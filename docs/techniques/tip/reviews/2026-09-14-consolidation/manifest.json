@@ -1,0 +1,180 @@
+{
+  "A_resolveDisputes": {
+    "ids": [
+      "dbfd8177afae45169c68035cd024d0c3",
+      "7e72fd7f0b57402a992f9053cab757c1"
+    ],
+    "reason": "human decision 2026-09-14: the approved session policy is the execution-integrity pause (batch C); the geometry base note folds into the canonical family (batch B)"
+  },
+  "B_geometryFamily": {
+    "batchId": "consolidation-geometry-2026-09-14",
+    "scope": "rule",
+    "merge": {
+      "supersedes": [
+        "dbfd8177afae45169c68035cd024d0c3",
+        "f120c2b934d845e1a43ca476abfa042d",
+        "779fbcf381824b90a70486a0f2bd5156",
+        "cac7bd77fa584a7aa94ccea0bbe078bf",
+        "17ec9915c4544b1cac5ff0c0e24e612d",
+        "eff8c28bbb6e4f869d041ecb70d4e4cd",
+        "e306ebce7b8a449c8b002aedbe5d2f80",
+        "3d08ab9088e84d1ebb47430f73dd00c5",
+        "c4d3b50cc3aa4755bcb1b997bb8f1cc3",
+        "557e30dac27a4a8baf5871a888daf035",
+        "d45362c1211647ed937bba7d095d3b04",
+        "6f6e925b642445b4861421950ad8bd7f",
+        "f39cf0b677cd459b83629b17735586b9",
+        "6083fce516f643549c7c6b7cf157109b",
+        "4ccdf6ed82d746c2813ca8529ecca28b",
+        "2de9051d8016477db25666b1da5c63cc",
+        "827e452760e24ddd805724239e823f6e",
+        "26c382310fa040968da675279fe2c91f",
+        "595642da39ae4804946a4cb5fc53f3f4",
+        "779afa13c4b34773a1c6d9371ae963a4",
+        "bca1cac46d1d44b4b33d30da0718e272",
+        "0477b92b4a2e4e7a9516cf7fa3bd9ac8",
+        "1d30159726a3411bb4f6b6763769b08e",
+        "7101b39773524751b658c62555ecf089",
+        "395ce53ec92d44bd82a43c479da77391",
+        "e6794b52a9f14188a3a85931e2da8003",
+        "082d17b5abfa4548b347687b368d99ea",
+        "0db23ca65130402683546b83422dc0f6"
+      ],
+      "new_rule": "RULE (adoption geometry — canonical family, consolidated 2026-09-14 from 28 rules; the code gate `techniques.tip.geometry_gate=enforce` validates -> repairs -> resizes -> revalidates BEFORE entry, and this rule is the analyst's statement of the same policy):\n1. SIGN — long: stop < entry and every target > entry; short/put: mirrored. A wrong-side ladder is usually a DIRECTION-LABEL error (the level set fits the opposite direction): treat it as a defective plan, never \"let the engine sort it out\".\n2. STOP WIDTH — the stop sits OUTSIDE the underlying's noise on the plan timeframe. Formulas are direction-explicit and in UNDERLYING units: long stopWidthPct = (entry − stop) / spot; short stopWidthPct = (stop − entry) / spot; a non-positive width is a SIGN failure. Momentum-chase entries: the stop sits below (long) / above (short) the impulse ORIGIN. High-priced names: judge percent, not dollars. A token stop that happens to PAY is still a defect. Numeric floors (0.75%, 1x plan-timeframe ATR) are the code gate's engineering floors, not this rule's authority; the high-beta / sub-$25 (1.5% or 1x daily ATR when the 5-session range > 10% of spot) and 15m-timeframe extra floors are HYPOTHESES under observation, not operative policy.\n3. TARGET WIDTH — the first target clears the noise floor and the time box is long enough for the ladder; a premium-% stop must be translated to an underlying move and sit outside the stated invalidation; never a premium ratchet on a debit spread. The TP1 >= max(0.5x ATR, ~1R) figure is a HYPOTHESIS, not operative policy.\n4. STALENESS — compare the plan entry to LIVE spot before adopting; consumed risk = long (entry − spot)/(entry − stop), short (spot − entry)/(stop − entry). A missing or stale spot, a missing ATR or a zero denominator means CANNOT JUDGE (recorded as such) — neither a pass nor a refusal. The 0.5 consumed-risk threshold is a HYPOTHESIS.\n5. DUPLICATE-TICKET / STOP-KIND — the same defective geometry re-handed with a cosmetically re-cut ladder is ONE defect; a source's daily-close invalidation is never translated into an intraday GTC.\nEvidence for every clause lives in scope evidence:adoption-geometry (14 dated cases, never injected). Repeated processing of one trade is not independent support. The AMZN/MU \"absolute auto-refuse\" memos were engine-defect evidence; with the pre-entry gate they are moot."
+    },
+    "expected_revisions": {
+      "dbfd8177afae45169c68035cd024d0c3": 2,
+      "f120c2b934d845e1a43ca476abfa042d": 1,
+      "779fbcf381824b90a70486a0f2bd5156": 1,
+      "cac7bd77fa584a7aa94ccea0bbe078bf": 1,
+      "17ec9915c4544b1cac5ff0c0e24e612d": 1,
+      "eff8c28bbb6e4f869d041ecb70d4e4cd": 1,
+      "e306ebce7b8a449c8b002aedbe5d2f80": 1,
+      "3d08ab9088e84d1ebb47430f73dd00c5": 1,
+      "c4d3b50cc3aa4755bcb1b997bb8f1cc3": 1,
+      "557e30dac27a4a8baf5871a888daf035": 1,
+      "d45362c1211647ed937bba7d095d3b04": 1,
+      "6f6e925b642445b4861421950ad8bd7f": 1,
+      "f39cf0b677cd459b83629b17735586b9": 1,
+      "6083fce516f643549c7c6b7cf157109b": 1,
+      "4ccdf6ed82d746c2813ca8529ecca28b": 1,
+      "2de9051d8016477db25666b1da5c63cc": 1,
+      "827e452760e24ddd805724239e823f6e": 1,
+      "26c382310fa040968da675279fe2c91f": 1,
+      "595642da39ae4804946a4cb5fc53f3f4": 1,
+      "779afa13c4b34773a1c6d9371ae963a4": 1,
+      "bca1cac46d1d44b4b33d30da0718e272": 1,
+      "0477b92b4a2e4e7a9516cf7fa3bd9ac8": 1,
+      "1d30159726a3411bb4f6b6763769b08e": 1,
+      "7101b39773524751b658c62555ecf089": 1,
+      "395ce53ec92d44bd82a43c479da77391": 1,
+      "e6794b52a9f14188a3a85931e2da8003": 1,
+      "082d17b5abfa4548b347687b368d99ea": 1,
+      "0db23ca65130402683546b83422dc0f6": 1
+    },
+    "author": "consolidation:2026-09-14"
+  },
+  "C_killSwitch": {
+    "batchId": "consolidation-killswitch-2026-09-14",
+    "scope": "rule",
+    "merge": {
+      "supersedes": [
+        "7e72fd7f0b57402a992f9053cab757c1"
+      ],
+      "new_rule": "RULE (session kill-switch — execution-integrity pause; replaces the 2026-09-04 clock clause and the 2026-09-11 geometry refinement, approved 2026-09-14): a fast stop on a trade whose final geometry, sizing, quote evidence and fills were all valid is a CLEAN losing trade — it produces a diagnostic, never a session-wide refusal; the daily-loss limits own that decision independently. Automated tip entries pause on an execution-integrity INCIDENT: a filled trade outside its risk plan, an exit on unconfirmed or delayed evidence, duplicate or unreconciled fills, a repeatedly failing entry path, or an identified shared-component failure. An incident is a persisted record (it survives restarts and date rollovers), scoped to what its evidence implicates, honoured by every automated entry path — auto-approval, already-armed plans, retries — never by exits, and released only on evidence bound to it that proves the repair (or an explicit, labeled human override). Missing evidence is a HOLD, not proof of validity. Runtime: techniques.tip.entry_pause_mode = integrity."
+    },
+    "expected_revisions": {
+      "7e72fd7f0b57402a992f9053cab757c1": 2
+    },
+    "author": "consolidation:2026-09-14"
+  },
+  "D_evidence": [
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "4ccdf6ed82d746c2813ca8529ecca28b",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 4ccdf6ed82d746c2813ca8529ecca28b rev 1, 2026-09-09, by analyst:fec54a57; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE (fifth confirming case + a hard PRE-ADOPTION ARITHMETIC GATE on check (2) STOP WIDTH of the consolidated adoption-geometry VETO — AMZN is now a repeat offender and the pipeline keeps handing the SAME defect on this ticker): before adopting, compute BOTH numbers and refuse if either fails: stopWidthPct = (entry-stop)/spot >= 0.75% of spot AND >= 1x ATR of the plan timeframe; and rung-1 R multiple = (TP1-entry)/(entry-stop) must land in the 1-5R band (>~8R is proof the STOP is wrong, not that the trade is great). Evidence: AMZN adopted 2026-09-07 long @258.5746 with fixed stop 258.1366 — 0.438 wide = 0.169% of spot, ~1/4 of the hourly ATR (AMZN hourly bars were swinging 1-3 pts: 9/08 13:30 bar 257.69->254.80), and a single rung at 265.00 = +2.49% = ~14.7R. The venue GTC armed, the quote stop triggered at 257.46 and FILLED 19 @256.9486: 1.63 pts/share realized = 3.7x the \"designed\" 0.438 risk, -30.89 on a plan claiming ~$8 of risk, all inside one session, 265 never within 4 pts. This is the identical geometry as AMZN 9/03 (0.16%), GOOGL 9/07 (0.147%, 3.2x slip), MSFT 9/04 (0.50%), AMZN 8/31 (0.26%). Two additions: (a) DO NOT score it as \"the stop saved us\" — AMZN gapped to 250.65 on 9/09 and is 252.49, so direction was also wrong, but that is luck: at lane size the same token stop pays a multi-R slip on ordinary noise. (b) TICKER MEMO: any handed AMZN plan with a sub-0.5% stop is auto-refused; the correct AMZN long geometry is the 9/03 passing version (stop 2.13 = 0.83%, below the 258.05 shelf, rung 265 = ~3.3R), which lost ~1R honestly. Re-derive from live spot with a structural stop or SKIP. (2026-09-09)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "2de9051d8016477db25666b1da5c63cc",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 2de9051d8016477db25666b1da5c63cc rev 1, 2026-09-10, by analyst:c4b6a9cf; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (seventh confirming case of check (2) STOP WIDTH + check (3) TARGET WIDTH of the consolidated adoption-geometry VETO — now extended to 15m-timeframe plans, where \"1x ATR of the plan timeframe\" is NOT enough on its own): RDDT adopted 2026-09-07 long @154.4986 with fixed stop 153.9856 — 0.513 wide = 0.33% of spot, while RDDT 15m bars were swinging 0.7-3.3 pts (the 15:30 bar alone ran 153.44->156.74) and the 5-session range was 144.80-162.50 (+11% of spot, i.e. the high-beta branch requiring >=1.5% or ~1x DAILY ATR). Ladder was also penny-sized: TP1 154.9716 = +0.31% = 0.92R, TP2 155.5633 = +0.69% = 2.07R — rung 1 under the 1R floor, so even a 100% trim hit leaves the runner carrying the full loss. Outcome: quote stop breached at 153.50 and FILLED 32 @153.2993 — 1.199 pts/share realized = 2.34x the \"designed\" 0.513 risk, -38.38, all inside the first session, TP2 never touched. Two additions to carry: (a) DIRECTION WAS RIGHT AND STAYED RIGHT — RDDT is 155.44 on 2026-09-10 after tagging 156.95 (both ladder rungs cleared, +1.7% above entry), so this is not \"the stop saved us\"; the geometry, not the thesis, produced the loss, and a structural stop (below the 151.0-153.3 shelf, ~1.5-2.0 pts = 1.0-1.3%) would have held through the flush and paid both rungs. (b) TIMEFRAME MEMO: a plan labelled timeframe 15m tempts a 15m-scale stop; use the SPOT-PERCENT floor and the recent DAILY range as the binding constraint, never the fastest timeframe's ATR — the shorter the plan timeframe, the more likely the handed stop is inside the bid/ask+gap scale. Same family as AMZN 8/31/9/03/9/07 x2, GOOGL 9/07, MSFT 9/04, PL 9/04. (2026-09-10)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "827e452760e24ddd805724239e823f6e",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 827e452760e24ddd805724239e823f6e rev 1, 2026-09-11, by analyst:ca552add; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (tenth confirming case of check (2) STOP WIDTH + check (3) TARGET WIDTH of the consolidated adoption-geometry VETO — HIGH-PRICED ($500-1500) names are the same defect wearing a big absolute number, and MU now joins AMZN as a ticker memo): a stop that LOOKS wide in dollars can still be token in percent. MU adopted 2026-09-07 long @1016.8441 with fixed stop 1013.8453 — 2.998 wide, which reads like \"3 points of room\" but is only 0.295% of spot, ~1/5 of the hourly ATR (MU hourly bars that week swung 6-25 pts; the 9/09 13:30 bar alone ran 992.30 -> 1042.40). Single rung 1020.00 = +0.31% = 1.05R, i.e. rung 1 sits at the bare floor with no second rung, while trailing after_r 1.0 would arm on a rounding error. Outcome: quote stop breached at 1012.77 and FILLED 4 @1012.4375 — 4.41/share realized = 1.47x the \"designed\" 2.998 risk (1.41 pts of slip below the stop level), -17.63 in the second session. Carry forward: (a) ALWAYS compute stopWidthPct on high-priced names before adoption; on a $1000 ticker the 0.75%-of-spot floor means >= ~7.5 pts, and 1x hourly ATR means >= ~10 pts — a 3-pt stop is inside the flush scale and the fill is wherever the next liquid print is. (b) MU TICKER MEMO: MU is a 2-4%/day mover with gap risk into its own earnings cycle; any handed MU plan with a sub-0.75% stop or a rung-1 under ~1.5R is auto-refused, re-derive from live spot with a stop below the prior session's swing shelf. (c) Do NOT score it as \"the stop saved us\": MU is 974.83 on 2026-09-11 (-4.1% below entry, hourly closes stair-stepping 1027 -> 980 -> 975), so direction was wrong too — that is luck, not process; at real lane size this geometry donates spreads and multi-R slips. Same family as AMZN 8/31/9/03/9/07 x2, GOOGL 9/07, MSFT 9/04, PL 9/04, RDDT 9/07, SOFI 9/08, ZURA 9/08. (2026-09-11)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "26c382310fa040968da675279fe2c91f",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 26c382310fa040968da675279fe2c91f rev 1, 2026-09-10, by analyst:8d39f6a8; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (eighth confirming case of check (2) STOP WIDTH + the high-beta branch of the consolidated adoption-geometry VETO — sub-$25 names make the token stop a rounding error in ABSOLUTE cents, which is the tell): SOFI adopted 2026-09-08 long @18.20 with fixed stop 18.1631 — 0.0369 wide = 0.20% of spot and ~3.7 CENTS on a name whose 3-session 15m range was 16.93-18.35 (~8% of spot) and whose 15m bars swing 0.05-0.15. That is inside the bid/ask+tick scale (SOFI spread ~0.29% = 5 cents, i.e. the SPREAD ALONE IS WIDER THAN THE DESIGNED RISK) — an automatic fail of the >=1.5%-of-spot / ~1x DAILY ATR floor for high-beta sub-$25 tickers. Ladder was equally token: TP1 18.2553 = +0.30%, TP2 18.3106 = +0.61% (1.5R/3R nominal, but on a fake R). Outcome: the venue GTC stop filled 100 @18.1564 the same session for -4.36 = 1.18x designed risk; neither rung was approached. NEW ABSOLUTE TEST to run before any adoption: is (entry - stop) at least ~3x the current quoted spread in DOLLARS? If not, refuse regardless of percentages — the exit is a coin flip against the market maker. Also: do NOT score this as \"small loss, machine worked\" — SOFI is 17.22 on 2026-09-10 (-5.4% below entry), so direction was wrong too; the trivial P&L is token size (100sh, ~$4 risk) plus luck, and at real lane size the same geometry donates spreads all day. Same family as AMZN 8/31 (0.26%) / 9/03 (0.16%) / 9/07 x2, GOOGL 9/07 (0.147%), MSFT 9/04 (0.50%), PL 9/04 (0.81% on a 19%-range name), RDDT 9/07 (0.33%)."
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "595642da39ae4804946a4cb5fc53f3f4",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 595642da39ae4804946a4cb5fc53f3f4 rev 1, 2026-09-10, by analyst:7747328b; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (ninth confirming case of check (2) STOP WIDTH + check (3) TARGET WIDTH of the consolidated adoption-geometry VETO — the high-beta branch is about the name's RANGE, not its spread, and a tight spread must never be used to excuse a token stop): ZURA adopted 2026-09-08 long @5.95 (100 sh) with fixed stop 5.91 — 0.04 wide = 0.67% of spot on a $6 name whose 5-session range was 5.365-6.26 (~16% of spot) and whose 15m bars swing 0.03-0.10. It FAILS the >=1.5%-of-spot / ~1x DAILY ATR floor for high-beta sub-$25 tickers even though it PASSES the absolute test (spread ~0.003, so risk was ~13x the spread) — so the spread test is a necessary floor, never sufficient; the binding constraint is the recent DAILY range. Ladder was also token: TP1 5.985 = +0.035 = +0.59% = 0.875R (under the 1R rung-1 floor), TP2 6.03 = +1.34% = 2R, with trailing after_r 1.0 arming on a rounding error. Outcome: venue GTC stop filled 100 @5.8988 same session for -5.12 = 1.28x designed risk, TP1 never touched. Do NOT score it as \"the stop saved us\": ZURA is 5.46 on 2026-09-10 (-8.2% below entry, 15m closes stair-stepping 5.70 -> 5.38), so direction was wrong too — luck, not process. Same family as AMZN 8/31/9/03/9/07 x2, GOOGL 9/07, MSFT 9/04, PL 9/04, RDDT 9/07, SOFI 9/08. Practical fix for a $5-8 name: stop >= ~0.10-0.15 (1.5-2.5%) below the session shelf, rung 1 >= 1R, and size in shares that make that width affordable — or refuse the adoption."
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "779afa13c4b34773a1c6d9371ae963a4",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 779afa13c4b34773a1c6d9371ae963a4 rev 1, 2026-09-11, by analyst:84e794b8; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (adds a DUPLICATE-TICKET detector to the consolidated adoption-geometry VETO; eleventh confirming case of check (2) STOP WIDTH, and the second MU 9/07 ticket): the pipeline hands the SAME defective geometry more than once on a ticker in the same session, with only the ladder cosmetically re-cut. Evidence: MU adopted 2026-09-07 long @1016.8441 with fixed stop 1013.8453 (2.998 wide = 0.295% of spot, ~1/5 hourly ATR while MU hourly bars swung 6-25 pts) — IDENTICAL entry and stop to the MU ticket already retro'd, but this one carried a two-rung ladder 1020.707 / 1024.824 (+0.38% / +0.78% = 1.29R / 2.66R) with 15-session box and trailing after_r 1.0 (arms on a rounding error). Same outcome: quote stop breached at 1012.77, venue filled 4 @1012.4375 = 4.41/share realized = 1.47x the \"designed\" risk (1.41 pts of slip below the level), -17.63 in the second session, rung 1 never touched. Pre-adoption test to add: hash (entry, stop) against plans already adopted or refused on this ticker today — a matching entry/stop with a reshuffled ladder is a RECYCLED plan (the pipeline re-derived nothing), refuse it outright, and the retroactive session kill-switch applies since the first copy was flattened. A better ladder does not repair a token stop. MU ticker memo stands: 0.75% of spot on a $1000 name = >=7.5 pts, 1x hourly ATR >= ~10 pts; any handed MU plan with a sub-0.75% stop is auto-refused. And do not score it as \"the stop saved us\" — MU is 974.83 on 2026-09-11 (-4.1% below entry, hourly closes 1027 -> 980 -> 975), so direction was wrong too: luck, not process. (2026-09-11)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "bca1cac46d1d44b4b33d30da0718e272",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule bca1cac46d1d44b4b33d30da0718e272 rev 1, 2026-09-08, by analyst:0f67cded; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE (third confirming case + new cost dimension for check (1) SIGN of the consolidated adoption-geometry VETO): a wrong-side ladder does not only donate two spreads on a flat tape — on a trending tape it CAPS the trade at two random ticks and hands the move to someone else. Evidence: INTC adopted 2026-09-04 LONG @92.79, stop 91.3341 (1.4559 wide = 1.57% of spot, ~1x hourly ATR — check 2 PASS, the only clean part), but ladder TP1 92.1488 / TP2 92.6376 BOTH BELOW entry (a short's ladder on a long ticket — same defect as HOOD and SNOW 9/03). Both rungs were \"reached\" the instant the venue GTC armed; because INTC was ripping, the market fills printed 27 @93.1014 and 27 @94.8110 for +62.97 (~0.8R) inside 15 minutes. INTC then went 95.8 -> 104.28 by 2026-09-08 (+12% from entry, +10% above our last exit): the designed exit never existed, we got two arbitrary prints, and a correctly-laddered long (TP1/TP2 ABOVE entry, structure trail after 1R as on MSFT 9/03 and GOOGL 9/02) would have banked multiples of this. So: refuse a sign-fail adoption ALWAYS, even when the tape is with us; the ticket being green is the fill clock, not the plan. Corollary for scoring: never let a wrong-sign plan that printed a profit count as evidence the pipeline works — count it as an opportunity loss."
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "0477b92b4a2e4e7a9516cf7fa3bd9ac8",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 0477b92b4a2e4e7a9516cf7fa3bd9ac8 rev 1, 2026-09-08, by analyst:4bcb46dc; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE (refines the enforcement teeth on check 2 of the consolidated adoption-geometry VETO — a token stop that PAYS is still a veto fail, and here is the mechanism): when stopWidth is far inside noise, a trailing policy keyed to \"after_r 1.0\" arms on the FIRST tick of drift, because 1R is a rounding error. The position stops being the plan we adopted (ladder to +4%/+5.8%) and becomes a blind micro-trail of whatever the tape does in the next hour: heads we ratchet a stop into a small gain, tails we are flattened in minutes. Both outcomes are the same defect. Evidence: AMZN adopted 2026-09-03 long @256.12 with fixed stop 255.7174 — 0.40 wide = 0.16% of spot, ~1/4 of an hourly ATR (AMZN hourly range 251.93-261.12 that week), a clear fail of the 0.75% / 1x-ATR floor. It worked ONLY because AMZN drifted up right after arming: the structure trail ratcheted 255.72 -> 256.07 -> 257.75 -> 258.05 -> 258.90 and the venue GTC filled 19 @258.4383 for +44.05. Neither ladder target (266.43 / 271.00) was ever within 5 pts; AMZN topped 261.12 and is 257.02 on 2026-09-08, i.e. below our exit — the trail, not the plan, produced the P&L. Compare the identical-geometry losers three sessions later (META 9/04 stop 0.99% but staleness-consumed, flattened in 107s; MSFT 9/04 stop 0.50%, flattened in 131s; AMZN 8/31 stop 0.26%, flattened in minutes for -7.22). Practical fixes: (a) refuse the adoption and re-derive with a stop >= 1x ATR below the last swing low; (b) if a plan is genuinely a trail-the-momentum trade, say so and set after_r off a REAL R, not a token one. And never score a token-stop adoption as validated by its ticket — 5.8R on a fake R is noise, not edge. (2026-09-08)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "1d30159726a3411bb4f6b6763769b08e",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 1d30159726a3411bb4f6b6763769b08e rev 1, 2026-09-07, by analyst:5c378ce5; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE (affirmative counterpart to the consolidated adoption-geometry VETO — what a PASSING adoption looks like, and how to let it work): when a handed managed plan clears all five checks, adopt it and then do NOT interfere — let the ladder trim and the post-1R structure trail run the exit. The trail is what converts a good entry into a realized win when the move fades. Evidence: MSFT adopted 2026-09-03 long @505.00, stop 498.99 (6.01 wide = 1.19% of spot, ~1x hourly ATR and below the 496-497 swing shelf — check 2 pass), single TP1 515.00 = +1.98% (~0.5x+ ATR beyond entry — check 3 pass), sign clean (stop < entry < target), 15-session time box vs a target reachable in 1-2 sessions (check 4 pass), spot 505 = live entry, not stale. Outcome: MSFT ran to 515.64, TP1 trimmed 5 @514.43 (0.57 slip on the touch — expect ~1 tick-to-half-point of slip on marketable ladder fills, do not tighten TP to a penny level), stop ratcheted 498.99 -> 499.88 -> 507.74 -> 509.56, and the remaining half stopped at 509.42. MSFT then round-tripped the entire move to 499.70 by 2026-09-07 (-3.1% from our second exit): the structure trail banked +69.23 (+1.15R on $60 of risk) out of a move that gave back everything. Contrast with the eight 9/02-9/04 sign/width failures: same pipeline, opposite geometry, opposite result — the checks, not the ticket, are the edge. Only remaining critique on this one: with geometry this clean the size was token (10 shares, $60 risk); a plan that passes every gate deserves normal lane size, not the same size as one we half-trust. (2026-09-07)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "7101b39773524751b658c62555ecf089",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 7101b39773524751b658c62555ecf089 rev 1, 2026-09-08, by analyst:c848a459; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE (extends the affirmative counterpart to the consolidated adoption-geometry VETO — \"what a PASSING adoption looks like\", second confirming case, plus two mechanics it exposed): GOOGL adopted 2026-09-02 long @337.01, fixed stop 333.7646 (3.25 wide = 0.96% of spot, ~1x hourly ATR, below the prior swing shelf — check 2 PASS), ladder 350/355 = +3.9%/+5.3% and 4R/5.5R on the stop (checks 1/3 PASS), 15-session time box vs targets needing ~4-6 sessions at ATR (check 4 PASS), entry = live spot (staleness consumed ~0). Outcome: neither ladder rung ever printed (GOOGL topped 344.66 and is 338.55 on 2026-09-08, i.e. BELOW our exit), but the post-1R structure trail ratcheted 333.76 -> 338.22 -> 340.79 -> 340.80 and the quote stop closed all 14 @339.802 for +39.09 (~+0.86R) after 3 sessions. Same signature as MSFT 9/03 (+69.23): on clean geometry the TRAIL, not the ladder, is what converts a fading move into a realized win — so never disable the trail to \"wait for TP1\", and never grade such a plan by whether the ladder filled. Two mechanics to carry forward: (a) SLIPPAGE — the intra-bar quote breach filled 339.802 vs the 340.80 trail level, ~1.0 pt / 0.29% below the ratchet; budget roughly a quarter-percent of give-back on a trailed stop-out and do not ratchet to a level whose \"protected\" gain only exists at the exact tick. (b) SIZE — again token (14 shares, ~$45 risk) on a plan that cleared every gate, the identical critique as MSFT 9/03; a plan that passes all five checks earns full lane size, otherwise the checks buy us nothing but tidy rounding errors. (c) HYGIENE — this position also threw \"we hold 14, broker shows 0.0 — unexplained; new entries halted\": a share-count reconciliation break must be cleared by a person before the desk re-enters that ticker; it did not distort this exit, but an unreconciled position is un-manageable. (2026-09-08)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "395ce53ec92d44bd82a43c479da77391",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 395ce53ec92d44bd82a43c479da77391 rev 1, 2026-09-09, by analyst:01d98c66; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE (third confirming case of the affirmative counterpart to the consolidated adoption-geometry VETO — a PASSING adoption is allowed to LOSE, and the size critique is now the only recurring defect): AMZN adopted 2026-09-03 long @257.98, fixed stop 255.8491 (2.13 wide = 0.83% of spot, ~1x hourly ATR and BELOW the 258.05 swing shelf — check 2 pass), single ladder rung 265.00 = +2.72% / ~3.3R (checks 1+3 pass), 3-session time box vs a target ~2 daily-ATRs away (check 4 pass), entry = live spot (staleness consumed ~0). Outcome: the 9/04 flush closed a 15m bar through the stop and the venue filled 19 @255.6189 for -44.86 (~-1.05R, ~0.23 pt slip below the stop level). That is the machine working as designed, not a defect: AMZN never came within 4 pts of 265 (high 261.12), chopped 255-258 for three sessions and then gapped to 250.65 on 9/09 (252.55 now, -2.1% below our exit) — holding to the 3-session time box or trailing would have cost more. Lessons to carry: (a) do NOT overcorrect a clean-geometry stop-out by widening stops or dropping the time box; a ~1R loss on a plan that passed all five checks is the price of the edge, and the same geometry produced MSFT 9/03 +69.23 and GOOGL 9/02 +39.09. (b) Budget ~0.1-0.3 pt of slip on a bar-close stop exit; the fill is not the level. (c) SIZE is the one thing still wrong across every PASSING adoption (MSFT 10sh/$60, GOOGL 14sh/$45, AMZN 19sh/$40): plans that clear every gate deserve full lane size, otherwise the checks only buy tidy rounding errors while the veto-fail adoptions keep the same token size — no asymmetry, no compounding. (2026-09-09)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "e6794b52a9f14188a3a85931e2da8003",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule e6794b52a9f14188a3a85931e2da8003 rev 1, 2026-09-10, by analyst:58cee01e; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (sixth confirming case — makes the AMZN TICKER MEMO an absolute auto-refuse, and adds a SLIPPAGE-MULTIPLE expectation to check (2) STOP WIDTH of the consolidated adoption-geometry VETO): the pipeline handed a SECOND AMZN long on 2026-09-07 — entry 258.5746, fixed stop 257.9866 (0.588 wide = 0.227% of spot, ~1/4 hourly ATR while AMZN hourly bars swung 1-3 pts), ladder 266.43/271.00 = +3.0%/+4.8% = 13.4R/22R on rung 1 (far outside the sane 1-5R band, i.e. proof the stop is wrong, not that the trade is great), trailing after_r 1.0 (arms on a rounding error), 15-session time box vs a rung ~3 daily ATRs away. Outcome: quote stop triggered at 257.46 and FILLED 19 @256.9486 — 1.63 pts/share realized = 2.8x the \"designed\" 0.588 risk, -30.89, inside ONE session, TP1 never within 8 pts. Carry forward: (a) EXPECT the realized loss on a sub-0.5% stop to be 3x designed — the stop sits inside the bid/ask+gap scale, so the fill is wherever the next liquid print is; \"risk is only $12\" is fiction. (b) AMZN specifically: any handed plan with stopWidthPct < 0.5% is auto-refused without further analysis (8/31 0.26%, 9/03 0.16%, 9/07 0.169%, 9/07 0.227% — four tickets, four token stops, all flattened same-session; the only honest AMZN loss was the 9/03 PASSING version with a 0.83% structural stop below the 258.05 shelf). (c) Session kill-switch is retroactive and cross-ticker: this was another same-session flatten within minutes of arming. (d) Do not score it as \"the stop saved us\" — AMZN gapped to 250.65 on 9/09; direction was wrong too, which is luck, not process. (2026-09-10)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "082d17b5abfa4548b347687b368d99ea",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 082d17b5abfa4548b347687b368d99ea rev 1, 2026-09-11, by analyst:b4319026; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (twelfth confirming case of check (2) STOP WIDTH of the consolidated adoption-geometry VETO — this one PAID, which is exactly why it needs journaling; adds a FILL-vs-LADDER DIVERGENCE test for scoring): AVGO adopted 2026-09-07 long @357.9845 with fixed stop 357.0779 — 0.9066 wide = 0.253% of spot, ~1/5 of the hourly ATR (AVGO hourly bars swing 2-7 pts; the 9/09 13:30 bar ran 368.01 -> 361.28). Ladder 359.1206 / 360.3462 = +0.32% / +0.66% (1.25R / 2.6R on a FAKE R), trailing after_r 1.0 (arms on a rounding error), 4-session box. Outcome: +102.18 — but the trims filled 6 @364.687 and 7 @366.8366, i.e. 5.6 and 6.5 points (1.5-1.8%) ABOVE the rungs they \"reached\", because AVGO gapped 358 -> 367/369 overnight on 9/08 and the stale rungs were market-triggered into live tape far above them. So the P&L is the gap, not the plan: identical mechanism to HOOD 9/03 (+197.60 on a sign-fail ladder) and INTC 9/04 (+62.97, then the real move ran 10% without us) — here AVGO topped 372.70 and is 361.45 on 9/11, so the accidental exits were fine, pure luck. NEW SCORING TEST: if a trim/stop fill prints more than ~0.5% away from the level that triggered it, the exit was NOT designed — tag the position \"stale-ladder / gap artifact\" and count it as an opportunity measurement, never as evidence the pipeline works. NEW TICKER MEMO: AVGO is a $360 name with 2-4% daily swings and an earnings gap cycle — 0.75% of spot = >= ~2.7 pts, 1x hourly ATR = >= ~4 pts; any handed AVGO plan with a sub-0.75% stop or a rung-1 under ~1.5R is auto-refused, re-derive from live spot with a stop below the prior session's swing shelf. Same family as AMZN 8/31/9/03/9/07 x2, GOOGL 9/07, MSFT 9/04, PL 9/04, RDDT 9/07, SOFI 9/08, ZURA 9/08, MU 9/07 x2. (2026-09-11)"
+    },
+    {
+      "scope": "evidence:adoption-geometry",
+      "sourceId": "0db23ca65130402683546b83422dc0f6",
+      "sourceRevision": 1,
+      "text": "[EVIDENCE — cites rule 0db23ca65130402683546b83422dc0f6 rev 1, 2026-09-11, by analyst:231908e4; superseded by the canonical adoption-geometry family on 2026-09-14; research record, never injected]\nRULE REFINEMENT (thirteenth confirming case of check (2) STOP WIDTH + check (3) TARGET WIDTH of the consolidated adoption-geometry VETO — and it revives the DUPLICATE REDUCE-ORDER hygiene defect, which is now a hard post-exit check): NVDA adopted 2026-09-08 long @229.45 with fixed stop 228.8343 — 0.6157 wide = 0.268% of spot, ~1/4 of the hourly ATR (NVDA hourly bars that week swung 1-3.5 pts; the 9/10 13:30 bar ran 220.99 -> 217.20). Ladder 229.8111 / 230.3972 = +0.157% / +0.41% = 0.59R / 1.55R, i.e. rung 1 BELOW the 1R floor — a penny target that gets \"touched\" on a wick and fills worse than it reads: the TP1 trim filled 10 @229.5541, 0.257 BELOW the rung it triggered on, banking +$1.04. Then both exit paths fired at once: the venue GTC filled 21 @228.7642 and NINE SECONDS later the internal quote stop filled another 10 @228.7357 — 41 shares closed on a 31-share position. Net -6.22, all inside the first session, rung 2 never approached. Carry forward: (a) NVDA TICKER MEMO — NVDA is a 2-3%/day, $220-235 name; 0.75% of spot = >= ~1.7 pts and 1x hourly ATR = >= ~2.5 pts, so any handed NVDA plan with a sub-1.5-pt stop is auto-refused (contrast the PASSING NVDA 9/08 ticket, stop 2.973 = 1.28%, which lost 1.03x designed risk honestly and saved 5% of downside). (b) A sub-1R rung 1 is an automatic refuse on its own, independent of stop width: even a 100% trim hit leaves the runner carrying the whole loss, which is exactly what happened here. (c) POST-EXIT HYGIENE: after any full close, reconcile exited qty against held qty — if they disagree, a duplicate reduce ticket fired (same defect as AAPL 8/29's double time-stop close); flag it before re-entering the ticker. (d) Do NOT score it as \"the stop saved us\": NVDA is 218.35 on 2026-09-11 (-4.8% below entry, hourly closes stair-stepping 225 -> 218), so direction was wrong too — luck, not process. Same family as AMZN 8/31/9/03/9/07 x2, GOOGL 9/07, MSFT 9/04, PL 9/04, RDDT 9/07, SOFI 9/08, ZURA 9/08, MU 9/07 x2, AVGO 9/07."
+    }
+  ],
+  "missing": [],
+  "manifestHash": "973ee053a87254fa3ebccf0edf68f4d9e3b0193c16b6f0e1a6a063dd42d8f365",
+  "rollback": "supersede the family note and the kill-switch note with expired:rollback (snapshot), then restore superseded_by=NULL on each source ONLY where its revision_no still equals the value in expected_revisions (+1 for the supersede snapshot); evidence records stay; re-dispute the two rules if the policy question reopens"
+}

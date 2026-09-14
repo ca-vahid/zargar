@@ -130,18 +130,21 @@ a delete is a tombstone (`deleted_at`, replacement link kept, snapshot minted). 
 a rule makes it CORE (always supplied); ⚑ dispute flags a note through the journaled
 path; supply is stamped BEFORE the first provider call, reliance after. Truncated
 notes are restored ONLY via `zargar.tools.tip_note_restore` (manifest + `--confirm
-<hash>`, revision transition). Bulk knowledge cleanup is HELD until the
-consolidation packet's policy decisions are made. **Money-path builds awaiting review
-(2026-09-14, own branches, NOT merged/active):** geometry rev 2 (`techniques/tip/geometry.py`,
-`techniques.tip.geometry_gate` default `shadow`, PRACTICE books only; PR #91) and the KB-06
-execution-integrity pause (`techniques/tip/integrity.py`, `techniques.tip.entry_pause_mode`
-default `clock` = the 2026-09-04 `adoption_killswitch` stays the live gate; incidents are
-recorded in every mode and pause automated entries only in `integrity`/`both`; admission fails
-CLOSED; design `docs/techniques/tip/reviews/2026-09-13-kb06-execution-integrity-pause.md`).
-The exact combined tree with both admission gates is PR #95 (`claude/tips-geometry-integrity-integrated`)
-— the reviewer's readiness fixes G91-01..06 / I93-01..04 live on the two branches and are
-merged there; every automated tip entry (auto-approval, `approve(via=auto)` head AND final
-submission, the stale-quote retry, every armed submission/retry) asks BOTH gates.
+<hash>`, revision transition). The reviewed consolidation batches were APPLIED 2026-09-14
+(`tools/tip_consolidation.py` → `POST /api/tip/knowledge/consolidate`, manifest hash +
+`--confirm`; 19 restorations, canonical geometry family rule, incident-based kill-switch
+rule, 14 `evidence:adoption-geometry` records that are never injected) — record in
+`reviews/2026-09-13-pr91-pr93-response.md` "Rollout completion". **Geometry rev 2 + KB-06 are
+LIVE in Practice since 2026-09-14 (v0.7.67, PR #95):** `techniques.tip.geometry_gate=enforce`
+(`techniques/tip/geometry.py`; PRACTICE books only — `_geometry_scope`; the stop is finalized
+and the size derived from it against `risk_pct`/`risk_budget_per_tip` BEFORE the order, recomputed
+at submission, review-gated when evidence is missing; post-fill widening is trim-first with a
+durable attempt) and `techniques.tip.entry_pause_mode=integrity` (`techniques/tip/integrity.py`;
+a persisted `TipExecutionIncident` pauses EVERY automated tip entry — auto-approval, the
+`approve(via=auto)` head AND final submission, the stale-quote retry, every armed
+submission/retry — never exits; released only on evidence bound to the incident or a labeled
+override; a valid fast loss is a `TipFastStopDiagnostic`, the loss limits are independent).
+Rollback = `PATCH /api/settings` back to `shadow`/`clock` (journaled; incidents and stops stay).
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries

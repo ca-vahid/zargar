@@ -1,0 +1,577 @@
+{
+  "plannedAt": "2026-09-14T05:15:53.622674+00:00",
+  "manifestHash": "50537e16ae51879e723e79e18fae4c6ea286b77a35e5f0ec6351aac62d81facf",
+  "restorations": [
+    {
+      "id": "9231fc1a1c43492793a25935e29f58b6",
+      "scope": "ticker:MU",
+      "author": "analyst:8ce44283",
+      "runId": "8ce44283dccc4a64857b9f4ad47d2f20",
+      "createdAt": "2026-09-02T19:41:04.952591+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "8ce44283dccc4a64857b9f4ad47d2f20",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2198,
+        "sha256": "ee6e682838705991037cf9afa810e0b0c95b2c207c09310db61094d31adbd95c"
+      },
+      "prefixMatch": true,
+      "addedChars": 198,
+      "addedText": " no waiting level. Next actionable MU signal would be an explicit eva \"Open / BTO MU <strike> <expiry> @price\" AFTER the AVGO print, or a genuine 4h close above 950 we independently want to express.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:8ce44283",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "MU / eva — 2026-09-02 the \"MU swings\" lifecycle completed WITHOUT a single mirrorable entry, and the desk's standing 929.2 risk flag is now CLOSED. Sequence: 13:56 ET chart post [image VIEWED: 4h, MU 947.49, symmetrical wedge from the 1036 high; her drawn levels 1049/1018/1000/979/950/917/890/855, PD-H ~968, PD-EQ ~941, PD-L ~921; she marked the 950 line as the trigger] with text \"im playing that wedge break, above 950 needs to give out. This is why i only went 1/2 position, confirmation is a break and close above 950\" — i.e. she was ALREADY long a half-size swing she never alerted (no strike, no expiry, no premium, no stop, ever); 14:58 \"MU swings +15% for those that didn't believe\"; 15:40 \"MU swings is $100 per contract...considering scaling out if you dont want to swing into AVGO\". Durable reads: (1) NEW eva family = the UNALERTED SWING P/L UPDATE (\"$X per contract\", \"+15%\") — a pure mark on a position with no reconstructible contract; it is never adoptable and the extractor keeps trying to open on it (this one failed opens_position). Treat \"MU swings\" the same as tt's \"970s green\": commentary on someone else's basis, and typically posted at/near the local pop. (2) Her own risk stance is now RISK-OFF into tonight's AVGO print (she is suggesting scaling out; she also flagged 950 needing a break AND CLOSE above, which had not happened at post time). (3) ACTION TAKEN this run: disarmed the last two eva MU plans still waiting at 929.2 — run 8505016a (1020C long, 9/01 map) and run 0d436825 (850P short, 8/31 map), the opposite-direction pair from her conditional maps. Rationale: her map has moved from a 929-ish dip-buy to a 950 wedge-break continuation, so 929.2 is no longer support-to-buy in her own framing, and the only way it fills is an AVGO-driven gap down — a knife-catch on a thesis its author is trimming. Desk MU exposure verified ZERO (positions + managed empty); all remaining MU tips (eva 980C/unspecified, tt 975C/1000C/1030C, MuggZone 945P) stay proposed with no waiting level. Next actionable MU signal would be an explicit eva \"Open / BTO MU <strike> <expiry> @price\" AFTER the AVGO print, or a genuine 4h close above 950 we independently want to express."
+      }
+    },
+    {
+      "id": "0138e4980cec4526988576b77b4499cc",
+      "scope": "source:🌟｜muggzone-options",
+      "author": "analyst:5cc4e203",
+      "runId": "5cc4e203a6ec420bbfb67e1cb25f247b",
+      "createdAt": "2026-09-02T20:23:17.700978+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "5cc4e203a6ec420bbfb67e1cb25f247b",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2006,
+        "sha256": "0bcf60c17914372a8f3c449c34c482ea7e03bcc9b7ee6785b68e49dc8619beed"
+      },
+      "prefixMatch": true,
+      "addedChars": 6,
+      "addedText": "o-buy.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:5cc4e203",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "2026-09-02 16:22 ET MuggZone \"AVGO dumping post\" = his one-line post-earnings reaction (AVGO printed after today's close; tape confirms it — AVGO 349.30 post-session vs 369.68 prevClose, -5.5%). Non-actionable (no ticker resolution/side/contract), but it is the CATALYST RESOLUTION for the whole AVGO-ER-sympathy basket he built today and yesterday, and it resolves AGAINST him: (1) MRVL 9/4 220C @1.60 (9/01 19:15 \"overnighters\", never trimmed, already -6% on the underlying) and the escalation MRVL 9/11 230C @1.15 (9/02 14:03) were explicitly AVGO-ER sympathy longs — an AVGO gap-down guts both; the escalation rule that told us to skip the 230C is now validated by price, not just process. (2) NVDA 9/4 230C @.95 (13:47, his best-formed alert) and the CRDO \"bounce play\" both sit in the same semi-cap/AI-optics complex and gap-risk the same way. Durable reads: (a) when MuggZone builds a basket around someone ELSE's earnings print, treat the print itself as the single risk event for every leg — his baskets are one correlated bet, not four ideas; (b) expect his cadence to go SILENT on these (he posts exits on scalps, silence on losers — MRVL has been narrated, never trimmed), so absence of an \"out\" alert on MRVL/NVDA is not evidence they worked; (c) his immediate/mirror book was -32% (25 signals / 4 verified / 10 expired) BEFORE this print. Desk reconciliation this run: ZERO exposure to AVGO, MRVL, NVDA, CRDO, VYX anywhere (live/sim/managed all empty of these; only RKLB + BBAI managed tips from jon-and-kian are open), and no MuggZone plan is armed-waiting, so nothing to close or disarm — the skips cost us nothing and saved the MRVL/NVDA legs. Forward watch: AVGO -5.5% after hours is a sector-wide gap risk for tomorrow — it pressures eva's still-armed MU pair at 929.2 (runs 8505016a 1020C long, 0d436825 850P short); an AVGO-driven semi fade is exactly the knife that fills that opposite-direction pair. Re-check and disarm at the 9/3 open unless eva re-affirms 929.2 as support-to-buy."
+      }
+    },
+    {
+      "id": "f92d5ba9cb414cc5bed6b18a88409f27",
+      "scope": "source:🌟｜tt",
+      "author": "analyst:deaa2a73",
+      "runId": "deaa2a73768e425ea45204565473e42c",
+      "createdAt": "2026-09-03T16:09:30.372047+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "deaa2a73768e425ea45204565473e42c",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2335,
+        "sha256": "2952a09be7c5357a32dfcea43cd03f7221652c326c96865afd6bea6d8f3a5f39"
+      },
+      "prefixMatch": true,
+      "addedChars": 335,
+      "addedText": "e at his post, never his lottery strike, never a level plan. Full-campaign retro: direction paid 2.90 -> 8.50 (+193%) in one gap session; our disarm was process-correct but this is the second tt name where skipping the market fill cost the whole move — the fill-band-at-his-post rule is the only expression that would have captured it.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:deaa2a73",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "2026-09-03 12:08 ET tt \"One more COIN off at 8.5 from 3.00 / Runners can die or valhalla, plenty of time on the cons\" = SEVENTH fragment and the terminal-stage exit of the COIN 9/18 200C lotto (9/02 10:22 open @2.90 \"take small\", COIN 177.8 -> 9/03 09:30 \"100 a con\" ~3.90 -> 09:35 trim 5.3 -> 10:36 trim 6.75 \"5 left\" -> 10:50 trim 7.50 \"3 left\" -> 11:37 bare \"new HOD\" non-event -> 12:08 one more off 8.5, so 2 lots left). Verification correctly failed opens_position (also ticker_resolves quirk: COIN prices fine, prevClose returned 0.0 in this run's quote — a data artifact, not an untradeable name; spread 0.07%). NEW DURABLE ITEMS: (1) \"Runners can die or valhalla, plenty of time on the cons\" = his TERMINAL STUB language for a multi-week expiry (same family as \"2 for vallhalla into AVGO er\"): the campaign is DONE, the residue is a free roll, and he explicitly cites remaining DTE as the excuse to stop managing it — expect either silence into 9/18 or a single \"out of the rest\"/gap-brag; no further fragment is adoptable. (2) The size ladder is now fully reconstructed for the first time in any tt campaign: 5 -> 3 -> 2 lots, i.e. 2/2/1 out at 5.3/6.75/7.50/8.50, all time-driven (~every 15-75 min) on an IV/gap pop, never at structure. (3) THESIS-COMPLETION CHECK: COIN 193.75 at this trim — his own 4h range-high target (193.8) has now been tagged EXACTLY, so this 8.50 trim is the first fragment where the underlying actually reached his stated objective while the 200 strike remains 3.2% OTM (breakeven 202.9, 15 DTE). Confirms the standing read: on tt lottery strikes the payoff comes from gap delta + IV, and he monetizes it before the strike ever matters. DESK STATE VERIFIED THIS RUN: zero COIN exposure anywhere (positions + managed empty); only COIN tip is the 9/02 200C, proposed/verdict skip, at_level run 8c97bc49 disarmed 9/03 09:30 — nothing to manage, nothing to disarm. Standing handling for the NEXT tt COIN setup unchanged: immediate sized-down fill at a ~0.5-delta strike at his post, never his lottery strike, never a level plan. Full-campaign retro: direction paid 2.90 -> 8.50 (+193%) in one gap session; our disarm was process-correct but this is the second tt name where skipping the market fill cost the whole move — the fill-band-at-his-post rule is the only expression that would have captured it."
+      }
+    },
+    {
+      "id": "a186c7b869c043ce9e6d2f80e12089e4",
+      "scope": "source:🌟｜tt",
+      "author": "analyst:a5d65740",
+      "runId": "a5d65740f8084e3d9a26e7a256c82ba2",
+      "createdAt": "2026-09-03T16:14:29.610183+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "a5d65740f8084e3d9a26e7a256c82ba2",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2128,
+        "sha256": "9c21b1a50fa8471259761bb1ea49c9aa6b01d6c4112e34c3c2c8f4b95077da03"
+      },
+      "prefixMatch": true,
+      "addedChars": 128,
+      "addedText": "age or disarm. Watchlist sidebar in the screenshot still shows VYX 1h and META 1D, consistent with his unalerted VYX share book.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:a5d65740",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "2026-09-03 12:13 ET tt \"Classic ICT Po3 / Trade review out later tonight\" [image VIEWED — it is a genuinely NEW COIN 4h chart, not the 9/02 re-post and not a reaction-panel brag]: COIN 193.74 (session high 195.85), a red ACCUMULATION/manipulation box drawn at ~172-177 (the 9/01-09/02 lows where he bought the 9/18 200C at 2.90), a faded green box over the prior 177-190 range, and a standard-deviation projection ladder off the breakout leg with levels labelled 0 / -1 / -1.5 / -2 / -2.5 / -4 / -4.5 — the -4 line sits AT 200.00 and -4.5 at ~204. So this is a POST-HOC victory-lap annotation of the COIN campaign he just finished trimming (2 lots left after 12:08 @8.50), framed in ICT Power-of-Three language (accumulate low → manipulate → distribute high). Three durable items: (1) NEW tt image family = the FRESH ANNOTATED THESIS CHART (distinct from the reaction-panel brag and the broker push-alert brag): it carries levels but NO strike/expiry/price, so it is log-only, never an entry — however it is the first tt post from which real upside references can be read, and they are the only place his 200 strike stops being incoherent (200/204 = the -4/-4.5 extensions, i.e. +3.2%/+5.3% from spot with 15 DTE). (2) \"Trade review out later tonight\" is his recap cadence — expect an evening post-mortem message with marks/screenshots, i.e. more log-only fragments, NOT new setups; do not wait on it for actionable content. (3) He does his chart-work in Po3/ICT terms with an explicit accumulation box = his stated invalidation on the next COIN setup will be a 4h close back INSIDE that box (172-177 here), matching his 9/02 \"B set up until 4h closes back in the range\" wording — use that box, not his round-number strike, as the stop reference if we ever mirror a tt COIN trade. DESK STATE VERIFIED THIS RUN: zero COIN exposure anywhere (positions + managed empty); only COIN tip is the 9/02 200C (proposed / verdict skip) with its at_level run 8c97bc49 already disarmed 9/03 09:30 — nothing to manage or disarm. Watchlist sidebar in the screenshot still shows VYX 1h and META 1D, consistent with his unalerted VYX share book."
+      }
+    },
+    {
+      "id": "2c8de5630e4146a3bb845e3b9f69547c",
+      "scope": "source:🌟｜tt",
+      "author": "analyst:577d08d4",
+      "runId": "577d08d494064296bdb787174ccf5543",
+      "createdAt": "2026-09-03T18:51:17.436849+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "577d08d494064296bdb787174ccf5543",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2177,
+        "sha256": "b9fb2e2b0e32fbf0fe49f97e63e04d9394c9ea8fe84c5c296b95af0f147e5123"
+      },
+      "prefixMatch": true,
+      "addedChars": 177,
+      "addedText": "posure anywhere (positions + managed empty), no MU plan armed (eva's opposite pair 47d69db7/60d47905 disarmed earlier today) — nothing to manage, nothing to disarm. (2026-09-03)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:577d08d4",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[tt] 2026-09-03 14:50:56 ET \"There's 100% selling half remaining / 1.2 -> 2.45 / Runners are free\" = EIGHTH fragment of the 12:17 MU 9/04 995C \"Mega lotto\" (@1.2) and the EXECUTION of the ladder he stated at 14:02. Full campaign: 12:17 open 1.2 -> 12:40 1.65 (+30%) -> 12:55 \"50 a con\" (~1.70) -> 12:57 trim ~40% at +60% -> 13:11 round-trip BAIL note (back to entry) -> 14:02 recap + forward ladder (\"trim half remaining at 100%, swing the rest\") -> 14:50:08 mark 2.25 (+87.5%) -> 14:50:56 trim half of the remainder at 2.45 (+104%). Verification correctly failed opens_position/actionable: it is a trim alert on a position we do not hold. NEW DURABLE ITEMS: (1) tt DOES execute a pre-stated ladder to the tick — the 2.40/+100% trigger he posted at 14:02 fired 48 minutes later at 2.45; his forward ladders are therefore predictive of his own behaviour (useful for anticipating the terminal fragment) even though no fragment is adoptable. (2) NEW terminal-stage phrase \"Runners are free\" = cost basis recovered, residual stub is a free roll — same family as COIN's \"Runners can die or valhalla\"; after this phrase expect silence or a single gap-brag into expiry, never an add. (3) Two marks 48 SECONDS apart (2.25 then 2.45) — his fragment stream can burst; never treat consecutive marks as separate campaigns. (4) Full mega-lotto ladder template now reconstructed and identical in shape to COIN: ~40% out at +60%, half the rest at +100%, tiny free runner — copy the LADDER, never the strike. PRICE CHECK at this trim: MU 958.67 (+0.27% vs prevClose 956.08, spread 0.03%), i.e. +1.6% above his 943.6 entry print; breakeven 996.2 still needs +3.9% by tomorrow's close, so the 995 strike remains unreachable-by-thesis — the entire +104% was IV/gamma on a 1DTE 3.8% OTM strike, monetized before the strike mattered. Confirms the \"Mega lotto = explicit SKIP family\" note: the only monetizable window was 23-153 min after the post and the mirror cannot capture it. DESK STATE VERIFIED THIS RUN: zero MU exposure anywhere (positions + managed empty), no MU plan armed (eva's opposite pair 47d69db7/60d47905 disarmed earlier today) — nothing to manage, nothing to disarm. (2026-09-03)"
+      }
+    },
+    {
+      "id": "1c2fb602d82e4e988f0648f0bc1151a4",
+      "scope": "ticker:COIN",
+      "author": "analyst:ae408fbb",
+      "runId": "ae408fbb94674d7ca1ffa935b657782f",
+      "createdAt": "2026-09-04T00:12:48.054992+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "ae408fbb94674d7ca1ffa935b657782f",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2176,
+        "sha256": "54913ad28c8f2b4904e9dea683ccaf39bf1718d3231576e9e6cb688a8ca6ff0d"
+      },
+      "prefixMatch": true,
+      "addedChars": 176,
+      "addedText": " at_level run 8c97bc49 disarmed 9/03 09:30 — nothing to manage, nothing to disarm. The 9/02 200C tip can now be considered closed-out by the source's own review (runners only).",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:ae408fbb",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[tt] 2026-09-03 20:11 ET \"COIN trade review, had a few people ask\" [image VIEWED: full IRONHEART CAPITAL trade-review card, not a new setup] = the TERMINAL, post-mortem fragment of the COIN 9/18 200C campaign (9/02 10:22 open -> 9/03 12:08 last trim @8.50, 2 runner lots left). Verification correctly failed all four gates: it is a recap of a position we do not hold, past its own targets. NEW DURABLE ITEMS: (1) NEW tt image family = the BRANDED TRADE-REVIEW CARD (distinct from the reaction-panel brag and the fresh annotated thesis chart) — it is a marketing/education post-mortem, always retrospective, never carries a live entry; when the 12:13 \"Trade review out later tonight\" line appears, expect exactly this and do not wait on it for actionable content. (2) It RESTATES the campaign parameters he never gave in real time: entry avg $3.00 (his live fragments said 2.90 open then quoted \"from 3.00\" — his review basis is the rounded/averaged number, so never reconcile our marks against his card), stop = wick low $172.17 (matches the 172-177 accumulation box = the true invalidation reference for any future tt COIN trade), and the SD ladder TP1 ~$190 (-1.5SD) / TP2 ~$196 (-2.5SD) / runners exit ~$212 (-4.5SD). His actual trims (5.3/6.75/7.50/8.50) fired at 187-194 spot, i.e. he executed the ladder AHEAD of the stated -2.5SD level — consistent with the standing read that he monetizes gap-delta/IV before the strike matters (200C still 3.8% OTM at review, spot 192.70, breakeven ~203). (3) Confirms the 3-stage ladder template (trim into TP1/TP2, tiny free runner to max expansion) already reconstructed on MU — copy the LADDER, never the lottery strike. (4) Thesis framing to reuse if a fresh tt COIN setup arrives: COIN as high-beta (beta 3.39) BTC proxy, fuel = BTC >$80K; the setup dies if BTC stalls or a 4h close returns inside the accumulation box. DESK STATE VERIFIED THIS RUN: zero COIN exposure (positions + managed empty); only COIN tip is the 9/02 200C, proposed/verdict skip, at_level run 8c97bc49 disarmed 9/03 09:30 — nothing to manage, nothing to disarm. The 9/02 200C tip can now be considered closed-out by the source's own review (runners only)."
+      }
+    },
+    {
+      "id": "1c86f3e3013d4d1b81cc992a7d827d92",
+      "scope": "source:🌟｜muggzone-options",
+      "author": "analyst:c92a9bdc",
+      "runId": "c92a9bdcd0bd4b9a9ee5a0b2b53e3a05",
+      "createdAt": "2026-09-04T14:44:43.023100+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "c92a9bdcd0bd4b9a9ee5a0b2b53e3a05",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2124,
+        "sha256": "b749d7c9fc59b7387f5372b7698f10f6a98c340a251849874728e76f7c5a337c"
+      },
+      "prefixMatch": true,
+      "addedChars": 124,
+      "addedText": "e DISARMED immediately — its author will have abandoned the thesis and the level only prints on a -6% giveback. (2026-09-04)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:c92a9bdc",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[MuggZone] 2026-09-04 10:44 ET \"no pop at all waiting til 11:-11:15 then out of calls if i dont see any green candles forming\" = NEW sub-family: CONDITIONAL TIME-STOP / PRE-EXIT WARNING on his own open long book, and the first time he has ever narrated a RED leg intraday (silence-on-losers cadence broken — because the whole session's book is red, not one leg). It retro-covers the three long calls he alerted this morning: SPY 0DTE 775 @.25 (09:47), MRVL \"8/1\" 240C @1.30 (09:57) and TSLA 9/4 357.5C @1.30 SL .80 (10:33) — the TSLA leg is only 11 minutes old and he is already planning to flatten it, i.e. his stated SL .80 is decorative and the real invalidation is a 30-minute clock. Three durable reads: (1) his intraday holds on 0-1 DTE longs have a ~30-90 min half-life (SNOW 9/03 = 97 min), which independently re-confirms the execution-mode rule — never park/arm anything of his, and never mirror after the post; (2) \"no pop at all\" is his own admission that the 09:27 pre-open \"continuation morning pump into SPX ATHs\" outlook FAILED — so treat his pre-open outlook line as a hypothesis with a same-morning kill switch, and any 0DTE scalp descended from it as dead once he posts a no-pop line; (3) expect either an \"out\" fragment or, per cadence, silence + a strike-drift mark on a lower strike around 11:00-11:15 — neither is mirrorable. Desk reconciliation this run: ZERO exposure to any MuggZone name (live = SPCX/TQQQ/MSFT.TO/AAPL.TO; sim/managed = jon-and-kian RKLB 10/16 70C and common-stock ZURA). All 7 open MuggZone tips are parked/proposed/shadow verdict skip; armed levels MRVL 9/11 230C @204.475 (day 2 of 4), MRVL 195P @210.14, CRDO @163.495, AVGO (no level) — a conditional exit warning on today's 0DTE calls is not an exit post, so nothing to close/trim/disarm yet. TRIGGER FOR NEXT RUN: if he posts \"out of calls\"/an exit fragment after 11:00, the MRVL 9/11 230C armed plan (his last un-exited swing leg, waiting at 204.475 while MRVL trades ~218 after a +4.7% gap) should be DISARMED immediately — its author will have abandoned the thesis and the level only prints on a -6% giveback. (2026-09-04)"
+      }
+    },
+    {
+      "id": "03583bcbbbb84bf19e2f11a4bc4bfe4c",
+      "scope": "source:🌟｜tt",
+      "author": "analyst:f5b3c576",
+      "runId": "f5b3c57620fe4eeeb1a9b5faf841b3ea",
+      "createdAt": "2026-09-04T15:39:36.823733+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "f5b3c57620fe4eeeb1a9b5faf841b3ea",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2074,
+        "sha256": "9d9f0ff7f3357cd0cc741209447e047724d106aec2d4e14516597180f92c18dc"
+      },
+      "prefixMatch": true,
+      "addedChars": 74,
+      "addedText": "s watch-only. Nothing to trim, tighten, close or disarm from this message.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:f5b3c576",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[tt] 2026-09-04 11:39 ET \"Alright too slow im good on this / Out the rest flat\" = TERMINAL FLAT-ALL of the UNDISCLOSED puts/spreads book, exactly as the 11:32 impatience tell predicted (11:01 spreads \"+50 per\" -> 11:10 \"puts still at 1.7, set be exit\" -> 11:32 \"cons ~2.00, not gonna be patient much longer\" -> 11:39 flat at breakeven). DURABLE: (1) The IMPATIENCE/TIME-BOX phrase family is now confirmed PREDICTIVE end-to-end: \"not gonna be patient much longer\" -> flat/BE exit within ~7 minutes, never an add. Any future tt fragment carrying that phrase should be treated as a pre-exit warning, so a mirror of that book (if it were ever disclosed) should be flattened on the phrase, not on the level. (2) His de-risk language resolves as stated: \"you can set be exit to preserve capital\" (11:10) => the actual outcome was \"out the rest flat\" — i.e. when he coaches breakeven exits he means it, and the trade dies flat rather than working. Second BE-flat exit in 4 sessions (9/01 12:36 \"out of all MU\", 9/01 \"spreads tagged out BE\"). (3) Full 9/04 tt arc closed: 09:39 flat-all of the MU 995C mega-lotto (+942%) -> 09:50 weekly P&L victory lap -> 4 commentary fragments on the never-alerted spreads/puts book -> 11:39 flat that too. He is now FLAT everything he has narrated today; standing expectation of NO new tt entry alerts for the rest of 9/04 held all session and is reinforced. (4) The whole 11:01-11:39 sequence produced zero mirrorable content (no ticker/strike/expiry/entry in 30h+ of mirror) — confirms the rule that fragments from his undisclosed books are commentary-only forever; do not reverse-engineer contracts from marks like \"1.7\"/\"2.00\". DESK STATE 09/04 11:39 VERIFIED: zero tt-sourced exposure anywhere (managed book = RKLB 10/16 70C jon-and-kian +2.8% and ZURA common stock; live equities unrelated). Only open tt tip = COIN 9/18 200C (proposed, analystVerdict skip, armedWaitingAt EMPTY, day 1 of 8) — he is mostly out of that trade (trims to 8.50, runners only), so it stays watch-only. Nothing to trim, tighten, close or disarm from this message."
+      }
+    },
+    {
+      "id": "b5eac6e059ec4b5fac058e1cd0ac741f",
+      "scope": "source:🌟｜muggzone-options",
+      "author": "analyst:9754c6e9",
+      "runId": "9754c6e997fa4895ade39bdf1cc85b94",
+      "createdAt": "2026-09-04T16:22:44.458797+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "9754c6e997fa4895ade39bdf1cc85b94",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2224,
+        "sha256": "e6bf2883a79850fbe06407cadae1a23b239ad6b1c2be032d7b859c06c77c1e2a"
+      },
+      "prefixMatch": true,
+      "addedChars": 224,
+      "addedText": " (no level) — a winners-only P/L card confirms/reverses none, so nothing to close, trim or disarm. Expect the closing fragments (\"out\", \"sold rest\") on the 7735C in the next minutes: record cadence, never price. (2026-09-04)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:9754c6e9",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[MuggZone] 2026-09-04 12:22 ET \"4.0\\\" + WIN-CARD IMAGE (VIEWED): three green rows — SPXW 9/4 7,735C ▲65.12%, SPXW 9/4 7,745C ▲91.25%, SPY 9/4 $772C ▲95.00%. Pure P/L card on legs he already holds; zero tradable signals. Four durable reads: (1) UNDISCLOSED LEG REVEALED — the SPXW 7745C was NEVER alerted in text (his only index posts today were SPY 775 @.25, SPX 7735C @2.2, SPY 772C @.25); his win cards therefore disclose positions he never posted, so treat the card as the *inventory* truth and the text as a partial feed. Corollary: never assume the text stream is his full book, and never back-fill an un-alerted contract as an entry — by the time it appears on a card it is already +91%. (2) The bare number \"4.0\" one minute after \"now. 3.5\" continues the minute-by-minute mark cadence on the 7735C (2.2 → 3.2 sold 1/4 → 3.5 → 4.0, +82% in 9 min); card's 65.12% implies the card's cost basis (~2.42) differs from his posted 2.2 — his cards mark from a platform avg, not from the number he alerts, so % on a card ≠ % from his posted premium. (3) SILENCE-ON-LOSERS confirmed again within one session: the card shows only the three green index legs; the red TSLA 9/4 357.5C (10:33, @1.30) and the dead SPY 775 0DTE (09:47) get no row, no mark, no exit. His index reversal thesis paid ~55 min after his 11:19 capitulation — grade the mechanism, not the outcome; the same-session tilt-re-entry rule stands. (4) Mirror math: every row is 65-95% above basis, i.e. an order of magnitude outside the 1.15x fill band; SPXW has no live quote on our venue and SPY 0DTE is banned by the safety floor → whole index family remains LOG-ONLY. Desk reconciliation: ZERO MuggZone exposure anywhere (live TQQQ/SPCX/MSFT.TO/AAPL.TO; managed = jon-and-kian RKLB 10/16 70C, common-stock ZURA + SOFI). All 9 open MuggZone tips verdict skip (SPY 772C proposed, SPX 7735C parked, TSLA 357.5C parked, MRVL 240C/230C/195P, AVGO, CRDO, stale 9/02 SPX 7660P); armed levels MRVL 195P @210.14 (day 1/15), CRDO (day 2/15), AVGO (no level) — a winners-only P/L card confirms/reverses none, so nothing to close, trim or disarm. Expect the closing fragments (\"out\", \"sold rest\") on the 7735C in the next minutes: record cadence, never price. (2026-09-04)"
+      }
+    },
+    {
+      "id": "be144e3fa04a4fe396d71a95877f813f",
+      "scope": "source:🌟｜muggzone-options",
+      "author": "analyst:006b4601",
+      "runId": "006b4601ddd44000b876ce3f8ed1e8a6",
+      "createdAt": "2026-09-04T18:23:18.438335+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "006b4601ddd44000b876ce3f8ed1e8a6",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2082,
+        "sha256": "a5588c69c9170e533c80c2efa5d2408d5c687056d071ddd29581c3193c5997e9"
+      },
+      "prefixMatch": true,
+      "addedChars": 82,
+      "addedText": "y musing confirms/reverses none, so nothing to close, trim or disarm. (2026-09-04)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:006b4601",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[MuggZone] 2026-09-04 14:22 ET \"Was going for a lotto profit taking drop, watch they do it right at 3:30pm\" = POST-MORTEM + FORWARD-CLOCK MUSING on the SPX put he closed 12 minutes earlier (14:03 open ~7700P @2.25, 14:10 \"out, damage limited\"). Zero signals by design: no ticker/verb/strike/expiry/premium, and the only forward content is a TIME window, not a level or a contract. Durable reads: (1) NEW vocabulary — \"lotto profit taking drop\" names his thesis for the failed put: he was betting 0DTE call holders dump into the last hour, so the trade was a CLOCK trade, not a structure trade; when he frames a leg this way expect it to be abandoned within minutes if the tape doesn't cooperate (7-min life here). (2) \"watch they do it right at 3:30pm\" is a CONDITIONAL RE-ENTRY TELL, not an alert: if a late-day index short comes it will land ~15:25-15:35 ET in his usual index format (bare strike + entry premium + 2-step TP ladder + @here). It carries no strike, no price and no invalidation — under the orphan-level/conditional-map family it is never an entry, and per the 14:09 lesson his conviction adjectives have a ~1-minute shelf life anyway. (3) He is now FLAT indexes for the third time today (09:47 SPY 775C dead → 11:19 capitulation → 12:13-13:02 SPX 7735C win → 14:03-14:10 put red); direction flips 4x in one session, so no directional read from him survives to our next run. (4) Index family stays LOG-ONLY regardless: SPXW has no live quote on our venue, SPY 0DTE banned by the safety floor. Desk reconciliation 14:22: ZERO MuggZone exposure anywhere (live TQQQ 42sh +123.7%, SPCX -6.9%, MSFT.TO +14.7%, AAPL.TO +37.6%; managed = jon-and-kian RKLB 10/16 70C 13x +5.6% day 2, common-stock ZURA +2.8% and SOFI +0.5%, both day 0). All 10 open MuggZone tips verdict skip (SPX 7000P now dead-closed, SPY 772C, SPX 7735C, TSLA 357.5C expiring today, MRVL 240C/230C/195P, AVGO, CRDO, stale 9/02 SPX 7660P); armed MRVL 195P @210.14 (day 1/15), CRDO (day 2/15), AVGO (no level) — a time-of-day musing confirms/reverses none, so nothing to close, trim or disarm. (2026-09-04)"
+      }
+    },
+    {
+      "id": "8a7ed5229f214c0dae6c5e10fc671e25",
+      "scope": "source:🌟｜tt",
+      "author": "analyst:fad3b453",
+      "runId": "fad3b453b5fd4c7ab158fd11777e8996",
+      "createdAt": "2026-09-08T13:53:51.269553+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "fad3b453b5fd4c7ab158fd11777e8996",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2022,
+        "sha256": "3a033ea3e18fa0164b4ad9540b965c9987bcc46853c09f8408ed362b68963534"
+      },
+      "prefixMatch": true,
+      "addedChars": 22,
+      "addedText": "ps and no armed plans.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:fad3b453",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[tt] 2026-09-08 09:53 ET \"Also took a couple 1180/1200c debit spreads for same date at 1.4, max gain on these is 18.00\" (@role ping, Inkedcapital echo) = a REAL structured open (two legs, net debit 1.4, $20 width => max gain 18.6, ~13:1) but STRUCTURALLY UNMIRRORABLE for two reasons: (1) NO TICKER anywhere — the desk mirror contains only this one tt message in the last 30h, so the parent alert that named the underlying and the expiry was never mirrored; (2) \"same date\" is a back-reference to that missing parent, so the expiry is unresolvable => the contract-identity rule (an expiry that cannot be pinned is a guess, not a contract) applies, and 1180/1200 strikes fit several names (MU ~1028 today is the likeliest given his MU obsession; NFLX is 76 post-split, so not NFLX). Never reverse-engineer the underlying from the strike pair. DURABLE ITEMS: (a) NEW tt structure family — he now alerts VERTICAL DEBIT SPREADS with explicit max-gain math (\"max gain on these is 18.00\"), i.e. his previously undisclosed \"spreads\" book (9/01-9/04 fragments: \"MU spreads 3.80 -> 5.15\", \"Up 50 per on these spreads\", \"Spreads tagged out BE\") is starting to surface WITH legs and a price. Watch for the parent alert: if a future tt message names the underlying + date for a 1180/1200 pair, this 1.4 debit is the basis to compare against. (b) \"Also took\" = this is an ADD alongside another position opened minutes earlier in the same (unmirrored) name — expect P/L fragments on both books today. (c) On any tt spread that IS identifiable in future: manage it on the UNDERLYING (trim toward the short strike), never with a premium ratchet (MU 1000/1020 lesson). DESK STATE 09/08 09:53 VERIFIED: zero tt-sourced exposure (managed book empty; live equities TQQQ/SPCX/MSFT.TO/AAPL.TO unrelated). ACTION TAKEN this run: disarmed the last open tt tip, COIN 9/18 200C (run 9ee31b89, verdict skip yet armed auto, day 2 of 8) — skip must never be able to fill, and tt is mostly out of that trade. tt now has no open tips and no armed plans."
+      }
+    },
+    {
+      "id": "869c257ef9f84154af79fc0d3be820fd",
+      "scope": "ticker:MU",
+      "author": "analyst:98d631a8",
+      "runId": "98d631a8d3cd442782306c93e7aa8b68",
+      "createdAt": "2026-09-08T16:58:10.605961+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "98d631a8d3cd442782306c93e7aa8b68",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2123,
+        "sha256": "8d72af3e888db82bd6df9199b047b63764666ea2bdf23a0c74f809367b6985d5"
+      },
+      "prefixMatch": true,
+      "addedChars": 123,
+      "addedText": "p must never end up armed\" rule; a bearish plan we rejected was one tick from filling into a name whose 4h structure is up.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:98d631a8",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[tt / MU] 2026-09-08 12:57 ET \"Mu just kinda building 4h structure / Let it cook / Unless 4h fvg at 970 is flipped structure is up\" + [image VIEWED: MU 4h TradingView, spot 1016.36 with 3:03 left on the bar, session High 1041.07 / Low 918.00, a horizontal \"BSL\" (buy-side liquidity) line at ~1035.32 just above price, two grey VOLIB (volume-imbalance) boxes at ~1010-1020 and ~1020-1030 that price is consolidating inside after the 9/04-9/08 impulse off the 962.37 \"CISD\" line, and an older imbalance box at 930-940]. STRUCTURE-STATUS post, NOT a trade: no strike, no expiry, no premium, no entry — correctly failed opens_position + actionable. DURABLE ITEMS: (1) NEW tt fragment family — the ICT STRUCTURE-HOLD post (\"let it cook / structure is up unless X is flipped\"). It is his BIAS MAINTENANCE language, i.e. he is holding the (undisclosed) long side and telling members not to touch it; historically his actionable MU alerts arrive separately as strike+premium lottos/spreads. Treat it as a stated INVALIDATION LEVEL, not an entry: his MU bull thesis dies on a 4h close below the ~970 FVG; above it, expect further tt MU long alerts and P/L fragments, not shorts. (2) It also gives the orphaned 09:53 \"1180/1200c debit spreads @1.4, same date\" its likeliest home: MU is the name he is actively narrating today (1180/1200 = ~16-18% OTM off 1016) — still NOT confirmation, do not reverse-engineer the ticker, but if a future tt post pins the expiry, MU is the working hypothesis. (3) Levels worth keeping for our own use: 962.37 CISD (his up-structure origin), ~970 4h FVG = stated invalidation, 1010-1020 VOLIB = current acceptance, 1035 BSL then 1041 high = liquidity overhead where he historically sells. DESK STATE 09/08 12:57 VERIFIED: zero MU exposure anywhere (positions + managed empty). Open MU tips = 8, all verdict skip or null, no fills. ACTION TAKEN this run: eva's MU 850P short (verdict skip) was armed auto and WAITING AT 1016.59 = live spot — disarmed (run 7ec6e66d) per the \"skip must never end up armed\" rule; a bearish plan we rejected was one tick from filling into a name whose 4h structure is up."
+      }
+    },
+    {
+      "id": "e81e0a1acf6547878e2ac3ad71b9d156",
+      "scope": "ticker:MU",
+      "author": "analyst:d8cdaadc",
+      "runId": "d8cdaadcbb144b088a66585f75dc7104",
+      "createdAt": "2026-09-09T14:05:27.601086+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "d8cdaadcbb144b088a66585f75dc7104",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2093,
+        "sha256": "2762c0301d60ca023dcdddd3e875aa5e254d207c1ea9027db80e2aa924ed4b8f"
+      },
+      "prefixMatch": true,
+      "addedChars": 93,
+      "addedText": "-day impulse origin (~1000 prevClose shelf), never a -35% premium stop. (2026-09-09, analyst)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:d8cdaadc",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[MuggZone / MU — resolves and CORRECTS the 09:59 attribution] 2026-09-09 10:04 ET \"leaving runners on MU 1040 currently 210% @here\" is a RUNNER MARK on a MU 1040 CALL (expiry never stated; MU 1037.61 live vs prevClose 1000.26, +3.7%, so a 9/09 0DTE or 9/11 1040C is ~ATM). Arithmetic ties it to the 09:59 \"sold 1/4 at 6.3 @here 170%\": 6.3 at +170% => basis ~2.33, and +210% off 2.33 => ~7.2 now — coherent for an ATM MU 1040C on a +3.7% day. So the 09:59 trim was almost certainly this MU leg, NOT the MRVL 9/11 250C @2.45 opened at 09:54 (my 09:59 note guessed MRVL/an earlier MRVL leg — treat that guess as SUPERSEDED; the 250C is only 5 minutes old and 6.3 blew through its own TP3 of 5.0). Same structural defect as the whole morning: the MU 1040 open was NEVER alerted (no BTO, no strike/expiry/premium at entry), it surfaces only as a % mark, so it is unmirrorable by construction — and at +210% any mirror pays ~3x his basis, far outside the 1.15x band, on a 0-2 DTE contract. Vocabulary: \"leaving runners on X <strike> currently N%\" = he has already trimmed and is riding the rest; expect the next MU line to be \"sold the rest / all out\" rather than an add. Desk reconciliation 10:04: ZERO MU exposure (no shares, no managed) and ZERO MuggZone exposure anywhere (live only TQQQ/SPCX/MSFT.TO/AAPL.TO; no managed positions at all) — nothing to trim, tighten, close or disarm. MU open-tip book: 12 tips (eva 1150/1060/1050/1020/1000/980C + 950P/850P, tt 980P hedge + 1x unspecified long, MuggZone 1100C wish + 1 bare call), ALL verdict=skip except eva's 9/03 980C which is still analystVerdict=null — stamp it DECLINE (stale, MU is now ~1038, the 980C is deep ITM and its 1.15x window is 6 sessions gone). Forward: MU has run 936 -> 1038 in 6 sessions and both MuggZone and tt are now TAKING money off / hedging (tt's 09:33 0DTE 980/970p \"intraday hedge\"), so any fresh MuggZone MU call alert today is a late chase — require his own BTO with price, honour <=1.15x, and put any stop below the gap-day impulse origin (~1000 prevClose shelf), never a -35% premium stop. (2026-09-09, analyst)"
+      }
+    },
+    {
+      "id": "4929b2037a9f46a89a11e4b958c5bf02",
+      "scope": "ticker:MU",
+      "author": "analyst:ae76541f",
+      "runId": "ae76541f3c3e418fb37f3c5babc750b1",
+      "createdAt": "2026-09-09T14:51:39.031276+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "ae76541f3c3e418fb37f3c5babc750b1",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2158,
+        "sha256": "d4334b57d34acb0e9322065a7c993bba41e03f5ac5f2e15b747d87f731e6bce7"
+      },
+      "prefixMatch": true,
+      "addedChars": 158,
+      "addedText": " eva 980C null) and none are armed. Forward: expect the next MU line to be a % mark or exit on the 1050C; treat any of it as commentary. (2026-09-09, analyst)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:ae76541f",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[MuggZone / MU] 2026-09-09 10:51 ET \"out on mu puts keeping a couple 1050 calls @here\" — FULL EXIT of the 9/09 1020P hedge 35 min after opening it, plus first disclosure of yet another hidden-basis leg (MU 9/09 1050 CALLS, \"a couple\"). Lifecycle now complete and it confirms the implicit-hedge read: 10:16 \"MU 1020 0dt puts 3.4 entry @everyone\" → 10:21 ladder \"4.4 / 5.0\" → 10:23 \"1st tp hit\" + broker card VIEWED (MU $1,020 09 Sep 26 (W) Put, qty 6, value $2,760, mark 4.60 vs avg 3.65, +570 / +26.03% — note avg 3.65 ≠ his posted 3.4, so he added/averaged the puts and the disclosed entry is again NOT our reference for a 1.15x band) → 10:51 flat the puts, keeping 1050C. So the puts were a ~30-min intraday insurance/scalp against his +253% 1040C runners, exactly as logged; he never intended to hold them, and he ends the sequence NET LONG MU (1050 strike, 0DTE, undisclosed basis/size, \"a couple\"). Durable: (1) our 1020P tip (created 10:17, proposed, verdict=skip) is now DEAD BY THE SOURCE'S OWN EXIT — stamp declined/closed, never adopt; not filling was the profit since a mirror would have had ~35 min and two spreads to catch a +26% mark. (2) \"out on X\" = his genuine flat verb (family: \"all out\", \"sold the rest/remaining cons\"); \"keeping a couple <strike> calls\" is a HOLD status on an unalerted leg, not an entry — no premium, no size, 0DTE, unmirrorable by construction (same defect as the 1040 runners and \"now 8.0 +\"). (3) MU pivots from him today: 1040 = the level his runners live above; 1050 = the strike he is now holding into the close. Cross-source: eva also carries a MU 9/09 1050C tip (09:45, shadow, skip) and tt is long MU with a 970 4h-FVG invalidation — three sources long MU into the close. Desk reconciliation 10:51: ZERO MU exposure (get_positions: no shares, no managed) and ZERO MuggZone exposure anywhere (live only TQQQ/SPCX/MSFT.TO/AAPL.TO; managed book EMPTY) — nothing to trim, tighten, close or disarm; all 13 open MU tips across sources carry verdict=skip (one eva 980C null) and none are armed. Forward: expect the next MU line to be a % mark or exit on the 1050C; treat any of it as commentary. (2026-09-09, analyst)"
+      }
+    },
+    {
+      "id": "aead7ddb65794c7aa2c435c62353ed33",
+      "scope": "ticker:GS",
+      "author": "analyst:77fb17da",
+      "runId": "77fb17da1e0e4d7f9188cb7228873f87",
+      "createdAt": "2026-09-10T19:36:49.756195+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "77fb17da1e0e4d7f9188cb7228873f87",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2062,
+        "sha256": "42dc20e67172a0eb37695b88633c554862b5dddd8f2fea4ba0f7fc51bb29ed2d"
+      },
+      "prefixMatch": true,
+      "addedChars": 62,
+      "addedText": "ossible-premium contract-identity fail from 9/08. (2026-09-10)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:77fb17da",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[eva / GS] 2026-09-10 15:35 ET EOD chart post, image VIEWED (GS daily, O1028.84 H1029.47 L1011.68 C1017.82 -1.26%): a textbook symmetrical-triangle apex — descending line from the 1152 July high, ascending line from the 890.69 low, price pinned at the apex ~1018-1030 with her horizontal grid 1154/1125/1100/1064/1045/1030/1000/962/936/918. She has drawn a green 1-2-3-4-5 impulse channel projecting OUT of the apex up through 1064 → 1100 → ~1154, i.e. she reads the compression as a coiled BULLISH expansion, and momentum histogram is negative (-70.34) but curling. Message content = \"longer compression = large expansion... waiting game\": pure hold/commentary on her existing 9/18 1100C (1/2 position, opened 9/08 @4.50), no BTO, no strike, no price — log-only, consistent with 10:43 (VEX, 1000 strike highest pull), 12:19 (\"would like a close above 1025 again\") and 13:58 (\"tempting to avg down on GS but NOT YET — waiting on PPI tomorrow; if we get that 1000 test I'll avg down\"). BOOK FACTS to carry: (1) her stated SL is \"under 1025 DAILY CLOSE\" and today's close (~1018) BREAKS it, yet she is explicitly holding and pre-planning an average-down at 1000 — same pattern as her 8/31 AMZN add through her own invalidation, so do NOT mirror any 1000-print add. (2) The apex means the daily range is compressing: any re-entry stop must be close-based or >=1x DAILY ATR under the level, never an intraday quote stop (the 1022 quote stop flattened our mirror 9/09 at the 1019.55 wick while her thesis stayed alive). Desk state verified 15:36: get_positions GS EMPTY (positions + managed) — nothing to trim, tighten or close. Open tips: 1100C 9/18 tip 33cb9ce6 (verdict take) still armed, day 3 of 6, armedWaitingAt empty — if it re-enters it is now entering with her daily-close invalidation broken and PPI/CPI risk overnight; require a 1025 reclaim (or the apex break she is waiting for) before any fill, and size for a full loss on 8 DTE. Second GS tip (1000C 9/18, seenCount 2) stays skip — the impossible-premium contract-identity fail from 9/08. (2026-09-10)"
+      }
+    },
+    {
+      "id": "9ca7094db8a84324837a9ecf79bd6f94",
+      "scope": "source:🌟｜eva",
+      "author": "analyst:57b4e4a7",
+      "runId": "57b4e4a75692413f93bd9e0839272752",
+      "createdAt": "2026-09-11T19:11:24.899216+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "57b4e4a75692413f93bd9e0839272752",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2156,
+        "sha256": "6b4b504816dd9a826ecaa9ae3f59769c308cac642b560f7751fc81339133585c"
+      },
+      "prefixMatch": true,
+      "addedChars": 156,
+      "addedText": "her sources) — nothing to trim, tighten, close or disarm off this update. All open eva tips stay as-is (verdicts skip except today's ONON 29C 9/25 = watch).",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:57b4e4a7",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[eva] 2026-09-11 15:10 ET FRIDAY EOD RECAP (image VIEWED = CME FedWatch board, not a chart): for the 16 Sep 2026 FOMC (next Wed) the ZQU6 strip prices EASE 0.0% / NO CHANGE 13.7% / HIKE 86.3%, and the hike odds have been building fast (48.4% a month ago -> 59.4% a week -> 72.4% yesterday -> 86.3% now). Her words: \"FOMC next week - market is expecting a rate hike.\" DURABLE MACRO GATE: treat next week as a known binary for every eva swing and for our own book — her whole open book is long-delta, and she is deliberately idle (\"Didn't trade much this week due to GS and AMZN so will do one more position next week\", \"just holding all these for now\"), i.e. expect at most ONE new BTO from her next week and nothing before the print.\nFULL OPEN BOOK as she states it (first complete inventory the desk has had — the last four are NEW to us, none was ever alerted as a BTO, so if the extractor later slices any of them out of a recap it is a re-statement, not a fresh call): GS 9/18 1100C @4.50 (½ position, \"risky swing\", SL under 1025 DAILY close, TP 1045/1070/1100); AMZN 10/16 300C @1.74 (swing; note her quoted basis drifted from the 8/31 post-avg-down 1.95 to 1.74 — she re-marks, so never treat her quoted premium as our fill reference; 250 daily close is the hard line, and her 13:54 AMZN VEX post today says \"250 holding as solid support, possible 270 test next week\"); TSLA 1/15/2027 960C @6.65 (swing); NOK 1/21/2028 25C @3.00 (LEAP); BULL 1/15/27 15C @0.37 and RIVN 1/15/2027 20C @1.30 — both explicitly COVERED CALLS against shares she owns (premium collection) = never mirrorable per the instrument-legality rule; do not invert into puts, her view there is neutral-to-bullish.\nNO exits, no trims, no adds, no \"expiring worthless\" in this message — the GS average-down remains DEFERRED (13:53 VEX note). Desk reconciliation 15:10: ZERO exposure to GS/AMZN/TSLA/NOK/RIVN/BULL (live book is TQQQ, SPCX, MSFT.TO, AAPL.TO shares; managed book is only RKT, T 1/15/27 29C, APLD 10/16 30C from other sources) — nothing to trim, tighten, close or disarm off this update. All open eva tips stay as-is (verdicts skip except today's ONON 29C 9/25 = watch)."
+      }
+    },
+    {
+      "id": "ef811150610443f9822205c88ada39a3",
+      "scope": "source:🌟｜muggzone-options",
+      "author": "analyst:84f02a74",
+      "runId": "84f02a745473475a9635e78dd0eae612",
+      "createdAt": "2026-09-11T21:30:58.768181+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "84f02a745473475a9635e78dd0eae612",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2041,
+        "sha256": "ea8fd8bddd2184553b10aa1113f10fd03aa3fd4a875d796cd9c0a8d224b96a2c"
+      },
+      "prefixMatch": true,
+      "addedChars": 41,
+      "addedText": " BTOs plus the 10:05 HIMS 9/18 $29C @.42.",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:84f02a74",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[MuggZone / DELL — 17:30 ET 2026-09-11 post-close \"GIUL is the man.. i wasn't 100% sure about those dell calls until i read his post last night.. Play of the week $550 calls .87 to 17.00+\"] VICTORY-LAP / ATTRIBUTION note, zero signals (no verb, no fresh contract; the companion 17:30 message is blank with no image id in the mirror — nothing viewable). Two durable takeaways. (1) UPSTREAM ATTRIBUTION: he explicitly credits the 🌟｜giul-heatseeker channel's PRIOR-EVENING (9/10 post-ORCL-print) DELL post as the origin of his 09:33 DELL 0DTE 550C alert — so on earnings-sympathy nights, giul-heatseeker is the upstream idea and MuggZone's bell-time drip is a downstream re-post at a far worse basis. Forward use: evaluate giul's evening post on its merits BEFORE the bell (that is where a mirrorable basis exists); by the time MuggZone drips it at 09:33+ the impulse is already running (DELL 506.44 prevClose -> 540 by 09:33 -> 565 top by 11:00). giul-heatseeker has NO scorecard yet (get_source_stats empty) and his only DELL tip (09:48, seenCount 3, long, no strike/expiry/premium) was unactionable — so treat this as one anecdote, not a track record, and start tracking his evening sympathy posts. (2) HIS POST-HOC NUMBERS DRIFT: he now quotes the 550C basis as \".87\" when his own 09:33 alert said \".80\" (0.87 was the AAPL 9/14 330C basis), and \"17.00+\" vs the 13.00 he narrated live at 10:06 — retrospective % / premium claims from this lane are peak marks on a re-remembered basis, never a replicable fill. Desk reconciliation 17:30: get_positions DELL EMPTY (positions + managed); managed book unchanged (GOOGL 11/20 370C ab, T 1/15/27 29C jon-and-kian, APLD 10/16 30C ab) — nothing to trim, tighten, close or disarm. All 5 open DELL tips (4 MuggZone + 1 giul) are verdict=skip, none armed, and all are now EXPIRED CORPSES (9/11 close) — close them as explicit declines. Live pipeline items from this lane today remain the 13:09 ORCL 9/18 $165C @1.30 (SL .80) and 13:27 RKLB 9/25 $70C @1.39 swing BTOs plus the 10:05 HIMS 9/18 $29C @.42."
+      }
+    },
+    {
+      "id": "120fe04eb03c4b44aeba2bea0e378cb1",
+      "scope": "source:🌟｜muggzone-options",
+      "author": "analyst:4a7544a3",
+      "runId": "4a7544a3dbec40b2b6f391e8c55aefe1",
+      "createdAt": "2026-09-11T21:38:18.238119+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "4a7544a3dbec40b2b6f391e8c55aefe1",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2101,
+        "sha256": "0a408af4c16a762ee3544be04d112611f60713bc51d983e86b16991a1e49c9d7"
+      },
+      "prefixMatch": true,
+      "addedChars": 101,
+      "addedText": "items from this lane: 13:09 ORCL 9/18 165C @1.30 (SL .80) and 13:27 RKLB 9/25 70C @1.39. (2026-09-11)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:4a7544a3",
+        "expectedRevision": 1,
+        "newRevision": 2,
+        "text": "[MuggZone — 17:37 ET 2026-09-11 post-close \"MuggZone Alerts 9/11 @everyone\" RECAP] Marketing scorecard of the whole session, zero signals (every line is past-tense on contracts that expired at today's close). Durable value = it CLOSES the loop on every tip this lane fed us today, and it is the first message where he reports his LOSERS. (1) Claimed outcomes: DELL 9/11 550C .80 -> \"18.35 by 10:25\" (1800%); DELL 560C 1.05 -> 10.50; QCOM 9/11 185C .97 -> all 3 TPs (+100%); MU 9/11 990C 2.86 -> TP1 3.55, TP2 3.8, then \"sold remaining at ENTRY\" (i.e. the third leg round-tripped to breakeven — the first time he has admitted a flat leg); AAPL 9/14 330C .87 -> 6.4 before noon (no exit posted; runners tile at 10:42 showed mark 5.70, so he is still free-rolling). (2) SELF-DISCLOSED LOSSES: the two 9/10 afternoon overnight lottos — META 9/11 630 PUTS and AMD 9/11 525 CALLS — \"did not pan out\", with the AMD caveat that it only paid if you RE-BOUGHT it at .10 after the open. Both were open tips here, verdict=skip, never armed; the auto-skip on the afternoon overnight-lotto format was correct on 2 of 2 today, so that format is NOT automatically his good one — the working formats remain the 2-4 DTE full-format swing (AAPL 330C) and the bell-time 0DTE first leg we structurally cannot fill at his basis. (3) NUMBERS DRIFT (third instance today): the 550C basis is now \".80\" again here vs \".87\" in his 17:30 post, and the peak is \"18.35\" vs \"17.00+\" (17:30) vs \"13.00\" narrated live at 10:06 — retrospective %s from this lane are re-remembered peak marks, never replicable fills. Desk reconciliation 17:37: zero exposure to any MuggZone ticker (positions + managed = RKT shares, T 1/15/27 29C, APLD 10/16 30C only) — nothing to trim, tighten, close or disarm. All 9/11-expiry MuggZone tips (DELL 550C/560C/bare/put, QCOM 185C+200C, MU 990/1010/1020, META 665C/630P, AMD 525C, NBIS 220P, MRVL) are now expired corpses and should be closed as explicit declines rather than left parked. Live pipeline items from this lane: 13:09 ORCL 9/18 165C @1.30 (SL .80) and 13:27 RKLB 9/25 70C @1.39. (2026-09-11)"
+      }
+    },
+    {
+      "id": "ad1e485e82d4461b941570535b83f716",
+      "scope": "source:🌟｜muggzone-options",
+      "author": "analyst:cdad03e3",
+      "runId": "cdad03e39ee644f3bbc2b055bef25296",
+      "createdAt": "2026-09-12T01:17:06.446162+00:00",
+      "currentRevision": 2,
+      "revisedAt": "2026-09-14T03:04:13.381744+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "evidence": {
+        "runId": "cdad03e39ee644f3bbc2b055bef25296",
+        "runKind": "intake",
+        "field": "text",
+        "fullLength": 2090,
+        "sha256": "2ac4a86f330ebb80a069734587412a4997a842bbe95d2d80917c8e2698ba0508"
+      },
+      "prefixMatch": true,
+      "addedChars": 90,
+      "addedText": " fill, no price, condition unresolved — premium-limit/conditional-wish rule). (2026-09-11)",
+      "transition": {
+        "reason": "restore",
+        "author": "restore-from-trace:cdad03e3",
+        "expectedRevision": 2,
+        "newRevision": 3,
+        "text": "[MuggZone — 21:16 ET 2026-09-11 \"I posted this on here 8/20, look at current prices on some of these names now\" + IMAGE VIEWED] The image is a photo of a printed sheet: his 8/20 \"oversold mega/large-cap tech\" composite screen (equal-weight 14d RSI, % below 50d SMA, % off 1m high; percentile score). Ranked APP 308.73/97, META 542.54/89, ARM 249.28/89, KLAC 186.22/85, AVGO 364.65/81, AMD 466.11/80, INTC 92.46/80, AMAT 491.87/79, CSCO 109.55/72, TXN 265.95/71, QCOM 161.07/67, LRCX 308.75/64 — prices are Aug 20 intraday, RSI/SMA through Aug 19. A background monitor shows a bearish candle-pattern cheat sheet (Bearish Kicker/Engulfing/Harami/Dark Cloud/Tweezer Top) — decor, not a view. ZERO signals, correctly: no verb, no strike, no expiry, no premium, and every price is THREE WEEKS STALE (INTC 92.46 then vs ~104 on 9/08; QCOM 161 then vs 185 on 9/11; META 542 then vs ~615). DURABLE TELL — NEW FORMAT for this lane: the RETROSPECTIVE SCREEN RE-POST is the weekend/after-hours cousin of his DELL victory lap: he re-publishes an old scan to show the names \"worked\", not to call anything. Forward use: (a) never let the extractor turn a stale screen row into a tip — run the price-deviation check against live spot first; (b) the screen itself is a mean-reversion WATCHLIST methodology, so if he ever re-runs it with CURRENT prices it is context for where he will fish next (APP/ARM/KLAC/AMAT are his oversold pool), never an entry. Desk reconciliation 21:16: get_positions holds ZERO of the 12 names (live book TQQQ/SPCX/MSFT.TO/AAPL.TO; managed = RKT shares, T 1/15/27 29C, APLD 10/16 30C) — nothing to trim, tighten, close or disarm. Related same-evening line at 21:01: \"ORCL: mightve jumped the gun on these, might see lower prices next week, then will look at Oct $170ish Calls\" — that is a SOFT WALK-BACK of his own 13:09 ORCL 9/18 $165C @1.30 swing (our open tip, verdict=skip, never armed) plus a level-less future wish on an Oct ~170C; both confirm the skip and neither is mirrorable (no fill, no price, condition unresolved — premium-limit/conditional-wish rule). (2026-09-11)"
+      }
+    }
+  ],
+  "unproven": [
+    {
+      "id": "aac9ee3efea54e13be34c0e787805431",
+      "scope": "experiment:b1",
+      "author": "batch-review:976da545",
+      "runId": "976da54546b142fdafe59643bdd16d25",
+      "createdAt": "2026-08-30T21:06:15.735037+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "verdict": "no trace evidence — left unproven, nothing proposed"
+    },
+    {
+      "id": "b3d7a11010aa4d1c8a02a8828dd754b0",
+      "scope": "experiment:b1",
+      "author": "batch-review:64f40988",
+      "runId": "64f409886d504b938e313f7e8bb54c43",
+      "createdAt": "2026-08-30T21:10:18.764194+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "verdict": "no trace evidence — left unproven, nothing proposed"
+    },
+    {
+      "id": "1d7d118ada1d40ee8ae3fe0f1b80eeb5",
+      "scope": "experiment:b2",
+      "author": "batch-review:38c41302",
+      "runId": "38c4130201114993b0ea834d26ea7342",
+      "createdAt": "2026-09-01T04:14:43.983191+00:00",
+      "currentRevision": 1,
+      "revisedAt": "2026-09-14T00:39:12.917581+00:00",
+      "storedLength": 2000,
+      "live": true,
+      "verdict": "no trace evidence — left unproven, nothing proposed"
+    }
+  ],
+  "rule": "apply only with --confirm <manifestHash>; every entry is a revision transition (snapshot, revision check under lock, journaled with the evidence hash); no backdating"
+}

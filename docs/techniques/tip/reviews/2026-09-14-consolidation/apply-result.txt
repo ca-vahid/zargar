@@ -1,0 +1,99 @@
+manifestHash 973ee053a87254fa3ebccf0edf68f4d9e3b0193c16b6f0e1a6a063dd42d8f365; family 28 ids; evidence 14; missing []
+{
+ "status": 200,
+ "body": {
+  "manifestHash": "973ee053a87254fa3ebccf0edf68f4d9e3b0193c16b6f0e1a6a063dd42d8f365",
+  "resolved": [
+   "dbfd8177afae45169c68035cd024d0c3",
+   "7e72fd7f0b57402a992f9053cab757c1"
+  ],
+  "batches": {
+   "family": {
+    "batchId": "consolidation-geometry-2026-09-14",
+    "merged": 28,
+    "newRules": [
+     "85fb55e85184470a912818b523db5f1c"
+    ],
+    "rejected": [],
+    "alreadyApplied": false
+   },
+   "killSwitch": {
+    "batchId": "consolidation-killswitch-2026-09-14",
+    "merged": 1,
+    "newRules": [
+     "035b22fcb39743d68e65fa735335b9c3"
+    ],
+    "rejected": [],
+    "alreadyApplied": false
+   }
+  },
+  "evidence": [
+   {
+    "sourceId": "4ccdf6ed82d746c2813ca8529ecca28b",
+    "id": "7048f8e9661a4f5f8e63393525fadfbc"
+   },
+   {
+    "sourceId": "2de9051d8016477db25666b1da5c63cc",
+    "id": "7fc31508088e4a2ba9c08375f698aa75"
+   },
+   {
+    "sourceId": "827e452760e24ddd805724239e823f6e",
+    "id": "a1f4d6c900fe4dc09f63945e7c86ca14"
+   },
+   {
+    "sourceId": "26c382310fa040968da675279fe2c91f",
+    "id": "61c244bcd84540578c5832ee83d3dcb7"
+   },
+   {
+    "sourceId": "595642da39ae4804946a4cb5fc53f3f4",
+    "id": "2be117312e9f4bf49cf576063feada49"
+   },
+   {
+    "sourceId": "779afa13c4b34773a1c6d9371ae963a4",
+    "id": "d3e13c8c17ec41af9743344419606ffd"
+   },
+   {
+    "sourceId": "bca1cac46d1d44b4b33d30da0718e272",
+    "id": "7f4da680b7954bdda59d497bdadd3f75"
+   },
+   {
+    "sourceId": "0477b92b4a2e4e7a9516cf7fa3bd9ac8",
+    "id": "ee4c641b3c054feca3cf5666ddf6db2b"
+   },
+   {
+    "sourceId": "1d30159726a3411bb4f6b6763769b08e",
+    "id": "a2e8ef9df7ce4630a5718c2a5515fcbb"
+   },
+   {
+    "sourceId": "7101b39773524751b658c62555ecf089",
+    "id": "f7960d51bfe3419280c05b3bd9a79d22"
+   },
+   {
+    "sourceId": "395ce53ec92d44bd82a43c479da77391",
+    "id": "9f5cb6cf0fae4ff3bcb42276c0938b8e"
+   },
+   {
+    "sourceId": "e6794b52a9f14188a3a85931e2da8003",
+    "id": "718cb472e05347a89ea914defd422d1d"
+   },
+   {
+    "sourceId": "082d17b5abfa4548b347687b368d99ea",
+    "id": "3be4bacafe3049688d6b9963ba27917a"
+   },
+   {
+    "sourceId": "0db23ca65130402683546b83422dc0f6",
+    "id": "0a89f94e3964462f812ec4d5402ebddc"
+   }
+  ],
+  "revisionTransitions": {
+   "dbfd8177afae45169c68035cd024d0c3": [
+    2,
+    3
+   ],
+   "7e72fd7f0b57402a992f9053cab757c1": [
+    2,
+    3
+   ]
+  }
+ }
+}
