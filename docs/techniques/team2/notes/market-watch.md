@@ -6355,3 +6355,28 @@ estart.ps1` at 16:32 ET. The
 - **Next run (~16:35) should:** (1) confirm the process is still healthy on 0.7.72 and nothing regressed after the restart; (2) if the run
   lands after 17:00 ET, confirm the nightly job armed tomorrow's three plans (`/api/team2/status` `armed` × 3 for 2026-09-15, `complete`
   false until 09:25) — else tomorrow's 09:00 run does it; (3) skip `/team2` UI (F103).
+
+## 2026-09-14 16:32 ET (run 95: post-close, process healthy on v0.7.72 after the 16:12 restart, no Team2 plan armed until the 17:00 nightly job, no stream drop since the restart, no Team2 warning)
+
+- **Alive on 0.7.72** (`/api/health` ok, started, `armed 11` = the restored tip plans). `/api/team2/status` `enabled true, mode auto,
+  armed: []` — SPY/QQQ/IWM for 09-14 stayed `disarmed` after the 16:00 close (run 94); no Team2 plan exists for 2026-09-15 yet, which is
+  correct at 16:32 (the `team2_plan_nightly` job is registered on the new process at 17:00 ET, `team2_preopen` at 09:25). Tomorrow's 09:00
+  run confirms the three plans.
+- **Nothing to read since 16:05.** No Team2 event, no order on Team2 Practice, no open position, no `needsAttention`. `zeroDte` policy
+  unchanged (flatten 15:45, last entry 15:30, premium cap $2,000, max 40 contracts). Thresholds unchanged from run 94 (`key_levels off`,
+  `target_replan structure`, `require_fresh_quote true`).
+- **Log since the restart (16:12 ET, 218 lines):** Team2 lines = the two job registrations only. No Team2 warning or traceback.
+  Alpaca stream connected + authenticated 16:11:49 and NO drop since (day total stays at four: 13:12, 13:26, 14:23, 15:29). The
+  `persist_bars: dropped N non-bucket-aligned stub bar(s)` noise continues through extended hours (platform, runs 91–94, not touched).
+- **Not Team2, for the reader:** (1) 16:15:52 EM's auto plan sheet `69cbf3b2` (152 symbols for 09-15, 4 processes) logged ONE `plan sheet
+  symbol failed` — a Yahoo `httpcore.ConnectTimeout` on one symbol's history fetch (`technique/service.py:1570`) — EM desk's; (2)
+  `TechniqueSweepStarted v1: missing required field 'sweepId'` at the same moment — the same event-contract class as F126 but on EM's
+  sweep event, EM desk's to fix; (3) `zargar.fx no live FX rate USD->CAD — converting 1:1` at boot (platform). None affect Team2.
+- **F125** still open (loss tally phantom charge; resets with tomorrow's plans). **F126** shipped in v0.7.72 — tomorrow's 16:00 close
+  is the first live check that the `TechniquePlanScored` warning is gone (expect ZERO `missing required field 'planFor'` lines).
+- **No code shipped, no rule/knob change, nothing to add to TRADING-RULES** this run. Skipped `/team2` UI (F103).
+- **Proposed (unchanged, platform):** the four Alpaca keepalive drops in 2 h 17 min (run 93) for `brokers/alpaca.py`'s owner.
+- **Tomorrow 09:00 run should:** (1) confirm three `armed` plans for 2026-09-15 minted by the 17:00 job (and, if the log shows the job
+  ran, that `plan-now` needed no manual call); (2) at 09:30 confirm the 09:25 pre-open completion (`pmh`/`pml`, `dayType`,
+  `sizingAtOpen`, `complete true`); (3) check the loss tally reset (F125) reads `losses 0` on all three; (4) count stream drops from
+  the open onward.
