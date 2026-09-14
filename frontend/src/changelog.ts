@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.73";
+export const APP_VERSION = "0.7.74";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.74",date:"2026-09-14",title:"Recover preparation and reconcile daily results",items:[
+    {tag:"fixed",text:"Partial Cartel preparation retries unresolved history with bounded recovery, preserving successful analyses, existing arms and immutable plan revisions."},
+    {tag:"fixed",text:"Simulated fills require fresh eligible quotes and retain exact source evidence. Protective orders keep waiting for usable quotes rather than claiming stale fills."},
+    {tag:"improved",text:"Cartel daily review separates trades, fills, fees and remaining holdings, with candidate attempts and durable quote coverage. Archived account history remains available."},
+    {tag:"improved",text:"Deployment ownership is serialized across teams; bar delivery measurements distinguish queue delays from missing history."},
+  ]},
   {version:"0.7.73",date:"2026-09-14",title:"A refused contract is not a loss, a late signal is not an order",items:[
     {tag:"fixed",text:"Team2 R1: the Practice book's two-loss allowance now counts only filled, closed losers. A contract the live picker refused or deferred is no longer a modelled loss against the desk, and the read no longer keeps a proxy position for a fire the book never held - the next pullback is a new candidate. Today IWM's single refused attempt had charged one of the two allowances."},
     {tag:"fixed",text:"Team2 R2: a fire is judged on the wall clock before any order chain starts and again after the quotes come back - outside its session, past the 15:30 cutoff, or older than three minutes it is recorded as a stale signal with source and decision times and never sent. A synthetic 15:28 signal delivered at 15:32 used to reach the order boundary."},

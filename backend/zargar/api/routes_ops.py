@@ -30,6 +30,11 @@ def build_ops_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=403, detail="local callers only")
         return await restart_state(eng)
 
+    @app.get('/api/ops/delivery-health', dependencies=[auth])
+    async def delivery_health():
+        return {'consumers': getattr(eng, '_delivery_health', {}),
+            'note': 'Since-process maxima; durable BarDeliveryHealth events preserve earlier intervals. Publication latency is distinct from missing source data.'}
+
     @app.post("/api/ops/quiesce")
     async def ops_quiesce(request: Request, minutes: float = 5.0, release: bool = False):
         """R1: suspend new entries before a restart captures its state (self-expiring); `release=true` lifts it."""
