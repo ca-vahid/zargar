@@ -58,6 +58,19 @@ async def restart_state(engine) -> dict:
                     pass
             for tid_ in sorted(in_flight):          # a chain task with no trade record yet
                 firing.append(f"{tid}:{ap.symbol}:{tid_}")
+    cartel = getattr(engine, 'cartel_observer', None)
+    for rid, row in list((getattr(cartel, 'rows', None) or {}).items()):
+        if row.get('status') not in ('armed', 'paused', 'closing'):
+            continue
+        armed.append(f'options_cartel:{rid}')
+        phase = row.get('state', {}).get('phase')
+        task = (getattr(cartel, 'fires', None) or {}).get(rid)
+        if row.get('mode') == 'alert':
+            alert_only += 1
+        if phase == 'submitting' or task is not None and not task.done():
+            firing.append(f'options_cartel:{rid}')
+        if phase in ('working', 'entry_protected'):
+            working_entries.append(f'options_cartel:{rid}')
     # venue orders: an order the venue has not acknowledged (or has partially filled) is IN FLIGHT - its
     # outcome is unknown across a restart; an ACCEPTED order is RESTING (a durable position's stop, a
     # resting limit): the sim book restores it and a live venue keeps it, so it is not a reason to
