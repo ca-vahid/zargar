@@ -55,10 +55,101 @@ those names), not source/ticker policy — they move to evidence with a link
 to geometry revision 2, which validates BEFORE entry and makes the ticker
 memos moot once built.
 
-**Old → new mapping:** the 32 ids above → `superseded_by = <new family id>`;
-the 14 evidence notes are NEW rows citing the old ids in text. **Rollback:**
-clear `superseded_by` on the 32 (all pointers, no deletes) and supersede the
-new family note with `expired:rollback`.
+**Old → new mapping:** the exact machine-readable list (every source id
+with the `revision_no` it was judged at, its retained clause, and every
+output record with its provenance) is §1a below; the apply batch MUST carry
+those revision numbers as `expected_revisions` so a source edited after this
+review aborts the whole batch (KB-02-B). **Rollback is itself a revision
+transition, never a pointer edit:** (1) supersede the family note
+(`superseded_by = expired:rollback`, snapshot reason `supersede`); (2) for
+each source id, snapshot (reason `rollback`) and restore `superseded_by =
+NULL` ONLY if its `revision_no` still equals the consolidation value — a row
+edited after consolidation keeps its later revision and is listed for the
+human instead of being overwritten; (3) evidence records stay (they cite,
+they do not govern). The batch id and payload hash of the consolidation
+receipt (`tip_knowledge_batches`) are the rollback's reference.
+
+**Direction, units and missing inputs (corrects the long-only arithmetic
+above):** long thesis `stopWidthPct = (entry − stop) / spot`, consumed risk
+`(entry − spot) / (entry − stop)`; short / put thesis `stopWidthPct =
+(stop − entry) / spot`, consumed risk `(spot − entry) / (stop − entry)`. A
+non-positive width or a non-positive denominator is a SIGN failure (§1.1),
+not a width or staleness failure. Entry, stop and spot are UNDERLYING prices
+in the underlying's currency even when the vehicle is an option (premium
+levels never enter these formulas); ATR is in the same units and the plan's
+timeframe. A missing or stale spot (older than the desk's freshness bound),
+a missing ATR or a zero denominator means **cannot judge** — the appraisal
+records that reason; it is neither a pass nor a refusal of the trade.
+**Authority:** 0.75 %, 1× ATR, 0.5 consumed risk and TP1 ≥ max(0.5× ATR,
+~1R) exist only in LLM-authored notes; presence in a note is not approval —
+each number is either approved by the human here or ships labeled
+HYPOTHESIS. The family's unconditional "refuse" wording is replaced by:
+"the geometry gate (revision 2) validates → repairs → resizes →
+revalidates; the analyst refuses only what that sequence cannot repair".
+
+**Evidence storage:** the 14 records do NOT go to `general` (automatically
+retrieved with a reserved prompt allocation — that would put the case
+histories back into every live context). They go to a scope that is never
+auto-injected: `evidence:adoption-geometry` — a NEW prefix (allow-listed in
+`normalize_scope`, excluded from `notes_for_tip`/rulebook selection,
+reachable on demand through search and the analyst's notes tool, with a
+guard test) — and that code change is a prerequisite of this batch.
+
+### 1a. Machine-readable mapping (verified against the live store 2026-09-13)
+
+Correction: the earlier "32 rules" was not reproducible from the store —
+**29** live `rule` rows name the consolidated adoption-geometry VETO or are
+the stop/exit-design rules the family folds in; the other three of the old
+count could not be identified and are dropped. All 29 are `revision_no = 1`
+at review time (the batch carries these as `expected_revisions`). Two of
+the 29 are DISPUTED (`needs_human`, journaled 2026-09-13) and are EXCLUDED
+from any batch until the kill-switch decision — and because one of them is
+the family's base note, the family batch cannot apply before that decision.
+
+```json
+{
+  "family": "RULE (adoption geometry)",
+  "judgedAt": "2026-09-13",
+  "expected_revisions": {"all 29 ids below": 1},
+  "sources": [
+    {"id": "dbfd8177", "role": "base: all five checks + CLOCK kill-switch clause", "status": "DISPUTED — excluded"},
+    {"id": "7e72fd7f", "role": "kill-switch on GEOMETRY, not the clock", "status": "DISPUTED — excluded"},
+    {"id": "f120c2b9", "clause": "1 SIGN — wrong-side ladder is a direction-label error"},
+    {"id": "779fbcf3", "clause": "4 STALENESS gate"},
+    {"id": "cac7bd77", "clause": "4 STALENESS — consumed risk ≥ 0.5 (threshold needs approval)"},
+    {"id": "17ec9915", "clause": "2 STOP WIDTH — ≥ 1× ATR of the plan timeframe"},
+    {"id": "eff8c28b", "clause": "2/5 enforcement of checks 2 + 5"},
+    {"id": "e306ebce", "clause": "2 STOP WIDTH — token stop voids designed risk"},
+    {"id": "3d08ab90", "clause": "2 STOP WIDTH — momentum-chase stop below the impulse origin"},
+    {"id": "c4d3b50c", "clause": "2 high-beta / sub-$25 branch", "label": "HYPOTHESIS"},
+    {"id": "557e30da", "clause": "3 TARGET WIDTH — TP1 ≥ max(0.5× ATR, ~1R); recycled-levels red flag (threshold needs approval)"},
+    {"id": "d45362c1", "clause": "3 time box must match the ladder"},
+    {"id": "6f6e925b", "clause": "3 premium-% stop translated to an underlying move"},
+    {"id": "f39cf0b6", "clause": "3 never a premium ratchet on a debit spread"},
+    {"id": "6083fce5", "clause": "5 stop KIND matches the source's stated invalidation"},
+    {"id": "4ccdf6ed", "clause": "2 pre-adoption arithmetic gate", "case": "fifth confirming case"},
+    {"id": "2de9051d", "clause": "2 15m-timeframe extra floor", "label": "HYPOTHESIS", "case": "seventh confirming case"},
+    {"id": "827e4527", "clause": "2 high-priced names: percent, not dollars", "case": "tenth confirming case"},
+    {"id": "26c38231", "clause": "2 high-beta branch", "label": "HYPOTHESIS", "case": "eighth confirming case"},
+    {"id": "595642da", "clause": "2/3 (high-beta branch)", "label": "HYPOTHESIS", "case": "ninth confirming case"},
+    {"id": "779afa13", "clause": "5 duplicate-ticket detector", "case": "eleventh confirming case"},
+    {"id": "bca1cac4", "case": "1 SIGN — third confirming case + cost dimension"},
+    {"id": "0477b92b", "case": "2 — a token stop that PAYS is still a defect"},
+    {"id": "1d301597", "case": "affirmative counterpart — what a PASSING adoption looks like"},
+    {"id": "7101b397", "case": "affirmative counterpart, extended"},
+    {"id": "395ce53e", "case": "affirmative counterpart — third passing case"},
+    {"id": "e6794b52", "case": "sixth confirming case — AMZN ticker memo (ENGINE-DEFECT evidence, links geometry rev 2)"},
+    {"id": "082d17b5", "case": "twelfth confirming case"},
+    {"id": "0db23ca6", "case": "thirteenth confirming case + duplicate reduce-order hygiene (also a PLATFORM-RULES finding)"}
+  ],
+  "outputs": [
+    {"out": "F", "kind": "rule", "scope": "rule", "text": "the five-section family in §1 with the corrected formulas", "provenance": "the 27 non-disputed ids (superseded_by = F.id)"},
+    {"out": "E01..E14", "kind": "evidence", "scope": "evidence:adoption-geometry", "one per case-bearing id": ["4ccdf6ed", "2de9051d", "827e4527", "26c38231", "595642da", "779afa13", "bca1cac4", "0477b92b", "1d301597", "7101b397", "395ce53e", "e6794b52", "082d17b5", "0db23ca6"], "provenance": "the id it is extracted from, cited in text; the id itself is superseded by F, not by E"}
+  ],
+  "rollback": "revision transitions per §1 (family → expired:rollback; each source restored only at its recorded revision)",
+  "receipt": "tip_knowledge_batches row of the apply run (batch id + payload hash) — filled at apply time"
+}
+```
 
 **Unresolved (needs the user, not the summarizer):**
 - **Session kill-switch: clock vs geometry** — `dbfd8177` says one stop-out
@@ -127,18 +218,50 @@ word — where the text names the ticker as its subject it is a proposal
 | `e2120ae0` | signal: | "[MuggZone / CRWV 9/11 105C] image VIEWED (msg 1546904697426681969)" | same as above |
 
 New orphans can no longer be written (the service now refuses an empty
-entity on every path). The 22 rows at the old 2,000-character boundary are
-truncated evidence; they keep their text and get a `[truncated at 2000 —
-legacy]` marker only if/when edited (no reconstruction is possible).
+entity on every path).
+
+**The 22 rows at the old 2,000-character boundary — checked against run
+evidence (2026-09-13, read-only script `truncation_evidence.py`; corrects
+the earlier "no reconstruction is possible" claim):**
+
+- **19 are PROVEN truncated at storage**: their `run_id` resolves to a
+  `tip_analyst_runs` row whose trace holds the `save_note` tool call with the
+  full original text (2,006–2,335 chars), of which the stored 2,000 chars are
+  a prefix. Ids (trace length): `9231fc1a` (2198), `0138e498` (2006),
+  `f92d5ba9` (2335), `a186c7b8` (2128), `2c8de563` (2177), `1c2fb602` (2176),
+  `1c86f3e3` (2124), `03583bcb` (2074), `b5eac6e0` (2224), `be144e3f` (2082),
+  `8a7ed522` (2022), `869c257e` (2123), `e81e0a1a` (2093), `4929b203` (2158),
+  `aead7ddb` (2062), `9ca7094d` (2156), `ef811150` (2041), `120fe04e` (2101),
+  `ad1e485e` (2090). The `TipNoteAdded` journal payloads carry the already
+  truncated text (2,000), so the trace is the only complete copy.
+  **Proposed restoration (NOT applied):** one reviewed batch that, per row,
+  snapshots the current text (revision 1, reason `edit`) and writes the
+  trace text as revision 2, author `restore-from-trace:<run8>`, journaled —
+  a revision transition, never an in-place overwrite; rows edited since
+  (revision_no > 1 at apply time) are listed for the human instead.
+- **3 have NO evidence** (`aac9ee3e`, `b3d7a110` experiment:b1; `1d7d118a`
+  experiment:b2 — batch-review runs whose traces hold no `save_note` step):
+  they stay labeled "possible truncation" in this packet only; nothing is
+  written to them.
+
 `16f86a3a` (source:ab) and `0600aecb` (rule) link to experiment-batch
 signals: their promotion provenance is a review item, not a deletion.
 
 ## 5. Sequence
 
-1. Safeguards first (this release): scheduling, conflict-locked transactional
-   apply, immutable revisions, scope validation, complete traversal.
-2. Human decisions: §3 kill-switch conflict; which numeric branches are
-   policy.
-3. Then apply §1 via the audit batch path (one reviewed batch, rollback
-   pointers), then §2 source profiles, then §4 confirmed reassignments.
-4. KB-08 measurement gates any change to what the analyst is SUPPLIED.
+1. Safeguards first (v0.7.62 + v0.7.63): scheduling, conflict-locked
+   transactional apply with receipts and revision checks, immutable
+   revisions, scope validation, complete traversal, PROPOSE-ONLY default.
+2. Prerequisite code: the `evidence:` scope (non-injected) and its guard
+   test; restoration batch for the 19 trace-recoverable truncated notes
+   (revision transitions, reviewed).
+3. Human decisions: §3 kill-switch conflict (both rules are flagged
+   DISPUTED through the journaled path since v0.7.63); which numeric
+   branches are policy; approval of each threshold in §1.
+4. Then apply §1 via the audit batch path with `expected_revisions` from
+   §1a (one reviewed batch, rollback as a revision transition), then §2
+   source profiles, then §4 confirmed reassignments. The trading-floor merge
+   the automatic audit applied on 2026-09-13 (`31b0b7c7` + sibling →
+   `571a93dc`) is reviewed in the same sitting: keep, or roll back the same
+   way.
+5. KB-08 measurement gates any change to what the analyst is SUPPLIED.
