@@ -55,7 +55,7 @@ export interface AuthState {
   sessionDays?: number;
 }
 
-interface AppState {
+export interface AppState {
   auth: AuthState;
   setAuth: (patch: Partial<AuthState>) => void;
   connected: boolean;

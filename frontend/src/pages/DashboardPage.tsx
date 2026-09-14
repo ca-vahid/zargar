@@ -404,7 +404,7 @@ function EquityCurvePanel() {
   const chartRef = useRef<Highcharts.Chart | null>(null);
 
   const { series, pts } = useEquityWindow(pids, spec.hours, spec.points);
-  const bookLive = useLiveEquity(books);
+  const bookLive = useLiveEquity(pids);
   const ccy = target?.baseCurrency ?? books[0]?.baseCurrency ?? "USD";
   const first = pts.length ? pts[0][1] : 0;
   const last = pts.length ? pts[pts.length - 1][1] : 0;
@@ -719,7 +719,8 @@ function EquityHero() {
     () => portfolios.filter((p) => p.kind === "sim" && !p.archived), [portfolios]);
   // marked against the same quotes the rest of the board draws, so the headline
   // moves with the tape instead of stepping once every 30 s (2026-09-14)
-  const simLive = useLiveEquity(sims);
+  const simIds = useMemo(() => sims.map((p) => p.id), [sims]);
+  const simLive = useLiveEquity(simIds);
   const practiceTotal = sims.reduce((sum, p) => sum + (simLive[p.id] ?? p.equity ?? p.cash), 0);
   const practiceCcy = sims[0]?.baseCurrency ?? "USD";
   const blended = useMemo(() => {
@@ -760,7 +761,7 @@ function EquityHero() {
   const { pts } = useEquityWindow(heroPids, 24, 60);
   const heroBooks = useMemo(
     () => portfolios.filter((p) => heroPids.includes(p.id)), [portfolios, heroPids]);
-  const heroLive = useLiveEquity(heroBooks);
+  const heroLive = useLiveEquity(heroPids);
   const move = dayMove(heroBooks, heroLive);
   const upMove = (move?.abs ?? 0) >= 0;
   return (

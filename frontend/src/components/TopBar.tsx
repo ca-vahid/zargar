@@ -54,7 +54,8 @@ export function TopBar() {
     () => portfolios.filter((p) => p.kind === "sim" && !p.archived), [portfolios]);
   // marked to the live tape, not to the 30 s server push: the chip used to
   // sit still between pushes while quotes arrived behind it (2026-09-14)
-  const practiceTotal = useLiveTotal(practice);
+  const practiceIds = useMemo(() => practice.map((p) => p.id), [practice]);
+  const practiceTotal = useLiveTotal(practiceIds);
   // armed plans living in the OTHER workspace must never be invisible
   const armedPlans = useStore((s) => s.techniqueArmed);
   const otherArmed = useMemo(
