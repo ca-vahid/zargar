@@ -21,7 +21,7 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## State of play (2026-09-14)
 
-- **Version:** v0.7.67 on main `b368e7e` (PR #95). Practice only: `trading.mode=practice`,
+- **Version:** v0.7.68 on main `24b6512` (PR #98 on top of the v0.7.67 rollout, PR #95). Practice only: `trading.mode=practice`,
   `techniques.tip.allow_live_auto=false`. The Tips Practice book (`techniques.tip.default_portfolio`)
   is the only book that trades tips; shadow books (immediate / armed) are research.
 - **Entry controls, both ACTIVE by journaled settings (2026-09-14 05:15Z):**
@@ -101,7 +101,13 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 11. **Tools that mint a session need `backend/.env`** — `tip_note_restore` and
     `tip_consolidation` must run from `C:/Cursor/zargar/backend`; from a worktree the apply
     step fails after printing the plan (learned 2026-09-14; nothing was written).
-12. **Restarts are the platform's biggest operational risk.** Other desks deploy during the
+12. **Same-symbol legs were a blind spot until 2026-09-14 (v0.7.68).** A scaled-in position
+    looped its stop 3,282 times in a shadow book because exit fills were attributed to the
+    first leg by symbol. Fixed (fills reduce toward flat; a reduce-only exit never crosses the
+    venue's zero), but the two research books that ran away (`ab` short 40,600 APLD, `eva`
+    short 5 TSLA) still carry those positions until the user resets them, and their armed-lane
+    scorecards are not trustworthy for those names.
+13. **Restarts are the platform's biggest operational risk.** Other desks deploy during the
     session; the app has been dark mid-session before. Every deploy must go through
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
