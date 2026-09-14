@@ -414,6 +414,11 @@ class PositionKeeper:
         if pf is None:
             return {}
         eq_before = await self.equity(pid)
+        # Resolve the day anchor while the book still looks the way it did
+        # BEFORE this level-set. Resolving it afterwards anchors on the new
+        # equity and the shift below then counts the same delta twice — a book
+        # going 0 -> 10,000 read as -50% and tripped the daily-loss halt.
+        await self.day_start_equity(pid)
         incoming = {(p["symbol"].upper(), p.get("secType", "STK")): p for p in positions}
         changes: list[dict] = []
 
@@ -467,8 +472,8 @@ class PositionKeeper:
             await session.commit()
 
         eq_after = await self.equity(pid)
-        # A broker sync is a level-set, not trading P&L — shift the day anchor.
-        await self.day_start_equity(pid)          # resolve it before shifting
+        # A broker sync is a level-set, not trading P&L — shift the day anchor
+        # (resolved above, against the pre-sync book).
         day_key = (pid, dt.datetime.now(tz=ET).date().isoformat())
         if day_key in self._day_start_equity:
             self._day_start_equity[day_key] += eq_after - eq_before

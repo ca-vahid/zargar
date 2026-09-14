@@ -107,3 +107,21 @@ async def test_a_broker_level_set_moves_the_anchor_not_todays_pnl(engine):
         pid, cash=10_500.0, positions=[], source="test")
     assert await engine.positions.day_start_equity(pid) == pytest.approx(10_500.0)
     assert await engine.positions.daily_loss_pct(pid) == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_a_level_set_on_a_book_with_no_anchor_yet_is_not_a_loss(engine):
+    """The anchor must be resolved against the PRE-sync book.
+
+    Resolving it afterwards anchors on the new equity and the shift then counts
+    the same delta twice: a book going 0 -> 10,000 read as -50% and tripped the
+    daily-loss halt on the next order (four test_engine_snaptrade failures).
+    """
+    pid = await _book(engine, cash=0.0)
+    assert not engine.positions._day_start_equity          # nothing anchored yet
+
+    await engine.positions.sync_portfolio_state(
+        pid, cash=10_000.0, positions=[], source="test")
+
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(10_000.0)
+    assert await engine.positions.daily_loss_pct(pid) == pytest.approx(0.0)
