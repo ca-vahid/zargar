@@ -1909,6 +1909,11 @@ function NoteCard({ n, onChanged, index }: {
             <button className="link-btn" disabled={busy} title="I've decided — clear the flag (journaled)"
               onClick={() => act(() => api.resolveTipNote(n.id))}>✓ resolved</button>
           )}
+          {!n.needsHuman && !n.supersededBy && (
+            <button className="link-btn" disabled={busy}
+              title="dispute: flag this note for your decision — no audit will merge or expire it while flagged (journaled)"
+              onClick={() => act(() => api.disputeTipNote(n.id))}>⚑ dispute</button>
+          )}
           {n.validUntil && !n.supersededBy && (
             <button className="link-btn" disabled={busy}
               title="pin: clear the expiry — this note is durable"
@@ -1944,6 +1949,12 @@ function NoteCard({ n, onChanged, index }: {
       ) : (
         <div className="kb-note-text"><RichText text={n.text} /></div>
       )}
+      <div className="muted" style={{ fontSize: 11, marginTop: 2 }}
+        title="Supplied = injected into a run before its first model call. Relied on = the model's own declaration afterwards — not proof the note helped.">
+        supplied {n.suppliedCount ?? 0}× · relied on {n.citedCount ?? 0}×
+        {n.core ? " · core" : ""}{n.needsHuman ? " · DISPUTED" : ""}
+        {n.revisionNo && n.revisionNo > 1 ? ` · rev ${n.revisionNo}` : ""}
+      </div>
     </div>
   );
 }
@@ -1956,6 +1967,8 @@ function KnowledgeTab() {
   const [q, setQ] = useState("");
   const [view, setView] = useState<KbView>("all");
   const [withHistory, setWithHistory] = useState(false);
+  // KB-02: propose-only receipts — the audit's judgement waiting for a human
+  const [batches, setBatches] = useState<import("../types").KnowledgeBatch[]>([]);
   const PAGE = 200;
   // KB-04: server-side search with a TOTAL — the tab used to filter a silent
   // newest-300 slice while 550 active notes stayed unfetched
@@ -1970,6 +1983,7 @@ function KnowledgeTab() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withHistory, q]);
+  useEffect(() => { api.knowledgeBatches("proposed").then(setBatches).catch(() => undefined); }, [notes]);
   const needle = q.trim().toUpperCase();
   const all = (notes ?? []).filter((n) =>
     // experiment artifacts are never injected into live runs — they only count
@@ -2039,6 +2053,33 @@ function KnowledgeTab() {
               onChange={(e) => setWithHistory(e.target.checked)} /> show history (superseded + expired)
           </label>
         </div>
+        {batches.length > 0 && (
+          <div className="kb-sec">
+            <div className="kb-sec-t">🗂 Audit proposals <span className="muted">· {batches.length} — knowledge
+              maintenance is propose-only: merges and expiries the audit judged are recorded here and touch no live
+              note until apply is switched on (techniques.tip.knowledge_apply_enabled); contradiction flags still land</span></div>
+            {batches.map((b) => (
+              <div key={b.id} className="kb-note">
+                <div className="kb-note-head">
+                  <span className="kb-note-scope">{b.scope}</span>
+                  <span className="muted">
+                    {b.createdAt ? timeAgo(b.createdAt) : ""} · {b.merges.length} merge{b.merges.length === 1 ? "" : "s"}
+                    · {b.expires.length} expir{b.expires.length === 1 ? "y" : "ies"} · {b.flagged.length} flagged
+                    · {b.rejected.length} rejected
+                  </span>
+                </div>
+                {b.merges.map((m, i) => (
+                  <div key={i} className="kb-note-text muted" style={{ fontSize: 12 }}>
+                    merge {m.supersedes.length} → “{m.text}”
+                  </div>
+                ))}
+                {b.expires.length > 0 && (
+                  <div className="kb-note-text muted" style={{ fontSize: 12 }}>expire: {b.expires.join(", ")}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {flagged.length > 0 && view !== "flagged" && (
           <button type="button" className="approvals-note mb" onClick={() => setView("flagged")}>
             ⚠ {flagged.length} note{flagged.length === 1 ? "" : "s"} need your call — the weekly rule

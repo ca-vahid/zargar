@@ -24,6 +24,19 @@ export const CHANGELOG: Release[] = [
     {tag:"improved",text:"Cartel research: deduplicated option quotes and gap records support long campaign valuation; dated leadership context and policy cohorts support prospective comparisons. History cache reuse now respects provider changes."},
   ]},
   {
+    version: "0.7.63",
+    date: "2026-09-13",
+    title: "Knowledge maintenance goes propose-only",
+    items: [
+      { tag: "fixed", text: "Knowledge maintenance is PROPOSE-ONLY by default: the audit's merges and expiries are recorded as proposals (Knowledge tab, 'Audit proposals') and touch no live note until apply is switched on. Contradiction flags still land - they only protect. The automatic audit had already applied one merge after the last release; the applied path is now off." },
+      { tag: "fixed", text: "An audit can no longer act on a note that changed after it was read: every batch carries the revision numbers it judged and aborts whole on any mismatch; a batch whose receipt committed but whose journal write failed replays as already-applied instead of superseding twice; a note flagged as disputed stays untouched by every later audit until you resolve it." },
+      { tag: "fixed", text: "Historical (as-of) reads no longer present an unversioned legacy note's current text as old knowledge - such notes are excluded and counted as unavailable; legacy notes get an observation-time baseline at boot; deleting a note leaves a tombstone so history stays readable." },
+      { tag: "fixed", text: "The knowledge audit visits groups least-recently-audited first (ticker groups had been starving behind source groups), a run with failed groups is recorded as partial, an all-skipped maintenance tick is 'skipped' rather than 'done', and every audit reply is measured per call with one larger retry when the reply hit its output cap before any JSON (the first live rule audit came back empty)." },
+      { tag: "new", text: "Notes carry a dispute button (journaled) and show supplied vs relied-on counts on the card itself; the analyst records 'supplied' before its first model call and 'relied on' separately after the verdict, for intake reviews too." },
+      { tag: "fixed", text: "Outcome census: every buy fill in scope is inventory even when its order predates the report window - an unknown-owner lot consumes FIFO and is reported as such instead of shifting a sale onto a newer idea." },
+    ],
+  },
+  {
     version: "0.7.62",
     date: "2026-09-13",
     title: "Knowledge that keeps its history, audits that can't merge a contradiction",

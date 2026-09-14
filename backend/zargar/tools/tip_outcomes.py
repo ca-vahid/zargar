@@ -104,21 +104,29 @@ async def main() -> None:
     # in the same (book, symbol) consumes open lots (lot.ts <= sell.ts) in
     # FIFO order, realizing against the LOT's basis and allocating the sell
     # fee per unit. Whatever remains open keeps its own cost + fees.
+    # INVENTORY = every scoped BUY execution (C62-01): ownership is resolved
+    # separately through the order -> signal link; a fill whose order/signal
+    # predates the report cutoff becomes an UNKNOWN-OWNER lot that still
+    # consumes FIFO — erasing it before matching shifted its sale onto a
+    # newer idea with no exception.
+    owner_by_order = {o["id"]: o["signal_id"] for o in orders if o.get("signal_id")}
     buys_by_idea: dict[str, list] = defaultdict(list)
-    for sg in sigs:
-        for o in orders_by_sig.get(sg["id"], []):
-            for e in ex_by_order.get(o["id"], []):
-                if e["side"] == "BUY":
-                    buys_by_idea[sg["id"]].append(e)
     lots_by_key: dict[tuple, list] = defaultdict(list)
-    for sid_, blist in buys_by_idea.items():
-        for e in blist:
-            q = float(e["qty"])
-            lots_by_key[(e["portfolio_id"], e["symbol"])].append({
-                "idea": sid_, "ts": e["ts"], "qty": q, "px": float(e["price"]),
-                "fee_unit": float(e["commission"] or 0) / q if q else 0.0,
-                "order_id": str(e.get("order_id") or ""),
-                "exec_id": str(e.get("id") or e.get("order_id") or "")})
+    unknown_owner_lots = 0
+    for e in execs:
+        if e["side"] != "BUY":
+            continue
+        owner = owner_by_order.get(e.get("order_id"))
+        if owner is not None:
+            buys_by_idea[owner].append(e)
+        else:
+            unknown_owner_lots += 1
+        q = float(e["qty"])
+        lots_by_key[(e["portfolio_id"], e["symbol"])].append({
+            "idea": owner or "__unknown__", "ts": e["ts"], "qty": q, "px": float(e["price"]),
+            "fee_unit": float(e["commission"] or 0) / q if q else 0.0,
+            "order_id": str(e.get("order_id") or ""),
+            "exec_id": str(e.get("id") or e.get("order_id") or "")})
     acct: dict[str, dict] = defaultdict(lambda: {
         "realized": 0.0, "sold": 0.0, "fees_alloc": 0.0})
     unallocated: list[dict] = []       # every sell quantity that found no lot (C59-02)
@@ -264,6 +272,12 @@ async def main() -> None:
             f"{sum(r['fees_alloc'] for r in g):.2f}",
         ]
         print("| " + " | ".join(cells) + " |")
+    unk = acct.get("__unknown__")
+    if unk or unknown_owner_lots:
+        ob_u = open_by_idea.get("__unknown__") or {"cost": 0.0, "fees": 0.0, "qty": 0.0}
+        print(f"Unknown-owner inventory (order/signal outside the report cutoff): "
+              f"{unknown_owner_lots} buy fill(s); realized {float((unk or {}).get('realized', 0.0)):+.2f} "
+              f"(NOT attributed to any idea); still open at cost {ob_u['cost']:.2f}.\n")
     ncomp = sum(1 for r in rows if r["completed"])
     print(f"\nCompleted-idea cohort n={ncomp}; every expectancy above carries that group's "
           "sample size — none is a validated edge claim."

@@ -296,3 +296,20 @@ supply-vs-reliance shown in the UI. Staged: consolidation packet
 (`reviews/2026-09-13-consolidation-packet.md`), orphan reassignment list.
 Decision required: kill-switch clock-vs-geometry conflict. Deferred: compact
 rulebook (gated on KB-08 frozen-evidence comparison). Bulk apply HELD.
+
+**Round 2 (v0.7.63, the reviewer's v0762 review — `reviews/2026-09-13-v0762-response.md`):**
+the v0.7.62 "bulk apply HELD" claim was wrong: the maintenance job's catch-up
+ran right after deploy and applied one merge (`source:trading-floor`) — the
+apply path is now PROPOSE-ONLY by default (`techniques.tip.knowledge_apply_enabled`
+False; receipts in `tip_knowledge_batches`, Knowledge tab "Audit proposals").
+Built: receipt-in-transaction idempotency (KB-02-A), revision check against
+what the judge read (KB-02-B), persisted disputes conflict-locked (KB-02-C),
+legacy rows excluded from as_of + boot baseline stamp + tombstone delete
+(KB-03), least-recently-audited traversal + honest run/maintenance statuses
+(KB-01/04), supply-before-first-call + per-call audit usage + truncation retry
+(KB-08), unknown-owner lots in the census (C62-01), `POST /api/tip/notes/{id}/dispute`.
+Design only: KB-06 execution-integrity pause
+(`reviews/2026-09-13-kb06-execution-integrity-pause.md`). Still HELD: the
+consolidation packet (needs exact id mapping, direction-correct formulas,
+non-injected evidence storage, rollback as a revision transition, the 22
+"possible truncations" verified against run evidence).

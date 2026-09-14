@@ -137,6 +137,10 @@ export const api = {
     request<{ ok: boolean }>("POST", `/api/tip/notes/${id}/resolve`),
   pinTipNote: (id: string) =>
     request<import("../types").TipNote>("POST", `/api/tip/notes/${id}/pin`),
+  disputeTipNote: (id: string) =>
+    request<{ ok: boolean }>("POST", `/api/tip/notes/${id}/dispute`),
+  knowledgeBatches: (status = "proposed", limit = 50) =>
+    request<import("../types").KnowledgeBatch[]>("GET", `/api/tip/knowledge/batches?status=${status}&limit=${limit}`),
   digestChannel: (channelId: string, date = "") =>
     request<{ ok: boolean; runId: string; date: string; messages: number }>(
       "POST", "/api/tip/digest", { channelId, date }),
