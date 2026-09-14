@@ -5975,3 +5975,32 @@ setup, that is a gap to report, not a refusal.
   block SPY; QQQ's 713.65 sits inside its 701–715 PM range, so watch QQQ. (2) If a fire happens, check the
   `contract` event (listed strike, NBBO ask near 0.60) and run replay parity. (3) Re-check the OPRA/cartel counts.
   (4) Skip the `/team2` UI check (F103).
+
+
+## 2026-09-14 10:05 ET (run 82 — scenario 4 on all three at 09:45, stack mixed after the bounce, no entries)
+
+- **Alive on v0.7.68** (armed 77 desk-wide, down from 80 at 09:35, not Team2). SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e`
+  armed, mode `auto`, Team2 Practice, `needsAttention false`, `stale false`, bar age 105 s (2m), quote age 0,
+  window `prime_open`. No restart since 05:35 PT.
+- **Scenario 4 (break PDL → puts) on all three at the 09:45 15m close, verified against the DB tape:** the 09:30–09:44
+  1m bars (all `exchange`) close SPY **759.41** < 763.60, QQQ **704.485** < 713.65, IWM **288.61** < 288.77. These match
+  the read's `scenario` events to the cent. The events were journaled at 09:46:01 ET. The 09:45–09:59 candle also closed
+  below every PDL (SPY 760.00, QQQ 705.78, IWM 288.12), so no flip. Bias `sinceTs` = the 09:30 candle, `rangeDay false`.
+- **No entry, and that is correct:** the gap-down opens bounced (SPY 758.5 → 760.6, QQQ 702.8 → 706.7, IWM 287.4 → 288.8),
+  so the 2m stack is now `mixed` on all three. Price sits above EMA200 on SPY/QQQ/IWM (e.g. SPY 760.29 vs E13 759.91 /
+  E48 759.36 / E200 760.01), and E3/B9/E4 hold entries until the stack turns bear. Setup counters are all
+  `touches 0 / pullbacks 0 / opportunities 0 / attempts 0`, with no `skip_*` notes, contract events, trades, or open
+  position. Replay parity has nothing to compare yet.
+- **F112 `pm_range` watch (from run 81):** all three are trading *inside* their PM ranges (SPY 757.77–760.77, QQQ
+  701.16–715.42, IWM 286.92–288.64). A put pullback to EMA13 at these prices would read `skip_no_trade_zone`
+  (`sizing_bucket` → `none`) unless price first breaks the PML. Nothing has been refused yet because no pullback counted.
+  The next run should say which gate refused, if a first bear-stack pullback appears.
+- **Data real-time:** 1m bars banked through 10:02 ET on all three, every bar `exchange`, none missing 09:30–10:02.
+  Log: `OPRA quotes` 65 (unchanged). `cartel-observer bar handling failed` **41** (+1 at 06:39 PT, the Options Cartel
+  `read_entry` ValueError, not Team2). `persist_bars … non-bucket-aligned stub` warnings continue (known shared path).
+  No Team2 warning or traceback.
+- **No code shipped, no new F-number.**
+- **Next run (~10:30) should:** (1) record whether the stack turned bear and whether a pullback was refused by
+  `skip_no_trade_zone` (inside the PM range) or taken (a `contract` event: listed strike, NBBO ask near 0.60), then run
+  replay parity on any fire; (2) note whether IWM re-reclaims 288.77 on a 15m close (that would flip or neutralise bias);
+  (3) re-check OPRA/cartel counts; (4) skip the `/team2` UI check (F103).
