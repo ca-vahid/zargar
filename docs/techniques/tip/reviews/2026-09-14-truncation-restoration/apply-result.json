@@ -1,0 +1,121 @@
+{
+ "manifestHash": "50537e16ae51879e723e79e18fae4c6ea286b77a35e5f0ec6351aac62d81facf",
+ "appliedAt": "2026-09-14T05:19:48Z",
+ "applied": "19/19",
+ "notes": [
+  {
+   "id": "1c86f3e3013d4d1b81cc992a7d827d92",
+   "scope": "source:🌟｜muggzone-options",
+   "revision_no": 2,
+   "len": 2124
+  },
+  {
+   "id": "03583bcbbbb84bf19e2f11a4bc4bfe4c",
+   "scope": "source:🌟｜tt",
+   "revision_no": 2,
+   "len": 2074
+  },
+  {
+   "id": "f92d5ba9cb414cc5bed6b18a88409f27",
+   "scope": "source:🌟｜tt",
+   "revision_no": 2,
+   "len": 2335
+  },
+  {
+   "id": "a186c7b869c043ce9e6d2f80e12089e4",
+   "scope": "source:🌟｜tt",
+   "revision_no": 2,
+   "len": 2128
+  },
+  {
+   "id": "9231fc1a1c43492793a25935e29f58b6",
+   "scope": "ticker:MU",
+   "revision_no": 2,
+   "len": 2198
+  },
+  {
+   "id": "1c2fb602d82e4e988f0648f0bc1151a4",
+   "scope": "ticker:COIN",
+   "revision_no": 2,
+   "len": 2176
+  },
+  {
+   "id": "b5eac6e059ec4b5fac058e1cd0ac741f",
+   "scope": "source:🌟｜muggzone-options",
+   "revision_no": 2,
+   "len": 2224
+  },
+  {
+   "id": "be144e3fa04a4fe396d71a95877f813f",
+   "scope": "source:🌟｜muggzone-options",
+   "revision_no": 2,
+   "len": 2082
+  },
+  {
+   "id": "869c257ef9f84154af79fc0d3be820fd",
+   "scope": "ticker:MU",
+   "revision_no": 2,
+   "len": 2123
+  },
+  {
+   "id": "e81e0a1acf6547878e2ac3ad71b9d156",
+   "scope": "ticker:MU",
+   "revision_no": 2,
+   "len": 2093
+  },
+  {
+   "id": "4929b2037a9f46a89a11e4b958c5bf02",
+   "scope": "ticker:MU",
+   "revision_no": 2,
+   "len": 2158
+  },
+  {
+   "id": "9ca7094db8a84324837a9ecf79bd6f94",
+   "scope": "source:🌟｜eva",
+   "revision_no": 2,
+   "len": 2156
+  },
+  {
+   "id": "aead7ddb65794c7aa2c435c62353ed33",
+   "scope": "ticker:GS",
+   "revision_no": 2,
+   "len": 2062
+  },
+  {
+   "id": "0138e4980cec4526988576b77b4499cc",
+   "scope": "source:🌟｜muggzone-options",
+   "revision_no": 2,
+   "len": 2006
+  },
+  {
+   "id": "2c8de5630e4146a3bb845e3b9f69547c",
+   "scope": "source:🌟｜tt",
+   "revision_no": 2,
+   "len": 2177
+  },
+  {
+   "id": "8a7ed5229f214c0dae6c5e10fc671e25",
+   "scope": "source:🌟｜tt",
+   "revision_no": 2,
+   "len": 2022
+  },
+  {
+   "id": "ad1e485e82d4461b941570535b83f716",
+   "scope": "source:🌟｜muggzone-options",
+   "revision_no": 3,
+   "len": 2090
+  },
+  {
+   "id": "120fe04eb03c4b44aeba2bea0e378cb1",
+   "scope": "source:🌟｜muggzone-options",
+   "revision_no": 2,
+   "len": 2101
+  },
+  {
+   "id": "ef811150610443f9822205c88ada39a3",
+   "scope": "source:🌟｜muggzone-options",
+   "revision_no": 2,
+   "len": 2041
+  }
+ ]
+}

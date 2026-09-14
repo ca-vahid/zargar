@@ -308,11 +308,14 @@ legacy rows excluded from as_of + boot baseline stamp + tombstone delete
 (KB-03), least-recently-audited traversal + honest run/maintenance statuses
 (KB-01/04), supply-before-first-call + per-call audit usage + truncation retry
 (KB-08), unknown-owner lots in the census (C62-01), `POST /api/tip/notes/{id}/dispute`.
-Design only: KB-06 execution-integrity pause
-(`reviews/2026-09-13-kb06-execution-integrity-pause.md`). Still HELD: the
-consolidation packet (needs exact id mapping, direction-correct formulas,
-non-injected evidence storage, rollback as a revision transition, the 22
-"possible truncations" verified against run evidence).
+Design only at the time: KB-06 execution-integrity pause
+(`reviews/2026-09-13-kb06-execution-integrity-pause.md`) — BUILT and ACTIVE in Practice
+2026-09-14 (v0.7.67, `entry_pause_mode=integrity`). The consolidation packet was
+APPLIED 2026-09-14 through `tools/tip_consolidation.py` (exact id mapping, direction-explicit
+formulas with numeric thresholds labeled HYPOTHESIS, `evidence:adoption-geometry` records
+never injected, rollback as a revision transition; 19 of the 22 "possible truncations"
+restored from run traces, 3 experiment-scope rows unproven and untouched) — receipts and
+manifests in `reviews/2026-09-14-consolidation/` and `reviews/2026-09-14-truncation-restoration/`.
 
 **Round 3 (v0.7.65, the reviewer's v0763 verdict — `reviews/2026-09-13-v0763-response.md`):**
 R63-01 disputes hold against EVERY writer (locked `supersede_tip_notes`
