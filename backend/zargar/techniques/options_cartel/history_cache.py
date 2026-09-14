@@ -22,11 +22,13 @@ async def read_cache(engine, symbol, timeframe, provider, at):
         return {'start': row.start_ms, 'end': row.end_ms, 'observedAt': row.observed_at, **row.payload}
 
 
-async def write_cache(engine, symbol, timeframe, provider, start, end, observed_at, bars):
+async def write_cache(engine, symbol, timeframe, provider, start, end, observed_at, bars, *, provenance=None):
     # Bar revisions are retained in each analysis/decision, not certified by this cache.
     values = [[b.ts, b.open, b.high, b.low, b.close, b.volume, b.source] for b in bars]
     payload = {'bars': values, 'provider': provider, 'sessionPolicy': 'provider_daily' if 'alpaca' in provider and timeframe == '1d' else 'rth',
                'inputHash': hashlib.sha256(json.dumps(values, separators=(',', ':')).encode()).hexdigest()}
+    if provenance is not None:
+        payload['provenance'] = provenance
     args = {'id': cache_key(symbol, timeframe, provider), 'symbol': symbol, 'timeframe': timeframe,
             'start_ms': start, 'end_ms': end, 'observed_at': observed_at, 'payload': payload}
     async with engine.sf() as session, session.begin():

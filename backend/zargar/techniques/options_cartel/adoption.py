@@ -69,6 +69,7 @@ async def _adopt_confirmed_entry(engine, run_id: str, *, allow_working=False):
             raise ValueError("adoption requires confirmed bought whole units and an actual fill price")
         if qty > order.qty:
             raise ValueError("entry cumulative fills exceed the submitted quantity")
+        armed.state = {**armed.state, "orderStatus": order.status, "filledQty": qty, "avgFillPrice": price}
         position_id = "cartel-" + hashlib.sha256(oid.encode()).hexdigest()[:40]
         existing = await session.get(ManagedPositionRow, position_id)
         if existing is not None:

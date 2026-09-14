@@ -100,7 +100,7 @@ class Engine:
             if isinstance(b, dict) and b.get("day") == today:
                 self.halt.books[pid] = dict(b)
 
-        self.sim_executor = SimExecutor(settings=self.settings)
+        self.sim_executor = SimExecutor(settings=self.settings, synthetic_quotes=self.config.quote_source == "sim")
         if self.config.broker == "ibkr":
             try:
                 from .brokers.ibkr import IBKRBroker
@@ -229,6 +229,7 @@ class Engine:
             asyncio.create_task(self._bar_persister.run(), name="bar-persister"),
             asyncio.create_task(self._equity_snapshotter(), name="equity-snapshots"),
             asyncio.create_task(self._daily_loss_monitor(), name="daily-loss-monitor"),
+            asyncio.create_task(self._event_loop_monitor(), name="event-loop-monitor"),
         ]
         if isinstance(self.feed, HybridQuoteFeed):
             self._tasks.append(asyncio.create_task(self._feed_monitor(), name="feed-monitor"))
@@ -290,6 +291,9 @@ class Engine:
             await self.snaptrade.stop()
         if getattr(self, "_snaptrade_client", None) is not None:
             await self._snaptrade_client.aclose()
+        telemetry = getattr(self, '_delivery_health_task', None)
+        if telemetry is not None:
+            await asyncio.gather(telemetry, return_exceptions=True)
         await self.db.dispose()
 
     # ------------------------------------------------------------- seeding
@@ -495,6 +499,13 @@ class Engine:
         return str(b.get("reason") or "book halted") if b else None
 
     # ------------------------------------------------------------- tasks
+    async def _event_loop_monitor(self) -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            expected = loop.time()+1
+            await asyncio.sleep(1)
+            self._event_loop_lag_ms = max(0., (loop.time()-expected)*1000)
+
     async def _quote_consumer(self) -> None:
         async with self.bus.subscription(topics.QUOTES) as q:
             while True:

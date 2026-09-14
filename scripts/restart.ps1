@@ -27,11 +27,37 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot 'deployment-lock.ps1')
+$restartMutex = Enter-ZargarDeployment $Root -Restart
+try {
+$handoffPath = Join-Path $Root 'logs/deployment-pending.json'
+$handoff = $null
+if (Test-Path -LiteralPath $handoffPath) {
+  $handoff = Get-Content -LiteralPath $handoffPath -Raw | ConvertFrom-Json
+  if ([DateTimeOffset]::Parse($handoff.expiresAt) -le [DateTimeOffset]::UtcNow) { throw 'Deployment handoff expired; revalidate source and artifact before restart.' }
+  if ((git -C $Root rev-parse HEAD).Trim() -ne $handoff.target) { throw 'Deployment target changed after handoff; restart refused.' }
+  if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Root 'frontend/dist/index.html')).Hash -ne $handoff.artifactSha256) { throw 'Deployment artifact changed after handoff; restart refused.' }
+  if ($Expect -and $Expect -ne $handoff.expectedVersion) { throw 'Expected version disagrees with deployment handoff.' }
+  $Expect = $handoff.expectedVersion
+}
+$receiptPath = Join-Path $Root 'logs/deployment-receipt.json'
+if (-not $handoff -and -not $Force -and (Test-Path -LiteralPath $receiptPath)) {
+  $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+  if ($receipt.phase -eq 'verified' -and $receipt.target -eq (git -C $Root rev-parse HEAD).Trim() -and
+      ([DateTimeOffset]::UtcNow - [DateTimeOffset]::Parse($receipt.completedAt)).TotalMinutes -lt 5) {
+    try { $recentHealth = Invoke-RestMethod http://127.0.0.1:8420/api/health -TimeoutSec 4 } catch { $recentHealth = $null }
+    if ($recentHealth.ok -and $recentHealth.version -eq $receipt.expectedVersion -and (-not $Expect -or $Expect -eq $recentHealth.version)) {
+      Write-Host 'This commit was just deployed and is healthy; duplicate restart skipped.'
+      exit 0
+    }
+  }
+}
 # the scheduler runs this in a console nobody sees: keep a transcript per run in logs/restart-<ts>.log
 $logDirEarly = Join-Path $Root "logs"
 if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
 try { Start-Transcript -Path (Join-Path $logDirEarly ("restart-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")) -Append | Out-Null } catch { }
 
+function Fail($m, $code=1) { Write-Host $m -ForegroundColor Red; exit $code }
 function Step($m) { Write-Host "> $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
 
@@ -47,31 +73,9 @@ if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir | O
 # Two callers (a task, a shell, the watchdog) must never both proceed; the lease file is created atomically and
 # names its owner. A pause that is not confirmed by the engine (POST failed, or the state still says
 # quiesced=false) is missing evidence: the ordinary path refuses; only -Force may continue (an override).
-$script:leaseFile = Join-Path $lockDir "deploy.lock"
-$script:leaseOwner = "{0}:{1}:{2}" -f $env:COMPUTERNAME, $PID, (Get-Date -Format "yyyyMMdd-HHmmss")
-function Test-LeaseOwnerAlive($path) {
-  # owner = host:pid:time; a lease whose process is gone is stale no matter how young it is
-  try { $o = (Get-Content $path -ErrorAction Stop | Select-Object -First 1); $parts = "$o".Split(":") } catch { return $false }
-  if ($parts.Count -lt 2) { return $false }
-  $ownerPid = 0; if (-not [int]::TryParse($parts[1], [ref]$ownerPid)) { return $false }
-  return [bool](Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)
-}
-function Acquire-DeployLease {
-  if ($env:ZARGAR_DEPLOY_LEASE) { $script:leaseOwner = $env:ZARGAR_DEPLOY_LEASE; return $true }   # nested call by the owner
-  if (Test-Path $script:leaseFile) {
-    $age = ((Get-Date) - (Get-Item $script:leaseFile).LastWriteTime).TotalSeconds
-    if ($age -lt 600 -and (Test-LeaseOwnerAlive $script:leaseFile)) { Warn ("another deploy owns the lease (" + (Get-Content $script:leaseFile -ErrorAction SilentlyContinue) + ", " + [int]$age + "s old)"); return $false }
-    Warn ("taking over a STALE deploy lease (" + [int]$age + "s old, owner " + $(if (Test-LeaseOwnerAlive $script:leaseFile) { "alive" } else { "gone" }) + ")")
-    Remove-Item $script:leaseFile -Force -ErrorAction SilentlyContinue
-  }
-  try { New-Item -ItemType File -Path $script:leaseFile -Value $script:leaseOwner -ErrorAction Stop | Out-Null; $env:ZARGAR_DEPLOY_LEASE = $script:leaseOwner; return $true }
-  catch { Warn ("could not create the deploy lease: " + $_.Exception.Message); return $false }
-}
-function Release-DeployLease {
-  if (-not (Test-Path $script:leaseFile)) { return }
-  $owner = (Get-Content $script:leaseFile -ErrorAction SilentlyContinue)
-  if ($owner -eq $script:leaseOwner) { Remove-Item $script:leaseFile -Force -ErrorAction SilentlyContinue }
-}
+# Compatibility names retained; the shared helper owns the OS lock and deploy.lock marker.
+function Acquire-DeployLease { return $true }
+function Release-DeployLease { } # outer finally releases only the actual owner
 function Confirm-EntryPause {
   # returns $true only when the engine CONFIRMED the pause: the POST answered quiesced=true AND the state reads quiesced=true
   try { $q = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { Warn ("entry pause request failed: " + $_.Exception.Message); return $false }
@@ -146,7 +150,7 @@ Start-Sleep -Seconds 2
 # the restart never reached its health wait or restoration check)
 $args2 = @{ Detach = $true }; if ($Force) { $args2.Force = $true }
 & (Join-Path $Root "scripts\start.ps1") @args2
-if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; Release-DeployLease; exit 1 }
+if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; exit 1 }
 
 # --- 3. WAIT for health - never walk away from a dark app ----------------------
 Step "Waiting for /api/health ..."
@@ -156,9 +160,9 @@ while ((Get-Date) -lt $deadline) {
   try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 3; break }
   catch { Start-Sleep -Seconds 3 }
 }
-if (-not $h) { Warn "App did NOT come back within 180s - investigate NOW, do not walk away."; Release-DeployLease; exit 4 }
+if (-not $h) { Warn "App did NOT come back within 180s - investigate NOW, do not walk away."; exit 4 }
 if ($Expect -and ($h.version -ne $Expect)) {
-  Warn "App is up but on v$($h.version), expected v$Expect (stale checkout?)"; Release-DeployLease; exit 5
+  Warn "App is up but on v$($h.version), expected v$Expect (stale checkout?)"; exit 5
 }
 Step ("Healthy: v" + $h.version + " | armed " + $h.local.armed + " | runs in flight " + $h.local.techniqueRunning)
 
@@ -184,5 +188,11 @@ if ($stateBefore -ne $null) {
     exit 6
   }
 }
+if ($handoff) {
+  @{ phase='verified'; target=$handoff.target; expectedVersion=$Expect; artifactSha256=$handoff.artifactSha256; completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID } |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Root 'logs/deployment-receipt.json') -Encoding ASCII
+  Remove-Item -LiteralPath $handoffPath
+}
 Release-DeployLease
 exit 0
+} finally { Exit-ZargarDeployment $restartMutex }

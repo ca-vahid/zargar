@@ -152,6 +152,7 @@ class BarAggregator:
     correction (charts and the end-of-day replay did)."""
 
     def __init__(self, bus: Bus, max_bars: int = 3000) -> None:
+        self._exchange_received = {}
         self._bus = bus
         self._max = max_bars
         self._bars: dict[str, deque[Bar]] = defaultdict(lambda: deque(maxlen=max_bars))
@@ -189,7 +190,8 @@ class BarAggregator:
             return 0.0
 
     def _publish(self, bar: Bar, source: str | None) -> None:
-        msg = {"symbol": bar.symbol, "tf": "1m", "bar": bar}
+        msg = {"symbol": bar.symbol, "tf": "1m", "bar": bar, "publishedAt": now_ms()}
+        msg['sourceReceivedAt'] = self._exchange_received.get((bar.symbol, bar.ts)) if source == 'exchange' else None
         if source:
             msg["source"] = source
         self._bus.publish(topics.BARS, msg)
@@ -274,6 +276,9 @@ class BarAggregator:
         minute is never touched, and same-minute DB writes conflict-ignore."""
         if bar.tf != "1m" or bar.close <= 0:
             return
+        self._exchange_received[(bar.symbol, bar.ts)] = now_ms()
+        if len(self._exchange_received) > 5000:
+            self._exchange_received.pop(next(iter(self._exchange_received)))
         bar.source = "exchange"
         forming = self._forming.get(bar.symbol)
         if forming is not None and bar.ts >= forming.ts:

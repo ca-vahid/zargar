@@ -11,7 +11,7 @@ from ...marketstructure.history import HistoryError, fetch_daily_batch, fetch_wi
 from ...marketstructure.sessions import session_bounds
 from ...models import TechniqueRun
 from .collect import normalize_daily
-from .data import DailyBar, completed_daily
+from .data import DailyBar, completed_daily, require_contiguous
 from .history_cache import cached_bars, read_cache, write_cache
 from .screen import _latest_session
 
@@ -47,6 +47,7 @@ class PreparationHistory:
         self.provider_error = None
         self.active_requests = 0
         self.prefetched = 0
+        self.response_providers = {}
         self.native_batch = policy.native_daily_batch and fetch is fetch_window and native_daily_available()
         self.batch_values = {}
         self.fallback_provider_key = f'{getattr(fetch, "__module__", "injected")}.{getattr(fetch, "__qualname__", "provider")}:daily-yahoo-rth'
@@ -144,6 +145,13 @@ class PreparationHistory:
         await self.report(symbol=symbol, message=f'Checking saved {symbol} daily history')
         expected = _latest_session(at).isoformat()
         raw_cache = await read_cache(self.engine, symbol, '1d', self.provider_key, at)
+        if self.fetch is fetch_window and not self.native_batch and raw_cache and not raw_cache.get('provenance', {}).get('responseProvider'):
+            raw_cache = None
+        if raw_cache:
+            try:
+                require_contiguous(normalize_daily(cached_bars(raw_cache, symbol, '1d'), symbol, at))
+            except ValueError:
+                raw_cache = None  # failed histories must be retried, not kept fresh by their last date alone
         prior_bars = cached_bars(raw_cache, symbol, '1d') if raw_cache else []
         if prior_bars:
             previous = normalize_daily(prior_bars, symbol, at)
@@ -152,7 +160,8 @@ class PreparationHistory:
                 return previous, {'historyCacheVersion': 1, 'historyThrough': expected,
                     'historyExpectedThrough': expected, 'historyFresh': True,
                     'historyObservedAt': raw_cache['observedAt'], 'historyReusedFrom': 'durable_cache',
-                    'historySource': self.provider_key, 'inputHash': raw_cache['inputHash']}
+                    'historySource': self.provider_key, 'inputHash': raw_cache['inputHash'],
+                    'historyResponseProvider': raw_cache.get('provenance', {}).get('responseProvider')}
 
         async with self.engine.sf() as session:
             cached = await session.scalar(select(TechniqueRun).where(
@@ -164,8 +173,12 @@ class PreparationHistory:
                 cast(TechniqueRun.result['collection']['historyObservedAt'].as_string(), BigInteger) <= at,
                 cast(TechniqueRun.result['collection']['historyObservedAt'].as_string(), BigInteger) >= at-5*86_400_000,
             ).order_by(TechniqueRun.created_at.desc()).limit(1))
-        if cached and cached.result.get('collection', {}).get('historySource') == self.provider_key:
+        if cached and cached.result.get('collection', {}).get('historySource') == self.provider_key and (self.fetch is not fetch_window or self.native_batch or cached.result.get('collection', {}).get('historyResponseProvider')):
             bars = completed_daily([DailyBar.model_validate(b) for b in cached.config['inputs']['history']], at)
+            try:
+                require_contiguous(bars)
+            except ValueError:
+                bars = []
             if bars and bars[-1].session.isoformat() == expected and all(b.symbol == symbol for b in bars):
                 self.cache_hits += 1
                 return bars, {**cached.result['collection'], 'historyReusedFrom': cached.id}
@@ -174,6 +187,10 @@ class PreparationHistory:
         fetch_start = max(start, prior_bars[-1].ts-86_400_000) if prior_bars else start
         provider_before = self.provider_key
         fetched = await self.window(symbol, '1d', fetch_start, at, client)
+        response_provider = self.response_providers.get((symbol, '1d')) or ('alpaca' if self.native_batch else None)
+        if raw_cache and raw_cache.get('provenance', {}).get('responseProvider') != response_provider:
+            prior_bars = []
+            fetched = await self.window(symbol, '1d', start, at, client)
         if provider_before != self.provider_key:
             prior_bars = []
             fetched = await self.window(symbol, '1d', start, at, client)
@@ -195,11 +212,13 @@ class PreparationHistory:
             from ...domain import Bar
             sources = {r.ts:r.source for r in raw}
             raw = [Bar(symbol, '1d', session_bounds(b.session.isoformat())[0], b.open, b.high, b.low, b.close, b.volume, source=sources.get(session_bounds(b.session.isoformat())[0], 'unknown')) for b in bars]
-            await write_cache(self.engine, symbol, '1d', self.provider_key, start, at, self.clock(), raw)
+            await write_cache(self.engine, symbol, '1d', self.provider_key, start, at, self.clock(), raw,
+                provenance={'responseProvider': self.response_providers.get((symbol, '1d')) or response_provider})
         return bars, {'historyCacheVersion': 1, 'historyThrough': actual,
                       'historyExpectedThrough': expected, 'historyFresh': actual == expected,
                       'historyObservedAt': self.clock(), 'historyReusedFrom': None,
-                      'historySource': self.provider_key}
+                      'historySource': self.provider_key,
+                      'historyResponseProvider': self.response_providers.get((symbol, '1d')) or response_provider}
 
     async def fallback_after_denied(self, error):
         """Switch datasets explicitly; neither cached prefixes nor batches cross feeds."""
@@ -221,18 +240,26 @@ class PreparationHistory:
             required_minutes += (session_bounds(day.isoformat())[1]-session_bounds(day.isoformat())[0])//60000
         start = session_bounds(day.isoformat())[0]
         provider = self.provider_key+':intraday'
-        cached = await read_cache(self.engine, symbol, '1m', provider, at)
+        cached = await read_cache(self.engine, symbol, '1m', provider, self.clock())
+        if self.fetch is fetch_window and cached and not cached.get('provenance', {}).get('responseProvider'):
+            cached = None  # legacy wrapper-only metadata cannot establish the answering dataset
         old = cached_bars(cached, symbol, '1m') if cached else []
         full = len({b.ts for b in old if start <= b.ts and b.ts+60000 <= end and b.source == 'exchange'}) == required_minutes
-        if cached and cached['start'] <= start and cached['end'] >= end and (full or at-cached['observedAt'] < 300000):
+        if cached and cached['start'] <= start and cached['end'] >= end and (full or 0 <= self.clock()-cached['observedAt'] < 300000):
             self.cache_hits += 1
             return [b for b in old if start <= b.ts and b.ts+60000 <= end]
         fetch_start = max(start, cached['end']-2*86400000) if cached and full else start
         bars = await self.window(symbol, '1m', fetch_start, end, client)
+        response_provider = self.response_providers.get((symbol, '1m'))
+        if cached and cached.get('provenance', {}).get('responseProvider') != response_provider:
+            old = []  # never splice two answering datasets into one baseline
         merged = {b.ts:b for b in old if start <= b.ts and b.ts+60000 <= end}
         merged.update({b.ts:b for b in bars if start <= b.ts and b.ts+60000 <= end})
         result = sorted(merged.values(), key=lambda b:b.ts)
-        await write_cache(self.engine, symbol, '1m', provider, start, end, self.clock(), result)
+        await write_cache(self.engine, symbol, '1m', provider, start, end, self.clock(), result,
+            provenance={'responseProvider': response_provider, 'requestedStart': start, 'requestedEnd': end,
+                'returnedMinutes': len(result), 'expectedSessionMinutes': required_minutes,
+                'missingMinutes': max(0, required_minutes-len(result)), 'noTradeIntervalsVerified': False})
         return result
 
     async def window(self, symbol, timeframe, start, end, client, *, refresh=False):
@@ -259,6 +286,13 @@ class PreparationHistory:
         self.active_requests += 1
         try:
             kwargs = {'refresh': True} if refresh and self.fetch is fetch_window else {}
+            if self.fetch is fetch_window:
+                from ...marketstructure.history import fetch_window_ex
+                bars, provider = await observed_work(fetch_window_ex(symbol, timeframe, start, end, client=client, **kwargs),
+                    self.report, message=f'Loading {symbol} {timeframe} history')
+                self.response_providers[(symbol, timeframe)] = provider
+                return bars
+            self.response_providers[(symbol, timeframe)] = self.fallback_provider_key
             return await observed_work(self.fetch(symbol, timeframe, start, end, client=client, **kwargs), self.report,
                                        message=f'Loading {symbol} {timeframe} history')
         except Exception as exc:
