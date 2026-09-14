@@ -72,10 +72,11 @@ def test_controller_rejects_an_unsupported_period_even_if_a_signal_is_supplied()
     p=p.model_copy(update={'volume_baseline':{0:1000.}})
     controller=CartelEntryController(SimpleNamespace(positions=SimpleNamespace(portfolio=lambda _:None)))
     controller.clock=lambda:OPEN+10*MIN
-    row={'config':{},'mode':'auto','portfolioId':'pf','status':'armed','state':{
+    execution=ExecutionInput(portfolio_id='pf',mode='auto',instrument='shares',budget=500)
+    row={'config':{'execution':execution.model_dump()},'mode':'auto','portfolioId':'pf','status':'armed','state':{
         'phase':'signalled','signal':signal,'opensAt':OPEN,'expiresAt':OPEN+390*MIN}}
     with pytest.raises(ValueError,match='supported volume-baseline periods'):
-        controller._entry_conditions(row,p,ExecutionInput(portfolio_id='pf',mode='auto',instrument='shares',budget=500))
+        controller._entry_conditions(row,p,execution)
 
 
 async def test_new_preparation_can_arm_a_partial_baseline_without_reducing_samples(engine):
