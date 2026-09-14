@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"EM review Delivery A: a shares fallback no longer keeps the option's x100 (HPQ booked -$719 on a -$7 trade and false-halted; repair tool with a dry-run manifest); a two-contract exit takes TP2 in the bar it prints with TP1; contracts are sized on the live ask, and a contract that does not fit the risk budget sizes to zero instead of one; the 09:25 pre-open judges shorts with the same direction-aware rule as the open (twelve shorts were wrongly replaced on 09-14); the critic's opinion, advisory flag and errors survive a restart and every fire journals its final disposition; short setups score as shorts; a cached option quote cannot confirm a premium stop twice."},
     {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
     {tag:"fixed",text:"Setup messages show entry descriptions and prices instead of bare IDs. Fixed the visible Unicode escape and replaced the pulsing red attention banner with a quieter, accessible control."},
+    {tag:"improved",text:"Team2: a pre-market break setup pointing against the day's bias now says so on the Armed page (\"inert while the bias is puts: needs a bias flip\") instead of reading like a live entry candidate."},
   ]},
   {
     version: "0.7.70",

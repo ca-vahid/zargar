@@ -2345,6 +2345,74 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F123 (2026-09-14 12:35 ET, run 87 — display only, FIXED on the label; the read was correct).** The
+  Armed snapshot listed SPY's and IWM's `pm_break_up@11:30` (the 11:45 15m close above the PMH, L2.5/V7)
+  as a `waiting` trigger with `windowOpenNow: true`, which run 86 took to mean "the one setup that can
+  actually enter with a bull stack". It cannot. `session.py` picks the entry candidate from
+  `[s for s in live if cur_bias is None or s.direction == cur_bias]` (the newest confirmed setup IN the
+  current bias direction — the F24 rule), and the bias on all three symbols is still scenario 4 (puts,
+  15m close below the PDL zone at 09:45). A PM break the other way is inert until a 15m close back
+  above the PDL zone flips the bias (`bias_flip_on_15m_close`). The tape proved it: SPY pulled back from
+  762.09 (11:45) to 761.21 (12:08) and reclaimed on the 12:16 2m bar (low 761.47, close 762.17, E13
+  about 761.6) — a textbook calls contact on a bull strength-3 stack — and the read minted no touch, no
+  skip, nothing, exactly as the bias filter dictates. Replay reproduced the same silence, so the live
+  and replayed paths agree. **Fix (label only, `runner.py` `_snapshot`):** a live setup whose direction
+  opposes the bias appends " — inert while the bias is puts: needs a bias flip (B1)" to its trigger
+  label. The status stays `waiting` because the Armed page treats status as a closed set (an unknown
+  value renders as a failure badge; `ArmedTab.tsx`, `ArmedPage.tsx`). No gate, count, order or money
+  path changes; the summary line already followed the bias (F24). Open question for the method, not
+  built: Casey's V7 direction guide says "above PMH → calls to the PDH zone" without a scenario
+  precedence, so whether a PM break should be allowed to override a stale opposite scenario (here, a
+  PDL break that price has since bounced 0.5% above) is a rule decision for the user — evidence today
+  is one clean, untaken SPY contact at 12:16 that ran to 762.60 by 12:24 (+0.43, about 1.2 ATR).
+- **F124 (2026-09-14 13:05 ET, run 88 — observation, NOT fixed; a second in-band-only-ITM day for the open
+  near-ITM decision, plus a proxy-position consequence of F108).** IWM flipped to scenario 3 at 13:00 (the
+  12:45 15m body closed 289.22 above the PDL zone top 289.06, B1/C1, `rangeDay` true) and the 13:00 2m bar
+  (high 289.24 ≥ E13 289.22, low 289.075 > level 289.06, close 289.08) was touch #1 in a bull strength-2
+  stack → `fire` at 13:02, bucket small ×0.5. The live pick walked the listed OTM calls nearest spot 289.064:
+  the nearest is 290 (no 289.5 is listed today — the stamped `listedStrikes` has 83 strikes at $1 steps near
+  the money and `/api/options/quote/IWM260914C00289500` is unavailable), OPRA ask 0.13 (bid 0.12, delayed
+  chain 0.10) < floor 0.20 → the walk stopped under the floor, `contract_refused` ("examined 290 ask 0.13"),
+  `TechniquePlanError` critical "no option contract available and the shares fallback is off — nothing was
+  sent", `needsAttention` true, no order, no exposure. All correct under F104/F105/F108. **Evidence for the
+  near-ITM decision:** at 13:06 ET the 289 call (ITM by $0.05, delta 0.71) quoted 0.41/0.42, volume 68,362,
+  OI 2,974, spread 2.4% — inside the $0.20–$0.90 band and the most active near-money contract, the same
+  shape as F104's 287.5 put on 09-10. **Consequence (F108's proxy):** the pure read fired on the 290 proxy
+  ($0.0233 modelled) and now holds `openPosition` (`openAtEnd` true, remaining 1.0); `session.py` manages
+  an open model position on every 2m close BEFORE it looks for new contacts, so until the proxy exits
+  (target 290.46, a 2m close through 289.06, or the 15:45 flatten) no further IWM contact can fire live —
+  even if a rally lifts the 290 ask into band, even on a legitimate touch #2. The read cannot know the live
+  refusal (it is pure and memoryless by design). Replay parity exact (8 events, same timestamps).
+  **Proposed, not built (user decisions):** (a) near-ITM/ATM eligibility — this is the second day the only
+  in-band contract was one strike ITM; (b) let the runner tell the read that a fire was refused live (the
+  proxy becomes `refused`, the setup stays eligible for its next contact) — that touches the pure read's
+  contract and needs a before/after replay test (the 0.7.60 lesson) plus a sweep, so it is written up here
+  and in `notes/market-watch.md` run 88 only. Related: F104, F105, F108, F123.
+- **F125 (2026-09-14 13:40 ET, run 89 — defect at the F108 × F37 seam, NOT fixed; the desk-wide loss cap is
+  charging a trade that was never sent).** The IWM proxy from F124 exited on the very next 2m close: 13:04
+  `exit` "premium stop: -126% ≤ −25% (P1/D13)" (entry premium $0.0233 incl. 1-tick slippage, exit $0.0014,
+  fees $1.04 a side → cost $3.37, proceeds −$0.90 → −126.71%; the arithmetic in `premium.pnl_pct` is right,
+  a penny option can lose more than its premium once fees are charged). The read now shows `trades 1, losses 1,
+  pnlPctSum −126.71`, `losses_today` 1 for IWM. **The live consequence:** the IWM plan is `mode: auto` but its
+  only trade row is `failed` (no `entry_order_id`, `filled_qty` 0 — the contract was refused, F124), so
+  `runner._plan_losses` (F37) judges the plan by the MODEL, and `/api/team2/status` reports losses SPY 0 /
+  QQQ 0 / IWM 1 — one of the desk-wide `max_losses_per_day` 2 (`losses_desk_wide` True, F29) spent with zero
+  dollars ever at risk. One more model loss anywhere (a second out-of-band proxy on a thin strike would do it)
+  and `skip_loss_cap_desk` silences EVERY live Team2 entry for the day; a second proxy loss in the IWM read
+  alone triggers its per-symbol `skip_loss_cap` (D-3). F108 promised "the model never vetoes"; through the
+  loss tally it now can. F37 already names this hazard ("the model can lose trades the desk declined") — the
+  refusal here happened one stage later, at the contract pick, and slipped past the `routed` test. Also
+  polluted: `day_pnl_pct` (the `shrink_after_win` cue) and the day summary's `pnlPctSum`. Replay parity exact
+  (10 events, 1 trade, same timestamps). **Proposed, not built (it changes what a risk cap counts — user
+  decision, and it touches the pure read):** (a) smallest — in `_plan_losses`, a money-mode plan whose fire
+  ended in a `failed` row (refused live) is judged by the book, not the model (0 losers); (b) the read
+  excludes `modelBand: out` proxy round-trips under `contractAuthority: quotes` from `losses_today`,
+  `day_pnl_pct` and `pnlPctSum` (needs `Position.to_dict` to carry `modelBand`, today only the `fire` event
+  does) — this is a `session.py` change and needs the before/after replay test (0.7.60 lesson); (c) F124(b):
+  the runner tells the read a fire was refused so the proxy never becomes a position. Recommend (a) now and
+  (b)/(c) with the near-ITM decision. Related: F29, F37, F108, F124.
+
+
 - **F122 (2026-09-11, run 79 — a reporting correction to run 78's note, no code defect).** Run 78
   queued "confirm each of tonight's freshly minted plans carries a `targets_rederived` row" as
   F110's acceptance test. **That test cannot pass at the mint, and its absence there is not a

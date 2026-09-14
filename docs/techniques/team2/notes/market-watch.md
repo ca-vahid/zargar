@@ -5833,7 +5833,8 @@ setup, that is a gap to report, not a refusal.
 ## 2026-09-11 16:35 ET (run 79 — the last run of the week: **v0.7.49 IS DEPLOYED**, and the 17:00 mint for Monday landed clean on it)
 
 - **THE BLOCKED DEPLOY WENT THROUGH.** `Start-ScheduledTask -TaskName ZargarRestart` — the exact call
-  run 78 was denied — was **permitted this run** and ran `scriptsestart.ps1` at 16:32 ET. The
+  run 78 was denied — was **permitted this run** and ran `scripts
+estart.ps1` at 16:32 ET. The
   restart transcript is clean end to end: `Healthy: v0.7.49 | armed 11 | runs in flight 0` and
   `Restore check OK: armed 11/11, openTrades 0/0, workingEntries 0/0, pendingExits 0/0,
   restingOrders 12/12, inflightOrders 0/0, managedPositions 4/4, managedOpen 4/4`. `/api/health` now
@@ -6083,3 +6084,115 @@ setup, that is a gap to report, not a refusal.
   PM range, so it is not refused by F112. Watch the stack before calling it a candidate. (2) If IWM's pop fails back under E13 with the stack still bear, the next
   pullback would still sit inside the PM range 286.92–288.64 and should read `skip_no_trade_zone`. (3) If QQQ reclaims 713.65 on a 15m close, check the
   `bias_flip`. (4) Re-check OPRA/cartel counts. (5) Skip `/team2` UI (F103).
+
+## 2026-09-14 12:05 ET (run 86: SPY/IWM 15m close above PMH -> pm_break_up calls setups; stacks bull; no entries; parity exact)
+
+- **Alive on v0.7.71.** The app was redeployed at 08:50 PT (11:50 ET, `restart-20260914-085009.log`, restore check 72/72 armed, 0 open trades) by another desk's
+  release. It happened between runs, with no Team2 position open. SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` re-armed at 11:51 ET, mode `auto` on Team2 Practice, `needsAttention false`,
+  `stale false`, bar age about 93 s, quote age 0.
+- **Tape: the midday bounce carried through the PM highs.** SPY is at 761.40 (PMH 760.77), IWM at 288.69 (PMH 288.64), QQQ at 709.38 (PMH 715.42, still inside its range).
+  The **11:45 15m closes** printed `pm_break` up on SPY (close 762.09 > 760.77 → calls to 766.31) and IWM (288.795 > 288.64 → calls to 290.46), creating
+  `pm_break_up@11:30` long setups (touches 0). Scenario 4 (puts) is still the recorded bias on all three. No 15m close has come back above a PDL zone (763.60 / 713.65 / 288.77),
+  though IWM sits 0.03% under 288.77.
+- **Stacks turned bull on all three:** SPY strength 3 (E13 761.38 > E48 760.23 > E200 759.94), QQQ strength 2, IWM strength 3 (E13 288.42 > E48 287.99 ≈ E200 287.98).
+  Puts are correctly blocked (E3/B9/E4). No new `skip_*`, `same_pullback`, fire, contract, trade or open position since run 85 apart from the two `pm_break` events.
+- **Replay parity EXACT on all three.** SPY: scenario, skip 10:36, same_pullback 10:50/11:04, pm_break 11:45. QQQ: scenario only. IWM: scenario, skip 10:48, same_pullback
+  11:08/11:30, pm_break 11:45. Replay now also carries IWM's 11:30 `same_pullback`, which run 85 flagged as missing from replay (the note-placement artifact did not recur on the full-day replay).
+- **Data real-time:** 29 1m bars per symbol in the last 30 min, latest 12:02 ET, all `exchange`. Log (`backend/zargar-8420.log`): `OPRA quotes` 65 and `cartel-observer bar handling failed`
+  41, both unchanged. The newest traceback is still the 06:39 PT Options Cartel `read_entry` one. No Team2 warning.
+- **Observation (reporting only, no F-number):** the snapshot `summary` still leads with "scenario 4 → puts … no entry until the stack turns bear" and does not mention the now-live
+  `pm_break_up` calls setup, which is the one that can actually enter with a bull stack. Snapshot `triggers` do list it. This is the same "newest setup" reporting lineage as F20. It is not worth a code change mid-session; revisit if it misleads a
+  review.
+- **No code shipped, no new F-number.**
+- **Next run (~12:30) should:** (1) SPY: an EMA13 2m pullback (E13 ~761.4) now sits ABOVE the PM range, so F112 does not refuse it. With a bull strength-3 stack this is a real calls candidate.
+  If it fires, check the `contract` event (listed strike, live NBBO ask near 0.60), the order/fill trail and replay parity. (2) IWM: E13 288.42 is still INSIDE the PM range 286.92–288.64,
+  so a pullback now should read `skip_no_trade_zone` until E13 clears 288.64. (3) IWM 15m close back above 288.77 would be a `bias_flip` check. (4) Re-check OPRA/cartel counts. (5) Skip `/team2` UI (F103).
+
+## 2026-09-14 12:35 ET (run 87: quiet tape, F123 — off-bias PM-break setups are inert, label fixed + deployed; parity exact)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `needsAttention false`, `stale false`,
+  bar age about 95 s, quote age 0, window `midday`. 29 1m bars per symbol in the last 30 min (latest 12:33 ET), all `exchange`.
+- **Tape since run 86:** SPY pulled back from 762.09 (11:45) to 761.21 (12:08), reclaimed on the 12:16 2m bar (low 761.47, close 762.17) and sat 762.0–762.6
+  into 12:33. QQQ 710.26 → 708.84 (12:08) → 711.12 (12:24) → 710.4. IWM 288.67 → 288.38 (12:10) → 289.30 (12:19) → 288.94. No 15m close back above a
+  PDL zone, so scenario 4 (puts) stands on all three. Stacks bull on all three (SPY strength 3: E13 761.97 / E48 761.03 / E200 760.21; QQQ 3; IWM 2).
+- **No new read event on any symbol** since the 11:45 `pm_break` rows. No `skip_*`, `same_pullback`, fire, contract, trade or open position.
+- **Replay parity EXACT** (SPY 5 events, QQQ 1, IWM 5, same timestamps as live).
+- **F123 (new, display only, FIXED).** Run 86 called SPY's/IWM's `pm_break_up@11:30` "the one setup that can actually enter with a bull stack". It cannot:
+  `session.py` only selects a candidate in the CURRENT bias direction (the F24 rule), and the bias is scenario 4 (puts) until a 15m close back above the PDL
+  zone. The 12:16 SPY bar was a clean calls contact on a bull strength-3 stack and the read minted nothing — correct under the rule, and replay agreed.
+  The snapshot showed the setup as a plain `waiting` trigger with the window open, which is what misled run 86. Fix: the trigger label now ends with
+  "— inert while the bias is puts: needs a bias flip (B1)" (`runner.py` `_snapshot`; status unchanged because the Armed page treats status as a closed set).
+  Commit `f57ad8d`, 23 runner/session tests green on `zargar_test_team2_watch`, frontend build green, changelog line in the 0.7.71 block (no version bump).
+- **Deployed 12:40 ET** via `/api/ops/restart-check` (safe, 0 open trades) + `Start-ScheduledTask ZargarRestart` (`restart-20260914-094010.log`). Down 12:40:10,
+  health back 12:43:52 (3.7 min), armed 73 = pre-restart count; Team2 restored 3 plans by 12:43:50, re-armed 12:43:06–12:43:34, no Team2 position open at any point.
+  The new labels are live on SPY and IWM. Regime ts 12:42 (the last closed 2m bar) right after boot.
+- **Log:** `OPRA quotes` 65 and `cartel-observer bar handling failed` 41 before the restart, both unchanged; the newest traceback was still the 06:39 PT Options Cartel one.
+  The routine `persist_bars dropped non-bucket-aligned stub bar(s)` warnings are not Team2. No Team2 warning. (Counters reset with the new log tail after the restart.)
+- **Proposed (method, user decision, not built):** Casey's V7 direction guide ("above PMH → calls to the PDH zone") states no scenario precedence, yet the read
+  keeps a stale opposite scenario (a PDL break price has since bounced 0.5% above) in charge until a 15m close re-crosses the PDL zone. Evidence today: one clean,
+  untaken SPY calls contact at 12:16 that ran +0.43 (about 1.2 ATR) by 12:24. Options: (a) keep as is (B1 bias rules), (b) let a PM break the other way flip the
+  bias when price is more than N ATR from the scenario level, (c) a 15m close back INSIDE the PDL zone flips. Needs a sweep before anything changes.
+- **Next run (~13:00) should:** (1) confirm the restore check logged clean for the 12:40 restart (`restore check` in `backend/zargar-8420.log` after 09:43 PT);
+  (2) SPY/QQQ/IWM: a 15m close back above 763.60 / 713.65 / 288.77 is the `bias_flip` to watch — after it, the `pm_break_up` label should drop its inert suffix
+  and an EMA13 pullback on the bull stack becomes a real calls candidate (check the `contract` event and the order/fill trail if it fires); (3) re-check OPRA/cartel
+  counts on the post-restart log; (4) skip `/team2` UI (F103).
+
+
+## 2026-09-14 13:07 ET (run 88: IWM flipped to scenario 3 and fired calls at 13:02 — refused, no eligible contract (F124); parity exact; no code)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `stale false`, bar age 90 s, quote age 0,
+  window `midday`. 29 1m bars per symbol in the last 30 min (latest 13:03 ET), all `exchange`; regime ts 13:04 at 13:07. Restore after the 12:40 restart
+  logged clean (`team2 runner restored 3 armed plan(s)` 12:43:50 ET; the ops check only logs MISMATCH and logged none after the restart).
+- **IWM: bias flip + fire, refused.** The 12:45 15m body closed 289.22 above the PDL zone top 289.06 → `scenario 3 (bounce PDL) → calls` at 13:00
+  (`rangeDay` true; the 12:47 1m bar ran 288.99 → 289.56 on 370k shares, high of the leg 289.84 at 12:49). The 13:00 2m bar (high 289.24 ≥ E13 289.22,
+  low 289.075 > level 289.06, close 289.08) = touch #1 in a bull strength-2 stack → `model_out_of_band` + `fire` 13:02 (size small ×0.5). Live pick:
+  nearest listed OTM call 290 (no 289.5 listed today), OPRA ask 0.13 (bid 0.12, chain 0.10) < floor 0.20 → walk stopped, `contract_refused`, critical
+  `TechniquePlanError` "no option contract available and the shares fallback is off — nothing was sent", `needsAttention true`. Trade row `failed`,
+  qty 0, no order, no exposure. Correct under F104/F105/F108. At 13:06 the 289 call (ITM by $0.05, delta 0.71) was 0.41/0.42, vol 68k, OI 2,974,
+  spread 2.4% — the only in-band near-money contract, one strike ITM (second such day after F104's 287.5P). **F124** recorded (TRADING-RULES).
+- **F124 side effect to watch:** the pure read holds the 290 proxy as `openPosition` (openAtEnd true); `session.py` manages an open model position
+  before it looks for new contacts, so no further IWM contact can fire live until the proxy exits (target 290.46 / 2m close through 289.06 / 15:45
+  flatten). Proposals (user decisions): near-ITM eligibility; let a live refusal release the read's proxy. Not built.
+- **SPY/QQQ:** no new read event since the 11:45 `pm_break` rows; bias still scenario 4 (puts), stacks bull (SPY 2, QQQ 3), `pm_break_up` inert label
+  correct on SPY. A 15m close back above 763.60 / 713.65 is still the `bias_flip` to watch.
+- **Replay parity EXACT** on all three (SPY 5, QQQ 1, IWM 8 events incl. 13:00 scenario, 13:02 model_out_of_band + fire; same open proxy position).
+- **Log (`backend/zargar-8420.log`):** `OPRA quotes failed` 67 (+2: 12:41 ET during boot, 12:50 ET one blip), `cartel-observer bar handling failed` 41
+  (unchanged), no traceback after the restart (newest still the 06:39 PT Options Cartel one). `fire review failed: timed out after 25s` at 12:50 ET is
+  EM's MSFT `r2` critic (`TechniquePlanError` on run `8979b99f`), not Team2. No Team2 warning.
+- **No code shipped.** F124 written up, no rule/knob change.
+- **Next run (~13:35) should:** (1) IWM: follow the proxy position's model events (`would_trim`/`would_exit`/stop/target) and confirm the live side
+  stays flat with no order; expect SILENCE on any touch #2 while the proxy is open (F124) — record if a real contact was skipped and what the 290 ask
+  was; (2) SPY/QQQ `bias_flip` at 763.60 / 713.65; (3) re-check OPRA/cartel counts; (4) skip `/team2` UI (F103); (5) after 15:45 confirm the
+  proxy flattens and IWM `needsAttention` resolves at the session grade.
+
+## 2026-09-14 13:40 ET (run 89: IWM proxy stopped out at 13:04 and its phantom loss is on the desk-wide cap (F125); two Alpaca stream drops self-healed; parity exact; no code)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `stale false`, bar age 97 s at 13:32,
+  quote age 0.3–0.5 s (SPY 762.73, QQQ 712.29, IWM 288.85, session regular), window `midday`. 29 1m bars per symbol in the last 30 min (latest 13:35 ET),
+  all `exchange`, no gap > 60 s since 12:58; regime ts 13:30 at 13:32. No Team2 order today on any book (the orders list has only tip/EM/cartel rows).
+- **IWM: the F124 proxy lasted one bar.** 13:04 2m close 289.03 → `exit` "premium stop: -126% ≤ −25%" on the $0.0233 proxy (exit $0.0014; after
+  $1.04 fees a side the round trip is −126.71% — the arithmetic is right, the contract was economically meaningless). The read then logged one
+  `same_pullback` at 13:10 (F62) and nothing since; `openPosition` null, so the F124 blocking effect is over. Tape since: IWM slid 289.05 → 288.74
+  (13:18) under the scenario-3 level 289.06 and sits 288.84–288.98; scenario_3 stays alive (a 15m close back below the zone bottom 288.77 is the
+  bias flip), E13 288.92, stack bull 3. At 13:33 the nearest OTM call is now the 289 (spot 288.86): 0.25/0.27, delta 0.41, vol 73k — in band, so a
+  legitimate next contact would find a contract; the 290C is 0.06/0.07.
+- **F125 (new, NOT fixed — TRADING-RULES):** because the IWM trade row is `failed` (never routed), `runner._plan_losses` (F37) judges the plan by the
+  MODEL and the phantom proxy exit counts as a real loss: `/api/team2/status` losses SPY 0 / QQQ 0 / IWM 1 of the desk-wide cap 2 (F29). One more
+  model loss on any symbol silences every live Team2 entry today (`skip_loss_cap_desk`) with $0 ever at risk; the IWM read alone is one proxy loss
+  from its own `skip_loss_cap`. `day_pnl_pct`/`pnlPctSum` carry the −126.71 too. Proposed (user decision, changes what a risk cap counts):
+  (a) smallest — a money-mode plan whose fire ended in a `failed` row is judged by the book (0 losers) in `_plan_losses`; (b) the read excludes
+  `modelBand: out` proxy round-trips from its loss/pnl tallies (session.py, needs the before/after replay test); (c) F124(b). Not built.
+- **SPY/QQQ:** no new read event since the 11:45 (SPY) / 09:45 (QQQ) rows; bias still scenario 4 (puts), stacks bull 3, SPY `pm_break_up` label
+  still correctly inert. SPY 762.7 sits 0.8 under the 763.60 flip; QQQ 712.3 is 1.3 under 713.65. A 15m close above either is the `bias_flip` to watch.
+- **Replay parity EXACT** on all three (SPY 5, QQQ 1, IWM 10 events, IWM 1 trade −126.71 on both sides, no open position on either side).
+- **Feed:** two Alpaca stream drops post-restart — 13:12:55 ET ("keepalive ping timeout", reconnected 13:13:03) and 13:26:45 ET ("no close frame",
+  reconnected 13:26:53). Each produced a transient `TechniquePlanError stale bars` on every armed plan (87 rows across the 72 plans; IWM's at
+  13:12:55 with lastBarTs 13:09 and 13:26:50 with lastBarTs 13:23) that cleared on its own — bars are continuous in the DB and `needsAttention`
+  is false on SPY/QQQ (IWM's true is the F124 refusal only). Platform, not Team2; noted, no F-number.
+- **Log (`backend/zargar-8420.log`, post-restart tail):** `OPRA quotes failed` 2 (12:50 ET, 13:12 ET — the second is the stream drop),
+  `cartel-observer bar handling failed` 0, no traceback. `fire review failed: timed out after 25s` 12:50 ET is EM's critic, not Team2. No Team2 warning.
+- **No code shipped.** F125 written up (TRADING-RULES + here), no rule/knob change.
+- **Next run (~14:10) should:** (1) IWM: watch for a touch #2 on scenario_3 (E13 ≈ 288.9) — if it fires, the live pick should now find the 289C in
+  band (record strike/ask and the order/fill trail; the proxy's second loss would trip the per-symbol cap, F125); a 15m close below 288.77 = bias flip
+  back to puts; (2) SPY/QQQ `bias_flip` at 763.60 / 713.65; (3) confirm `/api/team2/status` losses still 0/0/1 and that no `skip_loss_cap_desk` row
+  appeared; (4) re-check for further Alpaca stream drops (two in 14 min); (5) skip `/team2` UI (F103).

@@ -1234,9 +1234,16 @@ class Team2Runner(PlanRunner):
             trig.append(pseudo("pdl", f"15m close below the PDL zone {pdl.get('bottom', 0):.2f}–{pdl.get('top', 0):.2f} → puts",
                                "break PDL", "waiting" if ap.status == "armed" else ap.status, pdl.get("bottom"), "short",
                                [tgt_dn] if tgt_dn else []))
+        bias_dir = ((read.get("bias") or {}).get("direction")) if read else None
         for s in setups:
             label = (f"{s['kind'].replace('_', ' ')} at {s['anchor']:.2f} — buying the EMA13 pullbacks "
                      f"({'call' if s['direction'] == 'long' else 'put'}s), touches {s['touches']}")
+            if bias_dir and s["direction"] != bias_dir and not s.get("dead"):
+                # F123 (2026-09-14): `session.py` only ever selects a setup in the CURRENT bias direction, so a
+                # PM break the other way (SPY/IWM pm_break_up under scenario 4) cannot take an entry until a
+                # 15m close flips the bias. Say so on the label — the status stays `waiting` because the
+                # Armed page treats status as a closed set (an unknown value renders as a failure badge).
+                label += f" — inert while the bias is {'puts' if bias_dir == 'short' else 'calls'}: needs a bias flip (B1)"
             status = ("invalidated" if s.get("dead") else "fired" if (s["id"] in fired_setups or (open_pos and open_pos.get("setup") == s["id"]))
                       else "observed" if s.get("touches") else "waiting")
             trig.append(pseudo(s["id"], label, s["kind"], status, s.get("anchor"), s["direction"],
