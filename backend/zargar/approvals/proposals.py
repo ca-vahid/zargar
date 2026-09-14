@@ -741,6 +741,20 @@ class ProposalService:
         limit = intent.limit_price
         if fresh_ask and limit and fresh_ask < float(limit):
             limit = round(fresh_ask, 2)
+        # KB-06: a queued retry is admitted like a fresh automated entry
+        from ..techniques.tip import integrity as _ig
+        paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="retry")
+        if paused:
+            stamp["retryRefused"] = paused
+            async with eng.sf() as session:
+                row = await session.get(Proposal, pdict["id"])
+                if row is not None:
+                    row.context = {**(row.context or {}), "freshRetry": stamp}
+                    await session.commit()
+            await eng.journal.append(ev.PROPOSAL_RETRIED, {"proposalId": pdict["id"], **stamp},
+                                     aggregate_type="proposal", aggregate_id=pdict["id"],
+                                     portfolio_id=pdict["portfolioId"])
+            return order
         retry = await eng.orders.place(OrderIntent(
             portfolio_id=intent.portfolio_id, symbol=intent.symbol,
             sec_type=intent.sec_type, side=intent.side, qty=intent.qty,
@@ -764,9 +778,43 @@ class ProposalService:
                  retry.get("status"))
         return retry
 
+    async def _refuse_automated(self, proposal_id: str, *, reason: str, revert: bool = False) -> dict:
+        """KB-06: an AUTOMATED entry the pause refuses — the card stays (or goes
+        back to) pending with the reason on its record; journaled TipAutoPaused."""
+        eng = self.engine
+        async with eng.sf() as session:
+            row = await session.get(Proposal, proposal_id)
+            if row is None:
+                return {"proposal": {"id": proposal_id}, "order": None, "refused": reason}
+            if revert and row.status == "approved":
+                row.status = "pending"
+                row.decided_at = None
+                row.decided_via = None
+            row.context = {**(row.context or {}), "autoGate": reason}
+            await session.commit()
+            pdict = proposal_dict(row)
+        await eng.journal.append(ev.TIP_AUTO_PAUSED, {"reason": reason, "proposalId": proposal_id,
+                                                      **({"revertedApproval": True} if revert else {})},
+                                 aggregate_type="proposal", aggregate_id=proposal_id,
+                                 portfolio_id=pdict.get("portfolioId"))
+        eng.bus.publish(topics.PROPOSALS, pdict)
+        return {"proposal": pdict, "order": None, "refused": reason}
+
     async def approve(self, proposal_id: str, *, via: str = "app",
                       half: bool = False) -> dict:
         eng = self.engine
+        # KB-06: an AUTOMATED approval of a tip card is admitted only while no
+        # execution-integrity incident pauses this book (a human's click is a decision)
+        if via == "auto":
+            async with eng.sf() as session:
+                pre = await session.get(Proposal, proposal_id)
+                pre_pid = pre.portfolio_id if pre is not None else None
+                pre_tip = bool(pre is not None and (pre.context or {}).get("techniqueId") == "tip")
+            if pre_tip:
+                from ..techniques.tip import integrity as _ig
+                paused = await _ig.admission(eng, portfolio_id=pre_pid, entry_path="proposal")
+                if paused:
+                    return await self._refuse_automated(proposal_id, reason=paused)
         async with eng.sf() as session:
             row = await session.get(Proposal, proposal_id)
             if row is None:
@@ -846,6 +894,12 @@ class ProposalService:
             order_type=pdict["orderType"], limit_price=limit,
             bracket=bracket, source="signal",
             signal_id=pdict["signalId"], proposal_id=proposal_id)
+        # KB-06 final admission: immediately before the entry order exists
+        if via == "auto" and (pdict.get("context") or {}).get("techniqueId") == "tip":
+            from ..techniques.tip import integrity as _ig
+            paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal")
+            if paused:
+                return await self._refuse_automated(proposal_id, reason=paused, revert=True)
         order = await eng.orders.place(intent)
         order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
 

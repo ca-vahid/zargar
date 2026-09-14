@@ -699,6 +699,47 @@ class TipRunner(PlanRunner):
             self._handoff_tasks[key].add_done_callback(
                 lambda t, k=key: self._handoff_tasks.pop(k, None))
 
+    async def _place_with_retry(self, ap, trade, intent, *, stage: str):
+        """KB-06 final admission for the ARMED path: immediately before an
+        ENTRY order exists — arms created before the incident and collar
+        retries included — refuse while an execution-integrity incident
+        pauses this book/path. Exits never arrive here as stage 'entry'."""
+        if stage == "entry":
+            from . import integrity as _ig
+            why = await _ig.admission(self.engine, portfolio_id=getattr(ap.config, "portfolio_id", None),
+                                      entry_path="arm")
+            if why:
+                trade.status = "skipped"
+                trade.reason = why
+                with contextlib.suppress(Exception):
+                    self._log(ap, "entry_paused", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id)
+                with contextlib.suppress(Exception):
+                    from ... import events as _ev
+                    await self.engine.journal.append(
+                        _ev.TIP_AUTO_PAUSED, {"reason": why, "runId": ap.run_id, "trigger": trade.trigger_id,
+                                              "path": "arm"},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id,
+                        portfolio_id=getattr(ap.config, "portfolio_id", None))
+                with contextlib.suppress(Exception):
+                    await self._persist(ap)
+                return None
+        return await super()._place_with_retry(ap, trade, intent, stage=stage)
+
+    async def cancel_working_entries(self, *, reason: str, portfolio_id: str | None = None) -> int:
+        """KB-06: an incident opened AFTER arming still blocks — resting ENTRY
+        orders of this technique's armed plans are cancelled (exits untouched)."""
+        n = 0
+        for ap in list(self._armed.values()):
+            if portfolio_id and getattr(ap.config, "portfolio_id", None) != portfolio_id:
+                continue
+            for trade in list(ap.trades.values()):
+                if trade.status == "working" and trade.entry_order_id:
+                    with contextlib.suppress(Exception):
+                        await self.engine.orders.cancel(trade.entry_order_id)
+                        n += 1
+                        self._log(ap, "entry_cancelled", f"{trade.trigger_id}: {reason}", trigger=trade.trigger_id)
+        return n
+
     async def _handoff_when_filled(self, ap, tid, trade) -> None:
         deadline = time.monotonic() + HANDOFF_WINDOW_SECONDS
         order = None

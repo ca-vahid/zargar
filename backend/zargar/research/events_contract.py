@@ -90,6 +90,8 @@ CONTRACTS: dict[str, dict] = {
     "TipGeometryRepaired": {"version": 2, "required": ("proposalId", "underlying", "entryRef", "repairs"),
                             "nullable": ("proposalId",)},   # v2 2026-09-08: armed-lane repairs carry runId/trigger, no proposal
     "TipAutoPaused": {"version": 1, "required": ("reason",)},
+    "TipExecutionIncident": {"version": 1, "required": ("id", "action")},        # KB-06
+    "TipFastStopDiagnostic": {"version": 1, "required": ("positionId", "verdict")},
 }
 
 
