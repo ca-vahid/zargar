@@ -6321,3 +6321,37 @@ estart.ps1` at 16:32 ET. The
   no order); (2) confirm the session grade lands, IWM `needsAttention` resolves and the three plans expire cleanly at 16:00 (`status` no longer
   `armed`, `grade` set); (3) confirm the 17:00 plan-now job arms tomorrow's three plans (check at the 16:35 run only if the job runs early; else
   tomorrow 09:00); (4) any further stream drop after the close; (5) skip `/team2` UI (F103).
+
+## 2026-09-14 16:05 ET (run 94: the session closed cleanly on all three (15:45 flatten note, 16:00 scored + disarmed, no order, no open position); F126 found and FIXED (Team2 scorecard lacked `planFor`, v0.7.72 deployed 16:12 ET via ZargarRestart); no stream drop after 15:30)
+
+- **Alive on v0.7.71 at 16:02, v0.7.72 from 16:12 ET.** `/api/team2/status` `armed: []` — SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` are
+  `disarmed`, `stopReason null`. Team2 Practice has NO order today (newest orders on the book are still the 09-08 QQQ 714P pair). No Team2
+  plan is armed until the 17:00 ET `team2_plan_nightly` job (registered on the new process at 16:12).
+- **Close sequence, in order, on all three:** 15:32 `skip_last_entry` (run 93) → **15:45:00 `clock_flatten`** "flatten time 15:45 ET reached —
+  the book is already flat — nothing to close (C3/D-1)" on the plan's state events (F106 works: the flat day leaves a trace) → **16:00:05
+  `TechniquePlanScored`** (SPY/QQQ `theoreticalFires 0`; IWM `theoreticalFires 1, actualFires 0, modelPnlPctSum −126.71`, the row "model trade
+  not taken by the book (see skips)") → **16:00:05 `TechniquePlanDisarmed`** "session closed", `flatten false, openLeft 0`. IWM's
+  `needsAttention` (the 13:02 refusal) went with the plan; nothing carried over.
+- **Tape into the close:** SPY sold off to 760.80 at 15:58 (E13 761.37 / E48 761.79 / E200 761.44, `mixed`); QQQ 709.19 (E13 710.28 / E48
+  711.06 / E200 709.86, `mixed`); **IWM 287.89 with the day's FIRST bear stack at 15:58** (E13 288.16 < E48 288.41 < E200 288.43, strength 3) —
+  after the 15:30 cutoff, so no scenario-4 put touch was ever eligible today. All three biases ended scenario 4 (puts). 34 1m bars per symbol
+  15:30–16:03, all `exchange`, no gap > 61 s; 4 post-16:00 prints per symbol (extended hours, expected).
+- **F125 status:** unchanged at the close (IWM read `losses 1`, desk tally 1 of 2 — the phantom charge described in F125 never had to bite
+  today because no touch fired after 13:02). Resets with tomorrow's plans; the defect itself is still open.
+- **F126 (NEW, FIXED):** every close since 09-09 logged `event contract: TechniquePlanScored v1: missing required field 'planFor'` ×3 at
+  16:00:00 (12 warnings over four sessions, none from EM). The shared close emits `{runId, symbol, **scorecard}`; EM's scorecard carries
+  `planFor`, Team2's `_score_execution` did not. Fixed in `runner.py` (one key), `test_team2_close.py` asserts it (4 pass on
+  `zargar_test_team2_watch`), `npm run build` green, TRADING-RULES finding + change-log row written, version 0.7.72 (main was 0.7.71).
+  Commit `260fbc0` on `claude/zargar-stock-app-research-8mnqfh`. Reporting only — no rule, gate, sizing or money path changed.
+- **Deployed 16:09:48 ET** via `/api/ops/restart-check` (`safe: true`, 0 open trades, 0 working entries, 0 in-flight orders) +
+  `Start-ScheduledTask ZargarRestart` (`logs/restart-20260914-130948.log`). Health on 0.7.72 after 159 s; Alpaca stream connected 16:11:49
+  and authenticated; 11 tip plans restored; `team2_plan_nightly` 17:00 and `team2_preopen` 09:25 registered; 0 tracebacks, no Team2 warning.
+- **Feed since 15:30 ET:** NO fifth Alpaca stream drop (the day ends at four: 13:12, 13:26, 14:23, 15:29 — all self-healed). `OPRA quotes
+  failed` 0, `stale bars` 0, Traceback 0 in the pre-restart log since 15:30. The `persist_bars: dropped N non-bucket-aligned stub bar(s)`
+  noise continues (216 lines / 30 min, platform, not touched). Note for the log reader: the 41 `entry read requires symbol-matched,
+  minute-aligned 1m bars` tracebacks in today's file are the Options Cartel observer at the 09:xx open (another desk, noted in run 87's
+  `cartel-observer` count) — not Team2.
+- **Proposed (unchanged):** the four Alpaca keepalive drops in 2 h 17 min (run 93) remain a platform item for `brokers/alpaca.py`'s owner.
+- **Next run (~16:35) should:** (1) confirm the process is still healthy on 0.7.72 and nothing regressed after the restart; (2) if the run
+  lands after 17:00 ET, confirm the nightly job armed tomorrow's three plans (`/api/team2/status` `armed` × 3 for 2026-09-15, `complete`
+  false until 09:25) — else tomorrow's 09:00 run does it; (3) skip `/team2` UI (F103).
