@@ -26,8 +26,24 @@ The recorder and stored-quote valuation endpoints are implemented. They do not r
 
 ## Session review and record review
 
-The Plans page's Session review is read-only. It shows account/session-scoped recorded decisions, source counts and order/fill counts; it does not calculate hypothetical option profits. A data-limited category records a limitation, not proof that the missing data caused a profitable trade to be missed. Use the account risk/P&L report for actual recorded trading performance.
+The Plans page's Daily review is read-only. It joins account/session decisions with actual executions and fees, distinguishes signals from completed trades, and includes exclusions, pending-attempt history and durable quote coverage. It does not calculate hypothetical option profits. A data-limited category records a limitation, not proof that the missing data caused a profitable trade to be missed. Use the account risk/P&L report for actual recorded trading performance.
 
 Record reviews can annotate setup, execution, data and outcome concerns. Keep actor attribution, as-of time, method version and uncertainty explicit. Do not combine an author's peak-trim percentage with our realized portfolio result.
 
 Implementation: `replay.py`, `replay_service.py`, `sweeps.py`, `premium_replay.py`, `quote_observations.py`, `session_review.py`. Historical test counts are in dated release/deployment records; [current limits](DELIVERY-STATUS.md) govern new work.
+
+
+### Exact simulated-fill evidence (v0.7.74)
+
+ExecutionEvidence is committed with each new simulated execution. It records the exact
+quote identity fields, source/receive time, bid/ask/size, evidence policy and slippage inputs.
+Legacy executions remain unknown; a nearby periodic sample is not relabeled as their source.
+Simulated fills require non-delayed, finite, uncrossed quotes within 15 seconds of both
+receipt and source. Options require OPRA/IBKR source identity; explicit synthetic feed mode
+is labeled separately. An unusable quote leaves the original protective order working and
+records SimFillWaiting. These rules do not block real-broker protective submission.
+
+Durable quote coverage is account/session/contract scoped and survives worker restarts.
+Gap counts describe gaps in the sampled archive, not proved live-feed outages. No post-close
+mark is needed for a flat campaign. The report uses a requested-session cutoff and never
+substitutes a future fill or current quote into a past outcome.

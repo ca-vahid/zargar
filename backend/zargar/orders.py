@@ -474,6 +474,12 @@ class OrderManager:
                                        reject_reason=report.reason)
             elif report.kind == "expired":
                 await self._transition(report.order_id, OrderStatus.EXPIRED, ev.ORDER_EXPIRED)
+            elif report.kind == "fill_waiting":
+                async with self._sf() as session:
+                    order = await session.get(Order, report.order_id)
+                if order is not None:
+                    await self._journal.append("SimFillWaiting", {"reason": report.reason, "evidence": report.evidence},
+                        aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
         if bracket_parent is not None:
             await self._spawn_bracket_children(bracket_parent)
 
@@ -492,6 +498,10 @@ class OrderManager:
                 ts=dt.datetime.fromtimestamp(report.ts/1000, dt.UTC),
             )
             session.add(exec_row)
+            if report.evidence:
+                from .models import ExecutionEvidence
+                await session.flush()
+                session.add(ExecutionEvidence(execution_id=report.exec_id, evidence=report.evidence))
             prev_filled = order.filled_qty or 0.0
             prev_avg = order.avg_fill_price or 0.0
             new_filled = prev_filled + report.fill_qty
@@ -511,7 +521,8 @@ class OrderManager:
 
         await self._journal.append(
             ev.ORDER_FILL,
-            {"qty": report.fill_qty, "price": report.fill_price, "commission": report.commission},
+            {"qty": report.fill_qty, "price": report.fill_price, "commission": report.commission,
+             "executionId": report.exec_id, "executedAt": report.ts, "evidence": report.evidence},
             aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
         if fully:
             await self._journal.append(

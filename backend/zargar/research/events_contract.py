@@ -24,6 +24,8 @@ log = logging.getLogger("zargar.research.events")
 
 # kind -> {"version", "required": (fields...), "nullable": (fields...)}
 CONTRACTS: dict[str, dict] = {
+    "SimFillWaiting": {"version": 1, "required": ("reason", "evidence")},
+    "BarDeliveryHealth": {"version": 1, "required": ("consumer", "lastAt", "samples")},
     "TechniqueCartelContractSelection": {"version": 1, "required": ("runId", "symbol", "report")},
     "ManagedPositionHistoryRecovered": {"version": 1, "required": ("positionId", "source", "asOfMs", "addedSessions", "missedCloses")},
     "TechniqueCartelStateChanged": {"version": 1, "required": ("runId", "symbol", "action", "status", "phase")},
