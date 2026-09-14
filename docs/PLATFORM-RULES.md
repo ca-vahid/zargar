@@ -1677,3 +1677,17 @@ Quote-stop confirmation is forward-only (source timestamp strictly newer). `exec
 is registered with per-desk values (Tips/Team2/Cartel True = unchanged behaviour, EM False). `/api/health`
 carries `build` (short commit SHA). Repair tool contract: receipt journaled before commit, one row
 transition per plan, replay = `already_applied`, live rows skipped unless `--include-live` after quiescing.
+
+
+### Reviewer follow-up 2026-09-14 (FA-01..05) — shared-runner and repair contracts (EM desk)
+
+FA-01: entries pass a SYNCHRONOUS final guard (`PlanRunner._entry_guard`, via `OrderManager.place(before_submit=)`)
+after the manager's last await and before `executor.submit`, on every attempt incl. the collar retry; it
+re-judges the remaining daily loss budget and cached contract quality over the runner's own state and never
+resizes (a changed quantity/price is a fresh submission). Rule for every desk that places entries through the
+runner: state that can change during the order's awaits is judged in `before_submit`, not before them.
+FA-02..04 (repair tools): repaired state and audit receipts are written in ONE transaction (`Event` rows staged
+in the caller's session, row locked, hash re-checked); corrected values come from the Order/Execution ledger,
+never from the projection; ownership is validated before any read; `--include-live` verifies nothing.
+FA-05: a promotion's identity is the sweep's saved resolved thresholds + overlay + process version, never
+"same overlay". Build identity: `zargar.BUILD` bound at import (full SHA, `-dirty`), on `/api/health.build`.

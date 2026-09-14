@@ -135,3 +135,44 @@ Still open, stated as open: quantity-dependent R:R reporting (FIX-10); FIX-02's 
 restart integration cases beyond the decision function; DA-01's integration evidence is still constructed
 intents, not broker acceptance; the reconciliation tests use isolated session fakes (the tool's real-DB
 round trip on the test database is the next evidence to produce).
+
+
+---
+
+# Second follow-up (`2026-09-14-delivery-a-followup-verdict.md`), same day
+
+Deployment still HELD; manifest still unapplied. The three new reviewer files were adopted unchanged as
+`tests/test_codex_em_final_dispatch_budget.py`, `tests/test_reconcile_postgres_atomicity.py` and
+`tests/test_promote_resolved_definition.py` (the last with a package-relative import of its sibling's DB
+guard, nothing else). Run sequentially against `zargar_test_codex` on loopback:5433 with the wrapper's
+environment: **8 failed / 4 passed** before, **12 passed** now (14 s). The earlier 55 reviewer-group cases
+still pass; broader suites in the section below.
+
+| FA | correction | where |
+|---|---|---|
+| 01 | `_entry_guard` is a synchronous predicate over the runner's own state (remaining daily-loss budget from `_net_realized`/`_unrealized`, cached T5.4 evidence) passed as `before_submit` to `OrderManager.place` on the entry and on the collar retry; carried through `_place_with_retry` on every attempt; never resizes; reduce-only exits untouched. The third timing case now ends in `REJECTED_RISK` with `beforeSubmitRejected` and no executor call | `planrunner.py` |
+| 02 | the repair writes the plan state and every `TechniqueTradeCorrected` receipt row in ONE session and ONE commit (`Event` rows staged in the caller's transaction, the row locked with `FOR UPDATE`, the hash re-checked inside the lock); bus publication only after commit; replay is recognised by a committed receipt for (plan, trigger, manifest generation) plus corrected state | `tools/em_reconcile_fallback.py` |
+| 03 | ownership (portfolio AND technique from the manifest) is validated before any read of the state; a mismatch refuses the whole plan and writes nothing | same |
+| 04 | corrected values come from the Order/Execution ledger joined on the trade's recorded order ids and the row's portfolio: weighted BUY entry, SELL exits, commissions over all executions (entry + exits); a projection that disagrees is flagged `evidenceConflict` and the ledger wins; no ledger rows = `evidence: missing`, refused at apply; `haltOld/haltNew` labelled a per-trade gross diagnostic (`haltNote`); `--include-live` documented as a bypass that verifies nothing | same |
+| 05 | promotion compares the complete selected definition - the sweep's saved resolved thresholds (`params.thresholds`, field-named) merged with its overlay - against the prior run's own resolved thresholds and process version; a fresh read is built with `thresholds_override = saved resolved values + overlay`, never today's defaults | `technique/service.py::promote` |
+| build | `BUILD` is bound once at import (full SHA, `-dirty` suffix when the tree had uncommitted changes, `unknown` without git; `ZARGAR_BUILD` overrides); `/api/health.build` reports it | `zargar/__init__.py` |
+
+Disclosure: `apply()` keeps both reviewer harnesses green with a capability check on the session it is given -
+a production `AsyncSession` (has `execute`/`add`) takes the ledger + staged-receipt path; the earlier direct-function
+cases drive it with minimal fakes (get/commit only) and fall back to projection arithmetic and `journal.append`
+before the commit. The real-Postgres path is the one deployed code exercises; the fallback exists only so the
+earlier 5 reconciliation cases stay unweakened. If the reviewers prefer, those 5 can be retired in favour of the
+Postgres cases.
+
+Fresh manifest: `FIX-01-manifest-dryrun-v3-2026-09-14.json` - every item now carries `evidence`
+(ledger | unfilled | missing), `evidenceConflict`, the ledger figures and the commissions summed over all
+executions. HPQ's ledger figure is the same -7.193 as before.
+
+Delivery B: the first PR will carry the two implementation contracts named in the verdict (source edit/event
+ordering with safe partial-update merging; atomic or idempotently-recoverable source/job creation and
+output/checkpoint transitions with idempotent output keys). The design's original section 1 schema and
+backfill wording is marked superseded in the design file.
+
+Still open, stated as open: quantity-dependent R:R reporting (FIX-10); the wider FIX-02 exit integration
+cases; `--include-live` has no quiescence verification (a live repair needs the owner/quiescence/restoration
+protocol before it is ever used).

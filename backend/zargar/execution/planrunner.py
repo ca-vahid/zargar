@@ -2636,7 +2636,8 @@ class PlanRunner(SessionListener):
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         self._log(ap, "entry_submit", f"{trade.trigger_id}: BUY {qty:g} {'contract(s) ' + (trade.contract or {}).get('display', order_symbol) if sec_type == 'OPT' else 'sh'} LMT {limit:.2f}",
                   trigger=trade.trigger_id)
-        result = await self._place_with_retry(ap, trade, intent, stage="entry")
+        guard = self._entry_guard(ap, trade, trade.contract if sec_type == "OPT" else None, qty, limit)
+        result = await self._place_with_retry(ap, trade, intent, stage="entry", before_submit=guard)
         if result is None:
             return
         trade.entry_order_id = result.get("id")
@@ -2667,7 +2668,8 @@ class PlanRunner(SessionListener):
                         portfolio_id=cfg.portfolio_id, symbol=order_symbol, sec_type=sec_type,
                         side="BUY", qty=qty, order_type="LMT", limit_price=new_limit, tif="DAY",
                         source="technique", technique_id=self.TECHNIQUE_ID)
-                    result2 = await self._place_with_retry(ap, trade, intent2, stage="entry")
+                    guard2 = self._entry_guard(ap, trade, trade.contract if sec_type == "OPT" else None, qty, new_limit)
+                    result2 = await self._place_with_retry(ap, trade, intent2, stage="entry", before_submit=guard2)
                     if result2 is not None:
                         trade.entry_order_id = result2.get("id") or trade.entry_order_id
                         if result2.get("id"):
@@ -2701,14 +2703,43 @@ class PlanRunner(SessionListener):
             "orderId": trade.entry_order_id, "status": status, "reason": result.get("rejectReason")},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
 
-    async def _place_with_retry(self, ap: ArmedPlan, trade: Trade, intent, *, stage: str) -> dict | None:
+    def _entry_guard(self, ap: ArmedPlan, trade: Trade, contract: dict | None, qty: float, limit: float):
+        """FA-01 (2026-09-14): the SYNCHRONOUS final entry predicate OrderManager runs after its last await
+        and immediately before `executor.submit` (`place(..., before_submit=)`). It re-judges, over the
+        runner's current owned state, what `_admit_option_entry` judged earlier: the remaining daily loss
+        budget (another trade in the plan may have closed while the entry awaited persistence) and the
+        cached contract quality evidence. It never resizes: a changed quantity or price needs a fresh
+        submission. Returns None or raises; reduce-only exits never pass through it."""
+        cfg = ap.config
+
+        def guard() -> None:
+            if contract is not None and cfg.skip_wide_spread:
+                w = next((str(x) for x in (contract.get("warnings") or []) if "T5.4 wide spread" in str(x)), None)
+                if w:
+                    raise RuntimeError(f"final entry guard: {w}")
+            limit_d = float(cfg.daily_loss_limit or 0.0)
+            if limit_d > 0:
+                used = -(self._net_realized(ap) + min(0.0, self._unrealized(ap)))
+                left = limit_d - max(0.0, used)
+                if trade.instrument == "options":
+                    prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
+                    at_risk = float(qty) * float(limit) * float(trade.multiplier or 100.0) * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
+                else:
+                    at_risk = float(qty) * max(float(trade.entry) - float(trade.stop), 0.0)
+                if at_risk > left + 1e-9:
+                    raise RuntimeError(f"final entry guard: this entry risks ~${at_risk:,.0f} but only ${left:,.0f} "
+                                       f"of the ${limit_d:,.0f} daily loss limit is left (F33)")
+        return guard
+
+    async def _place_with_retry(self, ap: ArmedPlan, trade: Trade, intent, *, stage: str, before_submit=None) -> dict | None:
         """Submit through OrderManager; retry only transient transport errors
-        (never a risk rejection), journaling every attempt."""
+        (never a risk rejection), journaling every attempt. `before_submit` (FA-01) is carried
+        through every attempt so a retry cannot bypass the final entry guard."""
         cfg = ap.config
         attempt = 0
         while True:
             try:
-                return await self.engine.orders.place(intent)
+                return await self.engine.orders.place(intent, before_submit=before_submit)
             except Exception as exc:
                 msg = f"{type(exc).__name__}: {exc}"
                 transient = any(k in msg.lower() for k in TRANSIENT_ERRORS)

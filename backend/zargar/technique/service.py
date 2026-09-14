@@ -63,6 +63,7 @@ from .provenance import sweep_version, technique_source_version
 from .render import render_chart
 from .review import diff_runs, review_dict, validate_review
 from .rulebook import (
+    DEFAULT_THRESHOLDS,
     ET,
     PRIME_WINDOWS,
     RULES,
@@ -1750,6 +1751,21 @@ class TechniqueService:
         # DA-07 (2026-09-14): a promotion carries the sweep's VARIANT (threshold overlay); a prior read is
         # reused only when it was made under the same variant, and a fresh read is built under it
         variant = dict((params.get("overrides") or {}))
+        # FA-05 (2026-09-14): two empty overlays can sit on different saved BASE definitions. The sweep's
+        # saved resolved thresholds (field-named, `provenance.thresholds_dict`) are the definition; a
+        # prior read is reused only when its own resolved thresholds (and process version, when both
+        # are recorded) match, and a fresh read is built under the saved values, not today's defaults.
+        saved = dict(params.get("thresholds") or {})
+        saved_pv = params.get("processVersion")
+
+        def _definition(d: dict):
+            fields = {f.name: getattr(DEFAULT_THRESHOLDS, f.name) for f in dataclasses.fields(Thresholds)}
+            kw = {}
+            for k, v in (d or {}).items():
+                if k in fields:
+                    kw[k] = tuple(v) if isinstance(fields[k], tuple) and isinstance(v, list) else v
+            return dataclasses.replace(DEFAULT_THRESHOLDS, **kw)
+        selected = _definition({**saved, **variant}) if (saved or variant) else None
         if with_vision and not force:
             async with self.engine.sf() as session:
                 prior = (await session.execute(
@@ -1757,8 +1773,12 @@ class TechniqueService:
                                                TechniqueRun.status == "done", TechniqueRun.mode == "plan")
                     .order_by(TechniqueRun.created_at.desc()).limit(6))).scalars().all()
             for pr in prior:
-                prior_variant = dict((((pr.config or {}).get("overrides") or {}).get("thresholds") or {}))
-                if (pr.result or {}).get("passes") and prior_variant == variant \
+                pcfg = pr.config or {}
+                prior_variant = dict(((pcfg.get("overrides") or {}).get("thresholds") or {}))
+                prior_def = _definition({**(pcfg.get("thresholds") or {}), **prior_variant}) if (pcfg.get("thresholds") or prior_variant) else None
+                same_def = (selected is None and prior_def is None) or (selected is not None and prior_def is not None and selected == prior_def)
+                same_pv = (saved_pv is None or pcfg.get("processVersion") is None or pcfg.get("processVersion") == saved_pv)
+                if (pr.result or {}).get("passes") and prior_variant == variant and same_def and same_pv \
                         and str(getattr(pr, "technique", "enhanced_market") or "enhanced_market") == "enhanced_market":
                     async with self.engine.sf() as session:
                         r2 = await session.get(TechniqueWalkforward, row.id)
@@ -1770,7 +1790,7 @@ class TechniqueService:
                     return d
         rd = await self.analyze(symbol, as_of_ms=close_ms + 1, primary_tf=params.get("triggerTf"),
                                 trigger="promote", plan=True, with_vision=with_vision, wait=wait,
-                                thresholds_override=variant or None)
+                                thresholds_override=({**saved, **variant} or None))
         async with self.engine.sf() as session:
             r2 = await session.get(TechniqueWalkforward, row.id)
             if r2 is not None:

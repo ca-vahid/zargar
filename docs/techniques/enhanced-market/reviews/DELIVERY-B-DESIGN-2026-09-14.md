@@ -4,7 +4,13 @@ Design only; nothing here is built. Answers FIX-07 (durable source revisions), F
 extraction) and FIX-09 (alignment + source-informed candidate) from the reviewer packet, for review before
 implementation. Module names below are proposals inside the EM namespace (`backend/zargar/technique/`).
 
-## 1. Source revisions (FIX-07)
+## 1. Source revisions (FIX-07) - SUPERSEDED by the revision at the end of this file (2026-09-14 verdict)
+
+> The schema and backfill wording in this section is kept as the original proposal only. Do NOT implement
+> `first_usable_at` from `updated_at`, and do not put transcript/usability fields on the immutable revision -
+> see "Revision after the reviewers' answers" below (three tables; availability is a fact of the artifact
+> that produced it, else `unknown`).
+
 
 Today `technique_method_notes` holds one row per Discord message id with `text`, `transcript`,
 `extraction`, `board_check`, `status`; edits overwrite in place, the author is a display name, and a
@@ -159,3 +165,10 @@ coverage of the session is complete, `expired`, `superseded`.
 
 First implementation PR (proposed): the three tables + backfill dry-run tool + `resume_unfinished()` with
 fencing, no extraction changes yet.
+
+**Two implementation contracts for the first PR (2026-09-14 verdict):**
+1. Source edit/event ordering is recorded (Discord edit timestamp + gateway sequence) and partial updates
+   merge safely: an older or partial delivery never replaces a newer complete source state.
+2. Source/job creation and output/checkpoint transitions are atomic where the database allows (one
+   transaction for "artifact row + job checkpoint") and otherwise idempotent by output key: a crash between
+   creating an output and checkpointing it is recovered by re-deriving the same key, never by duplicating.
