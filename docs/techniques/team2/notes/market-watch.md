@@ -5900,3 +5900,48 @@ setup, that is a gap to report, not a refusal.
   source raise itself, and should it announce its recovery**, F67's two shared-side halves, and the
   F30-family question F105 sharpens. **The ZargarRestart permission is no longer blocking** (it
   worked this run), but the user may want it granted standing so a future fix is never stranded.
+
+
+## 2026-09-14 09:04 ET (run 80 — Monday pre-open: plans armed on 0.7.68, a GAP-DOWN morning, F110's acceptance test is live at 09:25)
+
+- **Alive on v0.7.68** (`/api/health` ok, armed 74 desk-wide). The weekend carried **19 restarts**
+  (v0.7.49 → 0.7.68, last `restart-20260914-053440`: `Restore check OK: armed 71/71, openTrades 0/0`),
+  which is exactly why each Team2 plan shows `TechniquePlanRestored` **19** — one per restart, no
+  defect. `/api/ops/restart-check`-relevant state is clean: no open trades, no working entries, no
+  inflight orders, proposals pending 0, not quiesced.
+- **Team2 plans for 2026-09-14 armed, mode `auto`, book Team2 Practice:** SPY `e26bb753`, QQQ
+  `37d93465`, IWM `fe537b5e` — `needsAttention false`, `stale false`, bar age ~90 s, quote age 0.
+  Each restore re-ran the warm-up (**12 valid sessions**; SPY 14556 / QQQ 12631 / IWM 11831 bars) and
+  stamped the **listed 0DTE strikes** (SPY 155, QQQ 195, IWM 83). `pmh`/`pml`/`dayType`/`sizingAtOpen`
+  null and `complete false` — correct before 09:25.
+- **Data real-time:** Alpaca stream `connected`/`authenticated` at 05:35 PT restart;
+  `options.quotes_source=alpaca`, `feed.exchange_bars=true`. SPY/QQQ/IWM 1m bars banked through
+  **09:02 ET** (29 bars in the last 30 min each). Pre-market mix: QQQ all `exchange`; SPY 26 and IWM 59
+  `sampled` fill-ins — but **every pre-market high/low so far is an `exchange` bar** (SPY 757.77–764.29,
+  QQQ 701.155–715.416, IWM 286.92–288.64), so 09:25's PMH/PML will not come from a sampled print.
+- **A gap-down morning.** Against Friday's 15:59 closes (SPY 764.195, QQQ 714.85, IWM 288.92) the
+  pre-market sits at SPY 758.3 (−0.77 %), **QQQ 701.8 (−1.8 %)**, IWM 287.3 (−0.56 %). All three are
+  already below their PDL zones (SPY 763.60, QQQ 713.65, IWM 288.77); IWM's whole pre-market range is
+  below its PDL. QQQ has **already run through its planned put target 708.63**; IWM (287.18) and SPY
+  (757.26) are within cents of theirs.
+- **F110's real acceptance test (per F122) should fire today:** with `target_replan=structure` +
+  `target_replan_gap_only=true`, the 09:25 pre-open should write a `targets_rederived` row at least on
+  **QQQ**, and possibly IWM/SPY depending on the 09:25 reference. No row on a symbol whose reference has
+  not crossed its target is correct.
+- **F70 recurs (known, shared feed, not Team2):** pre-market `Quote.prevClose` is one session stale again —
+  SPY 757.83 / QQQ 708.69 / IWM 287.70 (Thursday's closes) vs `regPrice` 764.29 / 714.88 / 288.89
+  (Friday). `techniques/team2/` still never reads `quote.prev_close` (`plan.py` takes it from the
+  previous-session bars), so no Team2 effect.
+- **Log clean:** no ERROR/Traceback line since today's 05:35 PT restart; no Team2 warning. New baselines
+  for the session (cumulative file `backend/zargar-8420.log`): `OPRA quotes` warnings **65** (last one
+  Sunday 21:06 PT, market closed), `cartel-observer bar handling failed` **40**.
+- **Settings sanity:** research knobs still off — `key_levels off`, `pm_room_atr 0`, `min_target_atr 0`;
+  `no_trade_zone pm_range` (the F112 zone as before, not the C1 conjunction); `require_fresh_quote true`.
+- **No code shipped, no new F-number** this run.
+- **Next run (~09:30) should:** (1) confirm the 09:25 pre-open completed on all three (`pmh`/`pml`,
+  `dayType`, `sizingAtOpen`, `complete true`) and call `POST /api/team2/preopen-now` only if not;
+  (2) **record F110's result** — `targets_rederived` on QQQ (and which others), plus `open_finalized` on
+  all three at 09:30; (3) note how the F112 `pm_range` no-trade zone behaves on a real gap-down: today's
+  PM ranges are wide (SPY 6.5, QQQ 14.3 points) so a 15m close below PDL can sit inside the PM range —
+  watch whether the zone blocks the first put setups after 09:45; (4) re-check the OPRA (65) and
+  cartel (40) counts; (5) do not attempt the `/team2` UI check (F103).
