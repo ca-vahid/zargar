@@ -164,6 +164,8 @@ class SignalService:
                 "revisionNo": int(getattr(n, "revision_no", 1) or 1),
                 "revisedAt": (getattr(n, "revised_at", None).isoformat()
                               if getattr(n, "revised_at", None) else None),
+                "deletedAt": (getattr(n, "deleted_at", None).isoformat()
+                              if getattr(n, "deleted_at", None) else None),
                 "createdAt": n.created_at.isoformat() if n.created_at else None}
 
     def _note_ttl_days(self, scope: str) -> float | None:
@@ -367,8 +369,11 @@ class SignalService:
         now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             for nid in note_ids:
-                row = await session.get(TipNote, nid)
-                if row is not None and row.superseded_by is None:
+                row = await session.get(TipNote, nid, with_for_update=True)
+                # R63-01: the shared lifecycle boundary refuses a DISPUTED row —
+                # an unresolved needs_human is never superseded by any writer
+                # outside the human's own resolution (callers stage instead)
+                if row is not None and row.superseded_by is None and not row.needs_human:
                     self._snapshot(session, row, now, "supersede")
                     row.superseded_by = str(by)[:80]
                     n += 1
@@ -452,21 +457,45 @@ class SignalService:
         return fam
 
     async def _supersede_rule_family(self, new_row) -> None:
+        """Rule-family hygiene under the SAME dispute invariant as the audit
+        batch (R63-01, one transaction, rows locked): a clean family member is
+        superseded (snapshot first); a DISPUTED member is never touched, and
+        the newcomer is STAGED as disputed too — a contradictory refinement
+        cannot enter the rulebook as uncontested advice while the human's
+        decision is pending. Journaled either way."""
         from ..models import TipNote
         fam = self._rule_family(new_row.text)
         if fam is None:
             return
+        now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             live = (await session.execute(select(TipNote).where(
                 TipNote.scope == "rule", TipNote.superseded_by.is_(None),
-                TipNote.id != new_row.id))).scalars().all()
-        old = [r.id for r in live if self._rule_family(r.text) == fam]
-        if not old:
-            return
-        await self.supersede_tip_notes(old, by=new_row.id)
+                TipNote.id != new_row.id).with_for_update())).scalars().all()
+            family = [r for r in live if self._rule_family(r.text) == fam]
+            if not family:
+                return
+            disputed = [r.id for r in family if r.needs_human]
+            superseded: list[str] = []
+            for r in family:
+                if r.needs_human:
+                    continue
+                self._snapshot(session, r, now, "supersede")
+                r.superseded_by = str(new_row.id)[:80]
+                superseded.append(r.id)
+            staged = False
+            if disputed:
+                me = await session.get(TipNote, new_row.id, with_for_update=True)
+                if me is not None and not me.needs_human:
+                    self._snapshot(session, me, now, "flag")
+                    me.needs_human = True
+                    staged = True
+            await session.commit()
         await self.engine.journal.append(
-            ev.TIP_RULE_AUDITED, {"superseded": old, "by": new_row.id,
-                                  "family": fam, "via": "family-dedupe"},
+            ev.TIP_RULE_AUDITED, {"superseded": superseded, "by": new_row.id,
+                                  "family": fam, "via": "family-dedupe",
+                                  "disputedKept": disputed,
+                                  "stagedReplacement": new_row.id if staged else None},
             aggregate_type="signal", aggregate_id=new_row.id)
 
     async def update_tip_note(self, note_id: str, *, text: str | None = None,
@@ -590,22 +619,61 @@ class SignalService:
         return note
 
     async def delete_tip_note(self, note_id: str) -> bool:
-        """KB-03: a delete is a TOMBSTONE, never a hard delete — the row stays
-        (superseded_by='deleted:user', excluded from every live list) so the
-        historical projection keeps what was known before the deletion."""
+        """KB-03: a delete is a TOMBSTONE, never a hard delete. R63-02: EVERY
+        transition into deletion snapshots the prior state and advances the
+        revision — an already-superseded note KEEPS its replacement link
+        (`deleted_at` marks the deletion), so the archive's provenance
+        survives; a live note additionally gets superseded_by='deleted:user'
+        so every live list excludes it. A repeat delete is a no-op (False —
+        the API answers 404, and no revision is minted)."""
         from ..models import TipNote
         now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
-            row = await session.get(TipNote, note_id)
-            if row is None or str(row.superseded_by or "").startswith("deleted:"):
-                return False                      # already a tombstone: 404, as a hard delete would
+            row = await session.get(TipNote, note_id, with_for_update=True)
+            if row is None or getattr(row, "deleted_at", None) is not None:
+                return False
+            self._snapshot(session, row, now, "delete")
+            row.deleted_at = now
             if row.superseded_by is None:
-                self._snapshot(session, row, now, "delete")
-            row.superseded_by = "deleted:user"
+                row.superseded_by = "deleted:user"
             await session.commit()
         await self.engine.journal.append(ev.TIP_NOTE_EDITED, {"id": note_id, "deleted": True},
                                          aggregate_type="signal", aggregate_id=note_id)
         return True
+
+    async def restore_note_text(self, note_id: str, text: str, *, expected_revision: int,
+                                source_run_id: str, evidence_sha256: str) -> dict:
+        """Truncation restoration (consolidation packet §4, reviewer GO to
+        PREPARE): replace a stored, truncated text with the run trace's full
+        text as a REVISION TRANSITION — snapshot first, revision checked under
+        lock against the reviewed manifest, the stored text must be a prefix
+        of the restored text, never a backdate. Journaled with the evidence
+        hash. Refused for superseded/deleted notes."""
+        from ..models import TipNote
+        if not text or len(text) > self.NOTE_TEXT_MAX:
+            raise ValueError("restored text empty or over the ceiling")
+        now = dt.datetime.now(dt.timezone.utc)
+        async with self.engine.sf() as session:
+            row = await session.get(TipNote, note_id, with_for_update=True)
+            if row is None:
+                raise ValueError("unknown note")
+            if row.superseded_by is not None or getattr(row, "deleted_at", None) is not None:
+                raise ValueError("not a live note — restoration targets live truncated rows only")
+            if int(row.revision_no or 1) != int(expected_revision):
+                raise ValueError(f"revision mismatch: note is revision {row.revision_no}, "
+                                 f"manifest expected {expected_revision} — re-plan")
+            if not text.startswith(row.text):
+                raise ValueError("restored text does not extend the stored text (prefix mismatch)")
+            added = len(text) - len(row.text)
+            self._snapshot(session, row, now, "restore")
+            row.text = text
+            await session.commit()
+            note = self.note_dict(row)
+        await self.engine.journal.append(
+            ev.TIP_NOTE_EDITED, {**note, "restoredFromRun": source_run_id,
+                                 "evidenceSha256": evidence_sha256, "addedChars": added},
+            aggregate_type="signal", aggregate_id=note_id)
+        return note
 
     async def apply_knowledge_batch(self, *, scope: str, merges: list, expires: list,
                                     contradictions: list, author: str, run_id: str,
