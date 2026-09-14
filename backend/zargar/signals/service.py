@@ -418,22 +418,31 @@ class SignalService:
                       author=author[:80], signal_id=signal_id, run_id=run_id,
                       valid_until=valid_until,
                       revised_at=born, revision_no=1)   # KB-03: known-from baseline at birth
+        # V65-KB-01 (2026-09-13): the row and its rule-family CLASSIFICATION
+        # commit in ONE transaction — a newcomer that conflicts with a disputed
+        # family member is born disputed; clean family members are superseded
+        # in the same commit (2026-09-04 hygiene: nine live versions of the
+        # "adoption geometry" rule were all injected into every run because
+        # supersession was only ever CLAIMED in prose). The notification comes
+        # AFTER the commit and may fail — the committed state is already final,
+        # so a failed notification can never expose an unflagged conflicting
+        # rule. (KB-02: the audit's transactional batch is the ONLY apply path
+        # for audit-authored rules — it passes family_dedupe=False.)
+        family: dict | None = None
         async with self.engine.sf() as session:
             session.add(row)
+            if scope == "rule" and family_dedupe:
+                family = await self._classify_rule_family(session, row, born)
             await session.commit()
         note = self.note_dict(row)
         await self.engine.journal.append(ev.TIP_NOTE_ADDED, note,
                                          aggregate_type="signal",
                                          aggregate_id=signal_id or row.id)
-        # rule-family hygiene (2026-09-04: nine live versions of the "adoption
-        # geometry" rule were all injected into every run because supersession
-        # was only ever CLAIMED in prose): a new rule whose family matches an
-        # existing live rule supersedes it automatically, journaled.
-        # (KB-02: the audit's transactional batch is the ONLY apply path for
-        # audit-authored rules — it passes family_dedupe=False)
-        if scope == "rule" and family_dedupe:
+        if family:
             with contextlib.suppress(Exception):
-                await self._supersede_rule_family(row)
+                await self.engine.journal.append(
+                    ev.TIP_RULE_AUDITED, {**family, "by": row.id, "via": "family-dedupe"},
+                    aggregate_type="signal", aggregate_id=row.id)
         return note
 
     _RULE_FAMILY_STOPWORDS = ("extends", "new", "corollary", "refines",
@@ -456,47 +465,39 @@ class SignalService:
             return None
         return fam
 
-    async def _supersede_rule_family(self, new_row) -> None:
-        """Rule-family hygiene under the SAME dispute invariant as the audit
-        batch (R63-01, one transaction, rows locked): a clean family member is
-        superseded (snapshot first); a DISPUTED member is never touched, and
-        the newcomer is STAGED as disputed too — a contradictory refinement
-        cannot enter the rulebook as uncontested advice while the human's
-        decision is pending. Journaled either way."""
+    async def _classify_rule_family(self, session, new_row, now) -> dict | None:
+        """Rule-family hygiene INSIDE the caller's transaction (V65-KB-01),
+        under the SAME dispute invariant as the audit batch (R63-01): family
+        rows are locked; a clean member is superseded (snapshot first); a
+        DISPUTED member is never touched, and the newcomer is STAGED as
+        disputed in the same commit — a contradictory refinement cannot enter
+        the rulebook as uncontested advice while the human's decision is
+        pending, not even for the instant between insert and notification.
+        Returns the journal payload (the caller notifies after the commit)."""
         from ..models import TipNote
         fam = self._rule_family(new_row.text)
         if fam is None:
-            return
-        now = dt.datetime.now(dt.timezone.utc)
-        async with self.engine.sf() as session:
-            live = (await session.execute(select(TipNote).where(
-                TipNote.scope == "rule", TipNote.superseded_by.is_(None),
-                TipNote.id != new_row.id).with_for_update())).scalars().all()
-            family = [r for r in live if self._rule_family(r.text) == fam]
-            if not family:
-                return
-            disputed = [r.id for r in family if r.needs_human]
-            superseded: list[str] = []
-            for r in family:
-                if r.needs_human:
-                    continue
-                self._snapshot(session, r, now, "supersede")
-                r.superseded_by = str(new_row.id)[:80]
-                superseded.append(r.id)
-            staged = False
-            if disputed:
-                me = await session.get(TipNote, new_row.id, with_for_update=True)
-                if me is not None and not me.needs_human:
-                    self._snapshot(session, me, now, "flag")
-                    me.needs_human = True
-                    staged = True
-            await session.commit()
-        await self.engine.journal.append(
-            ev.TIP_RULE_AUDITED, {"superseded": superseded, "by": new_row.id,
-                                  "family": fam, "via": "family-dedupe",
-                                  "disputedKept": disputed,
-                                  "stagedReplacement": new_row.id if staged else None},
-            aggregate_type="signal", aggregate_id=new_row.id)
+            return None
+        live = (await session.execute(select(TipNote).where(
+            TipNote.scope == "rule", TipNote.superseded_by.is_(None),
+            TipNote.id != new_row.id).with_for_update())).scalars().all()
+        family = [r for r in live if self._rule_family(r.text) == fam]
+        if not family:
+            return None
+        disputed = [r.id for r in family if r.needs_human]
+        superseded: list[str] = []
+        for r in family:
+            if r.needs_human:
+                continue
+            self._snapshot(session, r, now, "supersede")
+            r.superseded_by = str(new_row.id)[:80]
+            superseded.append(r.id)
+        staged = False
+        if disputed and not new_row.needs_human:
+            new_row.needs_human = True            # born disputed: no snapshot needed for a new row
+            staged = True
+        return {"superseded": superseded, "family": fam, "disputedKept": disputed,
+                "stagedReplacement": new_row.id if staged else None}
 
     async def update_tip_note(self, note_id: str, *, text: str | None = None,
                               scope: str | None = None) -> dict | None:
