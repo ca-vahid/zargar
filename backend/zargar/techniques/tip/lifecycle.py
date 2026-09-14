@@ -1019,8 +1019,19 @@ async def run_geometry_exception(eng, pos_id: str, state: dict) -> dict:
         return state
     st = dict(state)
 
-    async def persist(st_: dict, why: str) -> None:
-        await mgr.set_extras(pos_id, {"geometryException": st_})
+    async def persist(st_: dict, why: str, *, strict: bool = False) -> None:
+        # strict = the write must be DURABLE before the next step may move money;
+        # a non-strict write after an order exists never abandons the sequence
+        if strict:
+            await mgr.set_extras(pos_id, {"geometryException": st_}, strict=True)
+        else:
+            try:
+                await mgr.set_extras(pos_id, {"geometryException": st_}, strict=True)
+            except Exception as exc:
+                log.warning("geometry exception state write failed for %s (%s) — continuing with the "
+                            "in-memory state, reconcile at restart", pos_id[:8], exc)
+                with contextlib.suppress(Exception):
+                    p.attention.append(f"geometry exception state write failed: {str(exc)[:120]}")
         with contextlib.suppress(Exception):
             await eng.journal.append(ev.TIP_GEOMETRY_REPAIRED,
                                      {"proposalId": None, "positionId": pos_id, "underlying": p.symbol,
@@ -1115,7 +1126,29 @@ async def run_geometry_exception(eng, pos_id: str, state: dict) -> dict:
         else:
             st["attemptId"] = new_id()
             st["attemptState"] = "submitting"
-            await persist(st, "trim attempt recorded before submission")
+            try:
+                # the attempt record must be DURABLE before any trim order exists:
+                # a database failure stops the sequence here — tight stop in force,
+                # zero trim orders (the attempt id is dropped so nothing is "pending")
+                await persist(st, "trim attempt recorded before submission", strict=True)
+            except Exception as exc:
+                st.pop("attemptId", None)
+                st.pop("attemptState", None)
+                st["stopInForce"] = st.get("tightStop")
+                st["history"] = [*(st.get("history") or []),
+                                 {"from": "trim_pending", "to": "trim_pending", "event": "attempt write failed",
+                                  "error": str(exc)[:120]}]
+                with contextlib.suppress(Exception):
+                    p.attention.append(f"geometry trim NOT submitted: durable attempt write failed ({str(exc)[:100]})")
+                with contextlib.suppress(Exception):
+                    await eng.journal.append(ev.TIP_GEOMETRY_REPAIRED,
+                                             {"proposalId": None, "positionId": pos_id, "underlying": p.symbol,
+                                              "entryRef": p.entry, "repairs": [], "phase": "post-fill-exception",
+                                              "why": "attempt write failed — no trim submitted, tight stop in force",
+                                              "error": str(exc)[:160]},
+                                             aggregate_type="position", aggregate_id=pos_id,
+                                             portfolio_id=p.portfolio_id)
+                return st
             before = {x.get("orderId") for x in (p.exits or [])}
             await mgr.close(pos_id, fraction=float(st.get("trimQty") or 0) / max(1.0, float(st.get("qty") or 1)),
                             kind="geometry_trim", attempt_tag=_attempt_tag(st),

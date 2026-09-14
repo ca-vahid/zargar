@@ -389,3 +389,72 @@ async def test_default_clock_mode_records_without_pausing(rig):
     pdict = await _proposal(eng, "CLKA")
     out = await eng.proposals.approve(pdict["id"], via="auto")
     assert out["order"] is not None and not out.get("refused"), "clock mode: incidents do not pause"
+
+
+# ---------------------------------------------------------------- cause-specific release (activation blocker 2)
+async def test_invalid_quote_incident_needs_repaired_path_and_fresh_observation(rig):
+    """An invalid-quote incident releases only on a clean REPAIRED-PATH record
+    after it opened plus a qualifying FRESH observation bound to its position;
+    an earlier fill of the correct position is insufficient."""
+    from zargar.models import Execution, Order
+    eng = rig
+    pid = _pid(eng)
+    entry_order, stop_order = new_id(), new_id()
+    # the position: entered on a delayed quote (the defect), stopped later
+    async with eng.sf() as session:
+        session.add(Order(id=entry_order, portfolio_id=pid, symbol="IQA", sec_type="STK", side="BUY", qty=2.0,
+                          order_type="LMT", limit_price=10.0, status="FILLED", filled_qty=2.0, avg_fill_price=10.0,
+                          source="signal"))
+        session.add(Order(id=stop_order, portfolio_id=pid, symbol="IQA", sec_type="STK", side="SELL", qty=2.0,
+                          order_type="MKT", status="FILLED", filled_qty=2.0, avg_fill_price=9.5, source="technique"))
+        await session.commit()
+        session.add(Execution(id=new_id(), order_id=entry_order, portfolio_id=pid, symbol="IQA", side="BUY",
+                              qty=2.0, price=10.0, ts=dt.datetime.now(dt.UTC) - dt.timedelta(hours=2)))
+        await session.commit()
+    pos_id = new_id()
+    async with eng.sf() as session:
+        session.add(ManagedPositionRow(
+            id=pos_id, technique="tip", symbol="IQA", portfolio_id=pid, status="closed", tags=["source:Src"],
+            config={"direction": "long", "extras": {"riskPlan": {"enforced": True, "invariantOk": True,
+                                                                 "quote": {"delayed": True}}}},
+            legs=[{"symbol": "IQA", "secType": "STK", "qty": 0, "avgFill": 10.0, "entryOrderId": entry_order}],
+            state={"exits": [_stop_exit(NOW_MS + 45_000, orderId=stop_order)], "openedMs": NOW_MS}))
+        await session.commit()
+    (inc,) = await ig.detect_incidents(eng)
+    assert inc["cause"] == "invalid_evidence" and inc["kind"] == "integrity", inc
+    assert await ig.entry_paused(eng, portfolio_id=pid)
+    entry_exec = None
+    async with eng.sf() as session:
+        from sqlalchemy import select
+        entry_exec = (await session.execute(select(Execution.id).where(Execution.order_id == entry_order))).scalar()
+    # (1) the earlier entry fill of the CORRECT position: predates the defect -> refused
+    inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "ref": f"execution:{entry_exec}", "symbol": "IQA"})
+    with pytest.raises(ValueError, match="no repaired-path record"):
+        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=inc["revision"])
+    # (2) a clean enforced pre-entry record for this book + symbol AFTER the incident: repaired path, but no fresh observation
+    await eng.journal.append("TipGeometryRepaired",
+                             {"proposalId": None, "signalId": "sig-new", "underlying": "IQA", "entryRef": 10.2,
+                              "repairs": [], "phase": "pre-entry", "enforced": True, "mode": "enforce",
+                              "reviewRequired": None, "quote": {"delayed": False, "entryRefBasis": "limit"}},
+                             aggregate_type="signal", aggregate_id="sig-new", portfolio_id=pid)
+    async with eng.sf() as session:
+        from sqlalchemy import select
+        from zargar.models import Event
+        ev_id = (await session.execute(select(Event.id).where(Event.type == "TipGeometryRepaired")
+                                       .order_by(Event.id.desc()))).scalar()
+    inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "ref": f"event:{ev_id}"})
+    with pytest.raises(ValueError, match="no qualifying fresh observation"):
+        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=inc["revision"])
+    # a stale revision is refused even with complete evidence
+    async with eng.sf() as session:
+        session.add(Execution(id="fresh-exit-fill", order_id=stop_order, portfolio_id=pid, symbol="IQA", side="SELL",
+                              qty=2.0, price=9.5, ts=dt.datetime.now(dt.UTC)))
+        await session.commit()
+    inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "ref": "execution:fresh-exit-fill", "symbol": "IQA"})
+    with pytest.raises(ValueError, match="stale resolution"):
+        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=inc["revision"] - 1)
+    # (3) repaired path + fresh bound observation at the current revision: released
+    out = await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=inc["revision"], note="validated")
+    assert out["status"] == "resolved" and "repaired path" in out["resolution"]["validated"]
+    assert out["resolution"]["override"] is False
+    assert await ig.entry_paused(eng, portfolio_id=pid) is None

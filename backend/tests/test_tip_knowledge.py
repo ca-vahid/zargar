@@ -203,3 +203,19 @@ async def test_knowledge_audit_flags_scoped_contradictions(app_client):
     flagged = {n["id"] for n in notes if n["needsHuman"]}
     assert flagged == set(served[:2])      # exactly what the judge flagged
     assert "experiment:b1" not in fake.calls[0]["messages"][0]["content"]
+
+
+async def test_evidence_scope_is_never_injected(app_client):
+    """`evidence:<family>` notes are reachable on demand (search) but never
+    supplied to a run — not by notes_for_tip and not by the rulebook."""
+    client, eng = app_client
+    svc = eng.signals_service
+    n = await svc.add_tip_note("evidence:adoption-geometry", "AMZN 9/07 case: the handed stop was 0.2% wide (cites dbfd8177).")
+    assert n["scope"] == "evidence:adoption-geometry"
+    supplied = await svc.notes_for_tip("AMZN", "MuggZone", limit=50)
+    assert all(x["id"] != n["id"] for x in supplied)
+    from zargar.techniques.tip.analyst import _rules_text
+    text, count, snap = await _rules_text(eng)
+    assert n["id"] not in (snap or {}).get("revisionNos", {}) and "AMZN 9/07 case" not in text
+    found = await svc.search_tip_notes("AMZN 9/07", None, offset=0, limit=10)
+    assert any(x["id"] == n["id"] for x in found["items"])

@@ -355,3 +355,54 @@ async def test_accounting_is_read_from_serialized_positions(rig):
     acc2 = position_risk_accounting(mgr.get(pos2["id"]).to_dict())
     assert acc2["plannedRiskBasis"] == "executed-plan" and acc2["plannedRisk"] != 1.0
     assert acc2["hypothetical"]["plannedRisk"] == 1.0 and acc2["hypothetical"]["enforced"] is False
+
+
+# ---------------------------------------------------------------- durable trim attempt (activation blocker 1)
+async def test_attempt_write_failure_stops_the_trim_with_zero_orders(rig, monkeypatch):
+    """The attempt/state write goes through the REAL set_extras -> strict persist
+    chain; a database failure stops the sequence before any trim order exists,
+    the tighter protection stays, and nothing is left "pending"."""
+    from unittest.mock import AsyncMock
+    from zargar.techniques.tip.lifecycle import run_geometry_exception
+    eng = rig
+    mgr = eng.position_manager
+    q = await _quote(eng, "GEON")
+    tight, wide = round(q.last * 0.99, 2), round(q.last * 0.97, 2)
+    state = {"phase": "trim_pending", "tightStop": tight, "wideStop": wide, "trimQty": 5, "keepQty": 5,
+             "qty": 10, "unitLossAtWide": round(q.last * 0.03, 4), "budget": round(q.last * 0.03 * 5, 4) + 0.01,
+             "why": "test", "history": [], "stopInForce": tight}
+    pos = await _adopt_shares(eng, "GEON", qty=10, stop=tight, extras={"geometryException": state})
+    real_sf = eng.sf
+
+    class FailingSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def get(self, *_a, **_k):
+            return None
+
+        def add(self, _row):
+            pass
+
+        async def commit(self):
+            raise OSError("database unavailable")
+    close_spy = AsyncMock(wraps=mgr.close)
+    monkeypatch.setattr(mgr, "close", close_spy)
+    eng.sf = FailingSession
+    try:
+        final = await run_geometry_exception(eng, pos["id"], dict(state))
+    finally:
+        eng.sf = real_sf
+    assert close_spy.await_count == 0, "a failed attempt write must produce zero trim orders"
+    p = mgr.get(pos["id"])
+    assert p.state.stop == tight and not [x for x in p.exits if x.get("kind") == "geometry_trim"]
+    assert final["phase"] == "trim_pending" and "attemptId" not in final and final["stopInForce"] == tight
+    assert any("NOT submitted" in a for a in p.attention)
+    # with the database back, the same exception proceeds: attempt written, trim submitted, widened
+    final2 = await run_geometry_exception(eng, pos["id"], {k: v for k, v in final.items() if k != "history"} | {"history": []})
+    assert final2["phase"] == "widened" and final2.get("attemptId") and close_spy.await_count == 1
+    trims = [x for x in mgr.get(pos["id"]).exits if x.get("kind") == "geometry_trim"]
+    assert trims and trims[-1].get("attemptTag") == f"geometry_trim:{final2['attemptId']}"

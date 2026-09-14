@@ -258,6 +258,11 @@ async def _incident_order_ids(eng, inc: dict) -> set[str] | None:
 
 
 async def _resolve_proof(eng, e: dict, inc: dict | None = None) -> tuple[bool | None, str]:
+    ok, detail, _meta = await _resolve_proof_meta(eng, e, inc)
+    return ok, detail
+
+
+async def _resolve_proof_meta(eng, e: dict, inc: dict | None = None) -> tuple[bool | None, str, dict]:
     """A proof reference resolves to an ACTUAL record BOUND to the incident
     (C95-06) or it is nothing: an API-supplied boolean is not validation, and
     a record's mere existence is not either. Supported refs:
@@ -272,7 +277,7 @@ async def _resolve_proof(eng, e: dict, inc: dict | None = None) -> tuple[bool | 
     ref = str(e.get("ref") or e.get("id") or "")
     sf = getattr(eng, "sf", None)
     if not ref or ":" not in ref or sf is None:
-        return None, f"unresolvable proof reference {ref!r}"
+        return None, f"unresolvable proof reference {ref!r}", {}
     kind, _, ident = ref.partition(":")
     symbols = _incident_symbols(inc)
     pos_ids = {str(x.get("id")) for x in inc.get("evidence") or [] if x.get("kind") == "position"}
@@ -282,52 +287,64 @@ async def _resolve_proof(eng, e: dict, inc: dict | None = None) -> tuple[bool | 
             if kind == "execution":
                 row = await session.get(Execution, ident)
                 if row is None:
-                    return None, f"execution {ident} does not exist"
+                    return None, f"execution {ident} does not exist", {}
+                meta = {"kind": "execution", "ts": row.ts, "orderId": str(row.order_id), "symbol": str(row.symbol)}
                 if scope.get("portfolioId") and str(row.portfolio_id) != str(scope["portfolioId"]):
-                    return None, f"execution {ident} is in book {row.portfolio_id}, not the incident's — unrelated"
+                    return None, f"execution {ident} is in book {row.portfolio_id}, not the incident's — unrelated", meta
                 if symbols and str(row.symbol).upper() not in symbols:
-                    return None, f"execution {ident} is for {row.symbol}, not {', '.join(sorted(symbols))} — unrelated"
+                    return None, f"execution {ident} is for {row.symbol}, not {', '.join(sorted(symbols))} — unrelated", meta
                 order_ids = await _incident_order_ids(eng, inc)
                 if order_ids is None:
-                    return None, f"execution {ident}: the incident's positions could not be loaded"
+                    return None, f"execution {ident}: the incident's positions could not be loaded", meta
                 if str(row.order_id) not in order_ids:
-                    return None, f"execution {ident} belongs to order {row.order_id}, not one of the incident's positions — unrelated"
-                return True, f"execution {ident} {row.side} {row.qty:g} @ {row.price} at {row.ts.isoformat()}"
+                    return None, f"execution {ident} belongs to order {row.order_id}, not one of the incident's positions — unrelated", meta
+                return True, f"execution {ident} {row.side} {row.qty:g} @ {row.price} at {row.ts.isoformat()}", meta
             if kind == "event":
                 row = await session.get(Event, int(ident))
                 if row is None:
-                    return None, f"journal event {ident} does not exist"
+                    return None, f"journal event {ident} does not exist", {}
                 p = row.payload or {}
+                meta = {"kind": "event", "ts": row.ts, "type": row.type, "payload": p}
+                if scope.get("portfolioId") and row.portfolio_id and str(row.portfolio_id) != str(scope["portfolioId"]):
+                    return None, f"journal event {ident} is in another book — unrelated", meta
+                if row.type == "TipGeometryRepaired":
+                    # a REPAIRED-PATH record: bound by book + the incident's underlying(s)
+                    under = str(p.get("underlying") or "").upper()
+                    if symbols and under not in symbols:
+                        return None, f"journal event {ident} is about {under or '?'}, not the incident's symbol — unrelated", meta
+                    if not scope.get("portfolioId") and not p.get("portfolioId"):
+                        pass
+                    q = p.get("quote") or {}
+                    ok = bool(p.get("enforced")) and not p.get("reviewRequired") and not q.get("delayed") \
+                        and not q.get("underlyingDelayed")
+                    return ok, (f"event {ident}: {'enforced pre-entry plan without review' if ok else 'pre-entry record not a clean repaired path'}"), {**meta, "repairedPath": ok}
                 bound = (str(p.get("positionId") or "") in pos_ids
                          or str(p.get("proposalId") or "") in {str(x.get("id")) for x in inc.get("evidence") or [] if x.get("kind") == "proposal"})
                 if not bound:
-                    return None, f"journal event {ident} is not about one of the incident's positions/proposals — unrelated"
-                if scope.get("portfolioId") and row.portfolio_id and str(row.portfolio_id) != str(scope["portfolioId"]):
-                    return None, f"journal event {ident} is in another book — unrelated"
-                if row.type == "TipGeometryRepaired" and p.get("enforced") and not p.get("reviewRequired"):
-                    return True, f"event {ident}: enforced pre-entry plan without review"
+                    return None, f"journal event {ident} is not about one of the incident's positions/proposals — unrelated", meta
                 if row.type == "TipFastStopDiagnostic":
-                    return (p.get("verdict") == "valid"), f"event {ident}: diagnostic verdict {p.get('verdict')}"
+                    return (p.get("verdict") == "valid"), f"event {ident}: diagnostic verdict {p.get('verdict')}", {**meta, "observation": True}
                 if row.type == "ManagedPositionExit" and p.get("confirmation"):
-                    return bool((p.get("confirmation") or {}).get("confirmed")), f"event {ident}: exit confirmation record"
-                return None, f"journal event {ident} ({row.type}) carries no structured validity"
+                    return bool((p.get("confirmation") or {}).get("confirmed")), f"event {ident}: exit confirmation record", {**meta, "observation": True}
+                return None, f"journal event {ident} ({row.type}) carries no structured validity", meta
             if kind == "position":
                 if pos_ids and ident not in pos_ids:
-                    return None, f"position {ident} is not one of the incident's positions — unrelated"
+                    return None, f"position {ident} is not one of the incident's positions — unrelated", {}
                 row = await session.get(ManagedPositionRow, ident)
                 if row is None:
-                    return None, f"position {ident} does not exist"
+                    return None, f"position {ident} does not exist", {}
+                meta = {"kind": "position", "ts": getattr(row, "updated_at", None)}
                 if scope.get("portfolioId") and str(row.portfolio_id) != str(scope["portfolioId"]):
-                    return None, f"position {ident} is in another book — unrelated"
+                    return None, f"position {ident} is in another book — unrelated", meta
                 rp = ((row.config or {}).get("extras") or {}).get("riskPlan") or {}
                 if not rp:
-                    return None, f"position {ident} has no risk plan"
+                    return None, f"position {ident} has no risk plan", meta
                 ok = bool(rp.get("enforced")) and rp.get("invariantOk") is True and not rp.get("reviewRequired") \
                     and not (rp.get("quote") or {}).get("delayed")
-                return ok, f"position {ident}: enforced={rp.get('enforced')} invariantOk={rp.get('invariantOk')}"
+                return ok, f"position {ident}: enforced={rp.get('enforced')} invariantOk={rp.get('invariantOk')}", meta
     except Exception as exc:
-        return None, f"proof {ref} could not be resolved: {exc}"
-    return None, f"unknown proof kind {kind!r}"
+        return None, f"proof {ref} could not be resolved: {exc}", {}
+    return None, f"unknown proof kind {kind!r}", {}
 
 
 async def _validate_release(eng, inc: dict, note: str) -> tuple[bool, str]:
@@ -341,12 +358,23 @@ async def _validate_release(eng, inc: dict, note: str) -> tuple[bool, str]:
     pos_ids = [str(e.get("id")) for e in inc.get("evidence") or [] if e.get("kind") == "position"]
     proofs = [e for e in inc.get("evidence") or [] if e.get("kind") == "proof"]
 
+    resolved: list[tuple] = []
+
     async def resolved_proofs() -> tuple[list[str], list[str], list[str]]:
         good, bad, unknown = [], [], []
+        resolved.clear()
         for e in proofs:
-            ok, detail = await _resolve_proof(eng, e, inc)
+            ok, detail, meta = await _resolve_proof_meta(eng, e, inc)
+            resolved.append((ok, detail, meta))
             (good if ok else bad if ok is False else unknown).append(detail)
         return good, bad, unknown
+
+    def _opened() -> dt.datetime | None:
+        try:
+            t = dt.datetime.fromisoformat(inc["openedAt"])
+            return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+        except Exception:
+            return None
 
     if cause == "geometry_violation_filled":
         if mgr is None:
@@ -420,12 +448,33 @@ async def _validate_release(eng, inc: dict, note: str) -> tuple[bool, str]:
         return True, (f"{len(good)} resolved proof record(s) validate the trade: " + "; ".join(good)
                       + (f" (ignored {len(unknown)} unresolvable reference(s))" if unknown else ""))
     if cause == "invalid_evidence":
+        # an INVALID-QUOTE / invalid-evidence incident releases only when the
+        # entry/exit path is proven REPAIRED (a clean enforced pre-entry record
+        # for this book + symbol, AFTER the incident opened) AND a qualifying
+        # FRESH observation exists (an execution or confirmed exit record bound
+        # to the incident's positions, AFTER the incident opened). An earlier
+        # fill — even of the correct position — predates the defect and proves
+        # nothing about the repair.
         good, bad, unknown = await resolved_proofs()
         if bad:
-            return False, "the fresh observation itself shows a defect: " + "; ".join(bad)
-        if not good:
-            return False, "no fresh valid observation resolves to a record"
-        return True, "fresh observation recorded: " + "; ".join(good)
+            return False, "the appended evidence itself shows a defect: " + "; ".join(bad)
+        opened = _opened()
+        if opened is None:
+            return False, "the incident has no usable opening time"
+        repaired = [d for ok, d, m in resolved if ok and m.get("repairedPath") and m.get("ts") and m["ts"] > opened]
+        stale_repairs = [d for ok, d, m in resolved if ok and m.get("repairedPath") and m.get("ts") and m["ts"] <= opened]
+        fresh = [d for ok, d, m in resolved if ok and (m.get("kind") == "execution" or m.get("observation"))
+                 and m.get("ts") and m["ts"] > opened]
+        stale = [d for ok, d, m in resolved if ok and (m.get("kind") == "execution" or m.get("observation"))
+                 and m.get("ts") and m["ts"] <= opened]
+        if not repaired:
+            return False, ("no repaired-path record after the incident opened"
+                           + (f" (a record predating it does not count: {'; '.join(stale_repairs)})" if stale_repairs else "")
+                           + (f"; unresolved: {'; '.join(unknown)}" if unknown else ""))
+        if not fresh:
+            return False, ("no qualifying fresh observation after the incident opened"
+                           + (f" — an earlier fill predates the defect: {'; '.join(stale)}" if stale else ""))
+        return True, "repaired path: " + "; ".join(repaired) + " | fresh observation: " + "; ".join(fresh)
     if cause == "repeated_pre_entry_failure":
         # the calendar never releases on its own: a SUCCESSFUL pre-entry
         # validation on this path must be on the journal AFTER the incident opened
@@ -585,7 +634,9 @@ def classify_fast_stop(position: dict, *, now_ms: int | None = None,
     fast = (seconds is not None and seconds < FAST_STOP_S)
     base = {"seconds": seconds, "exitKind": kind, "timing": timing if seconds is not None else "unknown"}
     if plan_status == "invalid" or exit_status == "invalid":
-        return {"verdict": "invalid", "why": plan_why if plan_status == "invalid" else exit_why, **base}
+        why = plan_why if plan_status == "invalid" else exit_why
+        defect = ("quote" if "delayed quote" in why else "exit-evidence" if exit_status == "invalid" else "geometry")
+        return {"verdict": "invalid", "why": why, "defect": defect, **base}
     if seconds is None:
         return {"verdict": "evidence_missing", "why": "no execution timestamps on the record", **base}
     if not fast:
@@ -668,7 +719,9 @@ async def detect_incidents(eng, *, portfolio_id: str | None = None, strict: bool
             # failed incident write is retried on the next detection
             inc = None
             if verdict["verdict"] == "invalid":
-                inc = await open_incident(eng, kind="integrity", cause="geometry_violation_filled",
+                cause = ("invalid_evidence" if verdict.get("defect") in ("quote", "exit-evidence")
+                         else "geometry_violation_filled")
+                inc = await open_incident(eng, kind="integrity", cause=cause,
                                           scope=scope, evidence=evidence, why=f"{r.symbol}: {verdict['why']}")
             elif verdict["verdict"] == "evidence_missing":
                 inc = await open_incident(eng, kind="hold", cause="evidence_missing", scope=scope,

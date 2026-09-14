@@ -181,7 +181,11 @@ class SignalService:
             return float(s.get("techniques.tip.note_ttl_scoped_days", 90))
         return None
 
-    _SCOPE_PREFIXES = ("ticker:", "source:", "signal:", "experiment:", "daily:")
+    _SCOPE_PREFIXES = ("ticker:", "source:", "signal:", "experiment:", "daily:", "evidence:")
+    # `evidence:<family>` (consolidation packet, 2026-09-14): dated case records
+    # that CITE a rule; reachable by search and the analyst's notes tool on
+    # demand, NEVER auto-injected (notes_for_tip / rulebook selection do not
+    # read it) and never audited (guard test in test_tip_knowledge)
     NOTE_TEXT_MAX = 20000     # a hard ceiling, refused visibly — never sliced
 
     @classmethod
@@ -209,7 +213,7 @@ class SignalService:
                     raise ValueError("scope too long (160)")
                 return out
         raise ValueError(f"unknown scope '{sc}' — use general, rule, ticker:<SYM>, "
-                         "source:<name>, signal:<id>, daily:<date>, experiment:<batch>")
+                         "source:<name>, signal:<id>, daily:<date>, experiment:<batch>, evidence:<family>")
 
     @staticmethod
     def _snapshot(session, row, now, reason: str) -> None:

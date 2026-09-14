@@ -925,14 +925,25 @@ class PositionManager:
         await self._persist(p)
         return p.to_dict()
 
-    async def set_extras(self, pid: str, patch: dict) -> dict | None:
+    async def set_extras(self, pid: str, patch: dict, *, strict: bool = False) -> dict | None:
         """Technique-owned facts on a position (tips geometry rev 2: the
         pre-entry riskPlan, a post-fill exception's state machine). Persisted
-        in config.extras; the policy evaluator never reads them."""
+        in config.extras; the policy evaluator never reads them. `strict=True`
+        (a write that must be DURABLE before money moves — the trim attempt
+        record) raises on a database failure and leaves the in-memory extras
+        as they were; the default keeps the legacy best-effort persist."""
         p = self._pos.get(pid)
         if p is None:
             return None
-        p.extras = {**(p.extras or {}), **(patch or {})}
+        before = dict(p.extras or {})
+        p.extras = {**before, **(patch or {})}
+        if strict:
+            try:
+                await self._persist_candidate(p, policy=dict(p.policy), stop=p.state.stop)
+            except Exception:
+                p.extras = before
+                raise
+            return p.to_dict()
         await self._persist(p)
         return p.to_dict()
 
