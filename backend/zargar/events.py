@@ -62,7 +62,9 @@ TIP_LANE_DECIDED = "TipLaneDecided"                # which lane a take went down
 TIP_SPREAD_LEG_FAILED = "TipSpreadLegFailed"       # spread short leg died AND the long rollback failed — naked long, needs a person
 TIP_LANE_GRADED = "TipLaneGraded"                  # now-vs-at_level counterfactual, graded once the tip resolved
 TIP_RULE_AUDITED = "TipRuleAudited"                # weekly rule audit: merges/expiries applied, contradictions flagged
-TIP_KNOWLEDGE_MAINTENANCE = "TipKnowledgeMaintenance"   # KB-01: the weekly knowledge job ran / skipped / partial / failed (own schedule)
+TIP_KNOWLEDGE_MAINTENANCE = "TipKnowledgeMaintenance"
+TIP_EXECUTION_INCIDENT = "TipExecutionIncident"    # KB-06: incident opened / evidence / release_refused / resolved / cancelled_resting_entry
+TIP_FAST_STOP_DIAGNOSTIC = "TipFastStopDiagnostic" # KB-06: a fast stop classified from structured exit kinds + execution times (valid | evidence_missing | invalid)   # KB-01: the weekly knowledge job ran / skipped / partial / failed (own schedule)
 SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before the tip's horizon/expiry
 SIGNAL_DISMISSED = "SignalDismissed"                # user deleted the tip (soft: status=dismissed, plan disarmed, proposal expired)
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads

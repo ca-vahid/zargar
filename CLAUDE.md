@@ -131,9 +131,13 @@ a rule makes it CORE (always supplied); ⚑ dispute flags a note through the jou
 path; supply is stamped BEFORE the first provider call, reliance after. Truncated
 notes are restored ONLY via `zargar.tools.tip_note_restore` (manifest + `--confirm
 <hash>`, revision transition). Bulk knowledge cleanup is HELD until the
-consolidation packet's policy decisions are made; the KB-06 execution-integrity pause is
-a DESIGN (`docs/techniques/tip/reviews/2026-09-13-kb06-execution-integrity-pause.md`) —
-the clock-based `adoption_killswitch` stays until it is built and reviewed.
+consolidation packet's policy decisions are made. **Money-path builds awaiting review
+(2026-09-14, own branches, NOT merged/active):** geometry rev 2 (`techniques/tip/geometry.py`,
+`techniques.tip.geometry_gate` default `shadow`; PR #91) and the KB-06 execution-integrity
+pause (`techniques/tip/integrity.py`, `techniques.tip.entry_pause_mode` default `clock` = the
+2026-09-04 `adoption_killswitch` stays the live gate; incidents are recorded in every mode and
+pause automated entries only in `integrity`/`both`; design
+`docs/techniques/tip/reviews/2026-09-13-kb06-execution-integrity-pause.md`).
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries

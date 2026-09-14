@@ -2312,12 +2312,15 @@ class SignalService:
                             # GEOMETRY rev 2: a review-gated card never auto-approves
                             gate = f"geometry review required: {(proposal.get('context') or {}).get('reviewRequired')}"
                         if not gate:
-                            # nine-strike session clause (2026-09-04): one adoption
-                            # stopped out within minutes today = the hand-off
-                            # pipeline is suspect — autos pause for the session
+                            # KB-06 (2026-09-14): the entry pause — the clock gate (the
+                            # 2026-09-04 nine-strike clause, default), execution-integrity
+                            # incidents, or both (techniques.tip.entry_pause_mode); detection
+                            # runs first so a fresh defect pauses this very card
                             with contextlib.suppress(Exception):
-                                from ..techniques.tip.lifecycle import adoption_killswitch
-                                ks = await adoption_killswitch(eng)
+                                from ..techniques.tip import integrity as _ig
+                                await _ig.detect_incidents(eng)
+                                ks = await _ig.gate_reason(eng, portfolio_id=proposal.get("portfolioId"),
+                                                           entry_path="proposal")
                                 if ks:
                                     gate = ks
                                     await eng.journal.append(

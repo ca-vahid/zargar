@@ -217,11 +217,13 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.knowledge_apply_enabled": False,     # PROPOSE-ONLY by default (Codex 2026-09-13): audits validate + journal proposals and flag disputes; merges/expiries apply only when this is on
     "techniques.tip.audit_max_output_tokens": 3000,      # audit reply cap; doubled once on a max_tokens stop with no JSON (the first live run returned an empty reply)  # per-turn output cap; doubled (max 8192) after a max_tokens stop (RKLB truncation, 2026-09-11)
     # GEOMETRY-RISK-PLAN rev 2 (built 2026-09-14, reviewer GO; ACTIVATION is a separate reviewed decision)
-    "techniques.tip.geometry_gate": "shadow",            # off | shadow (compute + journal, sizes untouched) | enforce (final stop + size against the risk budget BEFORE entry)
+    "techniques.tip.geometry_gate": "shadow",            # off | shadow (compute + journal, sizes untouched) | enforce (final stop + size against the risk budget BEFORE entry, Practice books only)
     "techniques.tip.risk_budget_per_tip": 0.0,           # $ planned loss per tip at the FINAL stop; 0 = techniques.tip.risk_pct % of the book's equity
-    "techniques.tip.geometry_resize_threshold_pct": 10.0,
+    "techniques.tip.geometry_resize_threshold_pct": 10.0, # a stop widening >= this is 'review' severity for the record; the qty x unitLoss <= budget invariant holds regardless
     "techniques.tip.geometry_greeks_max_age_seconds": 900.0,   # G91-02: a delta older than this is NO estimate (review), never a guess
-    "techniques.tip.geometry_quote_max_age_seconds": 300.0,    # G91-02: the underlying reference quote for an option plan must be this fresh # a stop widening >= this is 'review' severity for the record; the qty x unitLoss <= budget invariant holds regardless
+    "techniques.tip.geometry_quote_max_age_seconds": 300.0,    # G91-02: the underlying reference quote for an option plan must be this fresh
+    # KB-06 execution-integrity pause (built 2026-09-14, reviewer GO; ACTIVATION is a separate reviewed decision)
+    "techniques.tip.entry_pause_mode": "clock",    # clock (the 2026-09-04 nine-strike clause, DEFAULT) | integrity (execution-integrity incidents pause automated entries) | both — incidents are detected + recorded in every mode
     "techniques.tip.reserve_slots": 3,            # glide sizing (2026-09-07): budget = min(budget_per_tip, free cash / this) — always room for ~N more tips (0 = off)
     "techniques.tip.min_budget": 500.0,           # the glide's floor: a late tip still gets a minimum expression while any cash lasts
     # --- the lotto lane (0–3 DTE tips; user decision 2026-09-01) ---

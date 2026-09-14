@@ -827,10 +827,25 @@ class PositionManager:
         await self._persist(p)
         return rec
 
+    def _premium_confirmation_record(self, p: Managed) -> dict:
+        """The STRUCTURED evidence of a confirmed premium stop (KB-06 I93-02):
+        the two distinct observations that paired, or `confirmed: false`."""
+        prev = self._premium_confirm.get(p.id) or {}
+        obs = self._mark_obs_ts.get(p.id) or {}
+        first = prev.get("obs") or {}
+        confirmed = bool(first) and bool(obs) and set(obs) == set(first) and all(obs[k] > first[k] for k in obs)
+        return {"confirmed": confirmed,
+                "observations": ([{"at": prev.get("at"), "sourceTs": dict(first)}, {"sourceTs": dict(obs)}]
+                                 if first and obs else []),
+                "mark": self._mark_evidence.get(p.id)}
+
     @serialized_adapter
     async def close(self, pid: str, *, fraction: float = 1.0, reason: str = "manual close",
-                    kind: str = "close", force_market: bool = False) -> dict | None:
-        """Reduce every open leg together (partial closes stay proportional)."""
+                    kind: str = "close", force_market: bool = False,
+                    evidence: dict | None = None) -> dict | None:
+        """Reduce every open leg together (partial closes stay proportional).
+        `evidence` (optional, structured) rides on the exit records — a
+        premium stop's confirmation record, never prose."""
         p = self._pos.get(pid)
         if p is None:
             return None
@@ -861,7 +876,9 @@ class PositionManager:
             want = abs(leg.qty) * fraction
             if leg.sec_type == "OPT":
                 want = float(int(round(want))) or (1.0 if fraction > 0 else 0.0)
-            await self._close_leg(p, leg, want, force_market=force_market, kind=kind, reason=reason)
+            rec = await self._close_leg(p, leg, want, force_market=force_market, kind=kind, reason=reason)
+            if rec is not None and evidence is not None:
+                rec["confirmation" if kind == "premium_stop" else "evidence"] = dict(evidence)
         await self._persist(p)
         return p.to_dict()
 
@@ -988,6 +1005,7 @@ class PositionManager:
             if fq > prev:
                 rec["filledQty"] = fq
                 rec["price"] = o.get("avgFillPrice")
+                rec["filledTs"] = self.now_ms()               # the fill's arrival, never the intent's time
                 leg = next((l for l in p.legs if l.symbol == (o.get("symbol") or "").upper()
                             or l.symbol == rec.get("leg")), None)
                 if leg is not None:
@@ -1185,13 +1203,16 @@ class PositionManager:
             await self._ensure_venue_stop(p)
         for d in decisions:
             reason = d.reason
+            evidence = None
             if "premium" in d.kind:
                 # a premium exit names its evidence (Codex 1B): which quote,
                 # from where, how old — never a bare number of unknown origin
                 reason = f"{d.reason} [mark: {self._mark_evidence.get(p.id, '?')}]"
+            if d.kind == "premium_stop":
+                evidence = self._premium_confirmation_record(p)
             self._log(p, d.kind, reason)
             await self.close(p.id, fraction=d.fraction, reason=reason, kind=d.kind,
-                             force_market=d.kind in ("stop", "premium_stop"))
+                             force_market=d.kind in ("stop", "premium_stop"), evidence=evidence)
         if not decisions:
             await self._persist(p)
 
@@ -1509,7 +1530,8 @@ class PositionManager:
                                    f"[mark: {self._mark_evidence.get(p.id, '?')}]")
                         self._log(p, d.kind, wreason)
                         await self.close(p.id, fraction=d.fraction, reason=wreason, kind=d.kind,
-                                         force_market=d.kind == "premium_stop")
+                                         force_market=d.kind == "premium_stop",
+                                         evidence=(self._premium_confirmation_record(p) if d.kind == "premium_stop" else None))
                         continue
                     new_state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
                                                       dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))

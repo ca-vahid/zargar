@@ -265,7 +265,7 @@ class ProposalService:
             underlying=signal_row.ticker, direction=direction, pid=portfolio_id,
             exit_plan=arm_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol,
             limit=limit, qty=qty, entry_hint=entry, source=signal_row.source_name,
-            signal_id=signal_row.id, analyst_run_id=analyst_run_id)
+            signal_id=signal_row.id, analyst_run_id=analyst_run_id, entry_path="arm")
         if gnote:
             explain += " " + gnote
         if arm_risk is not None and arm_risk.enforced:
@@ -754,7 +754,8 @@ class ProposalService:
                                   limit: float, qty: int, entry_hint: float | None,
                                   source: str | None, signal_id: str | None,
                                   analyst_run_id: str | None, phase: str = "pre-entry",
-                                  proposal_id: str | None = None) -> tuple[dict, int, object | None, str]:
+                                  proposal_id: str | None = None,
+                                  entry_path: str = "proposal") -> tuple[dict, int, object | None, str]:
         """GEOMETRY-RISK-PLAN rev 2, steps 1-3 (reviewer-tightened G91-01/02/03):
         the same geometry rules the adoption gate runs — BEFORE entry — producing
         the FINAL stop; the size is derived from that stop against the approved
@@ -801,15 +802,17 @@ class ProposalService:
                         ev.TIP_GEOMETRY_REPAIRED,
                         {"proposalId": proposal_id, "signalId": signal_id, "underlying": underlying,
                          "entryRef": None, "repairs": [], "phase": phase, "enforced": True, "mode": mode,
-                         "reviewRequired": out[2].reviewRequired, "analystRunId": analyst_run_id,
-                         "source": source},
+                         "entryPath": entry_path, "reviewRequired": out[2].reviewRequired,
+                         "analystRunId": analyst_run_id, "source": source},
                         aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
+                await self._note_pre_entry_failure(pid, entry_path, out[2].reviewRequired, signal_id)
             return out
         with contextlib.suppress(Exception):
             await eng.journal.append(
                 ev.TIP_GEOMETRY_REPAIRED,
                 {"proposalId": proposal_id, "signalId": signal_id, "underlying": underlying,
                  "entryRef": rp.entryRef, "repairs": list(rp.repairs), "phase": phase,
+                 "entryPath": entry_path,
                  "enforced": rp.enforced, "mode": mode, "plannedRisk": rp.plannedRisk,
                  "stressRisk": rp.stressRisk, "finalRisk": rp.plannedRisk,
                  "estimatorVersion": rp.estimatorVersion, "resizedFrom": rp.qtyRequested,
@@ -823,6 +826,8 @@ class ProposalService:
             if rp.reviewRequired:
                 note = (f"Geometry gate: NO automatic entry — {rp.reviewRequired}. "
                         f"The card waits for you.")
+                if phase == "pre-entry":
+                    await self._note_pre_entry_failure(pid, entry_path, rp.reviewRequired, signal_id)
                 return final_plan, qty, rp, note
             if rp.resized:
                 note = f"Geometry gate: {rp.resizeReason}."
@@ -834,6 +839,15 @@ class ProposalService:
                     (f"resize {rp.qtyRequested} → {rp.qty}" if rp.resized else "repair the stop") +
                     (f"; review: {rp.reviewRequired}" if rp.reviewRequired else "") + ".")
         return exit_plan, qty, rp, note
+
+    async def _note_pre_entry_failure(self, pid: str, entry_path: str, reason: str, ref: str | None) -> None:
+        """KB-06 wiring: a review-gated pre-entry result is refused on its own;
+        REPEATED ones on one entry path in a session open an integrity
+        incident for that path (recorded in every pause mode)."""
+        with contextlib.suppress(Exception):
+            from ..techniques.tip import integrity as _ig
+            await _ig.record_pre_entry_failure(self.engine, portfolio_id=pid, entry_path=entry_path,
+                                               reason=str(reason or "")[:160], ref=ref)
 
     async def _compute_risk_plan(self, *, mode: str, underlying: str, direction: str, pid: str,
                                  exit_plan: dict, vehicle: dict, sec_type: str, symbol: str,
@@ -1087,8 +1101,15 @@ class ProposalService:
         limit = intent.limit_price
         if fresh_ask and limit and fresh_ask < float(limit):
             limit = round(fresh_ask, 2)
-        # GEOMETRY rev 2: a queued retry is admitted like a fresh entry
-        rqty, pdict, refusal = await self._admit_geometry(pdict, limit=limit, qty=intent.qty, via="auto")
+        # KB-06 then GEOMETRY rev 2: a queued retry is admitted like a fresh
+        # automated entry — the integrity pause first (fails closed), then the
+        # whole risk plan at the retry limit
+        from ..techniques.tip import integrity as _ig
+        refusal = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="retry",
+                                      symbol=(ctx.get("vehicle") or {}).get("underlying") or pdict["symbol"])
+        rqty = intent.qty
+        if not refusal:
+            rqty, pdict, refusal = await self._admit_geometry(pdict, limit=limit, qty=intent.qty, via="auto")
         if refusal:
             stamp["retryRefused"] = refusal
             async with eng.sf() as session:
@@ -1126,6 +1147,18 @@ class ProposalService:
     async def approve(self, proposal_id: str, *, via: str = "app",
                       half: bool = False) -> dict:
         eng = self.engine
+        # KB-06: an AUTOMATED approval of a tip card is admitted only while no
+        # execution-integrity incident pauses this book (a human's click is a decision)
+        if via == "auto":
+            async with eng.sf() as session:
+                pre = await session.get(Proposal, proposal_id)
+                pre_pid = pre.portfolio_id if pre is not None else None
+                pre_tip = bool(pre is not None and (pre.context or {}).get("techniqueId") == "tip")
+            if pre_tip:
+                from ..techniques.tip import integrity as _ig
+                paused = await _ig.admission(eng, portfolio_id=pre_pid, entry_path="proposal")
+                if paused:
+                    return await self._refuse_automated(proposal_id, reason=paused)
         async with eng.sf() as session:
             row = await session.get(Proposal, proposal_id)
             if row is None:
@@ -1223,6 +1256,12 @@ class ProposalService:
             order_type=pdict["orderType"], limit_price=limit,
             bracket=bracket, source="signal",
             signal_id=pdict["signalId"], proposal_id=proposal_id)
+        # KB-06 final admission: immediately before the entry order exists
+        if via == "auto" and (pdict.get("context") or {}).get("techniqueId") == "tip":
+            from ..techniques.tip import integrity as _ig
+            paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal")
+            if paused:
+                return await self._refuse_automated(proposal_id, reason=paused, revert=True)
         order = await eng.orders.place(intent)
         order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
 

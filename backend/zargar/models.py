@@ -755,6 +755,30 @@ class TipNoteRevision(Base):
     reason: Mapped[str] = mapped_column(String(40), default="edit")   # edit|supersede|pin|refresh|flag|delete
 
 
+class TipExecutionIncident(Base):
+    """KB-06 (2026-09-14): an execution-integrity INCIDENT — persisted evidence
+    that the automated entry path produced or acted on something the desk
+    cannot trust. Opened by structured evidence, scoped to what it implicates,
+    honoured at final admission by every automated entry path, released only
+    by a cause-specific validation at the incident's current revision. Never
+    cleared by a clock, a restart or a date rollover."""
+    __tablename__ = "tip_execution_incidents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)   # open | resolved
+    kind: Mapped[str] = mapped_column(String(16))                                   # integrity | hold
+    cause: Mapped[str] = mapped_column(String(48))
+    scope: Mapped[dict] = mapped_column(JSONVariant, default=dict)      # {technique, portfolioId, entryPath?, symbol?}
+    evidence: Mapped[list] = mapped_column(JSONVariant, default=list)   # references only: {kind, id, note, at, ...}
+    release_criteria: Mapped[str] = mapped_column(Text, default="")
+    why: Mapped[str] = mapped_column(Text, default="")
+    revision: Mapped[int] = mapped_column(Integer, default=1)           # bumps on every evidence append
+    resolver: Mapped[str | None] = mapped_column(String(80))
+    resolution: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+
+
 class TipKnowledgeCycle(Base):
     """R63-04: one bounded knowledge-audit CYCLE — the eligible scope set at
     cycle start plus per-scope progress (pending / done / failed / dropped,
