@@ -1532,3 +1532,30 @@ producer payload or risk setting changed. The journal registry invariant passes.
   `consolidation-killswitch-2026-09-14`); the analyst's rulebook now states the incident-based
   policy in the same words the code enforces.
 
+### Runaway stop loop on a scaled-in position — 2026-09-14 (v0.7.68, PR #98)
+
+- **What happened:** APLD on the `🌟｜ab` ARMED SHADOW book (research, no money) held two
+  same-symbol legs (35 adopted 09-09, 35 scaled in 09-10). At 04:00 ET the pre-market quote
+  breached the stop; `close()` submitted one SELL per leg, but `on_order_update` attributed
+  every fill to the FIRST leg by symbol — the second leg's fill flipped the first (already
+  flat) leg back to +35, `open_legs` never emptied, `_mark_closed` never ran, and the quote
+  watch re-fired every ~4 s: 3,282 stop exits, the book 37,625 shares short by the 08:23 ET
+  pre-open tick (40,600 by the 08:34 deploy). The `🌟｜eva` shadow book's TSLA record (we
+  hold 7, venue −5) is the same family from an earlier day, caught by reconcile as attention.
+- **Fix (execution/positions.py):** an exit fill reduces every open leg of that symbol TOWARD
+  FLAT and never past zero (a fill beyond the open legs is flagged, not applied); and a
+  reduce-only exit never sells what the venue does not hold — when the venue line is flat or
+  on the other side the stale leg is marked flat (or shrunk to the venue line) and a record
+  whose legs were all stale closes on attention instead of looping. An UNKNOWN venue line
+  (never seen / lagging live poll) never blocks a protective exit. Tests:
+  `tests/test_exit_leg_attribution.py` (6, incl. the restored runaway record).
+- **Invariant 20 — a reduce-only exit never takes the venue book through zero.** The
+  in-flight guard (`_inflight_exit_qty`) is per symbol and the leg reduction must be too;
+  any code that adds a leg for a symbol the position already holds (scale-in, partial-fill
+  adoption, assignment) inherits this. Sim executors fill anything, so the invariant lives in
+  the manager, not the venue.
+- **Why the pre-open tick mattered:** no alert fired — every exit was a "successful" fill.
+  The desk sweep now prints fills by book/symbol; a fill count out of proportion to the
+  number of positions is the signal. The shadow books keep the short (research P&L only);
+  resetting them is the user's call.
+
