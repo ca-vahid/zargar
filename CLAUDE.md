@@ -119,11 +119,18 @@ receipt row `tip_knowledge_batches` written in the SAME transaction = the idempo
 key, journal after) and the desk runs **PROPOSE-ONLY** (`techniques.tip.knowledge_apply_enabled`
 False: merges/expiries are recorded as proposals — Knowledge tab "Audit proposals" — and
 only contradiction flags land); the weekly audit runs from its own
-`tip_knowledge_maintenance` job (daily, weekends included, journaled status;
-least-recently-audited groups first; only a genuine `done` advances catch-up) — never
-chain paid weekly work inside a weekday-only job. Pinning a rule makes it CORE (always
-supplied); ⚑ dispute flags a note through the journaled path; supply is stamped BEFORE
-the first provider call, reliance after. Bulk knowledge cleanup is HELD until the
+`tip_knowledge_maintenance` job (daily, weekends included, journaled status) as ONE
+persisted CYCLE (`tip_knowledge_cycles`, v0.7.65): pending scopes only, untouched
+first, failed scopes back off and are set aside after 3 attempts (receipt rows
+`status=failed`), the rulebook is judged once per cycle, and only a completed cycle
+(`done`) advances catch-up — never chain paid weekly work inside a weekday-only job.
+A DISPUTED (`needs_human`) row is never superseded by ANY writer — the shared
+`supersede_tip_notes` refuses it and family dedupe stages the newcomer as disputed;
+a delete is a tombstone (`deleted_at`, replacement link kept, snapshot minted). Pinning
+a rule makes it CORE (always supplied); ⚑ dispute flags a note through the journaled
+path; supply is stamped BEFORE the first provider call, reliance after. Truncated
+notes are restored ONLY via `zargar.tools.tip_note_restore` (manifest + `--confirm
+<hash>`, revision transition). Bulk knowledge cleanup is HELD until the
 consolidation packet's policy decisions are made; the KB-06 execution-integrity pause is
 a DESIGN (`docs/techniques/tip/reviews/2026-09-13-kb06-execution-integrity-pause.md`) —
 the clock-based `adoption_killswitch` stays until it is built and reviewed.

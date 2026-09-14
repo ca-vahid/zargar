@@ -100,17 +100,28 @@ guard test) — and that code change is a prerequisite of this batch.
 Correction: the earlier "32 rules" was not reproducible from the store —
 **29** live `rule` rows name the consolidated adoption-geometry VETO or are
 the stop/exit-design rules the family folds in; the other three of the old
-count could not be identified and are dropped. All 29 are `revision_no = 1`
-at review time (the batch carries these as `expected_revisions`). Two of
-the 29 are DISPUTED (`needs_human`, journaled 2026-09-13) and are EXCLUDED
-from any batch until the kill-switch decision — and because one of them is
-the family's base note, the family batch cannot apply before that decision.
+count could not be identified and are dropped. Revisions verified against
+the live store on 2026-09-14 00:47 UTC: 27 ids are `revision_no = 1`; the
+two DISPUTED ids are `revision_no = 2` (the dispute itself was a journaled
+revision transition on 2026-09-13). The batch carries the per-id map below
+as `expected_revisions` and MUST be re-verified at apply time — any drift
+aborts the whole batch. The two disputed ids are EXCLUDED from any batch
+until the kill-switch decision — and because one of them is the family's
+base note, the family batch cannot apply before that decision.
 
 ```json
 {
   "family": "RULE (adoption geometry)",
   "judgedAt": "2026-09-13",
-  "expected_revisions": {"all 29 ids below": 1},
+  "revisionsVerifiedAt": "2026-09-14T00:47Z",
+  "expected_revisions": {
+    "dbfd8177": 2, "7e72fd7f": 2,
+    "f120c2b9": 1, "779fbcf3": 1, "cac7bd77": 1, "17ec9915": 1, "eff8c28b": 1, "e306ebce": 1,
+    "3d08ab90": 1, "c4d3b50c": 1, "557e30da": 1, "d45362c1": 1, "6f6e925b": 1, "f39cf0b6": 1,
+    "6083fce5": 1, "4ccdf6ed": 1, "2de9051d": 1, "827e4527": 1, "26c38231": 1, "595642da": 1,
+    "779afa13": 1, "bca1cac4": 1, "0477b92b": 1, "1d301597": 1, "7101b397": 1, "395ce53e": 1,
+    "e6794b52": 1, "082d17b5": 1, "0db23ca6": 1
+  },
   "sources": [
     {"id": "dbfd8177", "role": "base: all five checks + CLOCK kill-switch clause", "status": "DISPUTED — excluded"},
     {"id": "7e72fd7f", "role": "kill-switch on GEOMETRY, not the clock", "status": "DISPUTED — excluded"},
@@ -190,7 +201,8 @@ never deleted.
 
 | class | examples | where it belongs |
 |---|---|---|
-| approved policy | the five geometry checks; "skip never arms" (`91fc550c`); "STO covered calls are never mirrorable" (`5777141f`) | `rule`, core |
+| approved policy (STRUCTURE) | the five geometry checks AS CHECKS — sign, stop width, target width, staleness, stop kind; "skip never arms" (`91fc550c`); "STO covered calls are never mirrorable" (`5777141f`) | `rule`, core |
+| numeric thresholds INSIDE those checks | 0.75 %, 1× ATR, consumed risk 0.5, TP1 ≥ max(0.5× ATR, ~1R) | NOT approved by summarization (reviewer, v0763): each number is approved by the human in §1a or ships labeled HYPOTHESIS — the earlier wording "approved policy: the five geometry checks" meant the structure, never the numbers |
 | hypothesis | high-beta floors; 15m extra floor; "trail after TP1 on catalyst tips" (TRADING-RULES) | `rule` labeled HYPOTHESIS, or TRADING-RULES "under observation" |
 | engine defect | AMZN/MU token-stop memos; duplicate reduce-order hygiene (`0db23ca6`) | evidence + PLATFORM-RULES finding, not a trading rule |
 | source interpretation | MuggZone vocabulary; Kian free-text is log-only | source profile |
@@ -234,11 +246,19 @@ the earlier "no reconstruction is possible" claim):**
   `aead7ddb` (2062), `9ca7094d` (2156), `ef811150` (2041), `120fe04e` (2101),
   `ad1e485e` (2090). The `TipNoteAdded` journal payloads carry the already
   truncated text (2,000), so the trace is the only complete copy.
-  **Proposed restoration (NOT applied):** one reviewed batch that, per row,
-  snapshots the current text (revision 1, reason `edit`) and writes the
-  trace text as revision 2, author `restore-from-trace:<run8>`, journaled —
-  a revision transition, never an in-place overwrite; rows edited since
-  (revision_no > 1 at apply time) are listed for the human instead.
+  **Restoration PREPARED (reviewer GO 2026-09-13), NOT applied:** the exact
+  manifest lives in `2026-09-13-truncation-restoration/manifest.json` (+
+  `manifest.md` with the added text for review) — per row: full id, scope,
+  current `revision_no` + `revised_at`, run id, trace text sha256 and
+  length, prefix-match proof, the added characters, and the transition
+  (`reason: restore`, `author: restore-from-trace:<run8>`, expected →
+  new revision). Regenerate with `python -m zargar.tools.tip_note_restore
+  --out …`; applying is `--apply --confirm <manifestHash>` against the
+  running app (`POST /api/tip/notes/{id}/restore` → `restore_note_text`:
+  snapshot first, revision re-checked under a row lock, prefix re-checked,
+  journaled with the evidence hash — a revision transition, never a
+  backdate, never an in-place overwrite; a note edited since the reviewed
+  plan changes the hash and the apply is refused).
 - **3 have NO evidence** (`aac9ee3e`, `b3d7a110` experiment:b1; `1d7d118a`
   experiment:b2 — batch-review runs whose traces hold no `save_note` step):
   they stay labeled "possible truncation" in this packet only; nothing is

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.64";
+export const APP_VERSION = "0.7.65";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,18 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.65",
+    date: "2026-09-13",
+    title: "Disputes hold against every writer, audits finish their cycle",
+    items: [
+      { tag: "fixed", text: "A disputed rule can no longer be replaced by an ordinary analyst or retro note through rule-family matching: the original stays active and disputed, and the conflicting newcomer is staged as disputed too - nothing contradictory enters the rulebook as uncontested advice until you decide." },
+      { tag: "fixed", text: "Deleting an already-replaced note keeps its replacement link and mints a revision like every other change, so history read at an earlier moment still shows the real replacement, not 'deleted'." },
+      { tag: "fixed", text: "The knowledge audit now runs as a persisted cycle: it audits only what is still pending, a group that fails is retried with backoff (three attempts, then set aside visibly) instead of holding every other group out, and the cycle completes once everything was covered - so propose-only maintenance no longer pays for the same rulebook and groups every day." },
+      { tag: "fixed", text: "A failed audit reply keeps its paid-call usage on the run record (tokens, stop reason, latency per call), and a reply cut off at its output cap gets its one bounded retry even when it had started an object." },
+      { tag: "new", text: "Truncation restoration prepared, not applied: a tool builds the exact manifest for the 19 notes whose full text survives in their run traces (full ids, current revisions, evidence hashes, the added text for review); applying it later is a revision transition gated on that manifest's hash." },
+    ],
+  },
   {version:"0.7.64",date:"2026-09-13",title:"Cartel entry integrity and Practice evidence",items:[
     {tag:"fixed",text:"Cartel: saved contract limits are checked again immediately before entry. Pending plans retain invalidation during slow lookups, and nearer confirmed targets cannot disappear behind optimistic fallback targets."},
     {tag:"improved",text:"Cartel: explicitly review older unused Practice arms, choose reachable first trims for new 2–3-contract campaigns, and replay the actual position size. Existing campaigns keep their saved exit policy."},

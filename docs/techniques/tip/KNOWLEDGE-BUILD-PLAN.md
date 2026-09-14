@@ -313,3 +313,20 @@ Design only: KB-06 execution-integrity pause
 consolidation packet (needs exact id mapping, direction-correct formulas,
 non-injected evidence storage, rollback as a revision transition, the 22
 "possible truncations" verified against run evidence).
+
+**Round 3 (v0.7.65, the reviewer's v0763 verdict — `reviews/2026-09-13-v0763-response.md`):**
+R63-01 disputes hold against EVERY writer (locked `supersede_tip_notes`
+refuses `needs_human`; family dedupe stages the newcomer as disputed);
+R63-02 delete = snapshot + `deleted_at` tombstone, replacement link kept;
+R63-03/04 the audit is a persisted CYCLE (`tip_knowledge_cycles`: pending
+work only, untouched-first, backoff 23/47/95 h, set aside after 3 attempts
+with `failed` receipts, rulebook once per cycle, completion advances the
+watermark — propose-only no longer pays daily); R63-05 `JudgeError` keeps
+paid-call usage, retry on validation failure (doubled cap only on
+`max_tokens`). Restoration PREPARED: `tools/tip_note_restore.py` manifest
+(`reviews/2026-09-13-truncation-restoration/`) + gated `--apply --confirm
+<hash>` → `POST /api/tip/notes/{id}/restore` (revision transition) — not
+executed. Packet: per-id expected revisions (two disputed = 2), structure
+vs numeric-threshold authority split. OPEN: KB-08 per-run intake knowledge
+manifest + frozen-evidence comparison; geometry rev 2 and KB-06 builds on
+their own branches (review before merge).

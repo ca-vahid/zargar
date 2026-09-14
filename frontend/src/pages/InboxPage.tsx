@@ -1887,8 +1887,10 @@ function NoteCard({ n, onChanged, index }: {
           </span>
         )}
         {n.supersededBy && (
-          <span className="status-pill dim" title={`superseded by ${n.supersededBy} — kept as history, no run reads it`}>
-            superseded
+          <span className="status-pill dim"
+            title={n.deletedAt ? `deleted ${timeAgo(n.deletedAt)} — kept as history${n.supersededBy.startsWith("deleted:") ? "" : `, earlier replaced by ${n.supersededBy}`}`
+              : `superseded by ${n.supersededBy} — kept as history, no run reads it`}>
+            {n.deletedAt ? "deleted" : "superseded"}
           </span>
         )}
         {(() => {

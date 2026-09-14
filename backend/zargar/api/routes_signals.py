@@ -396,6 +396,23 @@ def build_signal_routes(app, eng, auth, config) -> None:
                                  aggregate_type="signal", aggregate_id=note_id)
         return {"ok": True}
 
+    class RestoreBody(BaseModel):
+        text: str
+        expectedRevision: int
+        sourceRunId: str
+        evidenceSha256: str
+
+    @app.post("/api/tip/notes/{note_id}/restore", dependencies=[auth])
+    async def restore_tip_note(note_id: str, body: RestoreBody):
+        """Truncation restoration as a revision transition (packet §4) —
+        driven by `zargar.tools.tip_note_restore --apply --confirm <hash>`."""
+        try:
+            return await eng.signals_service.restore_note_text(
+                note_id, body.text, expected_revision=body.expectedRevision,
+                source_run_id=body.sourceRunId, evidence_sha256=body.evidenceSha256)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
     @app.post("/api/tip/notes/{note_id}/resolve", dependencies=[auth])
     async def resolve_tip_note(note_id: str):
         """A8.3: the human resolved a contradiction the rule audit surfaced —
