@@ -2307,6 +2307,9 @@ class SignalService:
                             elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
                                 gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
                                         f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
+                        if not gate and (proposal.get("context") or {}).get("reviewRequired"):
+                            # GEOMETRY rev 2: a review-gated card never auto-approves
+                            gate = f"geometry review required: {(proposal.get('context') or {}).get('reviewRequired')}"
                         if not gate:
                             # nine-strike session clause (2026-09-04): one adoption
                             # stopped out within minutes today = the hand-off

@@ -14,6 +14,7 @@ default policy (journaled); a proposal whose order never fills adopts nothing.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 import logging
 
@@ -814,15 +815,60 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
             gate_bars = await fetch_window(underlying, "15m", nms - 7 * 86_400_000, nms)
         except Exception:
             log.debug("geometry gate: no bars for %s (checking without structure)", underlying)
-    plan, repairs = check_exit_geometry(plan, direction=direction,
-                                        entry_ref=entry_ref, bars=gate_bars,
-                                        settings=eng.settings)
-    if repairs:
-        await note(ev.TIP_GEOMETRY_REPAIRED,
-                   {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs})
-        await _note_on_run(eng, ctx.get("analystRunId"),
-                           "Adoption-geometry gate repaired the exit plan before any venue "
-                           "order was placed: " + "; ".join(repairs))
+    fresh, repairs = check_exit_geometry(plan, direction=direction,
+                                         entry_ref=entry_ref, bars=gate_bars,
+                                         settings=eng.settings)
+    pre = ctx.get("riskPlan") if isinstance(ctx.get("riskPlan"), dict) else {}
+    exception: dict | None = None
+    if pre.get("enforced") and pre.get("finalStop") is not None:
+        # GEOMETRY rev 2 (design §5): the pre-entry FINAL stop is the trade the
+        # analyst evaluated. A fill-time re-check may only TIGHTEN immediately;
+        # a WIDEN is a bounded exception — trim FIRST, the tight stop stays armed
+        # until the trim is confirmed (run_geometry_exception, below)
+        from . import geometry as _geo
+        tight = float(pre["finalStop"])
+        proposed = fresh.get("underlyingStop")
+        unit_wide = None
+        if proposed is not None and pre.get("unitLoss") is not None and pre.get("stopDistance"):
+            d_new = _geo.stop_distance(direction, entry_ref, float(proposed))
+            if d_new and d_new > 0:
+                # both estimators are linear in the stop distance; the floor is re-applied below
+                unit_wide = float(pre["unitLoss"]) * d_new / float(pre["stopDistance"])
+                if pre.get("vehicle") == "option":
+                    unit_wide = min(unit_wide, float(pre.get("stressUnitLoss") or unit_wide))
+        decision = _geo.post_fill_decision(
+            direction=direction, entry_ref=entry_ref, current_stop=tight,
+            proposed_stop=(float(proposed) if proposed is not None else None),
+            qty=int(qty), unit_loss_at_proposed=unit_wide, budget=float(pre.get("budget") or 0))
+        plan = dict(fresh)
+        if decision["action"] == "tighten":
+            plan["underlyingStop"] = float(decision["stop"])
+        else:
+            plan["underlyingStop"] = tight                      # the tight stop arms first, always
+            if decision["action"] in ("widen", "trim_first", "reconcile"):
+                exception = {"phase": {"widen": "widen_ready", "trim_first": "trim_pending",
+                                       "reconcile": "reconcile"}[decision["action"]],
+                             "tightStop": tight, "wideStop": float(decision["stop"]),
+                             "trimQty": int(decision.get("trimQty") or 0),
+                             "keepQty": int(decision.get("keepQty") or qty), "qty": int(qty),
+                             "unitLossAtWide": unit_wide, "budget": float(pre.get("budget") or 0),
+                             "why": decision["why"], "history": [], "stopInForce": tight}
+        if repairs or decision["action"] != "keep":
+            await note(ev.TIP_GEOMETRY_REPAIRED,
+                       {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs,
+                        "phase": "post-fill", "decision": decision,
+                        "plannedRiskBefore": pre.get("plannedRisk"), "tightStop": tight})
+            await _note_on_run(eng, ctx.get("analystRunId"),
+                               f"Post-fill geometry check: {decision['action']} — {decision['why']}")
+    else:
+        plan = fresh
+        if repairs:
+            await note(ev.TIP_GEOMETRY_REPAIRED,
+                       {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs,
+                        "phase": "post-fill-legacy"})
+            await _note_on_run(eng, ctx.get("analystRunId"),
+                               "Adoption-geometry gate repaired the exit plan before any venue "
+                               "order was placed: " + "; ".join(repairs))
 
     stop = plan.get("underlyingStop")
     risk = abs(entry_ref - float(stop)) if stop else entry_ref * 0.05
@@ -844,6 +890,8 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         "overnightAck": True if is_opt else False,
         "policy": policy,
         "guardAccepted": (policy.get("stop") or {}).get("kind") == "none",
+        "extras": {**({"riskPlan": pre} if pre else {}),
+                   **({"geometryException": exception} if exception else {})},
     }
     try:
         pos = await mgr.adopt(spec)
@@ -875,4 +923,152 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
     log.info("proposal %s adopted as managed position %s (%s, %s)%s",
              pid, pos["id"], underlying, "OPT" if is_opt else "STK",
              " [partial]" if partial else "")
+    if exception:
+        asyncio.create_task(run_geometry_exception(eng, pos["id"], exception),
+                            name=f"tip-geometry-exception-{pos['id'][:8]}")
     return pos
+
+
+TRIM_WAIT_S = 120.0     # a trim is a reduce-only LMT at the bid; sim fills in ms, live may rest a bit
+
+
+async def run_geometry_exception(eng, pos_id: str, state: dict) -> dict:
+    """GEOMETRY rev 2 §5 — the bounded post-fill WIDEN as an execution-state
+    sequence, never assumed atomic: (1) trim FIRST with the tight stop armed;
+    (2) the wider stop takes effect ONLY after the trim is confirmed filled;
+    (3) rejected → tight stop stays; partial → the residual bound is recomputed
+    from the actual fill; unknown → reconcile before any stop change; (4) every
+    transition is persisted on the position (config.extras.geometryException)
+    and journaled, so a restart resumes from the persisted phase
+    (`reconcile_geometry_exceptions`)."""
+    from . import geometry as _geo
+    from ... import events as ev
+    mgr = getattr(eng, "position_manager", None)
+    if mgr is None:
+        return state
+    p = mgr.get(pos_id)
+    if p is None:
+        return state
+    st = dict(state)
+
+    async def persist(st_: dict, why: str) -> None:
+        await mgr.set_extras(pos_id, {"geometryException": st_})
+        with contextlib.suppress(Exception):
+            await eng.journal.append(ev.TIP_GEOMETRY_REPAIRED,
+                                     {"proposalId": None, "positionId": pos_id, "underlying": p.symbol,
+                                      "entryRef": p.entry, "repairs": [], "phase": "post-fill-exception",
+                                      "exception": {k: v for k, v in st_.items() if k != "history"},
+                                      "transitions": st_.get("history"), "why": why},
+                                     aggregate_type="position", aggregate_id=pos_id,
+                                     portfolio_id=p.portfolio_id)
+
+    async def widen(st_: dict) -> dict:
+        try:
+            await mgr.widen_stop(pos_id, float(st_["wideStop"]),
+                                 reason=f"geometry exception confirmed: {st_.get('why', '')}")
+            st_["applied"] = True
+        except Exception as exc:
+            st_["phase"] = "kept_tight"
+            st_["error"] = str(exc)[:200]
+        return st_
+
+    phase = st.get("phase")
+    if phase == "widen_ready":
+        st["phase"] = "widened"
+        st = await widen(st)
+        await persist(st, "widen admissible without a trim")
+        return st
+    if phase == "reconcile":
+        await persist(st, "held: tight stop in force, review required")
+        with contextlib.suppress(Exception):
+            p.attention.append(f"geometry exception needs a look: {st.get('why', '')}")
+        return st
+    if phase != "trim_pending":
+        return st
+    # ---- (1) trim first
+    frac = float(st.get("trimQty") or 0) / max(1.0, float(st.get("qty") or 1))
+    before = {x.get("orderId") for x in (p.exits or [])}
+    await mgr.close(pos_id, fraction=frac, kind="geometry_trim",
+                    reason=f"geometry exception: trim {st.get('trimQty')} of {st.get('qty')} before widening")
+    rec = next((x for x in reversed(p.exits or []) if x.get("kind") == "geometry_trim"
+                and x.get("orderId") and x.get("orderId") not in before), None)
+    if rec is None or not rec.get("orderId"):
+        st = _geo.advance_exception(st, {"kind": "trim_rejected"})
+        await persist(st, "trim order could not be placed — tight stop stays")
+        return st
+    st = _geo.advance_exception(st, {"kind": "trim_submitted", "orderId": rec["orderId"]})
+    await persist(st, "trim submitted; tight stop armed")
+    # ---- (2) wait for the confirmation
+    deadline = asyncio.get_event_loop().time() + TRIM_WAIT_S
+    while True:
+        row = await _order_row(eng, rec["orderId"])
+        status = (row or {}).get("status") or ""
+        filled = float((row or {}).get("filledQty") or 0)
+        if status == "FILLED":
+            st = _geo.advance_exception(st, {"kind": "trim_filled", "filledQty": filled})
+            break
+        if status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED", "ERROR"):
+            if filled > 0:
+                st = _geo.advance_exception(st, {"kind": "trim_filled", "filledQty": filled})
+            else:
+                st = _geo.advance_exception(st, {"kind": "trim_rejected"})
+            break
+        if asyncio.get_event_loop().time() > deadline:
+            st = _geo.advance_exception(st, {"kind": "trim_unknown"})
+            break
+        await asyncio.sleep(POLL_S)
+    # ---- (3) resolve the phase
+    if st["phase"] == "trim_pending" and st.get("partial"):
+        # partial: is the RESIDUAL size admissible at the wider stop?
+        remaining = float(st.get("qty") or 0) - float(st.get("filledQty") or 0)
+        unit = st.get("unitLossAtWide")
+        if unit and remaining * float(unit) <= float(st.get("budget") or 0) + 1e-9:
+            st["phase"] = "widened"
+            st["history"].append({"from": "trim_pending", "to": "widened", "event": "residual fits"})
+        else:
+            st["phase"] = "kept_tight"
+            st["history"].append({"from": "trim_pending", "to": "kept_tight", "event": "residual too large"})
+        st["stopInForce"] = st.get("wideStop") if st["phase"] == "widened" else st.get("tightStop")
+    if st["phase"] == "widened":
+        st = await widen(st)
+    await persist(st, f"exception resolved: {st['phase']}")
+    return st
+
+
+async def reconcile_geometry_exceptions(eng) -> int:
+    """Restart between steps of a trim-first sequence: resume from the
+    persisted phase — a trim already submitted is checked at the order, never
+    resubmitted; nothing widens until the fill is confirmed."""
+    from . import geometry as _geo
+    mgr = getattr(eng, "position_manager", None)
+    if mgr is None:
+        return 0
+    n = 0
+    for p in list(getattr(mgr, "_pos", {}).values()):
+        if p.technique != "tip" or p.status not in ("open", "attention"):
+            continue
+        st = (p.extras or {}).get("geometryException") or {}
+        if st.get("phase") not in ("trim_pending", "reconcile", "widen_ready"):
+            continue
+        n += 1
+        if st.get("phase") == "trim_pending" and st.get("trimOrderId"):
+            row = await _order_row(eng, st["trimOrderId"])
+            status = (row or {}).get("status") or ""
+            filled = float((row or {}).get("filledQty") or 0)
+            if status == "FILLED" or (status in ("CANCELLED", "REJECTED", "EXPIRED", "ERROR") and filled > 0):
+                st = _geo.advance_exception(st, {"kind": "reconciled", "filledQty": filled})
+            elif status in ("CANCELLED", "REJECTED", "REJECTED_RISK", "EXPIRED", "ERROR"):
+                st = _geo.advance_exception(st, {"kind": "trim_rejected"})
+            else:
+                await mgr.set_extras(p.id, {"geometryException": st})    # still working: keep waiting, tight stop in force
+                continue
+            if st["phase"] == "widened":
+                with contextlib.suppress(Exception):
+                    await mgr.widen_stop(p.id, float(st["wideStop"]), reason="geometry exception confirmed after restart")
+                    st["applied"] = True
+            await mgr.set_extras(p.id, {"geometryException": st})
+        elif st.get("phase") == "trim_pending":
+            asyncio.create_task(run_geometry_exception(eng, p.id, st), name=f"tip-geometry-exception-{p.id[:8]}")
+        elif st.get("phase") == "widen_ready":
+            asyncio.create_task(run_geometry_exception(eng, p.id, st), name=f"tip-geometry-exception-{p.id[:8]}")
+    return n

@@ -151,6 +151,7 @@ class Managed:
     venue_stop_at: float | None = None
     attention: list[str] = field(default_factory=list)
     halt_entries: bool = False           # set by reconciliation on unexplained drift
+    extras: dict = field(default_factory=dict)   # technique-owned facts (tips: riskPlan, geometry exception state); never read by the evaluator
 
     # ---------------------------------------------------------------- views
     @property
@@ -206,6 +207,7 @@ class Managed:
             "lastTfBarTs": self.last_tf_bar_ts,
             "venueStopOrderId": self.venue_stop_order_id, "venueStopAt": self.venue_stop_at,
             "attention": self.attention, "haltEntries": self.halt_entries,
+            "extras": dict(self.extras or {}),
         }
 
 
@@ -427,6 +429,7 @@ class PositionManager:
             last_tf_bar_ts=st.get("lastTfBarTs"),
             venue_stop_order_id=st.get("venueStopOrderId"), venue_stop_at=st.get("venueStopAt"),
             attention=list(st.get("attention") or []), halt_entries=bool(st.get("haltEntries")),
+            extras=dict(cfg.get("extras") or {}),
         )
         return p
 
@@ -437,7 +440,7 @@ class PositionManager:
                 row = await session.get(ManagedPositionRow, p.id)
                 cfg = {"direction": p.direction, "policy": p.policy, "entry": p.entry, "risk": p.risk,
                        "overnight": p.overnight, "overnightAck": p.overnight_ack, "runId": p.run_id,
-                       "entryMark": p.entry_mark, "entryIv": p.entry_iv}
+                       "entryMark": p.entry_mark, "entryIv": p.entry_iv, "extras": dict(p.extras or {})}
                 st = {"policyState": p.state.to_dict(), "realizedPnl": round(p.realized_pnl, 2),
                       "exits": p.exits[-100:], "events": p.events[-200:], "sessionsSeen": p.sessions_seen,
                       "openedMs": p.opened_ms, "closedMs": p.closed_ms, "lastTfBarTs": p.last_tf_bar_ts,
@@ -616,6 +619,7 @@ class PositionManager:
             opened_ms=self.now_ms(),
         )
         p.state = PolicyState(stop=stop_price(p.policy, PolicyState()))
+        p.extras = dict(spec.get("extras") or {})
         p.entry_mark = spec.get("entryMark", self._entry_mark(p))
         p.sessions_seen = [session_date(self.now_ms())]
         if not p.policy.get("adapter"):
@@ -888,6 +892,41 @@ class PositionManager:
                 p.state.stop = new_stop            # a policy change may only TIGHTEN the live stop
         self._log(p, "policy_changed", f"policy updated (tf {old_tf} -> {p.policy.get('timeframe', old_tf)})")
         await self._journal(POSITION_POLICY, p, {"policy": p.policy})
+        await self._ensure_venue_stop(p)
+        await self._persist(p)
+        return p.to_dict()
+
+    async def set_extras(self, pid: str, patch: dict) -> dict | None:
+        """Technique-owned facts on a position (tips geometry rev 2: the
+        pre-entry riskPlan, a post-fill exception's state machine). Persisted
+        in config.extras; the policy evaluator never reads them."""
+        p = self._pos.get(pid)
+        if p is None:
+            return None
+        p.extras = {**(p.extras or {}), **(patch or {})}
+        await self._persist(p)
+        return p.to_dict()
+
+    @serialized_adapter
+    async def widen_stop(self, pid: str, new_stop: float, *, reason: str) -> dict | None:
+        """The ONE way a live stop gets WIDER (set_policy only tightens): a
+        bounded, journaled exception the caller has already earned (tips
+        geometry rev 2: the trim-first sequence confirmed its trim). Refused
+        on adapter positions and when the stop is not actually wider."""
+        p = self._pos.get(pid)
+        if p is None:
+            return None
+        if p.policy.get("adapter"):
+            raise ValueError("adapter positions cannot widen their stop through the generic path")
+        short = p.direction == "short"
+        cur = p.state.stop
+        if cur is not None and not (float(new_stop) < cur if not short else float(new_stop) > cur):
+            raise ValueError(f"{new_stop} is not wider than the live stop {cur}")
+        p.policy = {**p.policy, "stop": {"kind": "fixed", "price": float(new_stop)}}
+        p.state.stop = float(new_stop)
+        self._log(p, "stop_widened", f"stop widened {cur} -> {float(new_stop):g}: {reason}")
+        await self._journal(POSITION_POLICY, p, {"policy": p.policy,
+                                                 "widened": {"from": cur, "to": float(new_stop), "reason": reason}})
         await self._ensure_venue_stop(p)
         await self._persist(p)
         return p.to_dict()

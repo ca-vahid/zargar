@@ -514,6 +514,21 @@ class ProposalService:
         if bits:
             explain += f" Exit campaign ({exit_plan.get('author', 'tip')}): {'; '.join(bits)}."
 
+        # ---- GEOMETRY rev 2 (2026-09-14): finalize the geometry and size against the
+        # risk budget BEFORE capital commits — shadow journals what would happen,
+        # enforce applies it (a review-gated card never auto-approves)
+        risk_plan = None
+        try:
+            exit_plan, qty, risk_plan, gnote = await self._pre_entry_geometry(
+                underlying=sig.ticker.upper(), direction=sig.direction, pid=pid,
+                exit_plan=exit_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol,
+                limit=limit, qty=qty, entry_hint=sig.entry_price, source=signal_row.source_name,
+                signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
+            if gnote:
+                explain += " " + gnote
+        except Exception:
+            log.debug("pre-entry geometry failed (advisory)", exc_info=True)
+
         # ---- preflight coherence (ARM-PLAN P1/F7): compare this order against
         # the platform risk caps NOW, on the card — not as a silent risk
         # rejection at fill time
@@ -588,6 +603,9 @@ class ProposalService:
                 "vehicle": vehicle,
                 "explain": explain + ((" " + glide_note) if glide_note else ""),
                 "exitPlan": exit_plan,
+                **({"riskPlan": risk_plan.to_dict()} if risk_plan else {}),
+                **({"reviewRequired": risk_plan.reviewRequired}
+                   if (risk_plan and risk_plan.enforced and risk_plan.reviewRequired) else {}),
                 "analystRunId": analyst.get("runId"),
                 "analyst": ({k: analyst.get(k) for k in
                              ("verdict", "rationale", "invalidation", "confidence")}
@@ -681,6 +699,144 @@ class ProposalService:
         self._entry_studies.add(task)
         task.add_done_callback(self._entry_studies.discard)
 
+    # ------------------------------------------------------------- geometry rev 2
+    async def _pre_entry_geometry(self, *, underlying: str, direction: str, pid: str,
+                                  exit_plan: dict, vehicle: dict, sec_type: str, symbol: str,
+                                  limit: float, qty: int, entry_hint: float | None,
+                                  source: str | None, signal_id: str | None,
+                                  analyst_run_id: str | None) -> tuple[dict, int, object | None, str]:
+        """GEOMETRY-RISK-PLAN rev 2, step 1-3: the same geometry rules the
+        adoption gate runs — but BEFORE entry, producing the FINAL stop; the
+        size is derived from that stop against the approved risk budget B
+        (`geometry.risk_budget`), invariant qty x unitLoss <= B on every
+        proposal. Journals TipGeometryRepaired phase 'pre-entry' with the
+        planned/stress risk and the estimator version. Returns (exit_plan,
+        qty, RiskPlan | None, explain note); in shadow mode the plan is
+        recorded and the caller's sizes are returned untouched."""
+        from ..techniques.tip import geometry as _geo
+        eng = self.engine
+        mode = _geo.gate_mode(eng.settings)
+        if mode == "off" or sec_type not in ("OPT", "STK"):
+            return exit_plan, qty, None, ""
+        await eng.ensure_symbol(underlying)
+        q = eng.quotes.get(underlying)
+        entry_ref = (float(q.last) if q is not None and q.last and q.last > 0 else None) \
+            or (float(entry_hint) if entry_hint else None)
+        if not entry_ref:
+            return exit_plan, qty, None, ""
+        bars: list = []
+        if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
+            try:
+                from ..clock import now_ms as _now_ms
+                from ..marketstructure.history import fetch_window
+                nms = _now_ms()
+                bars = await fetch_window(underlying, "15m", nms - 7 * 86_400_000, nms)
+            except Exception:
+                log.debug("pre-entry geometry: no bars for %s", underlying)
+        equity = None
+        with contextlib.suppress(Exception):
+            equity = float(await eng.positions.equity(pid) or 0) or None
+        budget, budget_source = _geo.risk_budget(eng.settings, equity)
+        delta = None
+        greeks_meta: dict = {}
+        quote_meta: dict = {"limit": float(limit)}
+        multiplier = 1.0
+        option_type = None
+        if sec_type == "OPT":
+            multiplier = float((vehicle or {}).get("multiplier") or 100.0)
+            option_type = (vehicle or {}).get("optionType")
+            snap = None
+            with contextlib.suppress(Exception):
+                snap = eng.options.snapshot_cached(symbol)
+            g = (snap or {}).get("greeks") or {}
+            if g.get("delta") is not None:
+                delta = float(g["delta"])
+                greeks_meta = {"source": "chain" if not (snap or {}).get("greeksLive") else "live",
+                               "asOf": (snap or {}).get("asOf") or (snap or {}).get("greeksFieldAsOf")}
+            oq = eng.quotes.get(symbol)
+            if oq is not None:
+                quote_meta.update({"source": getattr(oq, "source", None),
+                                   "delayed": bool(getattr(oq, "delayed", False))})
+        final_plan, rp = _geo.plan_risk(
+            mode=mode, direction=direction, vehicle=("option" if sec_type == "OPT" else "shares"),
+            entry_ref=entry_ref, exit_plan=exit_plan, bars=bars, settings=eng.settings,
+            limit=float(limit), qty_requested=int(qty), multiplier=multiplier,
+            option_type=option_type, delta=delta, greeks_meta=greeks_meta,
+            budget=budget, budget_source=budget_source, quote_meta=quote_meta)
+        with contextlib.suppress(Exception):
+            await eng.journal.append(
+                ev.TIP_GEOMETRY_REPAIRED,
+                {"proposalId": None, "signalId": signal_id, "underlying": underlying,
+                 "entryRef": entry_ref, "repairs": list(rp.repairs), "phase": "pre-entry",
+                 "enforced": rp.enforced, "mode": mode, "plannedRisk": rp.plannedRisk,
+                 "stressRisk": rp.stressRisk, "finalRisk": rp.plannedRisk,
+                 "estimatorVersion": rp.estimatorVersion, "resizedFrom": rp.qtyRequested,
+                 "resizedTo": rp.qty, "budget": rp.budget, "budgetSource": rp.budgetSource,
+                 "reviewRequired": rp.reviewRequired, "decisions": list(rp.decisions),
+                 "analystRunId": analyst_run_id, "source": source},
+                aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
+        note = ""
+        if rp.enforced:
+            if rp.reviewRequired:
+                note = (f"Geometry gate: NO automatic entry — {rp.reviewRequired}. "
+                        f"The card waits for you.")
+                return final_plan, qty, rp, note
+            if rp.resized:
+                note = f"Geometry gate: {rp.resizeReason}."
+            elif rp.repairs:
+                note = "Geometry gate finalized the stop before entry: " + "; ".join(rp.repairs) + "."
+            return final_plan, int(rp.qty), rp, note
+        if rp.resized or rp.repairs or rp.reviewRequired:
+            note = ("Geometry gate (shadow): would " +
+                    (f"resize {rp.qtyRequested} → {rp.qty}" if rp.resized else "repair the stop") +
+                    (f"; review: {rp.reviewRequired}" if rp.reviewRequired else "") + ".")
+        return exit_plan, qty, rp, note
+
+    async def _admit_geometry(self, pdict: dict, *, limit: float | None, qty: float,
+                              via: str) -> tuple[float, dict, str | None]:
+        """GEOMETRY rev 2, step 4 — final admission right before an entry order
+        exists: re-derive the risk at the limit that will actually be
+        submitted (a refreshed ask may only have IMPROVED it — the never-raise
+        rule stands) and re-apply qty x unitLoss <= B. Returns (qty, pdict,
+        refusal): a refusal means an AUTOMATED entry must not proceed (the
+        card stays for a person); a human's click proceeds with the resized
+        qty (their click is the review). Records the revalidated plan on the
+        proposal + journals a phase 'submit' event when anything changed."""
+        from ..techniques.tip import geometry as _geo
+        eng = self.engine
+        ctx = pdict.get("context") or {}
+        rp = ctx.get("riskPlan") or {}
+        if not rp or not rp.get("enforced"):
+            return qty, pdict, None
+        if via == "auto" and ctx.get("reviewRequired"):
+            return qty, pdict, f"geometry review required: {ctx.get('reviewRequired')}"
+        new_limit = float(limit) if limit else float(rp.get("quote", {}).get("limit") or 0)
+        q2, rp2 = _geo.revalidate_for_submit(rp, new_limit=new_limit) if new_limit else (int(rp.get("qty") or qty), rp)
+        q2 = min(int(q2), int(qty)) if q2 >= 1 else q2
+        changed = rp2 != rp or q2 != int(qty)
+        if changed:
+            with contextlib.suppress(Exception):
+                async with eng.sf() as session:
+                    row = await session.get(Proposal, pdict["id"])
+                    if row is not None:
+                        row.context = {**(row.context or {}), "riskPlan": rp2}
+                        await session.commit()
+                        pdict = proposal_dict(row)
+            with contextlib.suppress(Exception):
+                await eng.journal.append(
+                    ev.TIP_GEOMETRY_REPAIRED,
+                    {"proposalId": pdict["id"], "underlying": (ctx.get("vehicle") or {}).get("underlying") or pdict["symbol"],
+                     "entryRef": rp.get("entryRef"), "repairs": [], "phase": "submit", "via": via,
+                     "limit": new_limit, "qtyBefore": qty, "qtyAfter": q2,
+                     "plannedRisk": rp2.get("plannedRisk"), "stressRisk": rp2.get("stressRisk"),
+                     "reviewRequired": rp2.get("reviewRequired")},
+                    aggregate_type="proposal", aggregate_id=pdict["id"], portfolio_id=pdict.get("portfolioId"))
+        if q2 < 1:
+            if via == "auto":
+                return qty, pdict, f"geometry review required at submission: {rp2.get('reviewRequired')}"
+            return qty, pdict, None          # a person approved: their click is the review
+        return float(q2), pdict, None
+
     # ------------------------------------------------------------- decide
     async def _maybe_retry_stale_quote(self, pdict: dict, intent: OrderIntent,
                                        order: dict, *, via: str = "") -> dict:
@@ -741,9 +897,22 @@ class ProposalService:
         limit = intent.limit_price
         if fresh_ask and limit and fresh_ask < float(limit):
             limit = round(fresh_ask, 2)
+        # GEOMETRY rev 2: a queued retry is admitted like a fresh entry
+        rqty, pdict, refusal = await self._admit_geometry(pdict, limit=limit, qty=intent.qty, via="auto")
+        if refusal:
+            stamp["retryRefused"] = refusal
+            async with eng.sf() as session:
+                row = await session.get(Proposal, pdict["id"])
+                if row is not None:
+                    row.context = {**(row.context or {}), "freshRetry": stamp}
+                    await session.commit()
+            await eng.journal.append(ev.PROPOSAL_RETRIED, {"proposalId": pdict["id"], **stamp},
+                                     aggregate_type="proposal", aggregate_id=pdict["id"],
+                                     portfolio_id=pdict["portfolioId"])
+            return order
         retry = await eng.orders.place(OrderIntent(
             portfolio_id=intent.portfolio_id, symbol=intent.symbol,
-            sec_type=intent.sec_type, side=intent.side, qty=intent.qty,
+            sec_type=intent.sec_type, side=intent.side, qty=rqty,
             order_type=intent.order_type, limit_price=limit,
             bracket=intent.bracket, source="signal",
             signal_id=intent.signal_id, proposal_id=pdict["id"]))
@@ -778,6 +947,26 @@ class ProposalService:
                 await session.commit()
                 raise ValueError("proposal has expired")
             qty = max(1.0, row.qty / 2 if half else row.qty)
+            pre = proposal_dict(row)
+        # GEOMETRY rev 2: an AUTOMATED approval is admitted only if the enforced
+        # risk plan still holds at the current limit — a refused card stays
+        # pending for a person, with the reason on its record (no status flip)
+        if via == "auto" and (pre.get("context") or {}).get("riskPlan", {}).get("enforced"):
+            _q, pre, refusal = await self._admit_geometry(pre, limit=pre.get("limitPrice"), qty=qty, via=via)
+            if refusal:
+                async with eng.sf() as session:
+                    row = await session.get(Proposal, proposal_id)
+                    if row is not None:
+                        row.context = {**(row.context or {}), "autoGate": refusal}
+                        await session.commit()
+                        pre = proposal_dict(row)
+                await eng.journal.append(ev.TIP_AUTO_PAUSED, {"reason": refusal, "proposalId": proposal_id},
+                                         aggregate_type="proposal", aggregate_id=proposal_id,
+                                         portfolio_id=pre.get("portfolioId"))
+                eng.bus.publish(topics.PROPOSALS, pre)
+                return {"proposal": pre, "order": None, "refused": refusal}
+        async with eng.sf() as session:
+            row = await session.get(Proposal, proposal_id)
             row.status = "approved"
             row.decided_at = dt.datetime.now(dt.timezone.utc)
             row.decided_via = via
@@ -840,6 +1029,8 @@ class ProposalService:
                 log.info("proposal %s: limit improved %s -> %s (live ask)",
                          proposal_id, limit, round(ask, 2))
                 limit = round(ask, 2)
+        # GEOMETRY rev 2: re-derive the risk at the limit actually submitted
+        qty, pdict, _refusal = await self._admit_geometry(pdict, limit=limit, qty=qty, via=via)
         intent = OrderIntent(
             portfolio_id=pdict["portfolioId"], symbol=pdict["symbol"],
             sec_type=pdict["secType"], side=pdict["side"], qty=qty,

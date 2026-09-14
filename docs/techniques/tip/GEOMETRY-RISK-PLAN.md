@@ -1,6 +1,24 @@
 # Pre-entry geometry + risk sizing — design for review (2026-09-13)
 
-**Status: PROPOSAL. Nothing here is built or active.** Requested by the user
+**Status (2026-09-14): BUILT on branch `claude/tips-geometry-rev2` (PR open
+for implementation review), NOT active.** `techniques.tip.geometry_gate`
+defaults to `shadow` — every tip proposal computes and journals its risk
+plan (`TipGeometryRepaired phase: pre-entry`, `enforced: false`) while
+sizes and stops stay exactly as before; `enforce` is a separate, reviewed
+activation. Code: `techniques/tip/geometry.py` (pure: budget, unit-loss
+estimator `delta-linear-v1`, sizing invariant, submission revalidation,
+post-fill decision + trim-first reducer, accounting), wiring in
+`approvals/proposals.py` (`_pre_entry_geometry`, `_admit_geometry` for
+`via=auto` and the stale-quote retry), `signals/service.py` (a review-gated
+card never auto-approves), `techniques/tip/lifecycle.py`
+(`run_geometry_exception`, `reconcile_geometry_exceptions`), and the shared
+`execution/positions.py` additions `Managed.extras` / `set_extras` /
+`widen_stop` (PLATFORM-RULES change log). Tests: `tests/test_tip_geometry_rev2.py`
+(the ten acceptance cases + budget authority, pure) and
+`tests/test_tip_geometry_wiring.py` (engine wiring on the sim broker).
+Budget B = `techniques.tip.risk_budget_per_tip` when > 0, else
+`techniques.tip.risk_pct` % of the book's equity — approved policy knobs,
+never the model's quantity. Requested by the user
 (2026-09-11: "validate geometry and sizing before entry, with explicit,
 bounded post-fill exceptions") and the independent reviewer (next-priorities
 review, item 1). Motivating incident: SPCX 2026-09-10 — the adoption gate
