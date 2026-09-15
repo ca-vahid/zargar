@@ -492,6 +492,224 @@ class PlanRunner(SessionListener):
         except (TypeError, ValueError):
             return 2.0
 
+    def _full_exit_rung(self, ap: ArmedPlan, tr: Trade, qty: float | None) -> tuple[int | None, str]:
+        """The rung the PRODUCTION policy (`exits.plan_exit`) acts on next, decided like production: a small
+        position is judged on the ORIGINAL filled quantity (fewer than three option contracts exit fully at
+        `single_contract_exit`), everything else follows the ladder from `trims_done`. `qty` is the original
+        filled quantity when known (None at fire = the intended/unknown quantity, judged as a ladder position).
+        Returns (index, label); index None when the trade has no such target."""
+        single = str(ap.config.single_contract_exit or "tp2")
+        original = float(qty) if qty is not None else None
+        if tr.instrument == "options" and original is not None and original < 3:
+            idx = {"tp1": 0, "tp2": 1, "tp3": 2}.get(single, 1)
+            idx = max(idx, int(tr.trims_done or 0))
+            label = f"{single}-full"
+        else:
+            idx = int(tr.trims_done or 0)
+            label = f"tp{idx + 1}-ladder"
+        if not tr.targets or idx >= len(tr.targets):
+            return None, label
+        return idx, label
+
+    def _production_exit_qty(self, ap: ArmedPlan, tr: Trade, idx: int, label: str) -> float:
+        """The quantity production would send at that rung: the whole remainder for a small option position or the
+        last rung; otherwise round(original filled × ladder share), capped by the UNCOMMITTED remainder."""
+        uncommitted = max(0.0, float(tr.remaining) - float(tr.pending_exit_qty))
+        if label.endswith("-full") or idx >= len(EXIT_LADDER) or idx == len(tr.targets or []) - 1:
+            return uncommitted
+        share = EXIT_LADDER[idx]
+        proposed = float(int(round(float(tr.filled_qty or 0) * share)))
+        if float(tr.remaining) - proposed < 1:
+            proposed = uncommitted
+        return max(0.0, min(proposed, uncommitted))
+
+    def _target_distance(self, ap: ArmedPlan, tr: Trade, *, stage: str, qty: float | None) -> dict:
+        """Diagnostic only (target-distance-v1). Units kept apart: the plan's INTENDED underlying entry/stop
+        geometry (the only underlying entry the runner has - an observed underlying fill is not captured), the
+        option premium of the fill when the vehicle is an option, the NEXT trim rung and the FULL-EXIT rung of the
+        production policy for the quantity. Never gates, resizes or retargets."""
+        risk = abs(float(tr.entry) - float(tr.stop)) if tr.entry is not None and tr.stop is not None else 0.0
+        next_idx, next_label = self._full_exit_rung(ap, tr, qty)
+        small = tr.instrument == "options" and qty is not None and float(qty) < 3
+        full_idx = (next_idx if small else (len(tr.targets) - 1 if tr.targets else None))
+        full_label = next_label if small else (f"tp{full_idx + 1}-runner" if full_idx is not None else "none")
+
+        def dist(i):
+            if i is None or risk <= 0 or not tr.targets or i >= len(tr.targets):
+                return None
+            return round(abs(float(tr.targets[i]) - float(tr.entry)) / risk, 3)
+        return {"version": "target-distance-v1", "stage": stage,
+                "underlyingIntended": {"entry": tr.entry, "stop": tr.stop, "risk": round(risk, 6), "basis": tr.kind},
+                "underlyingObservedEntry": None,                   # not captured by the runner - never inferred
+                "optionPremiumFill": (tr.avg_fill if (stage == "fill" and tr.instrument == "options") else None),
+                "nextRung": next_label, "nextRungIndex": next_idx, "nextRungDistanceR": dist(next_idx),
+                "fullExitRung": full_label, "fullExitRungIndex": full_idx, "distanceR": dist(full_idx),
+                "vehicle": tr.instrument, "quantity": qty, "quantityKnown": qty is not None,
+                "session": ap.plan_for,
+                "policy": {"singleContractExit": ap.config.single_contract_exit, "ladder": list(EXIT_LADDER)},
+                "planBuiltFrom": (ap.plan or {}).get("builtFromSession")}
+
+    def _shadow_enabled(self, ap: ArmedPlan) -> bool:
+        """shadow-exit-v1 is an EM Practice opt-in: the technique's own knob (default off) AND the technique's default
+        (Practice) book only - other desks and other books produce no experiment records."""
+        # code default True so a bare test rig observes; the SETTINGS defaults are False for every desk
+        # (`execution.shadow_exit_observe`) and False for EM (`techniques.enhanced_market.shadow_exit_observe`) until
+        # the reviewers activate it - production resolves the settings, never this default
+        if not bool(self.rt("shadow_exit_observe", True)):
+            return False
+        book = str(self.rt("default_portfolio", "") or "")
+        return (not book) or str(ap.config.portfolio_id) == book   # configured desks: their default (Practice) book only
+
+    def _shadow_capture(self, ap: ArmedPlan, open_trades: list, q, now_ms: int, excess: float) -> list[dict]:
+        """shadow-exit-v1 CAPTURE (pure, no I/O, no awaits): for each open trade, if THIS fresh underlying observation
+        is at or beyond the next production rung, build one immutable observation record with the same-contract
+        NBBO as it is NOW. Raw observation capture only: coverage needs valid provenance, timestamps, a finite
+        uncrossed book and a KNOWN displayed size; unknown depth is unresolved. Stop precedence = the production
+        underlying quote-stop AND premium-stop predicates on the same observation."""
+        out = []
+        if q is None:
+            return out
+        src_ts = int(getattr(q, "source_ts", 0) or q.ts or 0)
+        delayed = bool(getattr(q, "delayed", False)) or str(getattr(q, "source", "") or "") == "chain"
+        age_s = (now_ms - src_ts) / 1000.0 if src_ts else None
+        obs = float(q.last) if q.last and q.last > 0 else (float(q.mid) if getattr(q, "mid", 0) and q.mid > 0 else None)
+        if obs is None or delayed or age_s is None or age_s < 0 or age_s > 10.0:
+            return out
+        seen = self.__dict__.setdefault("_shadow_seen", set())
+        prem_pct = float(self.rt("premium_stop_pct", 50.0) or 0)
+        basis = str(self.rt("premium_stop_basis", "bid") or "bid")
+        for tr in open_trades:
+            idx, label = self._full_exit_rung(ap, tr, tr.filled_qty)
+            if idx is None:
+                continue
+            target = float(tr.targets[idx])
+            hit = (obs <= target) if tr.direction == "short" else (obs >= target)
+            if not hit:
+                continue
+            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx)
+            if key in seen:
+                continue                                        # one durable record per trade instance per rung
+            proposed = self._production_exit_qty(ap, tr, idx, label)
+            contract = None
+            oq = self.engine.quotes.get(tr.order_symbol) if (tr.instrument == "options" and tr.order_symbol) else q
+            if oq is not None:
+                o_src = int(getattr(oq, "source_ts", 0) or oq.ts or 0)
+                contract = {"symbol": (tr.order_symbol if tr.instrument == "options" else ap.symbol),
+                            "bid": oq.bid, "ask": oq.ask, "bidSize": getattr(oq, "bid_size", None), "askSize": getattr(oq, "ask_size", None),
+                            "source": str(getattr(oq, "source", "") or ""), "sourceTs": o_src, "receivedTs": oq.ts,
+                            "ageS": (round((now_ms - o_src) / 1000.0, 2) if o_src else None),
+                            "delayed": bool(getattr(oq, "delayed", False)) or str(getattr(oq, "source", "") or "") == "chain"}
+            stop_reason = quote_stop_breach(tr, obs, excess_r=excess, direction=tr.direction)
+            prem_reason = None
+            if tr.instrument == "options" and contract and prem_pct > 0 and not contract["delayed"]:
+                cb = float(contract.get("bid") or 0); ca = float(contract.get("ask") or 0)
+                pprice = ((cb + ca) / 2.0) if (basis == "mid" and cb > 0 and ca > 0) else cb
+                with contextlib.suppress(Exception):
+                    prem_reason = premium_stop_breach(tr, pprice, stop_pct=prem_pct, basis=basis)
+            if stop_reason or prem_reason:
+                disposition = "stop_first"
+            elif tr.pending_exit_qty > 1e-9:
+                disposition = "pending_exit"
+            else:
+                disposition = "observed"
+            # evidence validity (FM-03): provenance + timestamp + finite uncrossed positive book + KNOWN size
+            valid = False; why = None
+            if contract is None:
+                why = "no contract quote"
+            elif contract["delayed"]:
+                why = "delayed chain row"
+            elif not contract["source"] or not contract["sourceTs"]:
+                why = "no source provenance / timestamp"
+            elif contract["ageS"] is None or contract["ageS"] < 0 or contract["ageS"] > 10.0:
+                why = "contract quote stale or future-dated"
+            else:
+                try:
+                    cb = float(contract["bid"] or 0); ca = float(contract["ask"] or 0)
+                    finite = all(x == x and abs(x) != float("inf") for x in (cb, ca))
+                    if not finite or cb <= 0 or ca <= 0 or ca < cb:
+                        why = "book not a finite uncrossed two-sided quote"
+                    else:
+                        valid = True
+                except (TypeError, ValueError):
+                    why = "unparseable quote"
+            size = contract.get("bidSize") if contract else None
+            size_known = isinstance(size, (int, float)) and size == size and size > 0
+            scorable = valid and size_known and disposition == "observed"
+            covered = min(proposed, float(size)) if scorable else 0.0
+            if valid and not size_known and why is None:
+                why = "displayed size unknown"
+            if disposition != "observed" and why is None:
+                why = disposition
+            out.append({"runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "tradeInstance": key[2],
+                        "rung": label, "rungIndex": idx, "target": target, "version": "shadow-exit-v1", "disposition": disposition,
+                        "underlying": {"price": obs, "source": str(getattr(q, "source", "") or ""), "sourceTs": src_ts, "receivedTs": q.ts, "ageS": round(age_s, 2)},
+                        "contract": contract,
+                        "quantities": {"original": tr.filled_qty, "remaining": tr.remaining, "pendingExit": tr.pending_exit_qty,
+                                       "proposedExit": proposed},
+                        "stopReason": stop_reason, "premiumStopReason": prem_reason, "vehicle": tr.instrument,
+                        "modeled": {"scorable": scorable, "coveredQty": covered, "unresolvedQty": max(0.0, proposed - covered),
+                                    "bid": (float(contract["bid"]) if scorable else None), "why": why,
+                                    "conventions": {"latencyS": 2.0, "slippageTicks": 1,
+                                                    "note": "metadata for the reducer - no fill is simulated here; a contemporaneous bid is a modeled liquidation opportunity, not a fill"}},
+                        "capture": "raw-observation-only", "observedAt": now_ms, "_key": key})
+        return out
+
+    async def _shadow_record(self, ap: ArmedPlan, payloads: list[dict]) -> None:
+        """Durable append of captured observations; a trade/rung is marked seen ONLY after its write succeeded
+        (FM-04: a failed write stays retryable on the next observation, with that observation's own timing)."""
+        seen = self.__dict__.setdefault("_shadow_seen", set())
+        for p in payloads:
+            key = p.pop("_key", None)
+            await self.engine.journal.append(ev.TECHNIQUE_EXIT_SHADOW, p, aggregate_type="technique_run",
+                                             aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+            if key is not None:
+                seen.add(key)
+
+    def _shadow_enqueue(self, ap: ArmedPlan, payloads: list[dict]) -> None:
+        """Hand captured observations to the bounded background recorder (FM-01): the quote watch never awaits
+        research I/O ahead of protective decisions. A full queue drops the record VISIBLY (counted + logged)."""
+        if not payloads:
+            return
+        q = self.__dict__.get("_shadow_queue")
+        if q is None:
+            q = self._shadow_queue = asyncio.Queue(maxsize=256)
+        for p in payloads:
+            try:
+                q.put_nowait((ap, p))
+            except asyncio.QueueFull:
+                self._shadow_dropped = int(self.__dict__.get("_shadow_dropped", 0)) + 1
+                self._log(ap, "shadow_dropped", f"{p.get('trigger')}: shadow observation dropped - recorder saturated "
+                          f"({self._shadow_dropped} dropped so far)", trigger=p.get("trigger"))
+        task = self.__dict__.get("_shadow_task")
+        if task is None or task.done():
+            self._shadow_task = asyncio.get_running_loop().create_task(self._shadow_recorder(), name="shadow-exit-recorder")
+
+    async def _shadow_recorder(self) -> None:
+        """Drains the bounded queue; each record is retried up to three times with its ORIGINAL timing, then dropped
+        visibly - never re-timed, never blocking the quote watch."""
+        q = self._shadow_queue
+        while True:
+            ap, p = await q.get()
+            try:
+                for attempt in range(3):
+                    try:
+                        await self._shadow_record(ap, [dict(p)])
+                        break
+                    except Exception as exc:               # noqa: BLE001 - research write; retried, then counted
+                        if attempt == 2:
+                            self._shadow_dropped = int(self.__dict__.get("_shadow_dropped", 0)) + 1
+                            self._log(ap, "shadow_dropped", f"{p.get('trigger')}: shadow observation not recorded after 3 attempts "
+                                      f"({type(exc).__name__}; {self._shadow_dropped} dropped so far)", trigger=p.get("trigger"))
+                        else:
+                            await asyncio.sleep(0.5)
+            finally:
+                q.task_done()
+
+    async def _shadow_target_pass(self, ap: ArmedPlan, open_trades: list, q, now_ms: int, excess: float) -> None:
+        """Capture + durable record, awaited (direct callers / tests). The production quote watch uses
+        `_shadow_capture` + `_shadow_enqueue` instead so protection is never behind research I/O."""
+        await self._shadow_record(ap, self._shadow_capture(ap, open_trades, q, now_ms, excess))
+
     async def on_quote_watch(self) -> None:
         """Between bar closes, exit an open trade whose *underlying* quote is
         decisively through the stop (`execution.exits.quote_stop_breach`) for
@@ -518,6 +736,13 @@ class PlanRunner(SessionListener):
             last = float(q.last) if q is not None and q.last and q.last > 0 else None
             fresh = q is not None and (now_ms - q.ts) <= max_age * 1000
             prem_pct = float(self.rt("premium_stop_pct", 50.0) or 0)
+            # shadow-exit-v1 (order-free, STRATEGY-PROPOSAL 2026-09-14 §2a; FM-01): a pure CAPTURE of this observation,
+            # handed to a bounded background recorder - no awaited research I/O ahead of the protective checks below
+            if self._shadow_enabled(ap):
+                try:
+                    self._shadow_enqueue(ap, self._shadow_capture(ap, open_trades, q, now_ms, excess))
+                except Exception:                          # noqa: BLE001 - research must never break the watch
+                    log.exception("shadow capture failed")
             for tr in open_trades:
                 # 1) failed-exit watchdog: a position whose exit errored must never
                 #    sit un-managed — retry at market every 30s (5 tries), alert once
@@ -1414,6 +1639,11 @@ class PlanRunner(SessionListener):
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "orderId": o["id"],
                 "qty": tr.filled_qty, "avgFill": tr.avg_fill, "stop": tr.stop, "targets": tr.targets},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+            with contextlib.suppress(Exception):          # diagnostic only (target-distance-v1)
+                await self.engine.journal.append(ev.TECHNIQUE_TARGET_DISTANCE, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "fillBasis": tr.avg_fill,
+                    **self._target_distance(ap, tr, stage="fill", qty=tr.filled_qty)},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
         await self._persist(ap)
         self._publish(ap, "position_open")
 
@@ -2390,7 +2620,8 @@ class PlanRunner(SessionListener):
                 "fill": tr.fill_price, "entry": tr.entry, "stop": tr.stop, "targets": trade.targets,
                 "verdictAfterCritic": j.verdict, "confidence": round(float(j.confidence), 3), "critic": trade.critic,
                 "criticMode": critic_mode, "criticDisposition": trade.critic_disposition, "criticFailure": critic_failure,
-                "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace},
+                "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace,
+                "targetDistance": self._target_distance(ap, trade, stage="fire", qty=None)},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         # 2026-09-09 user decision (TRADING-RULES 1.4b, 25 kills net +0.5R): the critic's veto is a knob.
         #   veto           every "no" kills the fire (the behaviour until day 10)

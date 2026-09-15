@@ -1,0 +1,41 @@
+[
+ {
+  "date": "2026-09-14",
+  "symbol": "MSFT",
+  "direction": "long",
+  "level": 498.97,
+  "target": 505.0,
+  "note": "a5a519f64605447b8d4ef69d2145267e",
+  "availableAt": "2026-09-14T09:20:51-04:00",
+  "horizon": "intraday",
+  "retrospective": true,
+  "version": "source-continuation-v1",
+  "addedAt": "2026-09-15T04:50:46.951053+00:00"
+ },
+ {
+  "date": "2026-09-14",
+  "symbol": "AAPL",
+  "direction": "long",
+  "level": 336.22,
+  "target": null,
+  "note": "5852d8befaee4816a2f9ef8d5432fad2",
+  "availableAt": "2026-09-14T09:23:21-04:00",
+  "horizon": "intraday",
+  "retrospective": true,
+  "version": "source-continuation-v1",
+  "addedAt": "2026-09-15T04:50:47.198239+00:00"
+ },
+ {
+  "date": "2026-09-14",
+  "symbol": "MRNA",
+  "direction": "long",
+  "level": 149.73,
+  "target": null,
+  "note": "f1a2fa702a6e417b9d64ac8e2fdd673f",
+  "availableAt": "2026-09-14T09:23:21-04:00",
+  "horizon": "swing",
+  "retrospective": true,
+  "version": "source-continuation-v1",
+  "addedAt": "2026-09-15T04:50:47.397198+00:00"
+ }
+]

@@ -447,3 +447,34 @@ keeps main's manifest-based receipt with EM's `restoration` / `healthBuild` / `b
 groups **78/78** in an exclusive window (0 other clients before/after); own EM suites + technique API + Team2
 runner/EOD **133/133**; arming solo **29 passed** + the pre-existing `test_auto_options_one_contract_lifecycle`.
 
+---
+
+# Release of the worker change - deployed 2026-09-14 21:28 PT (v0.7.83)
+
+WF-01..03 accepted at 72607e9. The combined release target integrates every later main commit (0.7.79 Orders F,
+0.7.80 Team2 F, 0.7.81/0.7.82 Orders F cumulative fill, 0.7.83 Tips follow-ups) and the runtime checkout's own
+branch state, keeping both desks' runner behaviour (EM's `_entry_guard` + `authorize` arm boundary beside
+Team2's composed retry guard and Orders F). Target **b7d8a574635aa0d6d2d6a4be0538dc06462c43e6**, version 0.7.83.
+
+Verification on that exact tree: reviewer groups 78/78 in an exclusive `zargar_test_codex` window (0 other
+clients before/after); arming + restart/restore recovery + Team2 runner 38 passed + the pre-existing
+`test_auto_options_one_contract_lifecycle` (on ecceb89, one Tips-docs commit earlier; the delta to b7d8a57 is
+d95ab68 = Tips follow-ups + version); the restore subset re-run on b7d8a57 with the load-sensitive
+`test_restore_reattaches_an_open_trade` passing alone twice.
+
+Deployment through `scripts/deploy.ps1` under the deployment lease (caller em-desk), after coordinating with the
+Tips desk session, which held its restarts: readiness safe, entry pause confirmed, fast-forward d95ab68 ->
+b7d8a57, artifact manifest `6A304C8F94AF…` (21 files), handoff, guarded restart. Receipt
+`logs/deployment-receipt.json`: phase **verified**, target b7d8a57…, expected 0.7.83, completed
+2026-09-15T04:29:04Z, **restoration ok** (armed 11/11, openTrades 0/0, workingEntries 0/0, pendingExits 0/0,
+restingOrders 23/23, inflightOrders 0/0, managedPositions 3/3, managedOpen 3/3), `healthBuild`
+b7d8a57…, before-inventory `logs/restart-inventory-20260914-212757.json`. Health afterwards: ok, version
+0.7.83, build b7d8a574635aa0d6d2d6a4be0538dc06462c43e6, armed 11. Market closed at the time.
+
+Two shared-tooling facts surfaced: (1) a first `deploy.ps1` attempt was refused by the fast-forward check because
+the runtime moved (d95ab68) between verification and deploy - two desks were deploying the same runtime; the
+receipt records it as `failed` with the reason and nothing was restarted; (2) the running Discord gateway writes
+`backend/gateway_status.json` into the checkout every minute and the KFIN-04 reviewed-source check refuses it as
+uncommitted; this release adds it to `.gitignore` (the file was removed immediately before the check for this
+deploy and is rewritten by the gateway).
+

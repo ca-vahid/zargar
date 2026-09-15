@@ -46,7 +46,9 @@ CONTRACTS: dict[str, dict] = {
     "TechniquePlanArmed":     {"version": 1, "required": ("runId", "symbol", "planFor", "config", "portfolio")},
     "TechniqueTradeCorrected": {"version": 1, "required": ("runId", "trigger", "fix", "old", "new")},   # FIX-01 reconciliation (2026-09-14)
     "TechniqueArmRefused":    {"version": 1, "required": ("runId", "symbol", "origin", "reason")},
-    "TechniqueSourceRevised": {"version": 1, "required": ("noteId", "revision", "kind", "outcome")},   # Delivery B next PR: a source revision landed (edit / delete / restore); positions and exits are never touched by it   # Delivery B order-free boundary (2026-09-14): scenario candidates never arm
+    "TechniqueSourceRevised": {"version": 1, "required": ("noteId", "revision", "kind", "outcome")},
+    "TechniqueExitShadow":    {"version": 1, "required": ("runId", "symbol", "trigger", "rung", "target", "version", "disposition")},   # STRATEGY-PROPOSAL 2026-09-14 §2a shadow-exit-v1: observation only, never an order
+    "TechniqueTargetDistance": {"version": 1, "required": ("runId", "symbol", "trigger", "stage", "fullExitRung", "distanceR", "version")},   # diagnostic flag; never rejects, resizes or retargets   # Delivery B next PR: a source revision landed (edit / delete / restore); positions and exits are never touched by it   # Delivery B order-free boundary (2026-09-14): scenario candidates never arm
     "TechniquePlanRestored":  {"version": 1, "required": ("runId", "symbol", "planFor", "portfolio")},   # restart re-attach; never counted as an arm
     "TechniquePlanDisarmed":  {"version": 1, "required": ("runId", "symbol", "reason")},
     "TechniquePlanRolled":    {"version": 1, "required": ("runId", "symbol", "from", "to")},   # multi-day plan advanced to its next session (ARM-GAPS A2/A4); was journaled without a contract
