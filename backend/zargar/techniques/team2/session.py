@@ -196,6 +196,13 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     # vetoes: when nothing models in band the read fires anyway on the nearest OTM strike as its proxy and says
     # `modelBand: out`; the live picker decides on fresh executable quotes (`pick_contract`).
     authority = str(plan.get("contractAuthority") or "model")
+    # R1 (2026-09-14, other team's EOD handoff): under quotes authority the runner records every fire the live
+    # picker REFUSED or DEFERRED (`plan.executionRefused`, persisted). Such a fire opens NO model position, counts
+    # no model entry and no model loss: the model proxy exists to manage a contract the book holds, and the book
+    # holds nothing. The fire event itself is still emitted identically (its fingerprint keeps the runner from
+    # re-acting), the structural episode limits are unchanged (the touch is spent, F61), and a later pullback of
+    # the same setup is a new candidate.
+    refused_live = set(plan.get("executionRefused") or []) if authority == "quotes" else set()
     events: list[dict] = []
 
     def note(ts: int, what: str, why: str, **detail) -> None:
@@ -784,11 +791,13 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         s.touches += 1                                      # F61: only a PRICED pullback spends the D9 allowance
         s.attempts += 1
         fill = model.buy(mark)
-        s.entries += 1
-        pos = Position(setup=s, direction=s.direction, entry_ts=end_ts, entry_spot=entry_spot, strike=strike,
-                       call=long, entry_mark=mark, entry_fill=fill, touch_index=idx,
-                       early=m < rules.early_flag_before_min, bucket=bucket, size_mult=mult, entry_kind=entry_kind,
-                       extreme=b2.high if long else b2.low, target=target, target_kind=target_kind, avg_fill=fill)
+        unfilled_live = f"{s.id}#{idx}" in refused_live
+        if not unfilled_live:
+            s.entries += 1
+            pos = Position(setup=s, direction=s.direction, entry_ts=end_ts, entry_spot=entry_spot, strike=strike,
+                           call=long, entry_mark=mark, entry_fill=fill, touch_index=idx,
+                           early=m < rules.early_flag_before_min, bucket=bucket, size_mult=mult, entry_kind=entry_kind,
+                           extreme=b2.high if long else b2.low, target=target, target_kind=target_kind, avg_fill=fill)
         kind_word = {"ema": "EMA13", "ema48": "EMA48", "level": "level", "base": "base beyond the level",
                      "ema200": "200 EMA flush"}[entry_kind]
         note(end_ts, "fire", f"{s.id}: touch #{idx} — {kind_word} at {entry_spot:.2f} "
@@ -798,7 +807,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
              + (" — early (before 10:00, P2)" if m < rules.early_flag_before_min else "")
              + ("" if listed_strikes else " — strike from the synthetic grid, not a listing")
              + (" — model out of band: the live quotes decide (F108)" if model_band == "out" else ""),
-             strikeSource=strike_source, modelBand=model_band, contractAuthority=authority,
+             strikeSource=strike_source, modelBand=model_band, contractAuthority=authority, unfilledLive=unfilled_live or None,
              target=None if target is None else round(target, 4), targetKind=target_kind,
              setup=s.id, touch=idx, spot=round(entry_spot, 4), strike=strike, premium=fill.premium, bucket=bucket,
              sizeMult=mult, early=m < rules.early_flag_before_min, entryKind=entry_kind, regime=r.to_dict(),
@@ -806,6 +815,9 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         if s.key_level_id and entry_kind == "level":
             note(end_ts, "key_level_retest", f"{s.id}: retest entry on the key level {s.anchor:.2f} (C2)", setup=s.id,
                  levelId=s.key_level_id, touch=idx)
+        if unfilled_live:
+            note(end_ts, "fire_unfilled_live", f"{s.id}: touch #{idx} was refused or deferred by the live contract picker — "
+                 "no model position, no model loss; the next pullback is a new candidate (R1)", setup=s.id, touch=idx)
 
     summary = {
         "trades": len(trades), "wins": sum(1 for t in trades if t.pnl_pct_weighted > 0),

@@ -155,6 +155,24 @@ class Execution(Base):
     ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class CartelPreparationAttempt(Base):
+    """Append-only candidate recovery/selection evidence, independent of UI projections."""
+    __tablename__ = "cartel_preparation_attempts"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    preparation_id: Mapped[str] = mapped_column(String(64), index=True)
+    plan_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    at: Mapped[int] = mapped_column(BigInteger, index=True)
+    evidence: Mapped[dict] = mapped_column(JSONVariant)
+
+
+class ExecutionEvidence(Base):
+    """Exact executor observation committed with its fill; legacy fills remain unknown."""
+    __tablename__ = "execution_evidence"
+    execution_id: Mapped[str] = mapped_column(ForeignKey("executions.id"), primary_key=True)
+    evidence: Mapped[dict] = mapped_column(JSONVariant)
+
+
 class Position(Base):
     __tablename__ = "positions"
     __table_args__ = (UniqueConstraint("portfolio_id", "symbol", "sec_type", name="uq_position"),)

@@ -78,6 +78,7 @@ class Team2Runner(PlanRunner):
         self._listing_tried: dict[str, int] = {}       # F104: last listing fetch attempt per plan (ms)
         self._listing_warned: dict[str, bool] = {}
         self._trail_gaps: dict[str, list[dict]] = {}   # run_id -> journal writes that failed (evidence gaps)
+        self._contract_verdicts: dict[str, list[dict]] = {}   # R5: run_id -> the day's contract verdicts (durable copy = journal)
         self._trail_gaps: dict[str, list[dict]] = {}   # run_id -> journal writes that failed (evidence gaps)
         self._seen: dict[str, int] = {}                # run_id -> events already acted on
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
@@ -87,6 +88,9 @@ class Team2Runner(PlanRunner):
         # bar) can never re-fire or skip one. `_seen` (the count) stays for the tests/UI that read it.
         self._seen_fp: dict[str, set[str]] = {}
         self._rewrite_noted: dict[str, int] = {}
+        # R3 (2026-09-14): the last decision's clock per plan — an event whose close is at or before it was NOT
+        # there when that minute was judged (a revision surfaced it) and is analytical state, never an order
+        self._decision_wm: dict[str, int] = {}
         self._small_noted: set[tuple[str, str]] = set()
         self._flatten_noted: set[str] = set()          # F106: the flatten's once-per-run note
         self._loss_tally: dict[str, dict[str, tuple[int, str]]] = {}   # day -> run_id -> (losers, basis) (F37/F38)
@@ -159,6 +163,81 @@ class Team2Runner(PlanRunner):
             return band
         return round(min(ask + rules.tick, band), 2)
 
+    _UNFILLED_TERMINAL = ("failed", "cancelled", "skipped", "rejected", "expired")
+
+    def _record_unfilled(self, ap: ArmedPlan, tid: str) -> bool:
+        """R1: tell the read that this fire never became a position (refused / deferred / cutoff / stale / rejected
+        / unfilled / sizing). The list rides the ordinary persist (`state_extras`), comes back on restore
+        (`restore_extras`) and is rebuilt from the durable verdicts (`load_contract_verdicts`), so a restart does not
+        resurrect the proxy. Returns True when the trigger was newly recorded."""
+        plan = ap.plan if isinstance(getattr(ap, "plan", None), dict) else None
+        if plan is None:
+            return False
+        lst = plan.setdefault("executionRefused", [])
+        if tid in lst:
+            return False
+        lst.append(tid)
+        return True
+
+    def _sync_unfilled(self, ap: ArmedPlan) -> int:
+        """R1: every ZERO-FILL outcome exempts its fire from the read's proxy, wherever it happened — the picker,
+        the stale gate, the entry gate, the order (rejected / cancelled unfilled / capped away), sizing or budget.
+        An unknown-ACK order (submitting / working) and a partial fill are NOT exempt: the book may hold them."""
+        n = 0
+        for t in list(ap.trades.values()):
+            if getattr(t, "is_add", False):
+                continue
+            if float(t.filled_qty or 0) <= 0 and t.status in self._UNFILLED_TERMINAL and self._record_unfilled(ap, t.trigger_id):
+                n += 1
+        return n
+
+    def _exempt_from_verdicts(self, ap: ArmedPlan) -> int:
+        """R1: a durable refusal / deferral whose trade projection is absent (or terminal and unfilled) is an exemption
+        after a restart too — the journal is the record, not the in-memory list. The LAST verdict of a trigger
+        decides (a deferral followed by a pick is not a refusal)."""
+        last: dict[str, str] = {}
+        for v in self._contract_verdicts.get(ap.run_id) or []:
+            last[str(v.get("trigger"))] = str(v.get("verdict") or "")
+        n = 0
+        for tid, verdict in last.items():
+            if verdict not in ("refused", "deferred") or tid == "None":
+                continue
+            t = ap.trades.get(tid)
+            if t is None or (float(t.filled_qty or 0) <= 0 and t.status in self._UNFILLED_TERMINAL):
+                if self._record_unfilled(ap, tid):
+                    n += 1
+        return n
+
+    def state_extras(self, ap: ArmedPlan) -> dict:
+        self._sync_unfilled(ap)
+        plan = ap.plan if isinstance(getattr(ap, "plan", None), dict) else {}
+        return {"executionRefused": list(plan.get("executionRefused") or []),
+                "decisionWatermark": self._decision_wm.get(ap.run_id)}
+
+    def restore_extras(self, ap: ArmedPlan, state: dict) -> None:
+        for tid in (state or {}).get("executionRefused") or []:
+            self._record_unfilled(ap, str(tid))
+        wm = (state or {}).get("decisionWatermark")
+        if wm:
+            self._decision_wm[ap.run_id] = max(int(wm), int(self._decision_wm.get(ap.run_id) or 0))
+
+    async def entry_gate(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
+        """R2: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
+        is sent, whether the order is an entry, an X5 add on a cached contract or a re-price retry. The signal-age rule
+        stays at the origin (`_stale_signal`): the chain itself may legitimately take a minute."""
+        if ap.config.mode == "alert":
+            return None
+        rules = self.rules()
+        now = int(time.time() * 1000)
+        now_et = dt.datetime.fromtimestamp(now / 1000, ET)
+        if now_et.strftime("%Y-%m-%d") != ap.plan_for:
+            return f"order boundary ({stage}): {now_et.strftime('%Y-%m-%d')} is not the plan's session {ap.plan_for} (R2)"
+        m = now_et.hour * 60 + now_et.minute
+        if m >= int(rules.last_entry_min):
+            return (f"order boundary ({stage}): the entry cutoff ({rules.last_entry_min // 60:02d}:{rules.last_entry_min % 60:02d}) "
+                    f"had passed at {now_et.strftime('%H:%M:%S')} — no new order (R2)")
+        return None
+
     async def _trail(self, ap: ArmedPlan, kind: str, event: str, reason: str, **detail) -> None:
         """Cohort v2 (2026-09-10, user decision): the candidate -> quote -> order -> fill -> exit trail is journaled under
         the plan run, not only kept in the plan's in-memory events. Orders, fills and exits are journaled by the
@@ -167,9 +246,18 @@ class Team2Runner(PlanRunner):
         run_id = getattr(ap, "run_id", None)
         if journal is None or not run_id:
             return
+        payload = {"runId": run_id, "symbol": ap.symbol, "event": event, "reason": reason, **detail}
+        # F111 (2026-09-11): the TechniquePlanRead contract requires `trigger`; a plan-level read row
+        # (warmup, listing, open_finalized, targets_rederived) has none, and every one of them logged a
+        # contract warning. State the absence rather than omit the field.
+        if kind == ev.TECHNIQUE_PLAN_READ:
+            payload.setdefault("trigger", None)
+        if kind == ev.TECHNIQUE_PLAN_CONTRACT:
+            # R5: the contract verdicts of the day, kept for the close funnel (the journal is the durable copy;
+            # `load_contract_verdicts` re-reads it after a restart)
+            self.__dict__.setdefault("_contract_verdicts", {}).setdefault(run_id, []).append(dict(payload))
         try:
-            await journal.append(kind, {"runId": run_id, "symbol": ap.symbol, "event": event, "reason": reason, **detail},
-                                 aggregate_type="technique_run", aggregate_id=run_id)
+            await journal.append(kind, payload, aggregate_type="technique_run", aggregate_id=run_id)
         except Exception as exc:  # noqa: BLE001 - a hole in the record is itself evidence (Codex, 2026-09-10)
             gaps = self._trail_gaps.setdefault(run_id, [])
             gaps.append({"event": event, "kind": kind, "error": str(exc)[:200], "at": int(time.time() * 1000)})
@@ -254,6 +342,7 @@ class Team2Runner(PlanRunner):
             trade.errors.append("options service not attached")
             await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", "options service not attached",
                               trigger=trade.trigger_id, verdict="deferred", stage="service", examined=[], direction=trade.direction)
+            self._record_unfilled(ap, trade.trigger_id)
             return None
         rules = self.rules()
         try:
@@ -265,6 +354,7 @@ class Team2Runner(PlanRunner):
                 trade.errors.append(why or "no expiry")
                 await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", why or "no expiry",
                                   trigger=trade.trigger_id, verdict="deferred", stage="expiry", examined=[], direction=trade.direction)
+                self._record_unfilled(ap, trade.trigger_id)
                 return None
             chain = await provider.chain(ap.symbol, expiry)
             spot = float(trade.entry)
@@ -318,6 +408,20 @@ class Team2Runner(PlanRunner):
             pick = select_by_premium(eligible, spot, trade.direction, target_premium=rules.target_premium,
                                      premium_floor=rules.premium_floor, expiry=expiry, today=today,
                                      is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick) if eligible else None
+            # R2: the quotes took time — re-check the actual clock before a contract can become an order
+            now_et = dt.datetime.fromtimestamp(time.time(), ET)
+            live_session = str(getattr(ap, "plan_for", "") or "") == now_et.strftime("%Y-%m-%d")
+            if pick is not None and live_session and now_et.hour * 60 + now_et.minute >= int(rules.last_entry_min):
+                why = (f"entry deferred — the cutoff passed while quoting ({now_et.strftime('%H:%M:%S')} ≥ "
+                       f"{rules.last_entry_min // 60:02d}:{rules.last_entry_min % 60:02d}); {pick.symbol} was in band (R2)")
+                trade.errors.append(why)
+                self._log(ap, "contract_deferred", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id, examined=examined,
+                          spot=round(spot, 4), listed=len(otm), unexamined=0, unpriced=unpriced, expiry=expiry, stage="cutoff")
+                await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", why, trigger=trade.trigger_id, verdict="deferred",
+                                  stage="cutoff", examined=examined, spot=round(spot, 4), listed=len(otm), expiry=expiry,
+                                  direction=trade.direction)
+                self._record_unfilled(ap, trade.trigger_id)
+                return None
             if pick is None:
                 seen = ", ".join(f"{x['strike']:g} " + (f"ask {x['ask']:.2f} ({x['priced']}, chain {x['delayedAsk']:.2f})" if x['eligible']
                                                           else f"no live quote ({x['priced']}; chain {x['delayedAsk']:.2f})")
@@ -334,6 +438,7 @@ class Team2Runner(PlanRunner):
                 await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, f"contract_{verdict}", why, trigger=trade.trigger_id, verdict=verdict,
                                   examined=examined, spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced,
                                   expiry=expiry, direction=trade.direction)
+                self._record_unfilled(ap, trade.trigger_id)
                 return None
             c = next(x for x in eligible if x.get("symbol") == pick.symbol)
             priced = c.get("priced")
@@ -357,6 +462,7 @@ class Team2Runner(PlanRunner):
             await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", f"contract pick failed: {exc}",
                               trigger=trade.trigger_id, verdict="deferred", stage="error", error=str(exc)[:200], examined=[],
                               direction=trade.direction)
+            self._record_unfilled(ap, trade.trigger_id)
             return None
 
     def preopen_due(self, now: dt.datetime) -> bool:
@@ -375,19 +481,25 @@ class Team2Runner(PlanRunner):
         gap = ((ref - prev_close) / prev_close * 100.0) if ref and prev_close else 0.0
         self._log(ap, "preopen", f"{ap.plan.get('sheet')}", pmh=ap.plan.get("pmh"), pml=ap.plan.get("pml"),
                   dayType=ap.plan.get("dayType"), sizing=ap.plan.get("sizingAtOpen"))
-        self._log_rederived(ap, "pre-open")
+        await self._log_rederived(ap, "pre-open")
         return {"rows": [], "reference": ref, "gapPct": round(gap, 3), "replan": False}
 
-    def _log_rederived(self, ap: ArmedPlan, when: str) -> None:
+    async def _log_rederived(self, ap: ArmedPlan, when: str) -> None:
+        """F110 (2026-09-11): the F81 re-derive moves the plan's target before a single entry is judged, so it
+        belongs on the DURABLE record, not only in the plan's in-memory events (which a restart wipes — and
+        this desk restarts mid-session). Journalled as TechniquePlanReplanned/`targets_rederived`."""
         red = (ap.plan or {}).get("targetsRederived") or {}
         if not red or ap.plan.get("_rederivedLogged") == red:
             return
         ap.plan["_rederivedLogged"] = red
         parts = [f"{side}: {v['was']:.2f} -> {v['now']:.2f} ({v['source']})" if v.get("now") is not None
                  else f"{side}: {v['was']:.2f} -> none" for side, v in red.items()]
-        self._log(ap, "targets_rederived", f"the {when} reference {next(iter(red.values()))['reference']:.2f} had run "
-                  f"through the planned target — re-derived from the morning's structure: " + "; ".join(parts) + " (F81)",
+        why = (f"the {when} reference {next(iter(red.values()))['reference']:.2f} had run "
+               f"through the planned target — re-derived from the morning's structure: " + "; ".join(parts) + " (F81)")
+        self._log(ap, "targets_rederived", why,
                   targets=ap.plan.get("targets"), planned=ap.plan.get("targetsPlanned"), rederived=red)
+        await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "targets_rederived", why, when=when,
+                          targets=ap.plan.get("targets"), planned=ap.plan.get("targetsPlanned"), rederived=red)
 
     async def _finalize_open(self, ap: ArmedPlan, bars: list[Bar]) -> None:
         from .plan import complete_plan
@@ -402,16 +514,77 @@ class Team2Runner(PlanRunner):
         ap.plan["preopenSnapshot"] = before
         ap.plan.update(done)
         ap.plan["openFinalizedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-        self._log_rederived(ap, "09:30 open")
-        self._log(ap, "open_finalized", f"day type finalized on the 09:30 open {done.get('openPrice')}: "
-                  f"{before.get('dayType')} (09:25 estimate) -> {done.get('dayType')}, sizing at open {done.get('sizingAtOpen')} (F49)",
-                  before=before, openPrice=done.get("openPrice"), dayType=done.get("dayType"))
+        await self._log_rederived(ap, "09:30 open")
+        why = (f"day type finalized on the 09:30 open {done.get('openPrice')}: "
+               f"{before.get('dayType')} (09:25 estimate) -> {done.get('dayType')}, "
+               f"sizing at open {done.get('sizingAtOpen')} (F49)")
+        self._log(ap, "open_finalized", why, before=before, openPrice=done.get("openPrice"), dayType=done.get("dayType"))
+        await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "open_finalized", why, before=before,
+                          openPrice=done.get("openPrice"), dayType=done.get("dayType"),
+                          sizingAtOpen=done.get("sizingAtOpen"))
         svc = getattr(self.engine, "team2", None)
         if svc is not None:
             with contextlib.suppress(Exception):
                 await svc.stamp_run(ap)
 
     # ------------------------------------------------------------- bars
+    def _merge_revision(self, ap: ArmedPlan, bar: Bar) -> dict | None:
+        """R3: merge a corrected / late minute into the private tape. Returns the revision record (None when the
+        bar is identical to what the desk already holds — a duplicate delivery changes nothing and writes nothing);
+        `_on_bar` journals it, so the decision-time inputs can be reconstructed from the record."""
+        bars = self._bars.setdefault(ap.run_id, [])
+        hhmm = dt.datetime.fromtimestamp(bar.ts / 1000, ET).strftime('%H:%M')
+        for i, b in enumerate(bars):
+            if b.ts == bar.ts:
+                same = (b.open, b.high, b.low, b.close, b.volume) == (bar.open, bar.high, bar.low, bar.close, bar.volume)
+                if same:
+                    return None
+                bars[i] = bar
+                text = (f"the {hhmm} bar was corrected ({b.source or 'unknown'} o/h/l/c/v {b.open}/{b.high}/{b.low}/{b.close}/{b.volume} → "
+                        f"{bar.source or 'unknown'} {bar.open}/{bar.high}/{bar.low}/{bar.close}/{bar.volume}); the next read runs on "
+                        f"the corrected tape (R3)")
+                rec = {"event": "bar_revised", "text": text, "ts_": bar.ts, "before": [b.open, b.high, b.low, b.close, b.volume],
+                       "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "source": bar.source,
+                       "decisionWatermark": self._decision_wm.get(ap.run_id)}
+                self._log(ap, "bar_revised", text, **{k: v for k, v in rec.items() if k not in ("event", "text")})
+                return rec
+            if b.ts > bar.ts:
+                bars.insert(i, bar)
+                text = f"the missing {hhmm} bar arrived late and was inserted; the next read runs on the completed tape (R3)"
+                rec = {"event": "bar_recovered", "text": text, "ts_": bar.ts, "source": bar.source,
+                       "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "decisionWatermark": self._decision_wm.get(ap.run_id)}
+                self._log(ap, "bar_recovered", text, **{k: v for k, v in rec.items() if k not in ("event", "text")})
+                return rec
+        bars.append(bar)
+        text = f"the {hhmm} bar arrived late and was appended (R3)"
+        rec = {"event": "bar_recovered", "text": text, "ts_": bar.ts, "source": bar.source,
+               "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "decisionWatermark": self._decision_wm.get(ap.run_id)}
+        self._log(ap, "bar_recovered", text, **{k: v for k, v in rec.items() if k not in ("event", "text")})
+        return rec
+
+    async def load_contract_verdicts(self) -> int:
+        """R5: after a restart the in-memory verdict list is empty; re-read today's durable `TechniquePlanContract`
+        rows for every armed plan so the close funnel is the same with or without a restart."""
+        n = 0
+        try:
+            from sqlalchemy import select as _select
+            from ...models import Event
+            async with self.engine.sf() as session:
+                for ap in list(self._armed.values()):
+                    rows = (await session.execute(_select(Event).where(Event.aggregate_id == ap.run_id, Event.type == ev.TECHNIQUE_PLAN_CONTRACT)
+                                                  .order_by(Event.id))).scalars().all()
+                    if rows:
+                        self._contract_verdicts[ap.run_id] = [dict(r.payload or {}) for r in rows]
+                        n += len(rows)
+                        # R1: reporting AND the read's exemption come back from the same durable rows
+                        added = self._exempt_from_verdicts(ap)
+                        if added:
+                            self._log(ap, "execution_overlay_restored", f"{added} refused/deferred fire(s) re-exempted from the "
+                                      f"read's proxy from the journal (R1)", restored=added)
+        except Exception:  # noqa: BLE001
+            log.warning("team2 contract verdicts not reloaded", exc_info=True)
+        return n
+
     async def _load_warmup(self, ap: ArmedPlan) -> None:
         if ap.run_id in self._warm_loaded:
             return
@@ -553,6 +726,15 @@ class Team2Runner(PlanRunner):
         if session_date(bar.ts) != ap.plan_for:
             return
         if ap.last_bar_ts is not None and bar.ts <= ap.last_bar_ts:
+            # R3 (2026-09-14): a minute the desk already passed is a REVISION (an exchange correction) or a RECOVERED
+            # HOLE — merge it into the private tape by timestamp instead of dropping it. No decision is re-run here:
+            # the next 2m close recomputes the read from the corrected history, `_seen_fp` keeps acted events from
+            # repeating, and `read_rewritten` states when a conclusion changed. Decision-time inputs stay in the
+            # journal; the revision is recorded with before/after.
+            rec = self._merge_revision(ap, bar)
+            if rec is not None and journal:
+                await self._trail(ap, ev.TECHNIQUE_PLAN_READ, rec["event"], rec["text"],
+                                  **{k: v for k, v in rec.items() if k not in ("event", "text")})
             return
         ap.last_bar_ts = bar.ts
         ap.stale = False
@@ -620,9 +802,28 @@ class Team2Runner(PlanRunner):
         new = [e for e, fp in zip(res.events, fps) if fp not in seen_fp]
         self._seen[ap.run_id] = len(res.events)
         halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
+        wm = self._decision_wm.get(ap.run_id)
+        self._decision_wm[ap.run_id] = max(int(wm or 0), int(now_ms))
         for e in new:
             seen_fp.add(self._fingerprint(e))           # before handling: a failing event is dropped, the rest still act
             what = e["event"]
+            if what in ("fire", "add", "trim", "exit") and wm is not None and int(e.get("ts") or 0) <= int(wm):
+                # R3 (2026-09-14): this minute was already judged (decision at `wm`) and the event was not there —
+                # a revision or a recovered hole surfaced it. It is a changed analytical conclusion, recorded here,
+                # never a backdated order, add, trim or exit: the book's position stays under present-time
+                # management (live trims, target breach, quote stop, clock flatten) and a setup price creates NOW
+                # arrives as a new event with a current close.
+                tid = f"{e.get('setup')}#{e.get('touch')}" if what == "fire" else str(e.get("setup") or "?")
+                rec = {"sourceTs": int(e.get("ts") or 0), "judgedAt": int(wm), "decisionTs": int(now_ms), "instruction": what}
+                self._log(ap, "backdated_signal_skip", f"{tid}: a {what} at {e.get('time') or e.get('ts')} surfaced by a revision "
+                          f"after that minute was judged — recorded, not acted on (R3)", trigger=tid, **rec)
+                if what == "fire":
+                    self._record_unfilled(ap, tid)
+                if journal:
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "backdated_signal_skip", **rec,
+                        "ts": e.get("ts"), "why": str(e.get("why") or "")}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                continue
             if what == "fire":
                 await self._fire_from_event(ap, e, bar, res, halted=halted, journal=journal)
             elif what == "add":
@@ -638,11 +839,11 @@ class Team2Runner(PlanRunner):
                                         "skip_target_behind", "model_out_of_band", "target_replanned",
                                         "skip_pm_room", "skip_target_near", "key_level_break", "key_level_setup",
                                         "key_level_flip", "key_level_rejected", "key_level_retired", "key_level_overruled",
-                                        "key_level_pending", "key_level_retest"):
+                                        "key_level_pending", "key_level_retest", "fire_unfilled_live"):
                     # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
                     # they get their own journal kind so skip counts mean skips
                     kind = ev.TECHNIQUE_PLAN_READ if (what in ("scenario", "pm_break", "late_touch", "pm_retest",
-                                                               "model_out_of_band", "target_replanned") or what.startswith("key_level_")) else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
+                                                               "model_out_of_band", "target_replanned", "fire_unfilled_live") or what.startswith("key_level_")) else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
                     await self.engine.journal.append(kind, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": str(e.get("setup") or e.get("scenario") or what),
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},
@@ -696,6 +897,19 @@ class Team2Runner(PlanRunner):
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "max_concurrent_positions",
                         "open": across, "max": cap, "ts": e.get("ts")},
                         aggregate_type="technique_run", aggregate_id=ap.run_id)
+                    self._record_unfilled(ap, tid)          # R1: the book never held it
+                return
+        # R2 (2026-09-14): the read's clock is the bar's; the ORDER's clock is the wall. A signal recovered from a
+        # delayed or replayed bar must not enter after the actual cutoff, outside its session, or when it is older
+        # than `max_signal_age_min`. Recorded as a missed opportunity with source, receipt and decision times.
+        if journal and ap.config.mode != "alert":
+            stale = self._stale_signal(ap, e, rules_now)
+            if stale is not None:
+                self._log(ap, "stale_signal_skip", f"{tid}: {stale['why']}", trigger=tid, **{k: v for k, v in stale.items() if k != "why"})
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "stale_signal_skip", **stale,
+                    "ts": e.get("ts")}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                self._record_unfilled(ap, tid)              # R1: a zero-fill outcome outside the picker
                 return
         direction = "long" if e.get("regime", {}).get("stack") == "bull" else "short"
         setup = next((s for s in res.setups if s["id"] == e.get("setup")), {})
@@ -748,6 +962,24 @@ class Team2Runner(PlanRunner):
             task.add_done_callback(lambda t, tid=tid, ap=ap: ap.fire_tasks.pop(tid, None))
         else:
             await self._fire_rest(ap, tid, stub, bar, ap.bar_index - 1, trade, journal=False)
+
+    def _stale_signal(self, ap: ArmedPlan, e: dict, rules: Team2Rules) -> dict | None:
+        """R2: None when the fire may be acted on NOW; else the record of why not (source/receipt/decision times)."""
+        now = int(time.time() * 1000)
+        src = int(e.get("ts") or 0)
+        now_et = dt.datetime.fromtimestamp(now / 1000, ET)
+        rec = {"sourceTs": src, "decisionTs": now, "ageMs": now - src}
+        if now_et.strftime("%Y-%m-%d") != ap.plan_for:
+            return {**rec, "why": f"signal from {ap.plan_for} judged on {now_et.strftime('%Y-%m-%d')} — not this session (R2)"}
+        m = now_et.hour * 60 + now_et.minute
+        if m >= int(rules.last_entry_min):
+            return {**rec, "why": f"the entry cutoff ({rules.last_entry_min // 60:02d}:{rules.last_entry_min % 60:02d}) had passed at "
+                                  f"decision time {now_et.strftime('%H:%M:%S')}; the signal's bar closed {(now - src) // 1000}s earlier (R2)"}
+        max_age = int(rules.max_signal_age_min) * 60_000
+        if max_age > 0 and now - src > max_age:
+            return {**rec, "why": f"the signal's bar closed {(now - src) // 1000}s ago (> {rules.max_signal_age_min} min): a recovered "
+                                  f"bar is analytical state, not an order (R2)"}
+        return None
 
     async def _exit_from_event(self, ap: ArmedPlan, e: dict, *, journal: bool) -> None:
         # the simulation names the setup via the position; every trade of that setup (the entry and its
@@ -999,6 +1231,16 @@ class Team2Runner(PlanRunner):
             return
         if base.remaining <= 0 or base.instrument != "options" or not base.contract or frac <= 0:
             return
+        # R2 (2026-09-14): an add increases exposure — it obeys the same session / cutoff / freshness rule as a fire
+        # at its origin, and the shared entry gate again at the order boundary (it rides a cached contract, so the
+        # picker's re-check never sees it)
+        stale = self._stale_signal(ap, e, self.rules())
+        if stale is not None:
+            self._log(ap, "stale_signal_skip", f"{tid}: add {stale['why']}", trigger=tid, **{k: v for k, v in stale.items() if k != "why"})
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "stale_signal_skip", "instruction": "add", **stale,
+                "ts": e.get("ts")}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+            return
         c = dict(base.contract)
         q = self.engine.quotes.get(base.order_symbol) if base.order_symbol else None
         if q is not None and q.ask and q.ask > 0:
@@ -1031,12 +1273,15 @@ class Team2Runner(PlanRunner):
         book (its real closed losers); an alert plan — or a money-mode plan that never routed — by the
         model. Never the larger of the two: the model is recomputed by today's newest code and can
         "lose" trades the desk declined at the time (SPY/IWM 2026-09-04 15:10)."""
-        routed = [t for t in trades if getattr(t, "entry_order_id", None) or float(getattr(t, "filled_qty", 0) or 0) > 0]
-        if mode in ("auto", "proposal") and routed:
+        if mode in ("auto", "proposal"):
+            # R1 (2026-09-14): a money-mode plan is judged by its BOOK — filled, closed losers only. A refused
+            # or deferred attempt (no order, no fill) is not a loss; neither is a routed order that never
+            # filled. The model ledger never spends a Practice loss allowance (F125). Before this the model
+            # counted until the first order was routed, so a zero-fill day could reach the two-loss cap.
             # R5: an X5 add rides the same position as its base trade — judge the POSITION
             groups: dict[str, list] = {}
             for t in trades:
-                if float(t.filled_qty or 0) > 0:
+                if float(getattr(t, "filled_qty", 0) or 0) > 0:
                     groups.setdefault(str(t.trigger_id).split("+add")[0], []).append(t)
             losers = sum(1 for ts in groups.values() if all(t.status == "closed" for t in ts) and sum(t.realized_pnl for t in ts) < 0)
             return losers, "book"
@@ -1123,23 +1368,75 @@ class Team2Runner(PlanRunner):
         sim = self._last_sim.get(ap.run_id) or {}
         model = list(sim.get("trades") or [])
         real = [t for t in ap.trades.values() if float(t.filled_qty or 0) > 0]
+        # R5 (2026-09-14): every ATTEMPT is on the record, not only the fills — a refused contract is the decisive
+        # reason a model trade was not taken, and it must survive the close, a restart and the capped event list
+        verdicts = getattr(self, "_contract_verdicts", {}).get(ap.run_id) or []
+        by_trigger: dict[str, dict] = {}
+        verdict_count: dict[str, int] = {}
+        for v in verdicts:
+            k = str(v.get("trigger"))
+            by_trigger[k] = v                                         # the LAST verdict for a trigger is its final one
+            verdict_count[k] = verdict_count.get(k, 0) + 1            # … the count keeps the retries visible
+        attempts = [t for t in ap.trades.values() if float(t.filled_qty or 0) <= 0 and not getattr(t, "is_add", False)]
+        # R5 (follow-up): attempt IDENTITIES come from the durable verdicts, then the trade projection is joined — a
+        # verdict journaled before the projection was persisted (a crash in between) is still an attempt, reported
+        # as journal-only evidence rather than silently counted as zero
+        known = {str(t.trigger_id) for t in ap.trades.values()}
+        journal_only = []
+        for k, v in by_trigger.items():
+            if k in known or k == "None":
+                continue
+            journal_only.append(SimpleNamespace(
+                trigger_id=k, setup_id=k.split("#")[0], status="unknown", order_symbol=v.get("symbol") if str(v.get("symbol") or "") != ap.symbol else None,
+                reason="journal-only: the trade projection was never persisted", errors=[], fired_ts=int(v.get("ts") or 0),
+                entry_order_id=None, filled_qty=0.0, is_add=False, _journal_only=True))
+        attempts += journal_only
         rows = []
         matched = 0
         used: set[str] = set()
+
+        def _attempt_row(t) -> dict:
+            v = by_trigger.get(str(t.trigger_id)) or {}
+            kind = ("policy_refusal" if v.get("verdict") == "refused" else "transient_deferral" if v.get("verdict") == "deferred"
+                    else "order_rejected" if t.status in ("failed", "cancelled", "rejected") and getattr(t, "entry_order_id", None)
+                    else "not_sent")
+            return {"trigger": t.trigger_id, "status": t.status, "attemptKind": kind, "contract": t.order_symbol,
+                    "verdict": v.get("verdict"), "verdictStage": v.get("stage"), "verdictCount": verdict_count.get(str(t.trigger_id), 0),
+                    "decisiveReason": v.get("reason") or t.reason or (t.errors[-1] if t.errors else None),
+                    "examined": v.get("examined"), "livePrice": ({"bid": v.get("bid"), "ask": v.get("ask")} if v.get("ask") is not None else None),
+                    "evidence": "journal-only" if getattr(t, "_journal_only", False) else "projection"}
+
         for mt in model:
             cands = [t for t in real if t.setup_id == mt.get("setup") and t.trigger_id not in used]
             hit = min(cands, key=lambda t: abs(int(t.fired_ts or 0) - int(mt.get("entryTs") or 0)), default=None)
+            att = None
+            if hit is None:
+                acands = [t for t in attempts if t.setup_id == mt.get("setup") and t.trigger_id not in used]
+                att = min(acands, key=lambda t: abs(int(t.fired_ts or 0) - int(mt.get("entryTs") or 0)), default=None)
             if hit is not None:
                 used.add(hit.trigger_id)
                 matched += 1
-            rows.append({"setup": mt.get("setup"), "entryTs": mt.get("entryTs"), "entryKind": mt.get("entryKind"),
-                         "modelStrike": mt.get("strike"), "modelPremium": mt.get("entryPremium"),
-                         "modelPnlPct": mt.get("pnlPct"), "modelExit": mt.get("exitReason"),
-                         "trigger": hit.trigger_id if hit else None, "status": hit.status if hit else "not taken",
-                         "avgFill": hit.avg_fill if hit else None, "qty": hit.filled_qty if hit else None,
-                         "realizedPnl": round(hit.realized_pnl - self._fees_paid(hit), 2) if hit else None,
-                         "contract": hit.order_symbol if hit else None,
-                         "note": ("" if hit else "model trade not taken by the book (see skips)")})
+            elif att is not None:
+                used.add(att.trigger_id)
+            row = {"setup": mt.get("setup"), "entryTs": mt.get("entryTs"), "entryKind": mt.get("entryKind"),
+                   "modelStrike": mt.get("strike"), "modelPremium": mt.get("entryPremium"),
+                   "modelPnlPct": mt.get("pnlPct"), "modelExit": mt.get("exitReason"),
+                   "trigger": hit.trigger_id if hit else (att.trigger_id if att else None),
+                   "status": hit.status if hit else (att.status if att else "not taken"),
+                   "avgFill": hit.avg_fill if hit else None, "qty": hit.filled_qty if hit else None,
+                   "realizedPnl": round(hit.realized_pnl - self._fees_paid(hit), 2) if hit else None,
+                   "contract": hit.order_symbol if hit else (att.order_symbol if att else None),
+                   "note": ("" if hit else ("attempted, not filled — see attempt" if att else "model trade not taken by the book (see skips)"))}
+            if att is not None:
+                row["attempt"] = _attempt_row(att)
+            rows.append(row)
+        for t in attempts:
+            if t.trigger_id not in used:
+                rows.append({"setup": t.setup_id, "entryTs": t.fired_ts or None, "trigger": t.trigger_id, "status": t.status,
+                             "qty": 0.0, "contract": t.order_symbol, "realizedPnl": 0.0, "attempt": _attempt_row(t),
+                             "note": ("journaled verdict without a trade projection — incomplete evidence, not zero"
+                                      if getattr(t, "_journal_only", False)
+                                      else "attempted where the read (as recomputed now) shows no model trade")})
         for t in real:
             if t.trigger_id not in used:
                 rows.append({"setup": t.setup_id, "entryTs": t.fired_ts, "trigger": t.trigger_id, "status": t.status,
@@ -1149,10 +1446,19 @@ class Team2Runner(PlanRunner):
         skips: dict[str, int] = {}
         for e in ap.events:
             k = str(e.get("event") or "")
-            if k.startswith("skip_") or k in ("max_concurrent_skip", "max_open_skip", "halt_skip", "entry_capped", "technique_loss_halt", "loss_halt"):
+            if k.startswith("skip_") or k.startswith("contract_") or k in ("max_concurrent_skip", "max_open_skip", "halt_skip", "entry_capped",
+                                                                          "technique_loss_halt", "loss_halt", "stale_signal_skip",
+                                                                          "backdated_signal_skip", "entry_gate_refused"):
                 skips[k] = skips.get(k, 0) + 1
+        # the durable funnel (from the verdict list, which the journal backs — not the capped event list)
+        opportunities = {str(t.trigger_id) for t in attempts} | {str(t.trigger_id) for t in real}
+        funnel = {"attempts": len(opportunities), "filled": len(real), "verdicts": len(verdicts), "journalOnly": len(journal_only),
+                  "policyRefused": sum(1 for v in by_trigger.values() if v.get("verdict") == "refused"),
+                  "transientDeferred": sum(1 for v in by_trigger.values() if v.get("verdict") == "deferred"),
+                  "picked": sum(1 for v in by_trigger.values() if v.get("verdict") == "picked"),
+                  "bookLosses": self._plan_losses(ap.config.mode, list(ap.trades.values()), sim)[0]}
         net = round(sum(t.realized_pnl - self._fees_paid(t) for t in ap.trades.values()), 2)
-        return {"technique": self.TECHNIQUE_ID, "basis": "session-read vs book",
+        return {"technique": self.TECHNIQUE_ID, "planFor": ap.plan_for, "basis": "session-read vs book", "funnel": funnel,
                 "theoreticalFires": len(model), "actualFires": len(real), "matched": matched,
                 "modelPnlPctSum": round(sum(float(mt.get("pnlPct") or 0) for mt in model), 2),
                 "realizedPnl": net, "realizedPnlGross": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
@@ -1219,9 +1525,16 @@ class Team2Runner(PlanRunner):
             trig.append(pseudo("pdl", f"15m close below the PDL zone {pdl.get('bottom', 0):.2f}–{pdl.get('top', 0):.2f} → puts",
                                "break PDL", "waiting" if ap.status == "armed" else ap.status, pdl.get("bottom"), "short",
                                [tgt_dn] if tgt_dn else []))
+        bias_dir = ((read.get("bias") or {}).get("direction")) if read else None
         for s in setups:
             label = (f"{s['kind'].replace('_', ' ')} at {s['anchor']:.2f} — buying the EMA13 pullbacks "
                      f"({'call' if s['direction'] == 'long' else 'put'}s), touches {s['touches']}")
+            if bias_dir and s["direction"] != bias_dir and not s.get("dead"):
+                # F123 (2026-09-14): `session.py` only ever selects a setup in the CURRENT bias direction, so a
+                # PM break the other way (SPY/IWM pm_break_up under scenario 4) cannot take an entry until a
+                # 15m close flips the bias. Say so on the label — the status stays `waiting` because the
+                # Armed page treats status as a closed set (an unknown value renders as a failure badge).
+                label += f" — inert while the bias is {'puts' if bias_dir == 'short' else 'calls'}: needs a bias flip (B1)"
             status = ("invalidated" if s.get("dead") else "fired" if (s["id"] in fired_setups or (open_pos and open_pos.get("setup") == s["id"]))
                       else "observed" if s.get("touches") else "waiting")
             trig.append(pseudo(s["id"], label, s["kind"], status, s.get("anchor"), s["direction"],
@@ -1391,6 +1704,8 @@ async def attach_team2_runner(engine) -> None:
         if restored:
             log.info("team2 runner restored %d armed plan(s)", restored)
         seeded = await runner.seed_loss_tally()
+        with contextlib.suppress(Exception):
+            await runner.load_contract_verdicts()               # R5: the close funnel survives a restart
         if seeded:
             log.info("team2 desk loss tally seeded with %d loser(s) from today's disarmed plans (F38)", seeded)
     except Exception:  # pragma: no cover

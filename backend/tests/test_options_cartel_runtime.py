@@ -31,6 +31,7 @@ async def runtime(repo, monkeypatch, mode="auto"):
     await setup(repo, monkeypatch, mode, arm=False)
     runner = CartelRuntime(repo.engine)
     runner.clock = lambda: OPEN
+    repo.engine.sim_executor.clock = lambda: runner.clock()
     repo.engine.cartel_observer = runner
     repo.engine.plan_runners = {"options_cartel": runner}
     repo.engine.techniques = {"options_cartel": runner}
@@ -108,7 +109,7 @@ async def test_option_campaign_api_entry_target_restore_and_stop(repo, monkeypat
     engine.position_manager._now = lambda: runner.clock()/1000
     spec = ExecutionInput(portfolio_id='pf', mode='auto', instrument='options', budget=500,
                           risk_pct=2, max_units=4, contract_symbol=contract, overnight_ack=True)
-    engine.quotes.on_quote(Quote(contract, bid=.39, ask=.4, last=.4, source='opra', ts=OPEN+10*60_000))
+    engine.quotes.on_quote(Quote(contract, bid=.39, ask=.4, last=.4, source='opra', source_ts=OPEN+10*60_000, ts=OPEN+10*60_000))
     app = create_app(engine.config, engine)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
         armed = await client.post('/api/options-cartel/runs/r1/arm', json=spec.model_dump(by_alias=True))
@@ -118,7 +119,7 @@ async def test_option_campaign_api_entry_target_restore_and_stop(repo, monkeypat
         async def entry_submitted():
             return (await repo.load('r1'))['state'].get('orderId') is not None
         await wait_for(entry_submitted)
-        premium = Quote(contract, bid=.34, ask=.35, last=.35, source='opra', ts=runner.clock())
+        premium = Quote(contract, bid=.34, ask=.35, last=.35, source='opra', source_ts=runner.clock(), ts=runner.clock())
         engine.quotes.on_quote(premium)
         await engine.sim_executor.on_quote(premium)
         async def adopted():
@@ -132,7 +133,7 @@ async def test_option_campaign_api_entry_target_restore_and_stop(repo, monkeypat
 
         runner.clock = lambda: OPEN+11*60_000
         engine.quotes.on_quote(Quote('HOOD', bid=55, ask=55.01, last=55, ts=runner.clock()))
-        premium = Quote(contract, bid=.60, ask=.61, last=.60, source='opra', ts=runner.clock())
+        premium = Quote(contract, bid=.60, ask=.61, last=.60, source='opra', source_ts=runner.clock(), ts=runner.clock())
         engine.quotes.on_quote(premium)
         await engine.position_manager.on_minute_bar(position,
             Bar('HOOD', '1m', OPEN+10*60_000, 55, 55.1, 54.9, 55, 1000))
@@ -165,7 +166,8 @@ async def test_option_campaign_api_entry_target_restore_and_stop(repo, monkeypat
         restored.clock = lambda: OPEN+12*60_000
         engine.position_manager._now = lambda: restored.clock()/1000
         engine.quotes.on_quote(Quote('HOOD', bid=48, ask=48.01, last=48, ts=restored.clock()))
-        premium = Quote(contract, bid=.45, ask=.46, last=.45, source='opra', ts=restored.clock())
+        engine.sim_executor.clock = lambda: restored.clock()
+        premium = Quote(contract, bid=.45, ask=.46, last=.45, source='opra', source_ts=restored.clock(), ts=restored.clock())
         engine.quotes.on_quote(premium)
         await engine.position_manager.on_minute_bar(position,
             Bar('HOOD', '1m', OPEN+11*60_000, 48.2, 48.3, 48, 48.1, 1000))

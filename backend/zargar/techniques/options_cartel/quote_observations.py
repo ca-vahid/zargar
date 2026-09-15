@@ -44,6 +44,13 @@ class QuoteRecorder:
             if row.get('mode') in ('proposal', 'auto') and row.get('status') in ('armed', 'paused', 'closing') \
                     and spec.get('instrument') == 'options' and spec.get('contract_symbol'):
                 targets.add((row['runId'], spec['contract_symbol']))
+        manager = getattr(self.service.engine, 'position_manager', None)
+        for position in manager.positions() if manager is not None else []:
+            if position.get('technique') != 'options_cartel' or position.get('status') in ('closed', 'archived') or not position.get('runId'):
+                continue
+            for leg in position.get('legs', []):
+                if leg.get('secType') == 'OPT' and abs(leg.get('qty', 0)) > 0:
+                    targets.add((position['runId'], leg['symbol']))
         if not targets:
             self.last_ids.clear()
             return

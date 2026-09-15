@@ -1602,3 +1602,76 @@ producer payload or risk setting changed. The journal registry invariant passes.
   LastRunTime and the running checkout's `git log -1` before triggering; if either moved in the
   last 5 minutes, wait a tick (the 11:45/11:50 collision).
 
+### Restart: exclusive deploy lease and a verified entry pause — 2026-09-14 (R4 of the EOD handoff; v0.7.73)
+
+The restart door (invariant 18) gained two guarantees the other team showed were missing: `restart.ps1` takes an
+EXCLUSIVE deploy lease (`logs\deploy.lock`, created atomically, owner = host:pid:time, stale after 600 s, released only
+by its owner; nested `start.ps1` inherits it via `ZARGAR_DEPLOY_LEASE`), and the entry pause is VERIFIED — the quiesce
+POST must answer `quiesced=true` AND `/api/ops/state` must read `quiesced=true` before the inventory is captured. A
+pause that is not confirmed refuses the ordinary path (exit 2); `-Force` / the watchdog's `-Override` remain the
+journaled exceptions. The watchdog skips its tick while a deploy holds the lease, so it cannot start a second engine
+during a restore. Refusals and the restore mismatch path release the lease. Scripts stay ASCII-clean where they were
+(start.ps1 keeps its three pre-existing non-ASCII bytes) and CRLF. Not exercised destructively against the shared
+runtime; verified by PowerShell parse and by the next coordinated deploy's transcript.
+
+
+### Cartel EOD correctness release — 2026-09-14 (v0.7.74)
+
+- SimExecutor requires finite positive uncrossed prices and receipt/source freshness (15s).
+  Option fills require OPRA/IBKR identity; only explicit sim quote-source mode permits synthetic
+  observations. Stale/delayed evidence leaves the order working and emits SimFillWaiting once
+  per changed reason. Real-broker protective routing is unchanged.
+- ExecutionEvidence is inserted in the execution transaction. OrderFill carries execution ID,
+  executor timestamp and evidence; legacy fills retain unknown provenance. Do not claim a
+  research sampler's nearby quote was the exact fill source.
+- All deployment/restart work uses scripts/deployment-lock.ps1. The Windows OS mutex covers
+  the authorized runtime directory across processes, releases after owner death, and permits
+  a same-owner nested restart. scripts/deploy.ps1 requires a reviewed full target commit,
+  clean runtime, fast-forward integration and matching post-build source before guarded restart.
+  It records owner, commit/version, phase, artifact hash and verification time. It adds no force
+  override. Desks must acquire this lease BEFORE changing/building the runtime checkout.
+- Restart inventory now includes Cartel arms and actual entry tasks; held swing positions
+  remain covered by the shared managed inventory. A proposal waiting for approval alone is
+  not an in-flight order.
+- Bounded BarDeliveryHealth events preserve per-consumer queue/close latency and handler
+  timing outside the trading callback. /api/ops/delivery-health is authenticated. These
+  measurements distinguish dispatch delay from stored-history completeness; they do not
+  infer missing venue prints or authorize retrospective entries.
+
+
+v0.7.74 convergence: restart, deploy, start and watchdog now share deployment-lock.ps1.
+The OS mutex owns the critical section and the existing deploy.lock marker remains the
+cross-version ownership record. An inherited token is honored only for the current owner
+or an explicitly nested descendant verified through process ancestry; an environment token
+alone cannot bypass ownership. Dead local marker owners can be recovered; live owners are
+not stolen on an age threshold. The R4 acknowledged-and-read-back quiesce requirement remains.
+Foreground manual start releases ownership at process handoff while preserving the existing
+watchdog startup grace period; detached deployment holds it through health/restore checks.
+
+### Dark app at 16:22 PT 2026-09-14 (after hours; ~2.5 minutes) — a conflict resolution broke the build
+
+Merging main v0.7.73 into the running checkout (which carried the watch job's unmerged 0.7.72) produced a changelog
+conflict; the Team2 desk's resolver concatenated the two release blocks and dropped the `]},` that closed the first.
+`restart.ps1` stopped the engine, then `start.ps1`'s frontend build failed on the TypeScript error and the restart
+exited 1 — with the new deploy lease still held, so the watchdog would have deferred for up to 10 minutes. Fixed by
+hand within ~2.5 minutes (block closed, lease removed, task re-run; v0.7.73 healthy, three Team2 plans for 09-15
+armed). Two rules from it: (1) `restart.ps1` releases the lease on EVERY failure exit and a lease whose owner
+process is gone is stale for both the next deploy and the watchdog — landed by the Cartel desk's
+`scripts/deployment-lock.ps1` convergence in v0.7.74 (OS mutex, dead-owner recovery, finally-released), which
+supersedes the Team2 desk's file-lease draft; (2) a merge into the running
+checkout must be built (`node scripts/check-release.mjs && npx tsc -b`) BEFORE the restart task is started — the
+door does not protect against a broken build because the stop happens before the build. The watch job's Team2
+commits (F123, F126, 0.7.72) had never been merged to main; they are brought to main with this change so the running
+checkout and main agree again.
+
+### Shared runner: technique state extras and one entry gate — 2026-09-14 (Team2 EOD follow-up; v0.7.76)
+
+Two hooks on `PlanRunner`, default no-ops, both technique-resolved: `state_extras(ap) -> dict` is merged into the armed
+state on EVERY `_persist` and `restore_extras(ap, state)` runs while re-arming a restored plan BEFORE the seed replay
+(a technique's durable overlay must exist before its first resumed read); `entry_gate(ap, trade, stage) -> reason | None`
+is asked at `pre_order` (after the contract pick and the review, before the mode branch), `order` (after sizing,
+immediately before the intent is written) and `retry` (the collar re-price). A reason skips the trade
+(`entry_gate_refused`, journaled as TechniquePlanTriggerSkipped, persisted); a hook that raises REFUSES (fail closed on
+a money path). Exits and cancels never pass through it. EM and Tips inherit the no-ops — their behaviour is unchanged
+(`tests/test_technique_arm*`, `test_tip_runner*`, `test_position_*`, `test_platform_*` green). Team2 uses them for the
+refused-fire overlay + decision watermark (R1/R3) and the wall-clock session/cutoff rule at the order boundary (R2).

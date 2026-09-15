@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.73";
+export const APP_VERSION = "0.7.77";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -18,7 +18,7 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "0.7.73",
+    version: "0.7.77",
     date: "2026-09-14",
     title: "Tips EOD review: liveness, governance, isolation",
     items: [
@@ -32,6 +32,25 @@ export const CHANGELOG: Release[] = [
       { tag: "improved", text: "Restart readiness (EOD-07) counts running Tips work (appraisals, intake reviews, retros, digests, rule audits) alongside EM's; stale rows are reported separately. Research quarantine (EOD-09): a corrupted shadow book can be flagged (POST /api/portfolios/{id}/quarantine) and is excluded from source trust and lane grading until reconciled; the rule audit records finished_at (EOD-08)." },
     ],
   },
+  {version:"0.7.76",date:"2026-09-14",title:"A refusal survives a restart, an add obeys the cutoff, a correction never backdates an order",items:[
+    {tag:"fixed",text:"Team2 R1: the list of fires the book never held (refused, deferred, stale, rejected, cancelled unfilled, sizing) now rides every ordinary save of the armed plan, is restored before the first read after a restart, and is rebuilt from the journaled contract verdicts. Before this a restart could bring the modelled position of a refused contract back. Orders with an unknown acknowledgement and partial fills are never exempted."},
+    {tag:"fixed",text:"Team2 R2: one entry gate at the order boundary for every money path - initial entries, trim-and-add orders riding a cached contract, and the collar re-price retry - judged on the wall clock after quoting, review and sizing. A synthetic 15:28 add delivered at 15:32 used to reach the order boundary; adds are also judged at their origin like fires."},
+    {tag:"fixed",text:"Team2 R3: a decision watermark per plan - a fire, add, trim or exit whose close is at or before the last decision was surfaced by a corrected or late minute and is recorded (backdated_signal_skip, with the time it was judged and the time it surfaced), never sent as a backdated order; a setup the current close creates still acts. Corrections and recovered minutes are now journaled durably (bar_revised / bar_recovered)."},
+    {tag:"improved",text:"Team2 R5: the close funnel builds its attempts from the durable contract verdicts and joins the trade projection to them, so a verdict journaled before the projection was saved is reported as journal-only evidence with its own row instead of vanishing; opportunities and retries are counted separately (verdicts / journalOnly)."},
+  ]},
+  {version:"0.7.74",date:"2026-09-14",title:"Recover preparation and reconcile daily results",items:[
+    {tag:"fixed",text:"Partial Cartel preparation retries unresolved history with bounded recovery, preserving successful analyses, existing arms and immutable plan revisions."},
+    {tag:"fixed",text:"Simulated fills require fresh eligible quotes and retain exact source evidence. Protective orders keep waiting for usable quotes rather than claiming stale fills."},
+    {tag:"improved",text:"Cartel daily review separates trades, fills, fees and remaining holdings, with candidate attempts and durable quote coverage. Archived account history remains available."},
+    {tag:"improved",text:"Deployment ownership is serialized across teams; bar delivery measurements distinguish queue delays from missing history."},
+  ]},
+  {version:"0.7.73",date:"2026-09-14",title:"A refused contract is not a loss, a late signal is not an order",items:[
+    {tag:"fixed",text:"Team2 R1: the Practice book's two-loss allowance now counts only filled, closed losers. A contract the live picker refused or deferred is no longer a modelled loss against the desk, and the read no longer keeps a proxy position for a fire the book never held - the next pullback is a new candidate. Today IWM's single refused attempt had charged one of the two allowances."},
+    {tag:"fixed",text:"Team2 R2: a fire is judged on the wall clock before any order chain starts and again after the quotes come back - outside its session, past the 15:30 cutoff, or older than three minutes it is recorded as a stale signal with source and decision times and never sent. A synthetic 15:28 signal delivered at 15:32 used to reach the order boundary."},
+    {tag:"fixed",text:"Team2 R3: a corrected or late-recovered minute is now merged into the desk's private tape by timestamp and recorded (bar_revised / bar_recovered) instead of being dropped because a later minute had already been seen; the next read runs on the corrected history without re-acting on anything already acted on."},
+    {tag:"fixed",text:"Restart scripts R4: a deploy takes an exclusive lease (logs/deploy.lock, owner-named, stale after ten minutes), the entry pause must be acknowledged by the engine AND read back from its state before anything is stopped, and the watchdog will not start a second engine while a deploy holds the lease. A pause that is not confirmed refuses the ordinary restart; -Force / -Override remain the journaled exceptions."},
+    {tag:"improved",text:"Team2 R5: the close scorecard keeps every attempt, filled or not, with its decisive contract verdict (policy refusal, transient deferral, order rejected) and the live price examined, and adds a durable funnel (attempts / filled / refused / deferred / book losses) rebuilt from the journal after a restart. Today's refused IWM 290 call read 'not taken - see skips' with no reason."},
+  ]},
   {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
     {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
     {tag:"fixed",text:"Setup messages show entry descriptions and prices instead of bare IDs. Fixed the visible Unicode escape and replaced the pulsing red attention banner with a quieter, accessible control."},

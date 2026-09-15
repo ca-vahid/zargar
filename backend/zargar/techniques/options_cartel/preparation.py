@@ -28,6 +28,7 @@ from .industry import IndustrySnapshot, read_industry, save_snapshot
 from .industry_feed import capture_industries
 from .leader_context import leader_evidence, research_protocol, summarize_leaders
 from .plans import CartelPlan
+from .preparation_attempts import held_identity, record_attempt, recovery_due, recovery_window
 from .preparation_io import DATA_ERRORS, PreparationHistory, observed_work, rate_limited
 from .preparation_readiness import (
     automatic_valid_until,
@@ -61,7 +62,7 @@ async def occupied_plans(engine, portfolio_id):
     for position in held:
         # The durable row stores its originating plan in config; run_id is
         # only an attribute of the in-memory managed-position object.
-        plan_id = (position.config or {}).get('runId') or f'managed:{position.id}'
+        plan_id = held_identity(position)
         records[plan_id] = {'planId': plan_id, 'symbol': position.symbol}
     return list(records.values())
 
@@ -179,7 +180,7 @@ async def run_preparation(engine, policy: PreparationPolicy, **kwargs):
 
 
 async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, discover=discover_market,
-                          industries=capture_industries, fetch=fetch_window, choose=planning_contract, on_started=None, resume_run_id=None, lease_owner=None):
+                          industries=capture_industries, fetch=fetch_window, choose=planning_contract, on_started=None, resume_run_id=None, lease_owner=None, recovery_attempt=False):
     started = clock()
     if not policy.enabled:
         raise ValueError('Enable automatic preparation before starting a run')
@@ -206,6 +207,9 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
               'savedAnalysesAvailable': prior.result.get('evaluated', 0) if prior else 0, 'startedAt': started, 'updatedAt': started, 'message': 'Starting market discovery', 'currentSymbol': None,
               'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0,
               'researchProtocol': research_protocol(policy, code_version=__version__)}
+    window = recovery_window(started, target_session)
+    retry_count = prior.result.get('recovery', {}).get('attempt', 0) if prior and prior.result.get('recovery', {}).get('window') == window else 0
+    result['recovery'] = {'attempt': retry_count + int(recovery_attempt), 'window': window, 'nextRetryAt': None}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
         parent_run_id=resume_run_id, primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
         config={'coverageVersion': 7, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
@@ -232,6 +236,8 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
         result['historyBatchSize'] = policy.history_batch_size
         if terminal:
             result['finishedAt'] = clock()
+            if result.get('dataErrors') or result.get('planErrors'):
+                result['recovery']['nextRetryAt'] = clock() + min(3600_000, 300_000 * 2**result['recovery']['attempt'])
         if not terminal and not force and time.monotonic()-last_persisted < 1:
             return None
         last_persisted = time.monotonic()
@@ -352,6 +358,8 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
             if len(selected_listings) < len(eligible):
                 result['warnings'].append(f"Optional cap limits this run to {len(selected_listings)} of {len(eligible)} eligible listings.")
             reused = {}
+            previous_rows = {r['symbol']: r for r in prior.result.get('rows', []) if r.get('analysisId')} if prior else {}
+            previous_pending = {r['symbol']: r for r in prior.result.get('shortlist', []) if r.get('status') == 'awaiting_contract'} if prior else {}
             if prior:
                 reused = {r['symbol']: r['analysisId'] for r in prior.result.get('rows', []) if r.get('analysisId') and r['status'] in ('candidate', 'filtered', 'research_only')}
                 # Child analyses survive a crash between their commit and the next progress checkpoint.
@@ -391,6 +399,13 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                             await checkpoint('evaluating')
                             continue
                         if symbol in reused:
+                            previous_row = previous_rows.get(symbol)
+                            if previous_row and previous_row.get('status') == 'filtered':
+                                result['rows'].append(json.loads(json.dumps(previous_row)))
+                                result['resumedAnalyses'] += 1; result['evaluated'] += 1; result['processed'] += 1
+                                result['notEvaluated'] = len(eligible)-result['processed']
+                                await checkpoint('evaluating')
+                                continue
                             saved = service._view(await service._load(reused[symbol]), detail=True)
                             if saved['config']['inputs']['as_of_ms'] != at:
                                 raise ValueError('Resumed analysis cutoff differs from the saved preparation')
@@ -492,8 +507,13 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                         ManagedPositionRow.portfolio_id == portfolio_id, ManagedPositionRow.symbol == symbol,
                         ManagedPositionRow.status.notin_(('closed', 'archived'))))
                 if existing or held:
-                    result['shortlist'].append({'symbol': symbol, 'status': 'already_managed', 'planId': existing.run_id if existing else held.run_id})
+                    result['shortlist'].append({'symbol': symbol, 'status': 'already_managed', 'planId': existing.run_id if existing else held_identity(held)})
                     continue
+                if symbol in previous_pending:
+                    result['shortlist'].append(json.loads(json.dumps(previous_pending[symbol])))
+                    continue
+                coverage = None
+                plan_record = None
                 try:
                     result['candidatesChecked'] += 1
                     minutes = await history_reader.baseline(symbol, at, client)
@@ -504,7 +524,9 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                         'minute_history': [MinuteInput(symbol=b.symbol, ts=b.ts, open=b.open, high=b.high,
                             low=b.low, close=b.close, volume=b.volume, source=b.source) for b in minutes if b.ts+60_000 <= at]})
                     enriched = await service.analyze(inputs, parent_run_id=run_id)
-                    key = hashlib.sha256(f'{target_session}:{portfolio_id}:{symbol}:{at}'.encode()).hexdigest()[:32]
+                    # A repaired baseline creates a revision, never rewrites an immutable plan.
+                    baseline_identity = json.dumps(baseline, sort_keys=True)
+                    key = hashlib.sha256(f'{target_session}:{portfolio_id}:{symbol}:{at}:{baseline_identity}'.encode()).hexdigest()[:32]
                     async with engine.sf() as session:
                         existing_plan = await session.get(TechniqueRun, key)
                     if existing_plan:
@@ -540,6 +562,7 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                             row['status'] = readiness.get('terminalStatus') or 'awaiting_contract'
                             row['reason'] = '; '.join(readiness['reasons'])
                             result['shortlist'].append(row)
+                            await record_attempt(engine, run_id, portfolio_id, row, clock(), policy=policy)
                             await checkpoint('preparing_plans')
                             continue
                         spec = prepared_execution(policy, portfolio_id, selected['selected']['symbol'], selection_policy)
@@ -548,9 +571,14 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                                 'validUntil': automatic_valid_until(plan), 'contextMinutes': [pack(b) for b in context]}})
                         row['status'] = 'armed'; result['armed'] += 1
                     result['shortlist'].append(row)
+                    await record_attempt(engine, run_id, portfolio_id, row, clock(), policy=policy)
                 except (*DATA_ERRORS, httpx.HTTPError) as exc:
                     result['planErrors'] += 1
-                    result['rows'].append({'symbol': symbol, 'status': 'plan_blocked', 'reason': str(exc)[:600]})
+                    blocked = {'symbol': symbol, 'analysisId': saved_id, 'planId': plan_record['runId'] if plan_record else None,
+                        'status': 'plan_blocked', 'reason': str(exc)[:600], 'volumeCoverage': coverage,
+                        'retryable': True, 'attemptedAt': clock()}
+                    result['rows'].append(blocked)
+                    await record_attempt(engine, run_id, portfolio_id, blocked, clock(), policy=policy)
                 await checkpoint('preparing_plans')
         result['coverageComplete'] = result.get('notEvaluated', 0) == 0 and result['dataErrors'] == 0
         result['currentSymbol'] = None
@@ -601,10 +629,24 @@ async def preparation_status(engine, workspace=None):
 
 
 async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
+    from .preparation_lease import claim, release
+    policy = read_policy(engine)
+    owner = new_id()
+    try:
+        await claim(engine, policy.workspace, owner, clock())
+    except ValueError:
+        return
+    try:
+        await _activate_pending(engine, clock=clock, choose=choose, lease_owner=owner)
+    finally:
+        await release(engine, policy.workspace, owner)
+
+
+async def _activate_pending(engine, *, clock=now_ms, choose=planning_contract, lease_owner=None):
     now = clock()
     day = dt.datetime.fromtimestamp(now/1000, ET).date()
     opens, closes = session_bounds(day.isoformat())
-    if not is_trading_day(day) or not opens-45*60_000 <= now < closes:
+    if now < opens-45*60_000:
         return
     running = getattr(engine, '_cartel_preparation_task', None)
     if running is not None and not running.done():
@@ -627,9 +669,6 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
     for item in updated_items:
         if item.get('status') != 'awaiting_contract' or not item.get('planId'):
             continue
-        if len(await occupied_plans(engine, portfolio_id)) >= policy.focus_count:
-            statuses[item['planId']] = 'Shortlist capacity reserved by existing arms or positions'
-            break
         async with engine.sf() as session:
             existing = await session.scalar(select(TechniqueArmed).where(TechniqueArmed.technique == 'options_cartel',
                 TechniqueArmed.portfolio_id == portfolio_id, TechniqueArmed.symbol == item['symbol'],
@@ -640,11 +679,20 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
         if existing or held:
             continue
         try:
+            from .preparation_lease import renew
+            if lease_owner:
+                await renew(engine, policy.workspace, lease_owner, clock())
             record = await service._load(item['planId'])
             plan = CartelPlan.model_validate(record.result['plan']['plan'])
             valid_until = automatic_valid_until(plan)
             if now >= valid_until:
                 statuses[plan.id] = 'Preparation evidence expired; next preparation run must rebuild the plan'
+                item.update(status='expired', reason=statuses[plan.id])
+                continue
+            if not is_trading_day(day) or not opens-45*60_000 <= now < closes:
+                continue
+            if len(await occupied_plans(engine, portfolio_id)) >= policy.focus_count:
+                statuses[plan.id] = 'Shortlist capacity reserved by existing arms or positions'
                 continue
             context, readiness = await publication_readiness(engine, plan, clock)
             if not readiness['ready']:
@@ -672,6 +720,8 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
                     item['status'] = readiness['terminalStatus']
                 continue
             spec = prepared_execution(policy, portfolio_id, selection['selected']['symbol'], selection_policy)
+            if lease_owner:
+                await renew(engine, policy.workspace, lease_owner, clock())
             await arm_with_capacity(engine, runtime, policy, plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
                 'clientKind': 'desktop', 'preparation': {'runId': row.id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'validUntil': valid_until,
                     'contextMinutes': [pack(b) for b in context]}})
@@ -679,6 +729,10 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
             item['status'] = 'armed'
         except Exception as exc:  # noqa: BLE001 - expose retry state without interrupting execution
             statuses[item['planId']] = f'{type(exc).__name__}: option preparation remains pending'
+        finally:
+            if item['planId'] in statuses:
+                item.update(reason=statuses[item['planId']], attemptedAt=clock())
+                await record_attempt(engine, row.id, portfolio_id, item, clock(), policy=policy)
     async with engine.sf() as session, session.begin():
         saved = await session.get(TechniqueRun, row.id, with_for_update=True)
         saved.result = {**saved.result, 'shortlist': updated_items}
@@ -718,7 +772,12 @@ async def _submit_preparation(engine, *, scheduled=False, workspace=None, **kwar
             latest = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
                 TechniqueRun.mode == 'preparation', TechniqueRun.status == 'done', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
         if latest and not latest.result.get('marketDataErrors') and PreparationPolicy.model_validate(latest.config.get('policy', {})) == policy and latest.config.get('session') == next_session_date(now) and 0 <= now-latest.as_of < 12*3_600_000:
-            return {'status': 'already_prepared', 'runId': latest.id}
+            if resumable(latest, policy, now):
+                if not recovery_due(latest, now):
+                    return {'status': 'recovery_waiting', 'runId': latest.id, 'recovery': latest.result.get('recovery', {})}
+                kwargs.update(resume_run_id=latest.id, recovery_attempt=True)
+            else:
+                return {'status': 'already_prepared', 'runId': latest.id}
     ready = asyncio.get_running_loop().create_future()
     ready.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
     engine._cartel_preparation_ready = ready
@@ -787,5 +846,5 @@ async def automatic_recovery(engine, *, clock=now_ms):
         return
     if row.result.get('phase') == 'waiting_for_benchmark' and row.config.get('session') == next_session_date(now):
         await submit_preparation(engine, workspace=policy.workspace, clock=clock)
-    elif resumable(row, policy, now) and row.status == 'failed' and row.result.get('phase') == 'interrupted':
-        await submit_preparation(engine, workspace=policy.workspace, resume_run_id=row.id, clock=clock)
+    elif resumable(row, policy, now) and row.status == 'failed' and row.result.get('phase') == 'interrupted' and recovery_due(row, now) or resumable(row, policy, now) and row.status == 'done' and recovery_due(row, now):
+        await submit_preparation(engine, workspace=policy.workspace, resume_run_id=row.id, recovery_attempt=True, clock=clock)

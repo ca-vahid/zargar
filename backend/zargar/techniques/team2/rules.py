@@ -88,6 +88,7 @@ class Team2Rules(MarketRules):
     premium_floor: float = 0.20             # never buy below this (the $0.05 lottery)
     premium_pick: str = "closest"           # F36: "closest" to target_premium (model AND live) | "first_under" (legacy)
     chase_cap_mult: float = 1.5             # F14: never pay more than target_premium x this for the contract (live ask)
+    max_signal_age_min: int = 3             # R2 (2026-09-14): a fire whose bar close is older than this at DECISION time is stale — journaled, never sent
     key_levels: str = "off"                 # C2 (2026-09-13, research, OFF): off | D1 | D2 | D3 — multi-day key levels as entry levels
     no_trade_zone: str = "pm_range"         # C1 (2026-09-13, DISABLED): "pm_range" (V6 picture) | "conjunction" (B5: none only inside BOTH ranges)
     pm_room_atr: float = 0.0                # C1 obstacle rule (0 = off): refuse a non-pm_break entry inside the PM range whose PM boundary ahead is < this x ATR away (F15's case)
@@ -154,7 +155,7 @@ SETTINGS_MAP: dict[str, str] = {
     "avoid_event_days": "avoid_event_days", "fee_per_contract": "fee_per_contract",
     "quote_candidates": "quote_candidates", "warmup_sessions": "warmup_sessions", "require_fresh_quote": "require_fresh_quote",
     "no_trade_zone": "no_trade_zone", "pm_room_atr": "pm_room_atr", "min_target_atr": "min_target_atr",
-    "key_levels": "key_levels",
+    "key_levels": "key_levels", "max_signal_age_min": "max_signal_age_min",
 }
 
 

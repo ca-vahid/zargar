@@ -174,6 +174,7 @@ class _Working:
     order: BrokerOrder
     eligible_at: int          # epoch ms — simulated submit latency
     triggered: bool = False   # for stop orders
+    waiting_reason: str = ""
 
 
 class SimExecutor(Executor):
@@ -183,11 +184,15 @@ class SimExecutor(Executor):
         slippage_bps: float = 2.0,
         size_impact_bps: float = 5.0,   # extra slippage when qty exceeds displayed size
         settings=None,                  # engine settings (fee schedule); None = Webull CA defaults
+        synthetic_quotes: bool = False,
         option_sessions: bool = True,   # EOD-05: options fill only in an eligible venue session
+        clock=None,
     ) -> None:
         super().__init__()
         self._settings = settings
+        self.synthetic_quotes = synthetic_quotes
         self._option_sessions = bool(option_sessions)
+        self.clock = clock or (lambda: now_ms())
         self._working: dict[str, _Working] = {}
         self._oca: dict[str, set[str]] = {}
         self._latency_ms = latency_ms
@@ -205,7 +210,7 @@ class SimExecutor(Executor):
 
     async def submit(self, order: BrokerOrder) -> None:
         async with self._lock:
-            self._working[order.id] = _Working(order=order, eligible_at=now_ms() + self._latency_ms)
+            self._working[order.id] = _Working(order=order, eligible_at=self.clock() + self._latency_ms)
             if order.oca_group:
                 self._oca.setdefault(order.oca_group, set()).add(order.id)
         await self.emit(ExecReport(kind="accepted", order_id=order.id))
@@ -218,7 +223,7 @@ class SimExecutor(Executor):
         async with self._lock:
             if order.id in self._working:
                 return
-            self._working[order.id] = _Working(order=order, eligible_at=now_ms())
+            self._working[order.id] = _Working(order=order, eligible_at=self.clock())
             if order.oca_group:
                 self._oca.setdefault(order.oca_group, set()).add(order.id)
 
@@ -247,9 +252,10 @@ class SimExecutor(Executor):
 
     async def on_quote(self, q: Quote) -> None:
         """Check working orders against a fresh quote."""
-        now = now_ms()
+        now = self.clock()
         fills: list[tuple[_Working, float]] = []
         cancels: list[str] = []
+        waiting = []
         async with self._lock:
             for oid, w in list(self._working.items()):
                 o = w.order
@@ -258,6 +264,14 @@ class SimExecutor(Executor):
                 if self._option_sessions and str(getattr(o, "sec_type", "") or "").upper() == "OPT" \
                         and not option_session_open(now):
                     continue                       # EOD-05: resting, not filled — no session
+                reason = self.quote_rejection(o, q, now)
+                if reason:
+                    if reason != w.waiting_reason:
+                        waiting.append(ExecReport(kind="fill_waiting", order_id=o.id, reason=reason,
+                            evidence=self.quote_evidence(q, now)))
+                    w.waiting_reason = reason
+                    continue
+                w.waiting_reason = ""
                 price = self._try_fill(w, q)
                 if price is not None:
                     fills.append((w, price))
@@ -269,14 +283,40 @@ class SimExecutor(Executor):
                             if sibling in self._working:
                                 del self._working[sibling]
                                 cancels.append(sibling)
+        for report in waiting:
+            await self.emit(report)
         for sibling in cancels:
             await self.emit(ExecReport(kind="cancelled", order_id=sibling, reason="oca_sibling_filled"))
         for w, price in fills:
             o = w.order
             await self.emit(ExecReport(
-                kind="fill", order_id=o.id, fill_qty=o.qty, fill_price=round(price, 4),
+                kind="fill", order_id=o.id, ts=now, fill_qty=o.qty, fill_price=round(price, 4),
                 commission=self._commission(o),
+                evidence={**self.quote_evidence(q, now), "eligibleAt": w.eligible_at,
+                    "slippageBps": self._slippage_bps, "sizeImpactBps": self._size_impact_bps},
             ))
+
+    def quote_rejection(self, order, q, at):
+        if not all(math.isfinite(v) for v in (q.bid, q.ask, q.ts, q.source_ts, q.bid_size, q.ask_size)) or not 0 < q.bid <= q.ask or min(q.bid_size, q.ask_size) < 0:
+            return "A finite uncrossed two-sided quote is required for a simulated fill"
+        if q.delayed or q.source == "chain":
+            return "Delayed quotes cannot price simulated fills"
+        if not 0 <= at-q.ts <= 15_000:
+            return "Quote receipt is stale or future-dated"
+        if self.synthetic_quotes and q.source in ("", "sim"):
+            return None
+        if order.sec_type == "OPT" and (q.source not in ("opra", "ibkr") or q.source_ts <= 0):
+            return "Option fill source identity or timestamp is unknown"
+        if not 0 <= at-(q.source_ts or q.ts) <= 15_000:
+            return "Quote source is stale or future-dated"
+        return None
+
+    def quote_evidence(self, q, at):
+        result = {"policy": "sim_fill_v1", "syntheticMode": self.synthetic_quotes,
+            "observedAt": at, "source": q.source, "sourceAt": q.source_ts or None,
+            "receivedAt": q.ts, "symbol": q.symbol, "bid": q.bid, "ask": q.ask,
+            "bidSize": q.bid_size, "askSize": q.ask_size, "delayed": q.delayed, "halted": q.halted}
+        return {key: None if isinstance(value, float) and not math.isfinite(value) else value for key, value in result.items()}
 
     def _try_fill(self, w: _Working, q: Quote) -> float | None:
         o = w.order
