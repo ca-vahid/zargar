@@ -157,3 +157,16 @@ def test_candidate_no_chase_waits_for_one_retest_then_stop_and_flatten_paths():
     closes = [99.0, 99.1, 99.2, 99.0, 99.1, 100.3] + [100.4] * 400
     res = evaluate_candidate(_bars(closes), {**ROW, "target": 150.0})
     assert res["path"]["end"] == "flattened" and res["path"]["at"] == "15:55"
+
+
+def test_target_distance_diagnostic_is_scoped_to_the_technique_knob():
+    """Tips desk request 2026-09-15: another desk's aggregates carry no EM research record. The runtime resolves
+    `techniques.<id>.target_distance_diagnostic` -> `execution.target_distance_diagnostic` (False); EM's is True."""
+    from zargar.settings_service import DEFAULTS
+    assert DEFAULTS["execution.target_distance_diagnostic"] is False
+    assert DEFAULTS["techniques.enhanced_market.target_distance_diagnostic"] is True
+    r = runner(Quotes())
+    assert r._target_distance_enabled() is True                      # bare rig: code default
+    r.rt = lambda key, default=None: False if key == "target_distance_diagnostic" else default
+    assert r._target_distance_enabled() is False
+

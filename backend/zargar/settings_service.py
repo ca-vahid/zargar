@@ -491,6 +491,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.min_one_contract": True,  # unchanged behaviour for the other desks - their call to flip
     "techniques.options_cartel.min_one_contract": True,
     "techniques.enhanced_market.min_one_contract": False,
+    "execution.target_distance_diagnostic": False,   # target-distance-v1 (2026-09-15): an EM diagnostic, absent from other desks' aggregates
+    "techniques.enhanced_market.target_distance_diagnostic": True,   # EM journals TechniqueTargetDistance at fire and fill (never gates)
     "execution.shadow_exit_observe": False,     # shadow-exit-v1 (2026-09-15): off for every desk; EM opts in per technique below
     "techniques.enhanced_market.shadow_exit_observe": False,   # EM Practice opt-in (also gated to the technique's default book); DISABLED pending the reviewers' activation
     "execution.spread_warn_pct": 20.0,          # DA-01: the generic rejudge_contract hook's T5.4-style spread warning threshold

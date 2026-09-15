@@ -557,6 +557,12 @@ class PlanRunner(SessionListener):
                 "policy": {"singleContractExit": ap.config.single_contract_exit, "ladder": list(EXIT_LADDER)},
                 "planBuiltFrom": (ap.plan or {}).get("builtFromSession")}
 
+    def _target_distance_enabled(self) -> bool:
+        """target-distance-v1 is an EM diagnostic: `techniques.enhanced_market.target_distance_diagnostic` is True,
+        `execution.target_distance_diagnostic` False, so other desks' aggregates carry no EM research record
+        (Tips desk request, 2026-09-15). Code default True keeps a bare test rig observable."""
+        return bool(self.rt("target_distance_diagnostic", True))
+
     def _shadow_enabled(self, ap: ArmedPlan) -> bool:
         """shadow-exit-v1 is an EM Practice opt-in: the technique's own knob (default off) AND the technique's default
         (Practice) book only - other desks and other books produce no experiment records."""
@@ -1660,7 +1666,8 @@ class PlanRunner(SessionListener):
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "orderId": o["id"],
                 "qty": tr.filled_qty, "avgFill": tr.avg_fill, "stop": tr.stop, "targets": tr.targets},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
-            with contextlib.suppress(Exception):          # diagnostic only (target-distance-v1)
+            if self._target_distance_enabled():
+              with contextlib.suppress(Exception):        # diagnostic only (target-distance-v1)
                 await self.engine.journal.append(ev.TECHNIQUE_TARGET_DISTANCE, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "fillBasis": tr.avg_fill,
                     **self._target_distance(ap, tr, stage="fill", qty=tr.filled_qty)},
@@ -2642,7 +2649,8 @@ class PlanRunner(SessionListener):
                 "verdictAfterCritic": j.verdict, "confidence": round(float(j.confidence), 3), "critic": trade.critic,
                 "criticMode": critic_mode, "criticDisposition": trade.critic_disposition, "criticFailure": critic_failure,
                 "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace,
-                "targetDistance": self._target_distance(ap, trade, stage="fire", qty=None)},
+                "targetDistance": (self._target_distance(ap, trade, stage="fire", qty=None)
+                                   if self._target_distance_enabled() else None)},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         # 2026-09-09 user decision (TRADING-RULES 1.4b, 25 kills net +0.5R): the critic's veto is a knob.
         #   veto           every "no" kills the fire (the behaviour until day 10)
