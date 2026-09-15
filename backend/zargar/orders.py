@@ -28,6 +28,28 @@ from .options import occ
 from .portfolio import PositionKeeper
 from .risk import RiskGate
 
+
+class SubmitUncertain(Exception):
+    """The order was written ahead and handed to the venue, and the venue's answer never arrived (F, 2026-09-14):
+    the outcome is UNKNOWN, not a failure. Carries the order id so the caller keeps the submission identity and
+    the exposure reservation until the venue's records reconcile it. Never retried as a fresh order."""
+
+    def __init__(self, order_id: str, cause: BaseException) -> None:
+        super().__init__(f"submission outcome unknown for order {order_id}: {type(cause).__name__}: {cause}")
+        self.order_id = order_id
+        self.cause = cause
+
+
+class SubmitUncertain(Exception):
+    """The order was written ahead and handed to the venue, and the venue's answer never arrived (F, 2026-09-14):
+    the outcome is UNKNOWN, not a failure. Carries the order id so the caller keeps the submission identity and
+    the exposure reservation until the venue's records reconcile it. Never retried as a fresh order."""
+
+    def __init__(self, order_id: str, cause: BaseException) -> None:
+        super().__init__(f"submission outcome unknown for order {order_id}: {type(cause).__name__}: {cause}")
+        self.order_id = order_id
+        self.cause = cause
+
 log = logging.getLogger('zargar.orders')
 
 
@@ -317,14 +339,17 @@ class OrderManager:
                 return await self._transition(order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
                     reject_reason=f'Pre-submit validation failed: {exc}',
                     extra={'beforeSubmitRejected': True, **extra_out})
-        await executor.submit(BrokerOrder(
-            id=order.id, symbol=order.symbol, sec_type=order.sec_type,
-            side=OrderSide(order.side), qty=order.qty,
-            order_type=OrderType(order.order_type),
-            limit_price=order.limit_price, stop_price=order.stop_price,
-            tif=TimeInForce(order.tif), portfolio_id=order.portfolio_id,
-            option_action=option_action,
-        ))
+        try:
+            await executor.submit(BrokerOrder(
+                id=order.id, symbol=order.symbol, sec_type=order.sec_type,
+                side=OrderSide(order.side), qty=order.qty,
+                order_type=OrderType(order.order_type),
+                limit_price=order.limit_price, stop_price=order.stop_price,
+                tif=TimeInForce(order.tif), portfolio_id=order.portfolio_id,
+                option_action=option_action,
+            ))
+        except Exception as exc:  # noqa: BLE001 - past this point a failure is an UNKNOWN outcome, never "not sent"
+            raise SubmitUncertain(order.id, exc) from exc
         return result
 
     def _estimate_price(self, intent: OrderIntent) -> float | None:

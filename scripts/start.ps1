@@ -220,6 +220,18 @@ if (-not $NoBuild) {
 $py = Join-Path $Root "backend\.venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { Fail "backend\.venv not found - create the venv first" 1 }
 
+# KFIN-04: ONE runtime identity for every door (task -> restart.ps1, a shell, the watchdog): what is
+# about to run - HEAD, clean-source verdict, the manifest of the complete built artifact, the deploy
+# script hashes and who asked - written BEFORE the launch to logs\runtime-identity.json. restart.ps1
+# copies it into the deployment receipt; a reviewed handoff must match it exactly.
+$identityCaller = $env:ZARGAR_DEPLOY_CALLER
+if (-not $identityCaller) { $identityCaller = "start.ps1" }
+try {
+  $identity = Write-ZargarRuntimeIdentity $Root $identityCaller
+  if (-not $identity.clean) { Warn ("launching UNREVIEWED source (" + $identity.problems.Count + " item(s), first: " + ($identity.problems | Select-Object -First 1) + ")") }
+  Step ("Runtime identity: " + $(if ($identity.head) { $identity.head.Substring(0, 12) } else { "no-git" }) + " artifact " + $(if ($identity.artifactManifestSha256) { $identity.artifactManifestSha256.Substring(0, 12) + " (" + $identity.artifactFileCount + " files)" } else { "none" }) + " via " + $identityCaller)
+} catch { Warn ("runtime identity not recorded: " + $_.Exception.Message) }
+
 if ($Detach) {
   Step "Starting Zargar in the background"
   Start-Process -FilePath $py -ArgumentList "-m", "zargar.main" `

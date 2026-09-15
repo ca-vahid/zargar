@@ -115,25 +115,59 @@ async def restart_state(engine) -> dict:
             pass
     # EOD-07 (2026-09-14): the EM service was the only paid work counted — a
     # running Tips appraisal / intake review / retro / digest / rule audit
-    # coexisted with inflightRuns=0. Count TipAnalystRun rows still RUNNING
-    # and RECENT (a row older than the reconciliation horizon is a stale
-    # record from a dead process, reported separately, never a restart veto).
+    # coexisted with inflightRuns=0. KFIN-04 (same day): the first cut judged a
+    # RUNNING row by its age (older than two hours = stale) — but age is not
+    # proof a paid job is dead. Ownership is: a row whose task is alive in THIS
+    # process is running however old it is; a row this process owns with no live
+    # task was lost (crash without a terminal persist) and is reconciled on the
+    # record, honestly labelled; a row of another runtime is judged by that
+    # owner's heartbeat and only ever reported, never rewritten here.
     tip_running: list[str] = []
     tip_stale: list[str] = []
+    tip_reconciled: list[str] = []
     sf = getattr(engine, "sf", None)
     if sf is not None:
         try:
             from sqlalchemy import select as _sel
             from .models import TipAnalystRun
-            horizon = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)
+            from .runtime import runtime_id
+            from .techniques.tip.analyst import RUN_LIVENESS_S, live_runs
+            me = runtime_id()
+            alive = live_runs(engine)
+            now_dt = dt.datetime.now(dt.timezone.utc)
+            fresh_after = now_dt - dt.timedelta(seconds=RUN_LIVENESS_S)
+            lost: list[str] = []
             async with sf() as session:
-                rows = (await session.execute(_sel(TipAnalystRun.id, TipAnalystRun.kind, TipAnalystRun.created_at)
-                                              .where(TipAnalystRun.status == "running"))).all()
-            for rid, kind, created in rows:
+                rows = (await session.execute(
+                    _sel(TipAnalystRun.id, TipAnalystRun.kind, TipAnalystRun.created_at,
+                         TipAnalystRun.owner, TipAnalystRun.heartbeat_at)
+                    .where(TipAnalystRun.status == "running"))).all()
+            for rid, kind, created, owner, beat in rows:
                 key = f"tip:{kind}:{rid}"
-                if created is not None and created.tzinfo is None:
-                    created = created.replace(tzinfo=dt.timezone.utc)
-                (tip_running if (created is None or created >= horizon) else tip_stale).append(key)
+                seen = beat or created
+                if seen is not None and seen.tzinfo is None:
+                    seen = seen.replace(tzinfo=dt.timezone.utc)
+                fresh = seen is not None and seen >= fresh_after
+                if rid in alive:
+                    tip_running.append(key)                 # live task here: running, whatever its age
+                elif fresh:
+                    tip_running.append(key)                 # just created / heartbeat fresh: its task may not be
+                elif owner == me:                           #   registered yet, or another runtime carries it
+                    lost.append(rid)                        # ours, no live task, no heartbeat: nothing carries it
+                    tip_reconciled.append(key)
+                else:
+                    tip_stale.append(key)                   # another runtime's silent row: reported, not ours to edit
+            if lost:
+                async with sf() as session:
+                    for r in (await session.execute(_sel(TipAnalystRun).where(
+                            TipAnalystRun.id.in_(lost), TipAnalystRun.status == "running"))).scalars().all():
+                        r.status = "failed"
+                        r.error = (f"lost by its owner process {me} (no live task) — reconciled by restart readiness "
+                                   f"at {now_dt.isoformat(timespec='seconds')}")
+                        r.finished_at = now_dt
+                    await session.commit()
+                log.warning("restart_state: reconciled %d lost Tips run(s) owned by this process: %s",
+                            len(lost), ", ".join(tip_reconciled[:5]))
         except Exception as exc:  # noqa: BLE001
             inventory_error = (inventory_error + "; " if inventory_error else "") + f"tip runs: {exc}"[:160]
     running += len(tip_running)
@@ -164,6 +198,7 @@ async def restart_state(engine) -> dict:
         "inflightRuns": running,
         "tipRuns": tip_running,
         "tipRunsStale": tip_stale,
+        "tipRunsReconciled": tip_reconciled,
         "proposalsPending": proposals_pending,
         "quiesced": q_until > now,
         "quiesceUntil": q_until or None,

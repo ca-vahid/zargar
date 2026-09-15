@@ -181,3 +181,7 @@ TIP_INTAKE_RECOVERED = "TipIntakeRecovered"
 # the own-book shadow ledger, unresolved (evidence missing), or context (never opens)
 TIP_OWNBOOK_CLASSIFIED = "TipOwnBookClassified"
 
+# KFIN-09 (2026-09-14): frozen knowledge comparison + entry-variant cohort (evidence only)
+TIP_FROZEN_BUNDLE = "TipFrozenBundle"          # an immutable case bundle was captured (id = content hash)
+TIP_FROZEN_REPLAY = "TipFrozenReplay"          # one isolated replay under one knowledge variant
+TIP_ENTRY_COHORT = "TipEntryCohort"            # one eligible idea recorded at its decision (all dispositions)
