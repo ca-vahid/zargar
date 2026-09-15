@@ -519,3 +519,78 @@ async def test_g_the_model_s_own_held_position_is_left_to_the_model(monkeypatch)
     ap.trades[held.trigger_id] = held
     await runner.on_minute_bar("SPY", _rbar(10, 1, 99.0))          # through the EMA13, but the MODEL holds it: its own exit rules speak
     assert runner._exit.await_count == 0
+
+
+# ================================================================ v0.7.78 acceptance review (F, reconciliation), 2026-09-14
+async def _uncertain(runner, ap):
+    from zargar.orders import SubmitUncertain
+    t = _sub_trade(ap)
+    runner._alert = AsyncMock()
+    runner.engine.orders = SimpleNamespace(place=AsyncMock(side_effect=SubmitUncertain("ord-9", TimeoutError("ACK missing"))))
+    await runner._place_with_retry(ap, t, SimpleNamespace(), stage="entry")
+    assert t.submit_uncertain and t.status == "submitting" and t.entry_order_id == "ord-9"
+    return t
+
+
+async def test_f2_a_confirmed_zero_fill_is_resolved_persisted_and_survives_a_restart():
+    runner, ap = _rrig()
+    t = await _uncertain(runner, ap)
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 0, "rejectReason": "venue: cancelled, nothing filled"})
+    assert t.status == "cancelled" and not t.submit_uncertain
+    assert runner.state_extras(ap)["executionRefused"] == [t.trigger_id]
+    d = t.to_dict()
+    assert d["submitUncertain"] is False and d["status"] == "cancelled"
+    # duplicate confirmation: idempotent (no second reconciliation, status unchanged)
+    logged_before = len([c for c in runner._log.call_args_list if c.args[1] == "entry_reconciled"])
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 0})
+    assert len([c for c in runner._log.call_args_list if c.args[1] == "entry_reconciled"]) == logged_before == 1
+    # a restart restores the RESOLVED state, not the stale uncertainty
+    runner2, ap2 = _rrig()
+    await runner2._restore_trades(ap2, state={"trades": [d]})
+    r = ap2.trades[t.trigger_id]
+    assert r.status == "cancelled" and not r.submit_uncertain and runner2.state_extras(ap2)["executionRefused"] == [t.trigger_id]
+
+
+async def test_f2_a_restart_with_an_unresolved_uncertainty_asks_the_persisted_order_row():
+    runner, ap = _rrig()
+    t = await _uncertain(runner, ap)
+    d = t.to_dict()
+    assert d["submitUncertain"] is True
+
+    def rig_with_row(row):
+        r2, a2 = _rrig()
+        session = SimpleNamespace(get=AsyncMock(return_value=row))
+
+        class Ctx:
+            async def __aenter__(self): return session
+            async def __aexit__(self, *a): return False
+        r2.engine.sf = Ctx
+        return r2, a2
+    # the row says the venue rejected it with nothing filled: resolved and exempt after the restart
+    r2, a2 = rig_with_row(SimpleNamespace(status="REJECTED", filled_qty=0.0, reject_reason="venue rejected"))
+    await r2._restore_trades(a2, state={"trades": [d]})
+    tr = a2.trades[t.trigger_id]
+    assert tr.status == "failed" and not tr.submit_uncertain and r2.state_extras(a2)["executionRefused"] == [t.trigger_id]
+    # the row is still in flight (or absent): the uncertainty is KEPT, never cleared on absence of evidence
+    for row in (SimpleNamespace(status="SUBMITTED", filled_qty=0.0), None):
+        r3, a3 = rig_with_row(row)
+        await r3._restore_trades(a3, state={"trades": [d]})
+        tr3 = a3.trades[t.trigger_id]
+        assert tr3.status == "submitting" and tr3.submit_uncertain and t.trigger_id not in r3.state_extras(a3)["executionRefused"]
+        assert r3.owner_of("ord-9") == (a3.run_id, t.trigger_id), "the order stays indexed so a later report still lands"
+    # the row shows a fill: managed, resolved, never exempt
+    r4, a4 = rig_with_row(SimpleNamespace(status="FILLED", filled_qty=2.0, avg_fill_price=0.5))
+    await r4._restore_trades(a4, state={"trades": [d]})
+    tr4 = a4.trades[t.trigger_id]
+    assert tr4.status == "open" and tr4.filled_qty == 2 and not tr4.submit_uncertain and t.trigger_id not in r4.state_extras(a4)["executionRefused"]
+
+
+async def test_f2_cancel_after_a_partial_fill_never_looks_like_a_zero_fill():
+    runner, ap = _rrig()
+    t = await _uncertain(runner, ap)
+    await runner.on_order_update({"id": "ord-9", "status": "PARTIALLY_FILLED", "filledQty": 1, "avgFillPrice": .5})
+    assert t.status == "open" and t.filled_qty == 1 and not t.submit_uncertain
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 1})
+    assert t.status == "open" and t.filled_qty == 1 and t.remaining == 1, "the partial stays managed"
+    assert t.trigger_id not in runner.state_extras(ap)["executionRefused"]
+    assert t.to_dict()["filledQty"] == 1 and t.to_dict()["submitUncertain"] is False

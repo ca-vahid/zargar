@@ -1753,3 +1753,13 @@ manager's last await, immediately before the venue hand-off; a refusal there is 
 carried through every attempt (the EM desk's FA-01 on their branch does the same with their quote/budget guard — the two
 compose when their branch merges; the retry-loop signature is identical). EM inherits the uncertain-outcome handling:
 a terminal timeout on an entry is no longer marked `failed`. Tips override `_place_with_retry` and are unchanged.
+
+### Orders: uncertainty is resolved by the venue's report, live and at restore — 2026-09-14 (Team2 review F; v0.7.80)
+
+`Trade.submit_uncertain` (v0.7.78) is now CLEARED only on authoritative evidence: `on_order_update` resolves it on any
+venue-sourced report of the entry order (fill, partial, rejected, cancelled, expired — `entry_reconciled`, journaled) before
+the ordinary bookkeeping runs, so a confirmed zero-fill becomes an ordinary failed/cancelled entry and a fill stays
+managed; `_restore_trades` judges a still-uncertain entry against the persisted `orders` row through the same callback
+(`_reconcile_uncertain_from_row`) — a terminal or filled row is authoritative, an in-flight or missing row keeps the
+uncertainty (never cleared on absence, a local timeout or a cancel request). Duplicate reports are idempotent; a cancel
+after a partial keeps the cumulative fill. Shared behaviour (EM inherits it; Tips override the retry loop).
