@@ -95,9 +95,12 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
    batches. Nobody is reading the proposals unless the user opens the Knowledge tab.
 9. **Three truncated `experiment:*` notes are unproven** (no trace evidence) and stay
    truncated. KB-08's frozen-evidence comparison for the rulebook audit is not built.
-10. **Own-book mirroring for Meet Kevin is OFF**; multi-image evidence is queued (first image
-    only); Telegram intake is deprioritized. Tips with their evidence in a second image are
-    graded on the caption + first image.
+10. **Own-book mirroring for Meet Kevin is OFF**; Telegram intake is deprioritized. Multi-image
+    evidence is processed since KFIN-07 (2026-09-14): every supported attachment up to
+    `techniques.tip.intake_max_images` (4) / `intake_max_image_bytes` (8 MiB) /
+    `intake_vision_calls_per_message` (4) is transcribed and grounded per attachment id; images
+    beyond those budgets are explicit `skipped-over-budget` in the coverage manifest, and a
+    contradiction between documents fails verification into review instead of picking a side.
 11. **Tools that mint a session need `backend/.env`** — `tip_note_restore` and
     `tip_consolidation` must run from `C:/Cursor/zargar/backend`; from a worktree the apply
     step fails after printing the plan (learned 2026-09-14; nothing was written).

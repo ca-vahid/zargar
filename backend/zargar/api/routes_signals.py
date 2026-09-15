@@ -43,24 +43,57 @@ def build_signal_routes(app, eng, auth, config) -> None:
         postedAt: str | None = None       # authoritative posting time (feeds stated_at)
         editedAt: str | None = None
         imageCount: int | None = None
+        # multi-image intake (KFIN-07): the message's supported attachment set in
+        # order — {id, filename, contentType, bytes, dataUrl?, status?, error?}.
+        # An entry without dataUrl keeps the status the gateway gave it
+        # (failed / skipped-over-budget / absent); one whose bytes do not decode
+        # as an image is stored as unreadable. Beats imageDataUrl when present.
+        attachments: list[dict] | None = None
 
     @app.post("/api/ingest/manual", dependencies=[auth])
     async def ingest_manual(body: ManualIngest):
+        from ..technique.llm import decode_data_url
         image = None
         media_type = "image/png"
         if body.imageDataUrl:
-            from ..technique.llm import decode_data_url
             try:
                 image, media_type = decode_data_url(body.imageDataUrl)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
-        if not body.text.strip() and image is None:
-            raise HTTPException(status_code=400, detail="text or imageDataUrl required")
+        attachments: list[dict] | None = None
+        if body.attachments is not None:
+            attachments = []
+            for i, att in enumerate(body.attachments, start=1):
+                entry = {"id": str(att.get("id") or f"att-{i}"),
+                         "filename": str(att.get("filename") or ""),
+                         "contentType": str(att.get("contentType") or ""),
+                         "bytes": int(att.get("bytes") or 0),
+                         "status": str(att.get("status") or ""),
+                         "error": str(att.get("error") or "")}
+                data_url = att.get("dataUrl")
+                if data_url:
+                    try:
+                        entry["data"], entry["mediaType"] = decode_data_url(str(data_url))
+                        entry["bytes"] = len(entry["data"])
+                    except (ValueError, Exception) as exc:
+                        entry["status"], entry["error"] = "unreadable", str(exc)[:200]
+                elif not entry["status"]:
+                    entry["status"] = "absent"
+                attachments.append(entry)
+        has_att_bytes = any(a.get("data") for a in (attachments or []))
+        if not body.text.strip() and image is None and not has_att_bytes:
+            if attachments:
+                # every attachment failed/unreadable and there is no caption:
+                # nothing to extract — still record the message + its manifest
+                pass
+            else:
+                raise HTTPException(status_code=400, detail="text or imageDataUrl required")
         return await eng.signals_service.ingest_manual(
             body.text, source_name=body.source_name, subject=body.subject,
             image=image, image_media_type=media_type,
             message_id=body.messageId, posted_at=body.postedAt,
-            edited_at=body.editedAt, image_count=body.imageCount)
+            edited_at=body.editedAt, image_count=body.imageCount,
+            attachments=attachments)
 
     @app.get("/api/signals/sources", dependencies=[auth])
     async def source_scorecards():

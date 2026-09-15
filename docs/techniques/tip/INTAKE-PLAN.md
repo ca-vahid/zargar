@@ -239,10 +239,36 @@ v0.7.50): when a message carries both text and an image, the transcript used
 to REPLACE the caption downstream, so a perfectly valid caption quote failed
 deterministic grounding (Meet Kevin's first tips died here). The corpus is
 now the sectioned union, with a coverage manifest line ("attachment 1 of N
-processed" — the gateway reports `imageCount`). Known limitation, queued:
-only the FIRST image is transcribed; quotes that live in image 2+ still
-cannot ground. Multi-image processing and per-source quote attribution are
-the agreed follow-up design.
+processed" — the gateway reports `imageCount`).
+
+**Multi-image intake (KFIN-07, 2026-09-14).** The gateway posts the message's
+whole supported attachment set (`collect_attachments`: Discord attachment id,
+message order, embeds as `embed-<n>-<key>`; `fetch_attachments_for_ingest`
+keeps a fetch failure as `failed` + reason and an oversize/over-cap image as
+`skipped-over-budget` — nothing is dropped). `ingest_manual(attachments=)`
+stages the coverage manifest on `meta.attachments` — one entry per attachment
+with a stable id, ordinal, status and (after processing) transcript — storing
+bytes as `chat_assets` up to `techniques.tip.intake_max_images` (4) and
+`intake_max_image_bytes` (8 MiB); undecodable bytes are `unreadable`, an
+entry without bytes is `absent`. `process_content` transcribes every other
+stored image with `Extractor.transcribe` (one vision call each, bounded by
+`intake_vision_calls_per_message` = 4 incl. the primary read; beyond it →
+`skipped-over-budget`; a provider failure → `failed`), and the primary image
+rides the extraction read as before. The grounding corpus is
+`build_grounding_corpus`: the caption + `--- attachment n of N <status> (id …)
+---` blocks; `ground_signal(…, blocks)` attributes every quote to the FIRST
+evidence block containing it (`grounding.quoteSources`, `evidenceBlocks`) and
+never searches a header line or an unprocessed attachment — an unprocessed
+image is never evidence. `detect_attachment_conflicts` flags two readings of
+one ticker/instrument/direction from DIFFERENT blocks that disagree on
+strike/expiry/premium/entry/target/stop: both are `conflict` (grounding fails,
+verification check `attachments_consistent`, journaled `TipAttachmentConflict`,
+no dedupe onto an older tip) — recorded, never blended; the discarded→review
+path hands them to the analyst. The processed manifest is journaled as
+`TipAttachmentsProcessed`. Dedupe (the message-id claim) and the revision
+policy (an edit is `TipMessageRevised`, never auto re-extracted) are unchanged:
+a duplicate delivery repeats neither the extraction nor a transcription.
+Tests: `tests/test_tip_multi_image_intake.py`.
 
 **Pre-extraction dedupe is an atomic CLAIM** (v0.7.26): check + write-ahead
 insert in one advisory-locked transaction. Completed row → duplicate; fresh
