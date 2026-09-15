@@ -243,3 +243,25 @@ stays v0.7.83 build `b7d8a57` until the process owner restarts** (the elevated t
 `scripts\stop.ps1`, or the EM desk's deploy path). No order was placed by any attempt. Practice
 scope, risk budgets and live gates unchanged. The two pending cards (AFRM, MRNA; expire 11:30 ET)
 will be revalidated through the new endpoint once 0.7.85 is live.
+
+## AP85-01..03 (review verdict `2026-09-15-v085-approval-verdict.md`; release 0.7.86)
+
+Reviewer file `test_v085_approval_boundaries_review.py` adopted verbatim (7 passed). Changes:
+AP85-01 - blockers carry an `identity` (incident id parsed from the admission refusal); the
+override records the identities it acknowledged; the final admission runs BEFORE any dispatch
+(spreads included) and admits only when the check names exactly an acknowledged incident; an
+unavailable integrity store (`integrity_unavailable`) always blocks. AP85-02 - the fingerprint
+binds the complete displayed plan (final stop, admissible size, unit loss, planned risk, budget,
+the approved maximum limit, symbol/secType/book, exit-plan hash, bracket, vehicle, each blocker's
+code + identity/detail); `expected` is REQUIRED on every manual approval (app and Telegram:
+the first Telegram tap only revalidates and shows the plan with confirm buttons carrying the
+fingerprint); the approval's revalidation runs at the confirmed maximum limit and may only
+improve the submitted limit; the pending->approved claim re-checks, under the row lock, that the
+row's readiness fingerprint, bracket stop and limit still match the confirmed snapshot and the
+order is built from that snapshot; `assess` never rewrites a claimed row. AP85-03 - half =
+floor(displayed quantity / 2), minimum one, validated against the same displayed fingerprint;
+the recorded exposure is the half exposure. Research follow-through: lateness is judged at the
+actual sample time (after any awaited refresh), an in-process pre-fetch claim stops timer +
+recovery double fetches, legacy records are re-judged at `sampledAt` (option session at capture,
+missing age = never adequate). Tests written by the reviewer only, per the user's instruction
+to ship fast; the existing suites were updated to pass the fingerprint.

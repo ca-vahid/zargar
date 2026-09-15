@@ -199,11 +199,31 @@ def evidence_ok(rec: dict | None, *, is_option: bool) -> tuple[bool, str | None]
     judged at capture); age is the age at capture."""
     if rec is None:
         return False, "no quote"
-    status, reasons = qualify_quote({**rec, "ageSeconds": rec.get("ageSeconds")}, is_option=is_option,
-                                    max_age_s=float("inf"), now_ms=int(rec.get("sourceTs") or 0) + 1, check_session=False)
+    if rec.get("ageSeconds") is None:
+        return False, "no age recorded at capture"
+    if "eligibility" in rec:
+        # captured under the provenance policy: its capture-time verdict stands,
+        # re-checked on its own provenance fields
+        status, reasons = qualify_quote(dict(rec), is_option=is_option, max_age_s=float("inf"),
+                                        now_ms=int(rec.get("sourceTs") or 0) + 1, check_session=False)
+        if status == "ineligible":
+            return False, "; ".join(reasons)
+        if rec.get("quoteStatus") != "fresh":
+            return False, f"quote {rec.get('quoteStatus')} (age {rec.get('ageSeconds')}s)"
+        return True, None
+    # a LEGACY record (no eligibility evaluated at capture): re-judge it at its
+    # own trustworthy capture time - provenance fields plus the option session
+    # at `sampledAt` - never assume it passed checks that did not exist
+    try:
+        cap = dt.datetime.fromisoformat(str(rec.get("sampledAt")))
+        cap_ms = int(cap.timestamp() * 1000)
+    except Exception:                                    # noqa: BLE001
+        return False, "legacy record: capture time unknown"
+    status, reasons = qualify_quote(dict(rec), is_option=is_option, max_age_s=float("inf"),
+                                    now_ms=cap_ms, check_session=is_option)
     if status == "ineligible":
-        return False, "; ".join(reasons)
-    if rec.get("quoteStatus", "fresh") != "fresh":
+        return False, "legacy record re-judged: " + "; ".join(reasons)
+    if rec.get("quoteStatus") != "fresh":
         return False, f"quote {rec.get('quoteStatus')} (age {rec.get('ageSeconds')}s)"
     return True, None
 
@@ -357,6 +377,7 @@ async def sample_one(eng, cohort_id: str, *, now: dt.datetime | None = None) -> 
     """Take the configured LATER sample for one pending row (idempotent: a
     row that is no longer pending is left alone). Labeled `delayed`; a
     sample far past its due time is MISSED, never back-labeled."""
+    now_injected = now is not None
     now = now or _utcnow()
     s = eng.settings
     max_age = float(s.get("techniques.tip.entry_cohort_quote_max_age_seconds", 300.0) or 300.0)
@@ -385,11 +406,32 @@ async def sample_one(eng, cohort_id: str, *, now: dt.datetime | None = None) -> 
             r.gaps = gaps
             await session.commit()
             return _row_dict(r)
-    quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="delayed")
-    if quote is None and sym != (r.ticker if r else sym):
+    # pre-fetch claim (in-process): the timer and the recovery worker never both
+    # fetch for the same row; the row lock below still guards the write
+    claims = getattr(eng, "_tip_cohort_sampling", None)
+    if claims is None:
+        claims = set()
         with contextlib.suppress(Exception):
-            await asyncio.wait_for(eng.options.refresh_now(sym), timeout=5.0)
+            eng._tip_cohort_sampling = claims
+    if cohort_id in claims:
+        async with eng.sf() as session:
+            r = await session.get(TipEntryCohortRow, cohort_id)
+            return _row_dict(r) if r else None
+    claims.add(cohort_id)
+    try:
         quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="delayed")
+        if quote is None and sym != (r.ticker if r else sym):
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(eng.options.refresh_now(sym), timeout=5.0)
+            quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="delayed")
+    finally:
+        claims.discard(cohort_id)
+    # timing eligibility is judged at the ACTUAL sample time (after any awaited
+    # refresh), on the same clock the row was gated with
+    if quote is not None and not now_injected:
+        with contextlib.suppress(Exception):
+            observed_at = dt.datetime.fromisoformat(str(quote.get("sampledAt")))
+    late_s = (observed_at - due).total_seconds() if due else 0.0
     eligible = bool(due is None or late_s <= tolerance_s)
     async with eng.sf() as session:
         # row-locked claim: the in-process timer and the recovery worker cannot both finalize
