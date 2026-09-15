@@ -10,6 +10,7 @@ import { CartelArmControls } from "./CartelArmControls";
 import { CartelReplayControls, CartelReplayResult } from "./CartelReplayControls";
 import { CartelPremiumReplayControls, CartelPremiumReplayResult } from "./CartelPremiumReplay";
 import { CartelQuoteRecording } from "./CartelQuoteRecording";
+import { CartelIntradayResearch } from "./CartelIntradayResearch";
 import { CartelEvidenceResult } from "./CartelEvidenceResult";
 import { CartelSweepControls, CartelSweepResult } from "./CartelSweepControls";
 import { CartelScanControls, CartelScanResult } from "./CartelScanControls";
@@ -248,6 +249,7 @@ export function OptionsCartelPage() {
       {(tab === "plans" || tab === "settings") && <CartelPreparation key={`${tab}:${workspace}:${workspace === "practice" ? practiceBookId : ""}`} view={tab} onOpen={open} onChanged={refresh} onSettings={() => setPageTab("settings")} />}
       {tab === "settings" && <CartelScheduleControls />}
       {tab === "settings" && <CartelQuoteRecording/>}
+      {(tab === "plans" || tab === "settings") && <CartelIntradayResearch key={`intraday-${workspace}`} settings={tab==='settings'}/>}
       {tab === "validation" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}
         onSelect={setIndustrySnapshotId} onImported={async run => {selectRun(run); await refresh();}}/>}
       {tab === "validation" && <CartelScanControls busy={!!busy} profile={profile} direction={direction}

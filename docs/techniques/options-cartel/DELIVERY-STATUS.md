@@ -48,3 +48,11 @@ provider-gap investigation: Yahoo omits November 12, 2025 while Alpaca raw provi
 history contains it. Different volume/adjustment datasets are not spliced automatically.
 Risk settings and saved campaigns were not migrated. Prospective cohort collection is still
 required before changing strategy thresholds or claiming improved expectancy.
+
+## Intraday research boundary
+
+Implemented non-executing Practice observations of blocked-market shortlists. Frozen prior
+completed daily EMAs are compared with completed 15-minute index candles. Hypothetical stock
+confirmations have no contract, fill or profit claim and cannot be armed. See
+[the accepted decision](INTRADAY-RESEARCH-DECISION-2026-09-14.md). Automatic reopening remains
+unimplemented and unapproved; observations must be evaluated prospectively before proposing it.

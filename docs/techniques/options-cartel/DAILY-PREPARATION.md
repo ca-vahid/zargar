@@ -105,3 +105,14 @@ archived book). It separates confirmed fills/closed campaigns, gross and net rea
 allocated entry/exit fees, remaining holdings, preparation exclusions and option-recording
 coverage. The native currency must match the account for combined monetary totals; missing
 historical FX or marks are unavailable, not substituted from today's prices.
+
+## Intraday research while the market gate is blocked
+
+The Practice-only monitor observes the saved blocked shortlist against frozen completed-daily
+EMA levels after closed 15-minute index candles. Two consecutive aligned observations can
+produce research-only stock confirmations, subject to existing source, volume and entry
+checks. It cannot unlock or arm these records. The daily market gate and execution policies
+remain unchanged. Settings → Intraday market research controls collection only.
+
+Protocol, source distinction and future promotion requirements are preserved in
+[the September 14 decision](INTRADAY-RESEARCH-DECISION-2026-09-14.md).
