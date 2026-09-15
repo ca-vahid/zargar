@@ -277,7 +277,7 @@ def test_changed_source_after_a_claim_binds_the_output_to_the_old_revision_and_o
         job = next(p for p in pend if p["id"] == n.id)
         rev1 = job["revisionId"]
         # the source is edited while the worker transcribes
-        await rig.deliver("update", {"id": "123", "channel_id": CH, "guild_id": "guild", "content": "edited caption https://x.com/i/broadcasts/1abc",
+        await rig.deliver("update", {"id": "123", "channel_id": CH, "guild_id": "guild", "content": "edited caption https://x.com/i/broadcasts/1abc123",   # the SAME media link: identical input
                                      "edited_timestamp": T1}, seq=2)
         revs = await rig.revs(n.id)
         assert len(revs) == 2 and revs[0]["id"] == rev1

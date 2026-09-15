@@ -252,9 +252,10 @@ def build_technique_routes(app, eng, auth, config) -> None:
         return {"noteId": note_id, "revisions": revs}
 
     @app.get("/api/technique/ingest/pending", dependencies=[auth])
-    async def ingest_pending():
-        """The em_ingest worker polls this: video notes waiting for a transcript."""
-        return {"notes": await _ingest(eng).pending()}
+    async def ingest_pending(owner: str = "em-ingest"):
+        """The em_ingest worker polls this: video notes waiting for a transcript, each leased to `owner`
+        (a worker INSTANCE identity, e.g. em-ingest:host:pid - WI-01)."""
+        return {"notes": await _ingest(eng).pending(owner=owner)}
 
     class IngestTranscriptBody(BaseModel):
         noteId: str

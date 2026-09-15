@@ -263,3 +263,12 @@ availability). All previous reviewer files stay green.
 
 Still deferred: scenario records, alignment, the source-informed candidate producer (design accepted, not built);
 re-transcription policy when the media itself changes (today: a new media hash simply makes a new output key).
+
+**WI-01..05 (worker wiring review, same evening):** lease context validated in full (note, revision, fence,
+unexpired claimed lease, media identity) before any write; worker INSTANCE identities; media identity per revision
+(replacement media re-pends the note, identical media reuses the transcript); extraction and board bound to one
+revision with the source re-checked before every side effect (superseded work is archived, never published,
+never completes a newer job); conflicts and old-context failures never mutate the current projection; a reused
+output key makes the persisted artifact the projection (`reprocess=True` for a deliberate re-run). Closure table
+in DELIVERY-A-RESPONSE; cases `tests/test_codex_worker_revision_ownership.py` + `tests/test_em_worker_ownership.py`.
+

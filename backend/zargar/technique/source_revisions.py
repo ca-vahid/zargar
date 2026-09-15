@@ -247,6 +247,14 @@ async def resume_unfinished(session, *, owner: str, now: dt.datetime | None = No
     return out
 
 
+async def job_by_id(session, job_id: str) -> TechniqueSourceJob | None:
+    return await session.get(TechniqueSourceJob, job_id, with_for_update=True)
+
+
+async def revision_by_id(session, revision_id: str) -> TechniqueSourceRevision | None:
+    return await session.get(TechniqueSourceRevision, revision_id)
+
+
 async def job_for_note(session, note_id: str) -> TechniqueSourceJob | None:
     """The CURRENT revision's job for a note (locked), or None when the note has no revision yet."""
     cur = await current_revision(session, note_id)
@@ -354,7 +362,7 @@ async def checkpoint(session, *, job_id: str, fence_token: int, item_key: str, a
         job.stage = stage
     if outcome:
         job.outcome = outcome
-        if outcome in ("done", "permanent", "retryable"):
+        if outcome in ("done", "permanent", "retryable", "superseded"):
             job.lease_owner = None                      # retryable = released for the next claim (after next_due_at)
             job.lease_until = None
         if outcome == "retryable":
@@ -366,7 +374,8 @@ async def checkpoint(session, *, job_id: str, fence_token: int, item_key: str, a
         job.error = error[:500]
     job.updated_at = now
     await session.flush()
-    return {"job": job_dict(job), "artifactId": (art_row.id if art_row is not None else None), "artifactReused": reused}
+    return {"job": job_dict(job), "artifactId": (art_row.id if art_row is not None else None), "artifactReused": reused,
+            "artifactPayload": (dict(art_row.payload or {}) if art_row is not None else None)}
 
 
 async def artifacts_for(session, revision_id: str) -> list[dict]:

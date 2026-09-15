@@ -372,3 +372,37 @@ revisioned).
 **Next PR (proceeding):** gateway deletion forwarding; the transcription/extraction workers through immutable
 artifacts + fenced checkpoints; the sequence-reset ordering through the real gateway/API path; tombstones that
 keep history and leave managed positions under their exit owner. Candidates stay order-free.
+
+
+---
+
+# Worker wiring review (`2026-09-14-worker-wiring-review.md`) - WI-01..05, same evening
+
+Scope kept to worker ownership and revision correctness. The six reviewer cases are adopted unchanged as
+`tests/test_codex_worker_revision_ownership.py` (6 failed -> 6 pass); the additional acceptance contracts are
+`tests/test_em_worker_ownership.py` (7 cases). Current main (0.7.77) is integrated with the build helper kept.
+
+| finding | closure | where |
+|---|---|---|
+| WI-01 (P1) a transcript lease could write a different note | The COMPLETE lease context is validated before any write: the job must belong to the requested note (`job.note_id`), the fence and an unexpired claimed lease are checked by `checkpoint`, and the media identity is the LEASED revision's own; any mismatch is `StaleWorker` / HTTP 409 with no artifact, checkpoint or projection change. Worker instances lease under their own identity (`/ingest/pending?owner=em-ingest:host:pid`, `worker_identity()`); the same instance renews without changing its fence, another instance is not handed the note and cannot complete it | `ingest.py::store_transcript`, `pending`; `source_revisions.py::job_by_id`, `revision_by_id`; `routes_technique.py`; `tools/em_ingest.py` |
+| WI-02 (P1) an old transcript suppressed replacement-media work | Media identity follows the accepted revision: `store_revision` re-derives the media link from the current text; replacement media makes the note `pending_transcript` again with its transcript dropped from the projection; unchanged media keeps it (identical input, reusable - `_transcript_for_media`). `pending()` serves the CURRENT revision's media and skips notes whose current media already has a transcript artifact. `store_transcript` archives an old worker's output under its revision and updates the projection only when the job's media is the current media. Extraction input = transcript (when current) + the CURRENT caption. The worker's download cache is keyed by note + media hash (`media_cache_name`). The team's changed-source case was revised to the input-identity contract (same media link) | `ingest.py::store_revision`, `pending`, `store_transcript`, `extract`; `tools/em_ingest.py` |
+| WI-03 (P1) superseded/deleted extraction reached current planning | Extraction is claimed BEFORE the paid read and bound to that revision; after the read the source is re-checked under the lock - edited or tombstoned means the result is archived as an artifact of the leased revision with the job `superseded`, the projection untouched and no board. `board_check` is authorized for one revision (the extraction's), claims before any planning side effect, re-checks the source before every plan run, before every arm and before publication; a change stops it, arms nothing, publishes nothing and ends the leased job `superseded` - it never claims whatever is current at the end | `ingest.py::extract`, `_extract_and_check`, `board_check`, `_source_is_current` |
+| WI-04 (P1) a lease conflict marked another worker's note failed | `StaleWorker` is an ownership conflict: `_extract_and_check` logs and mutates nothing. Failures are recorded only under the ORIGINAL context (`_fail(job=...)` / `revision_id=...`): the job's own fence (a stale fence records nothing), and the note turns `failed` only when that revision is still current; an old attempt's failure never overwrites a newer revision's success; no context = no mutation | `ingest.py::_extract_and_check`, `_fail`, `extract` (records its own LLM failure under its job) |
+| WI-05 (P2) reused output key diverged from the displayed extraction | When the output key already exists the PERSISTED artifact becomes the projection (the new answer is not displayed unpersisted); `artifactId` is inside the payload so the projection always names a persisted artifact; `extract(reprocess=True)` gives a deliberate re-run its own processing identity (a new artifact) before it is shown; the board result records the revision it consumed | `ingest.py::extract`; `source_revisions.py::checkpoint` returns `artifactPayload` |
+
+Boundary coverage added (`tests/test_em_worker_ownership.py`): two worker instances competing for one job (only
+the claimant renews or completes; a guessed fence is 409); unchanged media with an edited caption (transcript
+reused, extraction sees the current caption) and then replacement media (pending again, cache identity changes);
+duplicate completion (exactly one artifact); source edit and tombstone during planning (no arm, no publication,
+old job `superseded`, newer job not done, nothing disarmed or flattened); an old attempt's failure after the newer
+revision succeeded (newer success intact; a contextless failure mutates nothing); the board consuming the
+selected artifact and a deliberate reprocess persisting before display.
+
+Results (sequential, zargar_test_codex with 0 other clients before and after): reviewer ownership cases 6/6, boundary
+7/7, wiring 6/6, revisions 10/10, watermark pair, ordering/backfill/gateway/dispatch/source-loss/Postgres/promotion,
+team2_close, entry quality = **71 passed**. Own suites (em2): reconcile, ingest + ingest flow, gateway envelope/ack,
+separation, reviewer execution/evidence/preopen/exits 84 passed after two EM-owned test adjustments (the ingest-flow
+fake `board_check` accepts the new `revision_id=` keyword; its two bare 0.3 s sleeps became `wait_for` predicates -
+the extraction path now makes a few more round trips). Team2 runner + EOD + arming 49 passed, 1 pre-existing
+(`test_auto_options_one_contract_lifecycle`, Cartel sim executor, fails identically on main). No collisions.
+
