@@ -247,6 +247,35 @@ async def resume_unfinished(session, *, owner: str, now: dt.datetime | None = No
     return out
 
 
+def attempt_owner(role: str) -> str:
+    """A DISTINCT lease identity per attempt (WF-02): two concurrent attempts of the same role never share a
+    fence; only the original claimant renews or completes."""
+    import uuid
+    return f"{role}:{uuid.uuid4().hex[:10]}"
+
+
+async def lease_valid(session, *, job_id: str, fence_token: int, owner: str, now: dt.datetime | None = None) -> bool:
+    """Is this attempt's lease still the job's current, unexpired, in-progress claim? Read-only."""
+    now = now or utcnow()
+    job = await session.get(TechniqueSourceJob, job_id)
+    return bool(job is not None and int(job.fence_token or 0) == int(fence_token) and job.lease_owner == owner
+                and job.lease_until is not None and job.lease_until > now and job.outcome == "in_progress")
+
+
+async def extraction_artifact_for_revision(session, note_id: str, revision_id: str, artifact_id: str | None = None):
+    """The persisted extraction the current board may consume: the projection's `artifactId` when it belongs to
+    `revision_id`, else the newest extraction artifact OF that revision, else None (WF-01)."""
+    if artifact_id:
+        a = await session.get(TechniqueSourceArtifact, artifact_id)
+        if a is not None and a.note_id == note_id and a.kind == "extraction" and a.revision_id == revision_id:
+            return a
+    return (await session.execute(
+        select(TechniqueSourceArtifact).where(TechniqueSourceArtifact.note_id == note_id,
+                                              TechniqueSourceArtifact.revision_id == revision_id,
+                                              TechniqueSourceArtifact.kind == "extraction")
+        .order_by(TechniqueSourceArtifact.created_at.desc()).limit(1))).scalars().first()
+
+
 async def job_by_id(session, job_id: str) -> TechniqueSourceJob | None:
     return await session.get(TechniqueSourceJob, job_id, with_for_update=True)
 

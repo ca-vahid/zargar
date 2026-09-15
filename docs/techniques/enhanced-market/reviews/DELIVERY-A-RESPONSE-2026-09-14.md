@@ -406,3 +406,34 @@ fake `board_check` accepts the new `revision_id=` keyword; its two bare 0.3 s sl
 the extraction path now makes a few more round trips). Team2 runner + EOD + arming 49 passed, 1 pre-existing
 (`test_auto_options_one_contract_lifecycle`, Cartel sim executor, fails identically on main). No collisions.
 
+
+
+---
+
+# Worker rereview at c900215 (`2026-09-14-c900215-worker-rereview.md`) - WF-01..03, same evening
+
+Scope kept to ownership and provenance. The three reproductions are adopted unchanged as
+`tests/test_codex_worker_followup_boundaries.py` (3 failed -> 3 pass); the 13 prior cases still pass; the added
+ownership and manual-API coverage is `tests/test_em_worker_followup.py` (4 cases). Current main (KFIN-05/06/10)
+is integrated.
+
+| finding | closure | where |
+|---|---|---|
+| WF-01 (P1) manual board relabelled an old extraction | The board's INPUT is now a persisted extraction artifact that belongs to the note's CURRENT revision (the projection's `artifactId` when it does, else the newest extraction of that revision); a missing or superseded extraction is refused (`StaleWorker`, HTTP 409 on the manual route: "re-extract before planning") before any claim or planning, whichever entry point asked. A caller's omitted revision is never permission to relabel old output. Old artifacts stay history; the board result records the artifact and revision it consumed | `ingest.py::board_check`; `source_revisions.py::extraction_artifact_for_revision`; `routes_technique.py` (409) |
+| WF-02 (P1) an expired lease reached arming before rejection | Every attempt leases under a DISTINCT identity (`attempt_owner`: extract / transcript / board) so only the original claimant renews or completes; `board_check` carries job, owner, fence, expiry, revision and the selected artifact and validates the lease AND the source's currency (`lease_valid` + current revision) before every plan run, before every arm, at the arm's own mutation boundary and before publication. The shared runner gained an optional `authorize` awaitable (`PlanRunner.arm(..., authorize=)`, forwarded by `TechniqueService.arm_plan`) awaited after every earlier await and immediately before the first arm mutation - a lost, expired or reassigned lease or an edit during the awaited arm refuses the arm itself (nothing registered or persisted); no disarm or flatten as cleanup | `ingest.py::board_check` (`authorized`, `authorize_arm`); `source_revisions.py::attempt_owner`, `lease_valid`; `execution/planrunner.py::arm`; `technique/service.py::arm_plan` |
+| WF-03 (P1) a revision-only failure wrote without ownership | `_fail` accepts a job context ONLY: it writes when the attempt's lease is still valid (owner, fence, unexpired, in progress) and the job's revision is current; a revision id alone is no authority and an ownership conflict is a no-op. `board_check` records its own failures under its own job inside the planning path; `_extract_and_check` never claims in an exception handler | `ingest.py::_fail`, `board_check`, `_extract_and_check` |
+
+Coverage added (`tests/test_em_worker_followup.py`): the manual route refuses a superseded extraction (409) and,
+after re-extraction, accepts and consumes the current artifact (old artifact kept); a lease reassigned (fence
+changed) during planning stops before arming and leaves the other attempt's lease untouched; a source edit and a
+lease loss during the AWAITED arm are refused at the runner's mutation boundary (the arm mutation never
+happens; nothing disarmed or flattened); the full board exception path after another attempt on the same
+revision took over and succeeded - the stale failure writes nothing and the newer success stands.
+
+Results (sequential, zargar_test_codex, 0 other clients before and after): followup 3/3 + new coverage 4/4 + the 13
+prior ownership cases + wiring, revisions, watermark, ordering, backfill, gateway, dispatch, source-loss, Postgres,
+promotion, team2_close, entry quality = **78 passed**. Own suites (em2): ingest + ingest flow (real board_check),
+reconcile, gateway envelope/ack/modes, separation, reviewer execution/evidence/preopen/exits, technique API =
+104 passed, 1 flake (`test_chart_png_endpoint_on_sim_symbol`, a network-timing case that passes alone and touches
+nothing on this branch). Team2 runner + EOD + arming: see the line below.
+

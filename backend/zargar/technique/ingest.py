@@ -397,7 +397,7 @@ class MethodIngestService:
                 raise KeyError(note_id)
             cur = await srcrev.current_revision(session, note_id)
             if job_id is None:
-                job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
+                job = await srcrev.claim_for_note(session, note_id, owner=srcrev.attempt_owner("transcript"), retry=True)
                 if job is None and await srcrev.job_for_note(session, note_id) is not None:
                     raise StaleWorker("another worker holds this note's job")
                 job_id = job["id"] if job else None
@@ -471,10 +471,10 @@ class MethodIngestService:
 
     # ------------------------------------------------------------ extraction
     async def _extract_and_check(self, note_id: str) -> None:
-        """Extraction, then the deterministic board for setup material. WI-04: a lease conflict (`StaleWorker`)
-        is not a failure of this note - nothing is mutated; an extraction failure is recorded by `extract`
-        itself under ITS job context; a board failure is recorded under the revision the board was authorized
-        for. WI-03: a superseded/deleted source never reaches planning."""
+        """Extraction, then the deterministic board for setup material. A lease conflict (`StaleWorker`) is not a
+        failure of this note - nothing is mutated; extraction and board each record their own failure under
+        THEIR job context (WF-03: never a fresh claim in an old attempt's exception handler). WI-03: a
+        superseded/deleted source never reaches planning."""
         try:
             d = await self.extract(note_id)
         except StaleWorker as exc:
@@ -492,35 +492,34 @@ class MethodIngestService:
                 await self.board_check(note_id, revision_id=d.get("revisionId"))
             except StaleWorker as exc:
                 log.info("ingest: board for %s skipped - %s", note_id[:8], exc)
-            except Exception as exc:                   # noqa: BLE001 - surfaced on the note, never swallowed
+            except Exception:                          # noqa: BLE001 - recorded by board_check under its own job
                 log.exception("ingest: board check failed for %s", note_id[:8])
-                await self._fail(note_id, f"{type(exc).__name__}: {exc}"[:500], revision_id=d.get("revisionId"))
 
     async def _fail(self, note_id: str, error: str, *, job: dict | None = None, revision_id: str | None = None) -> None:
-        """Record a failure under the ORIGINAL work context only (WI-04): the job the attempt held (its fence
-        must still be current) or the revision it was authorized for. The note's projection turns `failed`
-        only when that revision is still the current one; an old attempt's failure never overwrites a newer
-        revision's success, and no context means no mutation at all."""
+        """Record a failure under the ORIGINAL attempt's job only (WI-04 / WF-03): the job's fence must still be
+        current AND the lease must still be this attempt's (owner, unexpired). A revision id alone is no
+        authority - without a valid original lease nothing is written (an ownership conflict is a no-op). The
+        note's projection turns `failed` only when the job's revision is still the current one."""
+        if job is None:
+            log.warning("ingest: failure for %s without a lease context is not recorded: %s", note_id[:8], error[:120])
+            return
         async with self.engine.sf() as session:
             n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
             if n is None:
                 return
-            cur = await srcrev.current_revision(session, note_id)
-            rev_id = revision_id or (job or {}).get("revisionId")
-            if job is None and rev_id is not None and cur is not None and cur.id == rev_id and not cur.deleted:
-                job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
-            if job is None and rev_id is None:
-                log.warning("ingest: failure for %s without a work context is not recorded on the note: %s", note_id[:8], error[:120])
+            owned = await srcrev.lease_valid(session, job_id=job["id"], fence_token=job["fenceToken"], owner=job["leaseOwner"])
+            if not owned:
+                log.info("ingest: failure for %s not recorded - the attempt no longer owns job %s", note_id[:8], str(job["id"])[:8])
                 return
-            if job is not None:
-                try:
-                    await srcrev.checkpoint(session, job_id=job["id"], fence_token=job["fenceToken"], item_key="failure",
-                                            outcome="permanent", error=error)
-                except srcrev.FenceMismatch as exc:
-                    await session.rollback()
-                    log.info("ingest: failure for %s not recorded - %s", note_id[:8], exc)
-                    return
-            if cur is not None and rev_id is not None and cur.id == rev_id and not cur.deleted:
+            try:
+                await srcrev.checkpoint(session, job_id=job["id"], fence_token=job["fenceToken"], item_key="failure",
+                                        outcome="permanent", error=error)
+            except srcrev.FenceMismatch as exc:
+                await session.rollback()
+                log.info("ingest: failure for %s not recorded - %s", note_id[:8], exc)
+                return
+            cur = await srcrev.current_revision(session, note_id)
+            if cur is not None and cur.id == job.get("revisionId") and not cur.deleted:
                 n.status = "failed"
                 n.error = error
                 n.updated_at = _now()
@@ -578,7 +577,7 @@ class MethodIngestService:
             source = f"{n.kind} in #{n.channel_name or n.channel_id} by {n.author} at {n.posted_at}"
             if not body:
                 raise RuntimeError("nothing to extract (no transcript, no text)")
-            job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
+            job = await srcrev.claim_for_note(session, note_id, owner=srcrev.attempt_owner("extract"), retry=True)
             if job is None and await srcrev.job_for_note(session, note_id) is not None:
                 raise StaleWorker("another worker holds this note's job")
             rev_id = cur.id if cur is not None else None
@@ -589,7 +588,7 @@ class MethodIngestService:
         try:
             ex = await self._llm_extract(source, body)
         except Exception as exc:                       # noqa: BLE001 - recorded under THIS job, then surfaced
-            await self._fail(note_id, f"{type(exc).__name__}: {exc}"[:500], job=job, revision_id=rev_id)
+            await self._fail(note_id, f"{type(exc).__name__}: {exc}"[:500], job=job)
             raise
         ex["symbols"] = self._clean_symbols(ex)
         ex["extractedAt"] = _now().isoformat()
@@ -645,106 +644,138 @@ class MethodIngestService:
 
     async def board_check(self, note_id: str, *, revision_id: str | None = None) -> dict:
         """Deterministic: for each symbol on the board, is it covered by an armed EM plan; else build our own plan
-        (no LLM) and report valid/rejected. WI-03: the board is AUTHORIZED for one revision (the extraction's);
-        the job is claimed before any planning side effect and the source is re-checked before every plan run,
-        before every arm and before publication - an edit or tombstone in between stops the board, arms nothing
-        and completes no newer revision's job (the leased job ends `superseded`)."""
+        (no LLM) and report valid/rejected.
+
+        WF-01: the board's INPUT is a persisted extraction artifact that belongs to the note's CURRENT revision -
+        the projection's `artifactId` when it does, else the newest extraction of that revision; a missing or
+        superseded extraction is refused (`StaleWorker`: re-extract first), whichever entry point asked (the
+        manual API included). A caller's omitted revision is never permission to relabel old output.
+        WF-02: the attempt's lease (job, distinct owner, fence, expiry) and the source's currency are validated
+        before every plan run, before every arm, at the arm's own mutation boundary (`authorize`) and before
+        publication; a lost, expired or reassigned lease stops side effects - it is not left to the final
+        checkpoint. Failures are recorded under THIS attempt's job only."""
+        owner = srcrev.attempt_owner("board")
         async with self.engine.sf() as session:
             n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
             if n is None:
                 raise KeyError(note_id)
             cur = await srcrev.current_revision(session, note_id)
-            rev_id = revision_id or (cur.id if cur is not None else None)
+            rev_id = cur.id if cur is not None else None
             if cur is not None and (cur.deleted or (revision_id is not None and cur.id != revision_id)):
                 raise StaleWorker("the source changed before the board started - nothing planned")
-            job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
+            art = None
+            if cur is not None:
+                art = await srcrev.extraction_artifact_for_revision(session, note_id, cur.id, (n.extraction or {}).get("artifactId"))
+                if art is None:
+                    raise StaleWorker("no persisted extraction for the current revision - re-extract before planning")
+            job = await srcrev.claim_for_note(session, note_id, owner=owner, retry=True)
             if job is None and await srcrev.job_for_note(session, note_id) is not None:
                 raise StaleWorker("another worker holds this note's job")
-            symbols = list((n.extraction or {}).get("symbols") or [])
+            extraction = dict(art.payload or {}) if art is not None else dict(n.extraction or {})
+            symbols = list(extraction.get("symbols") or [])
             await session.commit()
+
+        async def authorized() -> bool:
+            """Lease still this attempt's AND the source still the authorized revision (read-only)."""
+            async with self.engine.sf() as session:
+                ok = (job is None) or await srcrev.lease_valid(session, job_id=job["id"], fence_token=job["fenceToken"], owner=owner)
+                cur2 = await srcrev.current_revision(session, note_id)
+            return bool(ok and (cur2 is None or (rev_id is not None and cur2.id == rev_id and not cur2.deleted)))
+
+        async def authorize_arm() -> None:
+            if not await authorized():
+                raise StaleWorker("arm refused at the mutation boundary: lease or source no longer authorize this attempt")
+
         max_syms = int(self._num("ingest.board_max_symbols", 12))
         armed = self._armed_em_symbols()
         rows: list[dict] = []
-        superseded = False
-        for sym in symbols[:max_syms]:
-            if not await self._source_is_current(note_id, rev_id):
-                superseded = True
-                break
-            if sym in armed:
-                a = armed[sym]
-                rows.append({"symbol": sym, "status": "armed", "runId": a.get("runId"), "grade": a.get("grade"),
-                             "note": (a.get("summary") or "")[:120]})
-                continue
-            try:
-                run = await self.technique.analyze(sym, plan=True, with_vision=False, wait=True,
-                                                   trigger="ingest", tags=["ingest"])
-            except Exception as exc:                   # noqa: BLE001
-                rows.append({"symbol": sym, "status": "error", "reason": f"{type(exc).__name__}: {exc}"[:200]})
-                continue
-            plan = ((run or {}).get("result") or {}).get("plan") or {}
-            trigs = plan.get("triggers") or []
-            valid = [t for t in trigs if t.get("valid")]
-            if valid:
-                best = max(valid, key=lambda t: ((t.get("assessment") or {}).get("score") or 0, t.get("riskReward") or 0))
-                row = {"symbol": sym, "status": "new", "runId": run.get("id"),
-                       "grade": (best.get("assessment") or {}).get("grade"), "kind": best.get("kind"),
-                       "level": best.get("levelPrice"), "riskReward": best.get("riskReward"),
-                       "note": (best.get("note") or best.get("summary") or "")[:120]}
-                if self._get("ingest.auto_arm", False):
-                    # 2026-09-04 (user decision): arm what passes OUR gates - the plan is
-                    # ours (deterministic), the source only pointed at the symbol; the
-                    # loss halt and the account come from the normal arm path. The run
-                    # carries tag `ingest`, so auto-armed plans stay distinguishable.
-                    min_grade = str(self._get("ingest.auto_arm_min_grade", "B") or "B").upper()
-                    grade = str(row.get("grade") or "").upper()
-                    if grade and grade > min_grade:          # letters sort A < B < C
-                        row["armSkipped"] = f"grade {grade} below the auto-arm floor {min_grade}"
-                    elif not await self._source_is_current(note_id, rev_id):
-                        row["armSkipped"] = "source changed before arming (superseded)"
-                        superseded = True
-                    else:
-                        try:
-                            await self.technique.arm_plan(run.get("id"), {})
-                            row["status"] = "armed"
-                            row["autoArmed"] = True
-                        except Exception as exc:           # noqa: BLE001
-                            row["armError"] = str(exc)[:200]
-                rows.append(row)
-                if superseded:
+        stopped = False
+        try:
+            for sym in symbols[:max_syms]:
+                if not await authorized():
+                    stopped = True
                     break
-            else:
-                # the closest miss explains the rejection (usually R2)
-                inv = [t for t in trigs if not t.get("valid")]
-                why = ""
-                if inv:
-                    closest = max(inv, key=lambda t: t.get("riskReward") or 0)
-                    why = "; ".join((closest.get("noTradeReasons") or [])[:2])[:220]
-                    why = f"{closest.get('id')} {closest.get('kind')} @ {closest.get('levelPrice')}: {why}" if why else ""
-                rows.append({"symbol": sym, "status": "rejected", "runId": run.get("id"),
-                             "reason": why or "no triggers built"})
+                if sym in armed:
+                    a = armed[sym]
+                    rows.append({"symbol": sym, "status": "armed", "runId": a.get("runId"), "grade": a.get("grade"),
+                                 "note": (a.get("summary") or "")[:120]})
+                    continue
+                try:
+                    run = await self.technique.analyze(sym, plan=True, with_vision=False, wait=True,
+                                                       trigger="ingest", tags=["ingest"])
+                except Exception as exc:                   # noqa: BLE001
+                    rows.append({"symbol": sym, "status": "error", "reason": f"{type(exc).__name__}: {exc}"[:200]})
+                    continue
+                plan = ((run or {}).get("result") or {}).get("plan") or {}
+                trigs = plan.get("triggers") or []
+                valid = [t for t in trigs if t.get("valid")]
+                if valid:
+                    best = max(valid, key=lambda t: ((t.get("assessment") or {}).get("score") or 0, t.get("riskReward") or 0))
+                    row = {"symbol": sym, "status": "new", "runId": run.get("id"),
+                           "grade": (best.get("assessment") or {}).get("grade"), "kind": best.get("kind"),
+                           "level": best.get("levelPrice"), "riskReward": best.get("riskReward"),
+                           "note": (best.get("note") or best.get("summary") or "")[:120]}
+                    if self._get("ingest.auto_arm", False):
+                        # 2026-09-04 (user decision): arm what passes OUR gates - the plan is
+                        # ours (deterministic), the source only pointed at the symbol; the
+                        # loss halt and the account come from the normal arm path. The run
+                        # carries tag `ingest`, so auto-armed plans stay distinguishable.
+                        min_grade = str(self._get("ingest.auto_arm_min_grade", "B") or "B").upper()
+                        grade = str(row.get("grade") or "").upper()
+                        if grade and grade > min_grade:          # letters sort A < B < C
+                            row["armSkipped"] = f"grade {grade} below the auto-arm floor {min_grade}"
+                        elif not await authorized():
+                            row["armSkipped"] = "lease or source no longer authorize this attempt (superseded)"
+                            stopped = True
+                        else:
+                            try:
+                                # the arm's own mutation boundary re-validates the lease + source (WF-02)
+                                await self.technique.arm_plan(run.get("id"), {}, authorize=authorize_arm)
+                                row["status"] = "armed"
+                                row["autoArmed"] = True
+                            except StaleWorker as exc:
+                                row["armSkipped"] = str(exc)[:200]
+                                stopped = True
+                            except Exception as exc:           # noqa: BLE001
+                                row["armError"] = str(exc)[:200]
+                    rows.append(row)
+                    if stopped:
+                        break
+                else:
+                    # the closest miss explains the rejection (usually R2)
+                    inv = [t for t in trigs if not t.get("valid")]
+                    why = ""
+                    if inv:
+                        closest = max(inv, key=lambda t: t.get("riskReward") or 0)
+                        why = "; ".join((closest.get("noTradeReasons") or [])[:2])[:220]
+                        why = f"{closest.get('id')} {closest.get('kind')} @ {closest.get('levelPrice')}: {why}" if why else ""
+                    rows.append({"symbol": sym, "status": "rejected", "runId": run.get("id"),
+                                 "reason": why or "no triggers built"})
+        except Exception as exc:                       # noqa: BLE001 - recorded under THIS attempt's job, then surfaced
+            await self._fail(note_id, f"{type(exc).__name__}: {exc}"[:500], job=job)
+            raise
         result = {"checkedAt": _now().isoformat(), "rows": rows,
                   "counts": {k: sum(1 for r in rows if r["status"] == k) for k in ("armed", "new", "rejected", "error")},
-                  "skipped": symbols[max_syms:], "revisionId": rev_id}
+                  "skipped": symbols[max_syms:], "revisionId": rev_id, "artifactId": (art.id if art is not None else None)}
         async with self.engine.sf() as session:
             n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
-            now_cur = await srcrev.current_revision(session, note_id)
-            still_current = (not superseded) and ((now_cur is None) or (rev_id is not None and now_cur.id == rev_id and not now_cur.deleted))
+            still = (not stopped) and await authorized()
             if job:
                 try:
                     await srcrev.checkpoint(session, job_id=job["id"], fence_token=job["fenceToken"], item_key="board_check",
-                                            stage="board_checked", outcome=("done" if still_current else "superseded"))
+                                            stage="board_checked", outcome=("done" if still else "superseded"))
                 except srcrev.FenceMismatch as exc:
                     await session.rollback()
                     raise StaleWorker(str(exc)) from exc
-            if still_current:
+            if still:
                 n.board_check = result
                 n.status = "checked"
                 n.updated_at = _now()
             await session.commit()
             d = note_dict(n)
-        if not still_current:
-            log.info("ingest: board for %s not published - the source changed during planning (superseded)", note_id[:8])
-            return {**d, "superseded": True, "revisionId": rev_id}
+        if not still:
+            log.info("ingest: board for %s not published - lease or source changed during planning (superseded)", note_id[:8])
+            raise StaleWorker("board not published: the lease or the source changed during planning")
         log.info("ingest: board check %s -> %s", note_id[:8], result["counts"])
         self._publish(d)
         return d

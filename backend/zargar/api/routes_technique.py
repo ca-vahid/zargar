@@ -311,10 +311,13 @@ def build_technique_routes(app, eng, auth, config) -> None:
 
     @app.post("/api/technique/ingest/notes/{note_id}/board-check", dependencies=[auth])
     async def ingest_board_check(note_id: str):
+        from ..technique.ingest import StaleWorker
         try:
             return await _ingest(eng).board_check(note_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="note not found")
+        except StaleWorker as exc:
+            raise HTTPException(status_code=409, detail=f"board refused: {exc}")
 
     # --- session plans / walk-forward / arming --------------------------------------------
     @app.get("/api/technique/universe", dependencies=[auth])

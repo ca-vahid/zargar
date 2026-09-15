@@ -1730,6 +1730,15 @@ Gateway: `MESSAGE_DELETE` on EM channels becomes an EM tombstone revision (`Tech
 mirror/intake never receives deletions; deletions never touch positions, exits or arms.
 
 
+### Arm authorization boundary — 2026-09-14 (EM desk, shared runner, optional)
+
+`PlanRunner.arm(run_id, config, authorize=None)` (forwarded by `TechniqueService.arm_plan`): an optional awaitable
+awaited after every earlier await and immediately before the FIRST arm mutation. A caller whose authority can lapse
+during the awaited preparation (EM's source-board attempt: its fenced lease and the source revision) raises there and
+nothing is registered or persisted. No behaviour change for callers that pass nothing. Never used as a cleanup hook:
+a refused arm disarms or flattens nothing.
+
+
 ### Session findings — 2026-09-14 (first enforce/integrity day; v0.7.68 → 0.7.71)
 
 - **Bar DELIVERY stalls (3×):** 13:09–13:13, 13:23–13:27 and 15:26–15:29 ET every armed

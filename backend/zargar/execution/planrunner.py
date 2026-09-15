@@ -921,7 +921,10 @@ class PlanRunner(SessionListener):
 
     # ---------------------------------------------------------------- arm / disarm
     async def arm(self, run_id: str, config: ArmConfig | dict | None = None, *, restored: bool = False,
-                  paused: bool = False, prior_state: dict | None = None) -> dict:
+                  paused: bool = False, prior_state: dict | None = None, authorize=None) -> dict:
+        """`authorize` (optional, awaitable, WF-02 2026-09-14): a caller-owned check awaited immediately before
+        the FIRST arm mutation, after every earlier await - a lease or source that was lost during the awaited
+        preparation refuses the arm here (the callable raises), so no plan is registered or persisted."""
         if not bool(self.rt("enabled", True)):
             raise RuntimeError("execution.enabled is off (the runner is disabled)")
         if bool(self.rt("paused", False)):
@@ -1021,6 +1024,8 @@ class PlanRunner(SessionListener):
                 self._armed.pop(run_id, None)
                 raise ValueError(f"this plan was built for {ap.plan_for} and its last session "
                                  f"({_last}) is over — build a fresh plan for {_target} and arm that")
+        if authorize is not None:
+            await authorize()                        # raises -> nothing registered, nothing persisted
         self._armed[run_id] = ap
         with contextlib.suppress(Exception):
             await self.engine.ensure_symbol(symbol)

@@ -1799,7 +1799,7 @@ class TechniqueService:
         return rd
 
     # ------------------------------------------------------------ arming (phase 2)
-    async def arm_plan(self, run_id: str, config: dict | None = None) -> dict:
+    async def arm_plan(self, run_id: str, config: dict | None = None, *, authorize=None) -> dict:
         # C1 (2026-09-12): route option-untradeable names before the runner sees the config
         config = dict(config or {})
         s = self.engine.settings
@@ -1816,7 +1816,7 @@ class TechniqueService:
             config["optionTradeable"] = False
         elif liq is not None:
             config["optionTradeable"] = True
-        return await self.armer.arm(run_id, config)
+        return await self.armer.arm(run_id, config, authorize=authorize)
 
     # --- the multi-technique armed hub -------------------------------------------
     # Every PlanRunner on the engine (EM's armer, the tip runner, future
