@@ -26,6 +26,7 @@ export const CHANGELOG: Release[] = [
       { tag: "fixed", text: "A86-02: the approval claim recomputes the card's full plan (exit policy, bracket, vehicle, risk plan) under the row lock instead of trusting the cached fingerprint; the claimed plan is frozen on the card and both the order and the later position adoption use it - a concurrent edit of the exit policy cannot be claimed." },
       { tag: "improved", text: "Entry-variant study: the sampling claim is held through finalization (timer and recovery never double-fetch); research fixtures carry capture-time verdict fields." },
       { tag: "fixed", text: "A failed structured read of the incident store is 'integrity state unavailable' (never overridable) rather than a partial identity from prose; position adoption uses the claimed vehicle and risk plan as well as the claimed exit plan." },
+      { tag: "fixed", text: "Tips intake liveness no longer flaps Stalled/Recovered during a busy session: envelopes briefly in flight are a warning; only envelopes pending through three consecutive checks (about six minutes) are a stall." },
     ],
   },
   {
