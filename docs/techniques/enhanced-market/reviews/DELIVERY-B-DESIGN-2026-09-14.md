@@ -222,3 +222,44 @@ extraction.
 | scenario records, alignment, source-informed candidate | not started (design accepted) |
 | source backfill application | APPLIED 2026-09-14 evening under the scoped GO (19 revisions / 24 artifacts / 19 jobs; readback in DELIVERY-A-RESPONSE) |
 
+
+
+---
+
+# Next PR - BUILT (2026-09-14 evening, verification GO): deletion forwarding + workers through artifacts and fenced checkpoints
+
+Candidates remain order-free; no extraction-policy change; no Practice book; no activation.
+
+- **Deletion forwarding.** The gateway enqueues `MESSAGE_DELETE` as `kind=delete` for EM channels only (the tips
+  mirror/intake never consumes deletions; an EM-only channel's edit or deletion returns before the tips path;
+  deletions do not move the channel cursor). EM's inbox records a TOMBSTONE revision (history kept, the note shows
+  its last accepted text with `meta.deleted`), journals `TechniqueSourceRevised` (contract: noteId, revision,
+  kind, outcome) and touches nothing else: no disarm, no flatten, no re-ownership - managed positions and their
+  protective exits stay with their exit owner. A restore after a tombstone is the next revision.
+- **Workers through the ledger.** `pending()` hands the transcription worker a fenced LEASE (`jobId`,
+  `fenceToken`, `revisionId`; `techniques.enhanced_market.ingest.worker_lease_seconds`, 900) - the same worker
+  polling again renews without invalidating its own fence; another live owner's job is not handed out. The
+  worker (`tools/em_ingest.py`) posts the lease back with the transcript; `store_transcript` writes the transcript
+  ARTIFACT (output key = revision + media hash + model), the job checkpoint and the note's legacy columns in ONE
+  commit under that fence; a stale fence / expired lease / other owner is HTTP 409 with nothing written; a
+  duplicate post reuses the artifact (exactly once). A deferral (broadcast still live) and a failure release the
+  lease as `retryable` with `next_due_at`; the last allowed failure is `permanent`. `extract()` claims the job
+  before the paid read and writes the extraction artifact (output key = revision + input hash + model/prompt
+  hash) with its checkpoint; `board_check` is the terminal checkpoint (`done`); `_fail` records `permanent` with
+  the error in the same commit as the note. Worker-produced artifacts have KNOWN availability (`completed_at`);
+  the backfilled legacy ones stay unknown.
+- **Expired leases.** Every gateway delivery sweeps expired leases (`sweep_expired`: fence bumped, lease
+  released) so the next claim resumes at the recorded stage; the API never becomes a phantom owner of work.
+- **Changed source after a claim.** The edit creates revision n+1 with its own job; the in-flight worker's output
+  binds to the revision it was leased for; the note shows the latest text; with the media hash unchanged the
+  transcript is reusable (reviewer answer 1) and the note is not re-transcribed; the new revision's job is
+  claimable by the next stage.
+- **Sequence reset through the real path.** Tested end to end: envelope -> `_deliver` (ack/spool) -> the real
+  FastAPI app -> ledger; a newer edit with a lower receipt sequence is accepted and its later same-time update kept.
+
+Tests: `tests/test_em_source_wiring.py` (6 real-path cases: ordering + reset, tombstone contract, lease/exactly-
+once/stale worker, crash + expired lease + retry, changed source, extraction/board checkpoints with known
+availability). All previous reviewer files stay green.
+
+Still deferred: scenario records, alignment, the source-informed candidate producer (design accepted, not built);
+re-transcription policy when the media itself changes (today: a new media hash simply makes a new output key).

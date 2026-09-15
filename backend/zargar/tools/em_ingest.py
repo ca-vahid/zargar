@@ -104,7 +104,7 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
             nid, url = str(n.get("id")), str(n.get("mediaUrl") or "")
             force = bool(n.get("forcePartial"))
             print(f"[{time.strftime('%H:%M:%S')}] note {nid[:8]}: {url}{' (taking the partial replay)' if force else ''}")
-            body: dict = {"noteId": nid}
+            body: dict = {"noteId": nid, "jobId": n.get("jobId"), "fenceToken": n.get("fenceToken")}   # the fenced lease (Delivery B)
             try:
                 t0 = time.time()
                 if not force:
@@ -125,7 +125,8 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
                 print(f"    -> failed: {body['error']}")
             try:
                 pr = await http.post(f"{api}/api/technique/ingest/transcript", headers=headers, json=body, timeout=120)
-                st = (pr.json() or {}).get("status") if pr.status_code == 200 else f"HTTP {pr.status_code}"
+                st = (pr.json() or {}).get("status") if pr.status_code == 200 else (
+                    f"HTTP 409 stale lease - another worker took the job; nothing written" if pr.status_code == 409 else f"HTTP {pr.status_code}")
                 print(f"    -> app: {st}")
             except Exception as exc:  # noqa: BLE001
                 print(f"    -> could not report to the app: {exc}")

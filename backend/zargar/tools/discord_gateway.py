@@ -873,6 +873,11 @@ class Gateway:
             # mirror upsert + journal, NEVER auto re-extracted
             self._enqueue("update", data["d"])
             return
+        if t == "MESSAGE_DELETE":
+            # Delivery B: a deletion on an EM channel is a TOMBSTONE revision for EM's inbox (history kept,
+            # nothing re-owned). The tips mirror/intake does not consume deletions (out of scope here).
+            self._enqueue("delete", data["d"])
+            return
 
     def _match(self, msg: dict, is_dm: bool, author: dict, is_self: bool):
         """(should_ingest, source_name). The WATCHLIST is the allowlist; manual
@@ -909,15 +914,17 @@ class Gateway:
         em_entry = self._em.get(cid)
         if kind == "create":
             matched, source_name = self._match(msg, is_dm, author, is_self)
+        elif kind == "delete":
+            matched, source_name = False, None       # deletions: EM only (tips never consume them)
         else:
             matched, source_name = (cid in self._watch), None
         if not matched and em_entry is None:
             return
-        if kind == "update" and not mid:
+        if kind in ("update", "delete") and not mid:
             return
         env = {"kind": kind, "cid": cid, "mid": mid, "isDM": is_dm,
                "self": is_self, "source": source_name, "msg": msg,
-               "em": bool(em_entry) and kind in ("create", "update"), "matched": bool(matched),
+               "em": bool(em_entry) and kind in ("create", "update", "delete"), "matched": bool(matched),
                "seq": self._seq,                       # the RECEIPT's ordering key (Delivery B); persisted with the spool
                "attempts": 0}
         # write-ahead ACCEPTANCE (Codex G2): durable before RAM — a hard kill
@@ -963,7 +970,7 @@ class Gateway:
                 own = 0
             pm = self._store.pending_min(cid)
             older_pending = pm is not None and own and (
-                pm < own or ((env.get("kind") or "create") == "update" and pm <= own))
+                pm < own or ((env.get("kind") or "create") in ("update", "delete") and pm <= own))
             if older_pending:
                 self._store.release(env)     # retry loop replays in (cid, mid) order
                 return False
@@ -978,7 +985,7 @@ class Gateway:
                       f"{int(env.get('attempts') or 0) + 1}): {str(exc)[:120]}")
                 return False
             self._store.ack(env)
-            if (env.get("kind") or "create") != "update":
+            if (env.get("kind") or "create") not in ("update", "delete"):
                 self._store.advance(cid, str(env.get("mid") or ""))
             return True
 
@@ -1007,6 +1014,11 @@ class Gateway:
         msg, cid, mid = env["msg"], env["cid"], env["mid"]
         entry = self._watch.get(cid) or {}
         source_name = env.get("source") or entry.get("sourceName") or "auto"
+        if env["kind"] == "delete":
+            if env.get("em") and not env.get("emDone"):
+                await self._em_forward(http, headers, msg, self._em.get(cid) or {}, kind="delete", seq=env.get("seq"))
+                env["emDone"] = True
+            return                                    # deletions never reach the tips mirror/intake
         if env["kind"] == "update" and env.get("em") and not env.get("emDone"):
             # Delivery B: an EDIT on an EM channel is a new source revision for EM's inbox (kind=update);
             # independent of the tips mirror below, RAISES on failure like the create path

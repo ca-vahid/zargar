@@ -238,7 +238,7 @@ def build_technique_routes(app, eng, auth, config) -> None:
             payload["text"] = payload.get("text") or ""   # create defaults are normalised HERE, never for updates
             payload["images"] = payload.get("images") or []
             out = await ing.store_message(payload)
-        await ing.resume_unfinished(owner="gateway-delivery")
+        await ing.sweep_expired()                    # expired leases become claimable; the API owns no work
         return out
 
     @app.get("/api/technique/ingest/revisions/{note_id}", dependencies=[auth])
@@ -265,16 +265,22 @@ def build_technique_routes(app, eng, auth, config) -> None:
         durationSeconds: float | None = None
         model: str | None = None
         seconds: float | None = None
+        jobId: str | None = None          # Delivery B: the lease handed out by /ingest/pending
+        fenceToken: int | None = None
 
     @app.post("/api/technique/ingest/transcript", dependencies=[auth])
     async def ingest_transcript(body: IngestTranscriptBody):
+        from ..technique.ingest import StaleWorker
         try:
             return await _ingest(eng).store_transcript(
                 body.noteId, transcript=body.transcript, error=body.error, deferred=body.deferred,
                 meta={"durationSeconds": body.durationSeconds, "model": body.model, "seconds": body.seconds,
-                      "partial": True if body.partial else None})
+                      "partial": True if body.partial else None},
+                job_id=body.jobId, fence_token=body.fenceToken)
         except KeyError:
             raise HTTPException(status_code=404, detail="note not found")
+        except StaleWorker as exc:
+            raise HTTPException(status_code=409, detail=f"stale worker: {exc}")
 
     @app.get("/api/technique/ingest/notes", dependencies=[auth])
     async def ingest_notes(limit: int = 20):

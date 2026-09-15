@@ -25,9 +25,12 @@ import re
 from dataclasses import replace as dc_replace
 
 from pydantic import BaseModel
+import hashlib
+
 from sqlalchemy import select
 
 from .. import bus as topics
+from .. import events as ev
 from . import source_revisions as srcrev
 from ..domain import new_id
 from ..models import TechniqueMethodNote
@@ -86,6 +89,14 @@ EXTRACT_SYSTEM = (
     "of the company he describes.\n"
     "Dismissed names and small talk are not board items. Be terse."
 )
+
+
+def _h(s: str | None) -> str:
+    return hashlib.sha256((s or "").encode("utf-8")).hexdigest()[:32]
+
+
+class StaleWorker(RuntimeError):
+    """The caller's lease/fence is not current (or another worker holds the job): nothing was written."""
 
 
 def _int_or_none(v):
@@ -243,8 +254,24 @@ class MethodIngestService:
             log.warning("ingest: stale %s for note %s ignored: %s", kind, d["id"][:8], rev.get("why"))
         else:
             log.info("ingest: %s -> note %s revision %s (%s)", kind, d["id"][:8], rev.get("revision"), rev["outcome"])
+        # a tombstone / edit is a SOURCE fact: it is journaled and the history kept; it never disarms, flattens or
+        # re-owns anything - managed positions and their protective exits stay with their exit owner (next-PR contract)
+        journal = getattr(self.engine, "journal", None)
+        if journal is not None and rev["outcome"] in ("recorded", "stale", "unordered"):
+            with contextlib.suppress(Exception):
+                await journal.append(ev.TECHNIQUE_SOURCE_REVISED, {
+                    "noteId": d["id"], "messageId": mid, "revision": rev.get("revision"), "kind": kind,
+                    "outcome": rev["outcome"], "deleted": bool((note.meta or {}).get("deleted")) if rev["outcome"] == "recorded" else None,
+                    "why": rev.get("why")}, aggregate_type="technique_note", aggregate_id=d["id"])
         self._publish(d)
         return {**d, **{k: rev.get(k) for k in ("outcome", "revision", "revisionId", "why")}, "ok": True}
+
+    async def sweep_expired(self) -> int:
+        """Delivery B: release expired worker leases (fenced) - run on every gateway delivery; claims nothing."""
+        async with self.engine.sf() as session:
+            n = await srcrev.sweep_expired(session)
+            await session.commit()
+        return n
 
     async def resume_unfinished(self, *, owner: str = "engine") -> list[dict]:
         """Delivery B: re-lease every job whose lease is free/expired at its recorded stage (fenced).
@@ -260,6 +287,7 @@ class MethodIngestService:
         past `ingest.live_max_wait_minutes` the worker is told to take whatever
         replay exists (`forcePartial`) rather than wait forever."""
         max_wait = float(self._num("ingest.live_max_wait_minutes", 45))
+        lease = int(self._num("ingest.worker_lease_seconds", srcrev.DEFAULT_LEASE_SECONDS))
         now = _now()
         async with self.engine.sf() as session:
             rows = (await session.execute(
@@ -274,50 +302,91 @@ class MethodIngestService:
                     continue
                 first_live = _parse_ts(m.get("firstSeenLiveAt"))
                 force = bool(first_live and (now - first_live).total_seconds() / 60 >= max_wait)
+                # Delivery B: the worker gets a fenced LEASE on the note's current job; a note whose job another
+                # live worker holds is not handed out twice
+                job = await srcrev.claim_for_note(session, r.id, owner="em-ingest", now=now, lease_seconds=lease, retry=True)
+                if job is None and await srcrev.job_for_note(session, r.id) is not None:
+                    continue
                 out.append({"id": r.id, "mediaUrl": r.media_url, "attempts": int(m.get("attempts") or 0),
                             "deferrals": int(m.get("deferrals") or 0), "forcePartial": force,
-                            "postedAt": r.posted_at.isoformat() if r.posted_at else None})
+                            "postedAt": r.posted_at.isoformat() if r.posted_at else None,
+                            "jobId": job["id"] if job else None, "fenceToken": job["fenceToken"] if job else None,
+                            "revisionId": job["revisionId"] if job else None})
+            await session.commit()
             return out
 
     async def store_transcript(self, note_id: str, *, transcript: str | None = None,
                                error: str | None = None, meta: dict | None = None,
-                               deferred: bool = False) -> dict:
+                               deferred: bool = False, job_id: str | None = None,
+                               fence_token: int | None = None) -> dict:
         """The worker's result: a transcript (-> extraction), a DEFERRAL (the
         broadcast is still live - check again in `ingest.live_recheck_seconds`,
         no attempt spent), or a failure (retry up to transcribe_max_attempts,
-        then `failed` - never silent)."""
+        then `failed` - never silent).
+
+        Delivery B (next PR): the transcript is an immutable ARTIFACT of the note's current revision
+        (output key = revision + media hash + model) written with the job checkpoint and the note's
+        legacy columns in ONE commit, under the worker's fence (`job_id` / `fence_token` from `pending()`;
+        a caller without them claims inline). A stale fence, an expired lease or another owner's live
+        lease raises `StaleWorker` and writes nothing."""
         max_attempts = int(self._num("ingest.transcribe_max_attempts", 5))
         recheck = int(self._num("ingest.live_recheck_seconds", 60))
         async with self.engine.sf() as session:
-            n = await session.get(TechniqueMethodNote, note_id)
+            n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
             if n is None:
                 raise KeyError(note_id)
-            m = dict(n.meta or {})
-            m.update({k: v for k, v in (meta or {}).items() if v is not None})
-            if deferred and not (transcript and transcript.strip()):
-                m["deferrals"] = int(m.get("deferrals") or 0) + 1
-                m.setdefault("firstSeenLiveAt", _now().isoformat())
-                m["nextCheckAt"] = (_now() + dt.timedelta(seconds=recheck)).isoformat()
-                m["lastDeferReason"] = (error or "broadcast still live")[:200]
-                n.status = "pending_transcript"
+            if job_id is None:
+                job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
+                if job is None and await srcrev.job_for_note(session, note_id) is not None:
+                    raise StaleWorker("another worker holds this note's job")
+                job_id = job["id"] if job else None
+                fence_token = job["fenceToken"] if job else None
+            try:
+                m = dict(n.meta or {})
+                m.update({k: v for k, v in (meta or {}).items() if v is not None})
+                now = _now()
+                if deferred and not (transcript and transcript.strip()):
+                    m["deferrals"] = int(m.get("deferrals") or 0) + 1
+                    m.setdefault("firstSeenLiveAt", now.isoformat())
+                    nxt = now + dt.timedelta(seconds=recheck)
+                    m["nextCheckAt"] = nxt.isoformat()
+                    m["lastDeferReason"] = (error or "broadcast still live")[:200]
+                    n.status = "pending_transcript"
+                    n.meta = m
+                    n.updated_at = now
+                    if job_id:
+                        await srcrev.checkpoint(session, job_id=job_id, fence_token=int(fence_token), item_key="deferral",
+                                                outcome="retryable", error=m["lastDeferReason"], next_due_at=nxt, now=now)
+                    await session.commit()
+                    d = note_dict(n)
+                    self._publish(d)
+                    return d
+                if transcript and transcript.strip():
+                    n.transcript = transcript.strip()
+                    n.status = "transcribed"
+                    n.error = None
+                    if job_id:
+                        await srcrev.checkpoint(session, job_id=job_id, fence_token=int(fence_token), item_key="transcript",
+                                                stage="transcribed", now=now, release=True,
+                                                artifact={"kind": "transcript", "inputHash": _h(n.media_url or n.id),
+                                                          "configHash": str(m.get("model") or "unknown"),
+                                                          "payload": {"text": n.transcript, "durationSeconds": m.get("durationSeconds"),
+                                                                      "partial": bool(m.get("partial"))}})
+                else:
+                    m["attempts"] = int(m.get("attempts") or 0) + 1
+                    m["lastError"] = (error or "no transcript")[:500]
+                    n.status = "failed" if m["attempts"] >= max_attempts else "pending_transcript"
+                    n.error = m["lastError"] if n.status == "failed" else None
+                    if job_id:
+                        await srcrev.checkpoint(session, job_id=job_id, fence_token=int(fence_token), item_key=f"attempt-{m['attempts']}",
+                                                outcome=("permanent" if n.status == "failed" else "retryable"),
+                                                error=m["lastError"], next_due_at=now, now=now)
                 n.meta = m
-                n.updated_at = _now()
+                n.updated_at = now
                 await session.commit()
-                d = note_dict(n)
-                self._publish(d)
-                return d
-            if transcript and transcript.strip():
-                n.transcript = transcript.strip()
-                n.status = "transcribed"
-                n.error = None
-            else:
-                m["attempts"] = int(m.get("attempts") or 0) + 1
-                m["lastError"] = (error or "no transcript")[:500]
-                n.status = "failed" if m["attempts"] >= max_attempts else "pending_transcript"
-                n.error = m["lastError"] if n.status == "failed" else None
-            n.meta = m
-            n.updated_at = _now()
-            await session.commit()
+            except srcrev.FenceMismatch as exc:
+                await session.rollback()
+                raise StaleWorker(str(exc)) from exc
             d = note_dict(n)
         self._publish(d)
         if d["status"] == "transcribed" and self._get("ingest.auto_extract", True):
@@ -338,11 +407,15 @@ class MethodIngestService:
 
     async def _fail(self, note_id: str, error: str) -> None:
         async with self.engine.sf() as session:
-            n = await session.get(TechniqueMethodNote, note_id)
+            n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
             if n is not None:
                 n.status = "failed"
                 n.error = error
                 n.updated_at = _now()
+                job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
+                if job:
+                    await srcrev.checkpoint(session, job_id=job["id"], fence_token=job["fenceToken"], item_key="failure",
+                                            outcome="permanent", error=error)
                 await session.commit()
                 self._publish(note_dict(n))
 
@@ -385,16 +458,32 @@ class MethodIngestService:
             source = f"{n.kind} in #{n.channel_name or n.channel_id} by {n.author} at {n.posted_at}"
         if not body:
             raise RuntimeError("nothing to extract (no transcript, no text)")
+        # Delivery B: claim the current revision's job before the paid read; the artifact binds to THAT revision
+        async with self.engine.sf() as session:
+            job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
+            if job is None and await srcrev.job_for_note(session, note_id) is not None:
+                raise StaleWorker("another worker holds this note's job")
+            await session.commit()
         ex = await self._llm_extract(source, body)
         ex["symbols"] = self._clean_symbols(ex)
         ex["extractedAt"] = _now().isoformat()
-        ex["model"] = self.technique.llm_config().model
+        model = self.technique.llm_config().model
+        ex["model"] = model
         async with self.engine.sf() as session:
-            n = await session.get(TechniqueMethodNote, note_id)
+            n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
             n.extraction = ex
             n.status = "extracted"
             n.error = None
             n.updated_at = _now()
+            if job:
+                try:
+                    await srcrev.checkpoint(session, job_id=job["id"], fence_token=job["fenceToken"], item_key="extraction",
+                                            stage="extracted", release=True,
+                                            artifact={"kind": "extraction", "inputHash": _h(body),
+                                                      "configHash": _h(f"{model}|{EXTRACT_SYSTEM}"), "payload": ex})
+                except srcrev.FenceMismatch as exc:
+                    await session.rollback()
+                    raise StaleWorker(str(exc)) from exc
             await session.commit()
             d = note_dict(n)
         log.info("ingest: extracted %s -> %d symbol(s), %d claim(s)", note_id[:8], len(ex["symbols"]), len(ex.get("claims") or []))
@@ -476,10 +565,14 @@ class MethodIngestService:
                   "counts": {k: sum(1 for r in rows if r["status"] == k) for k in ("armed", "new", "rejected", "error")},
                   "skipped": symbols[max_syms:]}
         async with self.engine.sf() as session:
-            n = await session.get(TechniqueMethodNote, note_id)
+            n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
             n.board_check = result
             n.status = "checked"
             n.updated_at = _now()
+            job = await srcrev.claim_for_note(session, note_id, owner="engine", retry=True)
+            if job:
+                await srcrev.checkpoint(session, job_id=job["id"], fence_token=job["fenceToken"], item_key="board_check",
+                                        stage="board_checked", outcome="done")
             await session.commit()
             d = note_dict(n)
         log.info("ingest: board check %s -> %s", note_id[:8], result["counts"])

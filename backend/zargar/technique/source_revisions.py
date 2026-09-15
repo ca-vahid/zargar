@@ -247,9 +247,68 @@ async def resume_unfinished(session, *, owner: str, now: dt.datetime | None = No
     return out
 
 
+async def job_for_note(session, note_id: str) -> TechniqueSourceJob | None:
+    """The CURRENT revision's job for a note (locked), or None when the note has no revision yet."""
+    cur = await current_revision(session, note_id)
+    if cur is None:
+        return None
+    return (await session.execute(select(TechniqueSourceJob).where(TechniqueSourceJob.revision_id == cur.id)
+                                  .with_for_update())).scalars().first()
+
+
+async def claim_for_note(session, note_id: str, *, owner: str, now: dt.datetime | None = None,
+                         lease_seconds: int = DEFAULT_LEASE_SECONDS, retry: bool = False) -> dict | None:
+    """Lease the current revision's job for `owner` under a NEW fence token (the worker path: `pending()`
+    hands the lease to the transcription worker; the extraction / board / failure paths claim inline).
+    None when another owner holds a live lease, or when the job is finished and `retry` is not set (a human
+    retry re-opens a done/permanent job). Staged in the caller's session."""
+    now = now or utcnow()
+    job = await job_for_note(session, note_id)
+    if job is None:
+        return None
+    if job.lease_owner and job.lease_until is not None and job.lease_until > now and job.lease_owner != owner:
+        return None
+    if job.outcome in ("done", "permanent") and not retry:
+        return None
+    if job.lease_owner == owner and job.lease_until is not None and job.lease_until > now and job.outcome == "in_progress":
+        job.lease_until = now + dt.timedelta(seconds=lease_seconds)      # the same owner RENEWS: its fence stays valid
+        job.updated_at = now
+        await session.flush()
+        return job_dict(job)
+    job.fence_token = int(job.fence_token or 0) + 1
+    job.lease_owner = owner
+    job.lease_until = now + dt.timedelta(seconds=lease_seconds)
+    job.attempts = int(job.attempts or 0) + 1
+    job.outcome = "in_progress"
+    job.next_due_at = None
+    job.updated_at = now
+    await session.flush()
+    return job_dict(job)
+
+
+async def sweep_expired(session, *, now: dt.datetime | None = None, limit: int = 200) -> int:
+    """Release EXPIRED leases (a crashed or stalled worker) so the next claim can take the job at its
+    recorded stage - under a NEW fence, so the stalled worker's late checkpoint is refused. Claims nothing
+    itself: a delivery or an API call must never become a phantom owner of work it will not do."""
+    now = now or utcnow()
+    rows = (await session.execute(
+        select(TechniqueSourceJob).where(TechniqueSourceJob.outcome == "in_progress",
+                                         TechniqueSourceJob.lease_owner.is_not(None),
+                                         TechniqueSourceJob.lease_until <= now)
+        .limit(limit).with_for_update(skip_locked=True))).scalars().all()
+    for j in rows:
+        j.fence_token = int(j.fence_token or 0) + 1
+        j.lease_owner = None
+        j.lease_until = None
+        j.updated_at = now
+    await session.flush()
+    return len(rows)
+
+
 async def checkpoint(session, *, job_id: str, fence_token: int, item_key: str, artifact: dict | None = None,
                      stage: str | None = None, outcome: str | None = None, error: str | None = None,
-                     now: dt.datetime | None = None) -> dict:
+                     now: dt.datetime | None = None, next_due_at: dt.datetime | None = None,
+                     release: bool = False) -> dict:
     """Record one completed item for a job - and, when it produced an output, the artifact row - in the
     CALLER's session so one commit carries both. Refused (`FenceMismatch`) unless `fence_token` is the
     job's current token. The artifact is idempotent by its output key: an existing row with the same
@@ -295,9 +354,14 @@ async def checkpoint(session, *, job_id: str, fence_token: int, item_key: str, a
         job.stage = stage
     if outcome:
         job.outcome = outcome
-        if outcome in ("done", "permanent"):
-            job.lease_owner = None
+        if outcome in ("done", "permanent", "retryable"):
+            job.lease_owner = None                      # retryable = released for the next claim (after next_due_at)
             job.lease_until = None
+        if outcome == "retryable":
+            job.next_due_at = next_due_at
+    if release and job.outcome == "in_progress":
+        job.lease_owner = None                          # this stage's owner is done: the next stage claims anew
+        job.lease_until = None
     if error is not None:
         job.error = error[:500]
     job.updated_at = now
