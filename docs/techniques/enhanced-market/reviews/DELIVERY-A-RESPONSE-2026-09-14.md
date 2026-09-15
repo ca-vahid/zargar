@@ -330,3 +330,8 @@ fill unless the quote carries a real-time source identity (`SimExecutor.quote_re
 off), and those tests publish contract quotes with an empty source. Pre-existing on main, owned by the Cartel
 desk, not touched here; recorded for that desk. (Runs were done one file at a time in the foreground: the
 machine had ~1 GB free and background runs were killed for memory.)
+
+**Third integration (origin/main 7b1dee2: Cartel handoff receipt, deployment lock, Team2 F123/F126 on main):**
+clean merge, no conflicts; version 0.7.74 agrees; `planFor` present once. Exclusive window on the final tree
+(0 other clients before/after): reviewer groups + watermark + `test_team2_close` + entry quality 42/42; own
+Delivery B + reconcile + ingest + gateway + separation + Team2 runner + reviewer execution 72/72.
