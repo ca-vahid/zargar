@@ -11,6 +11,7 @@ import { CartelReplayControls, CartelReplayResult } from "./CartelReplayControls
 import { CartelPremiumReplayControls, CartelPremiumReplayResult } from "./CartelPremiumReplay";
 import { CartelQuoteRecording } from "./CartelQuoteRecording";
 import { CartelIntradayResearch } from "./CartelIntradayResearch";
+import { CartelProfitabilityResearch } from "./CartelProfitabilityResearch";
 import { CartelEvidenceResult } from "./CartelEvidenceResult";
 import { CartelSweepControls, CartelSweepResult } from "./CartelSweepControls";
 import { CartelScanControls, CartelScanResult } from "./CartelScanControls";
@@ -228,6 +229,7 @@ export function OptionsCartelPage() {
     <div id="cartel-content" role={detailMode ? "region" : "tabpanel"} aria-label={detailMode ? "Cartel record" : undefined} aria-labelledby={detailMode ? undefined : `cartel-tab-${tab}`}>
 
     {error && <ErrorState message={error} onRetry={detailMode ? () => setLoadRevision(n => n+1) : () => refresh().then(() => setError("")).catch(e => setError(String(e)))}/>}
+    {!detailMode && tab === "validation" && <CartelProfitabilityResearch onSettings={() => setPageTab('settings')}/>}
     {!detailMode && tab === "validation" && <CartelSweepControls runs={runs.filter(r => r.mode === "replay")} busy={!!busy} onRun={async body => {
       setBusy("Comparing entry rules"); setError("");
       try { selectRun(await api.post<Run>(`${ROOT}/sweeps`, body)); await refresh(); }
@@ -249,6 +251,7 @@ export function OptionsCartelPage() {
       {(tab === "plans" || tab === "settings") && <CartelPreparation key={`${tab}:${workspace}:${workspace === "practice" ? practiceBookId : ""}`} view={tab} onOpen={open} onChanged={refresh} onSettings={() => setPageTab("settings")} />}
       {tab === "settings" && <CartelScheduleControls />}
       {tab === "settings" && <CartelQuoteRecording/>}
+      {tab === "settings" && <CartelProfitabilityResearch settings/>}
       {(tab === "plans" || tab === "settings") && <CartelIntradayResearch key={`intraday-${workspace}`} settings={tab==='settings'}/>}
       {tab === "validation" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}
         onSelect={setIndustrySnapshotId} onImported={async run => {selectRun(run); await refresh();}}/>}

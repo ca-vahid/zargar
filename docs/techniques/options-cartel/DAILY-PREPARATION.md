@@ -116,3 +116,9 @@ remain unchanged. Settings → Intraday market research controls collection only
 
 Protocol, source distinction and future promotion requirements are preserved in
 [the September 14 decision](INTRADAY-RESEARCH-DECISION-2026-09-14.md).
+
+For the broader prospective study, leave profitability research enabled in Settings
+and run fresh preparation before the session. Validation's **Profitability research**
+compares the bounded full candidate pool, ranking alternatives and separate bearish
+and exit experiments. It does not increase executable shortlist capacity or grant
+entry permission. See [the collection and review protocol](PROFITABILITY-RESEARCH.md).
