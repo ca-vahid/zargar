@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.78";
+export const APP_VERSION = "0.7.79";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.79",date:"2026-09-14",title:"Tips intake reads every image, and says which one it read",items:[
+    {tag:"new",text:"Multi-image tips (KFIN-07): a message's whole attachment set is processed, not just the first image - each attachment keeps its Discord id and order, gets its own transcript, and every extracted quote is attributed to the caption or to ONE attachment (attachment n of N). A ticker or price that lives only in the second screenshot now grounds. Bounded by techniques.tip.intake_max_images (4), intake_max_image_bytes (8 MiB) and intake_vision_calls_per_message (4)."},
+    {tag:"improved",text:"Attachment coverage is on the record: the content's manifest and a TipAttachmentsProcessed journal entry list every image as processed, absent, unreadable, failed (with the reason) or skipped-over-budget - an image the desk did not read is never evidence, and a fetch failure at the gateway no longer disappears."},
+    {tag:"fixed",text:"Two screenshots that disagree (a different strike, price or expiry for the same trade) are no longer blended into one tip: both readings are kept, flagged as a conflict (TipAttachmentConflict), fail verification into the analyst's review and never dedupe onto an older tip. Duplicate deliveries still cost no extraction or transcription; an edited message is still a revision, never re-extracted."},
+  ]},
   {version:"0.7.78",date:"2026-09-14",title:"A retry is a new order, an unanswered order is not a zero, a held position keeps its stop",items:[
     {tag:"fixed",text:"Team2 E: a transport retry of an entry is judged on the wall clock again before it is sent, and the technique's time rule now runs inside the order manager after its last await, immediately before the venue hand-off - an entry admitted at 15:29:59 that retried at 15:30:01 used to go out. A refusal there is recorded as a skipped opportunity with its decision time, never as a strategy refusal. Exits and cancels are untouched."},
     {tag:"fixed",text:"Orders F: when the venue hand-off happens but the answer never arrives, the outcome is UNKNOWN (SubmitUncertain, carrying the order id) - the entry stays submitting with its exposure reserved and its order identity registered, it is never retried as a fresh order, an alert is raised, and it is never treated as a zero fill. Team2's proxy exemption withdraws itself when fill evidence later arrives; only a confirmed rejection or cancel with zero fill clears occupancy."},
