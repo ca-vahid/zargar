@@ -2474,12 +2474,26 @@ class PlanRunner(SessionListener):
                 why.append(f"premium ${premium:,.0f} exceeds the ${cfg.premium_budget:,.0f} budget — 1 contract anyway")
             n = min(n, max(1, afford))
             why.append(f"budget ${cfg.premium_budget:,.0f}")
-        n = int(max(1, min(n, cfg.max_contracts)))
+        cap = int(cfg.max_contracts)
+        # F127 (2026-09-15): a technique's 0DTE policy (`techniques.<id>.zero_dte.max_contracts`) is enforced by the
+        # RiskGate as a REFUSAL, while this sizer only knew `max_contracts` (risk.max_option_contracts, 50): Team2's
+        # IWM 284P at $0.33 was sized to 50 and refused against the policy's 40 — every contract cheaper than the
+        # budget/40 boundary was unfillable. The policy cap is a bound on the size, applied here before the order.
+        pol = s.get(f"techniques.{self.TECHNIQUE_ID}.zero_dte", None)
+        if isinstance(pol, dict) and bool(pol.get("enabled", False)) and str(self.rt("dte_policy", "0dte")) == "0dte":
+            try:
+                pol_cap = int(pol.get("max_contracts") or 0)
+            except (TypeError, ValueError):
+                pol_cap = 0
+            if pol_cap > 0 and pol_cap < cap:
+                cap = pol_cap
+                why.append(f"0DTE policy cap {pol_cap}")
+        n = int(max(1, min(n, cap)))
         self._log(ap, "sized",
                   f"{trade.trigger_id}: {n} contract(s) — ${equity * cfg.risk_pct / 100:,.0f} at risk "
                   f"({cfg.risk_pct:g}% of ${equity:,.0f}) / ${risk_per:,.0f} per contract"
                   + (f" ({prem_stop:g}% premium stop on ${premium:,.0f})" if 0 < prem_stop < 100 else "")
-                  + (", " + ", ".join(why) if why else "") + f", cap {cfg.max_contracts}",
+                  + (", " + ", ".join(why) if why else "") + f", cap {cap}",
                   trigger=trade.trigger_id, contracts=n)
         return n
 
