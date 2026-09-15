@@ -75,6 +75,18 @@ runtime ones to `execution.*`).
    on a mismatch). Assistants restart via the scheduler's `ZargarRestart` task (same door, same refusal);
    `ZargarRestartOverride` (= `restart.ps1 -Force`) exists for emergencies and is logged as an override. Task
    scripts are ASCII (Windows PowerShell 5.1). "No open positions" is not a restart test.
+19. **A source's own-book narration is research, never permission** (KFIN-08, 2026-09-14). A source enrolled in
+   `techniques.tip.mk_ownbook_sources` (Meet Kevin) narrates its OWN trades; "I bought / added / sold half" from it is
+   classified (`techniques/tip/ownbook.py`: own_open / own_exit / recap / hypothetical / third_party, deterministic text
+   first, extraction `actor`/`activity` second) and in `shadow` mode routed to a DEDICATED shadow book (`kind=shadow`,
+   `book=ownbook`) BEFORE the immediate book, the analyst, any proposal or armed plan - `techniques.tip.allow_live_auto`
+   and the Practice gates are never consulted because that path is never entered. A disclosure without a grounded price
+   (shares) / contract (strike + expiry) or without a qualified quote at the decision stays `ownbook_unresolved`
+   (journaled `TipOwnBookClassified`, nothing back-filled); recaps, hypotheticals, other people's screenshots and exits
+   with nothing to reduce are `ownbook_context` and never open. Grading (`GET /api/tip/ownbook/{source}`) uses the quote
+   at the decision + our own fill inside the DECLARED cohort (`mk_ownbook_cohort`); the `mk_ownbook_min_*` criteria are
+   reported, never acted on - promotion is a human verdict with no calendar deadline. Default mode `off`; guard tests in
+   `tests/test_tip_ownbook.py`.
 
 21. **One day anchor, durable, and every "today" figure measures from it** (2026-09-14).
    This ET day's opening equity is `PositionKeeper.day_start_equity(pid)`: the last PERSISTED
@@ -1942,3 +1954,13 @@ manager's last await, immediately before the venue hand-off; a refusal there is 
 carried through every attempt (the EM desk's FA-01 on their branch does the same with their quote/budget guard — the two
 compose when their branch merges; the retry-loop signature is identical). EM inherits the uncertain-outcome handling:
 a terminal timeout on an entry is no longer marked `failed`. Tips override `_place_with_retry` and are unchanged.
+
+### Orders: uncertainty is resolved by the venue's report, live and at restore — 2026-09-14 (Team2 review F; v0.7.80)
+
+`Trade.submit_uncertain` (v0.7.78) is now CLEARED only on authoritative evidence: `on_order_update` resolves it on any
+venue-sourced report of the entry order (fill, partial, rejected, cancelled, expired — `entry_reconciled`, journaled) before
+the ordinary bookkeeping runs, so a confirmed zero-fill becomes an ordinary failed/cancelled entry and a fill stays
+managed; `_restore_trades` judges a still-uncertain entry against the persisted `orders` row through the same callback
+(`_reconcile_uncertain_from_row`) — a terminal or filled row is authoritative, an in-flight or missing row keeps the
+uncertainty (never cleared on absence, a local timeout or a cancel request). Duplicate reports are idempotent; a cancel
+after a partial keeps the cumulative fill. Shared behaviour (EM inherits it; Tips override the retry loop).

@@ -101,8 +101,14 @@ positions get a nightly **retro** (`tip_retro`, `techniques.tip.retro_*`).
 docs/techniques/tip/reviews/):** the Discord gateway is a durable write-ahead LEDGER
 (accept→lease→ACK, revision-keyed, contiguous cursors, per-destination EM ack — a hard
 kill loses nothing); intake dedupe is an atomic advisory-locked CLAIM (fresh=inFlight
-non-ack, stale=resumed); the grounding corpus is caption+transcript UNION with an
-attachment-coverage manifest (first image only — multi-image queued); premium exits
+non-ack, stale=resumed); the grounding corpus is caption + one block PER ATTACHMENT (`--- attachment n of N
+(id …) ---`, KFIN-07 2026-09-14: every supported image up to `techniques.tip.intake_max_images` /
+`intake_max_image_bytes` / `intake_vision_calls_per_message` is transcribed — the primary image rides the
+extraction read, the rest get one `Extractor.transcribe` call each — every quote is attributed to the caption
+or ONE attachment id (`grounding.quoteSources`/`evidenceBlocks`), the coverage manifest `meta.attachments`
+keeps absent/unreadable/failed/skipped-over-budget explicit (`TipAttachmentsProcessed`), contradictory
+documents are RECORDED as `TipAttachmentConflict` and fail verification (`attachments_consistent`) — never
+blended; an unprocessed image is never evidence); premium exits
 need fresh marks with provenance on the record AND tick stops need two DISTINCT fresh
 observations (`execution.premium_mark_max_age_seconds`,
 `execution.premium_stop_confirm_window_seconds`); a pure quote-age REJECTED_RISK on an

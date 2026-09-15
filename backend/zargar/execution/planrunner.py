@@ -1395,6 +1395,43 @@ class PlanRunner(SessionListener):
                 "trigger": best.get("id"),
                 "note": "Estimate only — the exact contract (just-OTM call, this Friday/0DTE) and its real premium are chosen when the trigger fires."}
 
+    async def _resolve_uncertain(self, ap: ArmedPlan, tr: Trade, status: str, filled: float, *, source: str) -> None:
+        """F: clear `submit_uncertain` on authoritative evidence only (a venue order report, or the persisted order
+        row at restore) and persist the resolved state. Cumulative fill evidence is preserved by the caller's
+        ordinary bookkeeping, so a cancel after a partial fill never looks like a zero fill."""
+        tr.submit_uncertain = False
+        self._log(ap, "entry_reconciled", f"{tr.trigger_id}: the venue answered ({status}, filled {filled:g}) — the submission "
+                  f"is no longer uncertain ({source})", trigger=tr.trigger_id, status=status, filledQty=filled, source=source,
+                  orderId=tr.entry_order_id)
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_ORDER_RESULT, {
+                "runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "stage": "entry_reconciled",
+                "orderId": tr.entry_order_id, "status": status, "filledQty": filled, "source": source},
+                aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+
+    async def _reconcile_uncertain_from_row(self, ap: ArmedPlan, tr: Trade) -> None:
+        """F: after a restart an uncertain entry is judged against the persisted ORDER row (the write-ahead record the
+        venue's reports update) — a terminal or filled row is authoritative and goes through the same order-update
+        path as a live report; a row still in flight, or no row, keeps the uncertainty (never cleared on absence)."""
+        sf = getattr(self.engine, "sf", None)
+        if sf is None or not tr.entry_order_id:
+            return
+        try:
+            from ..models import Order
+            async with sf() as session:
+                row = await session.get(Order, tr.entry_order_id)
+        except Exception:  # noqa: BLE001 - missing evidence keeps the uncertainty
+            log.debug("uncertain entry %s: order row unavailable", tr.trigger_id, exc_info=True)
+            return
+        if row is None:
+            return
+        status = str(getattr(row, "status", "") or "")
+        if status not in ("FILLED", "PARTIALLY_FILLED", "REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
+            return
+        await self.on_order_update({"id": tr.entry_order_id, "status": status, "filledQty": float(getattr(row, "filled_qty", 0) or 0),
+                                    "avgFillPrice": getattr(row, "avg_fill_price", None),
+                                    "rejectReason": getattr(row, "reject_reason", None) or status})
+
     async def _restore_trades(self, ap: ArmedPlan, state: dict | None = None) -> None:
         """After a restart, rebuild the Trade objects and the order-id index from
         the persisted projection so an open position keeps being managed and its
@@ -1453,6 +1490,9 @@ class PlanRunner(SessionListener):
                 self.register_order(oid, (ap.run_id, tid))
             if tid in ap.trackers and tr.status not in ("cancelled", "failed", "skipped"):
                 ap.trackers[tid].status = "fired"     # already acted on; don't re-fire live
+            if getattr(tr, "submit_uncertain", False):
+                with contextlib.suppress(Exception):
+                    await self._reconcile_uncertain_from_row(ap, tr)      # F: the persisted order row is the evidence
             rebuilt += 1
         if rebuilt:
             self._log(ap, "restored_trades", f"re-attached {rebuilt} trade(s) after restart", trades=rebuilt)
@@ -1775,6 +1815,13 @@ class PlanRunner(SessionListener):
             return
         status = o.get("status")
         if o["id"] == tr.entry_order_id:
+            if getattr(tr, "submit_uncertain", False) and status in ("FILLED", "PARTIALLY_FILLED", "REJECTED", "REJECTED_RISK",
+                                                                    "CANCELLED", "EXPIRED"):
+                # F (2026-09-14): the venue answered — the submission is no longer uncertain, whatever the answer.
+                # A confirmed zero-fill becomes an ordinary failed/cancelled entry (the technique may exempt it);
+                # a fill or partial fill is managed as usual and never exempted. A local timeout, a cancel REQUEST
+                # or a missing row never reaches this branch: only a venue-sourced order report does.
+                await self._resolve_uncertain(ap, tr, str(status), float(o.get("filledQty") or 0), source="order_update")
             if status in ("FILLED", "PARTIALLY_FILLED"):
                 new_filled = float(o.get("filledQty") or 0)
                 if new_filled > tr.filled_qty:

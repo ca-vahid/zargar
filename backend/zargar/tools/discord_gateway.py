@@ -76,29 +76,83 @@ IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
 MAX_IMAGE_BYTES = 8 * 1024 * 1024      # the ingest endpoint decodes this inline
 
 
+MAX_INGEST_ATTACHMENTS = 6             # POST body bound; the app applies its own techniques.tip.intake_max_images
+
+
+def collect_attachments(msg: dict) -> list[dict]:
+    """The message's supported IMAGE attachment set with STABLE ids and
+    ordering (KFIN-07): real attachments (Discord attachment id) first, then
+    embed images (`embed-<n>-<key>`). One entry per distinct URL:
+    {id, url, filename, contentType, bytes, kind}."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for i, att in enumerate(msg.get("attachments") or [], start=1):
+        ct = str(att.get("content_type") or "")
+        name = str(att.get("filename") or "")
+        if ct.startswith("image/") or name.lower().endswith(IMAGE_EXT):
+            u = att.get("url") or att.get("proxy_url")
+            if u and str(u) not in seen:
+                seen.add(str(u))
+                out.append({"id": str(att.get("id") or f"att-{i}"), "url": str(u),
+                            "filename": name, "contentType": ct,
+                            "bytes": int(att.get("size") or 0), "kind": "attachment"})
+    for i, e in enumerate(msg.get("embeds") or [], start=1):
+        for key in ("image", "thumbnail"):
+            u = (e.get(key) or {}).get("url") or (e.get(key) or {}).get("proxy_url")
+            if u and str(u) not in seen:
+                seen.add(str(u))
+                out.append({"id": f"embed-{i}-{key}", "url": str(u), "filename": "",
+                            "contentType": "", "bytes": 0, "kind": "embed"})
+    return out
+
+
 def collect_images(msg: dict) -> list[str]:
     """Image URLs on a message: real attachments first, then embed images.
 
     Alert rooms often post a CHART with little or no text (user, 2026-08-28) —
     those must reach the vision transcription path, not ingest as empty text."""
-    urls: list[str] = []
-    for att in msg.get("attachments") or []:
-        ct = str(att.get("content_type") or "")
-        name = str(att.get("filename") or "").lower()
-        if ct.startswith("image/") or name.endswith(IMAGE_EXT):
-            u = att.get("url") or att.get("proxy_url")
-            if u:
-                urls.append(str(u))
-    for e in msg.get("embeds") or []:
-        for key in ("image", "thumbnail"):
-            u = (e.get(key) or {}).get("url") or (e.get(key) or {}).get("proxy_url")
-            if u:
-                urls.append(str(u))
-    seen, out = set(), []
-    for u in urls:                      # dedupe, keep order
-        if u not in seen:
-            seen.add(u)
-            out.append(u)
+    return [a["url"] for a in collect_attachments(msg)]
+
+
+async def fetch_attachments_for_ingest(http, attachments: list[dict]) -> list[dict]:
+    """Every attachment becomes a manifest entry the app can trust: bytes as a
+    data URL when the fetch succeeded, else an explicit status — `failed`
+    (HTTP error / exception, reason kept), `skipped-over-budget` (size cap or
+    beyond MAX_INGEST_ATTACHMENTS). Nothing is silently dropped."""
+    import base64
+    out: list[dict] = []
+    for i, att in enumerate(attachments, start=1):
+        entry = {"id": att["id"], "filename": att.get("filename") or "",
+                 "contentType": att.get("contentType") or "",
+                 "bytes": int(att.get("bytes") or 0), "url": att["url"]}
+        if i > MAX_INGEST_ATTACHMENTS:
+            entry.update(status="skipped-over-budget",
+                         error=f"beyond the gateway's {MAX_INGEST_ATTACHMENTS}-attachment cap")
+            out.append(entry)
+            continue
+        try:
+            r = await http.get(att["url"], timeout=30)
+            if r.status_code != 200:
+                entry.update(status="failed", error=f"image fetch HTTP {r.status_code}")
+                print(f"    ! image fetch {r.status_code} for {att['url'][:70]}")
+                out.append(entry)
+                continue
+            blob = r.content
+            if len(blob) > MAX_IMAGE_BYTES:
+                entry.update(status="skipped-over-budget", bytes=len(blob),
+                             error=f"{len(blob) // 1024}kB exceeds the {MAX_IMAGE_BYTES // 1024}kB cap")
+                print(f"    ! image too large ({len(blob) // 1024}kB) — skipped")
+                out.append(entry)
+                continue
+            ct = (r.headers.get("content-type") or "image/png").split(";")[0].strip()
+            if not ct.startswith("image/"):
+                ct = "image/png"
+            entry.update(bytes=len(blob), contentType=ct,
+                         dataUrl=f"data:{ct};base64,{base64.b64encode(blob).decode('ascii')}")
+        except Exception as exc:
+            entry.update(status="failed", error=f"image fetch failed: {str(exc)[:160]}")
+            print(f"    ! image fetch failed: {exc}")
+        out.append(entry)
     return out
 
 
@@ -1197,21 +1251,29 @@ class Gateway:
               f"{tag} {flatten_message(msg)[:80]!r}")
 
     async def _ingest_message(self, http, headers, msg: dict, source_name: str) -> dict:
-        """Post one message (text + first image, if any) to /api/ingest/manual —
-        the shared path for live alerts AND 'process last message'. Returns a
+        """Post one message (text + its supported attachment set) to
+        /api/ingest/manual — the shared path for live alerts AND 'process last
+        message'. Every attachment travels with a stable id and either its
+        bytes or an explicit failed/skipped status (KFIN-07). Returns a
         summary of what the pipeline did (for the process-result report)."""
         text = flatten_message(msg)
-        images = collect_images(msg)
-        image_data_url = await fetch_image_data_url(http, images[0]) if images else None
-        if not text.strip() and image_data_url is None:
+        attachments = await fetch_attachments_for_ingest(http, collect_attachments(msg))
+        has_bytes = any(a.get("dataUrl") for a in attachments)
+        if not text.strip() and not attachments:
             # TERMINAL, not a failure (first live dead-letter, 2026-09-09): a
             # sticker/reaction-only post has nothing to extract, ever — the
             # message is already mirrored, so this delivery is COMPLETE. An
             # ok:False here made the ledger burn 5 retries and dead-letter it
             # as if a real tip had been lost.
-            print("    -> nothing to ingest (no text, no usable image) — mirrored only")
+            print("    -> nothing to ingest (no text, no image) — mirrored only")
             return {"ok": True, "signals": [],
-                    "note": "nothing to ingest — no text and no usable image (mirrored only)"}
+                    "note": "nothing to ingest — no text and no image (mirrored only)"}
+        if not text.strip() and not has_bytes:
+            # images exist but none could be fetched: the app still records the
+            # message with its coverage manifest (every attachment explicit as
+            # failed/skipped) — a missing image is a fact on the record
+            print(f"    -> {len(attachments)} attachment(s), none fetchable — "
+                  "recording the coverage manifest only")
         try:
             body = {"text": text, "source_name": source_name or "auto",
                     "subject": f"discord: {describe_author(msg)}",
@@ -1220,9 +1282,10 @@ class Gateway:
                     "messageId": str(msg.get("id") or "") or None,
                     "postedAt": str(msg.get("timestamp") or "") or None,
                     "editedAt": str(msg.get("edited_timestamp") or "") or None,
-                    "imageCount": len(images) or None}
-            if image_data_url:
-                body["imageDataUrl"] = image_data_url
+                    "imageCount": len(attachments) or None}
+            if attachments:
+                body["attachments"] = [{k: v for k, v in a.items() if k != "url"}
+                                       for a in attachments]
             r = await http.post(f"{self.api}/api/ingest/manual", headers=headers,
                                 json=body, timeout=200)
             out = r.json() if r.status_code == 200 else {"error": r.text[:200]}

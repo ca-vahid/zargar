@@ -22,6 +22,7 @@ and restore `superseded_by = NULL` on each source ONLY at its recorded revision.
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 import asyncio
 import hashlib
