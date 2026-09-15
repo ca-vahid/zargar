@@ -2444,6 +2444,22 @@ class PlanRunner(SessionListener):
         qty = int(max(0, equity * cfg.risk_pct / 100 / per_share))
         return float(min(qty, cfg.max_qty))
 
+    @staticmethod
+    def _contract_is_0dte(contract: dict) -> bool:
+        """Does the SELECTED contract expire today? The OCC symbol is the identity the RiskGate judges (`occ.dte()`,
+        the same `date.today()` basis); the pick's `expiry` field is the fallback. Unknown = not 0DTE (no clamp)."""
+        from ..options import occ
+        o = occ.parse(str(contract.get("symbol") or "")) if contract.get("symbol") else None
+        if o is not None:
+            return o.dte() == 0
+        exp = contract.get("expiry")
+        if exp:
+            try:
+                return dt.date.fromisoformat(str(exp)[:10]) == dt.date.today()
+            except ValueError:
+                return False
+        return False
+
     async def _size_contracts(self, ap: ArmedPlan, trade: Trade, contract: dict) -> int:
         """R1 on the instrument we actually trade. Fixed `contracts` wins (R5 one-
         contract rule while learning); otherwise size by risk: the dollars at risk
@@ -2479,8 +2495,11 @@ class PlanRunner(SessionListener):
         # RiskGate as a REFUSAL, while this sizer only knew `max_contracts` (risk.max_option_contracts, 50): Team2's
         # IWM 284P at $0.33 was sized to 50 and refused against the policy's 40 — every contract cheaper than the
         # budget/40 boundary was unfillable. The policy cap is a bound on the size, applied here before the order.
+        # The clamp is scoped to the SELECTED contract's actual expiry — the OCC identity on the RiskGate's own date
+        # basis (`occ.dte()` == 0), never a policy default — so a longer-dated contract keeps its existing cap
+        # (reviewer regression, 2026-09-15).
         pol = s.get(f"techniques.{self.TECHNIQUE_ID}.zero_dte", None)
-        if isinstance(pol, dict) and bool(pol.get("enabled", False)) and str(self.rt("dte_policy", "0dte")) == "0dte":
+        if isinstance(pol, dict) and bool(pol.get("enabled", False)) and self._contract_is_0dte(contract):
             try:
                 pol_cap = int(pol.get("max_contracts") or 0)
             except (TypeError, ValueError):

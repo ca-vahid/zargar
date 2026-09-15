@@ -7,6 +7,9 @@ import pytest
 from zargar.execution.planrunner import ArmConfig, ArmedPlan, Trade
 from zargar.techniques.team2.runner import Team2Runner
 
+import datetime as dt
+TODAY_OCC = f"IWM{dt.date.today():%y%m%d}P00284000"        # a 0DTE contract on the RiskGate's date basis (occ.dte() == 0)
+
 
 def _rig(settings):
     eng = SimpleNamespace(settings=settings, journal=SimpleNamespace(append=AsyncMock()), trading_halted=lambda _: False,
@@ -23,6 +26,18 @@ def _rig(settings):
 BASE = {"techniques.team2.premium_stop_pct": 25.0, "techniques.team2.min_one_contract": True, "techniques.team2.dte_policy": "0dte"}
 
 
+async def test_the_clamp_follows_the_selected_contract_not_the_policy_default():
+    """A next-day contract keeps the risk cap even under dte_policy=0dte; a pick with only an `expiry` field is judged by it."""
+    runner, ap, trade = _rig({**BASE, "techniques.team2.zero_dte": {"enabled": True, "max_contracts": 40}})
+    tomorrow = dt.date.today() + dt.timedelta(days=1)
+    n = await runner._size_contracts(ap, trade, {"symbol": f"IWM{tomorrow:%y%m%d}P00284000", "ask": 0.33, "_sizeMult": 1.0, "_bucket": "full"})
+    assert n == 50
+    n = await runner._size_contracts(ap, trade, {"expiry": dt.date.today().isoformat(), "ask": 0.33, "_sizeMult": 1.0, "_bucket": "full"})
+    assert n == 40
+    n = await runner._size_contracts(ap, trade, {"ask": 0.33, "_sizeMult": 1.0, "_bucket": "full"})
+    assert n == 50, "an unidentified contract is never assumed 0DTE"
+
+
 @pytest.mark.parametrize("policy, expected", [
     ({"enabled": True, "max_contracts": 40, "premium_cap": 2000.0, "flatten_et": "15:45", "last_entry_et": "15:30"}, 40),   # today's IWM case
     ({"enabled": False, "max_contracts": 40}, 50),                                                                        # policy off: the risk cap
@@ -34,14 +49,14 @@ async def test_the_sizer_clamps_to_the_0dte_policy_cap(policy, expected):
     if policy is not None:
         settings["techniques.team2.zero_dte"] = policy
     runner, ap, trade = _rig(settings)
-    n = await runner._size_contracts(ap, trade, {"symbol": "IWM260915P00284000", "ask": 0.33, "bid": 0.32, "_sizeMult": 1.0, "_bucket": "full"})
+    n = await runner._size_contracts(ap, trade, {"symbol": TODAY_OCC, "ask": 0.33, "bid": 0.32, "_sizeMult": 1.0, "_bucket": "full"})
     # 6% of $9,934 = $596 at risk / ($33 x 25% = $8.25 per contract) = 72 -> budget $2,000 // $33 = 60 -> caps
     assert n == expected
 
 
 async def test_a_small_size_multiplier_still_lands_under_the_policy_cap_and_min_one_holds():
     runner, ap, trade = _rig({**BASE, "techniques.team2.zero_dte": {"enabled": True, "max_contracts": 40}})
-    n = await runner._size_contracts(ap, trade, {"symbol": "IWM260915P00284000", "ask": 0.33, "_sizeMult": 0.5, "_bucket": "small"})
+    n = await runner._size_contracts(ap, trade, {"symbol": TODAY_OCC, "ask": 0.33, "_sizeMult": 0.5, "_bucket": "small"})
     assert n == 36                                                   # int(72 x 0.5) = 36 < 40: the multiplier, not the cap, decides
-    n = await runner._size_contracts(ap, trade, {"symbol": "IWM260915P00284000", "ask": 9.0, "_sizeMult": 1.0, "_bucket": "full"})
+    n = await runner._size_contracts(ap, trade, {"symbol": TODAY_OCC, "ask": 9.0, "_sizeMult": 1.0, "_bucket": "full"})
     assert n == 2                                                    # a dear contract: risk says 2 ($596 / $225), the $2,000 budget says 2 - the cap never binds

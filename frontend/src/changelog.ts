@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.87";
+export const APP_VERSION = "0.7.88";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.88",date:"2026-09-15",title:"A cheap 0DTE contract is sized to the cap, not refused",items:[
+    {tag:"fixed",text:"Team2 F127: the contract sizer now clamps to the technique's 0DTE policy cap (40 contracts) for a contract that expires today, instead of asking for 50 and being refused by the risk gate - IWM's 284 put at $0.33 was refused that way at 11:14 ET on 09-15. Scoped to the selected contract's actual expiry: a longer-dated contract keeps its existing cap. The risk gate itself is unchanged."},
+  ]},
   {
     version: "0.7.87",
     date: "2026-09-15",
