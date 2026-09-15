@@ -956,6 +956,7 @@ class _Recorder:
         self.eng = eng
         self.run_id = run_id
         self.trace: list[dict] = []
+        register_run(eng, run_id)
 
     def step(self, kind: str, text: str, **extra) -> None:
         rec = {"seq": len(self.trace), "kind": kind, "text": text,
@@ -966,6 +967,77 @@ class _Recorder:
             self.eng.bus.publish(topics.TIP_ANALYST, {"runId": self.run_id, "step": rec})
         except Exception:      # streaming is best-effort
             pass
+        heartbeat_run(self.eng, self.run_id)
+
+
+# --- process ownership of paid runs (KFIN-04, 2026-09-14) --------------------------------
+# A "running" row's AGE is not evidence that its work is dead: a long appraisal or a
+# rule-audit cycle legitimately outlives the old two-hour cutoff. What IS evidence:
+# (1) this process holds a live task for the run (the in-process registry below), or
+# (2) the row's owner is another runtime whose heartbeat is fresh. `ops.restart_state`
+# reads both; a row this process owns with no live task is reconciled as lost.
+RUN_HEARTBEAT_S = 30.0          # at most one heartbeat write per run per this many seconds
+RUN_LIVENESS_S = 15 * 60.0      # a foreign runtime's row counts as running while its heartbeat is this fresh
+
+
+def _run_registry(eng) -> dict:
+    reg = getattr(eng, "_tip_run_registry", None)
+    if reg is None:
+        reg = eng._tip_run_registry = {}
+    return reg
+
+
+def register_run(eng, run_id: str) -> None:
+    """Bind a run to the task that carries it (+ stamp owner/heartbeat on the row, bounded)."""
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:           # no running loop (a synchronous test rig)
+        task = None
+    _run_registry(eng)[run_id] = {"task": task, "startedMs": int(time.time() * 1000), "beatAt": 0.0, "pending": None}
+    heartbeat_run(eng, run_id, force=True)
+
+
+def release_run(eng, run_id: str) -> None:
+    _run_registry(eng).pop(run_id, None)
+
+
+def live_runs(eng) -> dict[str, dict]:
+    """run id -> registry entry for every run whose task is still alive in this process."""
+    return {rid: e for rid, e in _run_registry(eng).items()
+            if e.get("task") is not None and not e["task"].done()}
+
+
+def heartbeat_run(eng, run_id: str, *, force: bool = False) -> None:
+    """Refresh `heartbeat_at` (and `owner`) on the row — throttled, one outstanding write per run,
+    never awaited by the caller."""
+    entry = _run_registry(eng).get(run_id)
+    if entry is None or getattr(eng, "sf", None) is None:
+        return
+    mono = time.monotonic()
+    if not force and mono - entry["beatAt"] < RUN_HEARTBEAT_S:
+        return
+    pending = entry.get("pending")
+    if pending is not None and not pending.done():
+        return
+    entry["beatAt"] = mono
+
+    async def write() -> None:
+        from ...models import TipAnalystRun
+        from ...runtime import runtime_id
+        try:
+            async with eng.sf() as session:
+                row = await session.get(TipAnalystRun, run_id)
+                if row is None or row.status != "running":
+                    return
+                row.owner = runtime_id()
+                row.heartbeat_at = dt.datetime.now(dt.timezone.utc)
+                await session.commit()
+        except Exception:      # a missed heartbeat is not a reason to stop the run
+            log.debug("tip run heartbeat failed for %s", run_id, exc_info=True)
+    try:
+        entry["pending"] = asyncio.create_task(write(), name=f"tip-run-heartbeat-{run_id[:8]}")
+    except RuntimeError:
+        entry["pending"] = None
 
 
 async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
@@ -989,6 +1061,8 @@ async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
         for k, v in fields.items():
             setattr(row, k, v)
         await session.commit()
+    if status in ("done", "failed"):
+        release_run(eng, run_id)
 
 
 import re as _re
