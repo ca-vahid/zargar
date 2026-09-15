@@ -37,7 +37,7 @@ SCHEDULED_JOB_FAILED = "ScheduledJobFailed"
 @dataclass
 class _Job:
     name: str
-    at: str                                   # "HH:MM" ET
+    at: "str | Callable[[dt.date], str]"      # "HH:MM" ET, or a per-day resolver (calendar-relative jobs)
     fn: Callable[[], Awaitable[Any]]
     weekdays_only: bool = True
     last_day: str = ""                        # ET date it last ran
@@ -61,18 +61,31 @@ class Scheduler:
         self.stop_timeout_s = 10.0
         self.tick_timeout_s = 600.0             # a tick waits this long for the jobs it started, then moves on
 
-    def register(self, name: str, at_et: str, fn: Callable[[], Awaitable[Any]], *,
+    def register(self, name: str, at_et: "str | Callable[[dt.date], str]", fn: Callable[[], Awaitable[Any]], *,
                  weekdays_only: bool = True) -> None:
-        hh, mm = at_et.split(":")
-        assert 0 <= int(hh) < 24 and 0 <= int(mm) < 60, at_et
+        """`at_et` is "HH:MM" ET, or a callable of the ET date returning "HH:MM"
+        for that day - the way a job follows the exchange calendar (R147-01,
+        2026-09-15: a pre-close capture runs relative to an early close)."""
+        if not callable(at_et):
+            hh, mm = at_et.split(":")
+            assert 0 <= int(hh) < 24 and 0 <= int(mm) < 60, at_et
         self._jobs[name] = _Job(name=name, at=at_et, fn=fn, weekdays_only=weekdays_only)
-        log.info("scheduled job registered: %s at %s ET", name, at_et)
+        log.info("scheduled job registered: %s at %s ET", name,
+                 at_et if not callable(at_et) else f"{self.resolve_at(name, dt.datetime.now(ET).date())} (calendar-relative)")
+
+    def resolve_at(self, name: str, day: dt.date) -> str:
+        """The "HH:MM" ET a job runs at on `day` (a calendar-relative job is
+        resolved per day)."""
+        job = self._jobs[name]
+        return job.at(day) if callable(job.at) else job.at
 
     def unregister(self, name: str) -> None:
         self._jobs.pop(name, None)
 
     def status(self) -> list[dict]:
-        return [{"name": j.name, "at": j.at, "weekdaysOnly": j.weekdays_only, "lastDay": j.last_day,
+        today = dt.datetime.now(ET).date()
+        return [{"name": j.name, "at": self.resolve_at(j.name, today), "calendarRelative": callable(j.at),
+                 "weekdaysOnly": j.weekdays_only, "lastDay": j.last_day,
                  "runs": j.runs, "failures": j.failures} for j in self._jobs.values()]
 
     def start(self) -> None:
@@ -122,7 +135,7 @@ class Scheduler:
                 continue
             if job.weekdays_only and now.weekday() >= 5:
                 continue
-            hh, mm = (int(x) for x in job.at.split(":"))
+            hh, mm = (int(x) for x in self.resolve_at(job.name, now.date()).split(":"))
             if minutes < hh * 60 + mm:
                 continue
             prev = self._running.get(job.name)

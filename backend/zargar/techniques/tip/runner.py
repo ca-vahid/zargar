@@ -1039,10 +1039,17 @@ async def attach_tip_runner(engine) -> None:
     # a pre-close snapshot of every open / intraday-exited Tips position and the
     # next session's first qualified quote (observation only; never an order)
     from . import holdstudy as _hold
-    hold_at = str(engine.settings.get("techniques.tip.hold_snapshot_at", "15:50"))
-    engine.scheduler.register("tip_hold_snapshot", hold_at,
+    # R147-01: calendar-relative - the pre-close capture runs N minutes before the
+    # EXCHANGE close of each day (12:50 on a 13:00 early close), the next-open
+    # capture starts AT the opening window (09:30) and searches inside it; a
+    # fixed hold_snapshot_at / hold_next_open_at, when set, overrides
+    before_close = int(engine.settings.get("techniques.tip.hold_snapshot_before_close_minutes",
+                                           _hold.DEFAULT_PRECLOSE_BEFORE_CLOSE_MIN) or _hold.DEFAULT_PRECLOSE_BEFORE_CLOSE_MIN)
+    hold_at = str(engine.settings.get("techniques.tip.hold_snapshot_at", "") or "")
+    engine.scheduler.register("tip_hold_snapshot",
+                              hold_at or (lambda d: _hold.preclose_job_time(d, before_close_minutes=before_close)),
                               lambda: _hold.snapshot_preclose(engine))
-    hold_open_at = str(engine.settings.get("techniques.tip.hold_next_open_at", "09:36"))
+    hold_open_at = str(engine.settings.get("techniques.tip.hold_next_open_at", "") or "") or _hold.next_open_job_time()
     engine.scheduler.register("tip_hold_next_open", hold_open_at,
                               lambda: _hold.sample_next_open(engine))
     # nightly LLM usage rollup into TechniqueHookStats.llm (Codex finding 10)
