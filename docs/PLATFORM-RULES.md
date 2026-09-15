@@ -1643,3 +1643,15 @@ checkout must be built (`node scripts/check-release.mjs && npx tsc -b`) BEFORE t
 door does not protect against a broken build because the stop happens before the build. The watch job's Team2
 commits (F123, F126, 0.7.72) had never been merged to main; they are brought to main with this change so the running
 checkout and main agree again.
+
+### Shared runner: technique state extras and one entry gate — 2026-09-14 (Team2 EOD follow-up; v0.7.76)
+
+Two hooks on `PlanRunner`, default no-ops, both technique-resolved: `state_extras(ap) -> dict` is merged into the armed
+state on EVERY `_persist` and `restore_extras(ap, state)` runs while re-arming a restored plan BEFORE the seed replay
+(a technique's durable overlay must exist before its first resumed read); `entry_gate(ap, trade, stage) -> reason | None`
+is asked at `pre_order` (after the contract pick and the review, before the mode branch), `order` (after sizing,
+immediately before the intent is written) and `retry` (the collar re-price). A reason skips the trade
+(`entry_gate_refused`, journaled as TechniquePlanTriggerSkipped, persisted); a hook that raises REFUSES (fail closed on
+a money path). Exits and cancels never pass through it. EM and Tips inherit the no-ops — their behaviour is unchanged
+(`tests/test_technique_arm*`, `test_tip_runner*`, `test_position_*`, `test_platform_*` green). Team2 uses them for the
+refused-fire overlay + decision watermark (R1/R3) and the wall-clock session/cutoff rule at the order boundary (R2).

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.74";
+export const APP_VERSION = "0.7.76";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.76",date:"2026-09-14",title:"A refusal survives a restart, an add obeys the cutoff, a correction never backdates an order",items:[
+    {tag:"fixed",text:"Team2 R1: the list of fires the book never held (refused, deferred, stale, rejected, cancelled unfilled, sizing) now rides every ordinary save of the armed plan, is restored before the first read after a restart, and is rebuilt from the journaled contract verdicts. Before this a restart could bring the modelled position of a refused contract back. Orders with an unknown acknowledgement and partial fills are never exempted."},
+    {tag:"fixed",text:"Team2 R2: one entry gate at the order boundary for every money path - initial entries, trim-and-add orders riding a cached contract, and the collar re-price retry - judged on the wall clock after quoting, review and sizing. A synthetic 15:28 add delivered at 15:32 used to reach the order boundary; adds are also judged at their origin like fires."},
+    {tag:"fixed",text:"Team2 R3: a decision watermark per plan - a fire, add, trim or exit whose close is at or before the last decision was surfaced by a corrected or late minute and is recorded (backdated_signal_skip, with the time it was judged and the time it surfaced), never sent as a backdated order; a setup the current close creates still acts. Corrections and recovered minutes are now journaled durably (bar_revised / bar_recovered)."},
+    {tag:"improved",text:"Team2 R5: the close funnel builds its attempts from the durable contract verdicts and joins the trade projection to them, so a verdict journaled before the projection was saved is reported as journal-only evidence with its own row instead of vanishing; opportunities and retries are counted separately (verdicts / journalOnly)."},
+  ]},
   {version:"0.7.74",date:"2026-09-14",title:"Recover preparation and reconcile daily results",items:[
     {tag:"fixed",text:"Partial Cartel preparation retries unresolved history with bounded recovery, preserving successful analyses, existing arms and immutable plan revisions."},
     {tag:"fixed",text:"Simulated fills require fresh eligible quotes and retain exact source evidence. Protective orders keep waiting for usable quotes rather than claiming stale fills."},

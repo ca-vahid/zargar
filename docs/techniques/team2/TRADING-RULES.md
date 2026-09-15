@@ -3122,6 +3122,22 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-14 EOD follow-up (other team: GO to finish, NO-GO to close; v0.7.76)** — their second packet at the
+  deployment target found four boundaries the v0.7.73 fixes left open (`notes/research/2026-09-14-pr106-followup-review.md`
+  in the Codex checkout; probes adopted verbatim in `tests/test_codex_team2_pr106_followup.py`). A: the refusal list
+  lived only in memory — it now rides every ordinary persist (`state_extras`), is restored before the first resumed read
+  (`restore_extras`), is rebuilt from the journaled verdicts (`_exempt_from_verdicts`) and covers every zero-fill outcome
+  (`_sync_unfilled`: refused, deferred, stale, entry-gate, rejected, cancelled unfilled, sizing); unknown-ACK and partial
+  fills are never exempt. B: adds bypassed the cutoff — `_add_from_event` runs `_stale_signal` at the origin and the
+  shared runner gained ONE `entry_gate` hook at the order boundary (`pre_order`, `order`, `retry`; `entry_gate_refused`).
+  C: a correction could mint a backdated entry inside the 3-minute allowance — a per-plan decision watermark
+  (`_decision_wm`, persisted) makes any fire/add/trim/exit closing at or before the last decision a recorded
+  `backdated_signal_skip`, never an order; the age allowance was NOT tuned; revisions are journaled
+  (`bar_revised`/`bar_recovered` as TechniquePlanRead). D: the funnel counted projected trades — attempts are now the
+  union of durable verdict triggers and trades, journal-only attempts get their own row and count (`journalOnly`,
+  `verdicts`). Judgement recorded: a historical exit instruction surfaced by a correction is NOT acted on — the book's
+  position stays under present-time management (live trims, target breach, quote stop, 15:45 flatten). Research
+  settings unchanged; the batch stays open until the other team accepts.
 - **2026-09-14 EOD handoff (other team, GO; v0.7.73)** — five fixes from their read-only reconciliation (cash $9,934.16,
   zero orders/fills, IWM 13:02 290C refused on a live $0.13 ask under the $0.20 floor — correct — but its modelled
   −126.71 % charged one desk loss). R1 money modes are judged by the BOOK only (`_plan_losses`), and a fire the
