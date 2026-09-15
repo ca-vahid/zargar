@@ -1108,3 +1108,14 @@ and retained fees, modeled exit fee only on the hypothetical sale, reconciliatio
 economics table with explicit unknowns, `riskBudgetQty` is a budget bound only, the payoff proxy is signed (puts count);
 planned room is labelled planned and the actual-entry room is unknown. No trading rule changed.
 
+### 2026-09-15 14:10 PT - order-free observation collection ENABLED for EM Practice only (user decision after the reviewers' close verdict)
+
+Journaled settings PATCH: `techniques.enhanced_market.shadow_exit_observe=true` (shadow-exit-v1: first fresh observation
+at the production rungs, unchanged targets) and `techniques.enhanced_market.shadow_p02_candidate=true` (frozen
+small-position-exit-v1 candidate observation at the plan TP1). `execution.*` defaults stay false, so no other desk
+observes; the observer is additionally gated to EM's default (Practice) book. Actual entries, exits, sizing and risk
+gates are UNCHANGED - the observer places no orders and never delays a protective exit (bounded background recorder).
+Purpose: obtain new-session P-02 evidence; without it the comparison stays unknown by construction. The per-session
+report (`tools/em_profitability.py`) consumes the records; conclusions only where covered evidence exists.
+Rollback = PATCH both keys back to false. Sep 16 baseline batch launched 14:05 PT against sheet 7da239dc (110 rows).
+
