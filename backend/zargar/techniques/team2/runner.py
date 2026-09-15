@@ -184,8 +184,18 @@ class Team2Runner(PlanRunner):
         the stale gate, the entry gate, the order (rejected / cancelled unfilled / capped away), sizing or budget.
         An unknown-ACK order (submitting / working) and a partial fill are NOT exempt: the book may hold them."""
         n = 0
+        plan = ap.plan if isinstance(getattr(ap, "plan", None), dict) else {}
+        lst = plan.get("executionRefused") if isinstance(plan.get("executionRefused"), list) else None
         for t in list(ap.trades.values()):
             if getattr(t, "is_add", False):
+                continue
+            if getattr(t, "submit_uncertain", False) or t.status in ("submitting", "working", "open") or float(t.filled_qty or 0) > 0:
+                # F: an unknown venue outcome, a live order or ANY fill keeps (or takes back) its occupancy — the
+                # overlay is reconciled by evidence, never append-only
+                if lst is not None and t.trigger_id in lst:
+                    lst.remove(t.trigger_id)
+                    self._log(ap, "execution_overlay_reconciled", f"{t.trigger_id}: fill/order evidence arrived — the read's proxy "
+                              f"exemption is withdrawn (status {t.status}, filled {float(t.filled_qty or 0):g})", trigger=t.trigger_id)
                 continue
             if float(t.filled_qty or 0) <= 0 and t.status in self._UNFILLED_TERMINAL and self._record_unfilled(ap, t.trigger_id):
                 n += 1
@@ -203,7 +213,8 @@ class Team2Runner(PlanRunner):
             if verdict not in ("refused", "deferred") or tid == "None":
                 continue
             t = ap.trades.get(tid)
-            if t is None or (float(t.filled_qty or 0) <= 0 and t.status in self._UNFILLED_TERMINAL):
+            if t is None or (float(t.filled_qty or 0) <= 0 and t.status in self._UNFILLED_TERMINAL
+                             and not getattr(t, "submit_uncertain", False)):
                 if self._record_unfilled(ap, tid):
                     n += 1
         return n
@@ -221,10 +232,11 @@ class Team2Runner(PlanRunner):
         if wm:
             self._decision_wm[ap.run_id] = max(int(wm), int(self._decision_wm.get(ap.run_id) or 0))
 
-    async def entry_gate(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
-        """R2: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
-        is sent, whether the order is an entry, an X5 add on a cached contract or a re-price retry. The signal-age rule
-        stays at the origin (`_stale_signal`): the chain itself may legitimately take a minute."""
+    def _entry_time_refusal(self, ap: ArmedPlan, stage: str) -> str | None:
+        """R2/E: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
+        is sent, whether the order is an entry, an X5 add on a cached contract, a transport retry or a re-price retry.
+        Pure and synchronous so it can run inside OrderManager after its last await. The signal-age rule stays at
+        the origin (`_stale_signal`): the chain itself may legitimately take a minute."""
         if ap.config.mode == "alert":
             return None
         rules = self.rules()
@@ -237,6 +249,12 @@ class Team2Runner(PlanRunner):
             return (f"order boundary ({stage}): the entry cutoff ({rules.last_entry_min // 60:02d}:{rules.last_entry_min % 60:02d}) "
                     f"had passed at {now_et.strftime('%H:%M:%S')} — no new order (R2)")
         return None
+
+    async def entry_gate(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
+        return self._entry_time_refusal(ap, stage)
+
+    def entry_guard_predicate(self, ap: ArmedPlan, trade: Trade) -> str | None:
+        return self._entry_time_refusal(ap, "submit")
 
     async def _trail(self, ap: ArmedPlan, kind: str, event: str, reason: str, **detail) -> None:
         """Cohort v2 (2026-09-10, user decision): the candidate -> quote -> order -> fill -> exit trail is journaled under
@@ -849,6 +867,43 @@ class Team2Runner(PlanRunner):
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},
                         aggregate_type="technique_run", aggregate_id=ap.run_id)
                     self._publish(ap, what)
+        await self._guard_orphaned_positions(ap, res, bar, journal=journal)
+
+    async def _guard_orphaned_positions(self, ap: ArmedPlan, res, bar: Bar, *, journal: bool) -> None:
+        """G (2026-09-14): a book position the model no longer holds — its exit surfaced by a revision was recorded,
+        not replayed (R3), or the read was rewritten under it — keeps the METHOD's present-time exit evaluation.
+        On every 2m decision the S1 one-candle stop is judged on the CURRENT close against the line the entry
+        leaned on (EMA13 / EMA48 / 200 EMA from the current regime, or the setup's level) and issued NOW with the
+        current timestamp. Premium trims and the premium stop (live watch), the target breach, the quote stop and
+        the 15:45 flatten stay on their own loops. No new threshold: the rule is session.py's S1, applied to the book."""
+        if not journal:
+            return
+        open_pos = getattr(res, "open_position", None)
+        held_setup = open_pos.get("setup") if isinstance(open_pos, dict) else None
+        reg = getattr(res, "regime_last", None) or {}
+        if not isinstance(reg, dict):
+            reg = reg.to_dict() if hasattr(reg, "to_dict") else {}
+        setups = getattr(res, "setups", None) or []
+        for tr in list(ap.trades.values()):
+            if tr.status != "open" or float(tr.remaining or 0) <= 0 or tr.pending_exit_qty > 1e-9 or tr.setup_id == held_setup:
+                continue
+            base = ap.trades.get(str(tr.trigger_id).split("+add")[0], tr)
+            kind = getattr(base, "_entry_kind", None) or getattr(tr, "_entry_kind", None) or "ema"
+            setup = next((x for x in setups if isinstance(x, dict) and x.get("id") == tr.setup_id), {})
+            name, guard = {"ema": ("EMA13", reg.get("ema13")), "ema48": ("EMA48", reg.get("ema48")),
+                           "ema200": ("200 EMA", reg.get("ema200"))}.get(kind, ("level", setup.get("anchor")))
+            if guard is None:
+                continue
+            long = tr.direction == "long"
+            through = (float(bar.close) < float(guard)) if long else (float(bar.close) > float(guard))
+            if not through:
+                continue
+            why = (f"present-time S1: 2m close {float(bar.close):.2f} through the {name} {float(guard):.2f} on a position the "
+                   f"model no longer holds — stop issued now (G)")
+            self._log(ap, "orphan_stop", f"{tr.trigger_id}: {why}", trigger=tr.trigger_id, close=float(bar.close), guard=float(guard), line=name)
+            await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "orphan_stop", why, trigger=tr.trigger_id, decisionTs=int(time.time() * 1000),
+                              barTs=bar.ts, close=float(bar.close), guard=float(guard), line=name)
+            await self._exit(ap, tr, "stop", float(tr.remaining), journal=True, reason=why, force_market=True)
 
     async def _fire_from_event(self, ap: ArmedPlan, e: dict, bar: Bar, res, *, halted: bool, journal: bool) -> None:
         tid = f"{e.get('setup')}#{e.get('touch')}"
@@ -946,6 +1001,7 @@ class Team2Runner(PlanRunner):
                       multiplier=100.0 if ap.config.instrument == "options" else 1.0)
         trade._size_mult = float(e.get("sizeMult") or 1.0)        # read by size_multiplier via the contract
         trade._bucket = str(e.get("bucket") or "?")
+        trade._entry_kind = str(e.get("entryKind") or "ema")      # G: the line the S1 one-candle stop is judged against
         trade.setup_id = str(e.get("setup"))
         trade.target_kind = str(e.get("targetKind") or "plan")
         ap.trades[tid] = trade

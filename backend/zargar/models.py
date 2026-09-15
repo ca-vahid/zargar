@@ -779,6 +779,89 @@ class TipNoteRevision(Base):
     reason: Mapped[str] = mapped_column(String(40), default="edit")   # edit|supersede|pin|refresh|flag|delete
 
 
+class TipFrozenBundle(Base):
+    """KFIN-09 (2026-09-14): an IMMUTABLE case bundle for the frozen knowledge
+    comparison - the message content, the tool outputs the original run saw,
+    the rule/note set with ids + revisions, model + settings and the exact
+    context manifest. The id is derived from the canonical content hash, so a
+    re-capture of unchanged evidence returns the same bundle; a row is never
+    edited. Replays read ONLY the bundle: missing inputs stay missing."""
+    __tablename__ = "tip_frozen_bundles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    signal_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    bundle: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class TipFrozenReplay(Base):
+    """One replay of a frozen bundle under one knowledge variant: the report
+    (decision, grounding, protections, no-verdict, latency, tokens, tool
+    calls served/missing, notes the model WANTED to save - never written).
+    Insert-only evidence; never a note, an order or a book."""
+    __tablename__ = "tip_frozen_replays"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    bundle_id: Mapped[str] = mapped_column(String(64), index=True)
+    variant: Mapped[str] = mapped_column(String(32), index=True)
+    report_hash: Mapped[str] = mapped_column(String(64))
+    report: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class TipEntryCohortRow(Base):
+    """KFIN-09 entry-variant COHORT: one row per eligible IDEA - every
+    extracted actionable open/add signal at its intake decision, including
+    skips, declines, blocked/review-gated cards, shadows, parks and
+    verification failures (not only proposals). Times are kept separate
+    (source post, receipt, decision); the quote at decision carries its own
+    freshness + provenance; the delayed sample is a LATER observation and is
+    labeled so - "unknown at alert" stays unknown."""
+    __tablename__ = "tip_entry_cohort"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    signal_id: Mapped[str] = mapped_column(String(64), index=True)
+    content_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    source: Mapped[str | None] = mapped_column(String(128), index=True)
+    ticker: Mapped[str] = mapped_column(String(32), index=True)
+    action: Mapped[str] = mapped_column(String(16))
+    decision_kind: Mapped[str] = mapped_column(String(16), default="intake")   # intake | redecision
+    posted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    decision: Mapped[str] = mapped_column(String(32), index=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text)
+    source_instrument: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    proposed_instrument: Mapped[dict | None] = mapped_column(JSONVariant)
+    source_premium: Mapped[float | None] = mapped_column(Float)
+    quote_symbol: Mapped[str | None] = mapped_column(String(32))
+    quote_at_decision: Mapped[dict | None] = mapped_column(JSONVariant)
+    quote_status: Mapped[str] = mapped_column(String(16), default="missing")   # fresh | stale | missing
+    delayed_sample: Mapped[dict | None] = mapped_column(JSONVariant)
+    delayed_status: Mapped[str] = mapped_column(String(16), default="unknown")  # pending | sampled | unknown | missed
+    delayed_due_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    gaps: Mapped[list] = mapped_column(JSONVariant, default=list)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class TipEntryVariantResult(Base):
+    """One entry variant's SEPARATE result book for one cohort row
+    (book = "variant:<name>"): the simulated fill under the shared budget /
+    fee / fill assumptions, or the reason the evidence is insufficient.
+    Never a Portfolio, never a P&L claim."""
+    __tablename__ = "tip_entry_variant_results"
+
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)     # "<cohort id>:<variant>"
+    cohort_id: Mapped[str] = mapped_column(String(64), index=True)
+    variant: Mapped[str] = mapped_column(String(32), index=True)
+    book: Mapped[str] = mapped_column(String(48), index=True)
+    adequate: Mapped[bool] = mapped_column(Boolean, default=False)
+    result: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    computed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TipExecutionIncident(Base):
     """KB-06 (2026-09-14): an execution-integrity INCIDENT — persisted evidence
     that the automated entry path produced or acted on something the desk

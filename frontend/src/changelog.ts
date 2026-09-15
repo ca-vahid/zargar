@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.77";
+export const APP_VERSION = "0.7.78";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.78",date:"2026-09-14",title:"A retry is a new order, an unanswered order is not a zero, a held position keeps its stop",items:[
+    {tag:"fixed",text:"Team2 E: a transport retry of an entry is judged on the wall clock again before it is sent, and the technique's time rule now runs inside the order manager after its last await, immediately before the venue hand-off - an entry admitted at 15:29:59 that retried at 15:30:01 used to go out. A refusal there is recorded as a skipped opportunity with its decision time, never as a strategy refusal. Exits and cancels are untouched."},
+    {tag:"fixed",text:"Orders F: when the venue hand-off happens but the answer never arrives, the outcome is UNKNOWN (SubmitUncertain, carrying the order id) - the entry stays submitting with its exposure reserved and its order identity registered, it is never retried as a fresh order, an alert is raised, and it is never treated as a zero fill. Team2's proxy exemption withdraws itself when fill evidence later arrives; only a confirmed rejection or cancel with zero fill clears occupancy."},
+    {tag:"fixed",text:"Team2 G: a book position the model no longer holds (its exit surfaced by a corrected minute was recorded, not replayed) still receives the method's present-time one-candle stop: on every 2m decision the current close is judged against the EMA13 / EMA48 / 200 EMA (or the level) and a stop is issued NOW with the current timestamp (orphan_stop). No new threshold."},
+  ]},
   {
     version: "0.7.77",
     date: "2026-09-14",
@@ -30,6 +35,7 @@ export const CHANGELOG: Release[] = [
       { tag: "fixed", text: "Evidence identities (EOD-06): a share plan records the quote source, age and delayed flag its incident classifier requires; an execution on one of the incident's own orders is bound by that relationship, not by comparing an option contract with its underlying symbol." },
       { tag: "fixed", text: "Scheduler: each job runs as its own task and shutdown is bounded (10 s) - a stuck nightly job no longer blocks other jobs' ticks or holds a restart hostage (the after-hours test teardowns were hanging on exactly that)." },
       { tag: "improved", text: "Restart readiness (EOD-07) counts running Tips work (appraisals, intake reviews, retros, digests, rule audits) alongside EM's; stale rows are reported separately. Research quarantine (EOD-09): a corrupted shadow book can be flagged (POST /api/portfolios/{id}/quarantine) and is excluded from source trust and lane grading until reconciled; the rule audit records finished_at (EOD-08)." },
+      { tag: "new", text: "Tips experiments (KFIN-09): a FROZEN knowledge comparison (an immutable case bundle - message, the tool outputs the run saw, rules/notes with ids + revisions, model + settings, the exact context manifest - replayed under current / core-only / no-knowledge variants with every write isolated: tool calls are served from the bundle or refused, notes the model wants to save are captured, never written) and an ENTRY-VARIANT COHORT that records EVERY eligible open/add idea at its decision (proposals, blocked cards, declines, arms, skips, shadows, parks, failures) with separate post/receipt/decision times, exact instruments, the source premium and the decision-time quote; immediate / delayed / 1.05x-cap entries are simulated into separate result books under identical budget, fees and fill assumptions. Reports separate adequate from insufficient evidence and never claim a P&L. All knobs are off by default (techniques.tip.frozen_capture_context, techniques.tip.entry_cohort_enabled); CLIs: zargar.tools.tip_frozen, zargar.tools.tip_entry_cohort." },
     ],
   },
   {version:"0.7.76",date:"2026-09-14",title:"A refusal survives a restart, an add obeys the cutoff, a correction never backdates an order",items:[

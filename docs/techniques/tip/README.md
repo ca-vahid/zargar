@@ -126,6 +126,37 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
 
+## Experiments (KFIN-09, built 2026-09-14 - inert by default)
+
+Two evidence tools, both isolated by construction (`tests/test_tip_kfin09_experiments.py`
+proves write isolation, denominator correctness, missing-data handling and reproducibility):
+
+- **Frozen knowledge comparison** (`techniques/tip/frozen.py`, CLI `zargar.tools.tip_frozen`).
+  `capture --signal <id>` (or `--run <id>`) builds an immutable case bundle from what the DB
+  already holds - the message, the tool outputs the run saw (its trace), the rule snapshot
+  (ids, revisions, core flags, hash), the notes it was handed, model + settings and the exact
+  context manifest (verbatim only when `techniques.tip.frozen_capture_context` was ON at run
+  time; otherwise reconstructed and labeled so, source history missing). `replay --bundle
+  fb-... --variants current,core_only,no_knowledge` runs the analyst prompt against the bundle
+  only: a tool call is served from the bundle or refused ("missing" - never fetched today),
+  `save_note` is captured as a proposed note and never written; the only rows added are
+  `tip_frozen_bundles` / `tip_frozen_replays`. `report --bundle fb-... --json out.json` prints
+  decision changes vs the baseline, grounding (used notes, rules/notes supplied), protections,
+  no-verdict rate, latency and tokens per variant - counts only, no "better".
+- **Entry-variant cohort** (`techniques/tip/cohort.py`, CLI `zargar.tools.tip_entry_cohort`).
+  With `techniques.tip.entry_cohort_enabled` ON, every eligible open/add idea is a
+  `tip_entry_cohort` row at its intake decision (and a `redecision` row when the recovery sweep
+  re-decides a park): source post / receipt / decision times kept apart, the exact source
+  instrument (OCC only when fully stated) and the proposed one, the source-stated premium, the
+  decision-time quote with age + provenance (`fresh|stale|missing`), gaps, and the configured
+  later sample (`techniques.tip.entry_cohort_delay_minutes`, labeled `delayed`; "unknown at
+  alert" stays unknown; a sample far past due is `missed`). `report` simulates the declared
+  variants - immediate, delay, `entry_cohort_premium_cap` x stated premium - into separate
+  result books (`tip_entry_variant_results`, book `variant:<name>`) under identical budget
+  (min of `budget_per_tip` / `max_premium_per_tip`), fees and fill-at-ask assumptions, and
+  separates "evidence adequate" from "insufficient" per row and variant. No P&L, no
+  equivalence claim; promotion of any variant is a separate reviewed verdict.
+
 ## Rollback and where the receipts are
 
 - Settings: `PATCH /api/settings {"techniques.tip.geometry_gate": "shadow",
