@@ -727,8 +727,8 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
     # A86-02: a manually approved card carries the immutable plan it was claimed
     # with - adoption uses THAT protection policy, never a later edit of the row
     approved = ctx.get("approvedPlan") or {}
-    if approved.get("exitPlan") is not None:
-        ctx = {**ctx, "exitPlan": approved["exitPlan"]}
+    if approved:
+        ctx = {**ctx, **{k: approved[k] for k in ("exitPlan", "vehicle", "riskPlan") if approved.get(k) is not None}}
 
     async def note(kind: str, payload: dict) -> None:
         try:
