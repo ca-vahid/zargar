@@ -629,3 +629,24 @@ async def test_f3_zero_fill_controls_still_exempt_and_a_working_entry_cancelled_
     await runner.on_order_update({"id": "ord-w", "status": "EXPIRED", "filledQty": 2.0, "avgFillPrice": .4})
     assert w.status == "open" and w.filled_qty == 2.0 and w.remaining == 2.0
     assert w.trigger_id not in runner.state_extras(ap)["executionRefused"]
+
+
+# ================================================================ F, cumulative fill on an already-open entry (2026-09-14)
+async def test_f4_a_terminal_report_adds_the_missed_second_contract_to_an_open_entry_and_the_controls_hold():
+    runner, ap = _rrig()
+    t = await _uncertain(runner, ap)
+    await runner.on_order_update({"id": "ord-9", "status": "PARTIALLY_FILLED", "filledQty": 1.0, "avgFillPrice": .5})
+    assert t.status == "open" and t.filled_qty == 1.0
+    # the second contract's fill callback was missed; the cancel of the remainder reports two filled in total
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 2.0, "avgFillPrice": .55})
+    assert t.status == "open" and t.filled_qty == 2.0 and t.remaining == 2.0 and t.avg_fill == .55
+    assert t.trigger_id not in runner.state_extras(ap)["executionRefused"]
+    assert len([c for c in runner._log.call_args_list if c.args[1] == "position_open"]) == 1, "opened once, never re-opened"
+    # duplicate and lower-total terminal reports never move an open position
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 2.0, "avgFillPrice": .55})
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 1.0})
+    assert t.status == "open" and t.filled_qty == 2.0 and t.remaining == 2.0 and t.avg_fill == .55
+    # a partial exit already booked: the cumulative figure still nets against the exits
+    t.exits.append({"kind": "tp1", "orderId": "x-1", "filledQty": 1.0, "price": .8})
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 3.0, "avgFillPrice": .6})
+    assert t.filled_qty == 3.0 and t.remaining == 2.0 and t.status == "open"
