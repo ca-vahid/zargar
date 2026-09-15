@@ -1675,3 +1675,18 @@ immediately before the intent is written) and `retry` (the collar re-price). A r
 a money path). Exits and cancels never pass through it. EM and Tips inherit the no-ops — their behaviour is unchanged
 (`tests/test_technique_arm*`, `test_tip_runner*`, `test_position_*`, `test_platform_*` green). Team2 uses them for the
 refused-fire overlay + decision watermark (R1/R3) and the wall-clock session/cutoff rule at the order boundary (R2).
+
+### Orders: an unanswered venue hand-off is an unknown outcome; retries are new orders — 2026-09-14 (Team2 review E/F; v0.7.78)
+
+`OrderManager.place` now raises `SubmitUncertain(order_id, cause)` when `executor.submit` raises: the order was written
+ahead and handed to the venue, and the answer never arrived — that is NOT "not sent". The shared `PlanRunner._place_with_retry`
+treats it (and a timeout at the terminal attempt) as an UNKNOWN outcome: the trade stays `submitting` with
+`Trade.submit_uncertain` (persisted, restored), the order id is registered so later fills route back, an alert is raised,
+and it is never retried as a fresh order. Only a confirmed zero-fill (rejected / cancelled unfilled) is a failure. The
+same loop judges every transport RETRY of a money-mode entry through `entry_gate` (stage `retry`) and composes the new
+synchronous `entry_guard_predicate` hook into OrderManager's `before_submit`, so a technique's time rule runs after the
+manager's last await, immediately before the venue hand-off; a refusal there is a skipped opportunity
+(`entry_gate_refused`, `decisionTs`), never a strategy refusal. Exits and cancels are untouched. `before_submit` is
+carried through every attempt (the EM desk's FA-01 on their branch does the same with their quote/budget guard — the two
+compose when their branch merges; the retry-loop signature is identical). EM inherits the uncertain-outcome handling:
+a terminal timeout on an entry is no longer marked `failed`. Tips override `_place_with_retry` and are unchanged.
