@@ -557,6 +557,12 @@ class PlanRunner(SessionListener):
                 "policy": {"singleContractExit": ap.config.single_contract_exit, "ladder": list(EXIT_LADDER)},
                 "planBuiltFrom": (ap.plan or {}).get("builtFromSession")}
 
+    def _target_distance_enabled(self) -> bool:
+        """target-distance-v1 is an EM diagnostic: `techniques.enhanced_market.target_distance_diagnostic` is True,
+        `execution.target_distance_diagnostic` False, so other desks' aggregates carry no EM research record
+        (Tips desk request, 2026-09-15). Code default True keeps a bare test rig observable."""
+        return bool(self.rt("target_distance_diagnostic", True))
+
     def _shadow_enabled(self, ap: ArmedPlan) -> bool:
         """shadow-exit-v1 is an EM Practice opt-in: the technique's own knob (default off) AND the technique's default
         (Practice) book only - other desks and other books produce no experiment records."""
@@ -590,16 +596,36 @@ class PlanRunner(SessionListener):
             idx, label = self._full_exit_rung(ap, tr, tr.filled_qty)
             if idx is None:
                 continue
+            rungs = [(idx, label, self._production_exit_qty(ap, tr, idx, label))]
+            # P-02 candidate (small-position-exit-v1, frozen 2026-09-15): a <=2-contract option position whose first
+            # PRODUCTION sale is >= 2R away also gets ONE observation at the plan's TP1 - the candidate's first sale
+            # (one contract of two, the whole position of one). Order-free; same evidence rules; own key.
+            if (bool(self.rt("shadow_p02_candidate", False)) and tr.instrument == "options" and tr.filled_qty
+                    and float(tr.filled_qty) <= 2 and idx != 0 and tr.targets and tr.entry is not None and tr.stop is not None):
+                risk = abs(float(tr.entry) - float(tr.stop))
+                first_sale_r = (abs(float(tr.targets[idx]) - float(tr.entry)) / risk) if risk > 0 else None
+                if first_sale_r is not None and first_sale_r >= 2.0:
+                    rungs.append((0, "tp1-candidate", (1.0 if float(tr.filled_qty) >= 2 else float(tr.filled_qty))))
+            for idx, label, proposed in rungs:
+                self._shadow_capture_rung(ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out)
+        return out
+
+    def _shadow_capture_rung(self, ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out):
+        """One rung of `_shadow_capture` (pure). `label` `tp1-candidate` carries the P-02 candidate's own key."""
+        if True:
             target = float(tr.targets[idx])
             hit = (obs <= target) if tr.direction == "short" else (obs >= target)
             if not hit:
-                continue
-            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx)
+                return
+            candidate = label == "tp1-candidate"
+            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx if not candidate else "tp1-candidate")
             pending = self.__dict__.setdefault("_shadow_pending", set())
-            if key in seen or key in pending:
-                continue                                        # acknowledged, or captured and awaiting its write
-            pending.add(key)
-            proposed = self._production_exit_qty(ap, tr, idx, label)
+            if not candidate:
+                if key in seen or key in pending:
+                    return                                      # acknowledged, or captured and awaiting its write
+                pending.add(key)
+            elif key in seen or key in pending:
+                return                                          # the candidate's first COVERED observation is recorded
             contract = None
             oq = self.engine.quotes.get(tr.order_symbol) if (tr.instrument == "options" and tr.order_symbol) else q
             if oq is not None:
@@ -650,6 +676,14 @@ class PlanRunner(SessionListener):
                 why = "displayed size unknown"
             if disposition != "observed" and why is None:
                 why = disposition
+            if candidate:
+                # PF-01 (2026-09-15): the frozen policy takes the FIRST COVERED opportunity - an unscorable touch is
+                # recorded once as raw evidence (its own key) and leaves the candidate eligible for a later covered one
+                if not scorable:
+                    key = key[:4] + ("tp1-candidate-raw",)
+                    if key in seen or key in pending:
+                        return
+                pending.add(key)
             out.append({"runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "tradeInstance": key[2],
                         "rung": label, "rungIndex": idx, "target": target, "version": "shadow-exit-v1", "disposition": disposition,
                         "underlying": {"price": obs, "source": str(getattr(q, "source", "") or ""), "sourceTs": src_ts, "receivedTs": q.ts, "ageS": round(age_s, 2)},
@@ -662,7 +696,6 @@ class PlanRunner(SessionListener):
                                     "conventions": {"latencyS": 2.0, "slippageTicks": 1,
                                                     "note": "metadata for the reducer - no fill is simulated here; a contemporaneous bid is a modeled liquidation opportunity, not a fill"}},
                         "capture": "raw-observation-only", "observedAt": now_ms, "_key": key})
-        return out
 
     async def _shadow_record(self, ap: ArmedPlan, payloads: list[dict]) -> None:
         """Durable append of captured observations; a trade/rung is marked seen ONLY after its write succeeded
@@ -1660,7 +1693,8 @@ class PlanRunner(SessionListener):
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "orderId": o["id"],
                 "qty": tr.filled_qty, "avgFill": tr.avg_fill, "stop": tr.stop, "targets": tr.targets},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
-            with contextlib.suppress(Exception):          # diagnostic only (target-distance-v1)
+            if self._target_distance_enabled():
+              with contextlib.suppress(Exception):        # diagnostic only (target-distance-v1)
                 await self.engine.journal.append(ev.TECHNIQUE_TARGET_DISTANCE, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "fillBasis": tr.avg_fill,
                     **self._target_distance(ap, tr, stage="fill", qty=tr.filled_qty)},
@@ -2642,7 +2676,8 @@ class PlanRunner(SessionListener):
                 "verdictAfterCritic": j.verdict, "confidence": round(float(j.confidence), 3), "critic": trade.critic,
                 "criticMode": critic_mode, "criticDisposition": trade.critic_disposition, "criticFailure": critic_failure,
                 "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace,
-                "targetDistance": self._target_distance(ap, trade, stage="fire", qty=None)},
+                "targetDistance": (self._target_distance(ap, trade, stage="fire", qty=None)
+                                   if self._target_distance_enabled() else None)},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         # 2026-09-09 user decision (TRADING-RULES 1.4b, 25 kills net +0.5R): the critic's veto is a knob.
         #   veto           every "no" kills the fire (the behaviour until day 10)
@@ -2838,6 +2873,28 @@ class PlanRunner(SessionListener):
                     f"(risk.max_option_premium_pct)")
         return None
 
+    async def _shares_position_cap(self, ap: ArmedPlan, limit: float) -> tuple[int | None, str]:
+        """The largest share quantity the RiskGate's per-position and gross caps admit at `limit` (2026-09-15):
+        `risk.max_position_notional`, `risk.max_position_pct` of equity and the room left under
+        `risk.max_gross_exposure_pct`. The gate stays the authority - this only stops a risk-%-sized share
+        position from being SENT several times larger than the book allows (WDC/INTU/AMAT 09-15: 89-100 shares
+        of a $330-420 name on a $10k Practice book, every one refused). None = no cap could be computed."""
+        try:
+            s = self.engine.settings
+            equity = float(await self.engine.positions.equity(ap.config.portfolio_id) or 0.0)
+            caps = [float(s.get("risk.max_position_notional", 1000.0))]
+            basis = ["risk.max_position_notional"]
+            book = self.engine.positions.portfolio(ap.config.portfolio_id) or {}
+            if equity > 0 and book.get("kind") != "shadow":   # the gate exempts research books from the equity caps
+                caps.append(equity * float(s.get("risk.max_position_pct", 10.0)) / 100.0); basis.append("risk.max_position_pct")
+                gross = float(await self.engine.positions.gross_exposure(ap.config.portfolio_id) or 0.0)
+                caps.append(max(0.0, equity * float(s.get("risk.max_gross_exposure_pct", 100.0)) / 100.0 - gross)); basis.append("risk.max_gross_exposure_pct")
+            k = min(range(len(caps)), key=lambda i: caps[i])
+            return int(caps[k] // max(float(limit), 0.01)), f"${caps[k]:,.0f} ({basis[k]})"
+        except Exception as e:                            # never block an entry on a diagnostic failure
+            self._log(ap, "sized", f"position cap not computed ({e}) - the risk gate decides")
+            return None, ""
+
     async def _entry_blocked(self, ap: ArmedPlan, trade: Trade, contract: dict | None, blocked: str | None) -> str | None:
         """What happens when the option entry is refused: the shares fallback (returns "shares"), a failed
         fire (no contract at all) or a journaled skip. Returns None when nothing may be sent."""
@@ -2975,12 +3032,26 @@ class PlanRunner(SessionListener):
                               f"{trade.trigger_id}: shares capped {qty:g} -> {afford} by the "
                               f"${cfg.premium_budget:,.0f} plan budget", trigger=trade.trigger_id)
                     qty = float(afford)
+            limit = round(trade.entry * (1 + cfg.slippage_pct / 100), 2)
+            afford, basis = await self._shares_position_cap(ap, limit)
+            if afford is not None and qty > afford:
+                # size DOWN to what the book's own caps admit instead of sending a refusal (2026-09-15)
+                if afford < 1:
+                    trade.status = "skipped"
+                    trade.reason = f"one share at {limit:.2f} exceeds the position cap {basis} - not sent"
+                    self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "size_zero",
+                        "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                    return
+                self._log(ap, "sized", f"{trade.trigger_id}: shares capped {qty:g} -> {afford} by the position cap {basis}",
+                          trigger=trade.trigger_id)
+                qty = float(afford)
             if qty < 1:
                 trade.status = "skipped"
                 trade.reason = "size rounds to 0 shares at this risk % — not sent"
                 self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
                 return
-            limit = round(trade.entry * (1 + cfg.slippage_pct / 100), 2)
             order_symbol, sec_type = ap.symbol, "STK"
             trade.order_symbol = ap.symbol
             trade.instrument, trade.multiplier = "shares", 1.0

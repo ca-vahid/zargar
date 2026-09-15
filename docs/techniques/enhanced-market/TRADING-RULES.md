@@ -1073,3 +1073,38 @@ records, failures retryable), and the source-candidate evaluator requires contig
 confirmation/retest and to the 11:30 deadline (a missing interval = unknown, also for never-confirmed claims).
 Sep 14 retrospective rows unchanged. No trading rule changed; `shadow_exit_observe` stays off.
 
+### 2026-09-15 - shares fallback sized to the book's caps (defect, not a rule change)
+
+Session evidence: WDC b1 (89 sh x 416), INTU b1 (100 x 330), AMAT b2 (97 x 420) fired, fell back to shares because
+the option was untradeable, and were sized from risk % alone (2% of a $10.2k book / stop distance, capped only by
+maxQty 100) - $33-41k positions on a $10k Practice book, every one REJECTED_RISK by the position caps (notional
+$25k, 50% of equity, gross 100%). Fix on the EM branch (`_shares_position_cap`, `tests/test_em_shares_position_cap.py`):
+a share entry is sized DOWN to the tightest of the gate's own caps (shadow research books keep only the $ cap, as the
+gate does); below one share it is a journaled `size_zero` skip. The RiskGate stays the authority; no threshold moved.
+Not deployed during the session - rides the next verified combined release.
+
+### 2026-09-15 - profitability cohorts frozen (reviewers' P-01..P-03; order-free, nothing activated)
+
+Packet `reviews/profitability-sweep-2026-09-15/`. Definitions in `research/PROFITABILITY-COHORTS-2026-09-15.md`
+(`profitability-cohorts-v1`): P-01 cohort `long_bounce_next_resistance` reported beside the full baseline with
+removed trades, missed-winner candidates (underlying-only proxy) and strata (confirmation, room at the actual entry,
+quantity, source alignment); P-02 `small-position-exit-v1` (<= 2 contracts, first production sale >= 2R: sell one of
+two / the whole single contract at the first covered executable bid at the plan TP1; forgone profit on winners
+counted; unknown without an observation) with faster-execution-at-unchanged-targets kept as the separate
+shadow-exit-v1 experiment; P-03 friction (concession + fees as a share of premium, 8% = ranking marker, never a
+gate), affordable quantity, delta-based payoff proxy or unknown. Per-session report:
+`python -m zargar.tools.em_profitability report --date <session>` -> `research/profitability/<date>.md`.
+First report (Sep 15, intraday cutoff) reproduces the reviewers' trade-book friction figures exactly (CVNA 10.12%,
+IREN 6.22%, NFLX 4.64%, ORCL 4.08%, CRWV 3.75%); all five fills ARE the cohort (removed = none), four cohort-eligible
+fires were refused (three by the position caps, one stale quote), P-02 is unknown for all four eligible positions.
+Gap-day wait unchanged; no early-profit rule; no entry broadening; `shadow_exit_observe` and the new
+`shadow_p02_candidate` knob both False.
+
+### 2026-09-15 - profitability measurement corrected (PF-01..03), P-02/P-03 provisional, both experiments off
+
+Reducer joins the observer's actual `tp1-candidate` payload bound to the trade instance/contract/lifetime; the
+candidate keeps its first COVERED opportunity (raw touch recorded once); fees are conserved in the pair (actual entry
+and retained fees, modeled exit fee only on the hypothetical sale, reconciliation required); every intent stays in the
+economics table with explicit unknowns, `riskBudgetQty` is a budget bound only, the payoff proxy is signed (puts count);
+planned room is labelled planned and the actual-entry room is unknown. No trading rule changed.
+

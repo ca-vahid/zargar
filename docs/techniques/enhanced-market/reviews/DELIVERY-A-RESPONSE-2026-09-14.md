@@ -478,3 +478,48 @@ receipt records it as `failed` with the reason and nothing was restarted; (2) th
 uncommitted; this release adds it to `.gitignore` (the file was removed immediately before the check for this
 deploy and is rewritten by the gateway).
 
+---
+
+# Measurement follow-up MF-01..03 (`2026-09-15-ef98903-measurement-followup.md`) - closed at c5dde09, deployed disabled in v0.7.85
+
+Fixes in `c5dde09b28027cd3139b96f7ddd27fe098b314da` (details in `STRATEGY-PROPOSAL-2026-09-14.md`, "Measurement
+follow-up"): the last-rung observation quantity mirrors `plan_exit` (runner kept; `fullExitPolicy` on the diagnostic),
+pending-vs-acknowledged capture identity validated at the writer (no duplicate rung record; failed appends retry with
+the original record), and the evaluator requires contiguous eligible minutes through confirmation/retest and to the
+11:30 deadline. Reviewer cases adopted unchanged. Measurement group 18/18; EM wiring/dispatch/FC-01/entry quality
+20/20; exits + EM review execution 28/28; arming solo 29 + the pre-existing `test_auto_options_one_contract_lifecycle`.
+Sep 14 retrospective rows unchanged (MSFT gated 1.09R, AAPL/MRNA never_confirmed).
+
+Sep 15 baseline preparation (unchanged, ran through the fixes): 112 reviewed, 49 setups / 63 no-setup, **49 armed, 0
+refused, 0 failed** (finished 22:34 PT).
+
+Release: the Tips desk's combined 0.7.85 (origin/main 995738e + PR #131 + c5dde09) = runtime checkout
+`8be1d24912efd55e6d3dc9a1320497b8df4c3430`. Their 22:59 PT ZargarRestart task and the Cartel desk's 22:39 attempt could
+not stop the process this desk's deploy had started (access denied from the unelevated task), so on the user's explicit
+"go" this desk deployed at 06:19-06:21 PT on 2026-09-15 (09:21 ET, pre-open; the user chose "deploy right now" over
+"after the close") through `scripts/deploy.ps1` under the lease: readiness safe, artifact manifest `3536DA7340AE…`
+(21 files), receipt phase **verified**, healthy v0.7.85, `healthBuild` 8be1d24…, **restoration ok** (armed 79/79,
+openTrades 0/0, workingEntries 0/0, pendingExits 0/0, restingOrders 22/22, inflightOrders 0/0, managedPositions 3/3,
+managedOpen 3/3), before-inventory `logs/restart-inventory-20260915-061945.json`. Live armed afterwards: 52 EM, 24 Tips,
+3 Team2. Both observer keys remain False; activation is a separate decision.
+
+---
+
+# Profitability cohorts review at ba2eccb (`reviews/profitability-cohort-regressions/`) - PF-01..03 + entry label, same day
+
+Research definitions accepted for prospective comparison; scoped integration GO with both experiments disabled.
+Reviewer cases adopted unchanged: `tests/test_p02_real_payload_and_fee_conservation.py` (3),
+`tests/test_codex_profitability_report_scope.py` (2) - 5 failed -> 5 pass; the 15 prior cases still pass (31 total with
+the measurement suites).
+
+| Item | Fix | Regression |
+|---|---|---|
+| PF-01 | Reducer consumes the actual capture payload (observed + modeled.scorable/coveredQty/bid + observedAt) and the documented shape; binds to trade instance, contract and lifetime; producer keeps the first COVERED opportunity (unscorable touch recorded once on its own raw key, candidate stays eligible). | `test_p02_reducer_consumes_the_actual_production_capture_payload` (185.84 vs 195.84, forgone 10), `test_p02_later_first_covered_bid_survives_an_unscorable_first_touch` |
+| PF-02 | Actual entry fee and actual retained-contract fees allocated by fill; modeled exit fee only on the hypothetical sale; components must reconcile with the execution-backed net. | `test_p02_keeps_actual_entry_and_retained_exit_fees_in_the_pair` (194 = 194, delta 0) |
+| PF-03 | Every intent kept in P-03 with explicit unknowns; `riskBudgetQty` wired and labelled a budget bound; signed-delta payoff proxy (puts). | `test_economics_table_keeps_refused_intents_with_unknown_quotes`, `test_put_delta_can_produce_a_positive_downside_payoff_proxy` |
+| Label | `roomPlannedR` vs `roomAtActualEntryR` (unknown); `sourceSymbolDirectionMatch`. P-02/P-03 marked PROVISIONAL in the report. | rendered in every report |
+
+Both experiments stay off (`execution.shadow_exit_observe`, `techniques.enhanced_market.shadow_exit_observe`,
+`execution.shadow_p02_candidate`, `techniques.enhanced_market.shadow_p02_candidate` = False). Disabled integration
+proceeds through the normal after-close release checks; the exact combined build and receipt follow in this file.
+

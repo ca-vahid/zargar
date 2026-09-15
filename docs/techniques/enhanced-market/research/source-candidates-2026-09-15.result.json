@@ -1,0 +1,391 @@
+{
+ "version": "source-continuation-v1",
+ "date": "2026-09-15",
+ "evaluatedAt": "2026-09-15T20:26:17.082681+00:00",
+ "rows": [
+  {
+   "version": "source-continuation-v1",
+   "symbol": "META",
+   "date": "2026-09-15",
+   "direction": "long",
+   "level": 665.0,
+   "target": 670.0,
+   "availableAt": "2026-09-15T13:22:26+00:00",
+   "observations": [
+    {
+     "at": "09:35",
+     "event": "confirmed_close",
+     "close": 666.2437744140625
+    }
+   ],
+   "outcome": "gated",
+   "why": "0.32R to the author's target with our stop is below the 3R gate",
+   "path": {
+    "end": "target",
+    "at": "09:39",
+    "price": 670.0,
+    "r": 0.32
+   },
+   "gates": {
+    "r2": "failed",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 446,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 656.2000122070312,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "entry": {
+    "at": "09:36",
+    "entry": 666.6463012695312,
+    "basis": "next-open-proxy"
+   },
+   "riskPerShare": 10.4463,
+   "rewardToRisk": 0.321,
+   "noteId": "ec718e401e7d47a68c4273350e6fd62a",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "AMZN",
+   "date": "2026-09-15",
+   "direction": "long",
+   "level": 250.0,
+   "target": 270.0,
+   "availableAt": "2026-09-15T13:22:26+00:00",
+   "observations": [
+    {
+     "at": "09:30",
+     "event": "early_cross",
+     "note": "before the opening range was complete - recorded, not entered"
+    },
+    {
+     "at": "09:35",
+     "event": "confirmed_close",
+     "close": 252.86000061035156
+    },
+    {
+     "at": "09:36",
+     "event": "no_chase_wait_retest",
+     "open": 252.85499572753906,
+     "cap": 251.25
+    },
+    {
+     "at": "10:08",
+     "event": "retest"
+    },
+    {
+     "at": "10:09",
+     "event": "confirmed_close",
+     "close": 250.18499755859375
+    }
+   ],
+   "outcome": "gated",
+   "why": "entry is on the wrong side of the stop",
+   "path": null,
+   "gates": {
+    "r2": "failed",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 446,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 251.75999450683594,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "entry": {
+    "at": "10:10",
+    "entry": 250.1649932861328,
+    "basis": "next-open-proxy"
+   },
+   "riskPerShare": -1.595,
+   "noteId": "ec718e401e7d47a68c4273350e6fd62a",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "SNDK",
+   "date": "2026-09-15",
+   "direction": "long",
+   "level": 1580.0,
+   "target": 1650.0,
+   "availableAt": "2026-09-15T13:22:26+00:00",
+   "observations": [],
+   "outcome": "never_confirmed",
+   "why": "no completed close beyond the level by 11:30 ET",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 446,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 1555.550048828125,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "ec718e401e7d47a68c4273350e6fd62a",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "MU",
+   "date": "2026-09-15",
+   "direction": "long",
+   "level": 940.0,
+   "target": 980.0,
+   "availableAt": "2026-09-15T13:22:26+00:00",
+   "observations": [
+    {
+     "at": "09:32",
+     "event": "early_cross",
+     "note": "before the opening range was complete - recorded, not entered"
+    },
+    {
+     "at": "10:00",
+     "event": "confirmed_close",
+     "close": 940.1500244140625
+    }
+   ],
+   "outcome": "stopped",
+   "why": null,
+   "path": {
+    "end": "stopped",
+    "at": "11:13",
+    "price": 927.8300170898438,
+    "r": -1.07
+   },
+   "gates": {
+    "r2": "passed",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 446,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 928.6099853515625,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "entry": {
+    "at": "10:01",
+    "entry": 940.10498046875,
+    "basis": "next-open-proxy"
+   },
+   "riskPerShare": 11.495,
+   "rewardToRisk": 3.471,
+   "noteId": "ec718e401e7d47a68c4273350e6fd62a",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "ZS",
+   "date": "2026-09-15",
+   "direction": "long",
+   "level": 191.0,
+   "target": 200.0,
+   "availableAt": "2026-09-15T13:22:26+00:00",
+   "observations": [
+    {
+     "at": "09:30",
+     "event": "early_cross",
+     "note": "before the opening range was complete - recorded, not entered"
+    },
+    {
+     "at": "09:38",
+     "event": "confirmed_close",
+     "close": 192.27000427246094
+    },
+    {
+     "at": "09:39",
+     "event": "no_chase_wait_retest",
+     "open": 192.0850067138672,
+     "cap": 191.955
+    },
+    {
+     "at": "09:40",
+     "event": "retest"
+    },
+    {
+     "at": "09:45",
+     "event": "confirmed_close",
+     "close": 191.68499755859375
+    }
+   ],
+   "outcome": "gated",
+   "why": "2.61R to the author's target with our stop is below the 3R gate",
+   "path": {
+    "end": "flattened",
+    "at": "15:55",
+    "price": 193.0449981689453,
+    "r": 0.5
+   },
+   "gates": {
+    "r2": "failed",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 441,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange",
+     "sampled"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 188.10479736328125,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "entry": {
+    "at": "09:46",
+    "entry": 191.39999389648438,
+    "basis": "next-open-proxy"
+   },
+   "riskPerShare": 3.2952,
+   "rewardToRisk": 2.61,
+   "noteId": "ec718e401e7d47a68c4273350e6fd62a",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "ZS",
+   "date": "2026-09-15",
+   "direction": "short",
+   "level": 186.0,
+   "target": 180.0,
+   "availableAt": "2026-09-15T13:22:26+00:00",
+   "observations": [],
+   "outcome": "never_confirmed",
+   "why": "no completed close beyond the level by 11:30 ET",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 441,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange",
+     "sampled"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 192.0,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "ec718e401e7d47a68c4273350e6fd62a",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "MSFT",
+   "date": "2026-09-15",
+   "direction": "long",
+   "level": 500.0,
+   "target": null,
+   "availableAt": "2026-09-15T13:22:26+00:00",
+   "observations": [
+    {
+     "at": "09:30",
+     "event": "early_cross",
+     "note": "before the opening range was complete - recorded, not entered"
+    },
+    {
+     "at": "09:35",
+     "event": "confirmed_close",
+     "close": 502.81500244140625
+    },
+    {
+     "at": "09:36",
+     "event": "no_chase_wait_retest",
+     "open": 502.81500244140625,
+     "cap": 502.5
+    },
+    {
+     "at": "10:05",
+     "event": "retest"
+    },
+    {
+     "at": "10:58",
+     "event": "confirmed_close",
+     "close": 500.125
+    }
+   ],
+   "outcome": "unknown",
+   "why": "the author gave no target - R2 cannot be evaluated",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 446,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 499.1000061035156,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "entry": {
+    "at": "10:59",
+    "entry": 500.0700988769531,
+    "basis": "next-open-proxy"
+   },
+   "riskPerShare": 0.9701,
+   "rewardToRisk": null,
+   "noteId": "ec718e401e7d47a68c4273350e6fd62a",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  }
+ ]
+}

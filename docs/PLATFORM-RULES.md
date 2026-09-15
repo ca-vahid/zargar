@@ -1753,6 +1753,9 @@ a refused arm disarms or flattens nothing.
 
 ### Order-free measurement hooks — 2026-09-15 (EM desk; shared runner, observation only)
 
+`TechniqueTargetDistance` (target-distance-v1, journaled at fire and fill, never gates) is scoped per technique since
+2026-09-15: `execution.target_distance_diagnostic=false` for every desk, `techniques.enhanced_market.target_distance_diagnostic=true`
+- the Tips desk asked that its aggregates carry no EM research record after the shared runner journaled it on Tips fills.
 `PlanRunner.on_quote_watch` CAPTURES (pure, no awaits) the first fresh underlying observation at or beyond a trade's
 next production rung with the same-contract NBBO and hands it to a bounded background recorder that journals
 `TechniqueExitShadow` (shadow-exit-v1) - research I/O never runs ahead of the premium/quote stops; drops are counted

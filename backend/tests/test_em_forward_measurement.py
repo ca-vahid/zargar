@@ -157,3 +157,43 @@ def test_candidate_no_chase_waits_for_one_retest_then_stop_and_flatten_paths():
     closes = [99.0, 99.1, 99.2, 99.0, 99.1, 100.3] + [100.4] * 400
     res = evaluate_candidate(_bars(closes), {**ROW, "target": 150.0})
     assert res["path"]["end"] == "flattened" and res["path"]["at"] == "15:55"
+
+
+def test_target_distance_diagnostic_is_scoped_to_the_technique_knob():
+    """Tips desk request 2026-09-15: another desk's aggregates carry no EM research record. The runtime resolves
+    `techniques.<id>.target_distance_diagnostic` -> `execution.target_distance_diagnostic` (False); EM's is True."""
+    from zargar.settings_service import DEFAULTS
+    assert DEFAULTS["execution.target_distance_diagnostic"] is False
+    assert DEFAULTS["techniques.enhanced_market.target_distance_diagnostic"] is True
+    r = runner(Quotes())
+    assert r._target_distance_enabled() is True                      # bare rig: code default
+    r.rt = lambda key, default=None: False if key == "target_distance_diagnostic" else default
+    assert r._target_distance_enabled() is False
+
+
+def test_p02_candidate_observation_at_tp1_for_a_small_distant_first_sale_position():
+    """small-position-exit-v1 (P-02, frozen 2026-09-15): a 2-contract option position whose first PRODUCTION sale (tp2-full)
+    is >= 2R away ALSO gets one observation at the plan TP1 with its own key; a 4-contract ladder does not."""
+    q = Quotes({"X": Quote("X", bid=100.99, ask=101.01, last=101.0, ts=NOW, source="", source_ts=NOW),
+                "X260918C00101000": Quote("X260918C00101000", bid=1.9, ask=2.0, last=1.95, bid_size=40, ask_size=40, ts=NOW, source="opra", source_ts=NOW)})
+    from zargar.settings_service import DEFAULTS
+    assert DEFAULTS["execution.shadow_p02_candidate"] is False and DEFAULTS["techniques.enhanced_market.shadow_p02_candidate"] is False
+    r = runner(q); ap = plan()
+    assert r._shadow_capture(ap, [trade(remaining=2.0, filled_qty=2.0, targets=[101.0, 103.0, 104.0])], q["X"], NOW, 0.25) == []   # off by default
+    on = {"execution.shadow_p02_candidate": True}
+    r = runner(q, settings=on); ap = plan()
+    tr = trade(remaining=2.0, filled_qty=2.0, targets=[101.0, 103.0, 104.0])        # tp2 (the first production sale) = 3R
+    recs = r._shadow_capture(ap, [tr], q["X"], NOW, 0.25)
+    assert [x["rung"] for x in recs] == ["tp1-candidate"] and recs[0]["rungIndex"] == 0 and recs[0]["quantities"]["proposedExit"] == 1.0
+    assert recs[0]["_key"][-1] == "tp1-candidate" and recs[0]["modeled"]["scorable"] and recs[0]["modeled"]["coveredQty"] == 1.0
+    assert r._shadow_capture(ap, [tr], q["X"], NOW + 1, 0.25) == []               # one record per trade instance per rung
+    # production rung still records on its own key when the underlying reaches tp2
+    q2 = Quotes({**q, "X": Quote("X", bid=102.99, ask=103.01, last=103.0, ts=NOW + 2, source="", source_ts=NOW + 2)})
+    r2 = runner(q2, settings=on); ap2 = plan(); tr2 = trade(remaining=2.0, filled_qty=2.0, targets=[101.0, 103.0, 104.0])
+    assert sorted(x["rung"] for x in r2._shadow_capture(ap2, [tr2], q2["X"], NOW + 2, 0.25)) == ["tp1-candidate", "tp2-full"]
+    # a near first sale (< 2R) or a ladder position gets no candidate observation
+    tr3 = trade(remaining=2.0, filled_qty=2.0, targets=[101.0, 101.5, 104.0])
+    assert [x["rung"] for x in runner(q, settings=on)._shadow_capture(plan(), [tr3], q["X"], NOW, 0.25)] == []
+    tr4 = trade(remaining=4.0, filled_qty=4.0, targets=[101.0, 103.0, 104.0])
+    assert [x["rung"] for x in runner(q, settings=on)._shadow_capture(plan(), [tr4], q["X"], NOW, 0.25)] == ["tp1-ladder"]
+
