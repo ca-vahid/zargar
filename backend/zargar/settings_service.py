@@ -217,6 +217,10 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.knowledge_audit_max_groups": 12,    # scope groups per maintenance run; the rest are deferred VISIBLY, least-recently-audited first (KB-04)
     "techniques.tip.knowledge_apply_enabled": False,     # PROPOSE-ONLY by default (Codex 2026-09-13): audits validate + journal proposals and flag disputes; merges/expiries apply only when this is on
     "techniques.tip.audit_max_output_tokens": 3000,      # audit reply cap; doubled once on a max_tokens stop with no JSON (the first live run returned an empty reply)  # per-turn output cap; doubled (max 8192) after a max_tokens stop (RKLB truncation, 2026-09-11)
+    # KFIN-02 (2026-09-14): bounded, resumable audit judgments — a scope is judged in deterministic note-boundary chunks
+    "techniques.tip.audit_chunk_notes": 40,              # notes per judge request (chunk closes at this count...)
+    "techniques.tip.audit_chunk_chars": 60000,           # ...or at this many characters of note text; chunk ids = hash of (note id, revision) — progress persists on the cycle, resumes across restarts
+    "techniques.tip.knowledge_audit_max_chunks": 24,     # paid judge requests per maintenance run across scopes; the rest stay pending VISIBLY (groupsChunkDeferred)
     # GEOMETRY-RISK-PLAN rev 2 (built 2026-09-14, reviewer GO; ACTIVATION is a separate reviewed decision)
     "techniques.tip.geometry_gate": "shadow",            # off | shadow (compute + journal, sizes untouched) | enforce (final stop + size against the risk budget BEFORE entry, Practice books only)
     "techniques.tip.risk_budget_per_tip": 0.0,           # $ planned loss per tip at the FINAL stop; 0 = techniques.tip.risk_pct % of the book's equity

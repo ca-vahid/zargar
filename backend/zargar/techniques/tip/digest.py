@@ -93,7 +93,18 @@ def _client_and_model(eng, client):
 
 
 async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) -> dict:
-    from .analyst import _Recorder, _persist_run
+    """One digest run, accounted through every outcome (KFIN-01): the single
+    provider call is a `perCall` record on the run's `usage` (tokens, cache
+    tokens, stop reason, latency; unknown provider usage stays None), each
+    note write leaves a receipt the moment it lands, and a failure or
+    cancellation ANYWHERE — the call, the parse, the daily note, a promotion
+    — persists the run as failed WITH the usage and the receipts gathered so
+    far before propagating. No write is retried."""
+    import contextlib as _ctx
+    import time as _time
+
+    from ...research import llm_stats
+    from .analyst import _Recorder, _persist_run, _usage_new, _usage_record
 
     rec = _Recorder(eng, run_id)
     rec.step("start", f"Digesting {source} for {day}: {len(msgs)} message(s).")
@@ -105,42 +116,105 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
               f"TRANSCRIPT ({len(msgs)} messages):\n{transcript}")
     system = (SYSTEM.replace("{maxp}", str(MAX_PROMOTIONS))
               + json.dumps(DigestOpinion.model_json_schema(), separators=(",", ":")))
+    usage = _usage_new()
+    receipts: list[dict] = []
+    partial: dict = {"noteId": None, "promoted": []}
+
+    def _meta() -> dict:
+        return {"usage": usage, **partial,
+                **({"receipts": list(receipts)} if receipts else {})}
+
+    async def _terminal_failure(error: str, *, cancelled: bool = False) -> None:
+        rec.step("error", ("Cancelled (shutdown/restart) — reconciled as failed."
+                           if cancelled else f"Digest failed: {error}"))
+        if cancelled:
+            with _ctx.suppress(Exception):
+                await _persist_run(eng, run_id, status="failed", rec=rec,
+                                   error="cancelled: shutdown/restart", opinion=_meta())
+        else:
+            await _persist_run(eng, run_id, status="failed", rec=rec,
+                               error=error[:500], opinion=_meta())
+
+    # ---- the paid call ------------------------------------------------------
+    _t0 = _time.perf_counter()
     try:
-        from ...research import llm_stats
-        with llm_stats.timed() as _t:
+        try:
             resp = await asyncio.wait_for(
                 client.messages.create(model=model, max_tokens=2000, system=system,
                                        messages=[{"role": "user", "content": header}]),
                 timeout=DIGEST_TIMEOUT_S)
-        llm_stats.record_response("digest", resp, model=model, latency_ms=_t.ms)
+        except asyncio.CancelledError:
+            _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                          error="cancelled")
+            raise
+        except TimeoutError:
+            _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                          error=f"timed out after {DIGEST_TIMEOUT_S}s")
+            raise ValueError(f"digest call timed out after {DIGEST_TIMEOUT_S}s") from None
+        except Exception as exc:
+            _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                          error=f"{type(exc).__name__}: {exc}")
+            raise
+        latency_ms = (_time.perf_counter() - _t0) * 1000.0
+        _usage_record(usage, resp, latency_ms=latency_ms)
+        with _ctx.suppress(Exception):
+            llm_stats.record_response("digest", resp, model=model, latency_ms=latency_ms)
+        if getattr(resp, "stop_reason", "") == "max_tokens":
+            rec.step("note", "Reply hit the output-token limit (stop=max_tokens) — "
+                             "recorded; the answer may be truncated.")
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         i, j = text.find("{"), text.rfind("}")
+        if i == -1 or j <= i:
+            raise ValueError("no JSON object in the digest reply"
+                             + (" (truncated at max_tokens)"
+                                if getattr(resp, "stop_reason", "") == "max_tokens" else ""))
         op = DigestOpinion.model_validate_json(text[i:j + 1])
+    except asyncio.CancelledError:
+        await _terminal_failure("cancelled", cancelled=True)
+        raise
     except Exception as exc:
-        rec.step("error", f"Digest failed: {exc}")
-        await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500])
+        await _terminal_failure(str(exc))
         raise
 
+    # ---- the side effects: each one receipted the moment it lands -----------
     svc = eng.signals_service
-    note = await svc.add_tip_note(
-        f"daily:{day}", f"[{source}] {op.summary.strip()}"[:2000],
-        author=f"digest:{run_id[:8]}", run_id=run_id)
-    promoted = []
-    for p in op.promotions[:MAX_PROMOTIONS]:
-        scope = (p.scope or "").strip()
-        if not scope.startswith(("ticker:", "source:")) or not p.text.strip():
-            continue                      # promotions may only land in durable scopes
-        pn = await svc.add_tip_note(scope[:160],
-                                    f"{p.text.strip()} (from {source} {day})"[:2000],
-                                    author=f"digest:{run_id[:8]}", run_id=run_id)
-        promoted.append({"id": pn["id"], "scope": scope})
+    now_iso = lambda: dt.datetime.now(dt.timezone.utc).isoformat()   # noqa: E731
+    try:
+        note = await svc.add_tip_note(
+            f"daily:{day}", f"[{source}] {op.summary.strip()}"[:2000],
+            author=f"digest:{run_id[:8]}", run_id=run_id)
+        partial["noteId"] = note["id"]
+        receipt = {"tool": "save_note", "scope": f"daily:{day}", "noteId": note["id"],
+                   "at": now_iso()}
+        receipts.append(receipt)
+        rec.step("receipt", f"side effect: daily note {note['id'][:8]} saved", **receipt)
+        for p in op.promotions[:MAX_PROMOTIONS]:
+            scope = (p.scope or "").strip()
+            if not scope.startswith(("ticker:", "source:")) or not p.text.strip():
+                continue                      # promotions may only land in durable scopes
+            pn = await svc.add_tip_note(scope[:160],
+                                        f"{p.text.strip()} (from {source} {day})"[:2000],
+                                        author=f"digest:{run_id[:8]}", run_id=run_id)
+            partial["promoted"].append({"id": pn["id"], "scope": scope})
+            receipt = {"tool": "save_note", "scope": scope, "noteId": pn["id"], "at": now_iso()}
+            receipts.append(receipt)
+            rec.step("receipt", f"side effect: promotion {pn['id'][:8]} saved to {scope}",
+                     **receipt)
+    except asyncio.CancelledError:
+        await _terminal_failure("cancelled", cancelled=True)
+        raise
+    except Exception as exc:
+        # a completed write keeps its receipt; the failed one is not retried
+        await _terminal_failure(f"saving notes failed: {exc}")
+        raise
+    promoted = partial["promoted"]
     rec.step("final", f"Digest saved (note {note['id'][:8]}) — "
                       f"{len(promoted)} nugget(s) promoted to durable scopes. "
                       f"Tickers: {', '.join(op.tickers[:12]) or '—'}.",
              noteId=note["id"], promoted=promoted)
     opinion = {"verdict": "digest", "summary": op.summary, "tickers": op.tickers,
                "noteId": note["id"], "promoted": promoted, "date": day,
-               "channelId": None, "runId": run_id}
+               "channelId": None, "runId": run_id, "usage": usage, "receipts": list(receipts)}
     await _persist_run(eng, run_id, status="done", rec=rec, opinion=opinion)
     return opinion
 
