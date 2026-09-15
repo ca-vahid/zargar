@@ -1032,3 +1032,24 @@ target execution (2a) is the first forward experiment. (4) HOOD Sep 10's givebac
 6.5R, full exit at 12R) with no saved intermediate level - a structural exit policy is untestable there; proposal:
 a target-distance gate at arm time, calibrated on sweeps, not on five trades. No rule changed.
 
+### 2026-09-15 - strategy proposal revised for the reviewers' SP-01..03; order-free forward measurement started
+
+`reviews/STRATEGY-PROPOSAL-2026-09-14.md` (revised). Corrections: (SP-01) the Sep 14 MSFT table is a RETROSPECTIVE case
+study - the first-touch row has no as-of stop (the opening range is not complete until 09:35) and claims no R; the
+definition `source-continuation-v1` is frozen for NEW sessions only: earliest eligible observation after the opening
+range, completed-close confirmation with a next-open proxy entry, no-chase at the EXECUTABLE price (level + 0.5%, one
+retest, expiry 11:30 unconfirmed / 15:55 = the baseline flatten clock, not 15:45), the opening-range-low stop, and every
+existing gate (R2 3R, liquidity, budget, final dispatch) still applied - a gated candidate is recorded, never traded;
+"never use the level as a stop" is withdrawn as a generalisation. (SP-02) HPQ's +$3.10 is an arithmetic illustration of
+an ASSUMED resting-share fill, not the proposed mechanism; the fresh-observation result is unmeasured and HOOD/INTC
+hypotheticals are unknown including their sign; the forward comparison is SHADOW ONLY (`shadow-exit-v1`, recorded as
+`TechniqueExitShadow` from the quote watch: fresh observation <= 10 s by source timestamp, one record per trade per
+production rung, same-contract NBBO with sizes, stop precedence on the same observation, covered vs unresolved
+quantity, missing/stale quotes unscorable). (SP-03) policy P redefined as EARLIER-ONLY with one/two/three-plus
+quantity rules and deferred; HOOD Sep 14's entry-minute touch is unscorable; Sep 10's missing saved level is a
+limitation of the saved-level candidate, not evidence against structural exits. Target distance is recorded as a
+diagnostic (`TechniqueTargetDistance` at fire and fill, `target-distance-v1`) - no gate, no N chosen.
+Ledger + evaluator: `tools/em_source_candidates.py` -> `research/source-candidates.json` /
+`source-candidates-<date>.result.json` (Sep 14 rows retrospective: MSFT gated 1.09R with a target path, AAPL and MRNA
+never confirmed). Baseline trading and the Sep 15 review-and-arm ritual unchanged; nothing from this measurement arms.
+
