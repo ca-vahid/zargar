@@ -200,6 +200,11 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.max_open_tips": 5,
     "techniques.tip.max_tip_age_hours": 72,  # older content is REPLAYED on history, never traded
     "techniques.tip.quote_wait_seconds": 6.0,  # wait for a cold ticker's first quote before verifying
+    # multi-image intake (KFIN-07, 2026-09-14): every supported attachment is processed up to
+    # these bounds; anything beyond is explicit in the coverage manifest as skipped-over-budget
+    "techniques.tip.intake_max_images": 4,             # attachments stored + transcribed per message
+    "techniques.tip.intake_max_image_bytes": 8 * 1024 * 1024,  # per-attachment size cap (bytes)
+    "techniques.tip.intake_vision_calls_per_message": 4,  # paid vision calls per message (primary read + per-image transcriptions)
     "techniques.tip.discord.watch": [],      # allowlist of DMs/channels the gateway monitors (UI-managed)
     "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
