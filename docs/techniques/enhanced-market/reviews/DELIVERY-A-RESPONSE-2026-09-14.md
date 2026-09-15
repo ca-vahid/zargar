@@ -442,3 +442,8 @@ arming solo 29 passed + the pre-existing `test_auto_options_one_contract_lifecyc
 (`test_restore_reattaches_an_open_trade`) failed only while a second arming run shared the machine; it passes
 alone and in the solo full-file run on this tree and on unmodified main - not counted as a regression.
 
+Final integration for this round (main 5fc2852, KFIN-03/04 lease + manifest hardening; `scripts/restart.ps1`
+keeps main's manifest-based receipt with EM's `restoration` / `healthBuild` / `beforeInventory` fields): reviewer
+groups **78/78** in an exclusive window (0 other clients before/after); own EM suites + technique API + Team2
+runner/EOD **133/133**; arming solo **29 passed** + the pre-existing `test_auto_options_one_contract_lifecycle`.
+
