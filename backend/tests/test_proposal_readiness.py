@@ -97,12 +97,12 @@ def test_readiness_module_classifies_and_fingerprints():
     assert plan["plannedRisk"] == 303.75 and plan["withinBudget"] is False and plan["cost"] == 675.0
     assert out["info"][0]["scope"] == "auto"
     # the same numbers + blockers fingerprint identically; a different limit does not
-    again = rd.build(pdict=pdict, rp=rp, blockers=bl, info=[], limit=2.25, qty=1, scope_mode="enforce",
+    again = rd.build(pdict=pdict, rp=rp, blockers=bl, info=[], limit=2.25, qty=3, scope_mode="enforce",
                      phase="submit", via="app", valid_for_s=300)
-    assert again["fingerprint"] == out["fingerprint"], "half size halves the same displayed plan"
+    assert again["fingerprint"] == out["fingerprint"], "the same displayed plan fingerprints identically across phases"
     cheaper = rd.build(pdict=pdict, rp=rp, blockers=bl, info=[], limit=2.10, qty=3, scope_mode="enforce",
                        phase="submit", via="app", valid_for_s=300)
-    assert cheaper["fingerprint"] == out["fingerprint"], "a LOWER limit is the same displayed plan (never raised)"
+    assert cheaper["fingerprint"] != out["fingerprint"], "AP85-02: the approved maximum limit is part of the plan"
     other = rd.build(pdict=pdict, rp={**rp, "finalStop": 60.0}, blockers=bl, info=[], limit=2.25, qty=3,
                      scope_mode="enforce", phase="submit", via="app", valid_for_s=300)
     assert other["fingerprint"] != out["fingerprint"], "a moved stop is a different plan"
@@ -148,15 +148,17 @@ async def test_budget_exceeded_card_shows_both_failures_and_half_size_does_not_f
     # the analyst's opinion is not touched by readiness
     assert "analyst" in pdict["context"]
     before = len(await _orders(eng))
-    plain = await eng.proposals.approve(pdict["id"], via="app")
+    noconf = await eng.proposals.approve(pdict["id"], via="app")
+    assert noconf["order"] is None and "confirmation" in noconf["refused"], "AP85-02: no fingerprint, no submission"
+    plain = await eng.proposals.approve(pdict["id"], via="app", expected=rd["fingerprint"])
     assert plain["order"] is None and plain.get("refused") and "blocked" in plain["refused"]
-    half = await eng.proposals.approve(pdict["id"], via="app", half=True)
+    half = await eng.proposals.approve(pdict["id"], via="app", half=True, expected=rd["fingerprint"])
     assert half["order"] is None and half.get("refused")
     assert len(await _orders(eng)) == before, "refusals place nothing"
     card = await _card(eng, pdict["id"])
     assert card["status"] == "pending" and card["context"]["readiness"]["state"] == "blocked"
     refused = [e for e in await _events(eng, "ProposalRevalidated") if e.get("action") == "approval_refused"]
-    assert len(refused) == 2 and all(e["orders"] == 0 for e in refused)
+    assert len(refused) == 3 and all(e["orders"] == 0 for e in refused)
 
 
 async def test_override_is_named_reasoned_journaled_and_submits_the_shown_exposure(rig):
@@ -200,7 +202,7 @@ async def test_resolved_incident_label_clears_on_revalidation_and_plan_matches_o
     assert out["readiness"]["state"] == "blocked"
     assert [b["code"] for b in out["readiness"]["blockers"]] == ["integrity_incident"]
     assert out["readiness"]["blockers"][0]["overridable"] is True
-    blocked = await eng.proposals.approve(pdict["id"], via="app")
+    blocked = await eng.proposals.approve(pdict["id"], via="app", expected=out["readiness"]["fingerprint"])
     assert blocked["order"] is None and "incident" in blocked["refused"]
     # the incident is resolved by its own path - the card still carries the old label
     await ig.resolve_incident(eng, inc["id"], resolver="test", examined_revision=inc["revision"],

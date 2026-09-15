@@ -62,12 +62,24 @@ def open_keyboard(public_url: str, path: str) -> dict | None:
 
 
 def parse_callback(data: str) -> tuple[str, str] | None:
+    """`action:proposal[:fingerprint]` - the fingerprint (AP85-02) is the
+    displayed plan a person confirms; without it an approve/half tap only
+    REVALIDATES and shows the plan with confirm buttons."""
     if ":" not in data:
         return None
-    action, _, pid = data.partition(":")
+    action, _, rest = data.partition(":")
+    pid, _, fp = rest.partition(":")
     if action not in ("approve", "half", "reject") or not pid:
         return None
-    return action, pid
+    return action, (f"{pid}:{fp}" if fp else pid)
+
+
+def confirm_keyboard(proposal_id: str, fingerprint: str) -> dict:
+    return {"inline_keyboard": [[
+        {"text": "✅ Confirm this plan", "callback_data": f"approve:{proposal_id}:{fingerprint}"},
+        {"text": "½ Confirm half", "callback_data": f"half:{proposal_id}:{fingerprint}"},
+        {"text": "❌ Reject", "callback_data": f"reject:{proposal_id}"},
+    ]]}
 
 
 class TelegramBot:
@@ -165,13 +177,29 @@ class TelegramBot:
             await self.send(await self._status_text())
 
     async def _decide(self, action: str, proposal_id: str) -> None:
+        pid, _, fp = proposal_id.partition(":")
         try:
             if action == "reject":
-                await self.engine.proposals.reject(proposal_id, via="telegram")
+                await self.engine.proposals.reject(pid, via="telegram")
                 await self.send("❌ Rejected.")
+            elif not fp:
+                # AP85-02: first tap = refresh & revalidate (zero orders) and show the
+                # plan; the confirm buttons carry the fingerprint of what is shown
+                out = await self.engine.proposals.revalidate(pid, via="telegram")
+                rd = out["readiness"]; plan = rd.get("plan") or {}
+                bl = "; ".join(f"{b['label']}" + (f" ({b['detail']})" if b.get("detail") else "") for b in rd.get("blockers") or [])
+                text = (f"🔎 <b>{out['proposal'].get('symbol')}</b> revalidated — execution: <b>{rd.get('state')}</b>\n"
+                        f"qty {plan.get('qty')} @ ≤ {plan.get('limit')} · stop {plan.get('finalStop')} · "
+                        f"risk/unit {plan.get('unitLoss')} · planned {plan.get('plannedRisk')} vs budget {plan.get('riskBudget')}\n"
+                        + (f"⛔ {bl}\n" if bl else "") + "Confirm to submit exactly this plan (no orders were placed by this check).")
+                if rd.get("state") in ("ready", "unverified"):
+                    await self.send(text, reply_markup=confirm_keyboard(pid, rd["fingerprint"]))
+                else:
+                    await self.send(text + " Overrides are available in the app only.")
+                return
             else:
                 result = await self.engine.proposals.approve(
-                    proposal_id, via="telegram", half=(action == "half"))
+                    pid, via="telegram", half=(action == "half"), expected=fp)
                 order = result["order"]
                 if order is None and result.get("refused"):
                     # readiness-v1: a blocked card is not approved by a tap - the
