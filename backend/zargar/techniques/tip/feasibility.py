@@ -41,17 +41,29 @@ def feasibility(*, budget: float, unit_loss: float | None, unit_cost: float | No
                 allocation_limit: float | None = None) -> dict:
     """How many units fit the approved risk budget (and the purchase
     allocation when known). qty 0 = an honest no-trade for this expression."""
-    out = {"version": FEASIBILITY_VERSION, "budget": round(float(budget or 0), 2), "unitLoss": unit_loss,
-           "unitCost": unit_cost, "allocationLimit": allocation_limit}
+    out = {"version": FEASIBILITY_VERSION, "budget": (round(float(budget), 2) if budget is not None else None),
+           "unitLoss": unit_loss, "unitCost": unit_cost, "allocationLimit": allocation_limit}
+    # PROF-F1: None = unknown (never capital), numeric zero = none available;
+    # a negative or non-finite number is an invalid input, not a budget
+    for name, v in (("budget", budget), ("unit_loss", unit_loss), ("unit_cost", unit_cost), ("allocation_limit", allocation_limit)):
+        if v is not None and (not math.isfinite(float(v)) or float(v) < 0):
+            out.update(feasible=None, qty=None, reason=f"invalid {name} ({v!r}) - review, not a trade")
+            return out
+    if budget is None:
+        out.update(feasible=None, qty=None, reason="risk budget unknown - review, not a trade")
+        return out
     if unit_loss is None:
         out.update(feasible=None, qty=None, reason="no unit-loss estimate (missing delta or stop) - review, not a trade")
         return out
-    if budget <= 0:
-        out.update(feasible=False, qty=0, reason="no approved risk budget")
+    if float(budget) <= 0:
+        out.update(feasible=False, qty=0, qtyByRisk=0, qtyByAllocation=None, reason="no approved risk budget")
         return out
-    fit = int(math.floor(float(budget) / float(unit_loss) + 1e-9)) if unit_loss > 0 else 0
+    if allocation_limit is not None and float(allocation_limit) <= 0:
+        out.update(feasible=False, qty=0, qtyByRisk=None, qtyByAllocation=0, reason="no purchase allocation ($0)")
+        return out
+    fit = int(math.floor(float(budget) / float(unit_loss) + 1e-9)) if float(unit_loss) > 0 else 0
     alloc_fit = None
-    if unit_cost and allocation_limit:
+    if allocation_limit is not None and unit_cost is not None and float(unit_cost) > 0:
         alloc_fit = int(math.floor(float(allocation_limit) / float(unit_cost) + 1e-9))
     qty = fit if alloc_fit is None else min(fit, alloc_fit)
     out.update(qtyByRisk=fit, qtyByAllocation=alloc_fit, qty=int(max(0, qty)), feasible=bool(qty >= 1))
@@ -70,13 +82,15 @@ def share_alternative(*, entry: float | None, stop: float | None, direction: str
     """RESEARCH comparison at the same dollar risk: shares sized so that
     qty x |entry - stop| <= budget (and qty x entry <= allocation). Never for a
     bearish thesis (share shorting is never proposed)."""
-    if direction == "short" or not entry or stop is None:
+    if direction == "short" or not entry or stop is None or budget is None:
         return None
+    if allocation_limit is not None and float(allocation_limit) <= 0:
+        return None                                     # PROF-F1: a $0 allocation buys nothing
     dist = _geo.stop_distance(direction, entry, stop)
     if dist is None or dist <= 0:
         return None
     qty = int(math.floor(float(budget) / dist + 1e-9))
-    if allocation_limit:
+    if allocation_limit is not None:
         qty = min(qty, int(math.floor(float(allocation_limit) / float(entry) + 1e-9)))
     if qty < 1:
         return None
