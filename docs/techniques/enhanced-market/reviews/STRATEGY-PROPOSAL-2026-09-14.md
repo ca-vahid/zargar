@@ -187,3 +187,29 @@ entries. Underlying-only sweeps measure geometry, not option profitability.
   fields report only R2 as evaluated; option liquidity, budget, contract selection and final dispatch are
   `not_evaluated` - a `target` path is not an admitted option trade.
 
+## Measurement follow-up (MF-01..03 at ef98903, 2026-09-15) - observer still disabled
+
+Reviewer packet `reviews/2026-09-15-ef98903-measurement-followup.md`; the three cases adopted unchanged
+(`tests/test_codex_em_capture_followup.py`, `tests/test_codex_source_confirmation_gap.py`).
+
+- **MF-01 last rung = production.** `_production_exit_qty` now runs `plan_exit`'s own arithmetic: share of the
+  ORIGINAL filled quantity (`EXIT_LADDER[idx]`, 1.0 past the ladder), capped by what remains, the remainder only
+  when the runner would be fractional, then capped by the uncommitted quantity; `-full` labels (small option
+  positions) still exit whole. 100 shares, 30 remaining, `trims_done=2` -> 15 at TP3, exactly `plan_exit`. The
+  target-distance diagnostic keeps its rung labels (`tp3-runner`) and adds `fullExitPolicy`, which states that a
+  ladder position's last rung trims its share and the runner remains until the stop or the session flatten - it
+  never implied liquidation.
+- **MF-02 pending vs acknowledged.** A capture claims its key in `_shadow_pending`; a second quote pass before the
+  first append is acknowledged captures nothing. The writer re-checks: a queued duplicate whose key is already
+  acknowledged is dropped without an append; a failed append releases the pending claim so the retry (the
+  original record, original timing) or a later capture can proceed; success moves the key to `_shadow_seen`.
+  The record carries its `idempotencyKey`. The recorder stays bounded and non-blocking.
+- **MF-03 continuity.** The evaluator walks eligible minutes CONTIGUOUSLY from the first eligible bar
+  (max(range complete, available)) through the confirmation, the next-open proxy, any retest wait and up to the
+  11:30 deadline; any unstored eligible minute inside that walk is an unresolved interval = unknown, for entered
+  AND never-confirmed claims alike (a gap before eligibility does not matter). Retrospective Sep 14 rows re-run:
+  MSFT gated 1.09R, AAPL/MRNA never_confirmed - unchanged, because their stored minutes are complete.
+
+18/18 measurement cases pass (the 15 prior + 3 new). `execution.shadow_exit_observe` and
+`techniques.enhanced_market.shadow_exit_observe` remain False; activation is a separate decision.
+

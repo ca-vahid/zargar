@@ -136,24 +136,31 @@ def evaluate_candidate(bars: list[dict], row: dict) -> dict:
     def hit_target(b):
         return target is not None and (b["high"] >= target if long else b["low"] <= target)
 
-    ordered = sorted(rth, key=lambda b: b["ts"])
-    candidates = [b for b in ordered if usable(b)]
-    if not candidates:
-        return _unknown(out, "no observation after the source became available and the opening range completed")
+    # ---- CONTIGUOUS walk from the first eligible minute (MF-03): every eligible minute up to the confirmation,
+    #      through any retest, and up to the deadline must be stored - an unseen eligible minute could hold the
+    #      confirmation, a no-chase event or a stop, so the result is unknown, never a later substitute
+    eligible_ms = max(range_complete_ms, avail_ms)
+    t = range_complete_ms                                   # the 09:35 bar is the first that can confirm
+    while t + 60000 < eligible_ms:
+        t += 60000
+    if t not in by_ts:
+        if (t // 60000) * 60000 >= day0 + 390 * 60000 or _hm(t) >= CONFIRM_DEADLINE:
+            return _unknown(out, "no observation after the source became available and the opening range completed")
     entered = None
     retest_armed = False
-    i = 0
-    while i < len(candidates):
-        b = candidates[i]
-        if _hm(b["ts"]) >= CONFIRM_DEADLINE:
+    while True:
+        if _hm(t) >= CONFIRM_DEADLINE:
             out["outcome"] = "never_confirmed"
             out["why"] = f"no completed close beyond the level by {CONFIRM_DEADLINE[0]:02d}:{CONFIRM_DEADLINE[1]:02d} ET"
             return out
+        b = by_ts.get(t)
+        if b is None:
+            return _unknown(out, f"eligible minute {_label(t)} is not stored - it could contain the confirmation, a retest or a stop")
         if beyond(b):
-            nxt = by_ts.get(int(b["ts"]) + 60000)
-            out["observations"].append({"at": _label(b["ts"]), "event": "confirmed_close", "close": b["close"]})
+            nxt = by_ts.get(t + 60000)
+            out["observations"].append({"at": _label(t), "event": "confirmed_close", "close": b["close"]})
             if nxt is None:
-                return _unknown(out, f"the minute after the confirming close ({_label(b['ts'] + 60000)}) is not stored - no next-open proxy")
+                return _unknown(out, f"the minute after the confirming close ({_label(t + 60000)}) is not stored - no next-open proxy")
             entry_px = float(nxt["open"])
             cap = level * (1 + NO_CHASE_PCT / 100) if long else level * (1 - NO_CHASE_PCT / 100)
             if (entry_px > cap + 1e-9) if long else (entry_px < cap - 1e-9):
@@ -161,19 +168,24 @@ def evaluate_candidate(bars: list[dict], row: dict) -> dict:
                     out["outcome"] = "no_chase_refused"
                     out["why"] = f"next open {entry_px} beyond the no-chase cap {cap:.2f} after the one allowed retest"
                     return out
-                out["observations"].append({"at": _label(nxt["ts"]), "event": "no_chase_wait_retest", "open": entry_px, "cap": round(cap, 4)})
+                out["observations"].append({"at": _label(t + 60000), "event": "no_chase_wait_retest", "open": entry_px, "cap": round(cap, 4)})
                 retest_armed = True
-                j = i + 1
-                while j < len(candidates) and not ((candidates[j]["low"] <= level + RETEST_TOLERANCE) if long else (candidates[j]["high"] >= level - RETEST_TOLERANCE)):
-                    j += 1
-                if j >= len(candidates):
-                    out["outcome"] = "no_chase_refused"; out["why"] = "no retest before the close"; return out
-                out["observations"].append({"at": _label(candidates[j]["ts"]), "event": "retest"})
-                i = j + 1
+                u = t + 60000
+                while True:                                 # contiguous retest search
+                    if _hm(u) >= (16, 0):
+                        out["outcome"] = "no_chase_refused"; out["why"] = "no retest before the close"; return out
+                    rb = by_ts.get(u)
+                    if rb is None:
+                        return _unknown(out, f"minute {_label(u)} is not stored during the retest wait")
+                    if (rb["low"] <= level + RETEST_TOLERANCE) if long else (rb["high"] >= level - RETEST_TOLERANCE):
+                        out["observations"].append({"at": _label(u), "event": "retest"})
+                        break
+                    u += 60000
+                t = u + 60000
                 continue
-            entered = {"at": _label(nxt["ts"]), "ts": int(nxt["ts"]), "entry": entry_px, "basis": "next-open-proxy"}
+            entered = {"at": _label(t + 60000), "ts": int(t + 60000), "entry": entry_px, "basis": "next-open-proxy"}
             break
-        i += 1
+        t += 60000
     if entered is None:
         out["outcome"] = "never_confirmed"; out["why"] = "no completed close beyond the level in the eligible window"
         return out

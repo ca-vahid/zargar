@@ -1065,3 +1065,11 @@ evaluator honours source availability, session identity and bar continuity and r
 `techniques.enhanced_market.shadow_exit_observe` stays False pending activation; target distance remains a
 diagnostic.
 
+### 2026-09-15 - measurement follow-up MF-01..03 closed (observer still disabled)
+
+Last-rung observation quantity now equals `plan_exit` (a 30/40/15 ladder keeps its runner at TP3; the diagnostic
+labels that policy), recording distinguishes pending from acknowledged captures at the writer (no duplicate rung
+records, failures retryable), and the source-candidate evaluator requires contiguous eligible minutes through the
+confirmation/retest and to the 11:30 deadline (a missing interval = unknown, also for never-confirmed claims).
+Sep 14 retrospective rows unchanged. No trading rule changed; `shadow_exit_observe` stays off.
+
