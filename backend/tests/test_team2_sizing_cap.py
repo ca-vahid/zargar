@@ -44,4 +44,4 @@ async def test_a_small_size_multiplier_still_lands_under_the_policy_cap_and_min_
     n = await runner._size_contracts(ap, trade, {"symbol": "IWM260915P00284000", "ask": 0.33, "_sizeMult": 0.5, "_bucket": "small"})
     assert n == 36                                                   # int(72 x 0.5) = 36 < 40: the multiplier, not the cap, decides
     n = await runner._size_contracts(ap, trade, {"symbol": "IWM260915P00284000", "ask": 9.0, "_sizeMult": 1.0, "_bucket": "full"})
-    assert n == 1                                                    # a dear contract: budget/risk say 0-2, min_one keeps one
+    assert n == 2                                                    # a dear contract: risk says 2 ($596 / $225), the $2,000 budget says 2 - the cap never binds
