@@ -383,3 +383,30 @@ cache creation None, effective None), output None, latency 17.0 s, tools
 served/missing 1/3 (it asked for evidence the original run never fetched). Decision, contract and
 protections identical on this one case; the compact context read fewer input tokens per call but
 made one more call and was slower. ONE case - no conclusion; the study continues on new bundles.
+
+## 15:15 ET tick: a second over-sell class (MRNA) and the shadow books' phantom shorts
+
+**MRNA, Tips Practice (fixed, PR pending merge).** The 09:34 ET fill (7 shares @ 141.96) carried the
+proposal's bracket: GTC target 7 @ 149.70 + GTC stop 7 @ 134.3674, spawned by the OrderManager on
+the fill. Adoption three seconds later added the manager's venue stop 7 @ 134.37 and the analyst's
+35/35/30 ladder without cancelling the children: at 134.37 both stops would have sold 14 against 7
+held (RKT again, a different cause); at 149.70 the bracket would have sold all 7 and the ladder
+trimmed on top. The two bracket children were cancelled by hand at 15:22 ET (MRNA 141.97 at the
+time, 5.4 % above the stop) so the manager is the only exit authority on the lot; the code fix makes
+adoption/scale-in/restore do that and refuses a late bracket under a managed entry
+(`tests/test_position_bracket_release.py`; PLATFORM-RULES change log). RKT (09-11) predates the
+bracket-on-share-proposals rule; SLV/T carry none.
+
+**Shadow books hold unintended SHORT share positions** (research books, no money; the trust bar is
+judged on the ARMED book, so these pollute it): eva (armed) TSLA -5, MU -13, AAPL -15, MSTR -36,
+SNOW -6, GOOGL -28, AMZN -57; ab (armed) APLD -40,600, RDDT -64, GOOGL -2, AMZN -3; common-stock
+(armed) LULU -49; muggzone-options (armed) MSFT -2. Cause: the same over-sell classes (a venue stop
+kept at pre-trim size, a manager stop firing on a record the venue no longer held) accumulated since
+09-04 - the resize/clamp fix (PR #138) is not in the running 0.7.86 build. Stale resting stops still
+sit against them: eva TSLA SELL 14 @ 353.17 (held -5), muggzone INTU SELL 6 (held 0), RKLB SELL 31
+(held 0). Nothing was placed or cancelled on the shadow books (sim orders are the user's call):
+the recommendation is a one-shot reconciliation after the deploy - cancel resting stops whose size
+exceeds the held quantity and flatten the shorts with reduce-only buys, journaled as a research
+reset, then re-seed the armed scorecards from that date. The TSLA record 8fd43463 that the sweep
+saw "closed on a stale record" at 15:15 ET is that class: its 13-share stop filled on 09-04 against
+8 held after trims, and the record stayed `closing` for 11 days until today's clamp closed it.

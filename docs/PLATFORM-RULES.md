@@ -1801,6 +1801,21 @@ entries that were still submitting/working. Shared behaviour; no threshold chang
   cards additionally carry `context.readiness` (typed blockers, final plan, fingerprint) and a
   human approval revalidates first — see `docs/techniques/tip/README.md` "Approval cards".
 
+- **2026-09-15 (Tips desk, shared execution) - ONE exit authority: adoption releases the entry's bracket.**
+  A share tip proposal carries a bracket (the finalized stop + first target, geometry rev 2) so the
+  fill is protected until the manager adopts it; the OrderManager spawns the two GTC children on the
+  full fill. Adoption then added the manager's own venue stop and ladder WITHOUT cancelling the
+  children: Tips Practice held 7 MRNA with a bracket stop (7 @ 134.3674), a venue stop (7 @ 134.37)
+  and a bracket target (7 @ 149.70) all resting beside a 35/35/30 ladder - the stop would have sold
+  14 against 7 held (the RKT short, one bug class over), the target 7 + the trim. Fix
+  (`PositionManager._release_bracket_children`): `adopt`, `append_leg` and `restore` cancel every
+  working `source=bracket` order whose parent is one of the position's entry orders BEFORE the venue
+  stop is placed (journal `ManagedPositionBracketReleased` phase adopt/scale_in/restore; a failed
+  cancel is an attention alert, never silent); the OrderManager asks `bracket_guard`
+  (`owns_entry_order`) before spawning children, so the completing fill of a partially adopted entry
+  journals `OrderBracketSkipped` instead. Adapter positions (Options Cartel) run their own venue
+  orders and are untouched. Tests: `tests/test_position_bracket_release.py`. The MRNA children were
+  cancelled by hand at 15:22 ET (orders a2089582, 564dd417) before the fix shipped.
 - **2026-09-15 (Tips desk, shared execution) - the venue GTC stop must follow the held quantity.**
   `PositionManager._ensure_venue_stop` re-placed the resting stop only when its PRICE changed; a
   trim reduced the leg but the venue kept the pre-trim size (RKT: 148 resting on 89 held; the

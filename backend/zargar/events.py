@@ -25,6 +25,7 @@ ORDER_ACCEPTED = "OrderAccepted"
 ORDER_FILL = "OrderFill"
 ORDER_FILLED = "OrderFilled"
 ORDER_CANCELLED = "OrderCancelled"
+ORDER_BRACKET_SKIPPED = "OrderBracketSkipped"   # a managed position owns the entry: no bracket children (2026-09-15)
 ORDER_REJECTED = "OrderRejected"
 ORDER_EXPIRED = "OrderExpired"
 ORDER_DRY_RUN = "OrderDryRun"
