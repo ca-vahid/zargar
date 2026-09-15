@@ -55,3 +55,25 @@ def test_compact_is_unavailable_without_core_flags_and_no_mutation_paths_exist()
     served = frozen._Served(_bundle())
     out = served.call("save_note", {"scope": "rule", "text": "x"})
     assert out.get("frozen") and served.proposed_notes and "not written" in out["note"]
+
+
+
+def test_compare_reads_the_emitted_gap_fields_and_keeps_reasons_apart():
+    # R147-02: an uncapturable image is a capture-time gap emitted as `bundleGaps`
+    base = {"bundleId": "case", "variant": "current", "verdict": "skip", "noVerdict": False,
+            "bundleGaps": [], "manifestGaps": [], "toolCalls": {"served": 1, "missing": 0}}
+    complete = frozen.compare([base, {**base, "variant": "compact"}])
+    assert complete["coverageLimited"] is False and complete["coverage"] == {
+        "missingToolCalls": 0, "imageGap": False, "bundleGaps": [], "manifestGaps": []}
+    image = frozen.compare([{**base, "bundleGaps": ["view_image output is not capturable"]}, {**base, "variant": "compact"}])
+    assert image["coverageLimited"] is True and image["coverage"]["imageGap"] is True \
+        and image["coverage"]["missingToolCalls"] == 0 and "uncapturable image output" in image["coverageNote"]
+    manifest_only = frozen.compare([{**base, "manifestGaps": ["source history block missing (not persisted at run time)"]},
+                                    {**base, "variant": "compact"}])
+    assert manifest_only["coverageLimited"] is True and manifest_only["coverage"]["imageGap"] is False \
+        and manifest_only["coverage"]["manifestGaps"] == ["source history block missing (not persisted at run time)"]
+    both = frozen.compare([{**base, "bundleGaps": ["view_image output is not capturable"],
+                            "toolCalls": {"served": 0, "missing": 2}}, {**base, "variant": "compact"}])
+    assert both["coverage"]["missingToolCalls"] == 2 and both["coverage"]["imageGap"] is True, "one reason never masks another"
+    legacy = frozen.compare([{**base, "gaps": ["image output not captured"]}])
+    assert legacy["coverageLimited"] is True and legacy["coverage"]["imageGap"] is True

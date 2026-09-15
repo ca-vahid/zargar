@@ -661,14 +661,24 @@ def compare(reports: list[dict]) -> dict:
     # bundle could not serve (missing tool calls, an uncapturable image output) is
     # COVERAGE-LIMITED - identical verdicts on it are not decision equivalence
     missing_total = sum(d["toolCalls"]["missing"] for d in rows.values())
-    image_gap = any("image" in str(g).lower() for r in reports for g in (r.get("gaps") or r.get("headerGaps") or []))
-    coverage_limited = bool(missing_total > 0 or image_gap)
+    # R147-02: the replay EMITS `bundleGaps` (capture-time gaps, e.g. an uncapturable
+    # image output) and `manifestGaps` (header/system reconstruction gaps); legacy
+    # reports may carry `gaps` / `headerGaps`. All are read, none masks another.
+    bundle_gaps = [str(g) for r in reports for g in (r.get("bundleGaps") or r.get("gaps") or [])]
+    manifest_gaps = [str(g) for r in reports for g in (r.get("manifestGaps") or r.get("headerGaps") or [])]
+    all_gaps = bundle_gaps + manifest_gaps
+    image_gap = any("image" in g.lower() for g in all_gaps)
+    coverage_limited = bool(missing_total > 0 or all_gaps)
+    coverage = {"missingToolCalls": missing_total, "imageGap": image_gap,
+                "bundleGaps": sorted(set(bundle_gaps)), "manifestGaps": sorted(set(manifest_gaps))}
     return {"bundleId": next((r.get("bundleId") for r in reports), None),
             "baseline": baseline, "variants": rows,
             "decisionDiffers": len({tuple(s) for s in verdict_sets.values()}) > 1,
             "coverageLimited": coverage_limited,
+            "coverage": coverage,
             "coverageNote": ("some requested evidence was not in the frozen bundle (missing tool calls "
-                             f"{missing_total}{', uncapturable image output' if image_gap else ''}): "
+                             f"{missing_total}{', uncapturable image output' if image_gap else ''}"
+                             f"{', ' + str(len(all_gaps)) + ' capture/manifest gap(s)' if all_gaps else ''}): "
                              "same verdicts do not establish decision equivalence"
                              if coverage_limited else "every requested tool input was served from the bundle"),
             "evidence": ("adequate" if reports and not any(r.get("skipped") for r in reports)
