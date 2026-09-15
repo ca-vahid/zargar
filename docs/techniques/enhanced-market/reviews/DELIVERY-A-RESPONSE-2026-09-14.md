@@ -478,3 +478,28 @@ receipt records it as `failed` with the reason and nothing was restarted; (2) th
 uncommitted; this release adds it to `.gitignore` (the file was removed immediately before the check for this
 deploy and is rewritten by the gateway).
 
+---
+
+# Measurement follow-up MF-01..03 (`2026-09-15-ef98903-measurement-followup.md`) - closed at c5dde09, deployed disabled in v0.7.85
+
+Fixes in `c5dde09b28027cd3139b96f7ddd27fe098b314da` (details in `STRATEGY-PROPOSAL-2026-09-14.md`, "Measurement
+follow-up"): the last-rung observation quantity mirrors `plan_exit` (runner kept; `fullExitPolicy` on the diagnostic),
+pending-vs-acknowledged capture identity validated at the writer (no duplicate rung record; failed appends retry with
+the original record), and the evaluator requires contiguous eligible minutes through confirmation/retest and to the
+11:30 deadline. Reviewer cases adopted unchanged. Measurement group 18/18; EM wiring/dispatch/FC-01/entry quality
+20/20; exits + EM review execution 28/28; arming solo 29 + the pre-existing `test_auto_options_one_contract_lifecycle`.
+Sep 14 retrospective rows unchanged (MSFT gated 1.09R, AAPL/MRNA never_confirmed).
+
+Sep 15 baseline preparation (unchanged, ran through the fixes): 112 reviewed, 49 setups / 63 no-setup, **49 armed, 0
+refused, 0 failed** (finished 22:34 PT).
+
+Release: the Tips desk's combined 0.7.85 (origin/main 995738e + PR #131 + c5dde09) = runtime checkout
+`8be1d24912efd55e6d3dc9a1320497b8df4c3430`. Their 22:59 PT ZargarRestart task and the Cartel desk's 22:39 attempt could
+not stop the process this desk's deploy had started (access denied from the unelevated task), so on the user's explicit
+"go" this desk deployed at 06:19-06:21 PT on 2026-09-15 (09:21 ET, pre-open; the user chose "deploy right now" over
+"after the close") through `scripts/deploy.ps1` under the lease: readiness safe, artifact manifest `3536DA7340AE…`
+(21 files), receipt phase **verified**, healthy v0.7.85, `healthBuild` 8be1d24…, **restoration ok** (armed 79/79,
+openTrades 0/0, workingEntries 0/0, pendingExits 0/0, restingOrders 22/22, inflightOrders 0/0, managedPositions 3/3,
+managedOpen 3/3), before-inventory `logs/restart-inventory-20260915-061945.json`. Live armed afterwards: 52 EM, 24 Tips,
+3 Team2. Both observer keys remain False; activation is a separate decision.
+
