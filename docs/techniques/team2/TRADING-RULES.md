@@ -3122,6 +3122,21 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-14 v0.7.76 acceptance review (other team: A–D ACCEPTED; E/F P1 open; v0.7.78)** — their packet
+  `notes/research/2026-09-14-v076-acceptance-review.md` (Codex checkout) is adopted in `tests/test_codex_team2_v076_boundaries.py`
+  (verbatim; its first case calls the EM desk's FA-01 `_entry_guard`, which lives on their branch and not on main — skipped
+  where FA-01 is absent, run for real in the running checkout before the deploy). E: `_place_with_retry` judges every
+  transport retry of an entry on the wall clock (`entry_gate` stage `retry`) and composes the technique's synchronous
+  `entry_guard_predicate` into OrderManager's `before_submit`, so the cutoff cannot be crossed inside the manager either;
+  a refusal there is `entry_gate_refused` with `decisionTs` (skipped opportunity, not a strategy refusal). F: `OrderManager.place`
+  raises `SubmitUncertain(order_id)` when the venue hand-off happens without an answer; the shared runner keeps the trade
+  `submitting` with `submit_uncertain` (persisted), registers the order id, alerts, never retries it as a fresh order; a
+  terminal timeout is treated the same way. `_sync_unfilled` never exempts an uncertain / live / filled trade and WITHDRAWS
+  a stored exemption when fill evidence arrives (the overlay is reconciled, not append-only). G (their judgement on
+  historical exits, accepted): `_guard_orphaned_positions` runs on every 2m decision — a book position the model no
+  longer holds is judged by S1 (the current 2m close through the EMA13 / EMA48 / 200 EMA or the level) and stopped NOW
+  (`orphan_stop`, journaled with decisionTs); the model's own held position is left to the model's rules. No threshold
+  changed; research settings unchanged; the batch stays open until they accept E/F/G.
 - **2026-09-14 EOD follow-up (other team: GO to finish, NO-GO to close; v0.7.76)** — their second packet at the
   deployment target found four boundaries the v0.7.73 fixes left open (`notes/research/2026-09-14-pr106-followup-review.md`
   in the Codex checkout; probes adopted verbatim in `tests/test_codex_team2_pr106_followup.py`). A: the refusal list

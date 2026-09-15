@@ -433,10 +433,11 @@ def build_signal_routes(app, eng, auth, config) -> None:
 
     class ConsolidateBody(BaseModel):
         manifestHash: str
-        resolve: list[str] = []
+        resolve: list = []                # ids, or {id, revision} entries (KFIN-05: reviewed revision per release)
         family: dict = {}
         killSwitch: dict = {}
         evidence: list[dict] = []
+        batches: list[dict] = []          # general form: merge or expire batches
 
     @app.post("/api/tip/knowledge/consolidate", dependencies=[auth])
     async def tip_knowledge_consolidate(body: ConsolidateBody):
@@ -448,7 +449,7 @@ def build_signal_routes(app, eng, auth, config) -> None:
         try:
             return await apply_consolidation(eng, manifest_hash=body.manifestHash, resolve=body.resolve,
                                              family=body.family, kill_switch=body.killSwitch,
-                                             evidence=body.evidence)
+                                             evidence=body.evidence, batches=body.batches)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 

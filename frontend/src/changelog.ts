@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.77";
+export const APP_VERSION = "0.7.78";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.78",date:"2026-09-14",title:"A retry is a new order, an unanswered order is not a zero, a held position keeps its stop",items:[
+    {tag:"fixed",text:"Team2 E: a transport retry of an entry is judged on the wall clock again before it is sent, and the technique's time rule now runs inside the order manager after its last await, immediately before the venue hand-off - an entry admitted at 15:29:59 that retried at 15:30:01 used to go out. A refusal there is recorded as a skipped opportunity with its decision time, never as a strategy refusal. Exits and cancels are untouched."},
+    {tag:"fixed",text:"Orders F: when the venue hand-off happens but the answer never arrives, the outcome is UNKNOWN (SubmitUncertain, carrying the order id) - the entry stays submitting with its exposure reserved and its order identity registered, it is never retried as a fresh order, an alert is raised, and it is never treated as a zero fill. Team2's proxy exemption withdraws itself when fill evidence later arrives; only a confirmed rejection or cancel with zero fill clears occupancy."},
+    {tag:"fixed",text:"Team2 G: a book position the model no longer holds (its exit surfaced by a corrected minute was recorded, not replayed) still receives the method's present-time one-candle stop: on every 2m decision the current close is judged against the EMA13 / EMA48 / 200 EMA (or the level) and a stop is issued NOW with the current timestamp (orphan_stop). No new threshold."},
+  ]},
   {
     version: "0.7.77",
     date: "2026-09-14",

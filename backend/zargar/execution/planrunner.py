@@ -183,6 +183,12 @@ class Trade:
     # trade; live_pct is the contract's fee-adjusted premium % from its own fresh bid; target_kind
     # says whether `targets[0]` is the planned level or the running high/low of day
     is_add: bool = False
+    # F (2026-09-14): the venue's answer to the entry never arrived — the order may be live. The exposure stays
+    # reserved (status `submitting`) until order/execution evidence reconciles it; never treated as a zero fill.
+    submit_uncertain: bool = False
+    # F (2026-09-14): the venue's answer to the entry never arrived — the order may be live. The exposure stays
+    # reserved (status `submitting`) until order/execution evidence reconciles it; never treated as a zero fill.
+    submit_uncertain: bool = False
     live_pct: float | None = None
     target_kind: str = "plan"
 
@@ -224,7 +230,7 @@ class Trade:
                 "entryOrderId": self.entry_order_id, "limitPrice": self.limit_price, "qty": self.qty,
                 "filledQty": self.filled_qty, "avgFill": self.avg_fill, "remaining": self.remaining,
                 "trimsDone": self.trims_done, "exits": list(self.exits), "realizedPnl": round(self.realized_pnl, 2),
-                "isAdd": bool(self.is_add), "livePct": self.live_pct, "targetKind": self.target_kind,
+                "isAdd": bool(self.is_add), "submitUncertain": bool(self.submit_uncertain), "entryKind": getattr(self, "_entry_kind", None), "livePct": self.live_pct, "targetKind": self.target_kind,
                 "unrealizedPnl": round(unreal, 2),
                 "realizedR": (round(self.realized_pnl / (risk * self.filled_qty), 3)
                               if self.filled_qty and self.instrument != "options" else None),
@@ -1424,6 +1430,9 @@ class PlanRunner(SessionListener):
             tr.single_exit = ap.config.single_contract_exit
             tr.scratched = bool(td.get("scratched", False))
             tr.critic_disposition = td.get("criticDisposition")
+            tr.submit_uncertain = bool(td.get("submitUncertain", False))
+            if td.get("entryKind"):
+                tr._entry_kind = str(td["entryKind"])
             ap.trades[tid] = tr
             # re-index working entry/exit orders so their updates route back here
             if tr.entry_order_id and tr.status in ("working", "submitting", "open"):
@@ -2675,6 +2684,12 @@ class PlanRunner(SessionListener):
             self.register_order(trade.entry_order_id, (ap.run_id, trade.trigger_id))
         status = result.get("status")
         if status in ("REJECTED_RISK", "REJECTED"):
+            rr = str(result.get("rejectReason") or "")
+            if "entry gate:" in rr:
+                # E: the technique's time predicate refused inside OrderManager (after its last await) — recorded
+                # as a skipped opportunity with its decision time, never as a strategy refusal
+                await self._refuse_entry(ap, trade, rr.split("entry gate:", 1)[1].strip(), stage="submit")
+                return
             trade.status = "failed"
             trade.reason = result.get("rejectReason") or status
             trade.errors.append(trade.reason)
@@ -2767,31 +2782,69 @@ class PlanRunner(SessionListener):
 
     async def _place_with_retry(self, ap: ArmedPlan, trade: Trade, intent, *, stage: str, before_submit=None) -> dict | None:
         """Submit through OrderManager; retry only transient transport errors
-        (never a risk rejection), journaling every attempt. `before_submit` (FA-01) is carried
-        through every attempt so a retry cannot bypass the final entry guard."""
+        (never a risk rejection), journaling every attempt.
+
+        E (2026-09-14): every transport RETRY of a new entry is a new submission — it is judged on the wall clock
+        again (`entry_gate`, stage `retry`) before it is sent, and the technique's synchronous time predicate
+        (`entry_guard_predicate`) is composed into the `before_submit` guard OrderManager runs after its last
+        await, so the cutoff cannot be crossed inside the manager either. Exits and cancels never pass here.
+        F: an exception past the venue hand-off (`SubmitUncertain`, or a timeout at the terminal attempt) is an
+        UNKNOWN outcome — the trade stays `submitting` with its exposure reserved and is never retried as a fresh
+        order; only a confirmed zero-fill is a failure."""
+        from ..orders import SubmitUncertain
         cfg = ap.config
         attempt = 0
+        money_entry = stage == "entry" and cfg.mode in ("proposal", "auto")
+
+        def composed() -> None:
+            if money_entry:
+                why = self.entry_guard_predicate(ap, trade)
+                if why:
+                    raise RuntimeError(f"entry gate: {why}")
+            if before_submit is not None:
+                before_submit()
+
         while True:
+            if attempt and money_entry:
+                why = await self._entry_gated(ap, trade, "retry")
+                if why:
+                    await self._refuse_entry(ap, trade, why, stage="retry")
+                    return None
             try:
-                return await self.engine.orders.place(intent, before_submit=before_submit)
+                return await self.engine.orders.place(intent, before_submit=composed)
             except Exception as exc:
                 msg = f"{type(exc).__name__}: {exc}"
-                transient = any(k in msg.lower() for k in TRANSIENT_ERRORS)
+                uncertain = isinstance(exc, (SubmitUncertain, TimeoutError, asyncio.TimeoutError))
+                transient = (not isinstance(exc, SubmitUncertain)) and any(k in msg.lower() for k in TRANSIENT_ERRORS)
                 trade.errors.append(f"{stage}: {msg}")
                 attempt += 1
                 trade.retries = attempt
-                self._log(ap, f"{stage}_error", f"{trade.trigger_id}: {msg}" + (" — retrying" if transient and attempt <= cfg.max_retries else ""),
-                          trigger=trade.trigger_id, attempt=attempt)
+                retrying = transient and attempt <= cfg.max_retries
+                self._log(ap, f"{stage}_error", f"{trade.trigger_id}: {msg}" + (" — retrying" if retrying else ""),
+                          trigger=trade.trigger_id, attempt=attempt, uncertain=uncertain and not retrying)
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": stage,
-                    "error": msg, "attempt": attempt, "retrying": transient and attempt <= cfg.max_retries},
+                    "error": msg, "attempt": attempt, "retrying": retrying, "uncertain": uncertain and not retrying,
+                    "orderId": getattr(exc, "order_id", None)},
                     aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-                if transient and attempt <= cfg.max_retries:
+                if retrying:
                     await asyncio.sleep(min(2.0 * attempt, 5.0))
                     continue
                 if stage == "entry":
-                    trade.status = "failed"
-                    trade.reason = msg
+                    if uncertain:
+                        trade.status = "submitting"
+                        trade.submit_uncertain = True
+                        trade.reason = f"submission outcome unknown — exposure reserved until the venue's records reconcile it: {msg}"
+                        oid = getattr(exc, "order_id", None)
+                        if oid:
+                            trade.entry_order_id = str(oid)
+                            self.register_order(trade.entry_order_id, (ap.run_id, trade.trigger_id))
+                        self._log(ap, "entry_uncertain", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id, orderId=oid)
+                        with contextlib.suppress(Exception):
+                            await self._alert(ap, f"{trade.trigger_id}: {trade.reason}", stage="entry")
+                    else:
+                        trade.status = "failed"
+                        trade.reason = msg
                 await self._persist(ap)
                 self._publish(ap, f"{stage}_error")
                 return None
@@ -3198,6 +3251,16 @@ class PlanRunner(SessionListener):
         Exits and cancels never pass through it."""
         return None
 
+    def entry_guard_predicate(self, ap: "ArmedPlan", trade: "Trade") -> str | None:
+        """Hook: the SYNCHRONOUS form of `entry_gate`, composed into OrderManager's `before_submit` guard so it
+        runs after the manager's last await and immediately before the venue hand-off. Pure — no I/O."""
+        return None
+
+    def entry_guard_predicate(self, ap: "ArmedPlan", trade: "Trade") -> str | None:
+        """Hook: the SYNCHRONOUS form of `entry_gate`, composed into OrderManager's `before_submit` guard so it
+        runs after the manager's last await and immediately before the venue hand-off. Pure — no I/O."""
+        return None
+
     async def _entry_gated(self, ap: "ArmedPlan", trade: "Trade", stage: str) -> str | None:
         try:
             why = await self._hook("entry_gate", self.entry_gate(ap, trade, stage))
@@ -3214,7 +3277,8 @@ class PlanRunner(SessionListener):
         with contextlib.suppress(Exception):
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "entry_gate_refused",
-                "stage": stage, "why": why, "ts": trade.fired_ts}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                "stage": stage, "why": why, "ts": trade.fired_ts, "sourceTs": trade.fired_ts,
+                "decisionTs": int(time.time() * 1000)}, aggregate_type="technique_run", aggregate_id=ap.run_id)
         await self._persist(ap)
         self._publish(ap, "fired")
 
