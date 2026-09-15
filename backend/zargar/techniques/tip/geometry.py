@@ -70,6 +70,7 @@ class RiskPlan:
     quote: dict = field(default_factory=dict)  # {source, ageS, delayed, priced}
     greeks: dict = field(default_factory=dict) # {delta, asOf, source}
     decisions: list = field(default_factory=list)
+    evidence: list = field(default_factory=list)  # typed evidence problems [{code, detail}] (readiness-v1, 2026-09-15)
 
     def to_dict(self) -> dict:
         d = asdict(self)

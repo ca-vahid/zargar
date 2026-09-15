@@ -99,7 +99,13 @@ async def test_every_automated_entry_path_honours_both_controls(rig):
     same = await eng.proposals._maybe_retry_stale_quote(pending, intent, rejected, via="auto")
     assert same is rejected
     # a person may still act, and protective exits still run while entries are paused
-    human = await eng.proposals.approve(pending["id"], via="app")
+    # readiness-v1 (2026-09-15): a plain click is refused while the incident is
+    # open; the person's decision is a labeled override naming that check
+    plain = await eng.proposals.approve(pending["id"], via="app")
+    assert plain["order"] is None and inc["id"][:8] in plain.get("refused", "")
+    human = await eng.proposals.approve(pending["id"], via="app",
+                                        override={"checks": ["integrity_incident"],
+                                                  "reason": "test: the desk accepts trading through this incident"})
     assert human["order"] is not None
     q = await _quote(eng, "ACTE")
     pos = await eng.position_manager.adopt({

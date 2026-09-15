@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.84";
+export const APP_VERSION = "0.7.85";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,19 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.85",
+    date: "2026-09-15",
+    title: "Tips: approval cards say whether a trade is ready, not just whether the analyst likes it",
+    items: [
+      { tag: "new", text: "Approval cards show two independent statuses - the analyst's opinion (take / watch / skip) and execution readiness (ready / blocked / needs refresh / unverified) - and list the ACTUAL blocking reasons by name: source not qualified for automatic trading, planned risk over the approved budget, missing / stale / delayed quote, an open execution-integrity incident, an unsupported instrument. 'AUTO: NOT YET EARNED' is gone." },
+      { tag: "new", text: "The final risk calculation is on the card: purchase allocation limit, approved planned-risk budget, estimated risk per share/contract, final quantity x risk, final stop (and the analyst's original), quote source and age, every adjustment made after the analyst's answer. Planned stop risk is labelled an estimate, not a guaranteed maximum loss; the analyst's sizing narrative stays separate." },
+      { tag: "new", text: "'Refresh & revalidate' re-fetches the quotes the plan needs, recomputes geometry and sizing, re-checks incidents and gates and saves the result - zero orders, the entry limit never raised. A resolved incident no longer leaves a permanent stale label." },
+      { tag: "improved", text: "Approve submits exactly the displayed, freshly validated plan: a blocked card is refused with the reason, a plan that changed since it was displayed (stop, size, a new failed check, a new incident) asks you to look again, a limit is never above what you saw, expired cards and duplicate clicks cannot create orders. An override is a separate action that names each check it accepts, shows the resulting exposure, needs a reason and is journaled; the platform protections (risk gate, kill switch, loss halts) still apply." },
+      { tag: "fixed", text: "Knowledge consolidation (KF83-01/02): a reviewed rejection now releases the dispute and expires the rule in ONE transaction - a failed expiry leaves the rule disputed and non-operative - and a retry recovers only a release this manifest wrote (the revision snapshot carries the manifest's marker; the batch receipt is the proof); another person's resolution refuses the stale review." },
+      { tag: "fixed", text: "Entry-variant study (KF83-03/04): a delayed sample counts as three-minute evidence only inside a declared tolerance (default 60 s) - later observations are kept as late diagnostics; a quote is executable comparison evidence only with venue provenance, no delayed flag, a genuine source time, a valid two-sided quote and an open option session - a freshly stamped chain snapshot never qualifies; stored records are re-judged." },
+    ],
+  },
   {version:"0.7.84",date:"2026-09-15",title:"Intraday market research without automatic unlocking",items:[
     {tag:"new",text:"Cartel Practice can observe blocked-market shortlists during the session, comparing completed 15-minute index candles with saved daily EMA levels and recording hypothetical stock confirmations. It cannot arm plans or place orders."},
     {tag:"improved",text:"The accepted research-only decision and its distinction from Sean's guidance are documented. Missing evidence stays unavailable, and existing execution permissions and risk settings remain unchanged."},

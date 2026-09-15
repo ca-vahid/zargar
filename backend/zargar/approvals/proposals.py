@@ -757,7 +757,8 @@ class ProposalService:
                                   source: str | None, signal_id: str | None,
                                   analyst_run_id: str | None, phase: str = "pre-entry",
                                   proposal_id: str | None = None,
-                                  entry_path: str = "proposal") -> tuple[dict, int, object | None, str]:
+                                  entry_path: str = "proposal",
+                                  count_failures: bool = True) -> tuple[dict, int, object | None, str]:
         """GEOMETRY-RISK-PLAN rev 2, steps 1-3 (reviewer-tightened G91-01/02/03):
         the same geometry rules the adoption gate runs — BEFORE entry — producing
         the FINAL stop; the size is derived from that stop against the approved
@@ -808,8 +809,9 @@ class ProposalService:
                          "reviewClass": "evidence",
                          "analystRunId": analyst_run_id, "source": source},
                         aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
-                await self._note_pre_entry_failure(pid, entry_path, out[2].reviewRequired, signal_id,
-                                                   review_class="evidence")
+                if count_failures:
+                    await self._note_pre_entry_failure(pid, entry_path, out[2].reviewRequired, signal_id,
+                                                       review_class="evidence")
             return out
         with contextlib.suppress(Exception):
             await eng.journal.append(
@@ -831,7 +833,7 @@ class ProposalService:
             if rp.reviewRequired:
                 note = (f"Geometry gate: NO automatic entry — {rp.reviewRequired}. "
                         f"The card waits for you.")
-                if phase == "pre-entry":
+                if phase == "pre-entry" and count_failures:
                     await self._note_pre_entry_failure(pid, entry_path, rp.reviewRequired, signal_id,
                                                        review_class=rp.reviewClass)
                 return final_plan, qty, rp, note
@@ -869,7 +871,7 @@ class ProposalService:
         s = eng.settings
         now = int(_now_ms())
         quote_meta: dict = {"limit": float(limit)}
-        problems: list[str] = []
+        problems: list[tuple[str, str]] = []      # (readiness code, detail)
         q_max_age = float(s.get("techniques.tip.geometry_quote_max_age_seconds", 300.0) or 300.0)
 
         def _age_s(q) -> float | None:
@@ -897,27 +899,27 @@ class ProposalService:
                                    "delayed": bool(getattr(sq, "delayed", False)),
                                    "underlyingDelayed": bool(getattr(sq, "delayed", False))})
                 if bool(getattr(sq, "delayed", False)):
-                    problems.append("share reference quote is delayed")
+                    problems.append(("quote_delayed", "share reference quote is delayed"))
                 elif age is not None and age > q_max_age:
-                    problems.append(f"share reference quote is {age:.0f}s old (max {q_max_age:.0f}s)")
+                    problems.append(("quote_stale", f"share reference quote is {age:.0f}s old (max {q_max_age:.0f}s)"))
         else:
             await eng.ensure_symbol(underlying)
             uq = eng.quotes.get(underlying)
             entry_ref = float(uq.last) if uq is not None and getattr(uq, "last", 0) and uq.last > 0 else None
             quote_meta["entryRefBasis"] = "underlying-last"
             if entry_ref is None:
-                problems.append("no live underlying reference quote")
+                problems.append(("quote_missing", "no live underlying reference quote"))
                 entry_ref = float(entry_hint) if entry_hint else 0.0
             else:
                 age = _age_s(uq)
                 quote_meta.update({"underlyingSource": getattr(uq, "source", None),
                                    "underlyingAgeS": age, "underlyingDelayed": bool(getattr(uq, "delayed", False))})
                 if bool(getattr(uq, "delayed", False)):
-                    problems.append("underlying reference quote is delayed")
+                    problems.append(("quote_delayed", "underlying reference quote is delayed"))
                 elif age is None:
-                    problems.append("underlying reference quote age unknown")
+                    problems.append(("quote_stale", "underlying reference quote age unknown"))
                 elif age > q_max_age:
-                    problems.append(f"underlying reference quote is {age:.0f}s old (max {q_max_age:.0f}s)")
+                    problems.append(("quote_stale", f"underlying reference quote is {age:.0f}s old (max {q_max_age:.0f}s)"))
         bars: list = []
         if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
             try:
@@ -937,13 +939,13 @@ class ProposalService:
         if sec_type == "OPT":
             raw_mult = (vehicle or {}).get("multiplier")
             if raw_mult is None:
-                problems.append("contract multiplier unknown (no contract metadata on the vehicle)")
+                problems.append(("contract_metadata", "contract multiplier unknown (no contract metadata on the vehicle)"))
                 multiplier = 0.0
             else:
                 multiplier = float(raw_mult)
             option_type = (vehicle or {}).get("optionType")
             if option_type not in ("call", "put"):
-                problems.append("option type unknown")
+                problems.append(("contract_metadata", "option type unknown"))
             snap = None
             with contextlib.suppress(Exception):
                 snap = eng.options.snapshot_cached(symbol)
@@ -970,7 +972,7 @@ class ProposalService:
                 quote_meta.update({"source": getattr(oq, "source", None), "ageS": _age_s(oq),
                                    "delayed": bool(getattr(oq, "delayed", False))})
                 if bool(getattr(oq, "delayed", False)):
-                    problems.append("contract quote is delayed")
+                    problems.append(("quote_delayed", "contract quote is delayed"))
         final_plan, rp = _geo.plan_risk(
             mode=mode, direction=direction, vehicle=("option" if sec_type == "OPT" else "shares"),
             entry_ref=entry_ref, exit_plan=exit_plan, bars=bars, settings=s,
@@ -978,14 +980,17 @@ class ProposalService:
             option_type=option_type, delta=delta, greeks_meta=greeks_meta,
             budget=budget, budget_source=budget_source, quote_meta=quote_meta, currency=currency)
         if problems:
-            rp.reviewRequired = "; ".join(problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")
+            rp.evidence = [{"code": c, "detail": d} for c, d in problems]
+            rp.reviewRequired = "; ".join(d for _c, d in problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")
+            rp.reviewClass = rp.reviewClass or "evidence"
             rp.qty = int(qty)
             rp.invariantOk = None
             rp.plannedRisk = None
         return final_plan, rp
 
     async def _admit_geometry(self, pdict: dict, *, limit: float | None, qty: float,
-                              via: str) -> tuple[float, dict, str | None]:
+                              via: str, phase: str = "submit",
+                              count_failures: bool = True) -> tuple[float, dict, str | None]:
         """GEOMETRY rev 2, step 4 — final admission immediately before an entry
         order exists (reviewer-tightened G91-01/02): under enforce on a Practice
         book the WHOLE plan is recomputed at the limit that will actually be
@@ -1025,7 +1030,7 @@ class ProposalService:
             symbol=pdict["symbol"], limit=new_limit, qty=int(qty),
             entry_hint=(rp.get("entryRef") if rp else None), source=ctx.get("sourceName"),
             signal_id=pdict.get("signalId"), analyst_run_id=ctx.get("analystRunId"),
-            phase="submit", proposal_id=pdict.get("id"))
+            phase=phase, proposal_id=pdict.get("id"), count_failures=count_failures)
         if rp2 is None:
             return (qty, pdict, "geometry: risk evidence unavailable at submission") if via == "auto" else (qty, pdict, None)
         refusal = None
@@ -1040,7 +1045,10 @@ class ProposalService:
             async with eng.sf() as session:
                 row = await session.get(Proposal, pdict["id"])
                 if row is not None:
-                    row.context = {**(row.context or {}), "riskPlan": rp2.to_dict(),
+                    # a clean recomputation CLEARS a stale review flag (readiness-v1:
+                    # a resolved evidence problem must not leave a permanent label)
+                    kept = {k: v for k, v in (row.context or {}).items() if k != "reviewRequired"}
+                    row.context = {**kept, "riskPlan": rp2.to_dict(),
                                    **({"exitPlan": final_plan} if not rp2.reviewRequired else {}),
                                    **({"reviewRequired": rp2.reviewRequired} if rp2.reviewRequired else {})}
                     if new_bracket is not None:
@@ -1061,7 +1069,9 @@ class ProposalService:
                 row.status = "pending"
                 row.decided_at = None
                 row.decided_via = None
-            row.context = {**(row.context or {}), "autoGate": reason}
+            ctx0 = row.context or {}
+            row.context = {**ctx0, "autoGate": reason,
+                           "readiness": self._readiness_from_refusal(proposal_dict(row), reason)}
             await session.commit()
             pdict = proposal_dict(row)
         await eng.journal.append(ev.TIP_AUTO_PAUSED, {"reason": reason, "proposalId": proposal_id,
@@ -1188,8 +1198,204 @@ class ProposalService:
                  retry.get("status"))
         return retry
 
+
+    # ------------------------------------------------------------- readiness
+    def _readiness_from_refusal(self, pdict: dict, reason: str) -> dict:
+        """The typed state an AUTOMATED refusal implies (the same shape a
+        refresh produces) so a refused card never shows only prose."""
+        from . import readiness as _rd
+        ctx = pdict.get("context") or {}
+        rp = ctx.get("riskPlan") or None
+        scope = self._geometry_scope(pdict.get("portfolioId") or "")
+        blockers = _rd.plan_blockers(rp, enforced_scope=(scope == "enforce"))
+        info: list[dict] = []
+        code = _rd.classify_refusal(reason)
+        if code and code not in {b["code"] for b in blockers}:
+            b = _rd.blocker(code, reason)
+            (info if b["scope"] == "auto" else blockers).append(b)
+        valid = float(self.engine.settings.get("techniques.tip.geometry_quote_max_age_seconds", 300.0) or 300.0)
+        return _rd.build(pdict=pdict, rp=rp, blockers=blockers, info=info,
+                         limit=pdict.get("limitPrice"), qty=float(pdict.get("qty") or 0),
+                         scope_mode=scope, phase="auto-refused", via="auto", valid_for_s=valid)
+
+    async def _auto_qualification(self, source_name: str | None) -> str | None:
+        """Why this source's cards are not approved AUTOMATICALLY (informational
+        for a person: it never blocks a manual decision)."""
+        eng = self.engine
+        name = source_name or "unknown"
+        policy = ((eng.settings.get("techniques.tip.sources") or {}).get(name, {}) or {})
+        if policy.get("mode") == "auto":
+            return None
+        if policy.get("mode") and policy.get("mode") != "auto":
+            return f"source policy: {policy.get('mode')} - approvals are manual"
+        svc = getattr(eng, "signals_service", None)
+        if svc is None or not hasattr(svc, "source_trust"):
+            return None
+        try:
+            trust = await svc.source_trust(name)
+        except Exception:                                   # noqa: BLE001 - informational
+            return None
+        need_n = int(eng.settings.get("techniques.tip.auto_min_graded", 5))
+        need_hit = float(eng.settings.get("techniques.tip.auto_min_hit", 0.4))
+        if int(trust.get("graded") or 0) < need_n:
+            return f"auto not yet earned: {trust.get('graded') or 0}/{need_n} graded tips"
+        hr = trust.get("hitRate")
+        if hr is not None and float(hr) < need_hit:
+            return f"auto not earned: hit rate {float(hr):.2f} below the {need_hit:.2f} bar ({trust.get('graded')} graded)"
+        return None
+
+    async def assess(self, pdict: dict, *, via: str, half: bool = False, refresh: bool = True,
+                     phase: str = "revalidate") -> tuple[dict, dict, float, float | None]:
+        """Execution readiness of a Tips card RIGHT NOW (readiness-v1, 2026-09-15):
+        refresh the quotes the plan needs, re-price the limit (the live ask may
+        only IMPROVE it - never raise), recompute geometry + sizing under the
+        gate's own rules, ask the execution-integrity store, note the source's
+        automatic-trading qualification, and PERSIST the typed result on the
+        card (`context.readiness`, the risk plan, a cleared or set review flag,
+        the improved limit). Places nothing. Returns (readiness, pdict, qty, limit)."""
+        from . import readiness as _rd
+        from ..techniques.tip import integrity as _ig
+        eng = self.engine
+        ctx = pdict.get("context") or {}
+        pid = pdict["portfolioId"]
+        now = dt.datetime.now(dt.timezone.utc)
+        blockers: list[dict] = []
+        info: list[dict] = []
+        exp = pdict.get("expiresAt")
+        expired = False
+        with contextlib.suppress(Exception):
+            expired = bool(exp and dt.datetime.fromisoformat(exp) < now)
+        if expired:
+            blockers.append(_rd.blocker("expired", f"expired {exp}"))
+        vehicle = ctx.get("vehicle") or {}
+        sec_type = pdict.get("secType")
+        underlying = str(vehicle.get("underlying") or pdict.get("symbol") or "").upper()
+        limit0 = float(pdict.get("limitPrice") or 0) or None
+        limit = limit0
+        if refresh and not expired:
+            with contextlib.suppress(Exception):
+                await eng.ensure_symbol(underlying)
+            if sec_type == "OPT":
+                with contextlib.suppress(Exception):
+                    await eng.options.refresh_now(pdict["symbol"])
+            if pdict.get("side") == "BUY" and pdict.get("orderType") == "LMT" and limit:
+                ask = None
+                with contextlib.suppress(Exception):
+                    if sec_type == "OPT":
+                        ask = await _live_ask(eng, pdict["symbol"])
+                    else:
+                        q = eng.quotes.get(pdict["symbol"])
+                        ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
+                if ask and ask < limit:
+                    limit = round(ask, 2)                    # never-chase: improve only
+        req_qty = max(1.0, float(pdict.get("qty") or 1) / 2 if half else float(pdict.get("qty") or 1))
+        scope = self._geometry_scope(pid)
+        q_final = req_qty
+        rp = ctx.get("riskPlan") or None
+        if not expired and scope == "enforce":
+            if sec_type in ("OPT", "STK"):
+                q_final, pdict, _ = await self._admit_geometry(pdict, limit=limit, qty=req_qty, via="app",
+                                                               phase=phase, count_failures=False)
+                rp = (pdict.get("context") or {}).get("riskPlan") or None
+                blockers += _rd.plan_blockers(rp, enforced_scope=True)
+            else:
+                blockers.append(_rd.blocker("unsupported_instrument",
+                                            (pdict.get("context") or {}).get("reviewRequired")
+                                            or "the geometry gate does not cover this vehicle"))
+        if not expired and _ig.pauses(eng.settings):
+            why = await _ig.admission(eng, portfolio_id=pid, entry_path="proposal", symbol=underlying)
+            if why:
+                blockers.append(_rd.blocker("integrity_unavailable" if "unavailable" in why else "integrity_incident", why))
+        gate = await self._auto_qualification((pdict.get("context") or {}).get("sourceName"))
+        if gate:
+            info.append(_rd.blocker("source_not_qualified", gate))
+        valid = float(eng.settings.get("techniques.tip.geometry_quote_max_age_seconds", 300.0) or 300.0)
+        readiness = _rd.build(pdict=pdict, rp=rp, blockers=blockers, info=info, limit=limit, qty=q_final,
+                              scope_mode=scope, phase=phase, via=via, valid_for_s=valid, now=now)
+        # persist: the typed state, the auto label (first reason, prose kept for older readers),
+        # a stale review flag cleared, the improved limit
+        async with eng.sf() as session:
+            row = await session.get(Proposal, pdict["id"])
+            if row is not None:
+                c = {k: v for k, v in (row.context or {}).items() if k not in ("readiness", "autoGate")}
+                c["readiness"] = readiness
+                first = (readiness["blockers"] or readiness["info"] or [None])[0]
+                if first:
+                    c["autoGate"] = f"{first['label']}: {first['detail']}" if first.get("detail") else first["label"]
+                if not any(b["code"] in ("risk_budget_exceeded", "plan_review", "unsupported_instrument",
+                                         "risk_evidence_unavailable", "no_enforced_plan") or b["code"] in _rd.EVIDENCE_CODES
+                           for b in readiness["blockers"]):
+                    c.pop("reviewRequired", None)
+                row.context = c
+                if limit and limit0 and limit < limit0 and row.status == "pending":
+                    row.limit_price = limit
+                await session.commit()
+                pdict = proposal_dict(row)
+        return readiness, pdict, q_final, limit
+
+    async def revalidate(self, proposal_id: str, *, via: str = "app") -> dict:
+        """Refresh and revalidate a pending card: quotes, geometry, sizing,
+        incidents, qualification - persisted, journaled, ZERO orders. An
+        expired card is marked expired here rather than left with a stale label."""
+        eng = self.engine
+        async with eng.sf() as session:
+            row = await session.get(Proposal, proposal_id)
+            if row is None:
+                raise ValueError("unknown proposal")
+            if row.status != "pending":
+                raise ValueError(f"proposal is {row.status}, not pending")
+            pdict = proposal_dict(row)
+        before = ((pdict.get("context") or {}).get("readiness") or {}).get("fingerprint")
+        limit_before = pdict.get("limitPrice")
+        readiness, pdict, _q, limit = await self.assess(pdict, via=via, refresh=True, phase="revalidate")
+        if readiness["state"] == "expired":
+            async with eng.sf() as session:
+                row = await session.get(Proposal, proposal_id, with_for_update=True)
+                if row is not None and row.status == "pending":
+                    row.status = "expired"
+                    row.decided_at = dt.datetime.now(dt.timezone.utc)
+                    await session.commit()
+                    pdict = proposal_dict(row)
+            await eng.journal.append(ev.PROPOSAL_EXPIRED, {"proposalId": proposal_id, "reason": "expired at revalidation"},
+                                     aggregate_type="proposal", aggregate_id=proposal_id, portfolio_id=pdict.get("portfolioId"))
+        await eng.journal.append(
+            ev.PROPOSAL_REVALIDATED,
+            {"proposalId": proposal_id, "action": "refresh", "via": via, "state": readiness["state"],
+             "blockers": [b["code"] for b in readiness["blockers"]], "info": [b["code"] for b in readiness["info"]],
+             "fingerprint": readiness["fingerprint"], "changed": bool(before and before != readiness["fingerprint"]),
+             "limitFrom": limit_before, "limitTo": limit, "orders": 0},
+            aggregate_type="proposal", aggregate_id=proposal_id, portfolio_id=pdict.get("portfolioId"))
+        eng.bus.publish(topics.PROPOSALS, pdict)
+        return {"proposal": pdict, "readiness": readiness, "order": None}
+
+    async def _refuse_human(self, proposal_id: str, readiness: dict, *, reason: str,
+                            changed: bool = False, revert: bool = False) -> dict:
+        """A manual approval that must not proceed: the card keeps (or goes
+        back to) pending with the typed readiness on it; journaled; no order."""
+        eng = self.engine
+        async with eng.sf() as session:
+            row = await session.get(Proposal, proposal_id, with_for_update=True)
+            if row is None:
+                return {"proposal": {"id": proposal_id}, "order": None, "refused": reason, "readiness": readiness}
+            if revert and row.status == "approved":
+                row.status = "pending"
+                row.decided_at = None
+                row.decided_via = None
+            row.context = {**(row.context or {}), "readiness": readiness}
+            await session.commit()
+            pdict = proposal_dict(row)
+        await eng.journal.append(
+            ev.PROPOSAL_REVALIDATED,
+            {"proposalId": proposal_id, "action": "approval_refused", "reason": reason[:300], "changed": changed,
+             "state": readiness.get("state"), "blockers": [b["code"] for b in readiness.get("blockers") or []],
+             "fingerprint": readiness.get("fingerprint"), "orders": 0, **({"revertedApproval": True} if revert else {})},
+            aggregate_type="proposal", aggregate_id=proposal_id, portfolio_id=pdict.get("portfolioId"))
+        eng.bus.publish(topics.PROPOSALS, pdict)
+        return {"proposal": pdict, "order": None, "refused": reason, "readiness": readiness, "changed": changed}
+
     async def approve(self, proposal_id: str, *, via: str = "app",
-                      half: bool = False) -> dict:
+                      half: bool = False, expected: str | None = None,
+                      override: dict | None = None) -> dict:
         eng = self.engine
         # KB-06: an AUTOMATED approval of a tip card is admitted only while no
         # execution-integrity incident pauses this book (a human's click is a decision)
@@ -1215,6 +1421,42 @@ class ProposalService:
                 raise ValueError("proposal has expired")
             qty = max(1.0, row.qty / 2 if half else row.qty)
             pre = proposal_dict(row)
+        # readiness-v1 (2026-09-15): a PERSON's approval submits the displayed,
+        # freshly validated plan - the card is revalidated right now (quotes,
+        # geometry, sizing, incidents); a blocked card is refused unless every
+        # failed check is overridable and named in a labeled override with a
+        # reason; a plan that changed since it was displayed is refused so the
+        # person reviews the refreshed card; a non-tip card keeps its old path
+        assessed = False
+        override_record: dict | None = None
+        limit_pre: float | None = None
+        if via != "auto" and (pre.get("context") or {}).get("techniqueId") == "tip":
+            from . import readiness as _rd
+            readiness, pre, q_final, limit_pre = await self.assess(pre, via=via, half=half, refresh=True, phase="submit")
+            if readiness["state"] == "expired":
+                async with eng.sf() as session:
+                    row = await session.get(Proposal, proposal_id, with_for_update=True)
+                    if row is not None and row.status == "pending":
+                        row.status = "expired"
+                        row.decided_at = dt.datetime.now(dt.timezone.utc)
+                        await session.commit()
+                raise ValueError("proposal has expired")
+            if expected and expected != readiness["fingerprint"]:
+                return await self._refuse_human(
+                    proposal_id, readiness, changed=True,
+                    reason="the plan changed since it was displayed (quote, stop, size or checks) - "
+                           "review the refreshed card and approve again")
+            try:
+                accepted, reason_text = _rd.validate_override(readiness, override)
+            except ValueError as exc:
+                return await self._refuse_human(proposal_id, readiness, reason=str(exc))
+            if accepted:
+                override_record = {"checks": [b["code"] for b in accepted], "labels": [b["label"] for b in accepted],
+                                   "details": [b.get("detail") for b in accepted], "reason": reason_text,
+                                   "by": via, "exposure": readiness["plan"], "fingerprint": readiness["fingerprint"],
+                                   "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+            qty = float(q_final)
+            assessed = True
         # GEOMETRY rev 2: an AUTOMATED approval is admitted only if the enforced
         # risk plan still holds at the current limit — a refused card stays
         # pending for a person, with the reason on its record (no status flip)
@@ -1223,17 +1465,33 @@ class ProposalService:
             if refusal:
                 return await self._refuse_automated(proposal_id, reason=refusal)
         async with eng.sf() as session:
-            row = await session.get(Proposal, proposal_id)
+            # row-locked, re-checked: two clicks (or a click racing the TTL)
+            # cannot both approve - the second one is told the card moved
+            row = await session.get(Proposal, proposal_id, with_for_update=True)
+            if row is None or row.status != "pending":
+                raise ValueError(f"proposal is {row.status if row is not None else 'unknown'}, not pending")
+            if row.expires_at and row.expires_at < dt.datetime.now(dt.timezone.utc):
+                row.status = "expired"
+                await session.commit()
+                raise ValueError("proposal has expired")
             row.status = "approved"
             row.decided_at = dt.datetime.now(dt.timezone.utc)
             row.decided_via = via
+            if override_record is not None:
+                row.context = {**(row.context or {}), "override": override_record}
             await session.commit()
             pdict = proposal_dict(row)
 
         await eng.journal.append(
-            ev.PROPOSAL_APPROVED, {"via": via, "half": half, "qty": qty},
+            ev.PROPOSAL_APPROVED, {"via": via, "half": half, "qty": qty,
+                                   **({"fingerprint": expected} if expected else {}),
+                                   **({"override": override_record} if override_record else {})},
             aggregate_type="proposal", aggregate_id=proposal_id,
             portfolio_id=pdict["portfolioId"])
+        if override_record is not None:
+            await eng.journal.append(
+                ev.PROPOSAL_OVERRIDDEN, {"proposalId": proposal_id, **override_record},
+                aggregate_type="proposal", aggregate_id=proposal_id, portfolio_id=pdict["portfolioId"])
 
         # defined-risk spread approval (ARM-PLAN P5): leg-sequenced open, not a
         # single OrderIntent — risk stays defined at every instant
@@ -1268,22 +1526,27 @@ class ProposalService:
         # user's own click). The never-chase rule from creation applies again:
         # the live ask may only IMPROVE the limit, never raise it.
         limit = pdict["limitPrice"]
-        if (pdict["side"] == "BUY" and pdict["orderType"] == "LMT" and limit):
-            if pdict["secType"] == "OPT":
-                ask = await _live_ask(eng, pdict["symbol"])
-            else:
-                q = eng.quotes.get(pdict["symbol"])
-                ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
-            if ask and ask < float(limit):
-                log.info("proposal %s: limit improved %s -> %s (live ask)",
-                         proposal_id, limit, round(ask, 2))
-                limit = round(ask, 2)
-        # GEOMETRY rev 2: the WHOLE plan is re-derived at the limit actually
-        # submitted; an automated entry the gate refuses here goes back to
-        # pending (G91-01: the final refusal is honoured, not just the pre-check)
-        qty, pdict, refusal = await self._admit_geometry(pdict, limit=limit, qty=qty, via=via)
-        if refusal and via == "auto":
-            return await self._refuse_automated(proposal_id, reason=refusal, revert=True)
+        if assessed:
+            # the person approved the plan assess() just displayed and persisted:
+            # that limit and size ARE the order (no second silent re-derivation)
+            limit = limit_pre or limit
+        else:
+            if (pdict["side"] == "BUY" and pdict["orderType"] == "LMT" and limit):
+                if pdict["secType"] == "OPT":
+                    ask = await _live_ask(eng, pdict["symbol"])
+                else:
+                    q = eng.quotes.get(pdict["symbol"])
+                    ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
+                if ask and ask < float(limit):
+                    log.info("proposal %s: limit improved %s -> %s (live ask)",
+                             proposal_id, limit, round(ask, 2))
+                    limit = round(ask, 2)
+            # GEOMETRY rev 2: the WHOLE plan is re-derived at the limit actually
+            # submitted; an automated entry the gate refuses here goes back to
+            # pending (G91-01: the final refusal is honoured, not just the pre-check)
+            qty, pdict, refusal = await self._admit_geometry(pdict, limit=limit, qty=qty, via=via)
+            if refusal and via == "auto":
+                return await self._refuse_automated(proposal_id, reason=refusal, revert=True)
         # the bracket is built AFTER admission from the proposal's (possibly
         # revalidated) protection plan — every protection from the same final plan
         bracket = None
@@ -1306,6 +1569,21 @@ class ProposalService:
             paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal")
             if paused:
                 return await self._refuse_automated(proposal_id, reason=paused, revert=True)
+        elif assessed:
+            # an incident that opened between the displayed validation and this
+            # order is a NEW failure the person has not seen (unless the override
+            # named the incident check) - revert, show it, place nothing
+            from . import readiness as _rd
+            from ..techniques.tip import integrity as _ig
+            paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal") \
+                if _ig.pauses(eng.settings) else None
+            if paused and not (override_record and "integrity_incident" in override_record["checks"]):
+                rd = dict((pdict.get("context") or {}).get("readiness") or {})
+                rd["blockers"] = [b for b in (rd.get("blockers") or []) if b["code"] != "integrity_incident"] + \
+                    [_rd.blocker("integrity_unavailable" if "unavailable" in paused else "integrity_incident", paused)]
+                rd["state"] = "blocked"
+                rd["fingerprint"] = _rd.fingerprint(rd.get("plan") or {}, rd["blockers"])
+                return await self._refuse_human(proposal_id, rd, reason=paused, changed=True, revert=True)
         order = await eng.orders.place(intent)
         order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
 

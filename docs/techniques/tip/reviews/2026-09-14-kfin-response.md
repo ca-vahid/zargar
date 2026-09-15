@@ -112,3 +112,121 @@ Effective settings after deploy: Practice only, `geometry_gate=enforce`, `entry_
   (9 steps) on the receipt. Live rulebook: 37 rules.
 - Tool follow-up: PR #123 (module-level `subprocess` import on the `--reject-proposals --apply`
   path; the apply above was posted from the planned manifest file).
+
+## Review follow-ups (2026-09-15, branch `claude/kfin-followups`, PR #127, release 0.7.83)
+
+Commits: `45b0235` (the three fixes + `tests/test_kfin_followups.py`), `6e59f81` (merge of
+`origin/main` after the other desk's 0.7.82 took the number), `f9b9180` (renumber to 0.7.83);
+merge commit on main `c5bb01b`; running checkout `d95ab68`. Live since 00:21 ET (build
+`d95ab683…`, restart through the `ZargarRestart` task after `restart-check safe=true`,
+`techniqueRunning=0`; 0 open incidents, gates enforce/integrity, Practice, `allow_live_auto` off).
+
+| # | Item | What changed | Proof |
+|---|---|---|---|
+| 1 | Consolidation retry safety | `consolidation.py`: the dispute release (revision snapshot + `needs_human=False`) and the wrapper's progress (`rec.applied`) commit in ONE transaction, row-locked; the `TipRuleAudited` notification comes after the commit and is best-effort (logged, never fatal). Validation accepts a row the same manifest already released (revision == reviewed + 1 and the latest snapshot reason is `resolve`) as `recovered`; any other move past the reviewed revision is still refused ("not disputed"). | `test_release_commits_with_progress_and_retries_after_a_failed_notification` (journal raises once → release committed, receipt applied, identical retry `replay: true`), `test_release_without_saved_progress_is_recognised_on_retry` (`recovered: true`; a row moved twice by someone else refused) |
+| 2 | Delayed-sample recovery | `cohort.recovery_loop` (first pass 30 s after boot, then every 60 s while `entry_cohort_enabled`) calls `sample_due`; wired in `attach_signal_layer` as the engine task `tip-cohort-recovery`. A sample past its grace is `missed` with the gap recorded, never back-labelled. | `test_delayed_samples_are_recovered_after_a_restart` (2 pending rows → 1 sampled/1 missed; task present) |
+| 3 | Attachment coverage in the UI | `_persist_attachments` stamps a coverage summary (id, n, status, chars, error — never the transcripts) on `extraction.attachments` of every signal of the content, and new signals are born with it; `InboxPage.tsx` `AttachmentsBlock` renders per-image chips (processed / failed / unreadable / skipped) and "Evidence from: caption, attachment n" from `grounding.quoteSources`. | `test_tip_multi_image_intake.py` 15 passed; frontend build green; block present in the deployed bundle |
+
+### Item 4 — observation-only workflows started (00:26 ET, journaled `PATCH /api/settings`)
+
+`techniques.tip.mk_ownbook_mode=observe`, `techniques.tip.mk_ownbook_sources=["MK-alpha-trades"]`
+(`GET /api/tip/ownbook/MK-alpha-trades` → enrolled, mode observe, book null, all counts 0),
+`techniques.tip.entry_cohort_enabled=true`, `techniques.tip.frozen_capture_context=true`.
+Nothing else moved: Practice, `risk_pct` 1.0, `risk_budget_per_tip` 0, `knowledge_apply_enabled`
+false, `allow_live_auto` false, geometry enforce, integrity pause. No order path is touched by any
+of the four keys (observe = classify + grade only; cohort = record + sample; frozen = stamp the
+manifest on the run's start step). Practice promotion stays a separate reviewed verdict.
+
+Initial reports at enablement:
+
+- Entry cohort (`tip_entry_cohort report`): 0 eligible ideas, all sample counters 0 — the cohort
+  starts with the 2026-09-15 session (`cohort-baseline.json` kept in the session scratchpad).
+- Frozen capture: `tip_frozen capture --run ca5c37db…` (ZS, eva, 21:45 UTC) built bundle
+  `fb-d74a31d83dc9162c` — manifest RECONSTRUCTED (the flag was off when the run happened),
+  `core_only` unavailable (the rule snapshot predates the core flag). A stub replay
+  (`--dry-run`) exercised both variants end to end without a provider call. **No paid replay was
+  spent on a reconstructed bundle**: the first real paired report comes from a run captured
+  AFTER the flag (tomorrow's session), which is the only capture that is verbatim.
+
+### Item 5 — clean integrated verification (fresh DB, one pytest at a time)
+
+Main `c5bb01b`, database `zargar_test_hubfix` dropped and recreated first, the other desks'
+pytest processes polled to zero before every slice (slice 4's first run overlapped one and was
+repeated clean), every slice under 9 minutes, no wider 590-second run:
+
+| Slice | Files | Result |
+|---|---|---|
+| 1 | kfin_followups, tip_knowledge, knowledge_governance, tip_multi_image_intake | 35 passed (85 s) |
+| 2 | tip_ownbook, signals_tip, platform_separation, tip_caption_grounding_review, tip_integrity, tip_geometry_wiring, tip_activation | 94 passed (170 s) |
+| 3 | tip_audit_chunks, tip_retro_digest_accounting, tip_kfin09_experiments, delivery_health, ops_tip_run_liveness, ops_restart, tip_runner | 87 passed, **4 failed** in `test_tip_runner.py` (482 s) — see below |
+| 3b | `test_tip_runner.py` alone after the fix below | 52 passed (194 s) |
+| 4 | the six `test_tip_eod_20260914_*` files, tip_completion_boundaries | 15 passed (17 s) |
+
+None of the reviewer's ten missing-row / FK failures reproduced on the fresh database.
+
+**The four `test_tip_runner.py` failures are not from PR #127** — they reproduce identically on
+`98bfdc3` (main before the PR), on `a670457` (main after KFIN-08) and with the test clock pinned
+to 11:00 ET. Cause: the Options Cartel desk's `12491f2` (2026-09-14, "reconcile execution
+evidence") made the sim venue refuse an OPTION fill on any quote without a venue identity and a
+fresh source time (`SimExecutor.quote_rejection`: "Delayed quotes cannot price simulated fills",
+"Option fill source identity or timestamp is unknown"). The runner tests' contract quotes carried
+no source, and the chain overlay installed at `track()` stamps every incoming quote
+`chain`/delayed — so the entries that used to fill off the DELAYED chain quote (a fantasy fill,
+the very thing the rule closes) now sit `ACCEPTED` and the tests time out. The live runtime is
+unaffected: the OPRA research feed installs an `opra` overlay with a fresh `source_ts`
+(`options/service.py`), and 37 Practice option orders filled in the 36 hours before this check.
+Fix (tests only, no production change): `_opt_quote` now does exactly what the OPRA feed does —
+`set_overlay(..., source="opra", source_ts=now)` + `on_quote` — and the two end-to-end tests
+publish a post-fire quote that is executable at the entry limit (ask 1.15 = the chain ask the
+limit came from; the old 1.15-mid quote had ask 1.20 and never crossed).
+
+## Approval-card readiness + KF83-01..04 (2026-09-15, branch `claude/tips-approval-readiness`, release 0.7.85)
+
+### Approval cards (the separate Tips work item)
+
+`backend/zargar/approvals/readiness.py` (pure) + `proposals.py::assess / revalidate / _refuse_human`,
+`POST /api/proposals/{id}/revalidate`, `approve` body `{half, expected, override}`, `InboxPage.tsx`
+`ProposalCard` + `OverrideDialog`. Readiness is scoped to Tips cards (`techniqueId == "tip"`); a
+card another technique creates keeps the old approval path unchanged
+(`test_non_tip_proposals_keep_the_old_approval_path`; Cartel runtime + pipeline proposal tests
+green). The ONE shared change in `approve()` is a tightening for every desk: the status flip is
+row-locked and re-checks pending/expiry, so duplicate clicks or a click racing the TTL cannot
+create a second order (PLATFORM-RULES entry).
+
+| Requirement | Delivered |
+|---|---|
+| 1. actual blocking reason | typed blockers with a code, label, evidence detail, overridable flag and scope: `source_not_qualified` (auto-only, informational), `risk_budget_exceeded`, `quote_missing` / `quote_stale` / `quote_delayed`, `contract_metadata`, `risk_evidence_unavailable`, `plan_review`, `integrity_incident` / `integrity_unavailable`, `unsupported_instrument`, `no_enforced_plan`, `expired`. The risk plan now carries typed `evidence` problems; a refused automated attempt stamps the same typed state. |
+| 2. opinion vs readiness | two pills: `analyst: take/watch/skip` (tooltip says it is an opinion) and `execution: ready / blocked / needs refresh / unverified / expired`; "Take" never implies the checks passed. |
+| 3. final risk calculation | risk grid: purchase allocation limit (the $2,000 `sizing.budget`), approved planned-risk budget + source, est. risk per unit + basis, final qty x risk = planned risk (within / exceeds budget; "analyst asked N"), final stop (analyst's original), quote source/age/delayed, adjustments, estimate note with the theoretical maximum; the analyst's narrative is a separate labelled section. |
+| 4. refresh and revalidate | `revalidate()`: `ensure_symbol` + `options.refresh_now`, limit re-priced DOWN only, geometry + sizing recomputed (`count_failures=False` - a refresh never feeds the incident counter), `integrity.admission`, source qualification; persisted (`context.readiness`, risk plan, a stale `reviewRequired`/`autoGate` cleared, the improved limit), journaled `ProposalRevalidated{orders:0}`; an expired card is marked expired. |
+| 5. explicit, safe approval | `approve(via=app/telegram)` on a Tips card revalidates first; refused (no raise, `refused` + readiness) when blocked, when `expected` (the readiness fingerprint = final stop + admissible size + blocker set) differs, or when an incident opened between the validation and the order (approval reverted); override = `{checks:[codes], reason>=20 chars}` naming EVERY failed check, overridable ones only (`integrity_incident`, `risk_budget_exceeded`, `plan_review`, `unsupported_instrument`; never a missing/stale quote, missing evidence or expiry), journaled `ProposalOverridden` with the exposure; Telegram taps get the refusal text. |
+
+Acceptance (`tests/test_proposal_readiness.py`, 7): AFRM-shape card shows the budget failure with
+its per-unit risk, plain Approve and half size refused with zero orders; override named, reasoned,
+journaled, submits the shown exposure (order qty = exposure qty); MRNA-shape card blocked by an
+open incident, the label clears on revalidation after the incident is resolved, the approved order
+carries the displayed size and stop with a limit never above the displayed one; a stale
+fingerprint or a new incident between refresh and submission is refused; expired cards and two
+concurrent clicks produce exactly one order; non-tip cards unchanged. Updated to the labeled
+override path: `test_tip_geometry_wiring.py`, `test_tip_integrity.py` (case 4),
+`test_tip_activation.py`.
+
+### KF83-01..04 (review verdict `2026-09-15-kfin-followup-verdict.md`)
+
+The reviewer's five-test file is adopted verbatim as `tests/test_kfin_followup_boundaries_review.py`
+(5 passed; the four failing assertions unchanged). The older `test_kfin_final_review.py` was NOT
+adopted: its first assertion requires the resolution-notification failure to raise, which the
+newer control (`test_notification_failure_still_finishes_and_replays`) contradicts.
+
+| Tag | Correction | Proof |
+|---|---|---|
+| KF83-01 | a release whose note is also expired/merged by a batch of the same payload is DEFERRED into that batch: `apply_knowledge_batch(releases={id: marker})` releases the dispute (snapshot with the marker), then expires, in ONE transaction; the row stays `needs_human` (non-operative) until the expiry commits; the batch receipt records `applied.released` | `test_failed_expiry_never_activates_rejected_proposal`, `test_rejection_keeps_the_rule_non_operative_until_the_expiry_commits` (failure injected at the expiry -> row disputed at the reviewed revision; retry completes one rejection; wrapper receipt deleted -> recovered from the batch receipt, no second mutation) |
+| KF83-02 | ownership proof: a standalone release writes revision reason `resolve:c:<manifest16>`; recovery requires reviewed+1 AND that marker (deferred releases: the payload's own batch receipt with the marker); the reviewed revision is re-checked under the row lock before releasing | `test_unrelated_resolution_is_not_manifest_ownership`, `test_release_without_saved_progress_is_recognised_on_retry` (genuine retry recovered; a `flag_tip_notes` resolution at the same arithmetic refused, nothing expired) |
+| KF83-03 | due time, observation time, lateness and eligibility are separate fields on the sample; `techniques.tip.entry_cohort_delay_tolerance_seconds` (60) declares the tolerance; later observations are `late` diagnostics excluded from the delay variant; the row is claimed under a row lock (timer vs recovery); catch-up bounded (200) with each observation on its own clock | `test_twelve_minute_recovery_is_not_three_minute_evidence`, `test_delayed_sample_timing_and_provenance_eligibility` |
+| KF83-04 | `qualify_quote`: venue identity (`opra`/`ibkr`) for options, no `delayed`, no `chain`, a genuine source time (shares may use a labelled receipt-time basis; options may not), no future time, valid uncrossed bid/ask, the option venue session (mirroring the Practice venue policy `sim_option_sessions`); `evidence_ok` re-judges STORED records from their own fields in every variant | `test_delayed_chain_quote_is_not_eligible_execution_evidence`, the provenance cases in the follow-ups file; the KFIN-09 cap fixture now carries provenance |
+
+Precision on the completion claims, as the reviewer asked: MK is in `observe` (classification and
+grading instrumentation, `route=pipeline`), NOT a declared funded shadow cohort; the first verbatim
+frozen paired comparison is still pending new captured evidence (a reconstructed bundle and a
+dry-run replay do not close it). Knowledge consolidation applies and entry-study conclusions stay
+on hold until this release is reviewed.

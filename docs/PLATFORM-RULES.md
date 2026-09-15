@@ -1992,3 +1992,23 @@ The v0.7.81 booking ran only for entries still `submitting`/`working`; an entry 
 ignored a cancel that reported more contracts. `on_order_update` now books the terminal report's cumulative fill for
 ANY entry trade (`_apply_entry_fill`: never regresses, opens once, nets against booked exits) and classifies only the
 entries that were still submitting/working. Shared behaviour; no threshold changed.
+
+- **2026-09-15 (Tips desk) — sim option fills need venue identity; tests must publish it.** Since
+  `12491f2` (2026-09-14) `SimExecutor.quote_rejection` fills an OPT order only on a quote whose
+  `source` is `opra`/`ibkr` with a fresh `source_ts`; a `chain`/delayed quote is "resting, not
+  filled" (`SimFillWaiting`). The chain overlay installed by `OptionsService._apply` re-stamps every
+  incoming contract quote `chain` unless an `opra` overlay replaced it (what the OPRA research feed
+  does). A test that expects a sim option fill must therefore publish through
+  `quotes.set_overlay(sym, ..., source="opra", source_ts=now)` + `on_quote` (see
+  `tests/test_tip_runner.py::_opt_quote`); a bare `Quote(...)` for a tracked contract never fills.
+  Four Tips runner tests had been failing since that commit for this reason (not time-of-day);
+  Practice fills in the runtime were never affected (37 option fills 2026-09-13/14).
+
+- **2026-09-15 (Tips desk, shared code) — `ProposalService.approve()` flips status under a row lock.**
+  The pending -> approved transition is now `SELECT ... FOR UPDATE` with the pending/expiry check
+  repeated inside the same transaction: a duplicate click, a Telegram tap racing the app, or a
+  click racing the TTL gets "proposal is approved/expired, not pending" instead of a second order.
+  Every desk's proposals get this; nothing else in the non-Tips path changed
+  (`tests/test_proposal_readiness.py::test_non_tip_proposals_keep_the_old_approval_path`). Tips
+  cards additionally carry `context.readiness` (typed blockers, final plan, fingerprint) and a
+  human approval revalidates first — see `docs/techniques/tip/README.md` "Approval cards".
