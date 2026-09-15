@@ -1,0 +1,61 @@
+{
+ "resolve": [
+  {
+   "id": "e02fbae2e8bd4608b8ab3188a61d50ea",
+   "revision": 2
+  },
+  {
+   "id": "e7a30cb4b5de4e269785166521931b3d",
+   "revision": 2
+  },
+  {
+   "id": "2c8ed73d9d124d34a0994ea0d202a983",
+   "revision": 2
+  }
+ ],
+ "batches": [
+  {
+   "batchId": "rejection-policy-proposals-2026-09-14",
+   "scope": "rule",
+   "expire": {
+    "ids": [
+     "e02fbae2e8bd4608b8ab3188a61d50ea",
+     "e7a30cb4b5de4e269785166521931b3d",
+     "2c8ed73d9d124d34a0994ea0d202a983"
+    ],
+    "reason": "reviewed rejection rejection-policy-proposals-2026-09-14: hypothesis, not policy"
+   },
+   "expected_revisions": {
+    "e02fbae2e8bd4608b8ab3188a61d50ea": 2,
+    "e7a30cb4b5de4e269785166521931b3d": 2,
+    "2c8ed73d9d124d34a0994ea0d202a983": 2
+   },
+   "author": "review:2026-09-14"
+  }
+ ],
+ "evidence": [
+  {
+   "scope": "evidence:policy-proposals",
+   "sourceId": "e02fbae2e8bd4608b8ab3188a61d50ea",
+   "sourceRevision": 2,
+   "author": "review:2026-09-14",
+   "text": "[REJECTED PROPOSAL \u2014 rule e02fbae2e8bd4608b8ab3188a61d50ea rev 2, 2026-09-14, by analyst:3edc884f] Reviewer disposition: Reviewer disposition (completion packet 2026-09-14, \"Reviewer disposition of the three quarantined promotions\"): do not approve as operative policy; preserve as research/evidence proposals. e02fbae2: one GME case supports inspecting token-stop geometry, not promoting a universal 1.5%/daily-ATR rule \u2014 the approved geometry controls already address plan integrity; the numeric threshold stays hypothetical. e7a30cb4: the AAOI outcome is retained as evidence; a single case is not a universal 35%/3% exit mandate; existing protective policy unchanged. 2c8ed73d: the GS evidence does not establish the extension to every low-delta wing or a one-third-slot sizing rule; that needs a properly defined comparison. Applied through the audited consolidation wrapper: dispute released at the reviewed revision, the rule expired (never activated), the text preserved verbatim in evidence:policy-proposals (never injected).\n--- original text ---\nRULE (promotes the sub-$25/high-beta stop floor from HYPOTHESIS to operative policy \u2014 clause 2 of the adoption-geometry rule): on an adopted SHARE entry, a stop inside intraday tick noise is not risk control, it is a scheduled exit that converts a correct thesis into a realized loss plus the full opportunity cost. Hard floor for shares: stop distance >= max(1x daily ATR below the last swing low, 1.5% of spot) when the name is sub-$25 or its 5-session range exceeds 10% of spot; if the plan's own stop is tighter than that, REPAIR it (widen + resize to the same dollar risk) or SKIP the adoption \u2014 never ship the plan's token stop to the venue as a GTC. Evidence: GME 2026-09-08 adoption from neal's \"@everyone GME ape now\" \u2014 entry 18.81, plan stop 18.7929 (1.7 cents = 0.09% of spot, ~1/20th of the 15m noise band) with targets 18.91/18.98 (0.5%/0.9%); the resting venue GTC filled 3 SECONDS after being placed at 18.7462, -6.38 on 100 shares. The thesis was right: neal trimmed half at +12% on 9/10 (Ryan Cohen bought 1M shares @20.38 that evening) and GME is 21.6-21.9 on 9/14, +15% from our entry. Also: the ladder itself was incoherent \u2014 a 0.5% first target on a name that moves 3%+ a day means we were never going to be paid for the risk we did take."
+  },
+  {
+   "scope": "evidence:policy-proposals",
+   "sourceId": "e7a30cb4b5de4e269785166521931b3d",
+   "sourceRevision": 2,
+   "author": "review:2026-09-14",
+   "text": "[REJECTED PROPOSAL \u2014 rule e7a30cb4b5de4e269785166521931b3d rev 2, 2026-09-14, by analyst:af078927] Reviewer disposition: Reviewer disposition (completion packet 2026-09-14, \"Reviewer disposition of the three quarantined promotions\"): do not approve as operative policy; preserve as research/evidence proposals. e02fbae2: one GME case supports inspecting token-stop geometry, not promoting a universal 1.5%/daily-ATR rule \u2014 the approved geometry controls already address plan integrity; the numeric threshold stays hypothetical. e7a30cb4: the AAOI outcome is retained as evidence; a single case is not a universal 35%/3% exit mandate; existing protective policy unchanged. 2c8ed73d: the GS evidence does not establish the extension to every low-delta wing or a one-third-slot sizing rule; that needs a properly defined comparison. Applied through the audited consolidation wrapper: dispute released at the reviewed revision, the rule expired (never activated), the text preserved verbatim in evidence:policy-proposals (never injected).\n--- original text ---\nRULE (exit policy for 0-3 DTE mirrors \u2014 promotes the PREMIUM-BLEED exit from a plan detail to operative policy, sits beside the fill-band and lotto-tape-filter rules): on a lotto mirror, always attach a bleed stop (exit when premium is down ~35% while the underlying is still INSIDE a ~3% band from entry) in addition to the underlying stop, and let it fire without waiting for the underlying stop or the ladder. On a 3-DTE contract, a premium that drops a third while the stock has barely moved is theta+IV telling us the impulse is over; the underlying stop (placed outside the impulse, by design far away) will never be hit before the option is worthless, so it is not a real exit for a lotto. Evidence: AAOI 2026-09-08, ab's 9/11 120C mirrored 2 lots @2.90 (below his 3.15 print, inside the 1.15x band, with-trend tape, delta 0.39) \u2014 53 minutes later premium -36% with AAOI only -2.9% and the bleed rule closed at 1.85 for -210. AAOI then went 116.3 -> 107.9 (9/09) -> 103 (9/10) and expired 9/11 at 105.36: the 120C was worth 0 and the 107 underlying stop would have exited a day late at a near-total loss. The bleed exit preserved ~64% of the premium on a thesis that was simply wrong."
+  },
+  {
+   "scope": "evidence:policy-proposals",
+   "sourceId": "2c8ed73d9d124d34a0994ea0d202a983",
+   "sourceRevision": 2,
+   "author": "review:2026-09-14",
+   "text": "[REJECTED PROPOSAL \u2014 rule 2c8ed73d9d124d34a0994ea0d202a983 rev 2, 2026-09-14, by analyst:aefb7cc7] Reviewer disposition: Reviewer disposition (completion packet 2026-09-14, \"Reviewer disposition of the three quarantined promotions\"): do not approve as operative policy; preserve as research/evidence proposals. e02fbae2: one GME case supports inspecting token-stop geometry, not promoting a universal 1.5%/daily-ATR rule \u2014 the approved geometry controls already address plan integrity; the numeric threshold stays hypothetical. e7a30cb4: the AAOI outcome is retained as evidence; a single case is not a universal 35%/3% exit mandate; existing protective policy unchanged. 2c8ed73d: the GS evidence does not establish the extension to every low-delta wing or a one-third-slot sizing rule; that needs a properly defined comparison. Applied through the audited consolidation wrapper: dispute released at the reviewed revision, the rule expired (never activated), the text preserved verbatim in evidence:policy-proposals (never injected).\n--- original text ---\nRULE (extends the 0-3 DTE PREMIUM-BLEED exit to ANY low-delta WING mirror, regardless of DTE): whenever the adopted contract is <=0.25 delta / >=5% OTM \u2014 i.e. whenever my own rationale contains the word \"lottery\" \u2014 attach the bleed stop (exit when premium is down ~35% while the underlying is still inside a ~3% band from entry) and let it fire ahead of the underlying stop and the ladder. On a wing, premium decay is the thesis clock: an underlying stop placed sanely outside the noise (here 1022 on a 1035 spot) sits far below the price at which the option is already worthless, so it is not a real exit. Evidence: GS 2026-09-08 \u2014 eva's 9/18 1100C mirrored 1 lot @4.70 (1.04x her 4.50 print, inside the fill band, GS 1033 basing under her 1045 breakout, delta ~0.17). Premium hit -36% with GS only -0.9% and the bleed rule closed at 3.00 for -170.06. GS then went 1035 -> 989 by 9/14; eva herself STC'd the same contract at 0.30 (-93%) after six sessions of holding through her own 1025 stop. The bleed exit preserved ~64% of the debit on a thesis that was already dead the same afternoon; the 1022 underlying stop would have exited a day late for near-total loss. Second clause (sizing): a self-labeled lottery strike is a total-loss ticket \u2014 take it at <=1/3 of a slot (1 lot here, not the 4 in my opinion) with a short time box. (2026-09-14)"
+  }
+ ],
+ "missing": [],
+ "manifestHash": "9e12f30ac31f4014bf7c556ecfa2acb1a9bd0d574cb97ef21454c99dfe0be766"
+}

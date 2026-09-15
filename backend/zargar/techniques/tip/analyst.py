@@ -928,6 +928,7 @@ async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
         "rulesHash": hashlib.sha1(canon.encode("utf-8")).hexdigest()[:12],
         "rules": [{"id": str(n["id"]), "text": n["text"],
                    "disputed": bool(n.get("needsHuman")),
+                   "core": bool(n.get("core")),          # KFIN-09: the compact (core-only) variant reads this
                    "createdAt": n.get("createdAt")} for n in ordered],
     }
     _rules_text.last_snapshot = snapshot
@@ -1093,6 +1094,65 @@ def _fail_meta(state: dict | None, tool_ctx: dict | None) -> dict:
     return out
 
 
+def _usage_new() -> dict:
+    """The run-level usage record every analyst-family run keeps (appraise,
+    review, retro, digest — KFIN-01): totals over the KNOWN provider
+    responses, plus one `perCall` entry per attempt so the per-turn shape is
+    on the record. `in`/`out`/`cacheRead`/`cacheWrite` sum only responses
+    that reported usage; a response without usage is counted in
+    `unknownCalls` and its entry carries None — never zero — and `partial`
+    says the totals are a lower bound."""
+    return {"in": 0, "out": 0, "calls": 0, "stops": [], "inPerCall": [],
+            "cacheRead": 0, "cacheWrite": 0, "retries": 0, "unknownCalls": 0,
+            "partial": False, "totalMs": 0.0, "perCall": []}
+
+
+def _usage_record(usage: dict, resp, *, latency_ms: float, attempt: int = 1,
+                  error: str | None = None) -> dict:
+    """Record ONE provider attempt on `usage` (created by `_usage_new`; a
+    legacy dict is upgraded in place). A returned response counts as a call
+    (`calls`, tokens, stop reason, latency); a failed attempt (`error` set)
+    is recorded as an attempt with no request counted — no phantom requests.
+    `attempt > 1` is a provider retry of the same logical request."""
+    for k, v in _usage_new().items():
+        usage.setdefault(k, v if not isinstance(v, (list, dict)) else type(v)())
+    entry: dict = {"attempt": int(attempt), "latencyMs": round(float(latency_ms), 1),
+                   "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    if attempt > 1:
+        usage["retries"] += 1
+    usage["totalMs"] = round(usage["totalMs"] + float(latency_ms), 1)
+    if error is not None:
+        entry["error"] = str(error)[:200]
+        usage["perCall"].append(entry)
+        return entry
+    usage["calls"] += 1
+    stop = getattr(resp, "stop_reason", None)
+    entry["stopReason"] = str(stop) if stop else None
+    usage["stops"].append(str(stop))
+    u = getattr(resp, "usage", None)
+    if u is None:
+        usage["unknownCalls"] += 1
+        usage["partial"] = True
+        entry.update(inputTokens=None, outputTokens=None,
+                     cacheReadTokens=None, cacheWriteTokens=None)
+    else:
+        i_tok = int(getattr(u, "input_tokens", 0) or 0)
+        o_tok = int(getattr(u, "output_tokens", 0) or 0)
+        c_read = int(getattr(u, "cache_read_input_tokens", 0) or 0)
+        c_write = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+        usage["in"] += i_tok
+        usage["out"] += o_tok
+        usage["cacheRead"] += c_read
+        usage["cacheWrite"] += c_write
+        # per-turn contribution (Codex 2026-09-12: run totals are summed
+        # across calls — consolidation decisions need the per-turn shape)
+        usage["inPerCall"].append(i_tok)
+        entry.update(inputTokens=i_tok, outputTokens=o_tok,
+                     cacheReadTokens=c_read, cacheWriteTokens=c_write)
+    usage["perCall"].append(entry)
+    return entry
+
+
 async def reconcile_stale_runs(eng, *, older_than_s: float | None = None) -> int:
     """Boot reconciliation (Codex audit finding 4): a restart or cancellation
     used to leave analyst runs labeled "running" forever (a Sep-7 intake was
@@ -1133,7 +1193,7 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     attempt's tool evidence, and the provider metadata is on the record."""
     st = state if state is not None else {}
     messages: list = st.setdefault("messages", [{"role": "user", "content": header}])
-    usage = st.setdefault("usage", {"in": 0, "out": 0, "calls": 0, "stops": []})
+    usage = st.setdefault("usage", _usage_new())
     from ...research import llm_stats
     stage = str(tool_ctx.get("stage") or "appraise")
     _settings = getattr(eng, "settings", None)
@@ -1155,12 +1215,21 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                     model=model, max_tokens=turn_cap, system=system,
                     messages=messages, tools=TOOLS)
                 break
+            except asyncio.CancelledError:
+                # shutdown/restart mid-call (KFIN-01): the attempt is on the
+                # record as cancelled — not a paid request — and the earlier
+                # paid turns stay in `usage` for the terminal persistence
+                _usage_record(usage, None, latency_ms=(time.perf_counter() - _t0) * 1000.0,
+                              attempt=attempt, error="cancelled")
+                raise
             except Exception as exc:
                 # a transient API error must not cost the whole appraisal (529
                 # killed the APPL run on its FIRST call, 2026-08-31): retry
                 # twice with backoff, then let the run fail as before. Failed
                 # attempts are MEASURED (Codex M1) — a provider retry is a
                 # retry; an ordinary tool-use turn never is.
+                _usage_record(usage, None, latency_ms=(time.perf_counter() - _t0) * 1000.0,
+                              attempt=attempt, error=f"{type(exc).__name__}: {exc}")
                 with contextlib.suppress(Exception):
                     llm_stats.record(stage, model=model,
                                      stop_reason=f"exception:{type(exc).__name__}"[:48],
@@ -1175,15 +1244,9 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 rec.step("note", f"Transient API error ({type(exc).__name__}) — "
                                  f"retry {attempt}/2 in {delay:g}s.")
                 await asyncio.sleep(delay)
-        usage["calls"] += 1
-        usage["stops"].append(str(getattr(resp, "stop_reason", None)))
+        _usage_record(usage, resp, latency_ms=(time.perf_counter() - _t0) * 1000.0,
+                      attempt=attempt)
         _u = getattr(resp, "usage", None)
-        if _u is not None:
-            usage["in"] += int(getattr(_u, "input_tokens", 0) or 0)
-            usage["out"] += int(getattr(_u, "output_tokens", 0) or 0)
-            # per-turn contribution (Codex 2026-09-12: run totals are summed
-            # across calls — consolidation decisions need the per-turn shape)
-            usage.setdefault("inPerCall", []).append(int(getattr(_u, "input_tokens", 0) or 0))
         # shared collector (Codex finding 10, corrected per review M1): the
         # stage comes from the CALLER (appraise/review/retro), a successful
         # tool-use turn is a new model turn — `retried` only marks provider
@@ -1372,6 +1435,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 else " · starter rules (none saved yet)."),
              tip=tip, notes=notes, rules=rules_n,
              verification={k: verification.get(k) for k in ("passed", "park", "shadow_only")})
+    capture_ctx = bool(s.get("techniques.tip.frozen_capture_context", False))
 
     from .lotto import is_lotto as _is_lotto, lotto_budget as _lotto_budget
     lotto_line = ""
@@ -1401,6 +1465,18 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     if historical_note:
         header = historical_note + "\n\n" + header
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))
+    if capture_ctx:
+        # KFIN-09: the EXACT context manifest, as components, so a frozen
+        # bundle can rebuild this header verbatim (and swap one block for a
+        # knowledge variant) without fetching anything today. Diagnostics only.
+        from .frozen import manifest_from_components
+        rec.step("context", "Context manifest captured for frozen replay.",
+                 contextManifest=manifest_from_components(
+                     header=header, system=system, today_line=header.split("\n", 1)[0],
+                     rules_text=rules_txt, notes_text=notes_txt,
+                     history_text=history_txt, lotto_line=lotto_line,
+                     verification=verification, tip=tip, policy=policy,
+                     siblings=siblings, historical_note=historical_note))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,

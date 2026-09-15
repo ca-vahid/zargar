@@ -26,11 +26,12 @@ error changes nothing and is retried on the cycle's terms.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import hashlib
 import json
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 from zoneinfo import ZoneInfo
 
@@ -98,6 +99,17 @@ class JudgeError(Exception):
         self.calls = list(calls)
 
 
+class JudgeCancelled(asyncio.CancelledError):
+    """Cancellation (shutdown/restart) mid-judgement — still a CancelledError
+    for the event loop, but it carries the call records made before the
+    cancel (KFIN-02: a cancelled second attempt preserves the first completed
+    call's evidence)."""
+
+    def __init__(self, calls: list[dict]):
+        super().__init__("judge cancelled")
+        self.calls = list(calls)
+
+
 async def _judge(client, *, model: str, system: str, header: str, cap: int,
                  max_tokens_ceiling: int = MAX_TOKENS_CEILING) -> tuple[RuleAuditOpinion, list[dict]]:
     """One audit judgement, measured (KB-08): returns the parsed opinion and
@@ -105,12 +117,16 @@ async def _judge(client, *, model: str, system: str, header: str, cap: int,
     latencyMs, maxTokens}]. A reply that does not validate earns ONE retry —
     at double the cap when the stop reason was `max_tokens` (the first live
     rule audit came back empty: prose ran past the 2,000-token cap before any
-    object), at the same cap otherwise. Every failure raises JudgeError WITH
-    the calls made, so a failed audit still records what it paid for."""
-    import asyncio
+    object), at the same cap otherwise. EVERY request — the first included —
+    is clamped to `max_tokens_ceiling` (KFIN-02: a configured 20,000 cap once
+    reached the provider ahead of the retry logic). Every failure raises
+    JudgeError WITH the calls made, so a failed audit still records what it
+    paid for; a cancellation raises JudgeCancelled with the same records."""
     from ...research import llm_stats
     calls: list[dict] = []
     last_error: str = ""
+    ceiling = max(1, int(max_tokens_ceiling))
+    cap = min(max(1, int(cap)), ceiling)
     for attempt in (1, 2):
         try:
             with llm_stats.timed() as _t:
@@ -118,7 +134,10 @@ async def _judge(client, *, model: str, system: str, header: str, cap: int,
                     client.messages.create(model=model, max_tokens=cap, system=system,
                                            messages=[{"role": "user", "content": header}]),
                     timeout=AUDIT_TIMEOUT_S)
-        except Exception as exc:                       # timeout / provider error / cancel
+        except asyncio.CancelledError as exc:          # shutdown/restart mid-call
+            calls.append({"attempt": attempt, "maxTokens": cap, "error": "cancelled"})
+            raise JudgeCancelled(calls) from exc
+        except Exception as exc:                       # timeout / provider error
             calls.append({"attempt": attempt, "maxTokens": cap, "error": str(exc)[:160]})
             raise JudgeError(f"judge call failed: {exc}", calls) from exc
         llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms, retried=attempt > 1)
@@ -140,8 +159,8 @@ async def _judge(client, *, model: str, system: str, header: str, cap: int,
             calls[-1]["parseError"] = last_error
             if attempt == 2:
                 break
-            if truncated and cap < max_tokens_ceiling:
-                cap = min(cap * 2, max_tokens_ceiling)   # bounded repair: ONE doubled retry
+            if truncated and cap < ceiling:
+                cap = min(cap * 2, ceiling)              # bounded repair: ONE doubled retry
     raise JudgeError(last_error or "no usable judgement", calls)
 
 
@@ -226,16 +245,20 @@ async def _save_cycle(eng, cycle: dict) -> None:
         log.debug("cycle persistence unavailable (offline?)", exc_info=True)
 
 
-async def _record_failed_group(eng, run_id: str, scope: str, error: str, calls: list[dict]) -> None:
+async def _record_failed_group(eng, run_id: str, scope: str, error: str, calls: list[dict],
+                               *, batch_id: str | None = None, chunk: dict | None = None) -> None:
     """R63-03: failed work is journaled explicitly — a receipt row with
     status 'failed' (same id shape as an applied batch) so restarts see the
-    attempt and the paid calls behind it."""
+    attempt and the paid calls behind it. With chunks (KFIN-02) the receipt
+    is per chunk and names the chunk's input manifest."""
     try:
         from ...models import TipKnowledgeBatch
         async with eng.sf() as session:
             session.add(TipKnowledgeBatch(
-                id=f"{run_id}:{scope}", run_id=run_id, scope=scope, status="failed",
-                payload_hash="", proposal={"error": (error or "")[:300], "usage": calls},
+                id=batch_id or f"{run_id}:{scope}", run_id=run_id, scope=scope[:160],
+                status="failed", payload_hash="",
+                proposal={"error": (error or "")[:300], "usage": calls,
+                          **({"chunk": chunk} if chunk else {})},
                 applied={}))
             await session.commit()
     except Exception:
@@ -315,15 +338,256 @@ def _mark(cycle: dict, scope: str, *, ok: bool, now: str, error: str | None = No
 def _cycle_summary(cycle: dict) -> dict:
     prog = cycle.get("progress") or {}
     by: dict[str, list[str]] = {"done": [], "pending": [], "failed": [], "dropped": []}
+    chunks: dict[str, dict] = {}
     for sc, p in sorted(prog.items()):
         by.setdefault(p.get("status", "pending"), []).append(sc)
+        if p.get("chunks"):
+            chunks[sc] = _chunk_summary(p)             # visible overflow + per-chunk progress
     return {"cycleId": cycle["id"], "startedAt": cycle["startedAt"], "status": cycle["status"],
-            **by, "discovered": [d["scope"] for d in (cycle.get("discovered") or [])]}
+            **by, "discovered": [d["scope"] for d in (cycle.get("discovered") or [])],
+            "chunks": chunks,
+            "overflow": sorted(sc for sc, c in chunks.items() if c.get("overflow"))}
 
 
 def _revisions_hash(notes: list[dict]) -> str:
     key = json.dumps(sorted((n["id"], int(n.get("revisionNo") or 1)) for n in notes))
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------------------
+# Bounded, resumable judgments (KFIN-02). A scope's notes are split into
+# deterministic NOTE-BOUNDARY chunks (ordered by note id; a chunk closes at
+# `audit_chunk_notes` notes or `audit_chunk_chars` characters), each with a
+# complete input manifest [(note id, revision)] and a stable chunk id = the
+# hash of that ordered manifest. Progress is persisted per chunk on the
+# cycle's `progress[scope]` (tip_knowledge_cycles.progress), so a restart
+# resumes the unfinished chunks; a note added / removed / revised changes
+# the affected chunk's id, which invalidates (visibly) and re-plans it
+# instead of reusing a stale judgment. Each chunk is judged and
+# applied/proposed ONCE (batch id per chunk). A merge/expiry/contradiction
+# that reaches across chunks is never applied: it is recorded as a separate
+# propose-only batch carrying the referenced ids, their revisions and their
+# owning chunks.
+CHUNK_NOTES_DEFAULT = 40
+CHUNK_CHARS_DEFAULT = 60_000
+MAX_CHUNKS_PER_RUN_DEFAULT = 24
+
+
+def _chunk_settings(s) -> tuple[int, int, int]:
+    def _int(key: str, default: int) -> int:
+        try:
+            v = int(s.get(key, default) or default)
+        except Exception:
+            v = default
+        return max(1, v)
+    return (_int("techniques.tip.audit_chunk_notes", CHUNK_NOTES_DEFAULT),
+            _int("techniques.tip.audit_chunk_chars", CHUNK_CHARS_DEFAULT),
+            _int("techniques.tip.knowledge_audit_max_chunks", MAX_CHUNKS_PER_RUN_DEFAULT))
+
+
+def _plan_chunks(notes: list[dict], *, max_notes: int, max_chars: int) -> list[dict]:
+    """Deterministic note-boundary chunks: [{chunkId, index, notes, manifest,
+    chars}]. Same notes at the same revisions -> the same chunk ids; a
+    single note larger than `max_chars` gets a chunk of its own."""
+    ordered = sorted(notes, key=lambda n: str(n.get("id")))
+    groups: list[list[dict]] = []
+    cur: list[dict] = []
+    cur_chars = 0
+    for n in ordered:
+        size = len(str(n.get("text") or "")) + 96          # id/author/date framing
+        if cur and (len(cur) >= max_notes or cur_chars + size > max_chars):
+            groups.append(cur)
+            cur, cur_chars = [], 0
+        cur.append(n)
+        cur_chars += size
+    if cur:
+        groups.append(cur)
+    return [{"chunkId": _revisions_hash(g), "index": i, "notes": g,
+             "manifest": [[n["id"], int(n.get("revisionNo") or 1)] for n in g],
+             "chars": sum(len(str(n.get("text") or "")) for n in g)}
+            for i, g in enumerate(groups)]
+
+
+def _batch_id(run_id: str, scope: str, chunk_id: str, n_chunks: int) -> str:
+    """One batch per chunk. A scope that fits in one chunk keeps the
+    historical `<run>:<scope>` id shape."""
+    return f"{run_id}:{scope}" if n_chunks <= 1 else f"{run_id}:{scope}:{chunk_id}"
+
+
+def _split_cross_chunk(op: RuleAuditOpinion, chunk_ids: set[str],
+                       scope_revisions: dict[str, int], owner: dict[str, str]) -> tuple[dict, dict]:
+    """Partition a chunk's judgment: `local` references only this chunk's
+    notes (applied per mode); `cross` references a note LIVE in the scope but
+    outside the chunk (proposal only, with complete references). An id that
+    is live nowhere stays local so apply rejects it whole, on the record."""
+    local = {"merges": [], "expires": [], "contradictions": []}
+    cross = {"merges": [], "expires": [], "contradictions": [], "refs": []}
+
+    def _route(kind: str, item, ids: list[str], **extra) -> None:
+        outside = [i for i in ids if i not in chunk_ids]
+        if outside and all(i in scope_revisions for i in ids):
+            cross[kind].append(item)
+            cross["refs"].append({"kind": kind[:-1] if kind != "contradictions" else "contradiction",
+                                  "ids": list(ids),
+                                  "revisions": {i: scope_revisions[i] for i in ids},
+                                  "chunks": {i: owner.get(i) for i in ids},
+                                  "outsideChunk": outside, **extra})
+        else:
+            local[kind].append(item)
+
+    for m in op.merges:
+        _route("merges", m, list(m.supersedes or []), text=m.new_rule, why=m.why)
+    for e in op.expires:
+        _route("expires", e, [e.id], why=e.why)
+    for c in op.contradictions:
+        _route("contradictions", c, list(c.ids or []), why=c.why)
+    return local, cross
+
+
+def _merge_applied(applied: dict, got: dict) -> None:
+    got = got or {}
+    applied["merged"] += int(got.get("merged", 0) or 0)
+    applied["expired"] += int(got.get("expired", 0) or 0)
+    applied["proposedMerges"] = int(applied.get("proposedMerges", 0)) + int(got.get("proposedMerges", 0) or 0)
+    applied["proposedExpires"] = int(applied.get("proposedExpires", 0)) + int(got.get("proposedExpires", 0) or 0)
+    applied.setdefault("newRules", []).extend(got.get("newRules", []) or [])
+    applied.setdefault("newNotes", []).extend(got.get("newNotes", []) or [])
+    for i in got.get("flagged", []) or []:
+        if i not in applied.setdefault("flagged", []):
+            applied["flagged"].append(i)
+    applied.setdefault("rejected", []).extend(got.get("rejected", []) or [])
+    if got.get("alreadyApplied"):
+        applied["alreadyApplied"] = True
+
+
+def _chunk_summary(prog: dict) -> dict:
+    chunks = prog.get("chunks") or {}
+    by = {"done": 0, "pending": 0, "failed": 0}
+    for e in chunks.values():
+        by[e.get("status") if e.get("status") in by else "pending"] += 1
+    m = prog.get("manifest") or {}
+    return {"planned": len(chunks), **by, "notes": m.get("notes"),
+            "overflow": bool(m.get("overflow")), "invalidated": len(prog.get("invalidated") or [])}
+
+
+async def _audit_scope(eng, client, *, model: str, scope: str, notes: list[dict], system: str,
+                       header_for: Callable[[list[dict], int, int], str], prog: dict,
+                       save, run_id: str, mode: str, cap: int, budget: dict, author: str,
+                       usage_all: list[dict], applied: dict, chunk_cfg: tuple[int, int, int]) -> str:
+    """Judge one scope through bounded chunks, resuming what an earlier run
+    already finished. Returns 'done' (every chunk done), 'failed' (a chunk
+    failed this visit — the scope backs off on the cycle's terms, done chunks
+    stay done) or 'deferred' (the run's chunk budget ran out — pending chunks
+    are visible and resume next tick). Cancellation persists the chunk's
+    state (with the calls already paid for) and propagates as
+    JudgeCancelled."""
+    svc = eng.signals_service
+    max_notes, max_chars, _ = chunk_cfg
+    chunks = _plan_chunks(notes, max_notes=max_notes, max_chars=max_chars)
+    now = _now_iso()
+    known = dict(prog.get("chunks") or {})
+    planned = {c["chunkId"] for c in chunks}
+    invalidated = list(prog.get("invalidated") or [])
+    for cid, entry in known.items():
+        if cid not in planned:
+            invalidated.append({"chunkId": cid, "index": entry.get("index"),
+                                "status": entry.get("status"), "batchId": entry.get("batchId"),
+                                "at": now, "reason": "inputs changed (note added/removed/revised)"})
+    prog["invalidated"] = invalidated[-50:]
+    prog["chunks"] = {
+        c["chunkId"]: {**(known.get(c["chunkId"]) or {"status": "pending", "attempts": 0,
+                                                       "batchId": None, "error": None, "at": None}),
+                       "index": c["index"], "notes": len(c["notes"]), "chars": c["chars"],
+                       "manifest": c["manifest"]}
+        for c in chunks}
+    prog["manifest"] = {"revisionsHash": _revisions_hash(notes), "notes": len(notes),
+                        "chunks": len(chunks), "chunkNotes": max_notes, "chunkChars": max_chars,
+                        "chunkIds": [c["chunkId"] for c in chunks], "plannedAt": now,
+                        "overflow": len(chunks) > 1}
+    scope_revisions = {n["id"]: int(n.get("revisionNo") or 1) for n in notes}
+    owner = {n["id"]: c["chunkId"] for c in chunks for n in c["notes"]}
+    failed_any = deferred = False
+    for c in chunks:
+        cid = c["chunkId"]
+        entry = prog["chunks"][cid]
+        if entry.get("status") == "done":
+            continue                                   # judged + applied/proposed once already
+        if budget["chunks"] <= 0:
+            deferred = True
+            break
+        budget["chunks"] -= 1
+        bid = _batch_id(run_id, scope, cid, len(chunks))
+        entry["attempts"] = int(entry.get("attempts") or 0) + 1
+        entry["at"] = now
+        chunk_meta = {"chunkId": cid, "index": c["index"], "of": len(chunks),
+                      "notes": len(c["notes"]), "manifest": c["manifest"]}
+
+        async def _fail(error: str, calls: list[dict]) -> None:
+            usage_all.append({"scope": scope, "chunkId": cid, "error": error[:160]})
+            entry.update(status="failed", error=error[:200], batchId=None)
+            await _record_failed_group(eng, run_id, scope, error, calls, batch_id=bid, chunk=chunk_meta)
+            if save is not None:
+                await save()
+
+        try:
+            op, calls = await _judge(client, model=model, system=system,
+                                     header=header_for(c["notes"], c["index"], len(chunks)), cap=cap)
+        except asyncio.CancelledError as exc:
+            calls = list(getattr(exc, "calls", None) or [])
+            usage_all.extend({"scope": scope, "chunkId": cid, **x} for x in calls)
+            await _fail("cancelled (shutdown/restart)", calls)
+            raise
+        except Exception as exc:
+            calls = list(getattr(exc, "calls", None) or [])
+            usage_all.extend({"scope": scope, "chunkId": cid, **x} for x in calls)
+            log.warning("knowledge audit failed for %s chunk %s: %s", scope, cid, exc)
+            await _fail(str(exc), calls)
+            failed_any = True
+            continue
+        usage_all.extend({"scope": scope, "chunkId": cid, **x} for x in calls)
+        chunk_ids = {n["id"] for n in c["notes"]}
+        local, cross = _split_cross_chunk(op, chunk_ids, scope_revisions, owner)
+        try:
+            got = await svc.apply_knowledge_batch(
+                scope=scope, merges=list(local["merges"]), expires=list(local["expires"]),
+                contradictions=list(local["contradictions"]), author=author, run_id=run_id,
+                live_ids=chunk_ids, batch_id=bid,
+                expected_revisions={i: scope_revisions[i] for i in chunk_ids}, mode=mode)
+            xgot = None
+            if cross["refs"]:
+                # never applied, whatever the mode: the judge saw only this
+                # chunk; the human sees the complete references
+                xgot = await svc.apply_knowledge_batch(
+                    scope=scope, merges=list(cross["merges"]), expires=list(cross["expires"]),
+                    contradictions=list(cross["contradictions"]), author=author, run_id=run_id,
+                    live_ids=set(scope_revisions), batch_id=f"{bid}:xchunk",
+                    expected_revisions=dict(scope_revisions), mode="propose")
+        except Exception as exc:
+            log.warning("knowledge audit apply aborted for %s chunk %s: %s", scope, cid, exc)
+            await _fail(f"apply aborted: {exc}", calls)
+            failed_any = True
+            continue
+        entry.update(status="done", batchId=bid, error=None, summary=(op.summary or "")[:300])
+        _merge_applied(applied, got or {})
+        if cross["refs"]:
+            xrec = {"scope": scope, "chunkId": cid, "batchId": f"{bid}:xchunk",
+                    "refs": cross["refs"], "mode": "propose",
+                    "proposedMerges": int((xgot or {}).get("proposedMerges", 0) or 0),
+                    "proposedExpires": int((xgot or {}).get("proposedExpires", 0) or 0),
+                    "flagged": list((xgot or {}).get("flagged", []) or []),
+                    "rejected": list((xgot or {}).get("rejected", []) or [])}
+            entry["crossChunk"] = xrec
+            applied.setdefault("crossChunk", []).append(xrec)
+            for i in xrec["flagged"]:
+                if i not in applied.setdefault("flagged", []):
+                    applied["flagged"].append(i)
+        if save is not None:
+            await save()
+    if failed_any:
+        return "failed"
+    if deferred:
+        return "deferred"
+    return "done"
 
 
 AUDITABLE_PREFIXES = ("ticker:", "source:")
@@ -387,12 +651,12 @@ async def run_rule_audit(eng, *, client=None, report: dict | None = None,
         t = r["text"].lower()
         return any(k in t for k in ("position", "run ", "run:", "20", "retro", "lane", "#"))
 
-    rules_txt = "\n".join(
-        f"- [{r['id']}] {r['text']} (by {r['author']}, {(r['createdAt'] or '')[:10]})"
-        + ("" if cited(r) else "  [NO EVIDENCE CITED]")
-        + ("  [DISPUTED — unresolved by the human; never merge or expire]" if r.get("needsHuman") else "")
-        for r in rules)
-    expected_revisions = {r["id"]: int(r.get("revisionNo") or 1) for r in rules}
+    def rules_text(subset: list[dict]) -> str:
+        return "\n".join(
+            f"- [{r['id']}] {r['text']} (by {r['author']}, {(r['createdAt'] or '')[:10]})"
+            + ("" if cited(r) else "  [NO EVIDENCE CITED]")
+            + ("  [DISPUTED — unresolved by the human; never merge or expire]" if r.get("needsHuman") else "")
+            for r in subset)
 
     # the evidence: recent retros + lane grades
     from sqlalchemy import select as _sel
@@ -422,56 +686,80 @@ async def run_rule_audit(eng, *, client=None, report: dict | None = None,
     from .analyst import register_run
     register_run(eng, run_id)          # KFIN-04: owned by this task, however long the judgment takes
 
-    header = (f"Today (ET): {dt.datetime.now(ET):%Y-%m-%d}\n"
-              f"YOUR LIVE RULES ({len(rules)}):\n{rules_txt}\n\n"
-              f"RECENT RETROS:\n{retro_txt}\n\nLANE GRADES:\n{lane_txt}")
+    def header_for(subset: list[dict], index: int, of: int) -> str:
+        part = ("" if of <= 1 else
+                f" — CHUNK {index + 1} of {of}: you see only these {len(subset)} rules; "
+                "judge them on their own, never reference a rule you cannot see")
+        return (f"Today (ET): {dt.datetime.now(ET):%Y-%m-%d}\n"
+                f"YOUR LIVE RULES ({len(rules)}{part}):\n{rules_text(subset)}\n\n"
+                f"RECENT RETROS:\n{retro_txt}\n\nLANE GRADES:\n{lane_txt}")
+
     system = AUDIT_SYSTEM + json.dumps(RuleAuditOpinion.model_json_schema(),
                                        separators=(",", ":"))
-    calls: list[dict] = []
-    try:
-        cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
-        op, calls = await _judge(client, model=model, system=system, header=header, cap=cap)
-    except JudgeError as exc:
-        calls = exc.calls
-        log.warning("rule audit failed: %s", exc)
-        await _finish(eng, run_id, status="failed",
-                      opinion={"error": str(exc)[:300], "usage": calls})   # KB-08: failures keep usage
-        rep.update(status="failed", reason=str(exc)[:200])
-        if cycle is not None:
-            _mark(cycle, "rule", ok=False, now=now_iso, error=str(exc))
-            await _save_cycle(eng, cycle)
-        return None
-
-    # ---- deterministic apply: validated + transactional (KB-02) ----------------
-    live_ids = {r["id"] for r in rules}
+    cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
+    chunk_cfg = _chunk_settings(s)
     mode = _apply_mode(s)
+    # ---- judge (bounded chunks, resumable) + deterministic apply (KB-02) ------
+    prog = (cycle["progress"].setdefault("rule", {"status": "pending", "attempts": 0, "lastAttempt": None,
+                                                  "retryAfter": None, "batchId": None, "error": None})
+            if cycle is not None else {})
+    save = (lambda: _save_cycle(eng, cycle)) if cycle is not None else None
+    usage_all: list[dict] = []
+    applied: dict = {"merged": 0, "expired": 0, "contradictions": 0, "newRules": [],
+                     "newNotes": [], "flagged": [], "rejected": [], "mode": mode,
+                     "proposedMerges": 0, "proposedExpires": 0, "crossChunk": []}
+    budget = {"chunks": chunk_cfg[2]}
     try:
-        applied = await svc.apply_knowledge_batch(
-            scope="rule", merges=list(op.merges), expires=list(op.expires),
-            contradictions=list(op.contradictions),
-            author=f"rule-audit:{run_id[:8]}", run_id=run_id, live_ids=live_ids,
-            batch_id=f"{run_id}:rule", expected_revisions=expected_revisions, mode=mode)
-    except Exception as exc:
-        log.warning("rule audit apply aborted (nothing written): %s", exc)
+        outcome = await _audit_scope(
+            eng, client, model=model, scope="rule", notes=rules, system=system,
+            header_for=header_for, prog=prog, save=save, run_id=run_id, mode=mode, cap=cap,
+            budget=budget, author=f"rule-audit:{run_id[:8]}", usage_all=usage_all,
+            applied=applied, chunk_cfg=chunk_cfg)
+    except asyncio.CancelledError:
+        # terminal on the record first (usage kept), then propagate
         await _finish(eng, run_id, status="failed",
-                      opinion={"error": f"apply aborted: {exc}"[:300], "usage": calls})
-        rep.update(status="failed", reason=f"apply aborted: {exc}"[:200])
+                      opinion={"error": "cancelled: shutdown/restart", "usage": usage_all,
+                               "chunks": _chunk_summary(prog)})
+        rep.update(status="failed", reason="cancelled")
+        raise
+    chunks = _chunk_summary(prog)
+    if outcome == "failed":
+        err = "; ".join(e.get("error") or "" for e in (prog.get("chunks") or {}).values()
+                        if e.get("status") == "failed") or "judge failed"
+        log.warning("rule audit failed: %s", err)
+        await _finish(eng, run_id, status="failed",
+                      opinion={"error": err[:300], "usage": usage_all, "chunks": chunks})   # KB-08: failures keep usage
+        rep.update(status="failed", reason=err[:200])
         if cycle is not None:
-            _mark(cycle, "rule", ok=False, now=now_iso, error=f"apply aborted: {exc}")
+            _mark(cycle, "rule", ok=False, now=now_iso, error=err)
             await _save_cycle(eng, cycle)
         return None
+    if outcome == "deferred":
+        pending = chunks["pending"]
+        await _finish(eng, run_id, status="partial",
+                      opinion={"verdict": "audit", "usage": usage_all, "chunks": chunks,
+                               "rationale": f"rulebook audit: {pending} chunk(s) deferred to the next tick"})
+        rep.update(status="partial", reason=f"rulebook: {pending} chunk(s) deferred (chunk budget)")
+        if cycle is not None:
+            prog["lastAttempt"] = now_iso              # progress, not an attempt
+            await _save_cycle(eng, cycle)
+        return None
+    applied["contradictions"] = len(applied["flagged"])
+    summary = " ".join(e.get("summary") or "" for e in sorted(
+        (prog.get("chunks") or {}).values(), key=lambda e: e.get("index") or 0)).strip()
     flagged = list(applied.get("flagged") or [])
     payload = {"runId": run_id, **{k: v for k, v in applied.items() if k != "flagged"},
-               "flagged": flagged, "summary": op.summary, "usage": calls, "mode": mode,
-               "cycleId": cycle["id"] if cycle else None}
+               "flagged": flagged, "summary": summary, "usage": usage_all, "mode": mode,
+               "chunks": chunks, "cycleId": cycle["id"] if cycle else None}
     rep.update(status="done", reason="")
     if cycle is not None:
-        _mark(cycle, "rule", ok=True, now=now_iso, batch_id=f"{run_id}:rule",
+        _mark(cycle, "rule", ok=True, now=now_iso,
+              batch_id=(prog.get("chunks") or {}).get(prog["manifest"]["chunkIds"][-1], {}).get("batchId"),
               revisions_hash=_revisions_hash(rules))
         await _save_cycle(eng, cycle)
     await _finish(eng, run_id, status="done",
                   opinion={"verdict": "audit", **payload,
-                           "rationale": op.summary or "rulebook audited"})
+                           "rationale": summary or "rulebook audited"})
     log.info("rule audit %s: merged %d, expired %d, flagged %d (%s)",
              run_id[:8], applied["merged"], applied["expired"], applied["contradictions"], mode)
     return payload
@@ -557,62 +845,68 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None,
     register_run(eng, run_id)          # KFIN-04: owned by this task, however long the cycle takes
 
     applied = {"groups": 0, "merged": 0, "expired": 0, "contradictions": 0,
-               "newNotes": [], "flagged": [], "rejected": [],
-               "groupsEligible": len(eligible), "groupsFailed": []}
+               "newRules": [], "newNotes": [], "flagged": [], "rejected": [],
+               "proposedMerges": 0, "proposedExpires": 0, "crossChunk": [],
+               "groupsEligible": len(eligible), "groupsFailed": [], "groupsChunkDeferred": [],
+               "chunks": {}}
     usage_all: list[dict] = []
+    cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
+    chunk_cfg = _chunk_settings(s)
+    budget = {"chunks": chunk_cfg[2]}                     # paid calls per run, across scopes
+    system = AUDIT_SYSTEM + json.dumps(RuleAuditOpinion.model_json_schema(), separators=(",", ":"))
+
+    def _header_for(scope: str):
+        def header_for(subset: list[dict], index: int, of: int) -> str:
+            notes_txt = "\n".join(
+                f"- [{n['id']}] {n['text']} (by {n['author']}, {(n['createdAt'] or '')[:10]}, "
+                f"cited {n.get('citedCount', 0)}x)"
+                + ("  [DISPUTED — unresolved by the human; never merge or expire]" if n.get("needsHuman") else "")
+                for n in subset)
+            part = ("" if of <= 1 else
+                    f" — CHUNK {index + 1} of {of}: you see only these {len(subset)} notes; "
+                    "judge them on their own, never reference a note you cannot see")
+            return (f"These are the desk's ACTIVE knowledge notes in scope '{scope}'{part} "
+                    f"(not trading rules — market/source knowledge):\n{notes_txt}")
+        return header_for
+
     for scope, notes in groups.items():
-        notes_txt = "\n".join(
-            f"- [{n['id']}] {n['text']} (by {n['author']}, {(n['createdAt'] or '')[:10]}, "
-            f"cited {n.get('citedCount', 0)}x)"
-            + ("  [DISPUTED — unresolved by the human; never merge or expire]" if n.get("needsHuman") else "")
-            for n in notes)
-        expected_revisions = {n["id"]: int(n.get("revisionNo") or 1) for n in notes}
-        header = (f"These are the desk's ACTIVE knowledge notes in scope '{scope}' "
-                  f"(not trading rules — market/source knowledge):\n{notes_txt}")
+        if budget["chunks"] <= 0:
+            applied["groupsChunkDeferred"].append(scope)  # untouched this run — visible
+            continue
         attempt_at = _now_iso()
+        prog = cycle["progress"].setdefault(scope, {"status": "pending", "attempts": 0, "lastAttempt": None,
+                                                    "retryAfter": None, "batchId": None, "error": None})
         try:
-            cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
-            op, calls = await _judge(
-                client, model=model,
-                system=AUDIT_SYSTEM + json.dumps(RuleAuditOpinion.model_json_schema(),
-                                                 separators=(",", ":")),
-                header=header, cap=cap)
-            usage_all += [{"scope": scope, **c} for c in calls]
-        except Exception as exc:
-            calls = list(getattr(exc, "calls", None) or [])
-            usage_all += [{"scope": scope, **c} for c in calls]
-            usage_all.append({"scope": scope, "error": str(exc)[:160]})
-            log.warning("knowledge audit failed for %s: %s", scope, exc)
+            outcome = await _audit_scope(
+                eng, client, model=model, scope=scope, notes=notes, system=system,
+                header_for=_header_for(scope), prog=prog, save=lambda: _save_cycle(eng, cycle),
+                run_id=run_id, mode=mode, cap=cap, budget=budget,
+                author=f"knowledge-audit:{run_id[:8]}", usage_all=usage_all, applied=applied,
+                chunk_cfg=chunk_cfg)
+        except asyncio.CancelledError:
+            applied["chunks"][scope] = _chunk_summary(prog)
+            await _finish(eng, run_id, status="failed",
+                          opinion={"error": "cancelled: shutdown/restart", "usage": usage_all,
+                                   "chunks": applied["chunks"]})
+            rep.update(status="failed", reason="cancelled")
+            raise
+        applied["chunks"][scope] = _chunk_summary(prog)
+        if outcome == "failed":
+            err = "; ".join(e.get("error") or "" for e in (prog.get("chunks") or {}).values()
+                            if e.get("status") == "failed") or "judge failed"
             applied["groupsFailed"].append(scope)      # visible, never silent
-            _mark(cycle, scope, ok=False, now=attempt_at, error=str(exc))
-            await _record_failed_group(eng, run_id, scope, str(exc), calls)
+            _mark(cycle, scope, ok=False, now=attempt_at, error=err)
             await _save_cycle(eng, cycle)
             continue
-        live_ids = {n["id"] for n in notes}
-        try:
-            got = await svc.apply_knowledge_batch(
-                scope=scope, merges=list(op.merges), expires=list(op.expires),
-                contradictions=list(op.contradictions),
-                author=f"knowledge-audit:{run_id[:8]}", run_id=run_id,
-                live_ids=live_ids, batch_id=f"{run_id}:{scope}",
-                expected_revisions=expected_revisions, mode=mode)
-        except Exception as exc:
-            log.warning("knowledge audit apply aborted for %s: %s", scope, exc)
-            applied["groupsFailed"].append(scope)
-            usage_all.append({"scope": scope, "error": f"apply aborted: {exc}"[:160]})
-            _mark(cycle, scope, ok=False, now=attempt_at, error=f"apply aborted: {exc}")
-            await _record_failed_group(eng, run_id, scope, f"apply aborted: {exc}", calls)
+        if outcome == "deferred":
+            applied["groupsChunkDeferred"].append(scope)
+            prog["lastAttempt"] = attempt_at            # progress made, not an attempt
             await _save_cycle(eng, cycle)
             continue
-        got = got or {}
-        _mark(cycle, scope, ok=True, now=attempt_at, batch_id=f"{run_id}:{scope}",
+        _mark(cycle, scope, ok=True, now=attempt_at,
+              batch_id=(prog.get("chunks") or {}).get(prog["manifest"]["chunkIds"][-1], {}).get("batchId"),
               revisions_hash=_revisions_hash(notes))
         await _save_cycle(eng, cycle)
-        applied["merged"] += got.get("merged", 0)
-        applied["expired"] += got.get("expired", 0)
-        applied["newNotes"] += got.get("newNotes", [])
-        applied["flagged"] += [i for i in got.get("flagged", []) if i not in applied["flagged"]]
-        applied["rejected"] += got.get("rejected", [])
         applied["groups"] += 1
     applied["contradictions"] = len(applied["flagged"])
     applied["mode"] = mode
@@ -634,6 +928,8 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None,
         bits = []
         if applied["groupsFailed"]:
             bits.append(f"failed {len(applied['groupsFailed'])}")
+        if applied["groupsChunkDeferred"]:
+            bits.append(f"chunk budget held {len(applied['groupsChunkDeferred'])}")
         if ready2:
             bits.append(f"deferred {len(ready2)}")
         if backoff2:
