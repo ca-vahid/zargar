@@ -1002,6 +1002,8 @@ class PlanRunner(SessionListener):
                 ap.expires_session = str(prior_state["expiresSession"])
             if prior_state.get("riskWarning"):
                 ap.risk_warning = str(prior_state["riskWarning"])
+            with contextlib.suppress(Exception):
+                self.restore_extras(ap, prior_state)         # hook: before the first resumed read (Team2 R1/R3)
         if not restored and not bool(self.rt("arm_expired_plans", False)):
             # a plan whose LAST session has already closed can never fire: refuse it
             # here instead of arming-then-expiring it (22 stale runs from a finished
@@ -1697,6 +1699,10 @@ class PlanRunner(SessionListener):
                          "planFor": ap.plan_for, "horizonSessions": ap.horizon_sessions,
                          "sessionsUsed": ap.sessions_used, "expiresSession": ap.expires_session,
                          "riskWarning": ap.risk_warning}
+                with contextlib.suppress(Exception):
+                    # hook (2026-09-14): a technique's own durable state rides the ORDINARY persist — Team2's
+                    # execution overlay (refused fires) and decision watermark; an occasional plan stamp is not a write path
+                    state.update(dict(self.state_extras(ap) or {}))
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
                                          portfolio_id=ap.config.portfolio_id, mode=ap.config.mode,
@@ -2353,6 +2359,13 @@ class PlanRunner(SessionListener):
             await self._persist(ap)
             self._publish(ap, "fired")
             return
+        # R2 (2026-09-14): ONE gate at the new-order boundary for every money path — initial entries, adds riding
+        # a cached contract, retries — judged on the wall clock after the awaited quote/review work above
+        if journal and cfg.mode in ("proposal", "auto"):
+            gate = await self._entry_gated(ap, trade, "pre_order")
+            if gate:
+                await self._refuse_entry(ap, trade, gate, stage="pre_order")
+                return
         # execution mode
         if cfg.mode == "alert" or not journal:
             trade.status = "alert"
@@ -2637,6 +2650,11 @@ class PlanRunner(SessionListener):
             trade.instrument, trade.multiplier = "shares", 1.0
         trade.qty = qty
         trade.limit_price = limit
+        # R2: re-judged after sizing/pricing, immediately before the intent is written
+        gate = await self._entry_gated(ap, trade, "order")
+        if gate:
+            await self._refuse_entry(ap, trade, gate, stage="order")
+            return
         trade.status = "submitting"
         intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=order_symbol, sec_type=sec_type, side="BUY",
                              qty=qty, order_type="LMT", limit_price=limit, tif="DAY", source="technique", technique_id=self.TECHNIQUE_ID)
@@ -2670,7 +2688,7 @@ class PlanRunner(SessionListener):
                 trade._collar_retried = True
                 q = self.engine.quotes.get(order_symbol)
                 new_limit = round(float(q.ask), 2) if q is not None and q.ask and q.ask > 0 else None
-                if new_limit and new_limit < limit:
+                if new_limit and new_limit < limit and not await self._entry_gated(ap, trade, "retry"):
                     self._log(ap, "entry_reprice",
                               f"{trade.trigger_id}: collar refused {limit:.2f} but the market came to us "
                               f"— retrying once at the live ask {new_limit:.2f}", trigger=trade.trigger_id)
@@ -3163,6 +3181,42 @@ class PlanRunner(SessionListener):
                             contract: dict | None, *, contracts: int | None) -> str | None:
         """Proposal mode: create the proposal the user approves; return its id (None = could not)."""
         return None
+
+    def state_extras(self, ap: "ArmedPlan") -> dict:
+        """Hook: technique-owned keys merged into the persisted armed state on EVERY `_persist` (Team2's execution
+        overlay + decision watermark, 2026-09-14). Return {} to add nothing."""
+        return {}
+
+    def restore_extras(self, ap: "ArmedPlan", state: dict) -> None:
+        """Hook: the counterpart of `state_extras`, called while re-arming a restored plan BEFORE the seed replay
+        runs the technique's first read."""
+        return None
+
+    async def entry_gate(self, ap: "ArmedPlan", trade: "Trade", stage: str) -> str | None:
+        """Hook: the reason a NEW order must not be sent now (None = go). Called at `pre_order` (after the contract
+        pick and the review), `order` (after sizing, right before the intent) and `retry` (the collar re-price).
+        Exits and cancels never pass through it."""
+        return None
+
+    async def _entry_gated(self, ap: "ArmedPlan", trade: "Trade", stage: str) -> str | None:
+        try:
+            why = await self._hook("entry_gate", self.entry_gate(ap, trade, stage))
+        except Exception as exc:  # noqa: BLE001 - a broken gate refuses (fail closed on a money path)
+            log.exception("entry_gate hook failed")
+            why = f"entry gate failed: {exc}"
+        if why:
+            self._log(ap, "entry_gate_refused", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id, stage=stage)
+        return why or None
+
+    async def _refuse_entry(self, ap: "ArmedPlan", trade: "Trade", why: str, *, stage: str) -> None:
+        trade.status = "skipped"
+        trade.reason = why
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "entry_gate_refused",
+                "stage": stage, "why": why, "ts": trade.fired_ts}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+        await self._persist(ap)
+        self._publish(ap, "fired")
 
     async def after_fire(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade",
                          judgement: "FireJudgement", bar: Bar) -> None:
