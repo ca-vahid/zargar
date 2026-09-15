@@ -403,7 +403,8 @@ class SignalService:
     async def add_tip_note(self, scope: str, text: str, *, author: str = "user",
                            signal_id: str | None = None,
                            run_id: str | None = None,
-                           family_dedupe: bool = True) -> dict:
+                           family_dedupe: bool = True,
+                           staged: bool = False) -> dict:
         from ..models import TipNote
         scope = self.normalize_scope(scope)          # KB-07: every writer, one gate
         text = (text or "").strip()
@@ -422,6 +423,16 @@ class SignalService:
                       author=author[:80], signal_id=signal_id, run_id=run_id,
                       valid_until=valid_until,
                       revised_at=born, revision_no=1)   # KB-03: known-from baseline at birth
+        if staged:
+            # EOD-03 (2026-09-14): a MODEL-written governing rule is a PROPOSAL,
+            # not policy — three retros promoted reviewed hypotheses ("from
+            # HYPOTHESIS to operative policy") into the live rulebook and the
+            # next appraisal was reading them 17 s later. Born needs_human: it
+            # never supersedes a live family member, it is rendered as pending
+            # in every run, and only a person (dispute release / reviewed batch)
+            # can make it operative.
+            row.needs_human = True
+            family_dedupe = False
         # V65-KB-01 (2026-09-13): the row and its rule-family CLASSIFICATION
         # commit in ONE transaction — a newcomer that conflicts with a disputed
         # family member is born disputed; clean family members are superseded
@@ -439,9 +450,15 @@ class SignalService:
                 family = await self._classify_rule_family(session, row, born)
             await session.commit()
         note = self.note_dict(row)
-        await self.engine.journal.append(ev.TIP_NOTE_ADDED, note,
+        await self.engine.journal.append(ev.TIP_NOTE_ADDED, {**note, **({"staged": True} if staged else {})},
                                          aggregate_type="signal",
                                          aggregate_id=signal_id or row.id)
+        if staged:
+            with contextlib.suppress(Exception):
+                await self.engine.journal.append(
+                    ev.TIP_RULE_AUDITED, {"proposed": row.id, "by": author[:80], "via": "model-save_note",
+                                          "status": "pending-review"},
+                    aggregate_type="signal", aggregate_id=row.id)
         if family:
             with contextlib.suppress(Exception):
                 await self.engine.journal.append(
@@ -3047,7 +3064,8 @@ class SignalService:
         sh_graded = sh_hits = 0
         pf = next((p for p in eng.positions.portfolios()
                    if p.get("kind") == "shadow" and (p.get("book") or "immediate") == "immediate"
-                   and p.get("sourceName") == source), None)
+                   and p.get("sourceName") == source
+                   and not p.get("quarantined")), None)       # EOD-09: a corrupted book grades nothing
         if pf is not None:
             cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=20)
             from ..models import Execution
@@ -3267,6 +3285,12 @@ async def attach_signal_layer(engine) -> None:
     engine.proposals.start()
     # rescue any mirrored images that only have (expiring) CDN links
     engine.signals_service.start_media_catchup()
+    # EOD-01 (2026-09-14): intake liveness monitor — journals a stall and its recovery
+    try:
+        from ..techniques.tip.intake_liveness import monitor_loop as _intake_monitor
+        engine._tasks.append(asyncio.create_task(_intake_monitor(engine), name="tip-intake-liveness"))
+    except Exception:
+        log.exception("intake liveness monitor did not start")
     # POST-SOAK 4.1/4.3: cold parks re-verify, error content retries once
     engine.signals_service.start_recovery()
     # KB-03: unversioned legacy notes get their known-from baseline NOW (an

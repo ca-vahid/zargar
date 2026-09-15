@@ -665,6 +665,7 @@ async def _finish(eng, run_id: str, *, status: str, opinion: dict) -> None:
             if row is not None:
                 row.status = status
                 row.opinion = opinion
+                row.finished_at = dt.datetime.now(dt.timezone.utc)      # EOD-08: terminal rows carry their end
                 row.trace = list(row.trace or []) + [
                     {"seq": len(row.trace or []), "kind": "final",
                      "text": opinion.get("summary") or opinion.get("error") or status,

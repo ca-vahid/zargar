@@ -69,6 +69,12 @@ class Portfolio(Base):
     # audit trail, but out of every list and total - the Practice reset gave each technique
     # its own book and the old shared one must not count toward the $40k.
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # EOD-09 (2026-09-14): a research book whose results are CORRUPTED (the APLD
+    # same-symbol-leg runaway left `ab` 40,600 shares short) is quarantined: its
+    # executions stay as evidence, but lane comparisons and source confidence
+    # never read it until a person reconciles and clears the flag.
+    quarantined: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    quarantine_note: Mapped[str | None] = mapped_column(String(400))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

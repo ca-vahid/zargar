@@ -1581,6 +1581,26 @@ producer payload or risk setting changed. The journal registry invariant passes.
   the fix loop is untested (lesson for the next activation: shadow for a session first, even
   when the reviewer signs off).
 
+### Tips EOD review fixes — 2026-09-14 evening (v0.7.73, `reviews/2026-09-14-eod-response.md`)
+
+- **Invariant 21 — the intake pipe proves liveness.** `gateway_status.json` (every 30 s) + the
+  gateway's idle watchdog (no frame for 180 s → reconnect) + `GET /api/tip/intake/liveness` +
+  `TipIntakeStalled`/`TipIntakeRecovered`. "API health ok" never implied delivery: 26 RTH
+  messages arrived after the close on 2026-09-14 with the app healthy throughout.
+- **Invariant 22 — a model cannot self-certify policy.** Under propose-only maintenance every
+  analyst-written `rule` is born `needs_human` (a proposal), never supersedes a live rule and is
+  rendered as PENDING REVIEW; only a person (dispute release / reviewed batch) makes it operative.
+- **Invariant 23 — a Practice option fill needs an eligible session** (`sim.option_session_open`,
+  09:30–16:00 ET on a trading day; `AppConfig.sim_option_sessions`, tests off). A fill at 04:01 ET
+  is not market evidence.
+- **Shared engine:** sim fill handling left the quote→bars critical path (bounded ordered queue);
+  the position watchdog runs per-position steps (a blocked position never stalls another's
+  protective retry; `execution.watch_pass_timeout_seconds` 5). Restart readiness counts running
+  Tips paid work (`tipRuns`, `tipRunsStale`). Research books can be quarantined
+  (`Portfolio.quarantined`, `POST /api/portfolios/{id}/quarantine`) — quarantined lanes grade nothing.
+- **Deploy-intent lease (not built):** until one exists, a desk checks the `ZargarRestart` task's
+  LastRunTime and the running checkout's `git log -1` before triggering; if either moved in the
+  last 5 minutes, wait a tick (the 11:45/11:50 collision).
 
 ### Restart: exclusive deploy lease and a verified entry pause — 2026-09-14 (R4 of the EOD handoff; v0.7.73)
 
