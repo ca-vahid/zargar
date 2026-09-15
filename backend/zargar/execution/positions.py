@@ -149,6 +149,7 @@ class Managed:
     last_tf_bar_ts: int | None = None
     venue_stop_order_id: str | None = None
     venue_stop_at: float | None = None
+    venue_stop_qty: float | None = None   # the quantity resting at the venue (RKT 2026-09-15: a trim left a 148-share stop on 89 held)
     attention: list[str] = field(default_factory=list)
     halt_entries: bool = False           # set by reconciliation on unexplained drift
     extras: dict = field(default_factory=dict)   # technique-owned facts (tips: riskPlan, geometry exception state); never read by the evaluator
@@ -206,6 +207,7 @@ class Managed:
             "closeReason": self.close_reason,
             "lastTfBarTs": self.last_tf_bar_ts,
             "venueStopOrderId": self.venue_stop_order_id, "venueStopAt": self.venue_stop_at,
+            "venueStopQty": self.venue_stop_qty,
             "attention": self.attention, "haltEntries": self.halt_entries,
             "extras": dict(self.extras or {}),
         }
@@ -404,6 +406,11 @@ class PositionManager:
                 for x in p.exits:
                     if x.get("orderId") and x.get("status") in (None, "SUBMITTED", "WORKING", "PARTIALLY_FILLED"):
                         self._register_exit_order(p, x["orderId"])
+                # the resting venue GTC stop is an exit order too: its fill after a
+                # restart must reach this position (RKT 2026-09-15: the stop filled 148
+                # at 11:17 ET and the manager, which had forgotten the id, kept 89 open)
+                if p.status == "open" and p.venue_stop_order_id:
+                    self._register_exit_order(p, p.venue_stop_order_id)
                 # the feeds must follow the position across a restart: the stop
                 # is judged on the UNDERLYING's bars/quotes and the premium stop
                 # on each leg's — RKLB's underlying went unwatched after an
@@ -437,6 +444,7 @@ class PositionManager:
             close_reason=st.get("closeReason"),
             last_tf_bar_ts=st.get("lastTfBarTs"),
             venue_stop_order_id=st.get("venueStopOrderId"), venue_stop_at=st.get("venueStopAt"),
+            venue_stop_qty=st.get("venueStopQty"),
             attention=list(st.get("attention") or []), halt_entries=bool(st.get("haltEntries")),
             extras=dict(cfg.get("extras") or {}),
         )
@@ -455,6 +463,7 @@ class PositionManager:
                       "openedMs": p.opened_ms, "closedMs": p.closed_ms, "lastTfBarTs": p.last_tf_bar_ts,
                       "closeReason": p.close_reason,
                       "venueStopOrderId": p.venue_stop_order_id, "venueStopAt": p.venue_stop_at,
+                      "venueStopQty": p.venue_stop_qty,
                       "attention": p.attention, "haltEntries": p.halt_entries}
                 if row is None:
                     row = ManagedPositionRow(id=p.id, technique=p.technique, symbol=p.symbol,
@@ -708,13 +717,18 @@ class PositionManager:
         stop = stop_price(p.policy, p.state)
         if stop is None:
             return
-        if p.venue_stop_order_id and p.venue_stop_at is not None and abs(p.venue_stop_at - stop) < 1e-9:
+        leg = stk[0]
+        want_qty = float(abs(leg.qty))
+        # unchanged price AND quantity: the resting stop is right. A trim that
+        # reduced the leg must resize it - the old stop kept the ORIGINAL size and
+        # sold 148 RKT against 89 held (2026-09-15, a 59-share unintended short)
+        if (p.venue_stop_order_id and p.venue_stop_at is not None and abs(p.venue_stop_at - stop) < 1e-9
+                and p.venue_stop_qty is not None and abs(float(p.venue_stop_qty) - want_qty) < 1e-9):
             return
         from ..orders import OrderIntent
         if p.venue_stop_order_id:
             with contextlib.suppress(Exception):
                 await self.engine.orders.cancel(p.venue_stop_order_id)
-        leg = stk[0]
         intent = OrderIntent(portfolio_id=p.portfolio_id, symbol=leg.symbol, sec_type="STK", side="SELL",
                              qty=abs(leg.qty), order_type="STP", stop_price=round(float(stop), 2), tif="GTC",
                              source="technique", technique_id=p.technique, tags=list(p.tags), reduce_only=True)
@@ -722,6 +736,7 @@ class PositionManager:
             res = await self.engine.orders.place(intent)
             p.venue_stop_order_id = res.get("id")
             p.venue_stop_at = float(stop)
+            p.venue_stop_qty = want_qty
             self._register_exit_order(p, p.venue_stop_order_id)
             self._log(p, "venue_stop", f"resting GTC stop {stop:.2f} at the venue (order {str(res.get('id'))[:8]})")
         except Exception as exc:
@@ -1184,6 +1199,10 @@ class PositionManager:
                             await self._alert(p, message, stage="policy_adapter")
                 if not p.open_legs and p.status != "closed":
                     await self._mark_closed(p, reason=rec.get("reason") or rec["kind"])
+                elif rec.get("kind") != "venue_stop" and o["id"] != p.venue_stop_order_id:
+                    # a partial exit (trim) changed the held quantity: the resting venue
+                    # stop must cover exactly what remains, never the pre-trim size
+                    await self._ensure_venue_stop(p)
                 await self._persist(p)
         elif status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
             rec["status"] = status

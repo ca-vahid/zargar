@@ -27,6 +27,7 @@ export const CHANGELOG: Release[] = [
       { tag: "improved", text: "Entry-variant study: the sampling claim is held through finalization (timer and recovery never double-fetch); research fixtures carry capture-time verdict fields." },
       { tag: "fixed", text: "A failed structured read of the incident store is 'integrity state unavailable' (never overridable) rather than a partial identity from prose; position adoption uses the claimed vehicle and risk plan as well as the claimed exit plan." },
       { tag: "fixed", text: "Tips intake liveness no longer flaps Stalled/Recovered during a busy session: envelopes briefly in flight are a warning; only envelopes pending through three consecutive checks (about six minutes) are a stall." },
+      { tag: "fixed", text: "Positions: the resting venue GTC stop is resized after every trim (it used to keep the original size - RKT sold 148 shares against 89 held on 2026-09-15, a 59-share unintended short, reconciled the same day) and is re-registered after a restart so its fill reaches the position instead of leaving a phantom open lot." },
     ],
   },
   {

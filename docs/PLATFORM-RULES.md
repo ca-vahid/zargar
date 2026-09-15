@@ -2012,3 +2012,16 @@ entries that were still submitting/working. Shared behaviour; no threshold chang
   (`tests/test_proposal_readiness.py::test_non_tip_proposals_keep_the_old_approval_path`). Tips
   cards additionally carry `context.readiness` (typed blockers, final plan, fingerprint) and a
   human approval revalidates first — see `docs/techniques/tip/README.md` "Approval cards".
+
+- **2026-09-15 (Tips desk, shared execution) - the venue GTC stop must follow the held quantity.**
+  `PositionManager._ensure_venue_stop` re-placed the resting stop only when its PRICE changed; a
+  trim reduced the leg but the venue kept the pre-trim size (RKT: 148 resting on 89 held; the
+  stop filled 148 at 11:17 ET and left the Tips Practice book short 59). Two restarts earlier
+  that morning had also dropped the stop's order id from the exit index (restore re-registered
+  only `state.exits`), so the fill never reached the position and it stayed open at 89. Fix:
+  `venueStopQty` is persisted, a price OR quantity mismatch cancels/replaces, every partial exit
+  fill re-runs `_ensure_venue_stop`, and restore re-registers `venueStopOrderId`. The exit path's
+  venue clamp (a leg is marked flat when the venue holds nothing on that side) is what kept the
+  phantom from selling again. Reconciled by hand the same day: reduce-only BUY 59 in Practice
+  (order `4bfd05bd`, -$9.16 on the excess short) and the managed position closed through the
+  clamped path with no order. Test: `tests/test_position_venue_stop_resize.py`.
