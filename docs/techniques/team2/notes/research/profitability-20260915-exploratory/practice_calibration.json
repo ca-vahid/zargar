@@ -10,16 +10,21 @@
   "day_loss_limit_mult": 2.0,
   "technique_pause_pct": 10.0,
   "book_breaker_pct": 15.0,
-  "max_losses": 2
+  "max_losses": 2,
+  "fee_per_contract_side": 1.04
  },
  "datasetVersion": "27516b6136abad09628fee56507a601467b8cc3379bd7541b34f55d27e8ae7c4",
  "arms": {
   "baseline@cap40": {
+   "approximate": true,
    "cap": 40,
    "taken": 36,
    "skippedConcurrent": 3,
    "skippedLossCap": 15,
    "skippedDayHalt": 0,
+   "skippedBreaker": 0,
+   "breakerTripped": false,
+   "feesOnIntegerQty$": 2134.0,
    "total$": 1374.0,
    "endEquity": 11308.0,
    "maxDrawdown$": -993.0,
@@ -75,6 +80,7 @@
      "contracts": 24,
      "invested$": 1149.0,
      "stopRisk$": 287.0,
+     "fees$": 74.88,
      "pnlPct": 45.3,
      "pnl$": 520.0
     },
@@ -87,6 +93,7 @@
      "contracts": 40,
      "invested$": 1143.0,
      "stopRisk$": 286.0,
+     "fees$": 83.2,
      "pnlPct": -28.2,
      "pnl$": -323.0
     },
@@ -99,6 +106,7 @@
      "contracts": 26,
      "invested$": 1208.0,
      "stopRisk$": 302.0,
+     "fees$": 54.08,
      "pnlPct": -29.1,
      "pnl$": -352.0
     },
@@ -111,6 +119,7 @@
      "contracts": 18,
      "invested$": 1148.0,
      "stopRisk$": 287.0,
+     "fees$": 37.44,
      "pnlPct": 65.3,
      "pnl$": 749.0
     },
@@ -123,6 +132,7 @@
      "contracts": 17,
      "invested$": 1216.0,
      "stopRisk$": 304.0,
+     "fees$": 35.36,
      "pnlPct": -9.9,
      "pnl$": -121.0
     },
@@ -135,6 +145,7 @@
      "contracts": 40,
      "invested$": 850.0,
      "stopRisk$": 212.0,
+     "fees$": 83.2,
      "pnlPct": 43.9,
      "pnl$": 373.0
     },
@@ -147,6 +158,7 @@
      "contracts": 28,
      "invested$": 639.0,
      "stopRisk$": 160.0,
+     "fees$": 58.24,
      "pnlPct": 32.1,
      "pnl$": 205.0
     },
@@ -159,6 +171,7 @@
      "contracts": 21,
      "invested$": 644.0,
      "stopRisk$": 161.0,
+     "fees$": 43.68,
      "pnlPct": 6.6,
      "pnl$": 43.0
     },
@@ -171,6 +184,7 @@
      "contracts": 25,
      "invested$": 1316.0,
      "stopRisk$": 329.0,
+     "fees$": 52.0,
      "pnlPct": -7.2,
      "pnl$": -95.0
     },
@@ -183,6 +197,7 @@
      "contracts": 25,
      "invested$": 1300.0,
      "stopRisk$": 325.0,
+     "fees$": 52.0,
      "pnlPct": -7.3,
      "pnl$": -95.0
     },
@@ -195,6 +210,7 @@
      "contracts": 23,
      "invested$": 1294.0,
      "stopRisk$": 323.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -207,6 +223,7 @@
      "contracts": 23,
      "invested$": 1277.0,
      "stopRisk$": 319.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -219,6 +236,7 @@
      "contracts": 30,
      "invested$": 1279.0,
      "stopRisk$": 320.0,
+     "fees$": 62.4,
      "pnlPct": -14.4,
      "pnl$": -185.0
     },
@@ -231,6 +249,7 @@
      "contracts": 36,
      "invested$": 1260.0,
      "stopRisk$": 315.0,
+     "fees$": 74.88,
      "pnlPct": 15.7,
      "pnl$": 198.0
     },
@@ -243,6 +262,7 @@
      "contracts": 17,
      "invested$": 626.0,
      "stopRisk$": 156.0,
+     "fees$": 35.36,
      "pnlPct": 9.4,
      "pnl$": 59.0
     },
@@ -255,6 +275,7 @@
      "contracts": 17,
      "invested$": 616.0,
      "stopRisk$": 154.0,
+     "fees$": 35.36,
      "pnlPct": -3.0,
      "pnl$": -19.0
     },
@@ -267,6 +288,7 @@
      "contracts": 25,
      "invested$": 1280.0,
      "stopRisk$": 320.0,
+     "fees$": 52.0,
      "pnlPct": -18.5,
      "pnl$": -237.0
     },
@@ -279,6 +301,7 @@
      "contracts": 26,
      "invested$": 1250.0,
      "stopRisk$": 312.0,
+     "fees$": 54.08,
      "pnlPct": 37.3,
      "pnl$": 466.0
     },
@@ -291,6 +314,7 @@
      "contracts": 39,
      "invested$": 1307.0,
      "stopRisk$": 327.0,
+     "fees$": 81.12,
      "pnlPct": -30.9,
      "pnl$": -404.0
     },
@@ -303,6 +327,7 @@
      "contracts": 40,
      "invested$": 1000.0,
      "stopRisk$": 250.0,
+     "fees$": 83.2,
      "pnlPct": -14.8,
      "pnl$": -148.0
     },
@@ -315,6 +340,7 @@
      "contracts": 40,
      "invested$": 874.0,
      "stopRisk$": 218.0,
+     "fees$": 83.2,
      "pnlPct": -32.1,
      "pnl$": -280.0
     },
@@ -327,6 +353,7 @@
      "contracts": 40,
      "invested$": 858.0,
      "stopRisk$": 215.0,
+     "fees$": 83.2,
      "pnlPct": 149.8,
      "pnl$": 1286.0
     },
@@ -339,6 +366,7 @@
      "contracts": 40,
      "invested$": 866.0,
      "stopRisk$": 217.0,
+     "fees$": 83.2,
      "pnlPct": -13.0,
      "pnl$": -113.0
     },
@@ -351,6 +379,7 @@
      "contracts": 20,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 41.6,
      "pnlPct": -3.0,
      "pnl$": -41.0
     },
@@ -363,6 +392,7 @@
      "contracts": 29,
      "invested$": 1976.0,
      "stopRisk$": 494.0,
+     "fees$": 60.32,
      "pnlPct": -13.1,
      "pnl$": -259.0
     },
@@ -375,6 +405,7 @@
      "contracts": 28,
      "invested$": 1312.0,
      "stopRisk$": 328.0,
+     "fees$": 58.24,
      "pnlPct": 16.6,
      "pnl$": 218.0
     },
@@ -387,6 +418,7 @@
      "contracts": 29,
      "invested$": 1974.0,
      "stopRisk$": 493.0,
+     "fees$": 60.32,
      "pnlPct": -40.4,
      "pnl$": -798.0
     },
@@ -399,6 +431,7 @@
      "contracts": 19,
      "invested$": 1230.0,
      "stopRisk$": 307.0,
+     "fees$": 39.52,
      "pnlPct": 57.5,
      "pnl$": 706.0
     },
@@ -411,6 +444,7 @@
      "contracts": 13,
      "invested$": 668.0,
      "stopRisk$": 167.0,
+     "fees$": 27.04,
      "pnlPct": -12.2,
      "pnl$": -82.0
     },
@@ -423,6 +457,7 @@
      "contracts": 35,
      "invested$": 1331.0,
      "stopRisk$": 333.0,
+     "fees$": 72.8,
      "pnlPct": -19.2,
      "pnl$": -255.0
     },
@@ -435,6 +470,7 @@
      "contracts": 25,
      "invested$": 1298.0,
      "stopRisk$": 325.0,
+     "fees$": 52.0,
      "pnlPct": 32.3,
      "pnl$": 420.0
     },
@@ -447,6 +483,7 @@
      "contracts": 13,
      "invested$": 666.0,
      "stopRisk$": 167.0,
+     "fees$": 27.04,
      "pnlPct": 33.1,
      "pnl$": 221.0
     },
@@ -459,6 +496,7 @@
      "contracts": 40,
      "invested$": 964.0,
      "stopRisk$": 241.0,
+     "fees$": 83.2,
      "pnlPct": 46.6,
      "pnl$": 450.0
     },
@@ -471,6 +509,7 @@
      "contracts": 40,
      "invested$": 1510.0,
      "stopRisk$": 378.0,
+     "fees$": 83.2,
      "pnlPct": -20.9,
      "pnl$": -315.0
     },
@@ -483,6 +522,7 @@
      "contracts": 32,
      "invested$": 1945.0,
      "stopRisk$": 486.0,
+     "fees$": 66.56,
      "pnlPct": -7.9,
      "pnl$": -154.0
     },
@@ -495,17 +535,22 @@
      "contracts": 31,
      "invested$": 1968.0,
      "stopRisk$": 492.0,
+     "fees$": 64.48,
      "pnlPct": -10.7,
      "pnl$": -211.0
     }
    ]
   },
   "baseline@cap50": {
+   "approximate": true,
    "cap": 50,
    "taken": 36,
    "skippedConcurrent": 3,
    "skippedLossCap": 15,
    "skippedDayHalt": 0,
+   "skippedBreaker": 0,
+   "breakerTripped": false,
+   "feesOnIntegerQty$": 2294.0,
    "total$": 1700.0,
    "endEquity": 11634.0,
    "maxDrawdown$": -1013.0,
@@ -561,6 +606,7 @@
      "contracts": 24,
      "invested$": 1149.0,
      "stopRisk$": 287.0,
+     "fees$": 74.88,
      "pnlPct": 45.3,
      "pnl$": 520.0
     },
@@ -573,6 +619,7 @@
      "contracts": 43,
      "invested$": 1229.0,
      "stopRisk$": 307.0,
+     "fees$": 89.44,
      "pnlPct": -28.2,
      "pnl$": -347.0
     },
@@ -585,6 +632,7 @@
      "contracts": 26,
      "invested$": 1208.0,
      "stopRisk$": 302.0,
+     "fees$": 54.08,
      "pnlPct": -29.1,
      "pnl$": -352.0
     },
@@ -597,6 +645,7 @@
      "contracts": 18,
      "invested$": 1148.0,
      "stopRisk$": 287.0,
+     "fees$": 37.44,
      "pnlPct": 65.3,
      "pnl$": 749.0
     },
@@ -609,6 +658,7 @@
      "contracts": 17,
      "invested$": 1216.0,
      "stopRisk$": 304.0,
+     "fees$": 35.36,
      "pnlPct": -9.9,
      "pnl$": -121.0
     },
@@ -621,6 +671,7 @@
      "contracts": 50,
      "invested$": 1062.0,
      "stopRisk$": 266.0,
+     "fees$": 104.0,
      "pnlPct": 43.9,
      "pnl$": 467.0
     },
@@ -633,6 +684,7 @@
      "contracts": 28,
      "invested$": 639.0,
      "stopRisk$": 160.0,
+     "fees$": 58.24,
      "pnlPct": 32.1,
      "pnl$": 205.0
     },
@@ -645,6 +697,7 @@
      "contracts": 21,
      "invested$": 644.0,
      "stopRisk$": 161.0,
+     "fees$": 43.68,
      "pnlPct": 6.6,
      "pnl$": 43.0
     },
@@ -657,6 +710,7 @@
      "contracts": 25,
      "invested$": 1316.0,
      "stopRisk$": 329.0,
+     "fees$": 52.0,
      "pnlPct": -7.2,
      "pnl$": -95.0
     },
@@ -669,6 +723,7 @@
      "contracts": 25,
      "invested$": 1300.0,
      "stopRisk$": 325.0,
+     "fees$": 52.0,
      "pnlPct": -7.3,
      "pnl$": -95.0
     },
@@ -681,6 +736,7 @@
      "contracts": 23,
      "invested$": 1294.0,
      "stopRisk$": 323.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -693,6 +749,7 @@
      "contracts": 23,
      "invested$": 1277.0,
      "stopRisk$": 319.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -705,6 +762,7 @@
      "contracts": 30,
      "invested$": 1279.0,
      "stopRisk$": 320.0,
+     "fees$": 62.4,
      "pnlPct": -14.4,
      "pnl$": -185.0
     },
@@ -717,6 +775,7 @@
      "contracts": 36,
      "invested$": 1260.0,
      "stopRisk$": 315.0,
+     "fees$": 74.88,
      "pnlPct": 15.7,
      "pnl$": 198.0
     },
@@ -729,6 +788,7 @@
      "contracts": 17,
      "invested$": 626.0,
      "stopRisk$": 156.0,
+     "fees$": 35.36,
      "pnlPct": 9.4,
      "pnl$": 59.0
     },
@@ -741,6 +801,7 @@
      "contracts": 18,
      "invested$": 652.0,
      "stopRisk$": 163.0,
+     "fees$": 37.44,
      "pnlPct": -3.0,
      "pnl$": -20.0
     },
@@ -753,6 +814,7 @@
      "contracts": 25,
      "invested$": 1280.0,
      "stopRisk$": 320.0,
+     "fees$": 52.0,
      "pnlPct": -18.5,
      "pnl$": -237.0
     },
@@ -765,6 +827,7 @@
      "contracts": 26,
      "invested$": 1250.0,
      "stopRisk$": 312.0,
+     "fees$": 54.08,
      "pnlPct": 37.3,
      "pnl$": 466.0
     },
@@ -777,6 +840,7 @@
      "contracts": 39,
      "invested$": 1307.0,
      "stopRisk$": 327.0,
+     "fees$": 81.12,
      "pnlPct": -30.9,
      "pnl$": -404.0
     },
@@ -789,6 +853,7 @@
      "contracts": 50,
      "invested$": 1250.0,
      "stopRisk$": 312.0,
+     "fees$": 104.0,
      "pnlPct": -14.8,
      "pnl$": -185.0
     },
@@ -801,6 +866,7 @@
      "contracts": 50,
      "invested$": 1092.0,
      "stopRisk$": 273.0,
+     "fees$": 104.0,
      "pnlPct": -32.1,
      "pnl$": -350.0
     },
@@ -813,6 +879,7 @@
      "contracts": 50,
      "invested$": 1073.0,
      "stopRisk$": 268.0,
+     "fees$": 104.0,
      "pnlPct": 149.8,
      "pnl$": 1607.0
     },
@@ -825,6 +892,7 @@
      "contracts": 50,
      "invested$": 1083.0,
      "stopRisk$": 271.0,
+     "fees$": 104.0,
      "pnlPct": -13.0,
      "pnl$": -141.0
     },
@@ -837,6 +905,7 @@
      "contracts": 20,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 41.6,
      "pnlPct": -3.0,
      "pnl$": -41.0
     },
@@ -849,6 +918,7 @@
      "contracts": 29,
      "invested$": 1976.0,
      "stopRisk$": 494.0,
+     "fees$": 60.32,
      "pnlPct": -13.1,
      "pnl$": -259.0
     },
@@ -861,6 +931,7 @@
      "contracts": 29,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 60.32,
      "pnlPct": 16.6,
      "pnl$": 226.0
     },
@@ -873,6 +944,7 @@
      "contracts": 29,
      "invested$": 1974.0,
      "stopRisk$": 493.0,
+     "fees$": 60.32,
      "pnlPct": -40.4,
      "pnl$": -798.0
     },
@@ -885,6 +957,7 @@
      "contracts": 20,
      "invested$": 1294.0,
      "stopRisk$": 324.0,
+     "fees$": 41.6,
      "pnlPct": 57.5,
      "pnl$": 744.0
     },
@@ -897,6 +970,7 @@
      "contracts": 13,
      "invested$": 668.0,
      "stopRisk$": 167.0,
+     "fees$": 27.04,
      "pnlPct": -12.2,
      "pnl$": -82.0
     },
@@ -909,6 +983,7 @@
      "contracts": 36,
      "invested$": 1369.0,
      "stopRisk$": 342.0,
+     "fees$": 74.88,
      "pnlPct": -19.2,
      "pnl$": -263.0
     },
@@ -921,6 +996,7 @@
      "contracts": 25,
      "invested$": 1298.0,
      "stopRisk$": 325.0,
+     "fees$": 52.0,
      "pnlPct": 32.3,
      "pnl$": 420.0
     },
@@ -933,6 +1009,7 @@
      "contracts": 13,
      "invested$": 666.0,
      "stopRisk$": 167.0,
+     "fees$": 27.04,
      "pnlPct": 33.1,
      "pnl$": 221.0
     },
@@ -945,6 +1022,7 @@
      "contracts": 50,
      "invested$": 1206.0,
      "stopRisk$": 301.0,
+     "fees$": 104.0,
      "pnlPct": 46.6,
      "pnl$": 562.0
     },
@@ -957,6 +1035,7 @@
      "contracts": 50,
      "invested$": 1888.0,
      "stopRisk$": 472.0,
+     "fees$": 104.0,
      "pnlPct": -20.9,
      "pnl$": -394.0
     },
@@ -969,6 +1048,7 @@
      "contracts": 32,
      "invested$": 1945.0,
      "stopRisk$": 486.0,
+     "fees$": 66.56,
      "pnlPct": -7.9,
      "pnl$": -154.0
     },
@@ -981,17 +1061,22 @@
      "contracts": 31,
      "invested$": 1968.0,
      "stopRisk$": 492.0,
+     "fees$": 64.48,
      "pnlPct": -10.7,
      "pnl$": -211.0
     }
    ]
   },
   "size_half@cap40": {
+   "approximate": true,
    "cap": 40,
    "taken": 36,
    "skippedConcurrent": 3,
    "skippedLossCap": 15,
    "skippedDayHalt": 0,
+   "skippedBreaker": 0,
+   "breakerTripped": false,
+   "feesOnIntegerQty$": 1982.0,
    "total$": 2231.0,
    "endEquity": 12165.0,
    "maxDrawdown$": -635.0,
@@ -1047,6 +1132,7 @@
      "contracts": 24,
      "invested$": 1149.0,
      "stopRisk$": 287.0,
+     "fees$": 74.88,
      "pnlPct": 45.3,
      "pnl$": 520.0
     },
@@ -1059,6 +1145,7 @@
      "contracts": 21,
      "invested$": 600.0,
      "stopRisk$": 150.0,
+     "fees$": 43.68,
      "pnlPct": -28.2,
      "pnl$": -169.0
     },
@@ -1071,6 +1158,7 @@
      "contracts": 26,
      "invested$": 1208.0,
      "stopRisk$": 302.0,
+     "fees$": 54.08,
      "pnlPct": -29.1,
      "pnl$": -352.0
     },
@@ -1083,6 +1171,7 @@
      "contracts": 18,
      "invested$": 1148.0,
      "stopRisk$": 287.0,
+     "fees$": 37.44,
      "pnlPct": 65.3,
      "pnl$": 749.0
     },
@@ -1095,6 +1184,7 @@
      "contracts": 17,
      "invested$": 1216.0,
      "stopRisk$": 304.0,
+     "fees$": 35.36,
      "pnlPct": -9.9,
      "pnl$": -121.0
     },
@@ -1107,6 +1197,7 @@
      "contracts": 40,
      "invested$": 850.0,
      "stopRisk$": 212.0,
+     "fees$": 83.2,
      "pnlPct": 43.9,
      "pnl$": 373.0
     },
@@ -1119,6 +1210,7 @@
      "contracts": 28,
      "invested$": 639.0,
      "stopRisk$": 160.0,
+     "fees$": 58.24,
      "pnlPct": 32.1,
      "pnl$": 205.0
     },
@@ -1131,6 +1223,7 @@
      "contracts": 21,
      "invested$": 644.0,
      "stopRisk$": 161.0,
+     "fees$": 43.68,
      "pnlPct": 6.6,
      "pnl$": 43.0
     },
@@ -1143,6 +1236,7 @@
      "contracts": 25,
      "invested$": 1316.0,
      "stopRisk$": 329.0,
+     "fees$": 52.0,
      "pnlPct": -7.2,
      "pnl$": -95.0
     },
@@ -1155,6 +1249,7 @@
      "contracts": 25,
      "invested$": 1300.0,
      "stopRisk$": 325.0,
+     "fees$": 52.0,
      "pnlPct": -7.3,
      "pnl$": -95.0
     },
@@ -1167,6 +1262,7 @@
      "contracts": 23,
      "invested$": 1294.0,
      "stopRisk$": 323.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -1179,6 +1275,7 @@
      "contracts": 23,
      "invested$": 1277.0,
      "stopRisk$": 319.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -1191,6 +1288,7 @@
      "contracts": 30,
      "invested$": 1279.0,
      "stopRisk$": 320.0,
+     "fees$": 62.4,
      "pnlPct": -14.4,
      "pnl$": -185.0
     },
@@ -1203,6 +1301,7 @@
      "contracts": 36,
      "invested$": 1260.0,
      "stopRisk$": 315.0,
+     "fees$": 74.88,
      "pnlPct": 15.7,
      "pnl$": 198.0
     },
@@ -1215,6 +1314,7 @@
      "contracts": 17,
      "invested$": 626.0,
      "stopRisk$": 156.0,
+     "fees$": 35.36,
      "pnlPct": 9.4,
      "pnl$": 59.0
     },
@@ -1227,6 +1327,7 @@
      "contracts": 18,
      "invested$": 652.0,
      "stopRisk$": 163.0,
+     "fees$": 37.44,
      "pnlPct": -3.0,
      "pnl$": -20.0
     },
@@ -1239,6 +1340,7 @@
      "contracts": 25,
      "invested$": 1280.0,
      "stopRisk$": 320.0,
+     "fees$": 52.0,
      "pnlPct": -18.5,
      "pnl$": -237.0
     },
@@ -1251,6 +1353,7 @@
      "contracts": 26,
      "invested$": 1250.0,
      "stopRisk$": 312.0,
+     "fees$": 54.08,
      "pnlPct": 37.3,
      "pnl$": 466.0
     },
@@ -1263,6 +1366,7 @@
      "contracts": 20,
      "invested$": 670.0,
      "stopRisk$": 168.0,
+     "fees$": 41.6,
      "pnlPct": -30.9,
      "pnl$": -207.0
     },
@@ -1275,6 +1379,7 @@
      "contracts": 40,
      "invested$": 1000.0,
      "stopRisk$": 250.0,
+     "fees$": 83.2,
      "pnlPct": -14.8,
      "pnl$": -148.0
     },
@@ -1287,6 +1392,7 @@
      "contracts": 40,
      "invested$": 874.0,
      "stopRisk$": 218.0,
+     "fees$": 83.2,
      "pnlPct": -32.1,
      "pnl$": -280.0
     },
@@ -1299,6 +1405,7 @@
      "contracts": 40,
      "invested$": 858.0,
      "stopRisk$": 215.0,
+     "fees$": 83.2,
      "pnlPct": 149.8,
      "pnl$": 1286.0
     },
@@ -1311,6 +1418,7 @@
      "contracts": 32,
      "invested$": 693.0,
      "stopRisk$": 173.0,
+     "fees$": 66.56,
      "pnlPct": -13.0,
      "pnl$": -90.0
     },
@@ -1323,6 +1431,7 @@
      "contracts": 20,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 41.6,
      "pnlPct": -3.0,
      "pnl$": -41.0
     },
@@ -1335,6 +1444,7 @@
      "contracts": 20,
      "invested$": 1363.0,
      "stopRisk$": 341.0,
+     "fees$": 41.6,
      "pnlPct": -13.1,
      "pnl$": -179.0
     },
@@ -1347,6 +1457,7 @@
      "contracts": 29,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 60.32,
      "pnlPct": 16.6,
      "pnl$": 226.0
     },
@@ -1359,6 +1470,7 @@
      "contracts": 20,
      "invested$": 1361.0,
      "stopRisk$": 340.0,
+     "fees$": 41.6,
      "pnlPct": -40.4,
      "pnl$": -550.0
     },
@@ -1371,6 +1483,7 @@
      "contracts": 20,
      "invested$": 1294.0,
      "stopRisk$": 324.0,
+     "fees$": 41.6,
      "pnlPct": 57.5,
      "pnl$": 744.0
     },
@@ -1383,6 +1496,7 @@
      "contracts": 13,
      "invested$": 668.0,
      "stopRisk$": 167.0,
+     "fees$": 27.04,
      "pnlPct": -12.2,
      "pnl$": -82.0
     },
@@ -1395,6 +1509,7 @@
      "contracts": 37,
      "invested$": 1407.0,
      "stopRisk$": 352.0,
+     "fees$": 76.96,
      "pnlPct": -19.2,
      "pnl$": -270.0
     },
@@ -1407,6 +1522,7 @@
      "contracts": 26,
      "invested$": 1350.0,
      "stopRisk$": 338.0,
+     "fees$": 54.08,
      "pnlPct": 32.3,
      "pnl$": 437.0
     },
@@ -1419,6 +1535,7 @@
      "contracts": 14,
      "invested$": 717.0,
      "stopRisk$": 179.0,
+     "fees$": 29.12,
      "pnlPct": 33.1,
      "pnl$": 238.0
     },
@@ -1431,6 +1548,7 @@
      "contracts": 40,
      "invested$": 964.0,
      "stopRisk$": 241.0,
+     "fees$": 83.2,
      "pnlPct": 46.6,
      "pnl$": 450.0
     },
@@ -1443,6 +1561,7 @@
      "contracts": 40,
      "invested$": 1510.0,
      "stopRisk$": 378.0,
+     "fees$": 83.2,
      "pnlPct": -20.9,
      "pnl$": -315.0
     },
@@ -1455,6 +1574,7 @@
      "contracts": 24,
      "invested$": 1459.0,
      "stopRisk$": 365.0,
+     "fees$": 49.92,
      "pnlPct": -7.9,
      "pnl$": -116.0
     },
@@ -1467,17 +1587,22 @@
      "contracts": 23,
      "invested$": 1460.0,
      "stopRisk$": 365.0,
+     "fees$": 47.84,
      "pnlPct": -10.7,
      "pnl$": -157.0
     }
    ]
   },
   "size_half@cap50": {
+   "approximate": true,
    "cap": 50,
    "taken": 36,
    "skippedConcurrent": 3,
    "skippedLossCap": 15,
    "skippedDayHalt": 0,
+   "skippedBreaker": 0,
+   "breakerTripped": false,
+   "feesOnIntegerQty$": 2117.0,
    "total$": 2655.0,
    "endEquity": 12590.0,
    "maxDrawdown$": -742.0,
@@ -1533,6 +1658,7 @@
      "contracts": 24,
      "invested$": 1149.0,
      "stopRisk$": 287.0,
+     "fees$": 74.88,
      "pnlPct": 45.3,
      "pnl$": 520.0
     },
@@ -1545,6 +1671,7 @@
      "contracts": 21,
      "invested$": 600.0,
      "stopRisk$": 150.0,
+     "fees$": 43.68,
      "pnlPct": -28.2,
      "pnl$": -169.0
     },
@@ -1557,6 +1684,7 @@
      "contracts": 26,
      "invested$": 1208.0,
      "stopRisk$": 302.0,
+     "fees$": 54.08,
      "pnlPct": -29.1,
      "pnl$": -352.0
     },
@@ -1569,6 +1697,7 @@
      "contracts": 18,
      "invested$": 1148.0,
      "stopRisk$": 287.0,
+     "fees$": 37.44,
      "pnlPct": 65.3,
      "pnl$": 749.0
     },
@@ -1581,6 +1710,7 @@
      "contracts": 17,
      "invested$": 1216.0,
      "stopRisk$": 304.0,
+     "fees$": 35.36,
      "pnlPct": -9.9,
      "pnl$": -121.0
     },
@@ -1593,6 +1723,7 @@
      "contracts": 50,
      "invested$": 1062.0,
      "stopRisk$": 266.0,
+     "fees$": 104.0,
      "pnlPct": 43.9,
      "pnl$": 467.0
     },
@@ -1605,6 +1736,7 @@
      "contracts": 28,
      "invested$": 639.0,
      "stopRisk$": 160.0,
+     "fees$": 58.24,
      "pnlPct": 32.1,
      "pnl$": 205.0
     },
@@ -1617,6 +1749,7 @@
      "contracts": 21,
      "invested$": 644.0,
      "stopRisk$": 161.0,
+     "fees$": 43.68,
      "pnlPct": 6.6,
      "pnl$": 43.0
     },
@@ -1629,6 +1762,7 @@
      "contracts": 25,
      "invested$": 1316.0,
      "stopRisk$": 329.0,
+     "fees$": 52.0,
      "pnlPct": -7.2,
      "pnl$": -95.0
     },
@@ -1641,6 +1775,7 @@
      "contracts": 25,
      "invested$": 1300.0,
      "stopRisk$": 325.0,
+     "fees$": 52.0,
      "pnlPct": -7.3,
      "pnl$": -95.0
     },
@@ -1653,6 +1788,7 @@
      "contracts": 23,
      "invested$": 1294.0,
      "stopRisk$": 323.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -1665,6 +1801,7 @@
      "contracts": 23,
      "invested$": 1277.0,
      "stopRisk$": 319.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -1677,6 +1814,7 @@
      "contracts": 31,
      "invested$": 1321.0,
      "stopRisk$": 330.0,
+     "fees$": 64.48,
      "pnlPct": -14.4,
      "pnl$": -191.0
     },
@@ -1689,6 +1827,7 @@
      "contracts": 37,
      "invested$": 1295.0,
      "stopRisk$": 324.0,
+     "fees$": 76.96,
      "pnlPct": 15.7,
      "pnl$": 203.0
     },
@@ -1701,6 +1840,7 @@
      "contracts": 17,
      "invested$": 626.0,
      "stopRisk$": 156.0,
+     "fees$": 35.36,
      "pnlPct": 9.4,
      "pnl$": 59.0
     },
@@ -1713,6 +1853,7 @@
      "contracts": 18,
      "invested$": 652.0,
      "stopRisk$": 163.0,
+     "fees$": 37.44,
      "pnlPct": -3.0,
      "pnl$": -20.0
     },
@@ -1725,6 +1866,7 @@
      "contracts": 25,
      "invested$": 1280.0,
      "stopRisk$": 320.0,
+     "fees$": 52.0,
      "pnlPct": -18.5,
      "pnl$": -237.0
     },
@@ -1737,6 +1879,7 @@
      "contracts": 27,
      "invested$": 1298.0,
      "stopRisk$": 324.0,
+     "fees$": 56.16,
      "pnlPct": 37.3,
      "pnl$": 484.0
     },
@@ -1749,6 +1892,7 @@
      "contracts": 20,
      "invested$": 670.0,
      "stopRisk$": 168.0,
+     "fees$": 41.6,
      "pnlPct": -30.9,
      "pnl$": -207.0
     },
@@ -1761,6 +1905,7 @@
      "contracts": 50,
      "invested$": 1250.0,
      "stopRisk$": 312.0,
+     "fees$": 104.0,
      "pnlPct": -14.8,
      "pnl$": -185.0
     },
@@ -1773,6 +1918,7 @@
      "contracts": 50,
      "invested$": 1092.0,
      "stopRisk$": 273.0,
+     "fees$": 104.0,
      "pnlPct": -32.1,
      "pnl$": -350.0
     },
@@ -1785,6 +1931,7 @@
      "contracts": 50,
      "invested$": 1073.0,
      "stopRisk$": 268.0,
+     "fees$": 104.0,
      "pnlPct": 149.8,
      "pnl$": 1607.0
     },
@@ -1797,6 +1944,7 @@
      "contracts": 33,
      "invested$": 715.0,
      "stopRisk$": 179.0,
+     "fees$": 68.64,
      "pnlPct": -13.0,
      "pnl$": -93.0
     },
@@ -1809,6 +1957,7 @@
      "contracts": 21,
      "invested$": 1427.0,
      "stopRisk$": 357.0,
+     "fees$": 43.68,
      "pnlPct": -3.0,
      "pnl$": -43.0
     },
@@ -1821,6 +1970,7 @@
      "contracts": 21,
      "invested$": 1431.0,
      "stopRisk$": 358.0,
+     "fees$": 43.68,
      "pnlPct": -13.1,
      "pnl$": -188.0
     },
@@ -1833,6 +1983,7 @@
      "contracts": 30,
      "invested$": 1406.0,
      "stopRisk$": 351.0,
+     "fees$": 62.4,
      "pnlPct": 16.6,
      "pnl$": 234.0
     },
@@ -1845,6 +1996,7 @@
      "contracts": 21,
      "invested$": 1429.0,
      "stopRisk$": 357.0,
+     "fees$": 43.68,
      "pnlPct": -40.4,
      "pnl$": -578.0
     },
@@ -1857,6 +2009,7 @@
      "contracts": 21,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 43.68,
      "pnlPct": 57.5,
      "pnl$": 781.0
     },
@@ -1869,6 +2022,7 @@
      "contracts": 14,
      "invested$": 719.0,
      "stopRisk$": 180.0,
+     "fees$": 29.12,
      "pnlPct": -12.2,
      "pnl$": -88.0
     },
@@ -1881,6 +2035,7 @@
      "contracts": 38,
      "invested$": 1446.0,
      "stopRisk$": 361.0,
+     "fees$": 79.04,
      "pnlPct": -19.2,
      "pnl$": -277.0
     },
@@ -1893,6 +2048,7 @@
      "contracts": 27,
      "invested$": 1402.0,
      "stopRisk$": 351.0,
+     "fees$": 56.16,
      "pnlPct": 32.3,
      "pnl$": 453.0
     },
@@ -1905,6 +2061,7 @@
      "contracts": 14,
      "invested$": 717.0,
      "stopRisk$": 179.0,
+     "fees$": 29.12,
      "pnlPct": 33.1,
      "pnl$": 238.0
     },
@@ -1917,6 +2074,7 @@
      "contracts": 50,
      "invested$": 1206.0,
      "stopRisk$": 301.0,
+     "fees$": 104.0,
      "pnlPct": 46.6,
      "pnl$": 562.0
     },
@@ -1929,6 +2087,7 @@
      "contracts": 41,
      "invested$": 1548.0,
      "stopRisk$": 387.0,
+     "fees$": 85.28,
      "pnlPct": -20.9,
      "pnl$": -323.0
     },
@@ -1941,6 +2100,7 @@
      "contracts": 25,
      "invested$": 1520.0,
      "stopRisk$": 380.0,
+     "fees$": 52.0,
      "pnlPct": -7.9,
      "pnl$": -120.0
     },
@@ -1953,17 +2113,22 @@
      "contracts": 24,
      "invested$": 1524.0,
      "stopRisk$": 381.0,
+     "fees$": 49.92,
      "pnlPct": -10.7,
      "pnl$": -163.0
     }
    ]
   },
   "C1@cap40": {
+   "approximate": true,
    "cap": 40,
    "taken": 50,
    "skippedConcurrent": 9,
    "skippedLossCap": 23,
    "skippedDayHalt": 0,
+   "skippedBreaker": 0,
+   "breakerTripped": false,
+   "feesOnIntegerQty$": 2871.0,
    "total$": 6415.0,
    "endEquity": 16349.0,
    "maxDrawdown$": -2619.0,
@@ -2021,6 +2186,7 @@
      "contracts": 40,
      "invested$": 1148.0,
      "stopRisk$": 287.0,
+     "fees$": 83.2,
      "pnlPct": 51.2,
      "pnl$": 588.0
     },
@@ -2033,6 +2199,7 @@
      "contracts": 13,
      "invested$": 622.0,
      "stopRisk$": 156.0,
+     "fees$": 40.56,
      "pnlPct": 45.3,
      "pnl$": 282.0
     },
@@ -2045,6 +2212,7 @@
      "contracts": 40,
      "invested$": 1143.0,
      "stopRisk$": 286.0,
+     "fees$": 83.2,
      "pnlPct": -28.2,
      "pnl$": -323.0
     },
@@ -2057,6 +2225,7 @@
      "contracts": 24,
      "invested$": 1245.0,
      "stopRisk$": 311.0,
+     "fees$": 49.92,
      "pnlPct": 87.9,
      "pnl$": 1094.0
     },
@@ -2069,6 +2238,7 @@
      "contracts": 25,
      "invested$": 1345.0,
      "stopRisk$": 336.0,
+     "fees$": 52.0,
      "pnlPct": -16.0,
      "pnl$": -215.0
     },
@@ -2081,6 +2251,7 @@
      "contracts": 21,
      "invested$": 1339.0,
      "stopRisk$": 335.0,
+     "fees$": 43.68,
      "pnlPct": 65.3,
      "pnl$": 874.0
     },
@@ -2093,6 +2264,7 @@
      "contracts": 20,
      "invested$": 1430.0,
      "stopRisk$": 358.0,
+     "fees$": 41.6,
      "pnlPct": -9.9,
      "pnl$": -142.0
     },
@@ -2105,6 +2277,7 @@
      "contracts": 19,
      "invested$": 1426.0,
      "stopRisk$": 357.0,
+     "fees$": 39.52,
      "pnlPct": 7.5,
      "pnl$": 106.0
     },
@@ -2117,6 +2290,7 @@
      "contracts": 40,
      "invested$": 850.0,
      "stopRisk$": 212.0,
+     "fees$": 83.2,
      "pnlPct": 43.9,
      "pnl$": 373.0
     },
@@ -2129,6 +2303,7 @@
      "contracts": 33,
      "invested$": 753.0,
      "stopRisk$": 188.0,
+     "fees$": 68.64,
      "pnlPct": 32.1,
      "pnl$": 242.0
     },
@@ -2141,6 +2316,7 @@
      "contracts": 25,
      "invested$": 766.0,
      "stopRisk$": 192.0,
+     "fees$": 52.0,
      "pnlPct": 6.6,
      "pnl$": 51.0
     },
@@ -2153,6 +2329,7 @@
      "contracts": 24,
      "invested$": 1505.0,
      "stopRisk$": 376.0,
+     "fees$": 49.92,
      "pnlPct": 8.3,
      "pnl$": 124.0
     },
@@ -2165,6 +2342,7 @@
      "contracts": 12,
      "invested$": 758.0,
      "stopRisk$": 189.0,
+     "fees$": 24.96,
      "pnlPct": -24.4,
      "pnl$": -185.0
     },
@@ -2177,6 +2355,7 @@
      "contracts": 24,
      "invested$": 1510.0,
      "stopRisk$": 378.0,
+     "fees$": 49.92,
      "pnlPct": 87.0,
      "pnl$": 1314.0
     },
@@ -2189,6 +2368,7 @@
      "contracts": 12,
      "invested$": 846.0,
      "stopRisk$": 211.0,
+     "fees$": 24.96,
      "pnlPct": -41.9,
      "pnl$": -355.0
     },
@@ -2201,6 +2381,7 @@
      "contracts": 31,
      "invested$": 1632.0,
      "stopRisk$": 408.0,
+     "fees$": 64.48,
      "pnlPct": -7.2,
      "pnl$": -118.0
     },
@@ -2213,6 +2394,7 @@
      "contracts": 31,
      "invested$": 1613.0,
      "stopRisk$": 403.0,
+     "fees$": 64.48,
      "pnlPct": -7.3,
      "pnl$": -118.0
     },
@@ -2225,6 +2407,7 @@
      "contracts": 30,
      "invested$": 1613.0,
      "stopRisk$": 403.0,
+     "fees$": 62.4,
      "pnlPct": -45.6,
      "pnl$": -736.0
     },
@@ -2237,6 +2420,7 @@
      "contracts": 24,
      "invested$": 1522.0,
      "stopRisk$": 380.0,
+     "fees$": 49.92,
      "pnlPct": -5.4,
      "pnl$": -82.0
     },
@@ -2249,6 +2433,7 @@
      "contracts": 35,
      "invested$": 1492.0,
      "stopRisk$": 373.0,
+     "fees$": 72.8,
      "pnlPct": -14.4,
      "pnl$": -215.0
     },
@@ -2261,6 +2446,7 @@
      "contracts": 40,
      "invested$": 1400.0,
      "stopRisk$": 350.0,
+     "fees$": 83.2,
      "pnlPct": 15.7,
      "pnl$": 220.0
     },
@@ -2273,6 +2459,7 @@
      "contracts": 20,
      "invested$": 736.0,
      "stopRisk$": 184.0,
+     "fees$": 41.6,
      "pnlPct": 9.4,
      "pnl$": 69.0
     },
@@ -2285,6 +2472,7 @@
      "contracts": 21,
      "invested$": 761.0,
      "stopRisk$": 190.0,
+     "fees$": 43.68,
      "pnlPct": -3.0,
      "pnl$": -23.0
     },
@@ -2297,6 +2485,7 @@
      "contracts": 25,
      "invested$": 1476.0,
      "stopRisk$": 369.0,
+     "fees$": 52.0,
      "pnlPct": -52.1,
      "pnl$": -769.0
     },
@@ -2309,6 +2498,7 @@
      "contracts": 30,
      "invested$": 1432.0,
      "stopRisk$": 358.0,
+     "fees$": 62.4,
      "pnlPct": -12.6,
      "pnl$": -181.0
     },
@@ -2321,6 +2511,7 @@
      "contracts": 22,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 45.76,
      "pnlPct": -12.1,
      "pnl$": -164.0
     },
@@ -2333,6 +2524,7 @@
      "contracts": 40,
      "invested$": 1000.0,
      "stopRisk$": 250.0,
+     "fees$": 83.2,
      "pnlPct": -14.8,
      "pnl$": -148.0
     },
@@ -2345,6 +2537,7 @@
      "contracts": 40,
      "invested$": 858.0,
      "stopRisk$": 215.0,
+     "fees$": 83.2,
      "pnlPct": 149.8,
      "pnl$": 1286.0
     },
@@ -2357,6 +2550,7 @@
      "contracts": 40,
      "invested$": 866.0,
      "stopRisk$": 217.0,
+     "fees$": 83.2,
      "pnlPct": -13.0,
      "pnl$": -113.0
     },
@@ -2369,6 +2563,7 @@
      "contracts": 22,
      "invested$": 1495.0,
      "stopRisk$": 374.0,
+     "fees$": 45.76,
      "pnlPct": -3.0,
      "pnl$": -45.0
     },
@@ -2381,6 +2576,7 @@
      "contracts": 29,
      "invested$": 1976.0,
      "stopRisk$": 494.0,
+     "fees$": 60.32,
      "pnlPct": -13.1,
      "pnl$": -259.0
     },
@@ -2393,6 +2589,7 @@
      "contracts": 31,
      "invested$": 1452.0,
      "stopRisk$": 363.0,
+     "fees$": 64.48,
      "pnlPct": 16.6,
      "pnl$": 242.0
     },
@@ -2405,6 +2602,7 @@
      "contracts": 29,
      "invested$": 1974.0,
      "stopRisk$": 493.0,
+     "fees$": 60.32,
      "pnlPct": -40.4,
      "pnl$": -798.0
     },
@@ -2417,6 +2615,7 @@
      "contracts": 30,
      "invested$": 1412.0,
      "stopRisk$": 353.0,
+     "fees$": 62.4,
      "pnlPct": -14.3,
      "pnl$": -203.0
     },
@@ -2429,6 +2628,7 @@
      "contracts": 21,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 43.68,
      "pnlPct": 57.5,
      "pnl$": 781.0
     },
@@ -2441,6 +2641,7 @@
      "contracts": 14,
      "invested$": 719.0,
      "stopRisk$": 180.0,
+     "fees$": 29.12,
      "pnlPct": -12.2,
      "pnl$": -88.0
     },
@@ -2453,6 +2654,7 @@
      "contracts": 24,
      "invested$": 1463.0,
      "stopRisk$": 366.0,
+     "fees$": 49.92,
      "pnlPct": 16.7,
      "pnl$": 244.0
     },
@@ -2465,6 +2667,7 @@
      "contracts": 28,
      "invested$": 1454.0,
      "stopRisk$": 364.0,
+     "fees$": 58.24,
      "pnlPct": 32.3,
      "pnl$": 470.0
     },
@@ -2477,6 +2680,7 @@
      "contracts": 15,
      "invested$": 769.0,
      "stopRisk$": 192.0,
+     "fees$": 31.2,
      "pnlPct": 33.1,
      "pnl$": 255.0
     },
@@ -2489,6 +2693,7 @@
      "contracts": 15,
      "invested$": 771.0,
      "stopRisk$": 193.0,
+     "fees$": 31.2,
      "pnlPct": 5.5,
      "pnl$": 42.0
     },
@@ -2501,6 +2706,7 @@
      "contracts": 40,
      "invested$": 1150.0,
      "stopRisk$": 287.0,
+     "fees$": 83.2,
      "pnlPct": -12.9,
      "pnl$": -148.0
     },
@@ -2513,6 +2719,7 @@
      "contracts": 40,
      "invested$": 1249.0,
      "stopRisk$": 312.0,
+     "fees$": 83.2,
      "pnlPct": 55.8,
      "pnl$": 697.0
     },
@@ -2525,6 +2732,7 @@
      "contracts": 30,
      "invested$": 1644.0,
      "stopRisk$": 411.0,
+     "fees$": 62.4,
      "pnlPct": -33.1,
      "pnl$": -544.0
     },
@@ -2537,6 +2745,7 @@
      "contracts": 31,
      "invested$": 1559.0,
      "stopRisk$": 390.0,
+     "fees$": 64.48,
      "pnlPct": 104.0,
      "pnl$": 1621.0
     },
@@ -2549,6 +2758,7 @@
      "contracts": 29,
      "invested$": 1746.0,
      "stopRisk$": 436.0,
+     "fees$": 60.32,
      "pnlPct": -34.0,
      "pnl$": -593.0
     },
@@ -2561,6 +2771,7 @@
      "contracts": 40,
      "invested$": 1015.0,
      "stopRisk$": 254.0,
+     "fees$": 83.2,
      "pnlPct": 54.2,
      "pnl$": 550.0
     },
@@ -2573,6 +2784,7 @@
      "contracts": 28,
      "invested$": 892.0,
      "stopRisk$": 223.0,
+     "fees$": 58.24,
      "pnlPct": -53.1,
      "pnl$": -474.0
     },
@@ -2585,6 +2797,7 @@
      "contracts": 35,
      "invested$": 1690.0,
      "stopRisk$": 423.0,
+     "fees$": 72.8,
      "pnlPct": 62.5,
      "pnl$": 1056.0
     },
@@ -2597,6 +2810,7 @@
      "contracts": 25,
      "invested$": 1816.0,
      "stopRisk$": 454.0,
+     "fees$": 52.0,
      "pnlPct": 27.2,
      "pnl$": 495.0
     },
@@ -2609,17 +2823,22 @@
      "contracts": 17,
      "invested$": 922.0,
      "stopRisk$": 230.0,
+     "fees$": 35.36,
      "pnlPct": 40.7,
      "pnl$": 375.0
     }
    ]
   },
   "C1@cap50": {
+   "approximate": true,
    "cap": 50,
    "taken": 50,
    "skippedConcurrent": 9,
    "skippedLossCap": 23,
    "skippedDayHalt": 0,
+   "skippedBreaker": 0,
+   "breakerTripped": false,
+   "feesOnIntegerQty$": 3063.0,
    "total$": 7153.0,
    "endEquity": 17087.0,
    "maxDrawdown$": -2677.0,
@@ -2677,6 +2896,7 @@
      "contracts": 41,
      "invested$": 1177.0,
      "stopRisk$": 294.0,
+     "fees$": 85.28,
      "pnlPct": 51.2,
      "pnl$": 603.0
     },
@@ -2689,6 +2909,7 @@
      "contracts": 13,
      "invested$": 622.0,
      "stopRisk$": 156.0,
+     "fees$": 40.56,
      "pnlPct": 45.3,
      "pnl$": 282.0
     },
@@ -2701,6 +2922,7 @@
      "contracts": 45,
      "invested$": 1286.0,
      "stopRisk$": 322.0,
+     "fees$": 93.6,
      "pnlPct": -28.2,
      "pnl$": -363.0
     },
@@ -2713,6 +2935,7 @@
      "contracts": 24,
      "invested$": 1245.0,
      "stopRisk$": 311.0,
+     "fees$": 49.92,
      "pnlPct": 87.9,
      "pnl$": 1094.0
     },
@@ -2725,6 +2948,7 @@
      "contracts": 25,
      "invested$": 1345.0,
      "stopRisk$": 336.0,
+     "fees$": 52.0,
      "pnlPct": -16.0,
      "pnl$": -215.0
     },
@@ -2737,6 +2961,7 @@
      "contracts": 21,
      "invested$": 1339.0,
      "stopRisk$": 335.0,
+     "fees$": 43.68,
      "pnlPct": 65.3,
      "pnl$": 874.0
     },
@@ -2749,6 +2974,7 @@
      "contracts": 20,
      "invested$": 1430.0,
      "stopRisk$": 358.0,
+     "fees$": 41.6,
      "pnlPct": -9.9,
      "pnl$": -142.0
     },
@@ -2761,6 +2987,7 @@
      "contracts": 19,
      "invested$": 1426.0,
      "stopRisk$": 357.0,
+     "fees$": 39.52,
      "pnlPct": 7.5,
      "pnl$": 106.0
     },
@@ -2773,6 +3000,7 @@
      "contracts": 50,
      "invested$": 1062.0,
      "stopRisk$": 266.0,
+     "fees$": 104.0,
      "pnlPct": 43.9,
      "pnl$": 467.0
     },
@@ -2785,6 +3013,7 @@
      "contracts": 33,
      "invested$": 753.0,
      "stopRisk$": 188.0,
+     "fees$": 68.64,
      "pnlPct": 32.1,
      "pnl$": 242.0
     },
@@ -2797,6 +3026,7 @@
      "contracts": 25,
      "invested$": 766.0,
      "stopRisk$": 192.0,
+     "fees$": 52.0,
      "pnlPct": 6.6,
      "pnl$": 51.0
     },
@@ -2809,6 +3039,7 @@
      "contracts": 24,
      "invested$": 1505.0,
      "stopRisk$": 376.0,
+     "fees$": 49.92,
      "pnlPct": 8.3,
      "pnl$": 124.0
     },
@@ -2821,6 +3052,7 @@
      "contracts": 12,
      "invested$": 758.0,
      "stopRisk$": 189.0,
+     "fees$": 24.96,
      "pnlPct": -24.4,
      "pnl$": -185.0
     },
@@ -2833,6 +3065,7 @@
      "contracts": 24,
      "invested$": 1510.0,
      "stopRisk$": 378.0,
+     "fees$": 49.92,
      "pnlPct": 87.0,
      "pnl$": 1314.0
     },
@@ -2845,6 +3078,7 @@
      "contracts": 12,
      "invested$": 846.0,
      "stopRisk$": 211.0,
+     "fees$": 24.96,
      "pnlPct": -41.9,
      "pnl$": -355.0
     },
@@ -2857,6 +3091,7 @@
      "contracts": 31,
      "invested$": 1632.0,
      "stopRisk$": 408.0,
+     "fees$": 64.48,
      "pnlPct": -7.2,
      "pnl$": -118.0
     },
@@ -2869,6 +3104,7 @@
      "contracts": 31,
      "invested$": 1613.0,
      "stopRisk$": 403.0,
+     "fees$": 64.48,
      "pnlPct": -7.3,
      "pnl$": -118.0
     },
@@ -2881,6 +3117,7 @@
      "contracts": 30,
      "invested$": 1613.0,
      "stopRisk$": 403.0,
+     "fees$": 62.4,
      "pnlPct": -45.6,
      "pnl$": -736.0
     },
@@ -2893,6 +3130,7 @@
      "contracts": 24,
      "invested$": 1522.0,
      "stopRisk$": 380.0,
+     "fees$": 49.92,
      "pnlPct": -5.4,
      "pnl$": -82.0
     },
@@ -2905,6 +3143,7 @@
      "contracts": 35,
      "invested$": 1492.0,
      "stopRisk$": 373.0,
+     "fees$": 72.8,
      "pnlPct": -14.4,
      "pnl$": -215.0
     },
@@ -2917,6 +3156,7 @@
      "contracts": 43,
      "invested$": 1505.0,
      "stopRisk$": 376.0,
+     "fees$": 89.44,
      "pnlPct": 15.7,
      "pnl$": 236.0
     },
@@ -2929,6 +3169,7 @@
      "contracts": 20,
      "invested$": 736.0,
      "stopRisk$": 184.0,
+     "fees$": 41.6,
      "pnlPct": 9.4,
      "pnl$": 69.0
     },
@@ -2941,6 +3182,7 @@
      "contracts": 21,
      "invested$": 761.0,
      "stopRisk$": 190.0,
+     "fees$": 43.68,
      "pnlPct": -3.0,
      "pnl$": -23.0
     },
@@ -2953,6 +3195,7 @@
      "contracts": 26,
      "invested$": 1535.0,
      "stopRisk$": 384.0,
+     "fees$": 54.08,
      "pnlPct": -52.1,
      "pnl$": -799.0
     },
@@ -2965,6 +3208,7 @@
      "contracts": 30,
      "invested$": 1432.0,
      "stopRisk$": 358.0,
+     "fees$": 62.4,
      "pnlPct": -12.6,
      "pnl$": -181.0
     },
@@ -2977,6 +3221,7 @@
      "contracts": 23,
      "invested$": 1421.0,
      "stopRisk$": 355.0,
+     "fees$": 47.84,
      "pnlPct": -12.1,
      "pnl$": -172.0
     },
@@ -2989,6 +3234,7 @@
      "contracts": 50,
      "invested$": 1250.0,
      "stopRisk$": 312.0,
+     "fees$": 104.0,
      "pnlPct": -14.8,
      "pnl$": -185.0
     },
@@ -3001,6 +3247,7 @@
      "contracts": 50,
      "invested$": 1073.0,
      "stopRisk$": 268.0,
+     "fees$": 104.0,
      "pnlPct": 149.8,
      "pnl$": 1607.0
     },
@@ -3013,6 +3260,7 @@
      "contracts": 50,
      "invested$": 1083.0,
      "stopRisk$": 271.0,
+     "fees$": 104.0,
      "pnlPct": -13.0,
      "pnl$": -141.0
     },
@@ -3025,6 +3273,7 @@
      "contracts": 22,
      "invested$": 1495.0,
      "stopRisk$": 374.0,
+     "fees$": 45.76,
      "pnlPct": -3.0,
      "pnl$": -45.0
     },
@@ -3037,6 +3286,7 @@
      "contracts": 29,
      "invested$": 1976.0,
      "stopRisk$": 494.0,
+     "fees$": 60.32,
      "pnlPct": -13.1,
      "pnl$": -259.0
     },
@@ -3049,6 +3299,7 @@
      "contracts": 32,
      "invested$": 1499.0,
      "stopRisk$": 375.0,
+     "fees$": 66.56,
      "pnlPct": 16.6,
      "pnl$": 249.0
     },
@@ -3061,6 +3312,7 @@
      "contracts": 29,
      "invested$": 1974.0,
      "stopRisk$": 493.0,
+     "fees$": 60.32,
      "pnlPct": -40.4,
      "pnl$": -798.0
     },
@@ -3073,6 +3325,7 @@
      "contracts": 30,
      "invested$": 1412.0,
      "stopRisk$": 353.0,
+     "fees$": 62.4,
      "pnlPct": -14.3,
      "pnl$": -203.0
     },
@@ -3085,6 +3338,7 @@
      "contracts": 22,
      "invested$": 1424.0,
      "stopRisk$": 356.0,
+     "fees$": 45.76,
      "pnlPct": 57.5,
      "pnl$": 818.0
     },
@@ -3097,6 +3351,7 @@
      "contracts": 14,
      "invested$": 719.0,
      "stopRisk$": 180.0,
+     "fees$": 29.12,
      "pnlPct": -12.2,
      "pnl$": -88.0
     },
@@ -3109,6 +3364,7 @@
      "contracts": 24,
      "invested$": 1463.0,
      "stopRisk$": 366.0,
+     "fees$": 49.92,
      "pnlPct": 16.7,
      "pnl$": 244.0
     },
@@ -3121,6 +3377,7 @@
      "contracts": 29,
      "invested$": 1506.0,
      "stopRisk$": 376.0,
+     "fees$": 60.32,
      "pnlPct": 32.3,
      "pnl$": 487.0
     },
@@ -3133,6 +3390,7 @@
      "contracts": 15,
      "invested$": 769.0,
      "stopRisk$": 192.0,
+     "fees$": 31.2,
      "pnlPct": 33.1,
      "pnl$": 255.0
     },
@@ -3145,6 +3403,7 @@
      "contracts": 15,
      "invested$": 771.0,
      "stopRisk$": 193.0,
+     "fees$": 31.2,
      "pnlPct": 5.5,
      "pnl$": 42.0
     },
@@ -3157,6 +3416,7 @@
      "contracts": 50,
      "invested$": 1437.0,
      "stopRisk$": 359.0,
+     "fees$": 104.0,
      "pnlPct": -12.9,
      "pnl$": -185.0
     },
@@ -3169,6 +3429,7 @@
      "contracts": 50,
      "invested$": 1561.0,
      "stopRisk$": 390.0,
+     "fees$": 104.0,
      "pnlPct": 55.8,
      "pnl$": 871.0
     },
@@ -3181,6 +3442,7 @@
      "contracts": 31,
      "invested$": 1699.0,
      "stopRisk$": 425.0,
+     "fees$": 64.48,
      "pnlPct": -33.1,
      "pnl$": -562.0
     },
@@ -3193,6 +3455,7 @@
      "contracts": 32,
      "invested$": 1610.0,
      "stopRisk$": 402.0,
+     "fees$": 66.56,
      "pnlPct": 104.0,
      "pnl$": 1674.0
     },
@@ -3205,6 +3468,7 @@
      "contracts": 30,
      "invested$": 1806.0,
      "stopRisk$": 451.0,
+     "fees$": 62.4,
      "pnlPct": -34.0,
      "pnl$": -613.0
     },
@@ -3217,6 +3481,7 @@
      "contracts": 50,
      "invested$": 1268.0,
      "stopRisk$": 317.0,
+     "fees$": 104.0,
      "pnlPct": 54.2,
      "pnl$": 687.0
     },
@@ -3229,6 +3494,7 @@
      "contracts": 29,
      "invested$": 924.0,
      "stopRisk$": 231.0,
+     "fees$": 60.32,
      "pnlPct": -53.1,
      "pnl$": -491.0
     },
@@ -3241,6 +3507,7 @@
      "contracts": 37,
      "invested$": 1787.0,
      "stopRisk$": 447.0,
+     "fees$": 76.96,
      "pnlPct": 62.5,
      "pnl$": 1116.0
     },
@@ -3253,6 +3520,7 @@
      "contracts": 26,
      "invested$": 1889.0,
      "stopRisk$": 472.0,
+     "fees$": 54.08,
      "pnlPct": 27.2,
      "pnl$": 515.0
     },
@@ -3265,61 +3533,66 @@
      "contracts": 18,
      "invested$": 976.0,
      "stopRisk$": 244.0,
+     "fees$": 37.44,
      "pnlPct": 40.7,
      "pnl$": 397.0
     }
    ]
   },
-  "baseline_resized_0.5@cap40": {
+  "baseline_resized_by_bucket@cap40": {
+   "approximate": true,
    "cap": 40,
    "taken": 36,
    "skippedConcurrent": 3,
    "skippedLossCap": 15,
    "skippedDayHalt": 0,
-   "total$": 1861.0,
-   "endEquity": 11796.0,
-   "maxDrawdown$": -832.0,
-   "maxDrawdownPct": -8.4,
-   "worstDay$": -511.0,
+   "skippedBreaker": 0,
+   "breakerTripped": false,
+   "feesOnIntegerQty$": 1982.0,
+   "total$": 2231.0,
+   "endEquity": 12165.0,
+   "maxDrawdown$": -635.0,
+   "maxDrawdownPct": -6.4,
+   "worstDay$": -503.0,
    "bestDay": "2026-09-02",
-   "totalWithoutBestDay$": 729.0,
+   "totalWithoutBestDay$": 1077.0,
    "contracts": {
     "min": 13,
     "median": 25,
     "max": 40,
-    "atCap": 7
+    "atCap": 6
    },
    "invested$": {
-    "median": 1260.0,
-    "max": 1472.0,
-    "sum": 40373.0
+    "median": 1250.0,
+    "max": 1510.0,
+    "sum": 39354.0
    },
    "stopRisk$": {
-    "median": 315.0,
-    "max": 368.0
+    "median": 312.0,
+    "max": 378.0
    },
-   "grossWins$": 5969.0,
-   "grossLosses$": -4109.0,
+   "grossWins$": 5994.0,
+   "grossLosses$": -3763.0,
    "byDate$": {
-    "2026-08-20": -155.0,
+    "2026-08-20": -1.0,
     "2026-08-21": 628.0,
     "2026-08-24": 621.0,
     "2026-08-26": -190.0,
     "2026-08-27": -54.0,
-    "2026-08-28": 53.0,
-    "2026-08-31": -174.0,
+    "2026-08-28": 52.0,
+    "2026-08-31": 22.0,
     "2026-09-01": -428.0,
-    "2026-09-02": 1132.0,
-    "2026-09-03": -511.0,
-    "2026-09-04": 399.0,
-    "2026-09-08": 657.0,
-    "2026-09-09": 32.0,
-    "2026-09-10": -150.0
+    "2026-09-02": 1154.0,
+    "2026-09-03": -503.0,
+    "2026-09-04": 392.0,
+    "2026-09-08": 674.0,
+    "2026-09-09": 19.0,
+    "2026-09-10": -157.0
    },
    "bySymbol$": {
-    "SPY": -771.0,
-    "QQQ": 1232.0,
-    "IWM": 1399.0
+    "SPY": -791.0,
+    "QQQ": 1257.0,
+    "IWM": 1765.0
    },
    "trades": [
     {
@@ -3331,6 +3604,7 @@
      "contracts": 24,
      "invested$": 1149.0,
      "stopRisk$": 287.0,
+     "fees$": 74.88,
      "pnlPct": 45.3,
      "pnl$": 520.0
     },
@@ -3338,13 +3612,14 @@
      "date": "2026-08-20",
      "symbol": "IWM",
      "setup": "pm_break_down@09:45",
-     "sizeMult": 0.5,
+     "sizeMult": 0.25,
      "premium": 0.29,
-     "contracts": 40,
-     "invested$": 1143.0,
-     "stopRisk$": 286.0,
+     "contracts": 21,
+     "invested$": 600.0,
+     "stopRisk$": 150.0,
+     "fees$": 43.68,
      "pnlPct": -28.2,
-     "pnl$": -323.0
+     "pnl$": -169.0
     },
     {
      "date": "2026-08-20",
@@ -3355,6 +3630,7 @@
      "contracts": 26,
      "invested$": 1208.0,
      "stopRisk$": 302.0,
+     "fees$": 54.08,
      "pnlPct": -29.1,
      "pnl$": -352.0
     },
@@ -3367,6 +3643,7 @@
      "contracts": 18,
      "invested$": 1148.0,
      "stopRisk$": 287.0,
+     "fees$": 37.44,
      "pnlPct": 65.3,
      "pnl$": 749.0
     },
@@ -3379,6 +3656,7 @@
      "contracts": 17,
      "invested$": 1216.0,
      "stopRisk$": 304.0,
+     "fees$": 35.36,
      "pnlPct": -9.9,
      "pnl$": -121.0
     },
@@ -3391,6 +3669,7 @@
      "contracts": 40,
      "invested$": 850.0,
      "stopRisk$": 212.0,
+     "fees$": 83.2,
      "pnlPct": 43.9,
      "pnl$": 373.0
     },
@@ -3403,6 +3682,7 @@
      "contracts": 28,
      "invested$": 639.0,
      "stopRisk$": 160.0,
+     "fees$": 58.24,
      "pnlPct": 32.1,
      "pnl$": 205.0
     },
@@ -3415,6 +3695,7 @@
      "contracts": 21,
      "invested$": 644.0,
      "stopRisk$": 161.0,
+     "fees$": 43.68,
      "pnlPct": 6.6,
      "pnl$": 43.0
     },
@@ -3427,6 +3708,7 @@
      "contracts": 25,
      "invested$": 1316.0,
      "stopRisk$": 329.0,
+     "fees$": 52.0,
      "pnlPct": -7.2,
      "pnl$": -95.0
     },
@@ -3439,6 +3721,7 @@
      "contracts": 25,
      "invested$": 1300.0,
      "stopRisk$": 325.0,
+     "fees$": 52.0,
      "pnlPct": -7.3,
      "pnl$": -95.0
     },
@@ -3451,6 +3734,7 @@
      "contracts": 23,
      "invested$": 1294.0,
      "stopRisk$": 323.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -3463,6 +3747,7 @@
      "contracts": 23,
      "invested$": 1277.0,
      "stopRisk$": 319.0,
+     "fees$": 47.84,
      "pnlPct": -2.1,
      "pnl$": -27.0
     },
@@ -3475,6 +3760,7 @@
      "contracts": 30,
      "invested$": 1279.0,
      "stopRisk$": 320.0,
+     "fees$": 62.4,
      "pnlPct": -14.4,
      "pnl$": -185.0
     },
@@ -3487,6 +3773,7 @@
      "contracts": 36,
      "invested$": 1260.0,
      "stopRisk$": 315.0,
+     "fees$": 74.88,
      "pnlPct": 15.7,
      "pnl$": 198.0
     },
@@ -3499,6 +3786,7 @@
      "contracts": 17,
      "invested$": 626.0,
      "stopRisk$": 156.0,
+     "fees$": 35.36,
      "pnlPct": 9.4,
      "pnl$": 59.0
     },
@@ -3508,11 +3796,12 @@
      "setup": "scenario_4@11:00",
      "sizeMult": 0.25,
      "premium": 0.36,
-     "contracts": 17,
-     "invested$": 616.0,
-     "stopRisk$": 154.0,
+     "contracts": 18,
+     "invested$": 652.0,
+     "stopRisk$": 163.0,
+     "fees$": 37.44,
      "pnlPct": -3.0,
-     "pnl$": -19.0
+     "pnl$": -20.0
     },
     {
      "date": "2026-08-31",
@@ -3523,6 +3812,7 @@
      "contracts": 25,
      "invested$": 1280.0,
      "stopRisk$": 320.0,
+     "fees$": 52.0,
      "pnlPct": -18.5,
      "pnl$": -237.0
     },
@@ -3535,6 +3825,7 @@
      "contracts": 26,
      "invested$": 1250.0,
      "stopRisk$": 312.0,
+     "fees$": 54.08,
      "pnlPct": 37.3,
      "pnl$": 466.0
     },
@@ -3542,13 +3833,14 @@
      "date": "2026-08-31",
      "symbol": "IWM",
      "setup": "pm_break_down@09:30",
-     "sizeMult": 0.5,
+     "sizeMult": 0.25,
      "premium": 0.34,
-     "contracts": 39,
-     "invested$": 1307.0,
-     "stopRisk$": 327.0,
+     "contracts": 20,
+     "invested$": 670.0,
+     "stopRisk$": 168.0,
+     "fees$": 41.6,
      "pnlPct": -30.9,
-     "pnl$": -404.0
+     "pnl$": -207.0
     },
     {
      "date": "2026-09-01",
@@ -3559,6 +3851,7 @@
      "contracts": 40,
      "invested$": 1000.0,
      "stopRisk$": 250.0,
+     "fees$": 83.2,
      "pnlPct": -14.8,
      "pnl$": -148.0
     },
@@ -3571,6 +3864,7 @@
      "contracts": 40,
      "invested$": 874.0,
      "stopRisk$": 218.0,
+     "fees$": 83.2,
      "pnlPct": -32.1,
      "pnl$": -280.0
     },
@@ -3583,6 +3877,7 @@
      "contracts": 40,
      "invested$": 858.0,
      "stopRisk$": 215.0,
+     "fees$": 83.2,
      "pnlPct": 149.8,
      "pnl$": 1286.0
     },
@@ -3590,13 +3885,14 @@
      "date": "2026-09-02",
      "symbol": "IWM",
      "setup": "scenario_1@10:00",
-     "sizeMult": 0.5,
+     "sizeMult": 0.25,
      "premium": 0.22,
-     "contracts": 40,
-     "invested$": 866.0,
-     "stopRisk$": 217.0,
+     "contracts": 32,
+     "invested$": 693.0,
+     "stopRisk$": 173.0,
+     "fees$": 66.56,
      "pnlPct": -13.0,
-     "pnl$": -113.0
+     "pnl$": -90.0
     },
     {
      "date": "2026-09-02",
@@ -3607,6 +3903,7 @@
      "contracts": 20,
      "invested$": 1359.0,
      "stopRisk$": 340.0,
+     "fees$": 41.6,
      "pnlPct": -3.0,
      "pnl$": -41.0
     },
@@ -3619,6 +3916,7 @@
      "contracts": 20,
      "invested$": 1363.0,
      "stopRisk$": 341.0,
+     "fees$": 41.6,
      "pnlPct": -13.1,
      "pnl$": -179.0
     },
@@ -3628,11 +3926,12 @@
      "setup": "pm_break_up@09:30",
      "sizeMult": 0.5,
      "premium": 0.47,
-     "contracts": 28,
-     "invested$": 1312.0,
-     "stopRisk$": 328.0,
+     "contracts": 29,
+     "invested$": 1359.0,
+     "stopRisk$": 340.0,
+     "fees$": 60.32,
      "pnlPct": 16.6,
-     "pnl$": 218.0
+     "pnl$": 226.0
     },
     {
      "date": "2026-09-03",
@@ -3643,6 +3942,7 @@
      "contracts": 20,
      "invested$": 1361.0,
      "stopRisk$": 340.0,
+     "fees$": 41.6,
      "pnlPct": -40.4,
      "pnl$": -550.0
     },
@@ -3655,6 +3955,7 @@
      "contracts": 20,
      "invested$": 1294.0,
      "stopRisk$": 324.0,
+     "fees$": 41.6,
      "pnlPct": 57.5,
      "pnl$": 744.0
     },
@@ -3667,6 +3968,7 @@
      "contracts": 13,
      "invested$": 668.0,
      "stopRisk$": 167.0,
+     "fees$": 27.04,
      "pnlPct": -12.2,
      "pnl$": -82.0
     },
@@ -3676,11 +3978,12 @@
      "setup": "pm_break_up@12:00",
      "sizeMult": 0.5,
      "premium": 0.38,
-     "contracts": 36,
-     "invested$": 1369.0,
-     "stopRisk$": 342.0,
+     "contracts": 37,
+     "invested$": 1407.0,
+     "stopRisk$": 352.0,
+     "fees$": 76.96,
      "pnlPct": -19.2,
-     "pnl$": -263.0
+     "pnl$": -270.0
     },
     {
      "date": "2026-09-08",
@@ -3691,6 +3994,7 @@
      "contracts": 26,
      "invested$": 1350.0,
      "stopRisk$": 338.0,
+     "fees$": 54.08,
      "pnlPct": 32.3,
      "pnl$": 437.0
     },
@@ -3700,11 +4004,12 @@
      "setup": "pm_break_down@09:30",
      "sizeMult": 0.25,
      "premium": 0.51,
-     "contracts": 13,
-     "invested$": 666.0,
-     "stopRisk$": 167.0,
+     "contracts": 14,
+     "invested$": 717.0,
+     "stopRisk$": 179.0,
+     "fees$": 29.12,
      "pnlPct": 33.1,
-     "pnl$": 221.0
+     "pnl$": 238.0
     },
     {
      "date": "2026-09-09",
@@ -3715,6 +4020,7 @@
      "contracts": 40,
      "invested$": 964.0,
      "stopRisk$": 241.0,
+     "fees$": 83.2,
      "pnlPct": 46.6,
      "pnl$": 450.0
     },
@@ -3724,11 +4030,12 @@
      "setup": "pm_break_down@11:00",
      "sizeMult": 0.5,
      "premium": 0.38,
-     "contracts": 39,
-     "invested$": 1472.0,
-     "stopRisk$": 368.0,
+     "contracts": 40,
+     "invested$": 1510.0,
+     "stopRisk$": 378.0,
+     "fees$": 83.2,
      "pnlPct": -20.9,
-     "pnl$": -307.0
+     "pnl$": -315.0
     },
     {
      "date": "2026-09-09",
@@ -3736,11 +4043,12 @@
      "setup": "pm_break_down@11:00",
      "sizeMult": 0.5,
      "premium": 0.61,
-     "contracts": 23,
-     "invested$": 1398.0,
-     "stopRisk$": 349.0,
+     "contracts": 24,
+     "invested$": 1459.0,
+     "stopRisk$": 365.0,
+     "fees$": 49.92,
      "pnlPct": -7.9,
-     "pnl$": -111.0
+     "pnl$": -116.0
     },
     {
      "date": "2026-09-10",
@@ -3748,11 +4056,12 @@
      "setup": "pm_break_down@09:45",
      "sizeMult": 0.5,
      "premium": 0.63,
-     "contracts": 22,
-     "invested$": 1397.0,
-     "stopRisk$": 349.0,
+     "contracts": 23,
+     "invested$": 1460.0,
+     "stopRisk$": 365.0,
+     "fees$": 47.84,
      "pnlPct": -10.7,
-     "pnl$": -150.0
+     "pnl$": -157.0
     }
    ]
   }
