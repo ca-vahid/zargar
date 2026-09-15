@@ -312,3 +312,21 @@ through the ZargarRestart task with the readiness check; the build SHA on `/api/
 and restoration evidence are returned afterwards.
 
 Results this round: codex exclusive window 34/34 (+ backfill/ordering/own Delivery B 21/21 after the dry-run patch); own Delivery B + reconcile + ingest + gateway envelope/ack 57/57; Team2 runner + close, arming, reviewer execution groups 50/50 (8.7 min).
+
+**Second integration, same round:** origin/main moved again while the suites ran (Cartel v0.7.74, Team2
+R1-R5, the deploy lease). Merged: version 0.7.74 in all four files with EM's launch-bound `BUILD` kept;
+Team2's close scorecard keeps `planFor` (F126) beside the R5 funnel; the changelog keeps the 0.7.72 block
+under 0.7.74/0.7.73; `npm run check-release` agrees. The stray Cartel tables were gone from
+`zargar_test_codex` by then. One combined run had ONE other client present at its start and showed two
+failures that pass alone and in the clean rerun - reported as a collision, not counted. Clean exclusive
+window on the final tree (0 other clients before and after): reviewer groups + watermark pair +
+`test_team2_close` + entry quality **42/42**; own Delivery B + reconcile + ingest + gateway + separation
+60/60; Team2 runner + reviewer execution 16/16; arming 29/30; tip runner 48/52. The FIVE failures are all option-fill
+timeouts/rejections (`test_technique_arming::test_auto_options_one_contract_lifecycle`, `test_tip_runner::
+test_option_tip_both_books_end_to_end`, `test_short_tip_puts_end_to_end`, `test_native_mleg_spread_fills_on_sim`,
+`test_native_mleg_failure_falls_back_to_sequencing`) and every one of them FAILS IDENTICALLY on unmodified
+origin/main (checked in a throwaway worktree of main): the Cartel merge's sim executor now refuses an option
+fill unless the quote carries a real-time source identity (`SimExecutor.quote_rejection`, `synthetic_quotes`
+off), and those tests publish contract quotes with an empty source. Pre-existing on main, owned by the Cartel
+desk, not touched here; recorded for that desk. (Runs were done one file at a time in the foreground: the
+machine had ~1 GB free and background runs were killed for memory.)
