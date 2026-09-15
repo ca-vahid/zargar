@@ -3122,6 +3122,17 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-14 v0.7.81 acceptance (other team: same cumulative-fill requirement, one F item; v0.7.82)** — the
+  cumulative-fill booking was still gated on `submitting`/`working`, so a cancel reporting two contracts after an
+  earlier partial had opened the trade with one was ignored. The terminal branch now books the report's cumulative
+  fill for ANY entry trade first (`_apply_entry_fill`), then classifies only entries still submitting/working. Their
+  packet `tests/test_codex_team2_v081_cumulative.py` verbatim; duplicate, lower-total and zero-fill controls unchanged.
+- **2026-09-14 v0.7.80 acceptance (other team: zero-fill reconciliation ACCEPTED; one F item; v0.7.81)** — a terminal
+  report was classified by the runner's LOCAL filled quantity, so a CANCELLED carrying `filledQty=1` after a missed
+  partial-fill callback read as a zero fill (and was exempted). `on_order_update` now books the report's cumulative fill
+  first (`_apply_entry_fill`, shared with the fill branch: never regresses, opens once) and only then classifies; the
+  restore path inherits it through the same callback. Their packet `tests/test_codex_team2_v080_terminal_fill.py`
+  verbatim (live + restart); zero-fill controls unchanged. No threshold or setting changed.
 - **2026-09-14 v0.7.78 acceptance (other team: E and G ACCEPTED, F's initial protection ACCEPTED; one F reconciliation
   item; v0.7.80)** — `submit_uncertain` was set and persisted but never cleared: a confirmed REJECTED / CANCELLED with zero
   fills left the trade uncertain, so `_sync_unfilled` kept withholding the exemption. `on_order_update` now resolves the

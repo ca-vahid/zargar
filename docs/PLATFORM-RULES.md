@@ -1964,3 +1964,20 @@ managed; `_restore_trades` judges a still-uncertain entry against the persisted 
 (`_reconcile_uncertain_from_row`) — a terminal or filled row is authoritative, an in-flight or missing row keeps the
 uncertainty (never cleared on absence, a local timeout or a cancel request). Duplicate reports are idempotent; a cancel
 after a partial keeps the cumulative fill. Shared behaviour (EM inherits it; Tips override the retry loop).
+
+### Orders: a terminal report is classified by its cumulative fill — 2026-09-14 (Team2 review F; v0.7.81)
+
+`PlanRunner.on_order_update` used the runner's local `filled_qty` to decide whether a CANCELLED / EXPIRED / REJECTED
+entry report was a zero fill — after a missed partial-fill callback (a dropped delivery, a restart) a cancel carrying
+`filledQty=1` became a "cancelled, nothing filled" entry, and a technique could exempt it from its read. The terminal
+branch now books the report's cumulative fill first (`_apply_entry_fill`, the same helper the fill branch uses: never
+regresses a larger local figure, opens the position once, persists, publishes) and classifies afterwards; the restore
+path inherits it because `_reconcile_uncertain_from_row` goes through the same callback. Shared behaviour (every
+technique's entries); no threshold changed.
+
+### Orders: a terminal report's cumulative fill is booked for any entry trade — 2026-09-14 (Team2 review F; v0.7.82)
+
+The v0.7.81 booking ran only for entries still `submitting`/`working`; an entry an earlier partial had already opened
+ignored a cancel that reported more contracts. `on_order_update` now books the terminal report's cumulative fill for
+ANY entry trade (`_apply_entry_fill`: never regresses, opens once, nets against booked exits) and classifies only the
+entries that were still submitting/working. Shared behaviour; no threshold changed.

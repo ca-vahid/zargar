@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.80";
+export const APP_VERSION = "0.7.82";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.82",date:"2026-09-14",title:"A cancel that reports more contracts than were booked books them",items:[
+    {tag:"fixed",text:"Orders F: a terminal order report now books its cumulative fill for any entry, including one an earlier partial fill had already opened - a cancel reporting two contracts after one was booked adds the second and manages both. Duplicate reports, a smaller total and a confirmed zero fill still change nothing they should not."},
+  ]},
+  {version:"0.7.81",date:"2026-09-14",title:"A cancel that says one contract filled is a position",items:[
+    {tag:"fixed",text:"Orders F: a terminal order report (cancelled, expired, rejected) is now classified by the cumulative filled quantity it carries, not by what the app happened to see earlier - if the partial-fill callback was missed, a cancel reporting one contract filled books that contract and manages it instead of being treated as a zero fill. Live and after a restart (the persisted order row). Confirmed zero-fill outcomes still clear the way for Team2's proxy exemption."},
+  ]},
   {version:"0.7.80",date:"2026-09-14",title:"An unanswered order is resolved when the venue answers",items:[
     {tag:"fixed",text:"Orders F: an entry whose venue hand-off got no answer now stops being uncertain the moment the venue's own report arrives - a confirmed rejection or cancel with nothing filled becomes an ordinary failed/cancelled entry (and Team2 may exempt it from the read's proxy), a fill or partial fill stays managed and is never exempted, and a cancel after a partial keeps the fill. After a restart an unresolved entry is judged against the persisted order row; an in-flight or missing row keeps the uncertainty. Nothing clears it on a local timeout or a cancel request."},
   ]},

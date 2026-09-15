@@ -1395,6 +1395,28 @@ class PlanRunner(SessionListener):
                 "trigger": best.get("id"),
                 "note": "Estimate only — the exact contract (just-OTM call, this Friday/0DTE) and its real premium are chosen when the trigger fires."}
 
+    async def _apply_entry_fill(self, ap: ArmedPlan, tr: Trade, tid: str, o: dict) -> None:
+        """Book the entry's cumulative fill from a venue report (fill, partial, or the fill a terminal report carries):
+        never regresses a larger local figure, opens the position once, persists and publishes."""
+        new_filled = float(o.get("filledQty") or 0)
+        if new_filled <= tr.filled_qty:
+            return
+        tr.filled_qty = new_filled
+        if o.get("avgFillPrice") is not None:
+            tr.avg_fill = o.get("avgFillPrice")
+        tr.remaining = tr.filled_qty - sum(float(x.get("filledQty") or 0) for x in tr.exits)
+        if tr.status != "open":
+            tr.status = "open"
+            tr.opened_ts = int(time.time() * 1000)
+            self._log(ap, "position_open", f"{tid}: filled {tr.filled_qty:g} @ {tr.avg_fill}",
+                      trigger=tid, qty=tr.filled_qty, avgFill=tr.avg_fill)
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_POSITION_OPENED, {
+                "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "orderId": o["id"],
+                "qty": tr.filled_qty, "avgFill": tr.avg_fill, "stop": tr.stop, "targets": tr.targets},
+                aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        await self._persist(ap)
+        self._publish(ap, "position_open")
+
     async def _resolve_uncertain(self, ap: ArmedPlan, tr: Trade, status: str, filled: float, *, source: str) -> None:
         """F: clear `submit_uncertain` on authoritative evidence only (a venue order report, or the persisted order
         row at restore) and persist the resolved state. Cumulative fill evidence is preserved by the caller's
@@ -1823,35 +1845,29 @@ class PlanRunner(SessionListener):
                 # or a missing row never reaches this branch: only a venue-sourced order report does.
                 await self._resolve_uncertain(ap, tr, str(status), float(o.get("filledQty") or 0), source="order_update")
             if status in ("FILLED", "PARTIALLY_FILLED"):
-                new_filled = float(o.get("filledQty") or 0)
-                if new_filled > tr.filled_qty:
-                    tr.filled_qty = new_filled
-                    tr.avg_fill = o.get("avgFillPrice")
-                    tr.remaining = tr.filled_qty - sum(float(x.get("filledQty") or 0) for x in tr.exits)
-                    if tr.status != "open":
-                        tr.status = "open"
-                        tr.opened_ts = int(time.time() * 1000)
-                        self._log(ap, "position_open", f"{tid}: filled {tr.filled_qty:g} @ {tr.avg_fill}",
-                                  trigger=tid, qty=tr.filled_qty, avgFill=tr.avg_fill)
-                        await self.engine.journal.append(ev.TECHNIQUE_PLAN_POSITION_OPENED, {
-                            "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "orderId": o["id"],
-                            "qty": tr.filled_qty, "avgFill": tr.avg_fill, "stop": tr.stop, "targets": tr.targets},
+                await self._apply_entry_fill(ap, tr, tid, o)
+            elif status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
+                # F (2026-09-14, terminal cumulative fill): a terminal report carries the venue's CUMULATIVE filled
+                # quantity — book it FIRST, for ANY entry trade (one already opened by an earlier partial included:
+                # a cancel reporting two contracts after one was booked adds the second), because the intermediate
+                # fill callback may have been missed (a restart, a dropped delivery). Then classify: only an entry
+                # that was still submitting/working needs a terminal verdict, and only a report with nothing filled
+                # is a confirmed zero-fill.
+                if float(o.get("filledQty") or 0) > tr.filled_qty:
+                    await self._apply_entry_fill(ap, tr, tid, o)
+                if tr.status in ("submitting", "working"):
+                    if tr.filled_qty > 0:
+                        tr.status = "open"           # partial then cancel: manage what we have
+                    else:
+                        tr.status = "cancelled" if status in ("CANCELLED", "EXPIRED") else "failed"
+                        tr.reason = o.get("rejectReason") or status
+                        self._log(ap, "entry_" + status.lower(), f"{tid}: entry {status} {tr.reason}", trigger=tid)
+                        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                            "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "stage": "entry", "status": status,
+                            "reason": tr.reason, "orderId": o["id"]},
                             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
                     await self._persist(ap)
-                    self._publish(ap, "position_open")
-            elif status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED") and tr.status in ("submitting", "working"):
-                if tr.filled_qty > 0:
-                    tr.status = "open"           # partial then cancel: manage what we have
-                else:
-                    tr.status = "cancelled" if status in ("CANCELLED", "EXPIRED") else "failed"
-                    tr.reason = o.get("rejectReason") or status
-                    self._log(ap, "entry_" + status.lower(), f"{tid}: entry {status} {tr.reason}", trigger=tid)
-                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
-                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "stage": "entry", "status": status,
-                        "reason": tr.reason, "orderId": o["id"]},
-                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
-                await self._persist(ap)
-                self._publish(ap, "entry_" + status.lower())
+                    self._publish(ap, "entry_" + status.lower())
         elif o["id"] in tr.exit_order_ids:
             x = next((e for e in tr.exits if e.get("orderId") == o["id"]), None)
             if x is None:
