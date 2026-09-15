@@ -200,6 +200,11 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.max_open_tips": 5,
     "techniques.tip.max_tip_age_hours": 72,  # older content is REPLAYED on history, never traded
     "techniques.tip.quote_wait_seconds": 6.0,  # wait for a cold ticker's first quote before verifying
+    # multi-image intake (KFIN-07, 2026-09-14): every supported attachment is processed up to
+    # these bounds; anything beyond is explicit in the coverage manifest as skipped-over-budget
+    "techniques.tip.intake_max_images": 4,             # attachments stored + transcribed per message
+    "techniques.tip.intake_max_image_bytes": 8 * 1024 * 1024,  # per-attachment size cap (bytes)
+    "techniques.tip.intake_vision_calls_per_message": 4,  # paid vision calls per message (primary read + per-image transcriptions)
     "techniques.tip.discord.watch": [],      # allowlist of DMs/channels the gateway monitors (UI-managed)
     "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
@@ -212,11 +217,22 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_study_enabled": True,   # journal-only NBBO sampling at alert and +delay for every option proposal (entry-quality study, P3 2026-09-10)
     "techniques.tip.entry_study_delay_seconds": 180.0,
     "techniques.tip.analyst_max_output_tokens": 3000,
+    # KFIN-09 (2026-09-14) experiments - ALL inert by default
+    "techniques.tip.frozen_capture_context": False,   # stamp the exact context manifest (header components) on each analyst run's start step so a frozen bundle can be captured verbatim
+    "techniques.tip.frozen_variants": "current,core_only",   # knowledge variants a frozen replay runs (current | core_only | no_knowledge)
+    "techniques.tip.entry_cohort_enabled": False,     # record EVERY eligible open/add idea (skips, declines, blocked cards, shadows, parks, failures) with its decision-time quote
+    "techniques.tip.entry_cohort_delay_minutes": 3.0, # the configured LATER sample (labeled delayed - never alert-time evidence)
+    "techniques.tip.entry_cohort_premium_cap": 1.05,  # the cap variant: fill only when the ask <= cap x the source-stated premium
+    "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
     "techniques.tip.analyst_max_rules": 50,             # rulebook budget per run: CORE (pinned) rules always, then newest (KB-04)
     "techniques.tip.knowledge_maintenance_at": "17:25", # ET, EVERY day incl. weekends; runs the audit on rule_audit_day or as catch-up (KB-01)
     "techniques.tip.knowledge_audit_max_groups": 12,    # scope groups per maintenance run; the rest are deferred VISIBLY, least-recently-audited first (KB-04)
     "techniques.tip.knowledge_apply_enabled": False,     # PROPOSE-ONLY by default (Codex 2026-09-13): audits validate + journal proposals and flag disputes; merges/expiries apply only when this is on
     "techniques.tip.audit_max_output_tokens": 3000,      # audit reply cap; doubled once on a max_tokens stop with no JSON (the first live run returned an empty reply)  # per-turn output cap; doubled (max 8192) after a max_tokens stop (RKLB truncation, 2026-09-11)
+    # KFIN-02 (2026-09-14): bounded, resumable audit judgments — a scope is judged in deterministic note-boundary chunks
+    "techniques.tip.audit_chunk_notes": 40,              # notes per judge request (chunk closes at this count...)
+    "techniques.tip.audit_chunk_chars": 60000,           # ...or at this many characters of note text; chunk ids = hash of (note id, revision) — progress persists on the cycle, resumes across restarts
+    "techniques.tip.knowledge_audit_max_chunks": 24,     # paid judge requests per maintenance run across scopes; the rest stay pending VISIBLY (groupsChunkDeferred)
     # GEOMETRY-RISK-PLAN rev 2 (built 2026-09-14, reviewer GO; ACTIVATION is a separate reviewed decision)
     "techniques.tip.geometry_gate": "shadow",            # off | shadow (compute + journal, sizes untouched) | enforce (final stop + size against the risk budget BEFORE entry, Practice books only)
     "techniques.tip.risk_budget_per_tip": 0.0,           # $ planned loss per tip at the FINAL stop; 0 = techniques.tip.risk_pct % of the book's equity
@@ -293,6 +309,21 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.shadow_arm_at": "09:12", # ET, on engine.scheduler (after the 09:05 reconciliation)
     "techniques.tip.trailing_after_r": 1.0,  # managed-position trail activates after +N R
     "techniques.tip.sources": {},            # {name: {entry, mode, risk_pct, budget_per_tip, ...}}
+    # --- MK own-book workflow (KFIN-08, 2026-09-14; techniques/tip/ownbook.py). ALL INERT by
+    # default: `off` classifies nobody. `observe` classifies + journals enrolled sources with the
+    # pipeline unchanged; `shadow` routes their first-person activity to the dedicated own-book
+    # shadow ledger ONLY (never Practice, never a proposal, never an armed plan). Promotion out of
+    # the ledger is a HUMAN verdict on the evidence — the criteria below are reported, never acted on.
+    "techniques.tip.mk_ownbook_mode": "off",             # off | observe | shadow
+    "techniques.tip.mk_ownbook_sources": [],             # enrolled source names, e.g. ["MK-alpha-trades"]
+    "techniques.tip.mk_ownbook_cohort": "",              # declared grading cohort stamped on every booked entry; "" = undeclared -> nothing grades
+    "techniques.tip.mk_ownbook_budget": 1000.0,          # $ per booked own-book entry (share notional / option debit)
+    "techniques.tip.mk_ownbook_quote_max_age_seconds": 120,  # a quote older than this at the decision is not executable evidence -> unresolved
+    "techniques.tip.mk_ownbook_min_age_sessions": 5,     # a booked entry grades only after N sessions (or once closed)
+    "techniques.tip.mk_ownbook_min_graded": 20,          # promotion criterion: graded entries in the declared cohort
+    "techniques.tip.mk_ownbook_min_hit": 0.55,           # promotion criterion: hit rate (marked/realized above cost)
+    "techniques.tip.mk_ownbook_min_avg_return_pct": 0.0, # promotion criterion: mean return % of graded entries
+    "techniques.tip.mk_ownbook_max_unresolved_pct": 25.0,  # promotion criterion: at most this % of own activity may be unresolved
     # --- flow technique (docs/techniques/flow/PLAN.md; context only in v1, no orders) ---
     "techniques.flow.vol_oi_min": 1.25,      # flag: today's volume / open interest
     "techniques.flow.vol_oi_strong": 5.0,

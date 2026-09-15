@@ -21,6 +21,7 @@ from .lifecycle import position_risk_accounting
 from .analyst import (
     TIMEOUT_S,
     TOOLS,
+    _fail_meta,
     _persist_run,
     _Recorder,
     _rules_text,
@@ -28,6 +29,72 @@ from .analyst import (
 )
 
 log = logging.getLogger("zargar.tip.retro")
+
+
+class _RetroOutcome:
+    """The terminal record of one retro agent loop (KFIN-01): the parsed
+    opinion on success, else None — and ALWAYS the loop's usage (per-call
+    tokens / stop reason / latency / retries) plus the side-effect receipts
+    the tools left, whatever ended the run."""
+
+    __slots__ = ("opinion", "state", "tool_ctx", "error")
+
+    def __init__(self, opinion, state: dict, tool_ctx: dict, error: str | None):
+        self.opinion, self.state, self.tool_ctx, self.error = opinion, state, tool_ctx, error
+
+    def meta(self) -> dict:
+        return _fail_meta(self.state, self.tool_ctx)
+
+
+async def _retro_loop(eng, client, *, model: str, system: str, header: str,
+                      rec: _Recorder, run_id: str, max_tools: int, tool_ctx: dict,
+                      tools_used: list[dict], label: str) -> _RetroOutcome:
+    """Run the agent loop for a retro and persist its terminal state through
+    EVERY outcome: success (done), malformed/empty reply, timeout, provider
+    failure (failed — usage + receipts retained) and cancellation (failed,
+    persisted, then the CancelledError propagates). A paid response followed
+    by a failure still has its usage; a note the tools wrote before the
+    failure still has its receipt. Nothing here retries a side effect."""
+    state: dict = {}
+
+    async def _loop():
+        text = await run_agent_loop(
+            eng, client, model=model, system=system, header=header, rec=rec,
+            run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
+            tools_used=tools_used, state=state)
+        if text is None:
+            raise ValueError(f"no {label} produced (loop exhausted)")
+        i, j = text.find("{"), text.rfind("}")
+        if i == -1 or j <= i:
+            raise ValueError(f"no JSON object in the {label} reply")
+        return RetroOpinion.model_validate_json(text[i:j + 1])
+
+    try:
+        op = await asyncio.wait_for(_loop(), timeout=TIMEOUT_S)
+    except asyncio.CancelledError:
+        # shutdown/restart mid-run: terminal on the record FIRST (usage and
+        # receipts included), then the cancellation propagates unchanged
+        rec.step("error", "Cancelled (shutdown/restart) — reconciled as failed.")
+        import contextlib as _ctx
+        with _ctx.suppress(Exception):
+            await _persist_run(eng, run_id, status="failed", rec=rec,
+                               error="cancelled: shutdown/restart",
+                               opinion=_fail_meta(state, tool_ctx))
+        raise
+    except TimeoutError:
+        err = f"{label} timed out after {TIMEOUT_S:g}s"
+        log.warning("tip %s timed out (%s)", label, run_id[:8])
+        rec.step("error", f"{label.capitalize()} failed: {err}")
+        await _persist_run(eng, run_id, status="failed", rec=rec, error=err[:500],
+                           opinion=_fail_meta(state, tool_ctx))
+        return _RetroOutcome(None, state, tool_ctx, err)
+    except Exception as exc:
+        log.warning("tip %s failed (%s): %s", label, run_id[:8], exc)
+        rec.step("error", f"{label.capitalize()} failed: {exc}")
+        await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500],
+                           opinion=_fail_meta(state, tool_ctx))
+        return _RetroOutcome(None, state, tool_ctx, str(exc))
+    return _RetroOutcome(op, state, tool_ctx, None)
 
 
 class RetroOpinion(BaseModel):
@@ -130,24 +197,16 @@ async def retro_position(eng, row: dict, *, client=None) -> dict | None:
     tools_used: list[dict] = []
     tool_ctx = {"ticker": row.get("symbol"), "source": source,
                 "signal_id": signal_id, "run_id": run_id, "stage": "retro"}
-    try:
-        text = await asyncio.wait_for(run_agent_loop(
-            eng, client, model=model, system=system, header=header, rec=rec,
-            run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
-            tools_used=tools_used), timeout=TIMEOUT_S)
-        if text is None:
-            raise ValueError("no retro produced (loop exhausted)")
-        i, j = text.find("{"), text.rfind("}")
-        op = RetroOpinion.model_validate_json(text[i:j + 1])
-    except Exception as exc:
-        log.warning("tip retro failed for %s: %s", row.get("id"), exc)
-        rec.step("error", f"Retro failed: {exc}")
-        await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500])
+    outcome = await _retro_loop(eng, client, model=model, system=system, header=header,
+                                rec=rec, run_id=run_id, max_tools=max_tools,
+                                tool_ctx=tool_ctx, tools_used=tools_used, label="retro")
+    op = outcome.opinion
+    if op is None:
         return None
     result = {"verdict": op.grade, "grade": op.grade, "whatWorked": op.what_worked,
               "whatDidnt": op.what_didnt, "ruleUpdate": op.rule_update,
               "confidence": op.confidence, "model": model, "toolsUsed": tools_used,
-              "positionId": row.get("id"), "runId": run_id}
+              "positionId": row.get("id"), "runId": run_id, **outcome.meta()}
     rec.step("final", f"Retro: {op.grade.replace('_', ' ').upper()}."
              + (f" Worked: {op.what_worked}" if op.what_worked else "")
              + (f" Didn't: {op.what_didnt}" if op.what_didnt else "")
@@ -389,7 +448,7 @@ async def run_unfilled_retros(eng, *, client=None, limit: int = 3) -> dict:
         if r.id in filled_ids:
             continue
         by_source.setdefault(r.source_name or "unknown", []).append(r)
-    ran = 0
+    ran = failed = mark_failed = 0
     for source, sigs in list(by_source.items())[:limit]:
         sigs = sigs[:8]
         run_id = new_id()
@@ -418,37 +477,37 @@ async def run_unfilled_retros(eng, *, client=None, limit: int = 3) -> dict:
         system = UNFILLED_RETRO_SYSTEM + json.dumps(RetroOpinion.model_json_schema(),
                                                     separators=(",", ":"))
         tools_used: list[dict] = []
-        try:
-            text = await asyncio.wait_for(run_agent_loop(
-                eng, client, model=model, system=system, header=header, rec=rec,
-                run_id=run_id, max_tools=max_tools,
-                tool_ctx={"ticker": sigs[0].ticker, "source": source,
-                          "signal_id": sigs[0].id, "run_id": run_id,
-                          "stage": "retro"},
-                tools_used=tools_used), timeout=TIMEOUT_S)
-            if text is None:
-                raise ValueError("no retro produced (loop exhausted)")
-            op = RetroOpinion.model_validate_json(text[text.find("{"):text.rfind("}") + 1])
-        except Exception as exc:
-            log.warning("unfilled retro failed for %s: %s", source, exc)
-            rec.step("error", f"Unfilled retro failed: {exc}")
-            await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500])
+        tool_ctx = {"ticker": sigs[0].ticker, "source": source,
+                    "signal_id": sigs[0].id, "run_id": run_id, "stage": "retro"}
+        outcome = await _retro_loop(eng, client, model=model, system=system, header=header,
+                                    rec=rec, run_id=run_id, max_tools=max_tools,
+                                    tool_ctx=tool_ctx, tools_used=tools_used,
+                                    label="unfilled retro")
+        op = outcome.opinion
+        if op is None:
+            failed += 1
             continue
         result = {"verdict": op.grade, "grade": op.grade, "whatWorked": op.what_worked,
                   "whatDidnt": op.what_didnt, "ruleUpdate": op.rule_update,
                   "confidence": op.confidence, "model": model, "toolsUsed": tools_used,
-                  "unfilledBatch": len(sigs), "runId": run_id}
+                  "unfilledBatch": len(sigs), "runId": run_id, **outcome.meta()}
         rec.step("final", f"Unfilled retro ({source}): {op.grade.replace('_', ' ')}."
                  + (f" {op.what_didnt}" if op.what_didnt else ""), opinion=result)
         await _persist_run(eng, run_id, status="done", rec=rec, opinion=result)
-        async with eng.sf() as session:
-            for s in sigs:
-                db = await session.get(Signal, s.id)
-                if db is not None:
-                    db.extraction = {**(db.extraction or {}), "unfilledRetro": run_id}
-            await session.commit()
         ran += 1
-    return {"unfilledRetros": ran}
+        try:
+            async with eng.sf() as session:
+                for s in sigs:
+                    db = await session.get(Signal, s.id)
+                    if db is not None:
+                        db.extraction = {**(db.extraction or {}), "unfilledRetro": run_id}
+                await session.commit()
+        except Exception:
+            # the run is done and on the record; an unmarked batch is
+            # reviewed again tomorrow — visible here, never silent
+            log.exception("unfilled retro %s: marking %d signal(s) failed", run_id[:8], len(sigs))
+            mark_failed += 1
+    return {"unfilledRetros": ran, "failed": failed, "markFailed": mark_failed}
 
 
 async def nightly_tip_review(eng, *, client=None) -> dict:

@@ -120,9 +120,10 @@ for history (no as-of listings) and scores the model's premium path, not fills.
   (`backdated_signal_skip`), not acted on — including a historical EXIT (judgement accepted by the other team
   2026-09-14). Since v0.7.78 a book position the model no longer holds keeps the method's present-time one-candle stop
   (`orphan_stop`, S1 on the current 2m close) besides the live trims, target breach, quote stop and flatten.
-- **Uncertain submissions (v0.7.78)**: an entry whose venue hand-off got no answer stays `submitting` (exposure reserved,
-  order id registered, alert raised) until order/execution evidence reconciles it; nothing reconciles it automatically
-  beyond the normal order-update path — a human may have to look at the venue. Not yet exercised against a real venue.
+- **Uncertain submissions (v0.7.78, resolved v0.7.80)**: an entry whose venue hand-off got no answer stays `submitting`
+  (exposure reserved, order id registered, alert raised) until the venue's own report of that order arrives — live, or
+  read from the persisted order row after a restart. An in-flight or missing row keeps the uncertainty; a human may
+  still have to look at the venue. Not yet exercised against a real venue.
 - **Journal completeness**: `_log` events are in-memory (capped, lost on restart); only `_trail` writes are durable.
   A plan whose snapshot shows `trailGaps` is an incompletely observed session. The morning-report line, the
   `/team2-review` skill, the 5m flag detector (A5) and intraday zones (A11) were never built.

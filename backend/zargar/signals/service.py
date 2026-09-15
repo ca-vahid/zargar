@@ -24,10 +24,11 @@ from .. import bus as topics
 from .. import events as ev
 from ..domain import new_id
 from ..models import ChatAsset, Portfolio as PortfolioRow, RawContent, Signal
-from .extraction import Extractor, ground_signal
+from .extraction import Extractor, detect_attachment_conflicts, ground_signal
 from .schemas import ExtractionResult, TradeSignal
 from .sources import SourcePolicy, resolve_policy
 from .verification import verify_signal
+from ..techniques.tip import ownbook as _ownbook
 
 log = logging.getLogger("zargar.signals")
 
@@ -1361,12 +1362,21 @@ class SignalService:
                             message_id: str | None = None,
                             posted_at: str | None = None,
                             edited_at: str | None = None,
-                            image_count: int | None = None) -> dict:
+                            image_count: int | None = None,
+                            attachments: list[dict] | None = None) -> dict:
         """Paste-in path — text, or a screenshot of the user's own client (the
         model transcribes it; the image is kept as evidence in chat_assets).
         `message_id`/`posted_at` (gateway envelope 2026-09-09): the Discord
         identity dedupes BEFORE extraction — a repeat delivery costs no LLM
         call — and the authoritative posting time feeds stated_at.
+        `attachments` (KFIN-07, 2026-09-14): the message's supported attachment
+        set in order — {id, filename, contentType, bytes, data?, status?, error?}.
+        Every entry lands in the coverage manifest (`meta.attachments`) with a
+        stable id and an explicit status; bytes are stored as chat_assets up to
+        `techniques.tip.intake_max_images` / `intake_max_image_bytes`, the rest
+        is `skipped-over-budget`. `image` alone is the legacy single-image form
+        (attachment `img-1`; `image_count` > 1 lists the undelivered rest as
+        `absent`).
 
         The dedupe is an ATOMIC CLAIM (Codex review G5, 2026-09-09): check +
         write-ahead insert run in ONE transaction serialized by a pg advisory
@@ -1385,7 +1395,9 @@ class SignalService:
         if edited_at:
             meta["editedAt"] = str(edited_at)
         if image_count and int(image_count) > 1:
-            meta["imageCount"] = int(image_count)   # coverage manifest: first image only is processed
+            meta["imageCount"] = int(image_count)   # coverage manifest total (legacy single-image form)
+        if attachments:
+            meta["imageCount"] = len(attachments)
         row = RawContent(id=new_id(), source_type="manual", source_name=source_name,
                          subject=subject, body_text=text, meta=meta)
         resume_id: str | None = None
@@ -1446,6 +1458,12 @@ class SignalService:
                 session.add(asset)
                 await session.commit()
             meta["imageAssetId"] = asset.id
+        if attachments:
+            manifest = await self._stage_attachments(attachments)
+            meta["attachments"] = manifest
+            primary = next((a for a in manifest if a.get("assetId")), None)
+            if primary is not None:
+                meta["imageAssetId"] = primary["assetId"]   # legacy pointer = the primary image
         async with eng.sf() as session:
             if message_id:
                 # row was committed by the claim; stamp the image asset on it
@@ -1459,11 +1477,83 @@ class SignalService:
                 await session.commit()
         await eng.journal.append(
             ev.CONTENT_RECEIVED, {"id": row.id, "source": source_name, "sourceType": "manual",
-                                  "hasImage": image is not None},
+                                  "hasImage": image is not None or bool(meta.get("imageAssetId")),
+                                  "attachments": [{"id": a["id"], "status": a["status"]}
+                                                  for a in (meta.get("attachments") or [])]},
             aggregate_type="content", aggregate_id=row.id)
         # the authoritative posting time reaches processing (Codex G1): a
         # recovered old message keeps its original age → replay/expiry apply
         return await self.process_content(row.id, stated_at=posted_at or None)
+
+    async def _stage_attachments(self, attachments: list[dict]) -> list[dict]:
+        """Attachment set → coverage manifest (KFIN-07). Stable ids, message
+        order, one explicit status each: bytes within the budgets are stored
+        as chat_assets (`pending` until processed); over-budget bytes are
+        `skipped-over-budget` (reason kept); undecodable bytes `unreadable`;
+        an entry that arrived without bytes keeps the gateway's status
+        (`failed` with its error, else `absent`). Nothing is dropped."""
+        from ..technique.llm import sniff_media_type
+        from .extraction import ATT_ABSENT, ATT_SKIPPED, ATT_UNREADABLE
+        eng = self.engine
+        max_images = int(eng.settings.get("techniques.tip.intake_max_images", 4))
+        max_bytes = int(eng.settings.get("techniques.tip.intake_max_image_bytes", 8 * 1024 * 1024))
+        manifest: list[dict] = []
+        stored = 0
+        for n, att in enumerate(attachments, start=1):
+            entry = {"id": str(att.get("id") or f"att-{n}"), "n": n,
+                     "filename": str(att.get("filename") or "")[:200],
+                     "contentType": str(att.get("contentType") or "")[:64],
+                     "bytes": int(att.get("bytes") or 0),
+                     "status": str(att.get("status") or ""),
+                     "error": str(att.get("error") or "")[:300]}
+            data = att.get("data")
+            if data:
+                entry["bytes"] = len(data)
+                if stored >= max_images:
+                    entry["status"] = ATT_SKIPPED
+                    entry["error"] = (f"beyond techniques.tip.intake_max_images={max_images} "
+                                      f"(attachment {n})")
+                elif len(data) > max_bytes:
+                    entry["status"] = ATT_SKIPPED
+                    entry["error"] = (f"{len(data)} bytes exceeds "
+                                      f"techniques.tip.intake_max_image_bytes={max_bytes}")
+                else:
+                    try:
+                        mt = sniff_media_type(data)
+                    except ValueError as exc:
+                        entry["status"], entry["error"] = ATT_UNREADABLE, str(exc)[:200]
+                    else:
+                        asset = ChatAsset(id=new_id(), thread_id=None, media_type=mt, data=data,
+                                          meta={"kind": "tip_screenshot",
+                                                "attachmentId": entry["id"], "n": n})
+                        async with eng.sf() as session:
+                            session.add(asset)
+                            await session.commit()
+                        entry.update(assetId=asset.id, mediaType=mt, status="pending")
+                        stored += 1
+            elif not entry["status"]:
+                entry["status"] = ATT_ABSENT
+            manifest.append(entry)
+        return manifest
+
+    @staticmethod
+    def _attachment_manifest(meta: dict) -> list[dict]:
+        """The content's coverage manifest; a legacy single-image row
+        (`imageAssetId` + optional `imageCount`, no `attachments`) is
+        synthesized as attachment `img-1` pending + the rest `absent` so the
+        one processing path serves both shapes."""
+        from .extraction import ATT_ABSENT
+        manifest = meta.get("attachments")
+        if isinstance(manifest, list) and manifest:
+            return [dict(a) for a in manifest]
+        if meta.get("imageAssetId"):
+            total = max(1, int(meta.get("imageCount") or 1))
+            out = [{"id": "img-1", "n": 1, "assetId": meta["imageAssetId"], "status": "pending"}]
+            out += [{"id": f"img-{k}", "n": k, "status": ATT_ABSENT,
+                     "error": "not delivered (single-image intake)"}
+                    for k in range(2, total + 1)]
+            return out
+        return []
 
     async def discord_message_edited(self, message_id: str, *, edited_at: str = "",
                                      text: str = "") -> dict:
@@ -1581,16 +1671,30 @@ class SignalService:
             content = await session.get(RawContent, content_id)
         if content is None:
             raise ValueError("unknown content")
-        image: bytes | None = None
-        asset_id = (content.meta or {}).get("imageAssetId")
-        if asset_id:
-            async with eng.sf() as session:
-                asset = await session.get(ChatAsset, asset_id)
-            image = asset.data if asset else None
+        from .extraction import (ATT_ABSENT, ATT_FAILED, ATT_PROCESSED, ATT_SKIPPED,
+                                 build_grounding_corpus)
+        # coverage manifest (KFIN-07): every attachment with a stable id and an
+        # explicit status; the bytes of the stored ones are loaded here — a
+        # stored image that vanished is `absent`, never silently skipped
+        manifest = self._attachment_manifest(content.meta or {})
+        images: dict[str, bytes] = {}
+        for entry in manifest:
+            if entry.get("assetId") and entry.get("status") in ("pending", ATT_PROCESSED):
+                async with eng.sf() as session:
+                    asset = await session.get(ChatAsset, entry["assetId"])
+                if asset is None or not asset.data:
+                    entry["status"], entry["error"] = ATT_ABSENT, "stored image missing"
+                else:
+                    images[entry["id"]] = asset.data
+        primary = next((e for e in manifest if e["id"] in images), None)
+        image: bytes | None = images[primary["id"]] if primary else None
         text = content.body_text or content.body_html or ""
         if not text.strip() and image is None:
+            if manifest:
+                await self._persist_attachments(content_id, manifest, vision_calls=0)
             await self._set_content_status(content_id, "ignored")
-            return {"contentId": content_id, "status": "ignored", "signals": []}
+            return {"contentId": content_id, "status": "ignored", "signals": [],
+                    "attachments": [{"id": a["id"], "status": a["status"]} for a in manifest]}
         if not self.extractor.available:
             return {"contentId": content_id, "status": "new", "signals": [],
                     "note": "extraction unavailable: ANTHROPIC_API_KEY not configured"}
@@ -1601,6 +1705,47 @@ class SignalService:
         await intake.start(source=content.source_name or "auto",
                            chars=len(text), has_image=image is not None,
                            preview=text[:400], experiment=experiment)
+        n_total = len(manifest)
+        # --- per-image transcription, bounded by the vision-call budget: the
+        # primary image rides the extraction call (1 call, as before); every
+        # other stored image gets its own transcription call so its transcript
+        # is machine-bound to its attachment id. Over budget → explicit skip.
+        vision_budget = int(eng.settings.get("techniques.tip.intake_vision_calls_per_message", 4))
+        vision_calls = 1 if image is not None else 0        # reserved for the primary read
+        others = [e for e in manifest if e["id"] in images and e is not primary]
+        if others:
+            intake.step("extract", f"{n_total} attachment(s): transcribing "
+                                   f"{len(others)} image(s) beyond the primary one "
+                                   f"(vision budget {vision_budget} call(s)/message).")
+            await intake.checkpoint()
+        for entry in others:
+            if entry.get("status") == ATT_PROCESSED and entry.get("transcript"):
+                continue                # resumed row: transcript already paid for
+            if vision_calls >= vision_budget:
+                entry["status"] = ATT_SKIPPED
+                entry["error"] = (f"beyond techniques.tip.intake_vision_calls_per_message="
+                                  f"{vision_budget}")
+                continue
+            vision_calls += 1
+            try:
+                transcript = await self.extractor.transcribe(
+                    images[entry["id"]],
+                    label=f"attachment {entry.get('n')} of {n_total} (id {entry['id']})")
+                entry["transcript"] = (transcript or "")[:20000]
+                entry["status"] = ATT_PROCESSED
+            except Exception as exc:
+                log.warning("attachment %s transcription failed for %s: %s",
+                            entry["id"], content_id, exc)
+                entry["status"], entry["error"] = ATT_FAILED, f"transcription failed: {str(exc)[:200]}"
+                intake.step("extract", f"Attachment {entry.get('n')} of {n_total} "
+                                       f"(id {entry['id']}): transcription failed — "
+                                       "recorded as failed, not evidence.")
+        # the OTHER attachments' blocks (transcripts + explicit non-coverage)
+        # reach the extraction read as separate documents, in message order
+        attachments_text = ""
+        if manifest and any(e is not primary for e in manifest):
+            attachments_text, _ = build_grounding_corpus(
+                "", [{**e, "total": n_total} for e in manifest if e is not primary])
         intake.step("extract", f"Extracting with {self.extractor.model}…"
                     + (" (image transcription included)" if image is not None else "")
                     + " — one LLM read of the whole message, usually 10–30 s.")
@@ -1614,7 +1759,11 @@ class SignalService:
                     source_name=content.source_name or "",
                     received_at=content.received_at.isoformat() if content.received_at else "",
                     image=image,
-                    is_retry=attempt > 1)   # same logical request (Codex M1)
+                    is_retry=attempt > 1,   # same logical request (Codex M1)
+                    **({"image_label": f"attachment {primary.get('n')} of {n_total} "
+                                       f"(id {primary['id']})",
+                        "attachments_text": attachments_text}
+                       if (primary is not None and n_total > 1) else {}))
                 break
             except Exception as exc:
                 # a transient API failure must not eat the tip (529 Overloaded
@@ -1673,31 +1822,34 @@ class SignalService:
             label = " · ".join(names[:2]) + f" +{len(names) - 2}"
         await intake.checkpoint(ticker=(label or "no signals")[:32])
 
+        # caption AND every processed transcript are this message's evidence
+        # (Codex critique 2026-09-11: the transcript once REPLACED the caption
+        # in the grounding corpus and a valid caption quote failed grounding).
+        # The corpus is sectioned per document — `--- attachment n of N (id …)
+        # ---` — so each claim grounds to the caption or to ONE attachment id,
+        # and an unprocessed attachment stays an explicit non-coverage line.
+        if primary is not None:
+            primary["transcript"] = (result.source_transcript or "")[:20000]
+            primary["status"] = ATT_PROCESSED
+        blocks = None
         source_text = text
-        if image is not None and result.source_transcript:
-            # caption AND transcript are BOTH this message's evidence (Codex
-            # critique 2026-09-11, reproduced: the transcript REPLACED the
-            # caption in the grounding corpus, so a perfectly valid caption
-            # quote failed deterministic grounding — Kevin's first tips died
-            # here). Ground against the sectioned union; the manifest line
-            # keeps attachment coverage honest (intake processes the FIRST
-            # image only — multi-image coverage is a queued follow-up).
-            n_total = int((content.meta or {}).get("imageCount") or 1)
-            if text.strip():
-                source_text = (
-                    f"{text}\n--- IMAGE TRANSCRIPT "
-                    f"(attachment 1 of {n_total} processed) ---\n"
-                    f"{result.source_transcript}")
-            else:
-                source_text = result.source_transcript
-            async with eng.sf() as session:
-                db_content = await session.get(RawContent, content_id)
-                if db_content is not None and not (db_content.body_text or "").strip():
-                    db_content.body_text = result.source_transcript
-                    await session.commit()
+        if manifest:
+            source_text, blocks = build_grounding_corpus(
+                text, [{**e, "total": n_total} for e in manifest])
+            await self._persist_attachments(content_id, manifest, vision_calls=vision_calls)
+            covered = sum(1 for e in manifest if e["status"] == ATT_PROCESSED)
+            intake.step("extract", f"Attachment coverage: {covered} of {n_total} processed — "
+                        + ", ".join(f"{e.get('n')}:{e['status']}" for e in manifest) + ".")
+            if image is not None and result.source_transcript:
+                async with eng.sf() as session:
+                    db_content = await session.get(RawContent, content_id)
+                    if db_content is not None and not (db_content.body_text or "").strip():
+                        db_content.body_text = result.source_transcript
+                        await session.commit()
 
         out = await self.handle_extraction(content, result, source_text=source_text,
-                                           intake=intake, experiment=experiment)
+                                           intake=intake, experiment=experiment,
+                                           blocks=blocks)
         await self._set_content_status(content_id, "extracted")
 
         # any signal that verification discarded -> the analyst reviews the
@@ -1825,17 +1977,49 @@ class SignalService:
                 .order_by(Signal.created_at.desc()).limit(6)
             )).scalars().all()
         # experiment rows are out-of-band (KNOWLEDGE plan §E): a REAL tip must
-        # never dedupe onto a replayed historical sample
+        # never dedupe onto a replayed historical sample. KFIN-08: an own-book
+        # CONTEXT row (recap / hypothetical / third-party) or an UNRESOLVED
+        # disclosure is not a tip either — "I bought NVDA at 95 last year" must
+        # not swallow "just added NVDA at 118.20" an hour later; only a BOOKED
+        # own-book entry dedupes a repeat of itself.
         for r in rows:
-            if experiment_tag(r.extraction) is None:
+            if experiment_tag(r.extraction) is None and r.status not in (
+                    _ownbook.STATUS_CONTEXT, _ownbook.STATUS_UNRESOLVED):
                 return r
         return None
 
+    async def _persist_attachments(self, content_id: str, manifest: list[dict],
+                                   *, vision_calls: int) -> None:
+        """Write the processed coverage manifest back onto the content (per-
+        attachment status + transcript) and journal it (KFIN-07)."""
+        eng = self.engine
+        try:
+            async with eng.sf() as session:
+                row = await session.get(RawContent, content_id)
+                if row is not None:
+                    row.meta = {**(row.meta or {}), "attachments": manifest,
+                                "visionCalls": vision_calls}
+                    await session.commit()
+            await eng.journal.append(
+                ev.TIP_ATTACHMENTS_PROCESSED,
+                {"contentId": content_id, "total": len(manifest), "visionCalls": vision_calls,
+                 "attachments": [{"id": a["id"], "n": a.get("n"), "status": a.get("status"),
+                                  "chars": len(a.get("transcript") or ""),
+                                  "error": (a.get("error") or "")[:200] or None}
+                                 for a in manifest]},
+                aggregate_type="content", aggregate_id=content_id)
+        except Exception:
+            log.exception("persisting the attachment manifest failed for %s", content_id)
+
     async def handle_extraction(self, content: RawContent, result: ExtractionResult,
                                 *, source_text: str, intake=None,
-                                experiment: str | None = None) -> list[dict]:
+                                experiment: str | None = None,
+                                blocks: list | None = None) -> list[dict]:
         """Grounding → dedupe → persistence → verification → proposal, per signal.
         Split out so tests can drive it with a canned ExtractionResult (no API).
+        `blocks` (KFIN-07): the sectioned grounding corpus — caption + one block
+        per attachment id — so every quote is attributed to the document it
+        came from and contradictory documents are recorded, never blended.
         `intake` (optional) is the message's IntakeRun — per-signal verdicts are
         streamed onto it so the whole pipeline is watchable live.
         `experiment` (KNOWLEDGE plan §E) marks an out-of-band historical batch:
@@ -1884,9 +2068,26 @@ class SignalService:
                         + (f" @ {s.premium:g}" if s.premium else "")
                         for s in result.signals]
         shared_opinion: dict | None = None
-        for sig in result.signals:
+        # grounding is judged for the whole message first: with a sectioned
+        # corpus each quote is attributed to its block, and two readings of
+        # one trade from DIFFERENT documents that disagree are both flagged
+        # `conflict` (KFIN-07) — neither is chosen, neither dedupes onto an
+        # older tip, both fail verification into the analyst's review
+        groundings = [ground_signal(sig, source_text, blocks) for sig in result.signals]
+        conflicts = (detect_attachment_conflicts(result.signals, groundings)
+                     if blocks is not None else [])
+        for c in conflicts:
+            await eng.journal.append(
+                ev.TIP_ATTACHMENT_CONFLICT,
+                {"contentId": content.id, "source": content.source_name, **c},
+                aggregate_type="content", aggregate_id=content.id)
+            istep("signal", f"{c['ticker']}: contradictory {c['field']} across documents — "
+                            + " vs ".join(f"{v['value']} ({', '.join(v['blocks'])})"
+                                          for v in c["values"])
+                            + ". Recorded, not blended — needs review.")
+        for idx, sig in enumerate(result.signals):
             policy = resolve_policy(eng.settings, content.source_name)
-            grounding = ground_signal(sig, source_text)
+            grounding = groundings[idx]
 
             # --- dedupe: the same tip seen again attaches to the original.
             # A FOLLOW-UP ("sold 40%", "close") is never a duplicate of the
@@ -1895,7 +2096,8 @@ class SignalService:
             key = dedupe_key_for(content.source_name, sig)
             window = float(eng.settings.get("techniques.tip.dedupe_window_hours", 24))
             dup = (await self._find_duplicate(key, window)
-                   if sig.action in ("open", "add", "") and experiment is None else None)
+                   if sig.action in ("open", "add", "") and experiment is None
+                   and not grounding.get("conflict") else None)
             if dup is not None:
                 async with eng.sf() as session:
                     db_dup = await session.get(Signal, dup.id)
@@ -2035,8 +2237,44 @@ class SignalService:
                             "(dates are advisory, not confirmed)")
                 except Exception:  # pragma: no cover - context is best-effort
                     log.debug("calendar lookup failed for %s", row.ticker)
+            # KFIN-08 (2026-09-14): an ENROLLED own-book source (Meet Kevin) narrates
+            # its own trading — "I added", "sold half", recaps, hypotheticals,
+            # other people's screenshots. Classified deterministically first
+            # (techniques/tip/ownbook.py), then by the extraction's actor/activity
+            # fields. In `shadow` mode own activity is diverted to the dedicated
+            # own-book shadow ledger BEFORE the immediate book, the analyst, any
+            # proposal or arm; in `observe` mode it is only recorded. Non-enrolled
+            # sources never enter this block.
+            ob = None
+            if experiment is None and _ownbook.enrolled(eng.settings, content.source_name):
+                ob = _ownbook.classify(sig, source_text, result=result)
+                ob["route"] = "pipeline"
+                if ob["class"] != "tip":
+                    ob = _ownbook.resolve(ob, sig, grounding=grounding,
+                                          quote=eng.quotes.get(row.ticker.upper()),
+                                          settings=eng.settings, stale=stale,
+                                          age_hours=age_hours)
+                    if _ownbook.mode(eng.settings) == "shadow":
+                        ob["route"] = "ownbook"
+                        try:
+                            ob = await _ownbook.book(self, row, sig, ob, source_text=source_text)
+                        except Exception as exc:          # never a silent drop
+                            log.exception("own-book booking failed for %s", row.id)
+                            ob["resolution"] = "unresolved"
+                            ob["reasons"] = [f"own-book booking failed: {exc}"[:300]]
+                            ob.pop("booked", None)
             replay = None
-            if stale or experiment is not None:
+            if ob is not None and ob.get("route") == "ownbook":
+                status = _ownbook.status_for(ob)
+                verification["checks"].append({
+                    "name": "ownbook", "passed": True, "fatal": False,
+                    "detail": (f"own-book {ob['class']} ({ob.get('resolution')}): research "
+                               "ledger only — never a proposal, an armed plan or a Practice order"
+                               + (" — " + "; ".join(ob.get("reasons") or []) if ob.get("reasons") else ""))})
+                verification["passed"] = False
+                verification["park"] = False
+                verification["shadow_only"] = False
+            elif stale or experiment is not None:
                 # too old to trade (or an out-of-band experiment sample, which is
                 # NEVER traded regardless of age) — replay it on history so the
                 # content still teaches something (both books' counterfactuals,
@@ -2074,6 +2312,8 @@ class SignalService:
                 extra = {"statedAt": result.stated_at, "ageHours": age_hours}
                 if replay is not None:
                     extra["replay"] = replay
+                if ob is not None:
+                    extra["ownbook"] = ob
                 db_row.extraction = {**(db_row.extraction or {}), **extra}
                 await session.commit()
                 row = db_row
@@ -2091,6 +2331,28 @@ class SignalService:
                   ticker=row.ticker, status=status)
             if intake is not None:
                 await intake.checkpoint()
+
+            if ob is not None:
+                await eng.journal.append(
+                    ev.TIP_OWNBOOK_CLASSIFIED,
+                    {"signalId": row.id, "ticker": row.ticker, "source": content.source_name,
+                     "class": ob["class"], "route": ob.get("route"), "basis": ob.get("basis"),
+                     "resolution": ob.get("resolution"), "reasons": ob.get("reasons") or [],
+                     "cohort": ob.get("cohort") or None, "status": status,
+                     "booked": ob.get("booked"), "agreement": ob.get("agreement"),
+                     "quoteAtDecision": (ob.get("evidence") or {}).get("quote")},
+                    aggregate_type="signal", aggregate_id=row.id)
+                if ob.get("route") == "ownbook":
+                    istep("handoff",
+                          f"{row.ticker}: own-book {ob['class']} → {ob.get('resolution')} "
+                          "(research ledger only; no proposal, no plan, no Practice order)"
+                          + (" — " + "; ".join(ob.get("reasons") or []) if ob.get("reasons") else ""),
+                          ticker=row.ticker, status=status)
+                    out.append({"signal": signal_dict(row), "proposal": None, "armed": None,
+                                "shadowOrder": None, "ownbook": ob})
+                    continue
+                istep("note", f"{row.ticker}: own-book classifier (observe) says {ob['class']} — "
+                              "pipeline unchanged.")
 
             proposal = None
             shadow_order = None
@@ -2367,6 +2629,14 @@ class SignalService:
                                 proposal = decided["proposal"]
                             except Exception:
                                 log.exception("auto-approve failed for proposal %s", proposal["id"])
+            # KFIN-09 (2026-09-14): the entry-variant COHORT records EVERY eligible
+            # idea at its decision - proposals, blocked cards, declines, arms,
+            # skips, shadows, parks, replays, failures (inert unless enabled)
+            with contextlib.suppress(Exception):
+                from ..techniques.tip import cohort as _cohort
+                await _cohort.record_idea(eng, row=row, content=content, status=status,
+                                          proposal=proposal, armed=armed, experiment=experiment,
+                                          appraised=bool(appraise and analyst_available))
             out.append({"signal": signal_dict(row), "proposal": proposal,
                         "armed": armed, "shadowOrder": shadow_order})
         return out
@@ -2434,7 +2704,7 @@ class SignalService:
 
         shadow = next((p for p in eng.positions.portfolios() if match(p)), None)
         if shadow is None:
-            name = f"Shadow: {source}" + (" (armed)" if book == "armed" else "")
+            name = f"Shadow: {source}" + {"armed": " (armed)", "ownbook": " (own book)"}.get(book, "")
             row = PortfolioRow(id=new_id(), name=name, kind="shadow",
                                starting_cash=10_000.0, cash=10_000.0,
                                source_name=source, book=book)
@@ -2973,6 +3243,7 @@ class SignalService:
                     with contextlib.suppress(Exception):
                         await eng.tip_runner.arm_shadow(row.id)   # books lane, today
                 policy = resolve_policy(eng.settings, row.source_name)
+                prop = None
                 if (new_status == "verified" and eng.proposals is not None
                         and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
@@ -2997,6 +3268,12 @@ class SignalService:
                                                            reason=why)
                             elif unattended and verdict == "take":
                                 await eng.proposals.approve(prop["id"], via="auto")
+                # KFIN-09: a park re-decided by the sweep is a REDECISION row in
+                # the entry cohort (the intake row stays as the first decision)
+                with contextlib.suppress(Exception):
+                    from ..techniques.tip import cohort as _cohort
+                    await _cohort.record_idea(eng, row=row, content=None, status=new_status,
+                                              proposal=prop, kind="redecision")
 
         # -- (b) error content, one retry -------------------------------------
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)

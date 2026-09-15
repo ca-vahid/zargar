@@ -52,7 +52,17 @@ async def verify_signal(
     # itself — quotes found, every price evidenced — the model inferred the
     # ticker from context the checker can't see (chart screenshot, channel
     # name): shadow-gate instead of killing (CRWV 2026-08-31).
-    if grounding is not None:
+    if grounding is not None and grounding.get("conflict"):
+        # KFIN-07: contradictory evidence across the caption / attachments —
+        # neither reading is chosen; the claim needs a person (fatal here, the
+        # discarded→review path hands it to the analyst)
+        c = grounding["conflict"][0]
+        vals = " vs ".join(f"{v.get('value')} ({', '.join(v.get('blocks') or [])})"
+                           for v in (c.get("values") or []))
+        add("attachments_consistent", False,
+            f"contradictory {c.get('field')} across documents — {vals}; "
+            "recorded, not blended — needs review")
+    elif grounding is not None:
         g_checks = grounding.get("checks") or {}
         ticker_only_gap = (not grounding.get("passed")
                            and g_checks.get("ticker_evidenced") is False

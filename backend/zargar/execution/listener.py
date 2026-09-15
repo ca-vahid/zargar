@@ -100,12 +100,11 @@ class SessionListener:
                 try:
                     if msg.get("tf") != "1m":
                         continue
-                    from ..delivery_health import observe
-                    from ..domain import now_ms
-                    started = now_ms()
-                    observe(self.engine, self._name, msg, q.qsize())
-                    await self.on_minute_bar(msg.get("symbol"), msg.get("bar"))
-                    observe(self.engine, self._name, msg, q.qsize(), handled_ms=now_ms()-started)
+                    from ..delivery_health import handling
+                    # start + outcome (ok / failed / cancelled) land in the telemetry's `finally`;
+                    # the telemetry itself never awaits, so this callback stays independent of journal I/O
+                    with handling(self.engine, self._name, msg, queue=q):
+                        await self.on_minute_bar(msg.get("symbol"), msg.get("bar"))
                 except asyncio.CancelledError:
                     raise
                 except Exception:

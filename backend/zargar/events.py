@@ -59,6 +59,8 @@ TIP_GEOMETRY_REPAIRED = "TipGeometryRepaired"      # adoption gate fixed a hande
 TIP_AUTO_PAUSED = "TipAutoPaused"
 TIP_MESSAGE_REVISED = "TipMessageRevised"          # a source EDITED an already-seen message (mirror updated; never auto re-extracted)                  # session kill-switch: an adoption stopped out within minutes — autos wait for a person
 TIP_LANE_DECIDED = "TipLaneDecided"                # which lane a take went down (now-proposal vs at-level arm) + preflight warnings
+TIP_ATTACHMENTS_PROCESSED = "TipAttachmentsProcessed"  # multi-image intake coverage manifest: per-attachment status (KFIN-07)
+TIP_ATTACHMENT_CONFLICT = "TipAttachmentConflict"      # contradictory evidence across caption/attachments — recorded, never blended
 TIP_SPREAD_LEG_FAILED = "TipSpreadLegFailed"       # spread short leg died AND the long rollback failed — naked long, needs a person
 TIP_LANE_GRADED = "TipLaneGraded"                  # now-vs-at_level counterfactual, graded once the tip resolved
 TIP_RULE_AUDITED = "TipRuleAudited"                # weekly rule audit: merges/expiries applied, contradictions flagged
@@ -177,3 +179,12 @@ AUTH_SIGN_IN = "AuthSignIn"
 TIP_INTAKE_STALLED = "TipIntakeStalled"
 TIP_INTAKE_RECOVERED = "TipIntakeRecovered"
 
+# KFIN-08 (2026-09-14): an enrolled own-book source's first-person activity was classified
+# (own_open / own_exit / recap / hypothetical / third_party) with its resolution — booked in
+# the own-book shadow ledger, unresolved (evidence missing), or context (never opens)
+TIP_OWNBOOK_CLASSIFIED = "TipOwnBookClassified"
+
+# KFIN-09 (2026-09-14): frozen knowledge comparison + entry-variant cohort (evidence only)
+TIP_FROZEN_BUNDLE = "TipFrozenBundle"          # an immutable case bundle was captured (id = content hash)
+TIP_FROZEN_REPLAY = "TipFrozenReplay"          # one isolated replay under one knowledge variant
+TIP_ENTRY_COHORT = "TipEntryCohort"            # one eligible idea recorded at its decision (all dispositions)

@@ -48,6 +48,15 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 - **Monitoring:** the desk's Claude session runs a pre-open tick (08:23 ET), 30-minute session
   ticks (:03/:33, 09:03–15:33 ET) and a 16:06 ET wrap-up. These are session-only crons — a
   session restart drops them and they must be re-armed.
+- **Meet Kevin own-book workflow (KFIN-08, built, NOT enrolled):** `techniques.tip.mk_ownbook_mode`
+  is `off` and `mk_ownbook_sources` is empty, so nothing changed at runtime. When enrolled
+  (`observe` first, then `shadow`), MK's "I bought / added / sold half" text is classified
+  (`techniques/tip/ownbook.py`) and booked ONLY in a dedicated `book=ownbook` shadow book —
+  never the Practice book, a proposal or an armed plan; ungrounded/stale disclosures stay
+  `ownbook_unresolved`; recaps, hypotheticals and other people's screenshots are
+  `ownbook_context`. Ledger + grading against the `mk_ownbook_min_*` criteria:
+  `GET /api/tip/ownbook/MK-alpha-trades` (a report — promotion stays a human verdict).
+  PLATFORM-RULES invariant 19; TRADING-RULES 2026-09-14.
 
 ## What changed on 2026-09-13/14 (why older docs read differently)
 
@@ -62,6 +71,12 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## Known gaps, risks and what could be wrong (read before trusting a number)
 
+0. **The MK own-book classifier is text rules + two extraction fields, unexercised on live
+   MK posts.** Known blind spots (TRADING-RULES 2026-09-14): "we bought" reads as the author's
+   fund; "sold puts" (a premium-selling OPEN) reads as an exit; a third-party screenshot with
+   no textual cue depends on the extractor's `actor`; entry aging counts weekdays, not the
+   exchange calendar. Run `observe` mode on MK for a week and read the `TipOwnBookClassified`
+   journal before switching to `shadow`; nothing about it is a Practice path either way.
 1. **No live-market session under enforce/integrity yet.** Everything is proven on the sim
    broker and the reviewer's rigs. Acceptance = the first `TipGeometryRepaired` with
    `phase: pre-entry, enforced: true`, the first review-gated card, and (if one happens) the
@@ -95,9 +110,12 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
    batches. Nobody is reading the proposals unless the user opens the Knowledge tab.
 9. **Three truncated `experiment:*` notes are unproven** (no trace evidence) and stay
    truncated. KB-08's frozen-evidence comparison for the rulebook audit is not built.
-10. **Own-book mirroring for Meet Kevin is OFF**; multi-image evidence is queued (first image
-    only); Telegram intake is deprioritized. Tips with their evidence in a second image are
-    graded on the caption + first image.
+10. **Own-book mirroring for Meet Kevin is OFF**; Telegram intake is deprioritized. Multi-image
+    evidence is processed since KFIN-07 (2026-09-14): every supported attachment up to
+    `techniques.tip.intake_max_images` (4) / `intake_max_image_bytes` (8 MiB) /
+    `intake_vision_calls_per_message` (4) is transcribed and grounded per attachment id; images
+    beyond those budgets are explicit `skipped-over-budget` in the coverage manifest, and a
+    contradiction between documents fails verification into review instead of picking a side.
 11. **Tools that mint a session need `backend/.env`** — `tip_note_restore` and
     `tip_consolidation` must run from `C:/Cursor/zargar/backend`; from a worktree the apply
     step fails after printing the plan (learned 2026-09-14; nothing was written).
@@ -125,6 +143,37 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     session; the app has been dark mid-session before. Every deploy must go through
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
+
+## Experiments (KFIN-09, built 2026-09-14 - inert by default)
+
+Two evidence tools, both isolated by construction (`tests/test_tip_kfin09_experiments.py`
+proves write isolation, denominator correctness, missing-data handling and reproducibility):
+
+- **Frozen knowledge comparison** (`techniques/tip/frozen.py`, CLI `zargar.tools.tip_frozen`).
+  `capture --signal <id>` (or `--run <id>`) builds an immutable case bundle from what the DB
+  already holds - the message, the tool outputs the run saw (its trace), the rule snapshot
+  (ids, revisions, core flags, hash), the notes it was handed, model + settings and the exact
+  context manifest (verbatim only when `techniques.tip.frozen_capture_context` was ON at run
+  time; otherwise reconstructed and labeled so, source history missing). `replay --bundle
+  fb-... --variants current,core_only,no_knowledge` runs the analyst prompt against the bundle
+  only: a tool call is served from the bundle or refused ("missing" - never fetched today),
+  `save_note` is captured as a proposed note and never written; the only rows added are
+  `tip_frozen_bundles` / `tip_frozen_replays`. `report --bundle fb-... --json out.json` prints
+  decision changes vs the baseline, grounding (used notes, rules/notes supplied), protections,
+  no-verdict rate, latency and tokens per variant - counts only, no "better".
+- **Entry-variant cohort** (`techniques/tip/cohort.py`, CLI `zargar.tools.tip_entry_cohort`).
+  With `techniques.tip.entry_cohort_enabled` ON, every eligible open/add idea is a
+  `tip_entry_cohort` row at its intake decision (and a `redecision` row when the recovery sweep
+  re-decides a park): source post / receipt / decision times kept apart, the exact source
+  instrument (OCC only when fully stated) and the proposed one, the source-stated premium, the
+  decision-time quote with age + provenance (`fresh|stale|missing`), gaps, and the configured
+  later sample (`techniques.tip.entry_cohort_delay_minutes`, labeled `delayed`; "unknown at
+  alert" stays unknown; a sample far past due is `missed`). `report` simulates the declared
+  variants - immediate, delay, `entry_cohort_premium_cap` x stated premium - into separate
+  result books (`tip_entry_variant_results`, book `variant:<name>`) under identical budget
+  (min of `budget_per_tip` / `max_premium_per_tip`), fees and fill-at-ask assumptions, and
+  separates "evidence adequate" from "insufficient" per row and variant. No P&L, no
+  equivalence claim; promotion of any variant is a separate reviewed verdict.
 
 ## Rollback and where the receipts are
 

@@ -168,6 +168,15 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
                 except Exception:
                     log.debug("health: technique status unavailable", exc_info=True)
             out["local"] = {"techniqueRunning": running, "armed": armed}
+            try:  # KFIN-03: a hung bar handler / shed subscriber is visible where the restart scripts look
+                from ..delivery_health import snapshot
+                snap = snapshot(eng)
+                ages = [c["inFlightAgeMs"] for c in snap["consumers"].values() if c.get("inFlightAgeMs") is not None]
+                out["local"]["delivery"] = {"inFlightMaxAgeMs": max(ages) if ages else None,
+                                            "busDrops": snap["busDrops"].get("total", 0),
+                                            "failedHandlers": sum(int(c.get("failed") or 0) for c in snap["consumers"].values())}
+            except Exception:
+                log.debug("health: delivery snapshot unavailable", exc_info=True)
         return out
 
     @app.get("/api/state", dependencies=[auth])

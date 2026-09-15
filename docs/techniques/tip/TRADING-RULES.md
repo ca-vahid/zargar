@@ -337,6 +337,31 @@ drawdown; nothing is claimed proven. Open into the new week: T Jan-27 29C
   provider unavailable, delayed, stale, exceptions) count; one incident per path, book
   and session.
 
+- 2026-09-14 — **MK own-book classification is built, shadow-first, off by default**
+  (KFIN-08; PLATFORM-RULES invariant 19). An enrolled source's first-person text is
+  classified deterministically (own_open / own_exit / recap / hypothetical /
+  third_party; the extraction's new `actor`/`activity` fields only fill silence, text
+  wins and a disagreement is recorded) and in `techniques.tip.mk_ownbook_mode=shadow`
+  routed to the source's own-book shadow book (`book=ownbook`) — never the immediate
+  book, the analyst, a proposal or an armed plan; the Practice/live gates are never
+  reached. Evidence rules kept whole: shares need a grounded entry price, options a
+  grounded strike + expiry, both a qualified two-sided quote ≤ 120 s old at the
+  decision and content inside `max_tip_age_hours` — otherwise `ownbook_unresolved`
+  with the reasons journaled (stale content is NOT back-filled from history). "Sold
+  half" reduces the own-book position by half (reduce-only); an exit with nothing
+  held, a recap, a hypothetical or another person's screenshot is `ownbook_context`
+  and opens nothing. Own-book context/unresolved rows never dedupe a later message
+  (a recap must not swallow "just added" an hour later). Grading is on the quote at
+  the decision + our fill inside the DECLARED cohort (`mk_ownbook_cohort`; "" = nothing
+  grades); the criteria (`mk_ownbook_min_graded` 20, `min_hit` 0.55,
+  `min_avg_return_pct` 0, `max_unresolved_pct` 25, `min_age_sessions` 5) are REPORTED
+  by `GET /api/tip/ownbook/{source}` with `verdict: human` — nothing acts on them, no
+  calendar deadline. 18 labeled cases + 12 pipeline tests in `tests/test_tip_ownbook.py`.
+  To enroll MK: `mk_ownbook_sources=["MK-alpha-trades"]`, `mk_ownbook_cohort=<label>`,
+  `mk_ownbook_mode=observe` first (classification journaled, pipeline unchanged), then
+  `shadow`. Known limits: "we bought" on an enrolled source reads as the author's fund;
+  "sold puts" (a premium-selling OPEN) reads as an exit; a third-party screenshot with
+  no textual cue relies on the extractor's `actor`; sessions are weekday-counted.
 - 2026-09-14 (EOD review, `reviews/2026-09-14-eod-response.md`) — **Correction to the
   budget narrative:** the MSFT 9/14 505C and TSLA 9/25 340P takes DID carry stops (MSFT
   501.2 → 485.49 after structure repair, TSLA 368 → 369.81, 45% premium stops); their
@@ -349,7 +374,10 @@ drawdown; nothing is claimed proven. Open into the new week: T Jan-27 29C
   rules written after the close promoted reviewed HYPOTHESES to policy without a batch —
   quarantined; model-written rules are proposals from now on.
 
-**Queued (agreed, not built):** MK self-disclosed-trade classification with
-labeled fixtures + promotion criteria; multi-image evidence processing.
+**Built 2026-09-14 (KFIN-08, shadow-first, INERT until enrolled):** MK
+self-disclosed-trade classification with labeled fixtures + predefined promotion
+criteria (`techniques/tip/ownbook.py`, `tests/fixtures/mk_ownbook_cases.json`,
+`GET /api/tip/ownbook/{source}`). **Queued (agreed, not built):** multi-image
+evidence processing.
 **Built 2026-09-14:** geometry validated BEFORE entry with bounded journaled
 post-fill exceptions (user decision 2026-09-11); rule-book consolidation.
