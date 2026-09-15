@@ -3122,6 +3122,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 review of PR #143/#144 (other team: F127 conditional GO; sheet rev. 2; activation NOT yet approved)** —
+  F127 merged as v0.7.88: the clamp is scoped to the SELECTED contract's expiry (OCC identity, the RiskGate's date
+  basis); a next-day contract keeps its cap (their regression `tests/test_codex_team2_f127_expiry.py`); RiskGate unchanged.
+  Wording corrected: the refusal depends on premium AND requested size (at $0.33 a 0.5 multiplier asks 36 and clears).
+  Sheet rev. 2: the −$800 stop is a SAMPLED review threshold (30-min tick + close), not an enforced limit — the enforced
+  limits remain F33, the day-loss halt, the 10 % pause and the 15 % breaker; breach → the Team2 Practice BOOK halt
+  (entries + adds refused, exits active), experiment stays paused at 0.5, no automatic return to 1.0; calibration
+  labelled approximate with the simulated/non-simulated list; cross-check by bucket identity now identical
+  (+$2,231 / −$635). Prerequisites: v0.7.88 deployed, C6 gate retained, a manual per-book halt route (one endpoint).
 - **2026-09-15 review of PR #140 (other team: comparisons ACCEPTED; sizing cap FIRST, C1 the follow-on; GO to finalize
   the plan, no activation)** — `notes/research/2026-09-15-sizing-cap-experiment-sheet.md`. Sizing basis recomputed with
   the intended Practice sizing (loss risk, not premium invested; `calibrate_practice.py`): at today's settings a trade
