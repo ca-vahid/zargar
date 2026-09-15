@@ -1053,3 +1053,15 @@ Ledger + evaluator: `tools/em_source_candidates.py` -> `research/source-candidat
 `source-candidates-<date>.result.json` (Sep 14 rows retrospective: MSFT gated 1.09R with a target path, AAPL and MRNA
 never confirmed). Baseline trading and the Sep 15 review-and-arm ritual unchanged; nothing from this measurement arms.
 
+### 2026-09-15 - measurement code corrected for the reviewers' FM-01..05 (observer stays disabled)
+
+Reviewer cases adopted unchanged (`tests/test_codex_em_measurement_boundaries.py`, `tests/test_codex_source_evaluator_temporal_evidence.py`,
+8 failed -> 8 pass; own 7 still pass). Research capture no longer awaits I/O ahead of protective exits (bounded
+background recorder, visible drops); quantities and the next rung follow `plan_exit` (original filled quantity,
+ladder trims, uncommitted remainder); coverage needs valid provenance/timestamp/uncrossed book/KNOWN size and
+stop precedence includes the premium stop; recording is idempotent per trade instance and retryable; the
+evaluator honours source availability, session identity and bar continuity and reports per-gate evaluation
+(R2 only). Scope narrowed to raw observation capture - no shadow terminal tracker yet, P&L deferred to a reducer.
+`techniques.enhanced_market.shadow_exit_observe` stays False pending activation; target distance remains a
+diagnostic.
+

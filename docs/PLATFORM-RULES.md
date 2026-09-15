@@ -1753,9 +1753,11 @@ a refused arm disarms or flattens nothing.
 
 ### Order-free measurement hooks — 2026-09-15 (EM desk; shared runner, observation only)
 
-`PlanRunner.on_quote_watch` journals `TechniqueExitShadow` (shadow-exit-v1) on the first fresh underlying observation at
-or beyond a trade's next production rung, with the same-contract NBBO - no order, no state, one record per trade per
-rung, off with `execution.shadow_exit_observe=false`. `TechniqueTargetDistance` (target-distance-v1) is journaled at
+`PlanRunner.on_quote_watch` CAPTURES (pure, no awaits) the first fresh underlying observation at or beyond a trade's
+next production rung with the same-contract NBBO and hands it to a bounded background recorder that journals
+`TechniqueExitShadow` (shadow-exit-v1) - research I/O never runs ahead of the premium/quote stops; drops are counted
+and logged. OFF by default for every desk (`execution.shadow_exit_observe=false`); a technique opts in with
+`techniques.<id>.shadow_exit_observe=true` and then only its default (Practice) book is observed. `TechniqueTargetDistance` (target-distance-v1) is journaled at
 fill and embedded in TriggerFired - a diagnostic that never rejects, resizes or retargets. Both contracts are in
 `research/events_contract.py`. Any desk may read them; none may act on them.
 

@@ -3,13 +3,21 @@
 ORDER-FREE research: rows are the author's numeric morning ideas, scored on the day's stored 1-minute bars
 under the frozen definition. Nothing here arms, sizes or trades; unknowns stay unknown.
 
+Temporal evidence rules (FM-05 / SE-01 / SE-02, 2026-09-15):
+- a candidate is eligible only after BOTH the opening range is complete AND the source was available
+  (`availableAt`, timezone-aware; missing or unparseable availability = unknown for a forward result);
+- the bars must belong to the row's New York session date, be unique and ordered; the opening range needs all
+  five 09:30-09:34 minutes; the next-open proxy needs the IMMEDIATELY following minute; a gap inside the path
+  from entry to the terminal event is an unresolved interval = unknown. Missing minutes are never replaced by
+  later bars.
+- the result reports the underlying path and, per gate, evaluated | passed | failed | not_evaluated: only R2 is
+  evaluated here; option NBBO/liquidity, the daily budget and final dispatch are NOT - a `target` path is not a
+  fully admitted option trade.
+
     python -m zargar.tools.em_source_candidates add --date 2026-09-14 --symbol MSFT --direction long --level 498.97 \\
         --target 505 --note a5a519f6... --available-at 2026-09-14T09:20:51-04:00 [--retrospective]
     python -m zargar.tools.em_source_candidates evaluate --date 2026-09-14        # read-only DB, writes the result file
     python -m zargar.tools.em_source_candidates show --date 2026-09-14
-
-Ledger: docs/techniques/enhanced-market/research/source-candidates.json (one list of rows).
-Results: docs/techniques/enhanced-market/research/source-candidates-<date>.result.json.
 """
 from __future__ import annotations
 
@@ -19,51 +27,105 @@ import datetime as dt
 import json
 import os
 import sys
+from zoneinfo import ZoneInfo
 
 VERSION = "source-continuation-v1"
-ET = dt.timezone(dt.timedelta(hours=-4))            # the research clock is ET; bars carry ms epochs
+NY = ZoneInfo("America/New_York")
 OPENING_RANGE_MINUTES = 5                             # stop = low of the first five completed minutes (09:30-09:34)
 NO_CHASE_PCT = 0.5                                    # executable entry may not exceed level * (1 + 0.5%)
 RETEST_TOLERANCE = 0.10                               # a retest = a low within level + 0.10 after the confirming close
 MIN_RR = 3.0                                          # EM's R2 gate to the author's target with OUR stop
-CONFIRM_DEADLINE = (11, 30)                           # R6 prime window: unconfirmed by 11:30 ET -> expired
+CONFIRM_DEADLINE = (11, 30)                           # R6 prime window: unconfirmed by 11:30 ET -> never_confirmed
 FLATTEN = (15, 55)                                    # the baseline flatten clock (flattenMinutesBeforeClose=5)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 LEDGER = os.path.join(ROOT, "docs", "techniques", "enhanced-market", "research", "source-candidates.json")
+GATES_NOT_EVALUATED = ("optionLiquidity", "dailyBudget", "finalDispatch", "contractSelection")
+
+
+def _ny(ms: int) -> dt.datetime:
+    return dt.datetime.fromtimestamp(ms / 1000, NY)
 
 
 def _hm(ms: int) -> tuple[int, int]:
-    d = dt.datetime.fromtimestamp(ms / 1000, ET)
+    d = _ny(ms)
     return d.hour, d.minute
 
 
 def _label(ms: int) -> str:
-    return dt.datetime.fromtimestamp(ms / 1000, ET).strftime("%H:%M")
+    return _ny(ms).strftime("%H:%M")
+
+
+def parse_available(s) -> dt.datetime | None:
+    if not s:
+        return None
+    try:
+        d = dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d if d.tzinfo else None                    # a naive availability is ambiguous -> unknown
+
+
+def _unknown(out: dict, why: str) -> dict:
+    out["outcome"] = "unknown"
+    out["why"] = why
+    return out
 
 
 def evaluate_candidate(bars: list[dict], row: dict) -> dict:
-    """Score one row on one session's 1-minute bars (dicts with ts/open/high/low/close). Pure.
-
-    Outcomes: unknown (no bars) | early_cross_only | never_confirmed | expired | no_chase_refused |
-    gated (fails the R2 gate) | target | stopped | flattened. Every intermediate observation is listed."""
-    rth = [b for b in bars if (9, 30) <= _hm(b["ts"]) < (16, 0)]
+    """Score one row on one session's 1-minute bars (dicts with ts/open/high/low/close). Pure."""
     out = {"version": VERSION, "symbol": row["symbol"], "date": row["date"], "direction": row.get("direction", "long"),
-           "level": row["level"], "target": row.get("target"), "observations": [], "outcome": "unknown", "why": None}
-    if len(rth) < OPENING_RANGE_MINUTES + 1:
-        out["why"] = f"{len(rth)} RTH bars stored - not enough to know the opening range"
-        return out
+           "level": row["level"], "target": row.get("target"), "availableAt": row.get("availableAt"),
+           "observations": [], "outcome": "unknown", "why": None, "path": None,
+           "gates": {"r2": "not_evaluated", **{g: "not_evaluated" for g in GATES_NOT_EVALUATED}},
+           "evidence": {"barCount": len(bars), "provenance": row.get("barsProvenance", "bars table, tf=1m")}}
+    available = parse_available(row.get("availableAt"))
+    if available is None:
+        return _unknown(out, "source availability missing or ambiguous - no as-of result")
+    session = dt.date.fromisoformat(row["date"])
+    # ---- bar validity: this session, unique, ordered, RTH minutes only
+    rth = []
+    seen_ts = set()
+    prev = None
+    for b in sorted(bars, key=lambda x: x["ts"]):
+        d = _ny(int(b["ts"]))
+        if d.date() != session:
+            return _unknown(out, f"a bar belongs to another session ({d.date()})")
+        if (9, 30) <= (d.hour, d.minute) < (16, 0):
+            if b["ts"] in seen_ts:
+                return _unknown(out, "duplicate minute in the stored bars")
+            if int(b["ts"]) % 60000 != 0:
+                return _unknown(out, "a bar is not minute-aligned")
+            seen_ts.add(b["ts"]); rth.append(b)
+    if not rth:
+        return _unknown(out, "no RTH bars stored")
+    day0 = int(dt.datetime(session.year, session.month, session.day, 9, 30, tzinfo=NY).timestamp() * 1000)
+    by_ts = {int(b["ts"]): b for b in rth}
+
+    def minute(i: int):
+        return by_ts.get(day0 + i * 60000)
+
+    # ---- opening range: all five 09:30-09:34 minutes must exist
+    opening = [minute(i) for i in range(OPENING_RANGE_MINUTES)]
+    if any(b is None for b in opening):
+        missing = [_label(day0 + i * 60000) for i, b in enumerate(opening) if b is None]
+        return _unknown(out, f"opening range incomplete - missing {missing}; the stop is unknown")
     long = str(row.get("direction", "long")) == "long"
     level = float(row["level"])
     target = float(row["target"]) if row.get("target") is not None else None
-    opening = rth[:OPENING_RANGE_MINUTES]
     stop = min(b["low"] for b in opening) if long else max(b["high"] for b in opening)
     out["stop"] = stop
-    out["stopKnownAt"] = _label(rth[OPENING_RANGE_MINUTES]["ts"])          # the first minute after the range
-    eligible_from = OPENING_RANGE_MINUTES
-    crosses_before = [b for b in rth[:eligible_from] if (b["high"] > level if long else b["low"] < level)]
+    range_complete_ms = day0 + OPENING_RANGE_MINUTES * 60000            # the 09:34 bar is complete at 09:35:00
+    out["stopKnownAt"] = _label(range_complete_ms)
+    # ---- eligibility: opening range complete AND the source available; a bar is usable once it has CLOSED
+    avail_ms = int(available.timestamp() * 1000)
+    out["eligibleFrom"] = _label(max(range_complete_ms, avail_ms))
+    crosses_before = [b for b in opening if (b["high"] > level if long else b["low"] < level)]
     if crosses_before:
         out["observations"].append({"at": _label(crosses_before[0]["ts"]), "event": "early_cross",
                                     "note": "before the opening range was complete - recorded, not entered"})
+
+    def usable(b) -> bool:                                             # its close is known after the minute ends
+        return (int(b["ts"]) + 60000) >= max(range_complete_ms, avail_ms)
 
     def beyond(b):
         return b["close"] > level if long else b["close"] < level
@@ -74,21 +136,25 @@ def evaluate_candidate(bars: list[dict], row: dict) -> dict:
     def hit_target(b):
         return target is not None and (b["high"] >= target if long else b["low"] <= target)
 
-    i = eligible_from
+    ordered = sorted(rth, key=lambda b: b["ts"])
+    candidates = [b for b in ordered if usable(b)]
+    if not candidates:
+        return _unknown(out, "no observation after the source became available and the opening range completed")
     entered = None
     retest_armed = False
-    while i < len(rth):
-        b = rth[i]
+    i = 0
+    while i < len(candidates):
+        b = candidates[i]
         if _hm(b["ts"]) >= CONFIRM_DEADLINE:
             out["outcome"] = "never_confirmed"
             out["why"] = f"no completed close beyond the level by {CONFIRM_DEADLINE[0]:02d}:{CONFIRM_DEADLINE[1]:02d} ET"
             return out
         if beyond(b):
-            if i + 1 >= len(rth):
-                out["outcome"] = "unknown"; out["why"] = "confirming close is the last stored bar"; return out
-            nxt = rth[i + 1]
-            entry_px = float(nxt["open"])
+            nxt = by_ts.get(int(b["ts"]) + 60000)
             out["observations"].append({"at": _label(b["ts"]), "event": "confirmed_close", "close": b["close"]})
+            if nxt is None:
+                return _unknown(out, f"the minute after the confirming close ({_label(b['ts'] + 60000)}) is not stored - no next-open proxy")
+            entry_px = float(nxt["open"])
             cap = level * (1 + NO_CHASE_PCT / 100) if long else level * (1 - NO_CHASE_PCT / 100)
             if (entry_px > cap + 1e-9) if long else (entry_px < cap - 1e-9):
                 if retest_armed:
@@ -97,50 +163,54 @@ def evaluate_candidate(bars: list[dict], row: dict) -> dict:
                     return out
                 out["observations"].append({"at": _label(nxt["ts"]), "event": "no_chase_wait_retest", "open": entry_px, "cap": round(cap, 4)})
                 retest_armed = True
-                # wait for a retest: a low within tolerance of the level, then the next confirming close re-enters here
                 j = i + 1
-                while j < len(rth) and not ((rth[j]["low"] <= level + RETEST_TOLERANCE) if long else (rth[j]["high"] >= level - RETEST_TOLERANCE)):
+                while j < len(candidates) and not ((candidates[j]["low"] <= level + RETEST_TOLERANCE) if long else (candidates[j]["high"] >= level - RETEST_TOLERANCE)):
                     j += 1
-                if j >= len(rth):
+                if j >= len(candidates):
                     out["outcome"] = "no_chase_refused"; out["why"] = "no retest before the close"; return out
-                out["observations"].append({"at": _label(rth[j]["ts"]), "event": "retest"})
+                out["observations"].append({"at": _label(candidates[j]["ts"]), "event": "retest"})
                 i = j + 1
                 continue
-            entered = {"at": _label(nxt["ts"]), "entry": entry_px, "basis": "next-open-proxy"}
+            entered = {"at": _label(nxt["ts"]), "ts": int(nxt["ts"]), "entry": entry_px, "basis": "next-open-proxy"}
             break
         i += 1
     if entered is None:
         out["outcome"] = "never_confirmed"; out["why"] = "no completed close beyond the level in the eligible window"
         return out
-    out["entry"] = entered
+    out["entry"] = {k: v for k, v in entered.items() if k != "ts"}
     risk = (entered["entry"] - stop) if long else (stop - entered["entry"])
     out["riskPerShare"] = round(risk, 4)
     if risk <= 0:
-        out["outcome"] = "gated"; out["why"] = "entry is on the wrong side of the stop"; return out
+        out["outcome"] = "gated"; out["gates"]["r2"] = "failed"; out["why"] = "entry is on the wrong side of the stop"; return out
     rr = ((target - entered["entry"]) / risk if long else (entered["entry"] - target) / risk) if target is not None else None
     out["rewardToRisk"] = round(rr, 3) if rr is not None else None
     if rr is None:
-        out["outcome"] = "unknown"; out["why"] = "the author gave no target"; return out
+        return _unknown(out, "the author gave no target - R2 cannot be evaluated")
+    out["gates"]["r2"] = "passed" if rr >= MIN_RR else "failed"
     if rr < MIN_RR:
         out["outcome"] = "gated"; out["why"] = f"{rr:.2f}R to the author's target with our stop is below the {MIN_RR:g}R gate"
-        # still walk the path for the record (what the gated candidate would have done)
-    start = next(k for k, b in enumerate(rth) if _label(b["ts"]) == entered["at"])
-    for b in rth[start:]:
-        if _hm(b["ts"]) >= FLATTEN:
-            r = ((b["close"] - entered["entry"]) / risk) if long else ((entered["entry"] - b["close"]) / risk)
-            out["path"] = {"end": "flattened", "at": _label(b["ts"]), "price": b["close"], "r": round(r, 2)}
+    # ---- terminal walk over CONTIGUOUS minutes from the entry; a gap = unresolved interval
+    t = entered["ts"]
+    while True:
+        b = by_ts.get(t)
+        if b is None:
+            out["path"] = {"end": "unknown", "at": _label(t), "why": "minute not stored - the interval could contain a stop, target or flatten"}
             break
+        if _hm(t) >= FLATTEN:
+            r = ((b["close"] - entered["entry"]) / risk) if long else ((entered["entry"] - b["close"]) / risk)
+            out["path"] = {"end": "flattened", "at": _label(t), "price": b["close"], "r": round(r, 2)}; break
         if stopped(b):
             r = ((b["close"] - entered["entry"]) / risk) if long else ((entered["entry"] - b["close"]) / risk)
-            out["path"] = {"end": "stopped", "at": _label(b["ts"]), "price": b["close"], "r": round(r, 2)}
-            break
+            out["path"] = {"end": "stopped", "at": _label(t), "price": b["close"], "r": round(r, 2)}; break
         if hit_target(b):
-            out["path"] = {"end": "target", "at": _label(b["ts"]), "price": target, "r": round(rr, 2)}
-            break
-    else:
-        out["path"] = {"end": "unknown", "why": "bars end before a terminal event"}
+            out["path"] = {"end": "target", "at": _label(t), "price": target, "r": round(rr, 2)}; break
+        t += 60000
+        if _hm(t) >= (16, 0):
+            out["path"] = {"end": "unknown", "why": "bars end before a terminal event"}; break
     if out["outcome"] != "gated":
         out["outcome"] = out["path"]["end"]
+    if out["path"]["end"] == "unknown" and out["outcome"] == "gated":
+        out["why"] += "; path unresolved (missing minute)"
     return out
 
 
@@ -155,7 +225,7 @@ def save_ledger(rows: list[dict]) -> None:
     json.dump(rows, open(LEDGER, "w", encoding="utf-8"), indent=1)
 
 
-async def _bars(symbol: str, date: str) -> list[dict]:
+async def _bars(symbol: str, date: str) -> tuple[list[dict], dict]:
     from ..config import AppConfig
     from ..db import make_engine, make_session_factory
     from sqlalchemy import text
@@ -165,12 +235,19 @@ async def _bars(symbol: str, date: str) -> list[dict]:
         async with sf() as session:
             await session.execute(text("set transaction read only"))
             day = dt.date.fromisoformat(date)
-            a = int(dt.datetime(day.year, day.month, day.day, 9, 0, tzinfo=ET).timestamp() * 1000)
-            b = int(dt.datetime(day.year, day.month, day.day, 16, 30, tzinfo=ET).timestamp() * 1000)
+            a = int(dt.datetime(day.year, day.month, day.day, 9, 0, tzinfo=NY).timestamp() * 1000)
+            b = int(dt.datetime(day.year, day.month, day.day, 16, 30, tzinfo=NY).timestamp() * 1000)
             rows = (await session.execute(text(
-                "select ts, open, high, low, close from bars where symbol=:s and tf='1m' and ts>=:a and ts<:b order by ts"),
+                "select ts, open, high, low, close, source from bars where symbol=:s and tf='1m' and ts>=:a and ts<:b order by ts"),
                 {"s": symbol, "a": a, "b": b})).all()
-            return [{"ts": int(r[0]), "open": float(r[1]), "high": float(r[2]), "low": float(r[3]), "close": float(r[4])} for r in rows]
+            sources = sorted({str(r[5]) for r in rows})
+            ver = None
+            try:
+                ver = (await session.execute(text("select value from settings where key='marketdata.dataset_version'"))).scalar()
+            except Exception:                              # noqa: BLE001 - optional identity
+                ver = None
+            return ([{"ts": int(r[0]), "open": float(r[1]), "high": float(r[2]), "low": float(r[3]), "close": float(r[4])} for r in rows],
+                    {"sources": sources, "datasetVersion": ver, "provenance": "bars table, tf=1m"})
     finally:
         await db.dispose()
 
@@ -179,9 +256,10 @@ async def evaluate(date: str) -> list[dict]:
     rows = [r for r in load_ledger() if r.get("date") == date]
     results = []
     for r in rows:
-        bars = await _bars(r["symbol"], date)
-        res = evaluate_candidate(bars, r)
-        res.update({"noteId": r.get("note"), "availableAt": r.get("availableAt"), "retrospective": bool(r.get("retrospective"))})
+        bars, meta = await _bars(r["symbol"], date)
+        res = evaluate_candidate(bars, {**r, "barsProvenance": meta["provenance"]})
+        res["evidence"].update({"sources": meta["sources"], "datasetVersion": meta["datasetVersion"]})
+        res.update({"noteId": r.get("note"), "retrospective": bool(r.get("retrospective")), "ledgerVersion": r.get("version")})
         results.append(res)
     out = os.path.join(os.path.dirname(LEDGER), f"source-candidates-{date}.result.json")
     json.dump({"version": VERSION, "date": date, "evaluatedAt": dt.datetime.now(dt.timezone.utc).isoformat(), "rows": results},
@@ -202,6 +280,8 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("show"); s.add_argument("--date", required=True)
     args = p.parse_args(argv)
     if args.cmd == "add":
+        if parse_available(args.available_at) is None:
+            print("refused: --available-at must be a timezone-aware ISO timestamp"); return 2
         rows = load_ledger()
         rows.append({"date": args.date, "symbol": args.symbol.upper(), "direction": args.direction, "level": float(args.level),
                      "target": (float(args.target) if args.target else None), "note": args.note, "availableAt": args.available_at,
@@ -218,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     results = asyncio.run(evaluate(args.date))
     for r in results:
         print(f"{r['date']} {r['symbol']:5} {r['direction']:5} level {r['level']} target {r.get('target')} -> {r['outcome']:16} "
-              f"{r.get('why') or ''} entry={r.get('entry')} stop={r.get('stop')} rr={r.get('rewardToRisk')} path={r.get('path')}")
+              f"{r.get('why') or ''} entry={r.get('entry')} stop={r.get('stop')} rr={r.get('rewardToRisk')} gates={r['gates']} path={r.get('path')}")
     return 0
 
 

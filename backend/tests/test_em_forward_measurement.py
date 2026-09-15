@@ -84,7 +84,14 @@ def test_shadow_stop_first_when_the_same_observation_breaches_the_stop_and_ladde
     asyncio.run(r._shadow_target_pass(ap, [tr], q["X"], NOW, 0.25))
     p = r.engine.journal.append.await_args.args[1]
     assert p["rung"] == "tp1-ladder" and p["target"] == 101.0
-    assert p["modeled"]["coveredQty"] == 1.0 and p["modeled"]["unresolvedQty"] == 2.0, "displayed size limits the covered quantity"
+    assert p["quantities"]["proposedExit"] == 1.0, "the production TP1 trim of a 3-contract ladder is round(3 x 0.30) = 1"
+    assert p["modeled"]["coveredQty"] == 1.0 and p["modeled"]["unresolvedQty"] == 0.0, "displayed size 1 covers the proposed trim"
+    # a bigger trim than the displayed size leaves the remainder unresolved
+    q2 = Quotes({"X": q["X"], "X260918C00101000": Quote("X260918C00101000", bid=1.5, ask=1.6, last=1.55, bid_size=2, ask_size=5, ts=NOW, source="opra", source_ts=NOW)})
+    r2 = runner(q2); ap2 = plan(); tr2 = trade(remaining=10.0, filled_qty=10.0); ap2.trades["b1"] = tr2
+    asyncio.run(r2._shadow_target_pass(ap2, [tr2], q2["X"], NOW, 0.25))
+    p2 = r2.engine.journal.append.await_args.args[1]
+    assert p2["quantities"]["proposedExit"] == 3.0 and p2["modeled"]["coveredQty"] == 2.0 and p2["modeled"]["unresolvedQty"] == 1.0
     # a pending exit on the same rung is recorded as such
     r = runner(q); ap = plan(); tr = trade(remaining=3.0, filled_qty=3.0, exits=[{"orderId": "e", "kind": "tp1", "qty": 1, "filledQty": 0, "status": "SUBMITTED"}])
     ap.trades["b1"] = tr
@@ -95,11 +102,13 @@ def test_shadow_stop_first_when_the_same_observation_breaches_the_stop_and_ladde
 def test_target_distance_is_a_diagnostic_at_fire_and_fill():
     r = runner(Quotes()); ap = plan()
     d = r._target_distance(ap, trade(), stage="fire", qty=None)
-    assert d["quantityKnown"] is False and d["entryBasis"] == "intended" and d["fullExitRung"] == "tp1-ladder" and d["distanceR"] == 1.0
+    assert d["quantityKnown"] is False and d["underlyingObservedEntry"] is None and d["optionPremiumFill"] is None
+    assert d["nextRung"] == "tp1-ladder" and d["nextRungDistanceR"] == 1.0 and d["fullExitRung"] == "tp3-runner" and d["distanceR"] == 3.0
     d2 = r._target_distance(ap, trade(), stage="fill", qty=2.0)
-    assert d2["fullExitRung"] == "tp2-full" and d2["distanceR"] == 2.0 and d2["quantityKnown"] is True and d2["version"] == "target-distance-v1"
+    assert d2["nextRung"] == "tp2-full" and d2["fullExitRung"] == "tp2-full" and d2["distanceR"] == 2.0 and d2["quantityKnown"] is True
+    assert d2["optionPremiumFill"] == 1.0 and d2["underlyingIntended"]["entry"] == 100.0 and d2["version"] == "target-distance-v1"
     sh = r._target_distance(ap, trade(instrument="shares", remaining=100, filled_qty=100), stage="fill", qty=100)
-    assert sh["fullExitRung"] == "tp1-ladder" and sh["distanceR"] == 1.0
+    assert sh["nextRung"] == "tp1-ladder" and sh["nextRungDistanceR"] == 1.0 and sh["optionPremiumFill"] is None
 
 
 # ----------------------------------------------------------------- source-continuation-v1 on synthetic bars
@@ -114,7 +123,8 @@ def _bars(closes, day="2026-09-15", start=(9, 30), spread=0.3):
     return out
 
 
-ROW = {"date": "2026-09-15", "symbol": "T", "direction": "long", "level": 100.0, "target": 106.0}
+ROW = {"date": "2026-09-15", "symbol": "T", "direction": "long", "level": 100.0, "target": 106.0,
+       "availableAt": "2026-09-15T09:20:00-04:00"}
 
 
 def test_candidate_no_bars_is_unknown_and_early_cross_never_enters():

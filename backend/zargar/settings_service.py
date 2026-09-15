@@ -491,7 +491,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.min_one_contract": True,  # unchanged behaviour for the other desks - their call to flip
     "techniques.options_cartel.min_one_contract": True,
     "techniques.enhanced_market.min_one_contract": False,
-    "execution.shadow_exit_observe": True,      # shadow-exit-v1 (2026-09-15): journal TechniqueExitShadow on the first fresh quote at a target rung; observation only
+    "execution.shadow_exit_observe": False,     # shadow-exit-v1 (2026-09-15): off for every desk; EM opts in per technique below
+    "techniques.enhanced_market.shadow_exit_observe": False,   # EM Practice opt-in (also gated to the technique's default book); DISABLED pending the reviewers' activation
     "execution.spread_warn_pct": 20.0,          # DA-01: the generic rejudge_contract hook's T5.4-style spread warning threshold
     "technique.arm.critic_mode": "veto",       # veto | momentum_only (bounce/reject "no" is advisory) | advisory (never blocks)
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire

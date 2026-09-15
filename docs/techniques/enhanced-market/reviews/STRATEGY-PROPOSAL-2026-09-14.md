@@ -157,3 +157,33 @@ entries. Underlying-only sweeps measure geometry, not option profitability.
    existing quote watch, one per trade per rung, no orders.
 3. **Target-distance diagnostic**: journaled `TechniqueTargetDistance` at fire and at fill; no gate.
 4. Baseline EM Practice review-and-arm continues unchanged; no candidate from 1–3 is armed or traded.
+
+## Measurement implementation notes (FM-01..05, 2026-09-15)
+
+- **Protection first (FM-01).** The quote watch performs a pure CAPTURE of the observation and hands it to a
+  bounded background recorder; no research I/O is awaited ahead of the premium stop or the quote stop. A
+  saturated or failing recorder drops records visibly (counted, logged) and never delays protection. The
+  observer is OFF for every desk (`execution.shadow_exit_observe=false`) and OFF for EM
+  (`techniques.enhanced_market.shadow_exit_observe=false`) until the reviewers activate it; when on, it applies
+  to the technique's default (Practice) book only.
+- **Production quantities and policy (FM-02).** The next rung is decided as `plan_exit` decides it: the small-
+  position rule on the ORIGINAL filled quantity, the ladder from `trims_done`; the proposed exit quantity is the
+  production trim (ladder share × original filled, capped by the uncommitted remainder; the whole remainder for a
+  small position or the last rung). Original, remaining, pending and proposed quantities are recorded separately.
+  The target-distance diagnostic reports the intended underlying geometry, the option premium of the fill, the
+  next rung and the full-exit rung separately; an observed underlying entry is never inferred.
+- **Evidence (FM-03).** Coverage requires provenance, a source timestamp within 10 s, a finite uncrossed
+  two-sided book and a KNOWN displayed size; unknown depth is unresolved, never covered. Stop precedence includes
+  the premium-stop predicate on the same observation; stop-first and pending-exit rows are not scored.
+- **Scope (FM-04).** This release is **raw observation capture only**: one durable record per trade instance
+  (entry order) per rung, marked seen only after the write succeeded, retried with the original timing, dropped
+  visibly after three failures. There is no shadow remainder or terminal tracker yet; P&L comparison is deferred
+  to a separately defined reducer, and the latency/slippage constants are metadata for that reducer, not a fill
+  simulation. Terminal-event evidence is unknown until that reducer exists.
+- **Source timing (FM-05).** The evaluator is eligible only after both the opening range is complete and the
+  source was available (timezone-aware; missing availability = unknown); bars must belong to the New York
+  session date, be unique and ordered; the opening range needs all five minutes; the next-open proxy needs the
+  immediately following minute; a missing minute inside the path is an unresolved interval = unknown. Per-gate
+  fields report only R2 as evaluated; option liquidity, budget, contract selection and final dispatch are
+  `not_evaluated` - a `target` path is not an admitted option trade.
+
