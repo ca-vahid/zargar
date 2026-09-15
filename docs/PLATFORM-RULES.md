@@ -1665,6 +1665,56 @@ is unchanged). (FIX-05) `Trade.critic / critic_advisory / errors / retries` surv
 journaled on TriggerFired with `criticMode`. (FIX-11 policy) `quote_exit_polls` counts DISTINCT quote
 observations by source timestamp - the same cached print cannot confirm a stop twice. Invariant added: **the
 multiplier belongs to the instrument that was actually ordered, never to the instrument that was requested.**
+
+
+### Reviewer re-review 2026-09-14 (DA-01..08) — shared-runner follow-ups (EM desk)
+
+`_admit_option_entry` is the ONE admission function for option entries (warning skips, premium caps,
+remaining daily-loss budget) and runs on the pick and again on the final price/quantity before dispatch;
+method quality re-judgement is the hook `rejudge_contract` (generic: spread only via
+`execution.spread_warn_pct`; EM: T5.4 + T5.3). `_manage` never advances a rung while an exit is pending.
+Quote-stop confirmation is forward-only (source timestamp strictly newer). `execution.min_one_contract`
+is registered with per-desk values (Tips/Team2/Cartel True = unchanged behaviour, EM False). `/api/health`
+carries `build` (short commit SHA). Repair tool contract: receipt journaled before commit, one row
+transition per plan, replay = `already_applied`, live rows skipped unless `--include-live` after quiescing.
+
+
+### Reviewer follow-up 2026-09-14 (FA-01..05) — shared-runner and repair contracts (EM desk)
+
+FA-01: entries pass a SYNCHRONOUS final guard (`PlanRunner._entry_guard`, via `OrderManager.place(before_submit=)`)
+after the manager's last await and before `executor.submit`, on every attempt incl. the collar retry; it
+re-judges the remaining daily loss budget and cached contract quality over the runner's own state and never
+resizes (a changed quantity/price is a fresh submission). Rule for every desk that places entries through the
+runner: state that can change during the order's awaits is judged in `before_submit`, not before them.
+FA-02..04 (repair tools): repaired state and audit receipts are written in ONE transaction (`Event` rows staged
+in the caller's session, row locked, hash re-checked); corrected values come from the Order/Execution ledger,
+never from the projection; ownership is validated before any read; `--include-live` verifies nothing.
+FA-05: a promotion's identity is the sweep's saved resolved thresholds + overlay + process version, never
+"same overlay". Build identity: `zargar.BUILD` bound at import (full SHA, `-dirty`), on `/api/health.build`.
+
+### Reviewer closure 2026-09-14 (FC-01) — the final entry guard judges the CURRENT quote (EM desk)
+
+Rule for every desk placing entries through the runner: `before_submit` evidence is the quote cache NOW, not
+a dict captured before the awaits. `PlanRunner._entry_guard` reads `engine.quotes.get(order_symbol)` and asks
+the technique's pure synchronous hook `judge_entry_quote(ap, trade, contract, quote)` (`execution/entry_quality.py`:
+two-sided uncrossed book, fresher than `execution.premium_mark_max_age_seconds`, spread within the technique's
+limit when the arm skips wide spreads - generic `execution.spread_warn_pct`, EM T5.4 10%). FC-02 (same day): NO quote =
+refusal; a delayed chain row = refusal when a real-time option source is configured; the freshness limit is the
+ENTRY policy `risk.stale_quote_seconds`, never an exit-mark age; the captured warning list admits nothing. The repair tool `tools/em_reconcile_fallback.py` has one
+code path (real session, row lock, receipts staged in the same transaction); fake-session test doubles are
+historical reproductions, never production evidence (`tests/test_em_reconcile_real_session.py`).
+
+
+### Order-free scenario candidates — 2026-09-14 (EM Delivery B, shared-runner boundary)
+
+A run whose `config.origin` or tag starts with `scenario:` is a research record: `PlanRunner.arm` journals
+`TechniqueArmRefused` (contract: runId, symbol, origin, reason) and raises, on EVERY path - API, restore,
+retry, auto-arm - independent of settings, until an activation decision adds an explicit allow-list. The
+check is `execution/origins.py::scenario_origin` (no technique import in the runner). EM's three new tables
+(`technique_source_revisions` / `_artifacts` / `_jobs`) are EM-only (`technique/source_revisions.py`); the
+gateway now forwards EM-channel EDITS to EM's inbox (`kind=update`) - the tips mirror/intake path is unchanged.
+
+
 ### Session findings — 2026-09-14 (first enforce/integrity day; v0.7.68 → 0.7.71)
 
 - **Bar DELIVERY stalls (3×):** 13:09–13:13, 13:23–13:27 and 15:26–15:29 ET every armed

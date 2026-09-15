@@ -50,6 +50,8 @@ from ..marketstructure.tracker import TriggerTracker, score_trigger
 from ..marketstructure.volume import build_profile
 from ..models import TechniqueArmed
 from .book import EXIT_LADDER, EXIT_REPRICE_BARS
+from .entry_quality import judge_entry_quote
+from ..technique.source_revisions import scenario_origin
 from .exits import (
     plan_exit,
     premium_stop_breach,
@@ -571,8 +573,8 @@ class PlanRunner(SessionListener):
                     if preason is None:
                         self._quote_breaches.pop(pkey, None)
                         self._quote_seen.pop(pkey, None)
-                    elif self._quote_seen.get(pkey) == int(getattr(oq, "source_ts", 0) or oq.ts):
-                        pass                                   # same observation as the last count
+                    elif self._quote_seen.get(pkey, 0) >= int(getattr(oq, "source_ts", 0) or oq.ts):
+                        pass         # DA-05: same or OLDER observation than the last count - not forward confirmation
                     else:
                         self._quote_seen[pkey] = int(getattr(oq, "source_ts", 0) or oq.ts)
                         pn = self._quote_breaches.get(pkey, 0) + 1
@@ -933,6 +935,16 @@ class PlanRunner(SessionListener):
         plan = (run.get("result") or {}).get("plan")
         if run.get("mode") != "plan" or not plan:
             raise ValueError("only plan runs (mode=plan) can be armed")
+        origin = scenario_origin(run)
+        if origin:
+            # Delivery B order-free boundary (2026-09-14): a source-informed scenario candidate is a research
+            # record - it never arms, from any path (API, restore, retry, auto-arm), independent of settings,
+            # until an activation decision adds an explicit allow-list. Journaled, then refused.
+            await self.engine.journal.append(ev.TECHNIQUE_ARM_REFUSED, {
+                "runId": run_id, "symbol": str(run.get("symbol") or ""), "origin": origin,
+                "reason": "order-free scenario candidate (Delivery B): no activation decision",
+                "restored": bool(restored)}, aggregate_type="technique_run", aggregate_id=run_id)
+            raise ValueError(f"run {run_id[:8]} is an order-free scenario candidate ({origin}) - it cannot be armed")
         s = self.engine.settings
         cfg = config if isinstance(config, ArmConfig) else ArmConfig.from_dict({
             "portfolioId": str(self.rt("default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
@@ -2255,6 +2267,13 @@ class PlanRunner(SessionListener):
                 log.warning("fire review failed: %s", msg)
                 j.trace.append({"stage": "critic", "step": "error", "reason": msg})
                 if await self._critic_failed(ap, tid, trade, msg):
+                    trade.critic_disposition = "failure-budget-paused"    # DA-08: terminal, persisted, journaled
+                    with contextlib.suppress(Exception):
+                        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                            "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "stage": "critic",
+                            "error": trade.reason, "criticFailure": critic_failure,
+                            "criticDisposition": trade.critic_disposition, "criticFailures": ap.critic_failures},
+                            aggregate_type="technique_run", aggregate_id=ap.run_id)
                     await self._persist(ap)
                     self._publish(ap, "critic_unavailable")
                     return
@@ -2439,6 +2458,77 @@ class PlanRunner(SessionListener):
                   trigger=trade.trigger_id, contracts=n)
         return n
 
+    async def _admit_option_entry(self, ap: ArmedPlan, trade: Trade, contract: dict, *, qty: int | None) -> str | None:
+        """The option entry gates, as ONE function so they run identically on the pick and on the final
+        price/quantity (DA-01): T5.3/T5.4 warnings (per-arm skips), the premium caps and the remaining
+        daily loss budget (F33). Returns the blocking reason or None. `qty=None` = estimate the quantity."""
+        cfg = ap.config
+        warnings = [str(w) for w in (contract.get("warnings") or [])]
+        if cfg.skip_wide_spread and any("T5.4 wide spread" in w for w in warnings):
+            return next(w for w in warnings if "T5.4 wide spread" in w)
+        if cfg.skip_elevated_iv and any("T5.3 elevated IV" in w for w in warnings):
+            return next(w for w in warnings if "T5.3 elevated IV" in w)
+        s = self.engine.settings
+        n = int(qty) if qty is not None else await self._size_contracts(ap, trade, contract)
+        est = float(contract.get("ask") or contract.get("mid") or 0.0) * 100.0 * max(1, n)
+        cap = float(s.get("risk.max_option_premium_notional", 0.0) or 0.0)
+        pct_cap = float(s.get("risk.max_option_premium_pct", 0.0) or 0.0)
+        eq = float(await self.engine.positions.equity(cfg.portfolio_id) or 0.0)
+        limit = float(cfg.daily_loss_limit or 0.0)
+        if limit > 0 and est > 0:
+            used = -(self._net_realized(ap) + min(0.0, self._unrealized(ap)))
+            left = limit - max(0.0, used)
+            prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
+            at_risk = est * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
+            if at_risk > left:
+                blocked = (f"loss budget: this entry risks ~${at_risk:,.0f} at its premium stop but only "
+                           f"${left:,.0f} of the ${limit:,.0f} daily loss limit is left (F33)")
+                self._log(ap, "skip_loss_budget", f"{trade.trigger_id}: {blocked}", trigger=trade.trigger_id,
+                          atRisk=round(at_risk, 2), left=round(left, 2), limit=limit)
+                return blocked
+        if est > 0 and pct_cap and eq <= 0:
+            return (f"cannot judge the premium cap: the account's equity reads ${eq:,.0f} "
+                    f"(risk.max_option_premium_pct needs a positive equity)")
+        if est > 0 and cap and est > cap:
+            return f"premium ~${est:,.0f} exceeds the ${cap:,.0f} per-order cap (risk.max_option_premium_notional)"
+        if est > 0 and pct_cap and eq > 0 and est > eq * pct_cap / 100.0:
+            return (f"premium ~${est:,.0f} is over {pct_cap:g}% of the account's ${eq:,.0f} equity "
+                    f"(risk.max_option_premium_pct)")
+        return None
+
+    async def _entry_blocked(self, ap: ArmedPlan, trade: Trade, contract: dict | None, blocked: str | None) -> str | None:
+        """What happens when the option entry is refused: the shares fallback (returns "shares"), a failed
+        fire (no contract at all) or a journaled skip. Returns None when nothing may be sent."""
+        cfg = ap.config
+        why = blocked or (trade.errors[-1] if trade.errors else "no contract available")
+        if cfg.entry_fallback == "shares" and trade.direction != "short":
+            # Express the same level trade in the underlying instead of skipping - the edge is the
+            # level, the option is only the vehicle (per-arm choice). Never for a short (puts only).
+            trade.instrument = "shares"
+            trade.multiplier = 1.0          # FIX-01: ONE final instrument decision (HPQ 09-14: -$7.19 booked x100)
+            trade.contract = None
+            trade.order_symbol = None
+            self._log(ap, "entry_fallback", f"{trade.trigger_id}: options unavailable ({why}) - taking shares instead",
+                      trigger=trade.trigger_id)
+            return "shares"
+        if contract is None:
+            trade.status = "failed"
+            trade.reason = "no option contract available - nothing sent"
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
+                "error": trade.errors[-1] if trade.errors else "no contract"},
+                aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
+            await self._alert(ap, f"{trade.trigger_id}: the trigger fired but no option contract was available "
+                              f"and the shares fallback is off - nothing was sent", stage="entry")
+            return None
+        trade.status = "skipped"
+        trade.reason = f"contract skipped ({blocked})"
+        self._log(ap, "contract_skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+            "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "contract_quality",
+            "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+        return None
+
     async def _enter(self, ap: ArmedPlan, trade: Trade, tr: TriggerTracker, *, journal: bool) -> None:
         """Auto mode: place the entry order (write-ahead: intent journaled first;
         OrderManager journals the risk verdict and routing). Options: buy the
@@ -2457,90 +2547,12 @@ class PlanRunner(SessionListener):
         contract = None
         if use_options:
             contract = trade.contract if trade.contract_attempted else await self._hook("pick_contract", self.pick_contract(ap, trade))
-            # T5.3/T5.4 liquidity/IV gates
-            blocked = None
-            if contract is not None:
-                warnings = [str(w) for w in (contract.get("warnings") or [])]
-                if cfg.skip_wide_spread and any("T5.4 wide spread" in w for w in warnings):
-                    blocked = next(w for w in warnings if "T5.4 wide spread" in w)
-                elif cfg.skip_elevated_iv and any("T5.3 elevated IV" in w for w in warnings):
-                    blocked = next(w for w in warnings if "T5.3 elevated IV" in w)
-            if contract is not None and blocked is None:
-                # Premium risk caps are checked HERE, not only at the RiskGate:
-                # a high-priced underlying (GS ~$21/contract) would otherwise
-                # fire, get rejected, and take no trade at all — with the
-                # fallback enabled the plan expresses the level in shares.
-                s = self.engine.settings
-                n_est = await self._size_contracts(ap, trade, contract)
-                est = float(contract.get("ask") or contract.get("mid") or 0.0) * 100.0 * max(1, n_est)
-                cap = float(s.get("risk.max_option_premium_notional", 0.0) or 0.0)
-                pct_cap = float(s.get("risk.max_option_premium_pct", 0.0) or 0.0)
-                # equity, not cash: `positions.portfolio()` returns the cached row
-                # (name/kind/cash/…) which carries NO "equity" key, so this silently
-                # fell back to CASH and refused every option entry in a book that is
-                # simply fully invested. That made this pre-check stricter than the
-                # RiskGate it exists to mirror (risk.py uses `positions.equity()`)
-                # and cost Team2 its first live order on 2026-09-04 (F22).
-                eq = float(await self.engine.positions.equity(cfg.portfolio_id) or 0.0)
-                # F33 (2026-09-04): the loss halt used to be judged only AFTER the entry — QQQ opened
-                # $1,062 of premium with $41 of budget left and was flattened a minute later. Refuse an
-                # entry whose own stop-loss (premium x premium_stop_pct) is bigger than what remains.
-                limit = float(cfg.daily_loss_limit or 0.0)
-                if limit > 0 and est > 0 and blocked is None:
-                    used = -(self._net_realized(ap) + min(0.0, self._unrealized(ap)))
-                    left = limit - max(0.0, used)
-                    prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
-                    at_risk = est * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
-                    if at_risk > left:
-                        blocked = (f"loss budget: this entry risks ≈${at_risk:,.0f} at its premium stop but only "
-                                   f"${left:,.0f} of the ${limit:,.0f} daily loss limit is left (F33)")
-                        self._log(ap, "skip_loss_budget", f"{trade.trigger_id}: {blocked}", trigger=trade.trigger_id,
-                                  atRisk=round(at_risk, 2), left=round(left, 2), limit=limit)
-                if est > 0 and pct_cap and eq <= 0 and blocked is None:
-                    # F39: zero/negative equity is "we cannot measure the account", not a percentage verdict —
-                    # it used to fail OPEN at exactly 0 and refuse everything below it under a %-cap message
-                    blocked = (f"cannot judge the premium cap: the account's equity reads ${eq:,.0f} "
-                               f"(risk.max_option_premium_pct needs a positive equity)")
-                elif est > 0 and cap and est > cap:
-                    blocked = f"premium ≈${est:,.0f} exceeds the ${cap:,.0f} per-order cap (risk.max_option_premium_notional)"
-                elif est > 0 and pct_cap and eq > 0 and est > eq * pct_cap / 100.0:
-                    blocked = (f"premium ≈${est:,.0f} is over {pct_cap:g}% of the account's ${eq:,.0f} equity "
-                               f"(risk.max_option_premium_pct)")
+            # first admission on the pick's own numbers (decides fallback vs option early)
+            blocked = await self._admit_option_entry(ap, trade, contract, qty=None) if contract is not None else None
             if contract is None or blocked:
-                why = blocked or (trade.errors[-1] if trade.errors else "no contract available")
-                if cfg.entry_fallback == "shares" and trade.direction != "short":
-                    # Express the same level trade in the underlying instead of
-                    # skipping — the edge is the level, the option is only the
-                    # vehicle (per-arm choice, changeable after arming). Never for
-                    # a short (puts only).
-                    use_options = False
-                    trade.instrument = "shares"
-                    trade.multiplier = 1.0          # FIX-01 (2026-09-14): the fallback is ONE final instrument decision -
-                    trade.contract = None           # HPQ 09-14 booked -$719.30 on a -$7.19 share trade with the option's x100
-                    trade.order_symbol = None
-                    self._log(ap, "entry_fallback",
-                              f"{trade.trigger_id}: options unavailable ({why}) — taking shares instead",
-                              trigger=trade.trigger_id)
-                elif contract is None:
-                    trade.status = "failed"
-                    trade.reason = "no option contract available — nothing sent"
-                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
-                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
-                        "error": trade.errors[-1] if trade.errors else "no contract"},
-                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-                    # a fire that dies at the touch must be SEEN (ARM-GAPS F4)
-                    await self._alert(ap, f"{trade.trigger_id}: the trigger fired but no option "
-                                      f"contract was available and the shares fallback is off — "
-                                      f"nothing was sent", stage="entry")
+                if await self._entry_blocked(ap, trade, contract, blocked) != "shares":
                     return
-                else:
-                    trade.status = "skipped"
-                    trade.reason = f"contract skipped ({blocked})"
-                    self._log(ap, "contract_skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
-                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
-                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "contract_quality",
-                        "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
-                    return
+                use_options = False
         frac = self._trigger_fraction(ap, trade)      # scale-in plans (ARM-PLAN P3)
         if use_options:
             # the pick's ask is already a beat old (the critic pass sits between
@@ -2554,8 +2566,8 @@ class PlanRunner(SessionListener):
             if getattr(self.engine, "options", None) is not None:
                 with contextlib.suppress(Exception):
                     await self.engine.options.reprice(contract)
-                    from ..technique.options import rejudge_spread as _rj
-                    _rj(contract)                    # the spread warnings follow the fresh quote too
+                with contextlib.suppress(Exception):
+                    await self._hook("rejudge_contract", self.rejudge_contract(ap, trade, contract))
             qty = float(await self._size_contracts(ap, trade, contract))
             if frac < 1.0:
                 qty = float(max(1, int(qty * frac))) if qty >= 1 else qty
@@ -2568,6 +2580,15 @@ class PlanRunner(SessionListener):
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "size_zero",
                     "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
                 return
+            # DA-01 (2026-09-14 re-review): FINAL admission on the price and quantity that will be sent -
+            # the refreshed spread/IV warnings, the premium caps and the REMAINING daily loss budget are
+            # judged again here, after every price/quantity change, immediately before dispatch
+            blocked = await self._admit_option_entry(ap, trade, contract, qty=int(qty))
+            if blocked:
+                if await self._entry_blocked(ap, trade, contract, blocked) != "shares":
+                    return
+                use_options = False
+        if use_options:
             limit = round(float(contract.get("ask") or contract.get("mid") or 0), 2)
             if limit <= 0:
                 trade.status = "failed"
@@ -2577,11 +2598,11 @@ class PlanRunner(SessionListener):
             with contextlib.suppress(Exception):
                 cap = await self._hook("entry_limit_cap", self.entry_limit_cap(ap, trade, contract))
             if cap and limit > float(cap):
-                # never chase (ARM-GAPS C1): rest at the trader's price — T4.1
+                # never chase (ARM-GAPS C1): rest at the trader's price - T4.1
                 # cancels an unfilled entry, and a multi-day plan rolls the level
                 self._log(ap, "entry_capped",
                           f"{trade.trigger_id}: ask {limit:.2f} is above the never-chase cap "
-                          f"{float(cap):.2f} — resting the entry at the cap", trigger=trade.trigger_id)
+                          f"{float(cap):.2f} - resting the entry at the cap", trigger=trade.trigger_id)
                 limit = round(float(cap), 2)
             order_symbol, sec_type = contract["symbol"], "OPT"
             trade.instrument, trade.multiplier = "options", 100.0
@@ -2627,7 +2648,8 @@ class PlanRunner(SessionListener):
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         self._log(ap, "entry_submit", f"{trade.trigger_id}: BUY {qty:g} {'contract(s) ' + (trade.contract or {}).get('display', order_symbol) if sec_type == 'OPT' else 'sh'} LMT {limit:.2f}",
                   trigger=trade.trigger_id)
-        result = await self._place_with_retry(ap, trade, intent, stage="entry")
+        guard = self._entry_guard(ap, trade, trade.contract if sec_type == "OPT" else None, qty, limit)
+        result = await self._place_with_retry(ap, trade, intent, stage="entry", before_submit=guard)
         if result is None:
             return
         trade.entry_order_id = result.get("id")
@@ -2658,7 +2680,8 @@ class PlanRunner(SessionListener):
                         portfolio_id=cfg.portfolio_id, symbol=order_symbol, sec_type=sec_type,
                         side="BUY", qty=qty, order_type="LMT", limit_price=new_limit, tif="DAY",
                         source="technique", technique_id=self.TECHNIQUE_ID)
-                    result2 = await self._place_with_retry(ap, trade, intent2, stage="entry")
+                    guard2 = self._entry_guard(ap, trade, trade.contract if sec_type == "OPT" else None, qty, new_limit)
+                    result2 = await self._place_with_retry(ap, trade, intent2, stage="entry", before_submit=guard2)
                     if result2 is not None:
                         trade.entry_order_id = result2.get("id") or trade.entry_order_id
                         if result2.get("id"):
@@ -2692,14 +2715,47 @@ class PlanRunner(SessionListener):
             "orderId": trade.entry_order_id, "status": status, "reason": result.get("rejectReason")},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
 
-    async def _place_with_retry(self, ap: ArmedPlan, trade: Trade, intent, *, stage: str) -> dict | None:
+    def _entry_guard(self, ap: ArmedPlan, trade: Trade, contract: dict | None, qty: float, limit: float):
+        """FA-01 (2026-09-14): the SYNCHRONOUS final entry predicate OrderManager runs after its last await
+        and immediately before `executor.submit` (`place(..., before_submit=)`). It re-judges, over the
+        runner's current owned state, what `_admit_option_entry` judged earlier: the remaining daily loss
+        budget (another trade in the plan may have closed while the entry awaited persistence) and the
+        cached contract quality evidence. It never resizes: a changed quantity or price needs a fresh
+        submission. Returns None or raises; reduce-only exits never pass through it."""
+        cfg = ap.config
+
+        def guard() -> None:
+            if contract is not None:
+                # FC-01 (closure review 2026-09-14): the CURRENT cached NBBO for the order symbol, judged by the
+                # technique's pure policy - never the captured warning list alone (a new OPRA print can widen
+                # the book while the order awaits persistence; the ask, size and budget are unchanged)
+                sym = str(contract.get("symbol") or trade.order_symbol or "")
+                why = self.judge_entry_quote(ap, trade, contract, self.engine.quotes.get(sym) if sym else None)
+                if why:
+                    raise RuntimeError(f"final entry guard: {why}")
+            limit_d = float(cfg.daily_loss_limit or 0.0)
+            # the day-budget predicate is the one F33 already enforces for OPTION entries; a share entry has
+            # never been budget-gated before the fill (its loss halt judges the open position), and the
+            # guard does not widen policy - it only makes the existing option check final
+            if limit_d > 0 and trade.instrument == "options":
+                used = -(self._net_realized(ap) + min(0.0, self._unrealized(ap)))
+                left = limit_d - max(0.0, used)
+                prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
+                at_risk = float(qty) * float(limit) * float(trade.multiplier or 100.0) * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
+                if at_risk > left + 1e-9:
+                    raise RuntimeError(f"final entry guard: this entry risks ~${at_risk:,.0f} but only ${left:,.0f} "
+                                       f"of the ${limit_d:,.0f} daily loss limit is left (F33)")
+        return guard
+
+    async def _place_with_retry(self, ap: ArmedPlan, trade: Trade, intent, *, stage: str, before_submit=None) -> dict | None:
         """Submit through OrderManager; retry only transient transport errors
-        (never a risk rejection), journaling every attempt."""
+        (never a risk rejection), journaling every attempt. `before_submit` (FA-01) is carried
+        through every attempt so a retry cannot bypass the final entry guard."""
         cfg = ap.config
         attempt = 0
         while True:
             try:
-                return await self.engine.orders.place(intent)
+                return await self.engine.orders.place(intent, before_submit=before_submit)
             except Exception as exc:
                 msg = f"{type(exc).__name__}: {exc}"
                 transient = any(k in msg.lower() for k in TRANSIENT_ERRORS)
@@ -2757,7 +2813,11 @@ class PlanRunner(SessionListener):
                              scratch_only_far_tp1=bool(getattr(self.rules(), "scratch_only_far_tp1", False)),
                              far_tp1_r=float(getattr(self.rules(), "far_tp1_r", 3.0)))
         if decision is None:
-            # a single-contract position may need to advance its trim counter without an order
+            # a single-contract position may need to advance its trim counter without an order -
+            # but NEVER while an exit is working/unresolved (DA-02, 2026-09-14): a pending or later
+            # cancelled order must not consume a target the position has not actually executed
+            if tr.pending_exit_qty > 1e-9:
+                return
             hit = ((bar.low <= tr.targets[tr.trims_done]) if tr.direction == "short"
                    else (bar.high >= tr.targets[tr.trims_done])) if tr.trims_done < len(tr.targets) else False
             if hit and tr.instrument == "options" and tr.filled_qty < 3:
@@ -3044,6 +3104,48 @@ class PlanRunner(SessionListener):
     def reviewer_available(self) -> bool:
         """Does this technique have a fire-time reviewer (EM: the vision critic) right now?"""
         return False
+
+    def judge_entry_quote(self, ap: "ArmedPlan", trade: "Trade", contract: dict, quote) -> str | None:
+        """FC-01: the SYNCHRONOUS final quality verdict on the CURRENT cached quote for the order symbol,
+        run inside `before_submit`. Pure - no I/O, no awaits, no mutation of the intent. Generic policy =
+        two-sided fresh book + spread within `execution.spread_warn_pct`; a technique overrides this with
+        its own book rules (EM: T5.4's 10%). Returns the refusal reason or None."""
+        return judge_entry_quote(contract, quote,
+                                 max_spread_pct=float(self.rt("spread_warn_pct", 20.0) or 20.0),
+                                 max_age_s=self._entry_quote_max_age(), refuse_wide=bool(ap.config.skip_wide_spread),
+                                 now_ms=now_ms(), require_current=self._live_option_quotes_expected())
+
+    def _entry_quote_max_age(self) -> float:
+        """FC-02: the ENTRY freshness policy is RiskGate's `risk.stale_quote_seconds` (10 s), never an exit-mark age."""
+        s = self.engine.settings
+        try:
+            return float(s.get("risk.stale_quote_seconds", 10) or 0)
+        except (TypeError, ValueError, AttributeError):
+            return 10.0
+
+    def _live_option_quotes_expected(self) -> bool:
+        """Is a real-time option source configured (then a delayed chain row is never entry evidence)?"""
+        fn = getattr(getattr(self.engine, "risk", None), "live_option_quotes_expected", None)
+        try:
+            return bool(fn()) if callable(fn) else False
+        except Exception:
+            return False
+
+    async def rejudge_contract(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> None:
+        """After the pre-order re-price: re-judge the contract's quality warnings on the FRESH quote
+        (DA-01). Generic policy = spread only (`execution.spread_warn_pct`, 20%); a technique overrides
+        this hook with its own book rules (EM: T5.4 spread + T5.3 IV). Must not journal or raise."""
+        bid, ask = float(contract.get("bid") or 0), float(contract.get("ask") or 0)
+        if bid > 0 and ask > 0:
+            mid = (bid + ask) / 2.0
+            sp = (ask - bid) / mid * 100.0 if mid > 0 else None
+            if sp is not None:
+                contract["spreadPct"] = round(sp, 2)
+                warns = [w for w in (contract.get("warnings") or []) if "T5.4 wide spread" not in str(w)]
+                if sp > float(self.rt("spread_warn_pct", 20.0) or 20.0):
+                    warns.append(f"T5.4 wide spread {sp:.1f}% on the NBBO (bid {bid:g} / ask {ask:g})")
+                contract["warnings"] = warns
+                contract["spreadJudgedOn"] = contract.get("priced") or "quote"
 
     async def review_fire(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade",
                           judgement: "FireJudgement") -> tuple[str, float, dict | None]:

@@ -150,8 +150,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     # --- health / state -----------------------------------------------------
     @app.get("/api/health")
     async def health(request: Request):
-        from .. import __version__
-        out = {"ok": True, "started": eng.started, "version": __version__}
+        from .. import __version__, build_sha
+        out = {"ok": True, "started": eng.started, "version": __version__, "build": build_sha()}
         # the restart guard (scripts/start.ps1) runs on this machine and must see whether
         # paid analyst reads / armed plans are in flight even though the API is closed.
         # Loopback AND no proxy headers = a local caller (Tailscale serve/funnel proxies

@@ -109,6 +109,7 @@ TECHNIQUE_PLAN_POSITION_OPENED = "TechniquePlanPositionOpened"
 TECHNIQUE_PLAN_EXIT = "TechniquePlanExit"
 TECHNIQUE_PLAN_POSITION_CLOSED = "TechniquePlanPositionClosed"
 TECHNIQUE_PLAN_ERROR = "TechniquePlanError"
+TECHNIQUE_ARM_REFUSED = "TechniqueArmRefused"          # Delivery B: an order-free scenario candidate asked to arm
 TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs the walk-forward replay
 TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time
 TECHNIQUE_PLAN_CONTRACT = "TechniquePlanContract"      # Team2 F108: candidate -> live quotes -> verdict (picked | deferred | refused), with every contract examined

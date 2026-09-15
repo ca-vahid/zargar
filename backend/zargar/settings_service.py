@@ -454,6 +454,12 @@ DEFAULTS: dict[str, Any] = {
     "technique.range_break": False,            # C5 (2026-09-12): consolidation break fires on the break close
     "technique.range_break_bars": 6,
     "technique.range_break_max_range_mult": 1.0,
+    "execution.min_one_contract": False,       # DA-06 (2026-09-14): risk-sized contracts floor at 1 (old behaviour) or 0 (budget is a bound)
+    "techniques.tip.min_one_contract": True,    # Tips keeps its one-contract floor (its premium-budget floor already implied it)
+    "techniques.team2.min_one_contract": True,  # unchanged behaviour for the other desks - their call to flip
+    "techniques.options_cartel.min_one_contract": True,
+    "techniques.enhanced_market.min_one_contract": False,
+    "execution.spread_warn_pct": 20.0,          # DA-01: the generic rejudge_contract hook's T5.4-style spread warning threshold
     "technique.arm.critic_mode": "veto",       # veto | momentum_only (bounce/reject "no" is advisory) | advisory (never blocks)
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols

@@ -15,10 +15,11 @@ import datetime as dt
 import logging
 import time
 
-from .options import rejudge_iv, rejudge_spread
+from .options import MAX_SPREAD_PCT, rejudge_iv, rejudge_spread
 from .. import bus as topics
 from .. import events as ev
-from ..domain import Bar
+from ..domain import Bar, now_ms
+from ..execution.entry_quality import judge_entry_quote
 from ..execution.planrunner import (  # noqa: F401 — re-exported for existing importers
     MODES, TRANSIENT_ERRORS, ArmConfig, ArmedPlan, FireJudgement, PlanRunner, Trade, _et_day_start_ms,
 )
@@ -285,6 +286,21 @@ class PlanArmer(PlanRunner):
                   + (f"; warnings: {'; '.join(warns)}" if warns else ""),
                   trigger=trade.trigger_id, contract=trade.contract)
         return trade.contract
+
+    async def rejudge_contract(self, ap, trade, contract: dict) -> None:
+        """EM's quality re-judgement on the fresh NBBO (DA-01): T5.4 spread and T5.3 IV, the same
+        functions the pick used, so the final admission sees the book's warnings on the final quote."""
+        rejudge_spread(contract)
+        rejudge_iv(contract, spot=float(trade.last_price or trade.entry or 0))
+
+    def judge_entry_quote(self, ap, trade, contract: dict, quote) -> str | None:
+        """EM's final verdict on the CURRENT NBBO (FC-01): T5.4's own 10% spread limit (`MAX_SPREAD_PCT`, the
+        number the pick and `rejudge_spread` use), a two-sided book, CURRENT evidence (no quote / a delayed row
+        when a real-time source is configured = refusal, FC-02) fresher than the ENTRY policy
+        `risk.stale_quote_seconds`. Synchronous and pure; the runner raises on a reason."""
+        return judge_entry_quote(contract, quote, max_spread_pct=MAX_SPREAD_PCT,
+                                 max_age_s=self._entry_quote_max_age(), refuse_wide=bool(ap.config.skip_wide_spread),
+                                 now_ms=now_ms(), require_current=self._live_option_quotes_expected())
 
     def _preopen_window(self, now: dt.datetime) -> bool:
         at = str(self.engine.settings.get("technique.arm.preopen_at", "09:25") or "09:25")

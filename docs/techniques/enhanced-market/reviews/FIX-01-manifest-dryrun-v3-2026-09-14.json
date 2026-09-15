@@ -1,0 +1,218 @@
+{
+  "generatedAt": 1789416707763,
+  "fix": "FIX-01",
+  "items": [
+    {
+      "runId": "b62bb83cf32d4369a61d02624a67ccad",
+      "symbol": "USO",
+      "planFor": "2026-09-14",
+      "trigger": "b1",
+      "status": "disarmed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "9d03592cf2f6e804",
+      "entryOrderId": "99180caefdd5450b8acf13f687f2ae49",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "evidence": "unfilled",
+      "evidenceConflict": null,
+      "ledger": {
+        "reason": "ledger has 0 buy / 0 sell execution(s) for the trade's orders"
+      },
+      "projection": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": null,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "haltNote": "per-trade gross diagnostic; the live halt aggregates all trades, fees and negative unrealized exposure",
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "b62bb83cf32d4369a61d02624a67ccad",
+      "symbol": "USO",
+      "planFor": "2026-09-14",
+      "trigger": "b2",
+      "status": "disarmed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "9d03592cf2f6e804",
+      "entryOrderId": "2ed2ddfa4a82402c95fd630bf52869c0",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "evidence": "unfilled",
+      "evidenceConflict": null,
+      "ledger": {
+        "reason": "ledger has 0 buy / 0 sell execution(s) for the trade's orders"
+      },
+      "projection": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": null,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "haltNote": "per-trade gross diagnostic; the live halt aggregates all trades, fees and negative unrealized exposure",
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "0ea197926e2e4f2d8db239d9c73e8e62",
+      "symbol": "SWKS",
+      "planFor": "2026-09-14",
+      "trigger": "b1",
+      "status": "disarmed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "6d45be2ad1d79b75",
+      "entryOrderId": "0b4549843aaa4d2f97f56ec7785c37f9",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "evidence": "unfilled",
+      "evidenceConflict": null,
+      "ledger": {
+        "reason": "ledger has 0 buy / 0 sell execution(s) for the trade's orders"
+      },
+      "projection": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": null,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "haltNote": "per-trade gross diagnostic; the live halt aggregates all trades, fees and negative unrealized exposure",
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "0ea197926e2e4f2d8db239d9c73e8e62",
+      "symbol": "SWKS",
+      "planFor": "2026-09-14",
+      "trigger": "b2",
+      "status": "disarmed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "6d45be2ad1d79b75",
+      "entryOrderId": "fb582dda953a450ba237e075a05a88fd",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "evidence": "unfilled",
+      "evidenceConflict": null,
+      "ledger": {
+        "reason": "ledger has 0 buy / 0 sell execution(s) for the trade's orders"
+      },
+      "projection": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": null,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "haltNote": "per-trade gross diagnostic; the live halt aggregates all trades, fees and negative unrealized exposure",
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "4d46f31870224793aa3ad84345c4535e",
+      "symbol": "HPQ",
+      "planFor": "2026-09-14",
+      "trigger": "b1",
+      "status": "disarmed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "ef17f95f1725c722",
+      "entryOrderId": "cb5d0e7492444a3fa296b7d62a134fe6",
+      "exitOrderIds": [
+        "0f9e3fd7115444269bc9b8c60d465573",
+        "89c4694af35b4981836bc3b19e3f3012"
+      ],
+      "filled": true,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": -719.3
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": -7.193
+      },
+      "evidence": "ledger",
+      "evidenceConflict": false,
+      "ledger": {
+        "avgEntry": 34.77,
+        "entryQty": 100.0,
+        "exitQty": 100.0,
+        "gross": -7.193,
+        "fees": 0.0
+      },
+      "projection": {
+        "qty": 100.0,
+        "avgFill": 34.77,
+        "exits": [
+          {
+            "kind": "tp1",
+            "qty": 30.0,
+            "price": 34.803,
+            "status": "SUBMITTED",
+            "orderId": "0f9e3fd7115444269bc9b8c60d465573"
+          },
+          {
+            "kind": "stop",
+            "qty": 70.0,
+            "price": 34.6531,
+            "status": "SUBMITTED",
+            "orderId": "89c4694af35b4981836bc3b19e3f3012"
+          }
+        ]
+      },
+      "commissions": 0.0,
+      "dailyLossLimit": 397.19,
+      "haltOld": true,
+      "haltNew": false,
+      "haltNote": "per-trade gross diagnostic; the live halt aggregates all trades, fees and negative unrealized exposure",
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    }
+  ],
+  "falseHalts": [
+    "4d46f31870224793aa3ad84345c4535e"
+  ],
+  "liveRows": [],
+  "unresolved": []
+}

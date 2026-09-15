@@ -198,3 +198,7 @@ wait (R6.6) holds every entry for the first 30 minutes on a gapped open, and the
 the evening triggers. Eight sessions of auto-arms (MU, GOOGL, META, GS, MSTR, NVDA, NBIS, CVNA...)
 have produced fires only on MU; the author's morning names are mostly in the 24 option-liquid set,
 so the option leg is measured on them first.
+
+## Source revisions (Delivery B first PR, 2026-09-14)
+
+Every forwarded message now also writes an IMMUTABLE revision row with the note (`technique_source_revisions`, one per distinct accepted source state; edits arrive from the gateway as `kind=update` and become revision n+1, ordered by the source's `editedAt` then the gateway sequence; identical redelivery is a receipt; partial payloads keep the accepted values). Derived outputs are append-only artifacts keyed by (revision, kind, input hash, config hash); progress is a fenced job (`resume_unfinished` on every delivery/poll). `GET /api/technique/ingest/revisions/{noteId}` shows the history. Backfill of the existing notes: `python -m zargar.tools.em_source_backfill` (dry run, then `--apply`, human step). Design and limits: `reviews/DELIVERY-B-DESIGN-2026-09-14.md`.

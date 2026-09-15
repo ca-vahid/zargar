@@ -80,6 +80,8 @@ def same_plan(a: dict | None, b: dict | None, tol: float = 1e-6) -> bool:
         return False
     if abs(a["entry"]["price"] - b["entry"]["price"]) > tol or abs(a["stop"]["price"] - b["stop"]["price"]) > tol:
         return False
+    if str(a["entry"].get("basis") or "at_level") != str(b["entry"].get("basis") or "at_level"):
+        return False                      # DA-07: the basis decides whether/when the simulator fills
     ta = [float(t["price"]) for t in (a.get("targets") or [])]
     tb = [float(t["price"]) for t in (b.get("targets") or [])]
     return len(ta) == len(tb) and all(abs(x - y) <= tol for x, y in zip(ta, tb))
