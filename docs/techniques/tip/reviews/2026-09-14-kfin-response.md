@@ -230,3 +230,16 @@ grading instrumentation, `route=pipeline`), NOT a declared funded shadow cohort;
 frozen paired comparison is still pending new captured evidence (a reconstructed bundle and a
 dry-run replay do not close it). Knowledge consolidation applies and entry-study conclusions stay
 on hold until this release is reviewed.
+
+### Deployment status (02:05 ET 2026-09-15)
+
+PR #131 merged (`995738e`). The running checkout is converged at `8be1d24` (main + the EM desk's
+`c5dde09`, version 0.7.85, frontend built, check-release green). The `ZargarRestart` task at
+01:59 ET passed the gate (restart-check safe, `techniqueRunning` 0) but could not stop the running
+server: `Stop-Process python (156864): Access is denied` - the process was started at 21:28 PT by
+the EM desk's elevated `deploy.ps1`; the Cartel desk's 22:39 PT attempt failed identically
+(receipt `phase: failed`, "Administrator terminal required ... automatic retries paused"). **Live
+stays v0.7.83 build `b7d8a57` until the process owner restarts** (the elevated terminal's
+`scripts\stop.ps1`, or the EM desk's deploy path). No order was placed by any attempt. Practice
+scope, risk budgets and live gates unchanged. The two pending cards (AFRM, MRNA; expire 11:30 ET)
+will be revalidated through the new endpoint once 0.7.85 is live.
