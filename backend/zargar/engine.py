@@ -292,9 +292,9 @@ class Engine:
             await self.snaptrade.stop()
         if getattr(self, "_snaptrade_client", None) is not None:
             await self._snaptrade_client.aclose()
-        telemetry = getattr(self, '_delivery_health_task', None)
-        if telemetry is not None:
-            await asyncio.gather(telemetry, return_exceptions=True)
+        # KFIN-03: bounded — a stuck telemetry sink is cancelled and reported, never awaited forever
+        from . import delivery_health
+        await delivery_health.shutdown(self)
         await self.db.dispose()
 
     # ------------------------------------------------------------- seeding

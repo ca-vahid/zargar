@@ -32,8 +32,10 @@ def build_ops_routes(app, eng, auth, config) -> None:
 
     @app.get('/api/ops/delivery-health', dependencies=[auth])
     async def delivery_health():
-        return {'consumers': getattr(eng, '_delivery_health', {}),
-            'note': 'Since-process maxima; durable BarDeliveryHealth events preserve earlier intervals. Publication latency is distinct from missing source data.'}
+        from ..delivery_health import snapshot
+        return {**snapshot(eng),
+            'note': 'Since-process maxima; durable BarDeliveryHealth events preserve earlier intervals. Publication latency is distinct from missing source data. '
+                    'inFlightAgeMs is how long the consumer\'s current handler has been running (null = idle); subscriberDrops / busDrops count messages shed from a full queue.'}
 
     @app.post("/api/ops/quiesce")
     async def ops_quiesce(request: Request, minutes: float = 5.0, release: bool = False):

@@ -67,11 +67,18 @@ if ($up) {
 }
 Set-Content -Path $lock -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Log ("engine " + $(if ($Force) { "restart requested" } else { "DOWN - no answer on :8420" }) + " -> start.ps1 -Detach" + $(if ($Override) { " -Force" } else { "" }))
+# KFIN-04: the same door and the same runtime identity as a task / manual restart - start.ps1 stamps
+# logs\runtime-identity.json with caller=watchdog before it launches; the identity is logged here.
+$env:ZARGAR_DEPLOY_CALLER = $(if ($Override) { "watchdog-override" } elseif ($Force) { "watchdog-restart" } else { "watchdog" })
 $startArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "start.ps1"), "-Detach")
 if ($Override) { $startArgs += "-Force" }
 & powershell @startArgs 2>&1 | ForEach-Object { Log ("  " + $_) }
 $code = $LASTEXITCODE
 Log ("start.ps1 exit " + $code)
+try {
+  $identity = Get-Content -LiteralPath (Join-Path $logDir "runtime-identity.json") -Raw | ConvertFrom-Json
+  Log ("runtime identity: head " + $identity.head + " artifact " + $identity.artifactManifestSha256 + " clean=" + $identity.clean + " caller=" + $identity.caller)
+} catch { Log ("runtime identity unavailable: " + $_.Exception.Message) }
 if ($code -ne 0) { exit $code }
 # --- restoration check: what was armed / open / working before must be back
 if ($before -ne $null) {
