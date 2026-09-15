@@ -1035,6 +1035,16 @@ async def attach_tip_runner(engine) -> None:
     engine.scheduler.register("tip_knowledge_maintenance", maint_at,
                               lambda: _rule_audit.run_knowledge_maintenance(engine),
                               weekdays_only=False)
+    # PROF-03 (2026-09-15): the overnight-hold study's two research samples -
+    # a pre-close snapshot of every open / intraday-exited Tips position and the
+    # next session's first qualified quote (observation only; never an order)
+    from . import holdstudy as _hold
+    hold_at = str(engine.settings.get("techniques.tip.hold_snapshot_at", "15:50"))
+    engine.scheduler.register("tip_hold_snapshot", hold_at,
+                              lambda: _hold.snapshot_preclose(engine))
+    hold_open_at = str(engine.settings.get("techniques.tip.hold_next_open_at", "09:36"))
+    engine.scheduler.register("tip_hold_next_open", hold_open_at,
+                              lambda: _hold.sample_next_open(engine))
     # nightly LLM usage rollup into TechniqueHookStats.llm (Codex finding 10)
     from ...research import llm_stats
     stats_at = str(engine.settings.get("techniques.tip.llm_stats_at", "17:40"))
