@@ -1,0 +1,3936 @@
+{
+ "sample": {
+  "start": "2026-08-20",
+  "end": "2026-09-11",
+  "symbols": [
+   "SPY",
+   "QQQ",
+   "IWM"
+  ],
+  "eligibleCells": 48,
+  "dropped": [],
+  "datasetVersion": "27516b6136abad09628fee56507a601467b8cc3379bd7541b34f55d27e8ae7c4",
+  "unit$": 600.0,
+  "split": "2026-09-08"
+ },
+ "arms": {
+  "baseline": {
+   "overrides": {},
+   "model": {
+    "symbolSessions": 48,
+    "trades": 54,
+    "wins": 19,
+    "winRate": 0.352,
+    "pnlPctSum": 209.5,
+    "bySymbol": {
+     "IWM": {
+      "trades": 21,
+      "pnlPctSum": 304.3
+     },
+     "QQQ": {
+      "trades": 13,
+      "pnlPctSum": 96.8
+     },
+     "SPY": {
+      "trades": 20,
+      "pnlPctSum": -191.6
+     }
+    }
+   },
+   "book": {
+    "taken": 36,
+    "skippedConcurrent": 3,
+    "skippedLossCap": 15,
+    "total": 471.0,
+    "maxDrawdown": -320.0,
+    "worstDay": -271.0,
+    "bestDay": "2026-09-02",
+    "minutesInMarket": 220,
+    "byDate": {
+     "2026-08-20": -36.0,
+     "2026-08-21": 166.0,
+     "2026-08-24": 190.0,
+     "2026-08-26": -44.0,
+     "2026-08-27": -13.0,
+     "2026-08-28": 13.0,
+     "2026-08-31": -36.0,
+     "2026-09-01": -185.0,
+     "2026-09-02": 401.0,
+     "2026-09-03": -271.0,
+     "2026-09-04": 96.0,
+     "2026-09-08": 147.0,
+     "2026-09-09": 107.0,
+     "2026-09-10": -64.0
+    },
+    "grossWins": 1793.0,
+    "grossLosses": -1322.0,
+    "profitFactor": 1.36,
+    "unitsDeployed": 20.0,
+    "fullUnitTrades": 7,
+    "premiumAtRiskMax$": 600.0,
+    "totalWithoutBestDay": 70.0,
+    "bySymbol$": {
+     "IWM": 610.0,
+     "QQQ": 296.0,
+     "SPY": -434.0
+    },
+    "bySize": {
+     "full(1.0)": {
+      "trades": 7,
+      "pnl$": -367.0
+     },
+     "x0.25": {
+      "trades": 6,
+      "pnl$": 99.0
+     },
+     "x0.50": {
+      "trades": 23,
+      "pnl$": 740.0
+     }
+    },
+    "earlier$": 281.0,
+    "week37$": 190.0,
+    "takenTrades": [
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 45.3,
+      "pnl$": 136.0,
+      "exit": "premium stop: -26% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -28.2,
+      "pnl$": -85.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@14:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -29.1,
+      "pnl$": -87.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 65.3,
+      "pnl$": 196.0,
+      "exit": "target 709.20 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "SPY",
+      "setup": "pm_break_up@11:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -9.9,
+      "pnl$": -30.0,
+      "exit": "2m close 767.02 through the EMA13 767.09"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 43.9,
+      "pnl$": 132.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 32.1,
+      "pnl$": 48.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "scenario_4@12:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 6.6,
+      "pnl$": 10.0,
+      "exit": "target 298.03 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.2,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.3,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -2.1,
+      "pnl$": -6.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -2.1,
+      "pnl$": -6.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -14.4,
+      "pnl$": -43.0,
+      "exit": "2m close 299.29 through the level 299.24"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 15.7,
+      "pnl$": 47.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 9.4,
+      "pnl$": 14.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -5.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -18.5,
+      "pnl$": -56.0,
+      "exit": "2m close 766.52 through the level 766.30"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 37.3,
+      "pnl$": 112.0,
+      "exit": "target 765.50 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -30.9,
+      "pnl$": -93.0,
+      "exit": "premium stop: -30% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -14.8,
+      "pnl$": -89.0,
+      "exit": "2m close 291.65 through the EMA13 291.60"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -32.1,
+      "pnl$": -96.0,
+      "exit": "premium stop: -32% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 149.8,
+      "pnl$": 449.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "scenario_1@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -13.0,
+      "pnl$": -39.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@10:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -9.0,
+      "exit": "2m close 708.90 through the EMA13 708.95"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -13.1,
+      "pnl$": -79.0,
+      "exit": "2m close 769.14 through the EMA13 769.27"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 16.6,
+      "pnl$": 50.0,
+      "exit": "target 712.30 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -40.4,
+      "pnl$": -243.0,
+      "exit": "premium stop: -40% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.5,
+      "pnl$": 172.0,
+      "exit": "target 769.26 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -12.2,
+      "pnl$": -18.0,
+      "exit": "2m close 769.87 through the EMA13 769.79"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "IWM",
+      "setup": "pm_break_up@12:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -19.2,
+      "pnl$": -58.0,
+      "exit": "2m close 295.87 through the level 295.92"
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 32.3,
+      "pnl$": 97.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 33.1,
+      "pnl$": 50.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": 46.6,
+      "pnl$": 280.0,
+      "exit": "target 291.81 (re-planned structural lev"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -20.9,
+      "pnl$": -125.0,
+      "exit": "2m close 761.97 through the EMA13 761.86"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -7.9,
+      "pnl$": -48.0,
+      "exit": "2m close 762.17 through the EMA13 762.16"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -10.7,
+      "pnl$": -64.0,
+      "exit": "2m close 757.64 through the EMA13 757.42"
+     }
+    ]
+   }
+  },
+  "C1": {
+   "overrides": {
+    "no_trade_zone": "conjunction"
+   },
+   "model": {
+    "symbolSessions": 48,
+    "trades": 82,
+    "wins": 30,
+    "winRate": 0.366,
+    "pnlPctSum": 358.6,
+    "bySymbol": {
+     "IWM": {
+      "trades": 26,
+      "pnlPctSum": 399.6
+     },
+     "QQQ": {
+      "trades": 27,
+      "pnlPctSum": 69.0
+     },
+     "SPY": {
+      "trades": 29,
+      "pnlPctSum": -110.0
+     }
+    }
+   },
+   "book": {
+    "taken": 50,
+    "skippedConcurrent": 9,
+    "skippedLossCap": 23,
+    "total": 1514.0,
+    "maxDrawdown": -565.0,
+    "worstDay": -271.0,
+    "bestDay": "2026-09-02",
+    "minutesInMarket": 234,
+    "byDate": {
+     "2026-08-20": 353.0,
+     "2026-08-21": 166.0,
+     "2026-08-24": 200.0,
+     "2026-08-25": 198.0,
+     "2026-08-26": -44.0,
+     "2026-08-27": -153.0,
+     "2026-08-28": 13.0,
+     "2026-08-31": -194.0,
+     "2026-09-01": -125.0,
+     "2026-09-02": 401.0,
+     "2026-09-03": -271.0,
+     "2026-09-04": 111.0,
+     "2026-09-08": 205.0,
+     "2026-09-09": 30.0,
+     "2026-09-10": 293.0,
+     "2026-09-11": 330.0
+    },
+    "grossWins": 3089.0,
+    "grossLosses": -1576.0,
+    "profitFactor": 1.96,
+    "unitsDeployed": 23.5,
+    "fullUnitTrades": 3,
+    "premiumAtRiskMax$": 600.0,
+    "totalWithoutBestDay": 1113.0,
+    "bySymbol$": {
+     "IWM": 874.0,
+     "QQQ": 619.0,
+     "SPY": 21.0
+    },
+    "bySize": {
+     "full(1.0)": {
+      "trades": 3,
+      "pnl$": -410.0
+     },
+     "x0.25": {
+      "trades": 12,
+      "pnl$": 57.0
+     },
+     "x0.50": {
+      "trades": 35,
+      "pnl$": 1867.0
+     }
+    },
+    "earlier$": 655.0,
+    "week37$": 858.0,
+    "takenTrades": [
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 51.2,
+      "pnl$": 154.0,
+      "exit": "target 299.10 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 45.3,
+      "pnl$": 68.0,
+      "exit": "premium stop: -26% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -28.2,
+      "pnl$": -85.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 87.9,
+      "pnl$": 264.0,
+      "exit": "target 711.05 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -16.0,
+      "pnl$": -48.0,
+      "exit": "2m close 766.75 through the EMA13 766.62"
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 65.3,
+      "pnl$": 196.0,
+      "exit": "target 709.20 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "SPY",
+      "setup": "pm_break_up@11:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -9.9,
+      "pnl$": -30.0,
+      "exit": "2m close 767.02 through the EMA13 767.09"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 7.5,
+      "pnl$": 22.0,
+      "exit": "target 763.15 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 43.9,
+      "pnl$": 132.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 32.1,
+      "pnl$": 48.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "scenario_4@12:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 6.6,
+      "pnl$": 10.0,
+      "exit": "target 298.03 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@13:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 8.3,
+      "pnl$": 25.0,
+      "exit": "target 763.15 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@13:15",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -24.4,
+      "pnl$": -37.0,
+      "exit": "2m close 763.58 through the EMA13 763.35"
+     },
+     {
+      "date": "2026-08-25",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 87.0,
+      "pnl$": 261.0,
+      "exit": "target 713.89 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-25",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -41.9,
+      "pnl$": -63.0,
+      "exit": "premium stop: -42% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.2,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.3,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -45.6,
+      "pnl$": -137.0,
+      "exit": "premium stop: -45% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.4,
+      "pnl$": -16.0,
+      "exit": "2m close 769.45 through the EMA13 769.45"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -14.4,
+      "pnl$": -43.0,
+      "exit": "2m close 299.29 through the level 299.24"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 15.7,
+      "pnl$": 47.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 9.4,
+      "pnl$": 14.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -5.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -52.1,
+      "pnl$": -156.0,
+      "exit": "premium stop: -52% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.6,
+      "pnl$": -38.0,
+      "exit": "2m close 766.48 through the EMA13 766.42"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.1,
+      "pnl$": -36.0,
+      "exit": "2m close 707.71 through the EMA48 707.60"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -14.8,
+      "pnl$": -89.0,
+      "exit": "2m close 291.65 through the EMA13 291.60"
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 149.8,
+      "pnl$": 449.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "scenario_1@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -13.0,
+      "pnl$": -39.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@10:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -9.0,
+      "exit": "2m close 708.90 through the EMA13 708.95"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -13.1,
+      "pnl$": -79.0,
+      "exit": "2m close 769.14 through the EMA13 769.27"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 16.6,
+      "pnl$": 50.0,
+      "exit": "target 712.30 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -40.4,
+      "pnl$": -243.0,
+      "exit": "premium stop: -40% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -14.3,
+      "pnl$": -43.0,
+      "exit": "2m close 720.75 through the EMA13 720.87"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.5,
+      "pnl$": 172.0,
+      "exit": "target 769.26 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -12.2,
+      "pnl$": -18.0,
+      "exit": "2m close 769.87 through the EMA13 769.79"
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 16.7,
+      "pnl$": 50.0,
+      "exit": "target 767.45 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 32.3,
+      "pnl$": 97.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 33.1,
+      "pnl$": 50.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 5.5,
+      "pnl$": 8.0,
+      "exit": "target 767.45 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.9,
+      "pnl$": -39.0,
+      "exit": "2m close 293.07 through the EMA13 293.01"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 55.8,
+      "pnl$": 167.0,
+      "exit": "target 292.62 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -33.1,
+      "pnl$": -99.0,
+      "exit": "premium stop: -33% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 104.0,
+      "pnl$": 312.0,
+      "exit": "target 757.69 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -34.0,
+      "pnl$": -102.0,
+      "exit": "premium stop: -34% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 54.2,
+      "pnl$": 163.0,
+      "exit": "target 287.83 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "IWM",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -53.1,
+      "pnl$": -80.0,
+      "exit": "premium stop: -53% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 62.5,
+      "pnl$": 187.0,
+      "exit": "target 716.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 27.2,
+      "pnl$": 82.0,
+      "exit": "target 765.99 (high of day) touched \u2014 se"
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 40.7,
+      "pnl$": 61.0,
+      "exit": "target 716.80 (planned level) touched \u2014 "
+     }
+    ]
+   },
+   "vsBase": {
+    "base": "baseline",
+    "bookDelta$": 1043.0,
+    "mddDelta$": -245.0,
+    "matched": {
+     "unchanged": 44,
+     "changedExit": 0,
+     "displaced": 4,
+     "new": 34,
+     "lost": 7
+    },
+    "sums": {
+     "changedExit": 0,
+     "displaced": -63.8,
+     "new": 198.3,
+     "lost": -105.4
+    },
+    "incremental": {
+     "bestIncrementalDate": "2026-08-20",
+     "itsContribution": 389.0,
+     "advantageWithoutIt": 654.0
+    }
+   }
+  },
+  "size_half": {
+   "overrides": {
+    "size_full": 0.5
+   },
+   "model": {
+    "symbolSessions": 48,
+    "trades": 54,
+    "wins": 19,
+    "winRate": 0.352,
+    "pnlPctSum": 209.5,
+    "bySymbol": {
+     "IWM": {
+      "trades": 21,
+      "pnlPctSum": 304.3
+     },
+     "QQQ": {
+      "trades": 13,
+      "pnlPctSum": 96.8
+     },
+     "SPY": {
+      "trades": 20,
+      "pnlPctSum": -191.6
+     }
+    }
+   },
+   "book": {
+    "taken": 36,
+    "skippedConcurrent": 3,
+    "skippedLossCap": 15,
+    "total": 763.0,
+    "maxDrawdown": -187.0,
+    "worstDay": -141.0,
+    "bestDay": "2026-09-02",
+    "minutesInMarket": 220,
+    "byDate": {
+     "2026-08-20": 6.0,
+     "2026-08-21": 166.0,
+     "2026-08-24": 190.0,
+     "2026-08-26": -44.0,
+     "2026-08-27": -13.0,
+     "2026-08-28": 13.0,
+     "2026-08-31": 10.0,
+     "2026-09-01": -141.0,
+     "2026-09-02": 421.0,
+     "2026-09-03": -111.0,
+     "2026-09-04": 96.0,
+     "2026-09-08": 147.0,
+     "2026-09-09": 53.0,
+     "2026-09-10": -32.0
+    },
+    "grossWins": 1653.0,
+    "grossLosses": -890.0,
+    "profitFactor": 1.86,
+    "unitsDeployed": 15.75,
+    "fullUnitTrades": 0,
+    "premiumAtRiskMax$": 300.0,
+    "totalWithoutBestDay": 342.0,
+    "bySymbol$": {
+     "IWM": 622.0,
+     "QQQ": 296.0,
+     "SPY": -155.0
+    },
+    "bySize": {
+     "x0.25": {
+      "trades": 9,
+      "pnl$": -9.0
+     },
+     "x0.50": {
+      "trades": 27,
+      "pnl$": 772.0
+     }
+    },
+    "earlier$": 593.0,
+    "week37$": 168.0,
+    "takenTrades": [
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 45.3,
+      "pnl$": 136.0,
+      "exit": "premium stop: -26% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -28.2,
+      "pnl$": -42.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@14:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -29.1,
+      "pnl$": -87.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 65.3,
+      "pnl$": 196.0,
+      "exit": "target 709.20 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "SPY",
+      "setup": "pm_break_up@11:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -9.9,
+      "pnl$": -30.0,
+      "exit": "2m close 767.02 through the EMA13 767.09"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 43.9,
+      "pnl$": 132.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 32.1,
+      "pnl$": 48.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "scenario_4@12:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 6.6,
+      "pnl$": 10.0,
+      "exit": "target 298.03 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.2,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.3,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -2.1,
+      "pnl$": -6.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -2.1,
+      "pnl$": -6.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -14.4,
+      "pnl$": -43.0,
+      "exit": "2m close 299.29 through the level 299.24"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 15.7,
+      "pnl$": 47.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 9.4,
+      "pnl$": 14.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -5.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -18.5,
+      "pnl$": -56.0,
+      "exit": "2m close 766.52 through the level 766.30"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 37.3,
+      "pnl$": 112.0,
+      "exit": "target 765.50 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -30.9,
+      "pnl$": -46.0,
+      "exit": "premium stop: -30% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -14.8,
+      "pnl$": -44.0,
+      "exit": "2m close 291.65 through the EMA13 291.60"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -32.1,
+      "pnl$": -96.0,
+      "exit": "premium stop: -32% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 149.8,
+      "pnl$": 449.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "scenario_1@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -13.0,
+      "pnl$": -20.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@10:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -9.0,
+      "exit": "2m close 708.90 through the EMA13 708.95"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -13.1,
+      "pnl$": -39.0,
+      "exit": "2m close 769.14 through the EMA13 769.27"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 16.6,
+      "pnl$": 50.0,
+      "exit": "target 712.30 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -40.4,
+      "pnl$": -121.0,
+      "exit": "premium stop: -40% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.5,
+      "pnl$": 172.0,
+      "exit": "target 769.26 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -12.2,
+      "pnl$": -18.0,
+      "exit": "2m close 769.87 through the EMA13 769.79"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "IWM",
+      "setup": "pm_break_up@12:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -19.2,
+      "pnl$": -58.0,
+      "exit": "2m close 295.87 through the level 295.92"
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 32.3,
+      "pnl$": 97.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 33.1,
+      "pnl$": 50.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": 46.6,
+      "pnl$": 140.0,
+      "exit": "target 291.81 (re-planned structural lev"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -20.9,
+      "pnl$": -63.0,
+      "exit": "2m close 761.97 through the EMA13 761.86"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -7.9,
+      "pnl$": -24.0,
+      "exit": "2m close 762.17 through the EMA13 762.16"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -10.7,
+      "pnl$": -32.0,
+      "exit": "2m close 757.64 through the EMA13 757.42"
+     }
+    ]
+   },
+   "vsBase": {
+    "base": "baseline",
+    "bookDelta$": 292.0,
+    "mddDelta$": 133.0,
+    "matched": {
+     "unchanged": 54,
+     "changedExit": 0,
+     "displaced": 0,
+     "new": 0,
+     "lost": 0
+    },
+    "sums": {
+     "changedExit": 0,
+     "displaced": 0,
+     "new": 0,
+     "lost": 0
+    },
+    "incremental": {
+     "bestIncrementalDate": "2026-09-03",
+     "itsContribution": 160.0,
+     "advantageWithoutIt": 132.0
+    }
+   }
+  },
+  "baseline_slip2": {
+   "overrides": {
+    "slippage_ticks": 2
+   },
+   "model": {
+    "symbolSessions": 48,
+    "trades": 54,
+    "wins": 19,
+    "winRate": 0.352,
+    "pnlPctSum": -81.7,
+    "bySymbol": {
+     "IWM": {
+      "trades": 21,
+      "pnlPctSum": 129.1
+     },
+     "QQQ": {
+      "trades": 13,
+      "pnlPctSum": 47.2
+     },
+     "SPY": {
+      "trades": 20,
+      "pnlPctSum": -257.9
+     }
+    }
+   },
+   "book": {
+    "taken": 36,
+    "skippedConcurrent": 3,
+    "skippedLossCap": 15,
+    "total": -121.0,
+    "maxDrawdown": -459.0,
+    "worstDay": -314.0,
+    "bestDay": "2026-09-02",
+    "minutesInMarket": 220,
+    "byDate": {
+     "2026-08-20": -82.0,
+     "2026-08-21": 146.0,
+     "2026-08-24": 135.0,
+     "2026-08-26": -65.0,
+     "2026-08-27": -33.0,
+     "2026-08-28": -39.0,
+     "2026-08-31": -75.0,
+     "2026-09-01": -247.0,
+     "2026-09-02": 324.0,
+     "2026-09-03": -314.0,
+     "2026-09-04": 78.0,
+     "2026-09-08": 127.0,
+     "2026-09-09": 5.0,
+     "2026-09-10": -82.0
+    },
+    "grossWins": 1540.0,
+    "grossLosses": -1661.0,
+    "profitFactor": 0.93,
+    "unitsDeployed": 20.5,
+    "fullUnitTrades": 7,
+    "premiumAtRiskMax$": 600.0,
+    "totalWithoutBestDay": -445.0,
+    "bySymbol$": {
+     "IWM": 253.0,
+     "QQQ": 232.0,
+     "SPY": -606.0
+    },
+    "bySize": {
+     "full(1.0)": {
+      "trades": 7,
+      "pnl$": -557.0
+     },
+     "x0.25": {
+      "trades": 4,
+      "pnl$": 54.0
+     },
+     "x0.50": {
+      "trades": 25,
+      "pnl$": 382.0
+     }
+    },
+    "earlier$": -172.0,
+    "week37$": 50.0,
+    "takenTrades": [
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 39.2,
+      "pnl$": 118.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -33.8,
+      "pnl$": -101.0,
+      "exit": "premium stop: -33% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@14:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -32.7,
+      "pnl$": -98.0,
+      "exit": "premium stop: -31% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 61.3,
+      "pnl$": 184.0,
+      "exit": "target 709.20 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "SPY",
+      "setup": "pm_break_up@11:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.5,
+      "pnl$": -38.0,
+      "exit": "2m close 767.02 through the EMA13 767.09"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 33.5,
+      "pnl$": 100.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 22.8,
+      "pnl$": 34.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "scenario_4@12:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 0.3,
+      "pnl$": 0.0,
+      "exit": "target 298.03 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -10.7,
+      "pnl$": -32.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -10.9,
+      "pnl$": -33.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.5,
+      "pnl$": -16.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.6,
+      "pnl$": -17.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -18.6,
+      "pnl$": -56.0,
+      "exit": "2m close 299.29 through the level 299.24"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 9.9,
+      "pnl$": 30.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 4.0,
+      "pnl$": 12.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -8.2,
+      "pnl$": -25.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -21.9,
+      "pnl$": -66.0,
+      "exit": "2m close 766.52 through the level 766.30"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 32.6,
+      "pnl$": 98.0,
+      "exit": "target 765.50 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -35.6,
+      "pnl$": -107.0,
+      "exit": "premium stop: -35% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -21.6,
+      "pnl$": -130.0,
+      "exit": "2m close 291.65 through the EMA13 291.60"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -39.1,
+      "pnl$": -117.0,
+      "exit": "premium stop: -39% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 134.9,
+      "pnl$": 405.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "scenario_1@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -20.9,
+      "pnl$": -63.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@10:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.9,
+      "pnl$": -18.0,
+      "exit": "2m close 708.90 through the EMA13 708.95"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -15.8,
+      "pnl$": -95.0,
+      "exit": "2m close 769.14 through the EMA13 769.27"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 12.2,
+      "pnl$": 37.0,
+      "exit": "target 712.30 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -42.7,
+      "pnl$": -256.0,
+      "exit": "premium stop: -42% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.5,
+      "pnl$": 172.0,
+      "exit": "target 769.26 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -15.7,
+      "pnl$": -24.0,
+      "exit": "2m close 769.87 through the EMA13 769.79"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "IWM",
+      "setup": "pm_break_up@12:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -23.7,
+      "pnl$": -71.0,
+      "exit": "2m close 295.87 through the level 295.92"
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 28.0,
+      "pnl$": 84.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 28.8,
+      "pnl$": 43.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": 37.2,
+      "pnl$": 223.0,
+      "exit": "target 291.81 (re-planned structural lev"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -25.4,
+      "pnl$": -152.0,
+      "exit": "2m close 761.97 through the EMA13 761.86"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -11.0,
+      "pnl$": -66.0,
+      "exit": "2m close 762.17 through the EMA13 762.16"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -13.6,
+      "pnl$": -82.0,
+      "exit": "2m close 757.64 through the EMA13 757.42"
+     }
+    ]
+   }
+  },
+  "C1_slip2": {
+   "overrides": {
+    "no_trade_zone": "conjunction",
+    "slippage_ticks": 2
+   },
+   "model": {
+    "symbolSessions": 48,
+    "trades": 82,
+    "wins": 30,
+    "winRate": 0.366,
+    "pnlPctSum": -39.9,
+    "bySymbol": {
+     "IWM": {
+      "trades": 26,
+      "pnlPctSum": 191.4
+     },
+     "QQQ": {
+      "trades": 27,
+      "pnlPctSum": -28.7
+     },
+     "SPY": {
+      "trades": 29,
+      "pnlPctSum": -202.7
+     }
+    }
+   },
+   "book": {
+    "taken": 50,
+    "skippedConcurrent": 9,
+    "skippedLossCap": 23,
+    "total": 820.0,
+    "maxDrawdown": -772.0,
+    "worstDay": -314.0,
+    "bestDay": "2026-09-02",
+    "minutesInMarket": 234,
+    "byDate": {
+     "2026-08-20": 276.0,
+     "2026-08-21": 146.0,
+     "2026-08-24": 83.0,
+     "2026-08-25": 182.0,
+     "2026-08-26": -65.0,
+     "2026-08-27": -170.0,
+     "2026-08-28": -39.0,
+     "2026-08-31": -213.0,
+     "2026-09-01": -175.0,
+     "2026-09-02": 324.0,
+     "2026-09-03": -314.0,
+     "2026-09-04": 94.0,
+     "2026-09-08": 169.0,
+     "2026-09-09": -13.0,
+     "2026-09-10": 233.0,
+     "2026-09-11": 299.0
+    },
+    "grossWins": 2737.0,
+    "grossLosses": -1917.0,
+    "profitFactor": 1.43,
+    "unitsDeployed": 24.25,
+    "fullUnitTrades": 3,
+    "premiumAtRiskMax$": 600.0,
+    "totalWithoutBestDay": 496.0,
+    "bySymbol$": {
+     "IWM": 539.0,
+     "QQQ": 468.0,
+     "SPY": -187.0
+    },
+    "bySize": {
+     "full(1.0)": {
+      "trades": 3,
+      "pnl$": -481.0
+     },
+     "x0.25": {
+      "trades": 9,
+      "pnl$": 18.0
+     },
+     "x0.50": {
+      "trades": 38,
+      "pnl$": 1283.0
+     }
+    },
+    "earlier$": 129.0,
+    "week37$": 688.0,
+    "takenTrades": [
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 43.1,
+      "pnl$": 129.0,
+      "exit": "target 299.10 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 39.2,
+      "pnl$": 59.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -33.8,
+      "pnl$": -101.0,
+      "exit": "premium stop: -33% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 82.5,
+      "pnl$": 248.0,
+      "exit": "target 711.05 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -19.3,
+      "pnl$": -58.0,
+      "exit": "2m close 766.75 through the EMA13 766.62"
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 61.3,
+      "pnl$": 184.0,
+      "exit": "target 709.20 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "SPY",
+      "setup": "pm_break_up@11:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.5,
+      "pnl$": -38.0,
+      "exit": "2m close 767.02 through the EMA13 767.09"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 4.8,
+      "pnl$": 14.0,
+      "exit": "target 763.15 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 33.5,
+      "pnl$": 100.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 22.8,
+      "pnl$": 34.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "scenario_4@12:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 0.3,
+      "pnl$": 0.0,
+      "exit": "target 298.03 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@13:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 5.0,
+      "pnl$": 15.0,
+      "exit": "target 763.15 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@13:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -27.1,
+      "pnl$": -81.0,
+      "exit": "premium stop: -26% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-25",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 82.6,
+      "pnl$": 248.0,
+      "exit": "target 713.89 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-25",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -44.1,
+      "pnl$": -66.0,
+      "exit": "premium stop: -44% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -10.7,
+      "pnl$": -32.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -10.9,
+      "pnl$": -33.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -48.4,
+      "pnl$": -145.0,
+      "exit": "premium stop: -48% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -8.4,
+      "pnl$": -25.0,
+      "exit": "2m close 769.45 through the EMA13 769.45"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -18.6,
+      "pnl$": -56.0,
+      "exit": "2m close 299.29 through the level 299.24"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 9.9,
+      "pnl$": 30.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 4.0,
+      "pnl$": 12.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -8.2,
+      "pnl$": -25.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -54.5,
+      "pnl$": -163.0,
+      "exit": "premium stop: -54% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -16.4,
+      "pnl$": -49.0,
+      "exit": "2m close 766.48 through the EMA13 766.42"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -15.0,
+      "pnl$": -45.0,
+      "exit": "2m close 707.71 through the EMA48 707.60"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -21.6,
+      "pnl$": -130.0,
+      "exit": "2m close 291.65 through the EMA13 291.60"
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 134.9,
+      "pnl$": 405.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "scenario_1@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -20.9,
+      "pnl$": -63.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@10:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.9,
+      "pnl$": -18.0,
+      "exit": "2m close 708.90 through the EMA13 708.95"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -15.8,
+      "pnl$": -95.0,
+      "exit": "2m close 769.14 through the EMA13 769.27"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 12.2,
+      "pnl$": 37.0,
+      "exit": "target 712.30 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 1.0,
+      "bucket": "full",
+      "pnlPct": -42.7,
+      "pnl$": -256.0,
+      "exit": "premium stop: -42% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -18.1,
+      "pnl$": -54.0,
+      "exit": "2m close 720.75 through the EMA13 720.87"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.5,
+      "pnl$": 172.0,
+      "exit": "target 769.26 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -15.7,
+      "pnl$": -24.0,
+      "exit": "2m close 769.87 through the EMA13 769.79"
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 13.2,
+      "pnl$": 40.0,
+      "exit": "target 767.45 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 28.0,
+      "pnl$": 84.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 28.8,
+      "pnl$": 43.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 1.6,
+      "pnl$": 2.0,
+      "exit": "target 767.45 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -18.9,
+      "pnl$": -57.0,
+      "exit": "2m close 293.07 through the EMA13 293.01"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 50.8,
+      "pnl$": 152.0,
+      "exit": "target 292.62 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -36.0,
+      "pnl$": -108.0,
+      "exit": "premium stop: -36% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 98.2,
+      "pnl$": 295.0,
+      "exit": "target 757.69 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -36.6,
+      "pnl$": -110.0,
+      "exit": "premium stop: -36% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 44.9,
+      "pnl$": 135.0,
+      "exit": "target 287.83 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "IWM",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -57.5,
+      "pnl$": -86.0,
+      "exit": "premium stop: -57% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.2,
+      "pnl$": 172.0,
+      "exit": "target 716.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 24.2,
+      "pnl$": 73.0,
+      "exit": "target 765.99 (high of day) touched \u2014 se"
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 36.4,
+      "pnl$": 55.0,
+      "exit": "target 716.80 (planned level) touched \u2014 "
+     }
+    ]
+   },
+   "vsBase": {
+    "base": "baseline_slip2",
+    "bookDelta$": 941.0,
+    "mddDelta$": -313.0,
+    "matched": {
+     "unchanged": 44,
+     "changedExit": 0,
+     "displaced": 4,
+     "new": 34,
+     "lost": 7
+    },
+    "sums": {
+     "changedExit": 0,
+     "displaced": -77.0,
+     "new": 64.2,
+     "lost": -131.1
+    },
+    "incremental": {
+     "bestIncrementalDate": "2026-08-20",
+     "itsContribution": 358.0,
+     "advantageWithoutIt": 583.0
+    }
+   }
+  },
+  "size_half_slip2": {
+   "overrides": {
+    "size_full": 0.5,
+    "slippage_ticks": 2
+   },
+   "model": {
+    "symbolSessions": 48,
+    "trades": 54,
+    "wins": 19,
+    "winRate": 0.352,
+    "pnlPctSum": -81.7,
+    "bySymbol": {
+     "IWM": {
+      "trades": 21,
+      "pnlPctSum": 129.1
+     },
+     "QQQ": {
+      "trades": 13,
+      "pnlPctSum": 47.2
+     },
+     "SPY": {
+      "trades": 20,
+      "pnlPctSum": -257.9
+     }
+    }
+   },
+   "book": {
+    "taken": 36,
+    "skippedConcurrent": 3,
+    "skippedLossCap": 15,
+    "total": 293.0,
+    "maxDrawdown": -340.0,
+    "worstDay": -182.0,
+    "bestDay": "2026-09-02",
+    "minutesInMarket": 220,
+    "byDate": {
+     "2026-08-20": -31.0,
+     "2026-08-21": 146.0,
+     "2026-08-24": 135.0,
+     "2026-08-26": -65.0,
+     "2026-08-27": -33.0,
+     "2026-08-28": -39.0,
+     "2026-08-31": -21.0,
+     "2026-09-01": -182.0,
+     "2026-09-02": 356.0,
+     "2026-09-03": -139.0,
+     "2026-09-04": 78.0,
+     "2026-09-08": 127.0,
+     "2026-09-09": 3.0,
+     "2026-09-10": -41.0
+    },
+    "grossWins": 1428.0,
+    "grossLosses": -1135.0,
+    "profitFactor": 1.26,
+    "unitsDeployed": 16.25,
+    "fullUnitTrades": 0,
+    "premiumAtRiskMax$": 300.0,
+    "totalWithoutBestDay": -63.0,
+    "bySymbol$": {
+     "IWM": 342.0,
+     "QQQ": 232.0,
+     "SPY": -280.0
+    },
+    "bySize": {
+     "x0.25": {
+      "trades": 7,
+      "pnl$": -81.0
+     },
+     "x0.50": {
+      "trades": 29,
+      "pnl$": 375.0
+     }
+    },
+    "earlier$": 205.0,
+    "week37$": 89.0,
+    "takenTrades": [
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 39.2,
+      "pnl$": 118.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -33.8,
+      "pnl$": -51.0,
+      "exit": "premium stop: -33% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@14:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -32.7,
+      "pnl$": -98.0,
+      "exit": "premium stop: -31% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 61.3,
+      "pnl$": 184.0,
+      "exit": "target 709.20 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "SPY",
+      "setup": "pm_break_up@11:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.5,
+      "pnl$": -38.0,
+      "exit": "2m close 767.02 through the EMA13 767.09"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 33.5,
+      "pnl$": 100.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 22.8,
+      "pnl$": 34.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "scenario_4@12:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 0.3,
+      "pnl$": 0.0,
+      "exit": "target 298.03 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -10.7,
+      "pnl$": -32.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -10.9,
+      "pnl$": -33.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.5,
+      "pnl$": -16.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "pm_break_up@10:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.6,
+      "pnl$": -17.0,
+      "exit": "target 770.38 (re-planned structural lev"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -18.6,
+      "pnl$": -56.0,
+      "exit": "2m close 299.29 through the level 299.24"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 9.9,
+      "pnl$": 30.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 4.0,
+      "pnl$": 12.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -8.2,
+      "pnl$": -25.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -21.9,
+      "pnl$": -66.0,
+      "exit": "2m close 766.52 through the level 766.30"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 32.6,
+      "pnl$": 98.0,
+      "exit": "target 765.50 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -35.6,
+      "pnl$": -53.0,
+      "exit": "premium stop: -35% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -21.6,
+      "pnl$": -65.0,
+      "exit": "2m close 291.65 through the EMA13 291.60"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -39.1,
+      "pnl$": -117.0,
+      "exit": "premium stop: -39% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 134.9,
+      "pnl$": 405.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "scenario_1@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -20.9,
+      "pnl$": -31.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@10:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.9,
+      "pnl$": -18.0,
+      "exit": "2m close 708.90 through the EMA13 708.95"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -15.8,
+      "pnl$": -47.0,
+      "exit": "2m close 769.14 through the EMA13 769.27"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 12.2,
+      "pnl$": 37.0,
+      "exit": "target 712.30 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -42.7,
+      "pnl$": -128.0,
+      "exit": "premium stop: -42% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.5,
+      "pnl$": 172.0,
+      "exit": "target 769.26 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -15.7,
+      "pnl$": -24.0,
+      "exit": "2m close 769.87 through the EMA13 769.79"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "IWM",
+      "setup": "pm_break_up@12:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -23.7,
+      "pnl$": -71.0,
+      "exit": "2m close 295.87 through the level 295.92"
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 28.0,
+      "pnl$": 84.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 28.8,
+      "pnl$": 43.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": 37.2,
+      "pnl$": 112.0,
+      "exit": "target 291.81 (re-planned structural lev"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -25.4,
+      "pnl$": -76.0,
+      "exit": "2m close 761.97 through the EMA13 761.86"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "pm_break_down@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -11.0,
+      "pnl$": -33.0,
+      "exit": "2m close 762.17 through the EMA13 762.16"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -13.6,
+      "pnl$": -41.0,
+      "exit": "2m close 757.64 through the EMA13 757.42"
+     }
+    ]
+   },
+   "vsBase": {
+    "base": "baseline_slip2",
+    "bookDelta$": 414.0,
+    "mddDelta$": 119.0,
+    "matched": {
+     "unchanged": 54,
+     "changedExit": 0,
+     "displaced": 0,
+     "new": 0,
+     "lost": 0
+    },
+    "sums": {
+     "changedExit": 0,
+     "displaced": 0,
+     "new": 0,
+     "lost": 0
+    },
+    "incremental": {
+     "bestIncrementalDate": "2026-09-03",
+     "itsContribution": 175.0,
+     "advantageWithoutIt": 239.0
+    }
+   }
+  },
+  "C1+size_half": {
+   "overrides": {
+    "no_trade_zone": "conjunction",
+    "size_full": 0.5
+   },
+   "model": {
+    "symbolSessions": 48,
+    "trades": 82,
+    "wins": 30,
+    "winRate": 0.366,
+    "pnlPctSum": 358.6,
+    "bySymbol": {
+     "IWM": {
+      "trades": 26,
+      "pnlPctSum": 399.6
+     },
+     "QQQ": {
+      "trades": 27,
+      "pnlPctSum": 69.0
+     },
+     "SPY": {
+      "trades": 29,
+      "pnlPctSum": -110.0
+     }
+    }
+   },
+   "book": {
+    "taken": 50,
+    "skippedConcurrent": 9,
+    "skippedLossCap": 23,
+    "total": 1780.0,
+    "maxDrawdown": -521.0,
+    "worstDay": -194.0,
+    "bestDay": "2026-09-02",
+    "minutesInMarket": 234,
+    "byDate": {
+     "2026-08-20": 395.0,
+     "2026-08-21": 166.0,
+     "2026-08-24": 200.0,
+     "2026-08-25": 198.0,
+     "2026-08-26": -44.0,
+     "2026-08-27": -153.0,
+     "2026-08-28": 13.0,
+     "2026-08-31": -194.0,
+     "2026-09-01": -81.0,
+     "2026-09-02": 421.0,
+     "2026-09-03": -111.0,
+     "2026-09-04": 111.0,
+     "2026-09-08": 205.0,
+     "2026-09-09": 30.0,
+     "2026-09-10": 293.0,
+     "2026-09-11": 330.0
+    },
+    "grossWins": 3089.0,
+    "grossLosses": -1309.0,
+    "profitFactor": 2.36,
+    "unitsDeployed": 21.5,
+    "fullUnitTrades": 0,
+    "premiumAtRiskMax$": 300.0,
+    "totalWithoutBestDay": 1359.0,
+    "bySymbol$": {
+     "IWM": 980.0,
+     "QQQ": 619.0,
+     "SPY": 181.0
+    },
+    "bySize": {
+     "x0.25": {
+      "trades": 14,
+      "pnl$": -5.0
+     },
+     "x0.50": {
+      "trades": 36,
+      "pnl$": 1785.0
+     }
+    },
+    "earlier$": 921.0,
+    "week37$": 858.0,
+    "takenTrades": [
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 51.2,
+      "pnl$": 154.0,
+      "exit": "target 299.10 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 45.3,
+      "pnl$": 68.0,
+      "exit": "premium stop: -26% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -28.2,
+      "pnl$": -42.0,
+      "exit": "premium stop: -28% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:45",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 87.9,
+      "pnl$": 264.0,
+      "exit": "target 711.05 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-20",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -16.0,
+      "pnl$": -48.0,
+      "exit": "2m close 766.75 through the EMA13 766.62"
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 65.3,
+      "pnl$": 196.0,
+      "exit": "target 709.20 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-21",
+      "symbol": "SPY",
+      "setup": "pm_break_up@11:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -9.9,
+      "pnl$": -30.0,
+      "exit": "2m close 767.02 through the EMA13 767.09"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 7.5,
+      "pnl$": 22.0,
+      "exit": "target 763.15 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 43.9,
+      "pnl$": 132.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 32.1,
+      "pnl$": 48.0,
+      "exit": "target 298.41 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "IWM",
+      "setup": "scenario_4@12:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 6.6,
+      "pnl$": 10.0,
+      "exit": "target 298.03 (low of day) touched \u2014 sel"
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@13:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 8.3,
+      "pnl$": 25.0,
+      "exit": "target 763.15 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-24",
+      "symbol": "SPY",
+      "setup": "scenario_4@13:15",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -24.4,
+      "pnl$": -37.0,
+      "exit": "2m close 763.58 through the EMA13 763.35"
+     },
+     {
+      "date": "2026-08-25",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 87.0,
+      "pnl$": 261.0,
+      "exit": "target 713.89 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-25",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -41.9,
+      "pnl$": -63.0,
+      "exit": "premium stop: -42% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.2,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-26",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:45",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -7.3,
+      "pnl$": -22.0,
+      "exit": "target 766.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -45.6,
+      "pnl$": -137.0,
+      "exit": "premium stop: -45% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-27",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -5.4,
+      "pnl$": -16.0,
+      "exit": "2m close 769.45 through the EMA13 769.45"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -14.4,
+      "pnl$": -43.0,
+      "exit": "2m close 299.29 through the level 299.24"
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 15.7,
+      "pnl$": 47.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 9.4,
+      "pnl$": 14.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-28",
+      "symbol": "IWM",
+      "setup": "scenario_4@11:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -5.0,
+      "exit": "target 298.13 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -52.1,
+      "pnl$": -156.0,
+      "exit": "premium stop: -52% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-08-31",
+      "symbol": "SPY",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.6,
+      "pnl$": -38.0,
+      "exit": "2m close 766.48 through the EMA13 766.42"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.1,
+      "pnl$": -36.0,
+      "exit": "2m close 707.71 through the EMA48 707.60"
+     },
+     {
+      "date": "2026-09-01",
+      "symbol": "IWM",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -14.8,
+      "pnl$": -44.0,
+      "exit": "2m close 291.65 through the EMA13 291.60"
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 149.8,
+      "pnl$": 449.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "IWM",
+      "setup": "scenario_1@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "full",
+      "pnlPct": -13.0,
+      "pnl$": -20.0,
+      "exit": "target 293.29 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-02",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@10:15",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -3.0,
+      "pnl$": -9.0,
+      "exit": "2m close 708.90 through the EMA13 708.95"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -13.1,
+      "pnl$": -39.0,
+      "exit": "2m close 769.14 through the EMA13 769.27"
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "QQQ",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 16.6,
+      "pnl$": 50.0,
+      "exit": "target 712.30 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-03",
+      "symbol": "SPY",
+      "setup": "pm_break_up@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "full",
+      "pnlPct": -40.4,
+      "pnl$": -121.0,
+      "exit": "premium stop: -40% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -14.3,
+      "pnl$": -43.0,
+      "exit": "2m close 720.75 through the EMA13 720.87"
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 57.5,
+      "pnl$": 172.0,
+      "exit": "target 769.26 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-04",
+      "symbol": "SPY",
+      "setup": "pm_break_down@10:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -12.2,
+      "pnl$": -18.0,
+      "exit": "2m close 769.87 through the EMA13 769.79"
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 16.7,
+      "pnl$": 50.0,
+      "exit": "target 767.45 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 32.3,
+      "pnl$": 97.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "QQQ",
+      "setup": "pm_break_down@09:30",
+      "entryKind": "level",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 33.1,
+      "pnl$": 50.0,
+      "exit": "target 716.34 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-08",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 5.5,
+      "pnl$": 8.0,
+      "exit": "target 767.45 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -12.9,
+      "pnl$": -39.0,
+      "exit": "2m close 293.07 through the EMA13 293.01"
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 55.8,
+      "pnl$": 167.0,
+      "exit": "target 292.62 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-09",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -33.1,
+      "pnl$": -99.0,
+      "exit": "premium stop: -33% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "SPY",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema48",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 104.0,
+      "pnl$": 312.0,
+      "exit": "target 757.69 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "QQQ",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": -34.0,
+      "pnl$": -102.0,
+      "exit": "premium stop: -34% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "IWM",
+      "setup": "scenario_4@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 54.2,
+      "pnl$": 163.0,
+      "exit": "target 287.83 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-10",
+      "symbol": "IWM",
+      "setup": "pm_break_down@10:00",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": -53.1,
+      "pnl$": -80.0,
+      "exit": "premium stop: -53% \u2264 \u221225% (P1/D13)"
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 62.5,
+      "pnl$": 187.0,
+      "exit": "target 716.80 (planned level) touched \u2014 "
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "SPY",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.5,
+      "bucket": "small",
+      "pnlPct": 27.2,
+      "pnl$": 82.0,
+      "exit": "target 765.99 (high of day) touched \u2014 se"
+     },
+     {
+      "date": "2026-09-11",
+      "symbol": "QQQ",
+      "setup": "scenario_1@09:30",
+      "entryKind": "ema",
+      "sizeMult": 0.25,
+      "bucket": "small",
+      "pnlPct": 40.7,
+      "pnl$": 61.0,
+      "exit": "target 716.80 (planned level) touched \u2014 "
+     }
+    ]
+   },
+   "vsBase": {
+    "base": "baseline",
+    "bookDelta$": 1309.0,
+    "mddDelta$": -201.0,
+    "matched": {
+     "unchanged": 44,
+     "changedExit": 0,
+     "displaced": 4,
+     "new": 34,
+     "lost": 7
+    },
+    "sums": {
+     "changedExit": 0,
+     "displaced": -63.8,
+     "new": 198.3,
+     "lost": -105.4
+    },
+    "incremental": {
+     "bestIncrementalDate": "2026-08-20",
+     "itsContribution": 431.0,
+     "advantageWithoutIt": 878.0
+    }
+   }
+  }
+ }
+}
