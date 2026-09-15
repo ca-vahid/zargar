@@ -466,7 +466,8 @@ async def test_cap_variant_fills_only_under_the_stated_premium_cap(rig):
     a = cohort.assumptions(eng.settings)
     base = {"id": "c1", "signalId": "s1", "ticker": "AAPL", "decision": "skipped",
             "quoteSymbol": "AAPL261016C00230000", "quoteStatus": "fresh",
-            "quoteAtDecision": {"ask": 2.20, "bid": 2.00, "ageSeconds": 3.0, "source": "opra"},
+            "quoteAtDecision": {"ask": 2.20, "bid": 2.00, "ageSeconds": 3.0, "source": "opra",
+                                "sourceTs": now_ms() - 3000, "delayed": False},   # KF83-04: executable evidence needs provenance
             "delayedStatus": "pending", "delayedSample": None, "sourcePremium": 2.00}
     res = {x["variant"]: x for x in cohort.simulate_variants(base, a)}
     assert res["cap"]["adequate"] and res["cap"]["fill"]["filled"] is False

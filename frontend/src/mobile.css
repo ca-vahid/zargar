@@ -870,3 +870,6 @@ button.bl-card:active { background: var(--surface-2); }
   .cartel-page .cartel-nav button { flex-shrink:0; }
   .cartel-page .cartel-table .link-btn { padding:8px; }
 }
+
+/* proposal readiness grid stacks on phones (readiness-v1) */
+@media (max-width: 640px) { .risk-grid { grid-template-columns: 1fr; } .risk-grid > span { margin-top: 4px; } }

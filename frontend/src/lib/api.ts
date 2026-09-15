@@ -63,8 +63,11 @@ export const api = {
   resumeBook: (pid: string) => request<any>("POST", `/api/portfolios/${pid}/resume`),
   patchSettings: (values: Record<string, unknown>) =>
     request<Record<string, unknown>>("PATCH", "/api/settings", values),
-  approveProposal: (id: string, half = false) =>
-    request<any>("POST", `/api/proposals/${id}/approve`, { half }),
+  approveProposal: (id: string, opts: boolean | { half?: boolean; expected?: string | null; override?: { checks: string[]; reason: string } | null } = false) =>
+    request<any>("POST", `/api/proposals/${id}/approve`,
+      typeof opts === "boolean" ? { half: opts } : { half: !!opts.half, expected: opts.expected ?? null, override: opts.override ?? null }),
+  /** readiness-v1: refresh quotes, recompute geometry/sizing, re-check incidents and gates - never an order */
+  revalidateProposal: (id: string) => request<any>("POST", `/api/proposals/${id}/revalidate`),
   rejectProposal: (id: string) => request<any>("POST", `/api/proposals/${id}/reject`),
   listProposals: (all = false, limit = 100) =>
     request<any[]>("GET", `/api/proposals?limit=${limit}${all ? "&all=true" : ""}`),
