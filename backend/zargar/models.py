@@ -26,6 +26,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from .runtime import runtime_id as _runtime_id
+
 JSONVariant = JSON().with_variant(JSONB(), "postgresql")
 
 
@@ -681,6 +683,11 @@ class TipAnalystRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    # KFIN-04 (2026-09-14): process ownership — the runtime that started the run (`runtime.runtime_id()`,
+    # host:pid:boot-token) and the last time its task said it was alive. Restart readiness judges a
+    # "running" row by its owner's live task / heartbeat, never by the row's age alone.
+    owner: Mapped[str | None] = mapped_column(String(96), default=_runtime_id)
+    heartbeat_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DiscordMessage(Base):

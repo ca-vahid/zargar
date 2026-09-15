@@ -29,15 +29,20 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot 'deployment-lock.ps1')
 $restartMutex = Enter-ZargarDeployment $Root -Restart
+# who is driving this door: deploy.ps1 sets it, the ZargarRestart task / a shell leaves it empty
+$callerSetHere = $false
+if (-not $env:ZARGAR_DEPLOY_CALLER) { $env:ZARGAR_DEPLOY_CALLER = 'restart.ps1'; $callerSetHere = $true }
+$script:restartFinished = $false
 try {
 $handoffPath = Join-Path $Root 'logs/deployment-pending.json'
 $handoff = $null
+$handoffManifest = $null
 if (Test-Path -LiteralPath $handoffPath) {
   $handoff = Get-Content -LiteralPath $handoffPath -Raw | ConvertFrom-Json
-  if ([DateTimeOffset]::Parse($handoff.expiresAt) -le [DateTimeOffset]::UtcNow) { throw 'Deployment handoff expired; revalidate source and artifact before restart.' }
-  if ((git -C $Root rev-parse HEAD).Trim() -ne $handoff.target) { throw 'Deployment target changed after handoff; restart refused.' }
-  if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Root 'frontend/dist/index.html')).Hash -ne $handoff.artifactSha256) { throw 'Deployment artifact changed after handoff; restart refused.' }
-  if ($Expect -and $Expect -ne $handoff.expectedVersion) { throw 'Expected version disagrees with deployment handoff.' }
+  # KFIN-04: clean reviewed source AND the manifest of the COMPLETE built artifact (every file under
+  # frontend/dist), not only HEAD and dist/index.html; a refusal is a terminal 'failed' on the receipt
+  try { $handoffManifest = Assert-ZargarHandoff $Root $handoff $Expect }
+  catch { $null = Set-ZargarReceiptPhase $Root 'failed' $_.Exception.Message $env:ZARGAR_DEPLOY_CALLER; $script:restartFinished = $true; throw }
   $Expect = $handoff.expectedVersion
 }
 $receiptPath = Join-Path $Root 'logs/deployment-receipt.json'
@@ -57,9 +62,21 @@ $logDirEarly = Join-Path $Root "logs"
 if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
 try { Start-Transcript -Path (Join-Path $logDirEarly ("restart-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")) -Append | Out-Null } catch { }
 
-function Fail($m, $code=1) { Write-Host $m -ForegroundColor Red; exit $code }
 function Step($m) { Write-Host "> $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
+# KFIN-04: every non-zero exit is a TERMINAL phase on the receipt (failed | deferred) with its reason,
+# so a deployment never stays 'restarting'; the pending handoff is kept (the reviewed artifact is still
+# valid until it expires) and named in the receipt so the next run knows it is finishing THIS deploy.
+function Leave($code, $why) {
+  if ($code -ne 0 -and $handoff) {
+    $phase = $(if ($code -eq 2) { 'deferred' } else { 'failed' })
+    try { $r = Set-ZargarReceiptPhase $Root $phase ("restart.ps1 exit " + $code + ": " + $why) $env:ZARGAR_DEPLOY_CALLER
+          if (-not $r.PSObject.Properties['handoffPending']) { $r | Add-Member -NotePropertyName handoffPending -NotePropertyValue $true; Write-ZargarReceipt $Root $r } } catch { }
+  }
+  $script:restartFinished = $true
+  exit $code
+}
+function Fail($m, $code=1) { Write-Host $m -ForegroundColor Red; Leave $code $m }
 
 # --- -1. readiness: what would this restart interrupt? (2026-09-09, PLATFORM-RULES invariant 18) -----
 # "No open positions" was never the test. The engine enumerates open technique trades, working
@@ -102,7 +119,7 @@ if ($engineUp) {
     }
     if (-not $rc.safe) {
       foreach ($r in $rc.reasons) { Warn ("in flight: " + $r) }
-      if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Release-DeployLease; Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; exit 2 }
+      if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Release-DeployLease; Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; Leave 2 ("in flight: " + ($rc.reasons -join "; ")) }
       Warn "-Force: restarting over the work listed above (override)"
     }
   } catch {
@@ -151,7 +168,7 @@ Start-Sleep -Seconds 2
 $args2 = @{ Detach = $true }; if ($Force) { $args2.Force = $true }
 if ($handoff) { $args2.NoBuild = $true } # the exact artifact was built and verified under the deployment owner
 & (Join-Path $Root "scripts\start.ps1") @args2
-if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; exit 1 }
+if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; Leave 1 ("start.ps1 exited " + $LASTEXITCODE) }
 
 # --- 3. WAIT for health - never walk away from a dark app ----------------------
 Step "Waiting for /api/health ..."
@@ -161,9 +178,9 @@ while ((Get-Date) -lt $deadline) {
   try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 3; break }
   catch { Start-Sleep -Seconds 3 }
 }
-if (-not $h) { Warn "App did NOT come back within 180s - investigate NOW, do not walk away."; exit 4 }
+if (-not $h) { Warn "App did NOT come back within 180s - investigate NOW, do not walk away."; Leave 4 "health never came back within 180s" }
 if ($Expect -and ($h.version -ne $Expect)) {
-  Warn "App is up but on v$($h.version), expected v$Expect (stale checkout?)"; exit 5
+  Warn "App is up but on v$($h.version), expected v$Expect (stale checkout?)"; Leave 5 ("healthy on v" + $h.version + ", expected v" + $Expect)
 }
 Step ("Healthy: v" + $h.version + " | armed " + $h.local.armed + " | runs in flight " + $h.local.techniqueRunning)
 
@@ -186,16 +203,49 @@ if ($stateBefore -ne $null) {
     if ($last) { Warn ("RESTORE MISMATCH: " + ($last.missing | ConvertTo-Json -Compress) + " - saved " + $snap) }
     else { Warn ("RESTORE CHECK unreachable - saved " + $snap) }
     Release-DeployLease
-    exit 6
+    Leave 6 ("restoration check failed - " + $snap)
   }
 }
+# --- 5. the receipt: the SAME runtime identity start.ps1 stamped when it launched the engine ------
+# (logs/runtime-identity.json: HEAD, clean-source verdict, artifact manifest, script hashes, caller)
+$identity = $null
+try { $identity = Get-Content -LiteralPath (Join-Path $Root 'logs/runtime-identity.json') -Raw | ConvertFrom-Json } catch { $identity = $null }
 if ($handoff) {
-  $actualArtifact = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Root 'frontend/dist/index.html')).Hash
-  if ($actualArtifact -ne $handoff.artifactSha256) { throw 'Artifact changed after verified handoff; deployment receipt refused.' }
-  @{ phase='verified'; target=$handoff.target; expectedVersion=$Expect; artifactSha256=$actualArtifact; completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID } |
-    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Root 'logs/deployment-receipt.json') -Encoding ASCII
+  $actualManifest = Get-ZargarArtifactManifest $Root
+  if ($actualManifest.ManifestSha256 -ne $handoff.artifactManifestSha256) {
+    $null = Set-ZargarReceiptPhase $Root 'failed' 'Artifact changed after verified handoff; deployment receipt refused.' $env:ZARGAR_DEPLOY_CALLER
+    $script:restartFinished = $true
+    throw 'Artifact changed after verified handoff; deployment receipt refused.'
+  }
+  if ($identity -and $identity.artifactManifestSha256 -ne $handoff.artifactManifestSha256) {
+    $null = Set-ZargarReceiptPhase $Root 'failed' 'The engine was launched from a different artifact than the handoff; deployment receipt refused.' $env:ZARGAR_DEPLOY_CALLER
+    $script:restartFinished = $true
+    throw 'The engine was launched from a different artifact than the handoff; deployment receipt refused.'
+  }
+  Write-ZargarReceipt $Root ([pscustomobject]@{ phase='verified'; target=$handoff.target; expectedVersion=$Expect
+    artifactManifestSha256=$actualManifest.ManifestSha256; artifactFileCount=$actualManifest.FileCount
+    artifactSha256=$actualManifest.Files['index.html']; completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID
+    caller=$env:ZARGAR_DEPLOY_CALLER; runtime=$identity; healthyVersion=$h.version })
   Remove-Item -LiteralPath $handoffPath
+} else {
+  # a plain restart (task / shell) is not a deployment: record the identity it brought up without
+  # claiming 'verified' (that word belongs to a reviewed handoff and drives the duplicate-skip rule)
+  try {
+    $plain = [pscustomobject]@{ phase='restarted'; target=$(if ($identity) { $identity.head } else { $null }); expectedVersion=$Expect
+      artifactManifestSha256=$(if ($identity) { $identity.artifactManifestSha256 } else { $null })
+      completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID; caller=$env:ZARGAR_DEPLOY_CALLER; runtime=$identity
+      healthyVersion=$h.version; force=[bool]$Force }
+    Write-ZargarReceipt $Root $plain
+  } catch { Warn ("receipt not written: " + $_.Exception.Message) }
 }
+$script:restartFinished = $true
 Release-DeployLease
 exit 0
-} finally { Exit-ZargarDeployment $restartMutex }
+} finally {
+  # an exception (not a Leave) that escaped with a handoff in flight is a terminal 'failed' too
+  if ($handoff -and -not $script:restartFinished) {
+    try { $null = Set-ZargarReceiptPhase $Root 'failed' 'restart.ps1 ended by an unhandled error; see the restart transcript' $env:ZARGAR_DEPLOY_CALLER } catch { }
+  }
+  if ($callerSetHere) { Remove-Item Env:ZARGAR_DEPLOY_CALLER -ErrorAction SilentlyContinue }
+  Exit-ZargarDeployment $restartMutex
+}

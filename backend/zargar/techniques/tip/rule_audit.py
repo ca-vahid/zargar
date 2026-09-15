@@ -419,6 +419,8 @@ async def run_rule_audit(eng, *, client=None, report: dict | None = None,
             status="running", kind="rule_audit", model=model, tools=[],
             tip={"liveRules": len(rules), "cycleId": cycle["id"] if cycle else None}))
         await session.commit()
+    from .analyst import register_run
+    register_run(eng, run_id)          # KFIN-04: owned by this task, however long the judgment takes
 
     header = (f"Today (ET): {dt.datetime.now(ET):%Y-%m-%d}\n"
               f"YOUR LIVE RULES ({len(rules)}):\n{rules_txt}\n\n"
@@ -551,6 +553,8 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None,
             tip={"groups": sorted(groups), "notes": sum(len(v) for v in groups.values()),
                  "cycleId": cycle["id"]}))
         await session.commit()
+    from .analyst import register_run
+    register_run(eng, run_id)          # KFIN-04: owned by this task, however long the cycle takes
 
     applied = {"groups": 0, "merged": 0, "expired": 0, "contradictions": 0,
                "newNotes": [], "flagged": [], "rejected": [],
@@ -658,7 +662,9 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None,
 
 async def _finish(eng, run_id: str, *, status: str, opinion: dict) -> None:
     from ...models import TipAnalystRun
+    from .analyst import release_run
     import contextlib
+    release_run(eng, run_id)           # KFIN-04: terminal on the record = no longer owned in-process
     with contextlib.suppress(Exception):
         async with eng.sf() as session:
             row = await session.get(TipAnalystRun, run_id)
