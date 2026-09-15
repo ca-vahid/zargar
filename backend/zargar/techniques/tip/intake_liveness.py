@@ -18,6 +18,8 @@ log = logging.getLogger("zargar.tip.intake_liveness")
 STATUS_FILE = "gateway_status.json"
 STALE_STATUS_S = 120        # the gateway writes every 30 s; 2 min = the process is gone or hung
 STALE_FRAME_S = 240         # no frame for 4 min on a "connected" socket = stuck pipe
+PENDING_STALL_SAMPLES = 3   # envelopes pending through this many consecutive monitor samples (~6 min at 120 s) = a stall;
+                            # fewer = in flight (a claim being processed) - reported as a warning, never a stall (2026-09-15)
 
 
 def _parse(ts: str | None) -> dt.datetime | None:
@@ -67,7 +69,11 @@ async def liveness(eng, *, base: Path | None = None, now: dt.datetime | None = N
             reasons.append(f"connected but no frame from Discord for {frame_age:.0f}s — stuck pipe")
         led = st.get("ledger") or {}
         if led.get("pending"):
-            reasons.append(f"{led['pending']} envelope(s) pending delivery to the app")
+            streak = int(getattr(eng, "_tip_intake_pending_streak", 0) or 0)
+            if streak >= PENDING_STALL_SAMPLES:
+                reasons.append(f"{led['pending']} envelope(s) pending delivery to the app through {streak} consecutive checks")
+            else:
+                warnings.append(f"{led['pending']} envelope(s) in flight to the app (a claim being processed - not a stall yet)")
         state = "stalled" if reasons else "live"
     # mirror watermarks per watched tips channel (last received vs last posted)
     channels: list[dict] = []
@@ -123,6 +129,8 @@ async def monitor_loop(eng, *, interval_s: float = 120.0) -> None:
             now = dt.datetime.now(dt.timezone.utc)
             if _in_window(now):
                 v = await liveness(eng, now=now)
+                pend = int((((v.get("gateway") or {}).get("ledger") or {}).get("pending")) or 0)
+                eng._tip_intake_pending_streak = (int(getattr(eng, "_tip_intake_pending_streak", 0) or 0) + 1) if pend else 0
                 if not v["ok"] and not stalled:
                     stalled = True
                     await eng.journal.append(getattr(ev, "TIP_INTAKE_STALLED", "TipIntakeStalled"),
