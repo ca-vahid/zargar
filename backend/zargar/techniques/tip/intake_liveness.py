@@ -43,6 +43,7 @@ async def liveness(eng, *, base: Path | None = None, now: dt.datetime | None = N
     now = now or dt.datetime.now(dt.timezone.utc)
     st = read_status(base)
     reasons: list[str] = []
+    warnings: list[str] = []        # history worth showing, never a CURRENT stall verdict
     gw: dict = {}
     if st is None:
         reasons.append("no gateway status file — the gateway is not running from this checkout or has never written one")
@@ -91,12 +92,16 @@ async def liveness(eng, *, base: Path | None = None, now: dt.datetime | None = N
                              "worstLag24hS": round(worst.total_seconds(), 1) if worst else None})
         late = [c for c in channels if c["watched"] and (c["worstLag24hS"] or 0) > 900]
         if late:
-            reasons.append(f"{len(late)} watched channel(s) delivered a message more than 15 min after it was posted in the last 24 h")
+            # a past delay is a fact to show, not evidence that the pipe is stuck NOW
+            # (the day after a 4 h gap would otherwise read "stalled" until the
+            # window rolled off and journal a false TipIntakeStalled at 04:00 ET)
+            warnings.append(f"{len(late)} watched channel(s) delivered a message more than 15 min after it was posted in the last 24 h")
     except Exception as exc:
         reasons.append(f"mirror watermarks unavailable: {exc}")
     ok = not reasons
     return {"ok": ok, "state": ("live" if ok else (state if st is None else "stalled")),
-            "reasons": reasons, "gateway": gw, "channels": channels, "checkedAt": now.isoformat()}
+            "reasons": reasons, "warnings": warnings, "gateway": gw, "channels": channels,
+            "checkedAt": now.isoformat()}
 
 
 def _in_window(now: dt.datetime) -> bool:
