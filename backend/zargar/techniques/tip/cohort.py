@@ -513,3 +513,23 @@ async def cohort_report(eng_or_sf, settings, *, since: dt.datetime | None = None
         "results": [{**x.result, "id": x.id} for x in res_rows],
         "disclaimer": DISCLAIMER,
     }
+
+
+async def recovery_loop(eng, *, first_delay_s: float = 30.0, interval_s: float = 60.0) -> None:
+    """Startup + periodic catch-up for pending delayed samples (review follow-up
+    2026-09-15: `sample_due` had no caller, so a restart left samples pending
+    for ever). Runs inside the app; a sample past its grace is MISSED, never
+    back-labeled."""
+    await asyncio.sleep(first_delay_s)
+    while True:
+        try:
+            if bool(eng.settings.get("techniques.tip.entry_cohort_enabled", False)):
+                n = await sample_due(eng)
+                if n:
+                    log.info("entry cohort: %d delayed sample(s) recovered", n)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("entry cohort delayed-sample recovery failed")
+        await asyncio.sleep(interval_s)
+

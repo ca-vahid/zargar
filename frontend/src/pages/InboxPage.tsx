@@ -356,6 +356,7 @@ function TipResultCard({ item }: { item: any }) {
         </div>
       )}
       {s.status === "replayed" && <ReplayBlock s={s} />}
+      <AttachmentsBlock s={s} />
       <AnalystBlock s={s} />
       {s.verification?.flowContext && <div className="muted" style={{ fontSize: 12 }}>{s.verification.flowContext}</div>}
       {s.verification?.calendarContext && <div className="muted" style={{ fontSize: 12 }}>⚠ {s.verification.calendarContext}</div>}
@@ -405,6 +406,38 @@ function ReplayBlock({ s }: { s: Signal }) {
           {im.pnlPct > 0 ? "+" : ""}{im.pnlPct}% ({im.reason})</span>
         {im.toTodayPct != null && <span className="muted"> · held to today {im.toTodayPct > 0 ? "+" : ""}{im.toTodayPct}%</span>}
       </span>
+    </div>
+  );
+}
+
+/** Attachment coverage + evidence attribution (KFIN-07, review follow-up
+    2026-09-15): which images were processed / failed / skipped, and whether the
+    extracted claims came from the caption or a specific attachment. Data lives on
+    extraction.attachments and extraction.grounding.quoteSources. */
+function AttachmentsBlock({ s }: { s: Signal }) {
+  const x = (s as any).extraction ?? {};
+  const atts: Array<{ id: string; n?: number; status?: string; chars?: number; error?: string | null }> = x.attachments ?? [];
+  const g = x.grounding ?? {};
+  const sources: Record<string, string> = g.quoteSources ?? {};
+  const blocks: string[] = Array.from(new Set(Object.values(sources)));
+  if (atts.length === 0 && blocks.length === 0) return null;
+  const cls = (st?: string) => st === "processed" ? "ok" : st === "failed" || st === "unreadable" ? "bad" : "wait";
+  return (
+    <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+      {atts.length > 0 && (
+        <span>
+          <span className="muted">Attachments: </span>
+          {atts.map((a) => (
+            <span key={a.id} className={cls(a.status)} style={{ marginRight: 6 }}
+                  title={`${a.id}${a.error ? ` — ${a.error}` : ""}${a.chars ? ` — ${a.chars} chars read` : ""}`}>
+              {a.n ?? "?"}: {a.status ?? "unknown"}
+            </span>
+          ))}
+        </span>
+      )}
+      {blocks.length > 0 && (
+        <span className="muted">Evidence from: {blocks.join(", ")}</span>
+      )}
     </div>
   );
 }

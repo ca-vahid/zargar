@@ -172,6 +172,7 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
     done_evidence = {e["sourceId"] for e in progress.get("evidence") or [] if e.get("id") or e.get("existing")}
     # ---- 2. validate EVERYTHING still to do, before any mutation
     problems: list[str] = []
+    already_released: dict[str, tuple[int, int]] = {}
     release_ids = {(r if isinstance(r, str) else str(r.get("id"))) for r in resolve}
     async with eng.sf() as session:
         for r in resolve:
@@ -182,9 +183,24 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
             row = await session.get(TipNote, rid)
             if row is None:
                 problems.append(f"resolve {rid[:8]}: note does not exist"); continue
+            have = int(row.revision_no or 1)
             if not row.needs_human:
-                problems.append(f"resolve {rid[:8]}: not disputed (nothing to release)")
-            if exp is not None and int(row.revision_no or 1) != int(exp):
+                # retry safety: the release itself may have committed on an earlier
+                # attempt whose progress write / notification failed — accept it
+                # when the row sits exactly one 'resolve' transition past the
+                # reviewed revision, otherwise it is somebody else's change
+                released_by_us = False
+                if exp is not None and have == int(exp) + 1:
+                    from ...models import TipNoteRevision
+                    last = (await session.execute(
+                        select(TipNoteRevision.reason).where(TipNoteRevision.note_id == rid)
+                        .order_by(TipNoteRevision.known_until.desc()).limit(1))).scalar()
+                    released_by_us = (last == "resolve")
+                if released_by_us:
+                    already_released[rid] = (int(exp), have)
+                else:
+                    problems.append(f"resolve {rid[:8]}: not disputed (nothing to release)")
+            elif exp is not None and have != int(exp):
                 problems.append(f"resolve {rid[:8]}: revision {row.revision_no} differs from the reviewed {exp}")
         for b in batches:
             key = b.get("_key") or str(b.get("batchId"))
@@ -207,7 +223,7 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
                 if nid not in exp_rev:
                     problems.append(f"batch {bid}: no reviewed revision for source {nid[:8]}"); continue
                 have = int(row.revision_no or 1)
-                allowed = {exp_rev[nid]} | ({exp_rev[nid] + 1} if (nid in release_ids and nid in done_resolve) else set())
+                allowed = {exp_rev[nid]} | ({exp_rev[nid] + 1} if (nid in release_ids and (nid in done_resolve or nid in already_released)) else set())
                 if have not in allowed:
                     problems.append(f"batch {bid}: source {nid[:8]} is revision {have}, judged at {exp_rev[nid]}")
                 if row.needs_human and nid not in release_ids:
@@ -221,7 +237,7 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
                 problems.append(f"evidence for {sid[:8]}: source does not exist"); continue
             want = int(e.get("sourceRevision") or 0)
             have = int(row.revision_no or 1)
-            moved_by_us = (1 if sid in release_ids and sid in done_resolve else 0) + \
+            moved_by_us = (1 if sid in release_ids and (sid in done_resolve or sid in already_released) else 0) + \
                           (1 if any(sid in _batch_ids(b) and (b.get("_key") or str(b.get("batchId"))) in done_batches for b in batches) else 0)
             if have != want + moved_by_us:
                 problems.append(f"evidence for {sid[:8]}: source is revision {have}, judged at {want}")
@@ -245,24 +261,43 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
             await session.commit()
     await _save("proposed")
     # ---- A: releases (each a revision transition, journaled with from/to)
+    now = dt.datetime.now(dt.timezone.utc)
     shift: dict[str, tuple[int, int]] = {t["id"]: (t["revisionFrom"], t["revisionTo"]) for t in progress.get("resolved") or []}
     for r in resolve:
         rid = r if isinstance(r, str) else str(r.get("id"))
         if rid in done_resolve:
             continue
-        async with eng.sf() as session:
-            before = int(await session.scalar(select(TipNote.revision_no).where(TipNote.id == rid)) or 1)
-        n = await svc.flag_tip_notes([rid], needs_human=False)
-        if n:
-            async with eng.sf() as session:
-                after = int(await session.scalar(select(TipNote.revision_no).where(TipNote.id == rid)) or 1)
+        if rid in already_released:
+            before, after = already_released[rid]
             shift[rid] = (before, after)
+            progress["resolved"].append({"id": rid, "revisionFrom": before, "revisionTo": after, "recovered": True})
+            await _save("proposed")
+            continue
+        # ONE transaction: the dispute release (revision snapshot + flag) and the
+        # wrapper's progress commit together, so a failure anywhere after this
+        # point can never leave a released rule with no record of who released
+        # it; the notification comes AFTER the commit and is best-effort
+        async with eng.sf() as session:
+            row = await session.get(TipNote, rid, with_for_update=True)
+            if row is None or not row.needs_human:
+                continue
+            before = int(row.revision_no or 1)
+            svc._snapshot(session, row, now, "resolve")
+            row.needs_human = False
+            after = int(row.revision_no or 1)
             progress["resolved"].append({"id": rid, "revisionFrom": before, "revisionTo": after})
+            rec = await session.get(TipKnowledgeBatch, receipt_id)
+            if rec is not None:
+                rec.applied = dict(progress)
+            await session.commit()
+        shift[rid] = (before, after)
+        try:
             await eng.journal.append(ev.TIP_RULE_AUDITED,
                                      {"resolved": rid, "by": actor, "via": "consolidation", "manifestHash": computed,
                                       "revisionFrom": before, "revisionTo": after},
                                      aggregate_type="signal", aggregate_id=rid)
-            await _save("proposed")
+        except Exception:                       # noqa: BLE001 - the transition is already durable
+            log.exception("consolidation: release notification failed for %s (transition committed)", rid)
     # ---- B: batches through apply_knowledge_batch (row-locked, revision-checked, receipt in the same txn)
     for b in batches:
         key = b.get("_key") or str(b.get("batchId"))
