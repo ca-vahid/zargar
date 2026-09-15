@@ -3122,6 +3122,21 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 review of PR #140 (other team: comparisons ACCEPTED; sizing cap FIRST, C1 the follow-on; GO to finalize
+  the plan, no activation)** — `notes/research/2026-09-15-sizing-cap-experiment-sheet.md`. Sizing basis recomputed with
+  the intended Practice sizing (loss risk, not premium invested; `calibrate_practice.py`): at today's settings a trade
+  invests ~$1,250 of premium (median; the $2,000 budget and the 40-contract cap bind, not the 6 %), stop risk ~$312.
+  Practice-scale, cap 40: baseline +$1,374 / DD −$993 (10 %); sizing cap 0.5 +$2,231 / DD −$635 (6.4 %); C1 +$6,415 /
+  DD −$2,619 (26 %) — C1's $700 budget was unjustified and C1 needs its sizing addressed first. Frozen rules: the one
+  change `size_full` 1.0 → 0.5; loss stop −$800 marked-to-market incl. open positions and fees, checked every 30 min
+  and at the close, breach → knob back, no new entries, exits kept; ten completed sessions, twenty filled
+  opportunities = interim review only; actual fills reported separately from the labelled baseline replay. Corrections
+  applied: exploratory labels, sizing attribution (19 model / 10 selected trades: 7 at 1.0→0.5 + 3 P7-reduced at
+  0.5→0.25), classifier both sides of displacement (`displacedFrom`, `netVsBase`), script side effects stated.
+  **Live defect found while calibrating (F127): 09-15 11:14 ET IWM 284P (ask $0.33) sized to 50 contracts and REFUSED
+  by the RiskGate's 0DTE cap (40) — the sizer caps at `risk.max_option_contracts` (50) and the 0DTE cap is a rejection,
+  not a clamp, so every contract under ≈$0.50 is refused. Fix on its own branch (sizer clamps to the technique's 0DTE
+  `max_contracts`), held for GO because it changes live sizing (refusal → 40 contracts).**
 - **2026-09-15 profitability: C1 and the sizing map, controlled comparisons (GO from the other team; no activation)** —
   `notes/research/2026-09-15-c1-and-sizing-controlled-comparisons.md` (+ `profitability-20260915-canonical/`). Their sweep
   reproduced EXACTLY on the banked tape (dataset `27516b61…`, 48 paired cells, none dropped): baseline 36 book trades
