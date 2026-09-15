@@ -1675,3 +1675,69 @@ immediately before the intent is written) and `retry` (the collar re-price). A r
 a money path). Exits and cancels never pass through it. EM and Tips inherit the no-ops — their behaviour is unchanged
 (`tests/test_technique_arm*`, `test_tip_runner*`, `test_position_*`, `test_platform_*` green). Team2 uses them for the
 refused-fire overlay + decision watermark (R1/R3) and the wall-clock session/cutoff rule at the order boundary (R2).
+
+### Delivery telemetry finished + deployment lease hardened — 2026-09-14 (Tips desk, KFIN-03/04, branch `claude/kfin-03-04`)
+
+**KFIN-03 (`zargar/delivery_health.py`).** The bar-delivery telemetry now has ONE bounded writer per engine that drains a
+per-consumer dirty set (one entry per consumer, first-dirty order — a consumer re-dirtying while it waits keeps its
+place, so a busy sink can never starve another consumer) and keeps draining after the active write finishes: a snapshot
+marked dirty while the sink was blocked is flushed WITHOUT another market event (the reviewer's regression
+`tests/test_tip_completion_boundaries.py::test_delivery_writer_retains_other_consumers_without_another_bar` is adopted
+verbatim). Every bar consumer — `SessionListener._bar_loop` (EM/Tips/Team2 armers) and `PositionManager._bar_loop` —
+wraps its handler in `delivery_health.handling(...)`, a SYNC context manager that records the start and, in
+`__exit__`/`finally`, the outcome (`handled` / `failed` + `lastFailure` / `cancelled`), so a hung or failing handler stays
+diagnosable: `GET /api/ops/delivery-health` shows `inFlight` + `inFlightAgeMs` per consumer, `subscriberDrops` (the
+bus now counts drops per topic and per live queue: `Bus.drops(q)` / `Bus.drop_counts()`), and the writer's own backlog;
+`/api/health` (local) carries a one-line `delivery` summary. Trading callbacks never await the journal (the telemetry
+is synchronous; the writer is the only task, and there is at most one). Engine stop calls
+`delivery_health.shutdown(engine, timeout=2s)`: a stuck sink is cancelled and the unflushed count reported, never
+awaited indefinitely. Tests: `tests/test_delivery_health.py` (blocked sink + three consumers, failed/cancelled/blocked
+handlers, bounded shutdown, callback independence).
+
+**KFIN-04 (`scripts/deployment-lock.ps1` + the four doors; `zargar/ops.py`, `zargar/runtime.py`).** Same lease, same
+mutex/marker scheme — hardened, not replaced. (1) A restart handoff now verifies CLEAN REVIEWED SOURCE
+(`Test-ZargarReviewedSource`: HEAD = the reviewed target, nothing modified or untracked, and no gitignored `.py/.js/.ts/
+.css/.html` inside `backend/zargar`, `frontend/src`, `frontend/public`) AND a SHA-256 manifest of the COMPLETE built
+artifact (`Get-ZargarArtifactManifest`: every file under `frontend/dist`, manifest hash over the sorted list) — a
+modified `dist/assets/*.js` with an unchanged `dist/index.html` is refused, as is a dirty backend file; a legacy handoff
+with only `artifactSha256` is refused ("carries no artifact manifest"). Hashing is .NET (`Get-FileHash` is a module
+function 5.1 cannot find under an inherited pwsh-7 `PSModulePath`). (2) Receipts are TERMINAL: `deploy.ps1` writes
+`failed` / `deferred` (+ `detail`) on every exit path and `restart.ps1`'s `Leave` records the phase for every non-zero exit
+(2 = deferred, else failed; the pending handoff is kept and flagged `handoffPending`) — nothing stays `building` /
+`restarting`. (3) ONE runtime identity: `start.ps1` (the door under the task, a shell and the watchdog) writes
+`logs/runtime-identity.json` (HEAD, clean verdict, artifact manifest, the five script hashes, caller from
+`ZARGAR_DEPLOY_CALLER`) before launching; `restart.ps1` copies it into the receipt and refuses a verified receipt when the
+launched artifact differs from the handoff; the watchdog logs it. A plain restart writes phase `restarted` (never
+`verified` — that word drives the duplicate-skip rule and belongs to a reviewed handoff). Ownership tests
+(`tests/test_deployment_lock.py`, under `powershell.exe` 5.1): nested child vs foreign child, dead owner + hard-killed
+owner (abandoned mutex recovered) + unidentified marker (never removed), pending/expired handoff, exception cleanup,
+duplicate request in one process, manifest refusals, shared identity/receipt, terminal phases.
+
+**Readiness (`ops.restart_state`).** The two-hour Tips-run cutoff is gone: age is not proof a paid job is dead. A
+`TipAnalystRun` now carries `owner` (= `runtime.runtime_id()`, `host:pid:boot-token`, stamped by the column default)
+and `heartbeat_at` (refreshed by `_Recorder.step`, throttled to one bounded write per 30 s per run); every run is bound to
+the asyncio task that carries it (`analyst.register_run` from `_Recorder.__init__` and both rule-audit cycles;
+`release_run` on the terminal persist). Readiness counts a running row when its task is alive in this process (however
+old), or when its heartbeat/creation is within 15 min (registration in flight, or another runtime alive); a row THIS
+process owns with no live task and no heartbeat is reconciled on the record (`failed`, "lost by its owner process …",
+reported as `tipRunsReconciled`); another runtime's silent row is reported as `tipRunsStale` and never rewritten here.
+Boot reconciliation (`reconcile_stale_runs(older_than_s=0)`) is unchanged. Tests: `tests/test_ops_tip_run_liveness.py`;
+`test_tip_eod_20260914_restart.py` and `test_ops_restart.py` stay green.
+
+Pre-existing failures observed (identical on origin/main `561a859`, verified from a clean export of main):
+`test_position_chaos.py::test_failed_exit_watchdog_retries_then_alerts` (grouped run only) and
+`test_technique_arming.py::test_auto_options_one_contract_lifecycle` (also alone) — not touched by this branch.
+### Orders: an unanswered venue hand-off is an unknown outcome; retries are new orders — 2026-09-14 (Team2 review E/F; v0.7.78)
+
+`OrderManager.place` now raises `SubmitUncertain(order_id, cause)` when `executor.submit` raises: the order was written
+ahead and handed to the venue, and the answer never arrived — that is NOT "not sent". The shared `PlanRunner._place_with_retry`
+treats it (and a timeout at the terminal attempt) as an UNKNOWN outcome: the trade stays `submitting` with
+`Trade.submit_uncertain` (persisted, restored), the order id is registered so later fills route back, an alert is raised,
+and it is never retried as a fresh order. Only a confirmed zero-fill (rejected / cancelled unfilled) is a failure. The
+same loop judges every transport RETRY of a money-mode entry through `entry_gate` (stage `retry`) and composes the new
+synchronous `entry_guard_predicate` hook into OrderManager's `before_submit`, so a technique's time rule runs after the
+manager's last await, immediately before the venue hand-off; a refusal there is a skipped opportunity
+(`entry_gate_refused`, `decisionTs`), never a strategy refusal. Exits and cancels are untouched. `before_submit` is
+carried through every attempt (the EM desk's FA-01 on their branch does the same with their quote/budget guard — the two
+compose when their branch merges; the retry-loop signature is identical). EM inherits the uncertain-outcome handling:
+a terminal timeout on an entry is no longer marked `failed`. Tips override `_place_with_retry` and are unchanged.

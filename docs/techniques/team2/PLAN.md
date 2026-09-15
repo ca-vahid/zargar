@@ -337,8 +337,9 @@ and are now part of the plan; each carries the phase it belongs to.
   (12 sessions) is preserved as read evidence. The 30-minute watch job tallies per plan: listing, warm-up identity,
   model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,
   and trail gaps (a plan with `trailGaps` is an incompletely observed session).
-- **EOD batch 2026-09-14 (v0.7.73 + v0.7.76):** OPEN until the other team accepts the follow-up (durable execution
-  overlay, one entry gate, decision watermark, funnel from durable verdicts) — see TRADING-RULES' change log.
+- **EOD batch 2026-09-14 (v0.7.73 + v0.7.76 + v0.7.78):** A–D accepted; OPEN until the other team accepts E (transport
+  retries obey the cutoff), F (an unanswered submission keeps its exposure) and G (present-time stop for a position the
+  model no longer holds) — see TRADING-RULES' change log.
 - **Rules under observation:** F81b `target_replan=structure` on gap days (ON since 2026-09-09; review at 10 live
   gap-day entries or the twenty-session review; the BOOK decides).
 - **Research knobs, all OFF (v0.7.53):** `no_trade_zone` (pm_range | conjunction — C1), `pm_room_atr` (C1's explicit

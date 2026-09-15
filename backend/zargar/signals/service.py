@@ -2563,6 +2563,14 @@ class SignalService:
                                 proposal = decided["proposal"]
                             except Exception:
                                 log.exception("auto-approve failed for proposal %s", proposal["id"])
+            # KFIN-09 (2026-09-14): the entry-variant COHORT records EVERY eligible
+            # idea at its decision - proposals, blocked cards, declines, arms,
+            # skips, shadows, parks, replays, failures (inert unless enabled)
+            with contextlib.suppress(Exception):
+                from ..techniques.tip import cohort as _cohort
+                await _cohort.record_idea(eng, row=row, content=content, status=status,
+                                          proposal=proposal, armed=armed, experiment=experiment,
+                                          appraised=bool(appraise and analyst_available))
             out.append({"signal": signal_dict(row), "proposal": proposal,
                         "armed": armed, "shadowOrder": shadow_order})
         return out
@@ -3169,6 +3177,7 @@ class SignalService:
                     with contextlib.suppress(Exception):
                         await eng.tip_runner.arm_shadow(row.id)   # books lane, today
                 policy = resolve_policy(eng.settings, row.source_name)
+                prop = None
                 if (new_status == "verified" and eng.proposals is not None
                         and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
@@ -3193,6 +3202,12 @@ class SignalService:
                                                            reason=why)
                             elif unattended and verdict == "take":
                                 await eng.proposals.approve(prop["id"], via="auto")
+                # KFIN-09: a park re-decided by the sweep is a REDECISION row in
+                # the entry cohort (the intake row stays as the first decision)
+                with contextlib.suppress(Exception):
+                    from ..techniques.tip import cohort as _cohort
+                    await _cohort.record_idea(eng, row=row, content=None, status=new_status,
+                                              proposal=prop, kind="redecision")
 
         # -- (b) error content, one retry -------------------------------------
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
