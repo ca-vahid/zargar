@@ -1,0 +1,595 @@
+{
+ "provider": "alpaca",
+ "entitlement": "market-data keys in backend/.env (research/optiontrades.py)",
+ "requestedAt": "2026-09-15T02:21:54.483708+00:00",
+ "window": [
+  "2026-09-14T13:30:00+00:00",
+  "2026-09-14T20:00:00+00:00"
+ ],
+ "cutoff": "2026-09-15T01:56:55.589979+00:00",
+ "keysPresent": true,
+ "cases": [
+  {
+   "messageId": "1549099003680133141",
+   "signalId": "61c6b9fc6e9b47c0b7647836256b2abf",
+   "source": "\ud83c\udf1f\uff5cab",
+   "postedAt": "2026-09-14T16:46:23.345000+00:00",
+   "postedET": "12:46:23",
+   "receivedAt": "2026-09-14T21:14:56.627495+00:00",
+   "ticker": "AMZN",
+   "action": "add",
+   "instrument": "call",
+   "strike": 300.0,
+   "expiry": "2026-11-20",
+   "statedPremium": 3.97,
+   "statedEntry": null,
+   "symbol": "AMZN261120C00300000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 289,
+    "first": "2026-09-14T16:42:14.905371+00:00",
+    "last": "2026-09-14T17:46:19.236380+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T16:46:25.478030378Z",
+     "p": 3.57,
+     "s": 1,
+     "x": "A",
+     "c": "a"
+    },
+    "prints5min": {
+     "n": 116,
+     "low": 3.54,
+     "high": 3.8,
+     "vwap": 3.6816
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 237,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T16:46:00Z",
+     "o": 3.57,
+     "h": 3.6,
+     "l": 3.55,
+     "c": 3.55,
+     "v": 69,
+     "n": 17
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549101342969045195",
+   "signalId": "08f9378922b3427fa1c6209b735b2a98",
+   "source": "MK-alpha-trades",
+   "postedAt": "2026-09-14T16:55:41.075000+00:00",
+   "postedET": "12:55:41",
+   "receivedAt": "2026-09-14T21:25:17.047898+00:00",
+   "ticker": "SPCX",
+   "action": "open",
+   "instrument": "put",
+   "strike": 150.0,
+   "expiry": "2026-10-16",
+   "statedPremium": 8.05,
+   "statedEntry": null,
+   "symbol": "SPCX261016P00150000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 129,
+    "first": "2026-09-14T16:51:54.974401+00:00",
+    "last": "2026-09-14T17:50:15.728374+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T16:57:28.045363886Z",
+     "p": 8,
+     "s": 1,
+     "x": "A",
+     "c": "I"
+    },
+    "prints5min": {
+     "n": 28,
+     "low": 7.98,
+     "high": 8.1,
+     "vwap": 8.0636
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 196,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": null
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549112864239784132",
+   "signalId": "f3f53dd1d0a642a1a85ed17f19702814",
+   "source": "\ud83c\udf1f\uff5cmuggzone-options",
+   "postedAt": "2026-09-14T17:41:27.960000+00:00",
+   "postedET": "13:41:27",
+   "receivedAt": "2026-09-14T21:26:08.470287+00:00",
+   "ticker": "AMZN",
+   "action": "open",
+   "instrument": "call",
+   "strike": 260.0,
+   "expiry": "2026-09-18",
+   "statedPremium": 1.8,
+   "statedEntry": null,
+   "symbol": "AMZN260918C00260000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 520,
+    "first": "2026-09-14T17:36:46.229623+00:00",
+    "last": "2026-09-14T18:41:03.849790+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T17:41:38.948599694Z",
+     "p": 1.88,
+     "s": 10,
+     "x": "D",
+     "c": "I"
+    },
+    "prints5min": {
+     "n": 100,
+     "low": 1.71,
+     "high": 1.9,
+     "vwap": 1.8446
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 379,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T17:41:00Z",
+     "o": 1.8,
+     "h": 1.89,
+     "l": 1.8,
+     "c": 1.89,
+     "v": 40,
+     "n": 8
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549122640915206258",
+   "signalId": "d36965581a554d83a8a6a67328bca3ba",
+   "source": "\ud83c\udf1f\uff5cmuggzone-options",
+   "postedAt": "2026-09-14T18:20:18.901000+00:00",
+   "postedET": "14:20:18",
+   "receivedAt": "2026-09-14T21:26:55.318384+00:00",
+   "ticker": "TSLA",
+   "action": "open",
+   "instrument": "put",
+   "strike": 360.0,
+   "expiry": "2026-09-14",
+   "statedPremium": 0.35,
+   "statedEntry": null,
+   "symbol": "TSLA260914P00360000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 8536,
+    "first": "2026-09-14T18:15:19.079173+00:00",
+    "last": "2026-09-14T19:20:17.752194+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T18:20:19.098591339Z",
+     "p": 0.38,
+     "s": 1,
+     "x": "A",
+     "c": "I"
+    },
+    "prints5min": {
+     "n": 719,
+     "low": 0.3,
+     "high": 0.41,
+     "vwap": 0.3645
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 390,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T18:20:00Z",
+     "o": 0.35,
+     "h": 0.42,
+     "l": 0.34,
+     "c": 0.36,
+     "v": 1082,
+     "n": 141
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549129275771191448",
+   "signalId": "1eff49b01e1e44c899342d74e1836352",
+   "source": "\ud83c\udf1f\uff5ccommon-stock",
+   "postedAt": "2026-09-14T18:46:40.774000+00:00",
+   "postedET": "14:46:40",
+   "receivedAt": "2026-09-14T21:13:55.740713+00:00",
+   "ticker": "MRNA",
+   "action": "open",
+   "instrument": "shares",
+   "strike": null,
+   "expiry": null,
+   "statedPremium": null,
+   "statedEntry": 145.74,
+   "underlying": {
+    "bars": 390,
+    "closeAtPostMinute": 145.695,
+    "closePlus15": 146.345,
+    "closePlus60": 146.315,
+    "sessionClose": 146.77
+   },
+   "disposition": "descriptive underlying path only (local exchange bars); the stated risk level names no indicator/trigger/fill policy, so no strategy P&L is derived"
+  },
+  {
+   "messageId": "1549129552003989506",
+   "signalId": "600005a1024f482f9025ba6f8264fd4e",
+   "source": "\ud83c\udf1f\uff5cjon-and-kian",
+   "postedAt": "2026-09-14T18:47:46.633000+00:00",
+   "postedET": "14:47:46",
+   "receivedAt": "2026-09-14T21:32:21.413892+00:00",
+   "ticker": "PLTR",
+   "action": "open",
+   "instrument": "call",
+   "strike": 195.0,
+   "expiry": "2026-10-16",
+   "statedPremium": 3.1,
+   "statedEntry": null,
+   "symbol": "PLTR261016C00195000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 155,
+    "first": "2026-09-14T18:45:12.417409+00:00",
+    "last": "2026-09-14T19:47:20.965616+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T18:47:51.656437344Z",
+     "p": 3.19,
+     "s": 1,
+     "x": "J",
+     "c": "a"
+    },
+    "prints5min": {
+     "n": 42,
+     "low": 3.05,
+     "high": 3.2,
+     "vwap": 3.1168
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 165,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T18:47:00Z",
+     "o": 3.1,
+     "h": 3.19,
+     "l": 3.1,
+     "c": 3.19,
+     "v": 2,
+     "n": 2
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549135802846548030",
+   "signalId": "2a1471de7fbf4833b65b658f8081e551",
+   "source": "\ud83c\udf1f\uff5cab",
+   "postedAt": "2026-09-14T19:12:36.950000+00:00",
+   "postedET": "15:12:36",
+   "receivedAt": "2026-09-14T21:20:00.493830+00:00",
+   "ticker": "AFRM",
+   "action": "open",
+   "instrument": "call",
+   "strike": 80.0,
+   "expiry": "2026-11-20",
+   "statedPremium": null,
+   "statedEntry": null,
+   "symbol": "AFRM261120C00080000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 51,
+    "first": "2026-09-14T19:13:03.883384+00:00",
+    "last": "2026-09-14T19:58:14.323384+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T19:13:03.883384041Z",
+     "p": 5.13,
+     "s": 1,
+     "x": "X",
+     "c": "a"
+    },
+    "prints5min": {
+     "n": 24,
+     "low": 5.1,
+     "high": 5.2,
+     "vwap": 5.1518
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 47,
+    "first": "2026-09-14T13:38:00+00:00",
+    "last": "2026-09-14T19:58:00+00:00",
+    "barAtPostMinute": null
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549135802846548030",
+   "signalId": "9c5bf56a181c4d7380e799aec6928765",
+   "source": "\ud83c\udf1f\uff5cab",
+   "postedAt": "2026-09-14T19:12:36.950000+00:00",
+   "postedET": "15:12:36",
+   "receivedAt": "2026-09-14T21:20:00.493830+00:00",
+   "ticker": "AFRM",
+   "action": "open",
+   "instrument": "call",
+   "strike": 80.0,
+   "expiry": "2026-10-16",
+   "statedPremium": 2.02,
+   "statedEntry": null,
+   "symbol": "AFRM261016C00080000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 178,
+    "first": "2026-09-14T19:12:38.812377+00:00",
+    "last": "2026-09-14T19:59:03.726149+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T19:12:38.81237749Z",
+     "p": 2.04,
+     "s": 3,
+     "x": "I",
+     "c": "a"
+    },
+    "prints5min": {
+     "n": 84,
+     "low": 2.02,
+     "high": 2.16,
+     "vwap": 2.0532
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 70,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T19:12:00Z",
+     "o": 2.04,
+     "h": 2.05,
+     "l": 2.04,
+     "c": 2.05,
+     "v": 48,
+     "n": 3
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549141579426566175",
+   "signalId": "45622f5cf10248a8bf73909c4d2a0566",
+   "source": "\ud83c\udf1f\uff5cab",
+   "postedAt": "2026-09-14T19:35:34.194000+00:00",
+   "postedET": "15:35:34",
+   "receivedAt": "2026-09-14T21:21:52.687585+00:00",
+   "ticker": "AMZN",
+   "action": "open",
+   "instrument": "call",
+   "strike": 260.0,
+   "expiry": "2026-09-25",
+   "statedPremium": 3.1,
+   "statedEntry": null,
+   "symbol": "AMZN260925C00260000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 80,
+    "first": "2026-09-14T19:32:00.824786+00:00",
+    "last": "2026-09-14T19:59:57.910222+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T19:35:36.216758446Z",
+     "p": 3.05,
+     "s": 1,
+     "x": "M",
+     "c": "a"
+    },
+    "prints5min": {
+     "n": 37,
+     "low": 3.05,
+     "high": 3.15,
+     "vwap": 3.1005
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 285,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T19:35:00Z",
+     "o": 3.05,
+     "h": 3.05,
+     "l": 3.05,
+     "c": 3.05,
+     "v": 1,
+     "n": 1
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549143622388162654",
+   "signalId": "6bef229a71d642d68f145812530b9b33",
+   "source": "\ud83c\udf1f\uff5ceva",
+   "postedAt": "2026-09-14T19:43:41.274000+00:00",
+   "postedET": "15:43:41",
+   "receivedAt": "2026-09-14T21:45:14.714277+00:00",
+   "ticker": "META",
+   "action": "open",
+   "instrument": "call",
+   "strike": 700.0,
+   "expiry": "2026-09-18",
+   "statedPremium": null,
+   "statedEntry": null,
+   "symbol": "META260918C00700000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 553,
+    "first": "2026-09-14T19:38:41.599455+00:00",
+    "last": "2026-09-14T19:59:57.670949+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T19:43:45.918658606Z",
+     "p": 2.45,
+     "s": 2,
+     "x": "M",
+     "c": "a"
+    },
+    "prints5min": {
+     "n": 128,
+     "low": 2.38,
+     "high": 2.5,
+     "vwap": 2.4184
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 374,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T19:43:00Z",
+     "o": 2.47,
+     "h": 2.49,
+     "l": 2.43,
+     "c": 2.43,
+     "v": 58,
+     "n": 20
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  },
+  {
+   "messageId": "1549143622388162654",
+   "signalId": "ff32772b7f8042a5bae95c9391eb6f5d",
+   "source": "\ud83c\udf1f\uff5ceva",
+   "postedAt": "2026-09-14T19:43:41.274000+00:00",
+   "postedET": "15:43:41",
+   "receivedAt": "2026-09-14T21:45:14.714277+00:00",
+   "ticker": "ZS",
+   "action": "open",
+   "instrument": "call",
+   "strike": 200.0,
+   "expiry": "2026-09-18",
+   "statedPremium": null,
+   "statedEntry": null,
+   "symbol": "ZS260918C00200000",
+   "trades": {
+    "status": "ok",
+    "reason": "",
+    "count": 277,
+    "first": "2026-09-14T19:39:13.819487+00:00",
+    "last": "2026-09-14T19:59:36.901383+00:00",
+    "firstPrintAfterPost": {
+     "t": "2026-09-14T19:43:41.692005735Z",
+     "p": 3.33,
+     "s": 2,
+     "x": "A",
+     "c": "f"
+    },
+    "prints5min": {
+     "n": 90,
+     "low": 3.33,
+     "high": 3.75,
+     "vwap": 3.5473
+    }
+   },
+   "bars": {
+    "status": "ok",
+    "reason": "",
+    "count": 286,
+    "first": "2026-09-14T13:30:00+00:00",
+    "last": "2026-09-14T19:59:00+00:00",
+    "barAtPostMinute": {
+     "t": "2026-09-14T19:43:00Z",
+     "o": 3.3,
+     "h": 3.6,
+     "l": 3.3,
+     "c": 3.4,
+     "v": 36,
+     "n": 17
+    }
+   },
+   "nbbo": {
+    "status": "unavailable",
+    "reason": "HTTP 404: {\"message\":\"Not Found\"}\n"
+   },
+   "disposition": "trade prints and minute bars retrieved with provenance; contemporaneous bid/ask/sizes UNAVAILABLE under the entitlement \u2014 no executable fill, spread or slippage can be established; no missed-profit figure is derived"
+  }
+ ],
+ "nbboProbe": {
+  "status": "unavailable",
+  "reason": "HTTP 404: {\"message\":\"Not Found\"}\n",
+  "http": 404
+ }
+}

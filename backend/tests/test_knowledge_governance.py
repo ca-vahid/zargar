@@ -62,7 +62,7 @@ async def test_disputed_rules_are_labeled_and_snapshotted(rig):
     await svc.add_tip_note("rule", "RULE (beta family): do the other thing.")
     await svc.flag_tip_notes([r1["id"]], needs_human=True)
     text, n, snap = await _rules_text(rig)
-    assert n == 2 and "[DISPUTED" in text
+    assert n == 2 and "[PENDING REVIEW" in text and "disputed" in text   # EOD-03: disputed/proposed rules render as PENDING REVIEW, never as policy
     assert snap is _rules_text.last_snapshot        # explicit return, mirrored
     assert snap and len(snap["ruleIds"]) == 2 and len(snap["rulesHash"]) == 12
     # the snapshot carries the exact supplied content + flags (Codex K3):
