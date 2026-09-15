@@ -1019,3 +1019,16 @@ tempo is not where our edge is hiding either.
     (`TechniquePlanReplanned`, `trigger=preopen_replan`, parent linked). For a re-planned
     run the gap-void rule measures the 09:25→09:30 surprise (`referencePrice` is the
     tracker's prev_close). Evidence for §1.1 still accrues on the valid 08-25 samples.
+
+### 2026-09-14 evening - trading review (five completed Practice positions; +$364.49 net on the day, +$294.13 book)
+
+Evidence and the two research comparisons: `reviews/STRATEGY-PROPOSAL-2026-09-14.md` (reviewers' packet:
+`reviews/2026-09-14-trading-results-and-missed-setups.md` and companions). Findings, dated: (1) the author's MSFT
+long over 498.97 -> 505 was covered by a SHORT plan - a representation mismatch, not a proven missed option trade;
+with our frozen confirmation (completed 1m close) and stop (opening-range low) it is a 1.1R trade that fails the 3R
+gate; a stop at the level is stopped out. (2) AAPL 336.22 and MRNA 149.73 never triggered - correct no-trades.
+(3) HPQ's TP1 was touched intrabar at 09:36 and sold after the bar closed at +$0.99 on the trim: a fresh-observation
+target execution (2a) is the first forward experiment. (4) HOOD Sep 10's giveback is a distant-target problem (TP1 at
+6.5R, full exit at 12R) with no saved intermediate level - a structural exit policy is untestable there; proposal:
+a target-distance gate at arm time, calibrated on sweeps, not on five trades. No rule changed.
+
