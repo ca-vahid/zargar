@@ -63,6 +63,16 @@ def _ensure_columns_sync(conn) -> list[str]:
                     conn.execute(table.update().where(col.is_(None)).values({col.name: default}))
                     conn.execute(text(f"ALTER TABLE {table.name} ALTER COLUMN {col.name} SET NOT NULL"))
             added.append(f"{table.name}.{col.name}")
+        # declared indexes the live table lacks (a unique index on a column added
+        # above is what makes a research observation's identity enforceable in
+        # the DB, HOLD142-02 2026-09-15); additive only, never dropped here
+        have_idx = {i["name"] for i in insp.get_indexes(table.name)}
+        for idx in table.indexes:
+            if idx.name and idx.name not in have_idx and all(c.name in have or c.name in
+                                                                {a.split(".", 1)[1] for a in added if a.startswith(table.name + ".")}
+                                                                for c in idx.columns):
+                idx.create(conn)
+                added.append(f"{table.name}:{idx.name}")
     return added
 
 
