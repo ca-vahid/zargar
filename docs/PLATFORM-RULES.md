@@ -2016,6 +2016,13 @@ entries that were still submitting/working. Shared behaviour; no threshold chang
   cards additionally carry `context.readiness` (typed blockers, final plan, fingerprint) and a
   human approval revalidates first — see `docs/techniques/tip/README.md` "Approval cards".
 
+- **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
+  `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
+  returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and
+  `calendarRelative`). Fixed "HH:MM" jobs are unchanged. First user: the Tips hold study's pre-close
+  capture, which must run before an EARLY close (12:50 on a 13:00 day) - a fixed 15:50 silently
+  missed those sessions (R147-01). Once-per-day, journal hydration and the running-task guard apply
+  to calendar-relative jobs exactly as before.
 - **2026-09-15 (Tips desk, shared db) - `create_all` also creates declared indexes an existing table lacks.**
   `db._ensure_columns_sync` added missing COLUMNS to live tables but never their declared indexes,
   so a UNIQUE index on a column added after the table's first creation (the hold study's

@@ -49,7 +49,8 @@ STUDY_VERSION = "holdstudy-v2"      # v2 2026-09-15: windows, identity, fee basi
 RTH_OPEN_MIN = 9 * 60 + 30
 DEFAULT_PRECLOSE_WINDOW_MIN = 15    # the last N minutes before the exchange close
 DEFAULT_NEXT_OPEN_WINDOW_MIN = 15   # the first N minutes after 09:30 ET
-DEFAULT_NEXT_OPEN_ATTEMPTS = 12     # in-window retries for the FIRST qualified quote
+DEFAULT_NEXT_OPEN_ATTEMPTS = 40     # in-window retries (20 s apart) for the FIRST qualified quote from 09:30
+DEFAULT_PRECLOSE_BEFORE_CLOSE_MIN = 10   # the pre-close job runs this many minutes before the exchange close
 NEXT_OPEN_RETRY_S = 20.0
 
 
@@ -63,6 +64,41 @@ def _iso(x) -> str | None:
 
 def session_date(now: dt.datetime | None = None) -> str:
     return (now or _utcnow()).astimezone(ET).date().isoformat()
+
+
+def _clock(pinned: dt.datetime | None):
+    """The clock a collection run reads AFTER every await: the real clock, or
+    the pinned instant when a caller supplied `now` (tests, replays)."""
+    return (lambda: pinned) if pinned is not None else _utcnow
+
+
+def _sample_time(quote: dict | None, fallback: dt.datetime) -> dt.datetime:
+    """The ACTUAL time a quote observation was taken (its `sampledAt`, stamped
+    by the quote store when the sample was read), else the clock after the
+    sample. Distinct from `sourceTs` (the venue print) and from the job's start."""
+    raw = (quote or {}).get("sampledAt")
+    if raw:
+        with contextlib.suppress(Exception):
+            t = dt.datetime.fromisoformat(str(raw))
+            return t if t.tzinfo is not None else t.replace(tzinfo=dt.timezone.utc)
+    return fallback
+
+
+def preclose_job_time(d: dt.date | str, *, before_close_minutes: int = DEFAULT_PRECLOSE_BEFORE_CLOSE_MIN) -> str:
+    """When the pre-close job should run on a given date, relative to the
+    EXCHANGE close (early closes included): "15:50" on a normal day, "12:50"
+    on a 13:00 close. Non-trading days get the normal time (the job then
+    records nothing / a miss by the window rule)."""
+    d = dt.date.fromisoformat(d) if isinstance(d, str) else d
+    close_min = int(_cal.session_close_minutes(d)) if _cal.is_trading_day(d) else int(_cal.RTH_CLOSE_MIN)
+    m = max(0, close_min - int(before_close_minutes))
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def next_open_job_time() -> str:
+    """The next-open job starts AT the opening window's start (09:30 ET) and
+    searches inside it - the protocol is the first qualified quote from 09:30."""
+    return f"{RTH_OPEN_MIN // 60:02d}:{RTH_OPEN_MIN % 60:02d}"
 
 
 def _knob(eng, key: str, default):
@@ -361,6 +397,7 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
     from ...models import TipHoldSnapshotRow
     if not bool(_knob(eng, "techniques.tip.hold_study_enabled", True)):
         return 0
+    clock = _clock(now)
     now = now or _utcnow()
     now_et = now.astimezone(ET)
     sess = now_et.date().isoformat()
@@ -400,12 +437,32 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
             sym = str(leg.get("symbol"))
             is_opt = leg.get("secType") == "OPT"
             key = observation_key(sess, str(p["id"]), sym, arm)
+            observed_at = now
             if verdict == "inside":
-                if is_opt:
-                    with contextlib.suppress(Exception):
-                        await eng.options.refresh_now(sym)
-                quote, status = _snap(eng, sym, is_option=is_opt, kind="preclose")
-                gaps = [] if status == "fresh" else [f"pre-close quote {status}"]
+                # R147-01: the clock is re-read for THIS row (earlier rows, option
+                # refreshes and retries take time) and the ACTUAL sample time -
+                # the quote's own sampledAt, read after the await - must lie inside
+                # the window; the job's start time admits nothing by itself
+                t_row = clock()
+                if judge_window(t_row, window) != "inside":
+                    quote, status = None, "late"
+                    observed_at = t_row
+                    gaps = [f"pre-close window ended before this row was sampled (row reached at "
+                            f"{t_row.astimezone(ET).strftime('%H:%M:%S')} ET, job started "
+                            f"{now_et.strftime('%H:%M:%S')} ET) - late, not protocol-qualified"]
+                else:
+                    if is_opt:
+                        with contextlib.suppress(Exception):
+                            await eng.options.refresh_now(sym)
+                    quote, status = _snap(eng, sym, is_option=is_opt, kind="preclose")
+                    observed_at = _sample_time(quote, clock())
+                    if status == "fresh" and judge_window(observed_at, window) != "inside":
+                        status = "late"
+                        gaps = [f"quote sampled at {observed_at.astimezone(ET).strftime('%H:%M:%S')} ET, outside the "
+                                f"pre-close window {window['start'][11:16]}-{window['end'][11:16]} ET (job started "
+                                f"{now_et.strftime('%H:%M:%S')} ET) - late, not protocol-qualified"]
+                    else:
+                        gaps = [] if status == "fresh" else [f"pre-close quote {status}"]
             else:
                 quote, status = None, "outside_window"
                 gaps = [("pre-close window elapsed" if verdict == "late" else "not a trading day")
@@ -435,9 +492,12 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
                 exits_policy={"stop": (p.get("state") or {}).get("stop"), "ladder": policy.get("ladder"),
                               "premiumStopPct": ((policy.get("premium_stop") or {}).get("pct") if isinstance(policy.get("premium_stop"), dict) else policy.get("premium_stop"))},
                 planned_risk=planned, planned_risk_qty=planned_qty, fees=fees,
-                observed_at=now, window={**(window or {"kind": "preclose", "sessionDate": sess, "start": None, "end": None}),
-                                         "verdict": verdict, "observedAt": _iso(now),
-                                         "sourceTs": (quote or {}).get("sourceTs"), "toleranceS": tol},
+                observed_at=observed_at,
+                window={**(window or {"kind": "preclose", "sessionDate": sess, "start": None, "end": None}),
+                        "verdict": (judge_window(observed_at, window) if window else verdict),
+                        "jobStartedAt": _iso(now), "observedAt": _iso(observed_at),
+                        "sampledAt": (quote or {}).get("sampledAt"),
+                        "sourceTs": (quote or {}).get("sourceTs"), "toleranceS": tol},
                 expected_next_session=expected_next_session(sess),
                 preclose_quote=quote, preclose_status=status, exit_price=exit_px,
                 next_open_quote=None, next_open_status="pending", gaps=gaps)
@@ -493,6 +553,7 @@ async def sample_next_open(eng, *, now: dt.datetime | None = None) -> int:
     if not bool(_knob(eng, "techniques.tip.hold_study_enabled", True)):
         return 0
     pinned = now is not None
+    clock = _clock(now)
     now = now or _utcnow()
     today = session_date(now)
     win_min = int(_knob(eng, "techniques.tip.hold_next_open_window_minutes", DEFAULT_NEXT_OPEN_WINDOW_MIN))
@@ -504,6 +565,7 @@ async def sample_next_open(eng, *, now: dt.datetime | None = None) -> int:
     n = 0
     for rid, sess, expected in todo:
         window = next_open_window(expected, minutes=win_min)
+        sampled_at = now
         if today < expected:
             continue                                   # not yet the expected session
         if today > expected:
@@ -526,32 +588,52 @@ async def sample_next_open(eng, *, now: dt.datetime | None = None) -> int:
                     sym, is_opt = r.leg_symbol, r.sec_type == "OPT"
                 attempts = 0
                 quote, status = None, "missing"
+                sampled_at = clock()
                 while True:
+                    # R147-01: every attempt re-reads the clock before sampling and
+                    # judges the quote's ACTUAL sample time against the window
+                    if judge_window(clock(), window) != "inside":
+                        if attempts == 0:
+                            status, quote, sampled_at = "missed", None, clock()
+                        break
                     attempts += 1
                     if is_opt:
                         with contextlib.suppress(Exception):
                             await eng.options.refresh_now(sym)
                     quote, status = _snap(eng, sym, is_option=is_opt, kind="next_open")
-                    if status == "fresh" or attempts >= max_attempts:
+                    sampled_at = _sample_time(quote, clock())
+                    if status == "fresh":
+                        if judge_window(sampled_at, window) != "inside":
+                            status = "late"
                         break
-                    if judge_window(_utcnow(), window) != "inside":
+                    if attempts >= max_attempts:
                         break
                     await asyncio.sleep(NEXT_OPEN_RETRY_S)
-                gap = None if status == "fresh" else \
-                    f"no qualified next-open quote inside the window after {attempts} attempt(s): {status}"
+                if status == "fresh":
+                    gap = None
+                elif status == "late":
+                    gap = (f"qualified quote sampled at {sampled_at.astimezone(ET).strftime('%H:%M:%S')} ET, outside the "
+                           f"opening window {window['start'][11:16]}-{window['end'][11:16]} ET (job started "
+                           f"{now.astimezone(ET).strftime('%H:%M:%S')} ET) - late, not protocol-qualified")
+                elif status == "missed":
+                    gap = (f"opening window ended before this row was sampled (reached at "
+                           f"{sampled_at.astimezone(ET).strftime('%H:%M:%S')} ET) - observation MISSED")
+                else:
+                    gap = f"no qualified next-open quote inside the window after {attempts} attempt(s): {status}"
         async with eng.sf() as session:
             r = await session.get(TipHoldSnapshotRow, rid, with_for_update=True)
             if r is None or r.next_open_status != "pending":
                 continue                               # settled by a concurrent run: the original stands
             r.next_open_quote = quote
-            r.next_open_status = status if (quote is not None or status == "missed") else "missing"
-            r.next_open_sampled_at = now
-            r.next_open_window = {**window, "observedAt": _iso(now), "attempts": attempts,
+            r.next_open_status = status if (quote is not None or status in ("missed", "late")) else "missing"
+            r.next_open_sampled_at = sampled_at
+            r.next_open_window = {**window, "jobStartedAt": _iso(now), "observedAt": _iso(sampled_at),
+                                  "sampledAt": (quote or {}).get("sampledAt"), "attempts": attempts,
                                   "sourceTs": (quote or {}).get("sourceTs")}
             if gap:
                 r.gaps = list(r.gaps or []) + [gap]
             if r.arm == "carry":
-                r.carry_outcome = await _managed_outcome(eng, r.position_id, r.observed_at or r.created_at, now)
+                r.carry_outcome = await _managed_outcome(eng, r.position_id, r.observed_at or r.created_at, sampled_at)
             await session.commit()
         n += 1
     if n:
