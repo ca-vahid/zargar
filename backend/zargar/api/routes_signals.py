@@ -452,6 +452,14 @@ def build_signal_routes(app, eng, auth, config) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 
+    @app.get("/api/tip/intake/liveness", dependencies=[auth])
+    async def tip_intake_liveness():
+        """EOD-01: is the Discord pipe DELIVERING? Gateway status file + mirror
+        watermarks per watched channel; the desk sweep and the morning report
+        read this, API health never answered it."""
+        from ..techniques.tip.intake_liveness import liveness
+        return await liveness(eng)
+
     # --- KB-06 execution-integrity incidents ---------------------------------
     @app.get("/api/tip/incidents", dependencies=[auth])
     async def tip_incidents(status: str = "open", limit: int = 100):

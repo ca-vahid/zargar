@@ -52,6 +52,14 @@ class Scheduler:
         self.engine = engine
         self._jobs: dict[str, _Job] = {}
         self._task: asyncio.Task | None = None
+        # EOD-04/07 (2026-09-14): jobs run as their OWN tasks — a long or stuck
+        # job never blocks the tick for the other jobs, and `stop()` is BOUNDED
+        # (a job that does not unwind within `stop_timeout_s` is abandoned and
+        # named in the log instead of holding the whole shutdown/restart hostage;
+        # the after-hours test teardowns hung on exactly that)
+        self._running: dict[str, asyncio.Task] = {}
+        self.stop_timeout_s = 10.0
+        self.tick_timeout_s = 600.0             # a tick waits this long for the jobs it started, then moves on
 
     def register(self, name: str, at_et: str, fn: Callable[[], Awaitable[Any]], *,
                  weekdays_only: bool = True) -> None:
@@ -75,10 +83,21 @@ class Scheduler:
         if self._task is not None:
             self._task.cancel()
             try:
-                await self._task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(self._task, timeout=self.stop_timeout_s)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+            except Exception:                   # noqa: BLE001
+                log.exception("scheduler loop ended with an error")
             self._task = None
+        running = {n: t for n, t in self._running.items() if not t.done()}
+        for t in running.values():
+            t.cancel()
+        if running:
+            done, pending = await asyncio.wait(list(running.values()), timeout=self.stop_timeout_s)
+            for n, t in running.items():
+                if t in pending:
+                    log.error("scheduled job %s did not unwind within %.0fs at shutdown — abandoned", n, self.stop_timeout_s)
+        self._running = {}
 
     async def _loop(self) -> None:
         while True:
@@ -94,6 +113,7 @@ class Scheduler:
         now = dt.datetime.now(ET)
         day = now.strftime("%Y-%m-%d")
         minutes = now.hour * 60 + now.minute
+        started: list[asyncio.Task] = []
         for job in list(self._jobs.values()):
             if not job.hydrated:
                 job.last_day = job.last_day or await self._journaled_last_day(job.name)
@@ -105,8 +125,22 @@ class Scheduler:
             hh, mm = (int(x) for x in job.at.split(":"))
             if minutes < hh * 60 + mm:
                 continue
+            prev = self._running.get(job.name)
+            if prev is not None and not prev.done():
+                continue                        # still running from an earlier tick: never a second copy
             job.last_day = day
-            await self._run(job, day)
+            t = asyncio.create_task(self._run(job, day), name=f"job:{job.name}")
+            self._running[job.name] = t
+            started.append(t)
+        if started:
+            # a tick still SEES its jobs through (callers that tick by hand rely on
+            # it), but never longer than tick_timeout_s — a stuck job no longer
+            # freezes every later tick, and stop() can abandon it
+            await asyncio.wait(started, timeout=self.tick_timeout_s)
+        for n in [n for n, t in self._running.items() if t.done()]:
+            t = self._running.pop(n)
+            if not t.cancelled() and t.exception() is not None:
+                log.error("scheduled job task %s raised: %r", n, t.exception())
 
     async def _journaled_last_day(self, name: str) -> str:
         """The ET date this job last ran, per the journal — so 'once per day'

@@ -65,6 +65,7 @@ class RiskPlan:
     stressRisk: float = 0.0                    # qty × stressUnitLoss
     invariantOk: bool | None = None            # qty × unitLoss <= budget (None = no estimate)
     reviewRequired: str | None = None          # a reason means NO automatic entry
+    reviewClass: str | None = None             # EOD-02: evidence | budget | plan — typed, not parsed from prose
     enforced: bool = False
     quote: dict = field(default_factory=dict)  # {source, ageS, delayed, priced}
     greeks: dict = field(default_factory=dict) # {delta, asOf, source}
@@ -217,6 +218,9 @@ def plan_risk(*, mode: str, direction: str, vehicle: str, entry_ref: float,
     # ---- size against B ------------------------------------------------------
     if rp.unitLoss is None:
         rp.reviewRequired = ("no risk estimate: " + str(rp.greeks.get("reason") or "no stop"))
+        # EOD-02: a missing/stale Greek or reference is UNAVAILABLE EVIDENCE (a
+        # path problem when repeated); "no stop" / wrong side is the CARD's plan
+        rp.reviewClass = "evidence" if rp.greeks.get("reason") else "plan"
         rp.qty = int(qty_requested)
         rp.invariantOk = None
     else:
@@ -226,6 +230,7 @@ def plan_risk(*, mode: str, direction: str, vehicle: str, entry_ref: float,
             rp.decisions.append(note)
         if qty < 1:
             rp.reviewRequired = note or "no quantity satisfies the risk budget"
+            rp.reviewClass = "budget"
             rp.resized = True
             rp.resizeReason = note
         elif qty < int(qty_requested):

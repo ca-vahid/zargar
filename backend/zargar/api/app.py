@@ -244,6 +244,23 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         return {"id": row.id, "name": row.name, "kind": row.kind,
                 "cash": row.cash, "startingCash": row.starting_cash}
 
+    class QuarantineBody(BaseModel):
+        on: bool = True
+        note: str = ""
+
+    @app.post("/api/portfolios/{pid}/quarantine", dependencies=[auth])
+    async def quarantine_portfolio(pid: str, body: QuarantineBody):
+        """EOD-09: mark a research book's results invalid for lane comparison and
+        source confidence (or clear it after reconciliation). Journaled."""
+        try:
+            info = await eng.positions.set_quarantine(pid, body.on, body.note)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        await eng.journal.append("PortfolioQuarantine", {"portfolioId": pid, "on": body.on, "note": body.note,
+                                                          "name": info.get("name")},
+                                 aggregate_type="portfolio", aggregate_id=pid, portfolio_id=pid)
+        return info
+
     @app.delete("/api/portfolios/{pid}", dependencies=[auth])
     async def remove_portfolio(pid: str):
         """Shadow research books ONLY (demo/test cleanup) — sim/paper/live are

@@ -674,11 +674,20 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             wanted = scope
             scope = f"experiment:{ctx['experiment']}"
             text = f"[wanted scope: {wanted}] {text}"
+        # EOD-03 (2026-09-14): under propose-only maintenance a model-written
+        # RULE is staged for review (needs_human), never an operative rule —
+        # an analyst cannot self-certify that a reviewed hypothesis is policy
+        staged = scope == "rule" and not bool(
+            eng.settings.get("techniques.tip.knowledge_apply_enabled", False))
         note = await eng.signals_service.add_tip_note(
             scope, text,
             author=f"analyst:{str(ctx.get('run_id') or '')[:8]}",
-            signal_id=ctx.get("signal_id"), run_id=ctx.get("run_id"))
-        return {"saved": True, "scope": note["scope"], "id": note["id"]}
+            signal_id=ctx.get("signal_id"), run_id=ctx.get("run_id"), staged=staged)
+        out = {"saved": True, "scope": note["scope"], "id": note["id"]}
+        if staged:
+            out["status"] = ("PROPOSED — pending human review; this is NOT operative policy until "
+                             "released (the rulebook shows it as pending)")
+        return out
     if name == "get_quote":
         if exp:
             # F11 (batch-1): the prompt warning alone did not stop tool-time
@@ -905,7 +914,7 @@ async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
     rules = selected
     ordered = list(reversed(rules))
     lines = "\n".join(
-        ("- [DISPUTED — the audit flagged a conflict; weigh it, do not follow blindly] "
+        ("- [PENDING REVIEW — proposed or disputed, NOT operative policy: do not apply it as a rule] "
          if n.get("needsHuman") else "- ")
         + f"{n['text']} ({(n['createdAt'] or '')[:10]})"
         for n in ordered)

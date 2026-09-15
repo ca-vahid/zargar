@@ -21,7 +21,7 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## State of play (2026-09-14)
 
-- **Version:** v0.7.71 (running checkout; contains this desk's 0.7.67 rollout PR #95, 0.7.68 exit guard PR #98 and 0.7.69 integrity-counter fix PR #100). Practice only: `trading.mode=practice`,
+- **Version:** v0.7.77 (deployed 21:35 ET 2026-09-14: EOD review fixes EOD-01..09, `reviews/2026-09-14-eod-response.md`; on top of the day's rollout PR #95, exit guard PR #98, counter fix PR #100). Practice only: `trading.mode=practice`,
   `techniques.tip.allow_live_auto=false`. The Tips Practice book (`techniques.tip.default_portfolio`)
   is the only book that trades tips; shadow books (immediate / armed) are research.
 - **Entry controls, both ACTIVE by journaled settings (2026-09-14 05:15Z):**
@@ -112,9 +112,12 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     because a contract with no stop risks its whole debit. Two analyst takes expired
     unapproved. Either the analyst supplies a stop on every take, or `risk_pct` /
     `risk_budget_per_tip` changes — a user decision recorded in TRADING-RULES.
-14. **Four stale incidents from the 0.7.68 counter are still open** (`760309ca`, `df02e34a`,
-    `2e87b5bf`, `4e93b293`); they keep Practice proposal automation paused until a take
-    card validates or the user overrides them as a detection defect.
+14. **Intake delivery stalled for 4 h 38 m on 2026-09-14 (12:35–17:13 ET)** with the app
+    healthy; 26 market-hours messages were first seen after the close. Root cause unproven
+    (console-only gateway logging); v0.7.73 adds the status file, idle watchdog, file log,
+    `/api/tip/intake/liveness` and the stall journal. The four stale incidents of the day
+    were released on bound evidence at 18:22 ET; three retro-promoted rules are quarantined
+    pending your review.
 15. **Bar delivery stalled three times on 2026-09-14** (~4 min each, bars intact, quotes
     fresh). Exits are quote-based so positions were safe, but an armed ENTRY on a stale
     bar stream is blind; the aggregator's delivery latency is not instrumented yet.

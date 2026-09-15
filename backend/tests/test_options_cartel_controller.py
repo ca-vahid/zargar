@@ -34,7 +34,8 @@ async def setup(repo, monkeypatch, mode="auto", *, arm=True):
     monkeypatch.setattr(engine, "ensure_symbol", ensure)
     monkeypatch.setattr(engine.quotes, "age_seconds", lambda symbol: (now-engine.quotes.get(symbol).ts)/1000)
     await engine.positions.load()
-    engine.sim_executor = SimExecutor(latency_ms=0, slippage_bps=0, size_impact_bps=0, settings=engine.settings)
+    engine.sim_executor = SimExecutor(latency_ms=0, slippage_bps=0, size_impact_bps=0, settings=engine.settings,
+                                      option_sessions=False)   # rig fills options at any hour (EOD-05 gate is tested on its own)
     engine.orders = OrderManager(engine.sf, engine.bus, engine.journal, engine.risk, engine.settings,
                                  engine.positions, engine.quotes, engine.executor_for, ensure)
     engine.sim_executor.on_report = engine.orders.on_report

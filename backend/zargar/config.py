@@ -46,6 +46,7 @@ class AppConfig(BaseSettings):
     sim_tick_interval: float = 0.35  # seconds between simulated ticks per symbol batch
     sim_seed: int = 0  # 0 = random each run; fixed value = deterministic quotes
     sim_history_minutes: int = 2 * 24 * 60  # synthesized 1m-bar history per symbol
+    sim_option_sessions: bool = True  # EOD-05: Practice option fills need an eligible session (09:30-16:00 ET)
 
     # --- integrations ----------------------------------------------------
     # SnapTrade personal API credentials (dashboard → API Key page). Used for

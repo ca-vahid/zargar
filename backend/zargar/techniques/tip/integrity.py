@@ -291,14 +291,19 @@ async def _resolve_proof_meta(eng, e: dict, inc: dict | None = None) -> tuple[bo
                 meta = {"kind": "execution", "ts": row.ts, "orderId": str(row.order_id), "symbol": str(row.symbol)}
                 if scope.get("portfolioId") and str(row.portfolio_id) != str(scope["portfolioId"]):
                     return None, f"execution {ident} is in book {row.portfolio_id}, not the incident's — unrelated", meta
-                if symbols and str(row.symbol).upper() not in symbols:
-                    return None, f"execution {ident} is for {row.symbol}, not {', '.join(sorted(symbols))} — unrelated", meta
                 order_ids = await _incident_order_ids(eng, inc)
                 if order_ids is None:
                     return None, f"execution {ident}: the incident's positions could not be loaded", meta
-                if str(row.order_id) not in order_ids:
-                    return None, f"execution {ident} belongs to order {row.order_id}, not one of the incident's positions — unrelated", meta
-                return True, f"execution {ident} {row.side} {row.qty:g} @ {row.price} at {row.ts.isoformat()}", meta
+                # EOD-06: the binding is the EXACT leg/order/book relationship — an
+                # execution on one of the incident's positions' own orders (entry
+                # legs or exits) is bound even when its symbol is the option
+                # CONTRACT and the incident is scoped by the UNDERLYING; a symbol
+                # match alone never binds
+                if str(row.order_id) in order_ids:
+                    return True, f"execution {ident} {row.side} {row.qty:g} @ {row.price} at {row.ts.isoformat()}", meta
+                if symbols and str(row.symbol).upper() not in symbols:
+                    return None, f"execution {ident} is for {row.symbol}, not {', '.join(sorted(symbols))} — unrelated", meta
+                return None, f"execution {ident} belongs to order {row.order_id}, not one of the incident's positions — unrelated", meta
             if kind == "event":
                 row = await session.get(Event, int(ident))
                 if row is None:
@@ -801,36 +806,46 @@ async def _duplicate_executions(eng, rows, portfolio_id: str | None) -> list[tup
     return out
 
 
-_CARD_INTRINSIC_REVIEW = ("no quantity satisfies", "risk budget", "no stop", "no risk estimate",
-                          "spread vehicle", "human decision only", "wrong side", "penny")
+_CARD_INTRINSIC_REVIEW = ("no quantity satisfies", "risk budget", "no stop", "spread vehicle",
+                          "human decision only", "wrong side", "penny")
+# what the producers actually write when EVIDENCE could not be obtained (EOD-02: the
+# review's real outputs are "no risk estimate: missing delta — no estimate invented",
+# "delta is 901s old (max 900s)", "underlying reference quote is 301s old (max 300s)")
 _SYSTEMIC_REVIEW = ("unavailable", "exception", "provider", "delayed", "stale", "no fresh", "missing delta",
-                    "no quote", "quote missing", "multiplier unknown", "error", "timeout", "bars")
+                    "no quote", "quote missing", "quote age unknown", "multiplier unknown", "error",
+                    "timeout", "bars", "s old", "old (max", "no live underlying")
 
 
-def systemic_pre_entry_reason(reason: str | None) -> bool:
+def systemic_pre_entry_reason(reason: str | None, review_class: str | None = None) -> bool:
     """Does a review-gated pre-entry result point at a FAILING PATH (evidence
     could not be produced: bars/quote/greeks/provider/exception) rather than
     at the card itself (the budget fits no unit, the plan has no stop, an
     unsupported vehicle)? Only the former counts toward
     `repeated_pre_entry_failure` — 2026-09-14, first enforce session: three
     analyst-skipped option cards whose whole debit exceeded the $88 budget
-    opened a (duplicated) incident and paused the Practice proposal path."""
+    opened a (duplicated) incident and paused the Practice proposal path.
+    The TYPED class on the plan (`reviewClass`: evidence | budget | plan)
+    decides when present; the text match is the fallback for older journal
+    rows, and it checks the evidence vocabulary FIRST (the producer's
+    "no risk estimate:" prefix wraps both kinds — EOD-02 false negative)."""
+    if review_class in ("evidence", "budget", "plan"):
+        return review_class == "evidence"
     r = str(reason or "").lower()
     if not r:
         return False
-    if any(k in r for k in _CARD_INTRINSIC_REVIEW):
-        return False
-    return any(k in r for k in _SYSTEMIC_REVIEW)
+    if any(k in r for k in _SYSTEMIC_REVIEW):
+        return True
+    return False
 
 
 async def record_pre_entry_failure(eng, *, portfolio_id: str | None, entry_path: str, reason: str,
-                                   ref: str | None) -> dict | None:
+                                   ref: str | None, review_class: str | None = None) -> dict | None:
     """Invalid geometry BEFORE entry is refused/reviewed on its own; REPEATED
     SYSTEMIC failures on one entry path (REPEATED_PRE_ENTRY_FAILURES in a
     session) open ONE integrity incident for that path (later failures extend
     it). Counted from the journal (TipGeometryRepaired pre-entry with a
     systemic reviewRequired), so a restart keeps the count."""
-    if not systemic_pre_entry_reason(reason):
+    if not systemic_pre_entry_reason(reason, review_class):
         return None
     from sqlalchemy import select
     from ... import events as ev
@@ -840,10 +855,12 @@ async def record_pre_entry_failure(eng, *, portfolio_id: str | None, entry_path:
     sod = now_et.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(dt.timezone.utc)
     try:
         async with eng.sf() as session:
-            rows = (await session.execute(select(Event.payload).where(
-                Event.type == ev.TIP_GEOMETRY_REPAIRED, Event.ts >= sod))).scalars().all()
+            q = select(Event.payload).where(Event.type == ev.TIP_GEOMETRY_REPAIRED, Event.ts >= sod)
+            if portfolio_id:
+                q = q.where(Event.portfolio_id == str(portfolio_id))     # EOD-02: book B never trips book A
+            rows = (await session.execute(q)).scalars().all()
         n = sum(1 for p in rows if (p or {}).get("phase") == "pre-entry"
-                and systemic_pre_entry_reason((p or {}).get("reviewRequired"))
+                and systemic_pre_entry_reason((p or {}).get("reviewRequired"), (p or {}).get("reviewClass"))
                 and ((p or {}).get("entryPath") or "proposal") == entry_path)
     except Exception:
         return None

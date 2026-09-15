@@ -21,6 +21,7 @@ def make_test_config(**overrides) -> AppConfig:
         sim_tick_interval=0.03,
         sim_seed=42,
         sim_history_minutes=30,
+        sim_option_sessions=False,   # suites fill options at any hour; EOD-05 gate has its own test
         auth_token="",
         google_client_id="",       # sign-in off in tests even when backend/.env enables it
         google_allowed_emails="",
