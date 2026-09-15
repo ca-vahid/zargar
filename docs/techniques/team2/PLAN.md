@@ -337,10 +337,11 @@ and are now part of the plan; each carries the phase it belongs to.
   (12 sessions) is preserved as read evidence. The 30-minute watch job tallies per plan: listing, warm-up identity,
   model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,
   and trail gaps (a plan with `trailGaps` is an incompletely observed session).
-- **Profitability track (2026-09-15):** the other team's sweep reproduced exactly on the banked tape; C1 conjunction
-  (+$1,043 book, DD +77 %) proposed as the next labelled Practice experiment with a $700 drawdown budget and a
-  10-session / 20-entry horizon; the sizing cap (`size_full` 0.5: +$292, DD −42 %, identical trades) is the follow-on.
-  Awaiting their review; nothing activated — `notes/research/2026-09-15-c1-and-sizing-controlled-comparisons.md`.
+- **Profitability track (2026-09-15):** comparisons accepted by the other team (exploratory tape, pre-C6). Sequence:
+  **sizing cap first** (`size_full` 0.5; Practice-scale +$2,231 / DD −$635 vs baseline +$1,374 / DD −$993; loss stop
+  −$800 marked-to-market; ten completed sessions), C1 the follow-on (Practice-scale DD 26 % — sizing first). Sheet
+  awaiting approval; nothing activated. Prerequisite: the 0DTE cap clamp (F127) — the baseline refuses contracts under
+  ≈$0.50 today. `notes/research/2026-09-15-sizing-cap-experiment-sheet.md`.
 - **EOD corrective batch 2026-09-14 (v0.7.73 → v0.7.82): CLOSED 2026-09-14** — A–G accepted by the other team
   (durable refusal overlay, entry gate at every order path incl. transport retries, decision watermark, funnel from
   durable verdicts, uncertain submissions reconciled by the venue's report with cumulative fills, present-time stop

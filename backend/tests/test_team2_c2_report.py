@@ -20,7 +20,10 @@ def test_matched_trades_split_into_unchanged_changed_exit_displaced_new_and_lost
     assert [x["setup"] for x in c["displaced"]] == ["pm_break_up@10:00"]          # same family, different entry
     assert [x["setup"] for x in c["new"]] == ["key_break_up@10:15:101.00"]
     assert c["lost"] == []                                                        # the displaced one's original is not "lost"
-    assert c["sums"] == {"changedExit": 10.0, "displaced": 3.0, "new": 12.0, "lost": 0.0}
+    assert [x["setup"] for x in c["displacedFrom"]] == ["pm_break_up@09:45"]      # …but it IS accounted for (reviewer, 2026-09-15)
+    assert c["sums"] == {"changedExit": 10.0, "displaced": 3.0, "displacedFrom": -8.0, "new": 12.0, "lost": 0.0, "netVsBase": 33.0}
+    # the components reconcile to the model difference: (20+5+3+12) − (10+5−8) = 33
+    assert c["sums"]["netVsBase"] == round(sum(x["pnlPct"] for x in var[0]["trades"]) - sum(x["pnlPct"] for x in base[0]["trades"]), 1)
 
 
 def test_book_sim_is_chronological_one_position_and_two_losses_end_the_day():
