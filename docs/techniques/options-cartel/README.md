@@ -1,6 +1,6 @@
 # Options Cartel — current guide
 
-Updated 2026-09-13 against integrated main. Technique id: `options_cartel`.
+Updated 2026-09-15. Technique id: `options_cartel`. Deployment evidence is separate from source status.
 Sean Trades (`@SRxTrades`) is the source author; the app's numerical interpretations and Practice experiments are identified separately.
 
 The desk is implemented. The [September 13 correctness release](READINESS-2026-09-13.md) adds final-entry contract checks, target integrity, pending invalidation protection, explicit legacy-arm review and quantity-correct Practice research. Other desks can advance the app-wide version independently. Use the release handoff and live health for deployment state.
@@ -37,3 +37,7 @@ No full public-feed coverage, exact author replication, broker-verified author r
   records the user-approved observation-only experiment. It does not change trading permission.
 
 - [September 15 profitability review](PROFITABILITY-REVIEW-2026-09-15.md): cash-day accounting, 63 research cases, candidate/target selection and a prioritized prospective experiment queue. No execution settings changed.
+
+- [Profitability research](PROFITABILITY-RESEARCH.md): prospective candidate/ranking,
+  bearish, campaign-target and exit comparisons in Practice; operating instructions
+  and promotion criteria. Actual trades remain in Daily review.
