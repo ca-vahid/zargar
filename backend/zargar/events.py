@@ -176,3 +176,8 @@ AUTH_SIGN_IN = "AuthSignIn"
 TIP_INTAKE_STALLED = "TipIntakeStalled"
 TIP_INTAKE_RECOVERED = "TipIntakeRecovered"
 
+# KFIN-08 (2026-09-14): an enrolled own-book source's first-person activity was classified
+# (own_open / own_exit / recap / hypothetical / third_party) with its resolution — booked in
+# the own-book shadow ledger, unresolved (evidence missing), or context (never opens)
+TIP_OWNBOOK_CLASSIFIED = "TipOwnBookClassified"
+

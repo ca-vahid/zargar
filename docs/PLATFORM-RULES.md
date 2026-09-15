@@ -75,6 +75,18 @@ runtime ones to `execution.*`).
    on a mismatch). Assistants restart via the scheduler's `ZargarRestart` task (same door, same refusal);
    `ZargarRestartOverride` (= `restart.ps1 -Force`) exists for emergencies and is logged as an override. Task
    scripts are ASCII (Windows PowerShell 5.1). "No open positions" is not a restart test.
+19. **A source's own-book narration is research, never permission** (KFIN-08, 2026-09-14). A source enrolled in
+   `techniques.tip.mk_ownbook_sources` (Meet Kevin) narrates its OWN trades; "I bought / added / sold half" from it is
+   classified (`techniques/tip/ownbook.py`: own_open / own_exit / recap / hypothetical / third_party, deterministic text
+   first, extraction `actor`/`activity` second) and in `shadow` mode routed to a DEDICATED shadow book (`kind=shadow`,
+   `book=ownbook`) BEFORE the immediate book, the analyst, any proposal or armed plan - `techniques.tip.allow_live_auto`
+   and the Practice gates are never consulted because that path is never entered. A disclosure without a grounded price
+   (shares) / contract (strike + expiry) or without a qualified quote at the decision stays `ownbook_unresolved`
+   (journaled `TipOwnBookClassified`, nothing back-filled); recaps, hypotheticals, other people's screenshots and exits
+   with nothing to reduce are `ownbook_context` and never open. Grading (`GET /api/tip/ownbook/{source}`) uses the quote
+   at the decision + our own fill inside the DECLARED cohort (`mk_ownbook_cohort`); the `mk_ownbook_min_*` criteria are
+   reported, never acted on - promotion is a human verdict with no calendar deadline. Default mode `off`; guard tests in
+   `tests/test_tip_ownbook.py`.
 
 ## 2. Findings (settled, with evidence)
 

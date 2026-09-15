@@ -128,6 +128,21 @@ class TradeSignal(BaseModel):
         description="True only for a fresh, explicit call to act now. False for recaps of past "
                     "trades, performance reviews, marketing, or ambiguous commentary. If the "
                     "ticker or direction is ambiguous, set false rather than guessing.")
+    # KFIN-08 (2026-09-14): who is acting and what kind of activity the text
+    # describes. Deterministic text rules in techniques/tip/ownbook.py run
+    # FIRST; these fill in only when the text is silent, and only for sources
+    # enrolled in the own-book workflow. Never a permission for an order.
+    actor: str = Field(
+        default="unknown",
+        description='WHO is acting: "author" when the poster describes their OWN trade or intent '
+                    '("I bought", "I\'m adding"); "third_party" when it is someone else\'s position '
+                    '(a screenshot of another account, "my friend bought"); "unknown" otherwise.')
+    activity: str = Field(
+        default="unspecified",
+        description='"call" = a recommendation to the reader; "own_trade" = the author reporting a '
+                    'trade they made themselves ("I bought/added/sold"); "recap" = a past-tense '
+                    'review of earlier trades; "hypothetical" = conditional or considered '
+                    '("if it dips I\'d buy"); "unspecified" when unclear.')
 
     # local normalization of the enum-ish strings (see module docstring: real
     # Literal enums in the schema draw a 400 from the structured-output grammar)
@@ -250,6 +265,17 @@ class TradeSignal(BaseModel):
     def _v_confidence(cls, v: object) -> str:
         return _norm(v, {"explicit_call", "implied", "commentary_only"}, "commentary_only")
 
+    @field_validator("actor", mode="before")
+    @classmethod
+    def _v_actor(cls, v: object) -> str:
+        return _norm(v, {"author", "third_party", "unknown"}, "unknown")
+
+    @field_validator("activity", mode="before")
+    @classmethod
+    def _v_activity(cls, v: object) -> str:
+        return _norm(v, {"call", "own_trade", "recap", "hypothetical", "unspecified"},
+                     "unspecified")
+
 
 def underlying_price_checks_ok(sig: "TradeSignal",
                                live_underlying: float | None) -> tuple[bool, str]:
@@ -359,6 +385,12 @@ stated). A broker position-row screenshot with all-zero P/L columns alongside su
 the fill that just happened — the same single open, not a second signal. ("Still holding", \
 "up X% on my calls" remain recaps.)
 - If ticker or direction is ambiguous, set is_actionable=false rather than guessing.
+- Say WHO acts and WHAT the activity is: actor="author" + activity="own_trade" when the poster \
+reports their own fill ("I added $50k of NVDA at 118", "sold half my TSLA"); activity="recap" for a \
+past-tense review ("bought NVDA at 95 last year, up 40%"); activity="hypothetical" for a \
+conditional or a plan ("if it dips I'd buy more"); actor="third_party" when the position shown \
+belongs to someone else (another account's screenshot, "a member sent me his fills"). An own \
+trade is NOT a call to the reader — set activity="call" only for a recommendation to act.
 - confidence is "explicit_call" only when the author explicitly says to buy/sell now, ideally \
 with entry/stop/target; "implied" when clearly bullish/bearish without a call; otherwise \
 "commentary_only".

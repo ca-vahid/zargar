@@ -48,6 +48,15 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 - **Monitoring:** the desk's Claude session runs a pre-open tick (08:23 ET), 30-minute session
   ticks (:03/:33, 09:03–15:33 ET) and a 16:06 ET wrap-up. These are session-only crons — a
   session restart drops them and they must be re-armed.
+- **Meet Kevin own-book workflow (KFIN-08, built, NOT enrolled):** `techniques.tip.mk_ownbook_mode`
+  is `off` and `mk_ownbook_sources` is empty, so nothing changed at runtime. When enrolled
+  (`observe` first, then `shadow`), MK's "I bought / added / sold half" text is classified
+  (`techniques/tip/ownbook.py`) and booked ONLY in a dedicated `book=ownbook` shadow book —
+  never the Practice book, a proposal or an armed plan; ungrounded/stale disclosures stay
+  `ownbook_unresolved`; recaps, hypotheticals and other people's screenshots are
+  `ownbook_context`. Ledger + grading against the `mk_ownbook_min_*` criteria:
+  `GET /api/tip/ownbook/MK-alpha-trades` (a report — promotion stays a human verdict).
+  PLATFORM-RULES invariant 19; TRADING-RULES 2026-09-14.
 
 ## What changed on 2026-09-13/14 (why older docs read differently)
 
@@ -62,6 +71,12 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## Known gaps, risks and what could be wrong (read before trusting a number)
 
+0. **The MK own-book classifier is text rules + two extraction fields, unexercised on live
+   MK posts.** Known blind spots (TRADING-RULES 2026-09-14): "we bought" reads as the author's
+   fund; "sold puts" (a premium-selling OPEN) reads as an exit; a third-party screenshot with
+   no textual cue depends on the extractor's `actor`; entry aging counts weekdays, not the
+   exchange calendar. Run `observe` mode on MK for a week and read the `TipOwnBookClassified`
+   journal before switching to `shadow`; nothing about it is a Practice path either way.
 1. **No live-market session under enforce/integrity yet.** Everything is proven on the sim
    broker and the reviewer's rigs. Acceptance = the first `TipGeometryRepaired` with
    `phase: pre-entry, enforced: true`, the first review-gated card, and (if one happens) the

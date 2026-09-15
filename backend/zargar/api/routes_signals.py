@@ -160,6 +160,13 @@ def build_signal_routes(app, eng, auth, config) -> None:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    # --- MK own-book shadow ledger (KFIN-08): the record + grading against the
+    # predefined promotion criteria. A read; nothing here acts on the verdict.
+    @app.get("/api/tip/ownbook/{source}", dependencies=[auth])
+    async def tip_ownbook_ledger(source: str):
+        from ..techniques.tip.ownbook import ledger
+        return await ledger(eng.signals_service, source)
+
     # --- discord intake: catalog (from the gateway) + watchlist (from the UI) --
     @app.post("/api/tip/discord/catalog", dependencies=[auth])
     async def discord_report_catalog(request: Request):

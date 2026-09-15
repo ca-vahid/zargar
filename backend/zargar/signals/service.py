@@ -28,6 +28,7 @@ from .extraction import Extractor, ground_signal
 from .schemas import ExtractionResult, TradeSignal
 from .sources import SourcePolicy, resolve_policy
 from .verification import verify_signal
+from ..techniques.tip import ownbook as _ownbook
 
 log = logging.getLogger("zargar.signals")
 
@@ -1825,9 +1826,14 @@ class SignalService:
                 .order_by(Signal.created_at.desc()).limit(6)
             )).scalars().all()
         # experiment rows are out-of-band (KNOWLEDGE plan §E): a REAL tip must
-        # never dedupe onto a replayed historical sample
+        # never dedupe onto a replayed historical sample. KFIN-08: an own-book
+        # CONTEXT row (recap / hypothetical / third-party) or an UNRESOLVED
+        # disclosure is not a tip either — "I bought NVDA at 95 last year" must
+        # not swallow "just added NVDA at 118.20" an hour later; only a BOOKED
+        # own-book entry dedupes a repeat of itself.
         for r in rows:
-            if experiment_tag(r.extraction) is None:
+            if experiment_tag(r.extraction) is None and r.status not in (
+                    _ownbook.STATUS_CONTEXT, _ownbook.STATUS_UNRESOLVED):
                 return r
         return None
 
@@ -2035,8 +2041,44 @@ class SignalService:
                             "(dates are advisory, not confirmed)")
                 except Exception:  # pragma: no cover - context is best-effort
                     log.debug("calendar lookup failed for %s", row.ticker)
+            # KFIN-08 (2026-09-14): an ENROLLED own-book source (Meet Kevin) narrates
+            # its own trading — "I added", "sold half", recaps, hypotheticals,
+            # other people's screenshots. Classified deterministically first
+            # (techniques/tip/ownbook.py), then by the extraction's actor/activity
+            # fields. In `shadow` mode own activity is diverted to the dedicated
+            # own-book shadow ledger BEFORE the immediate book, the analyst, any
+            # proposal or arm; in `observe` mode it is only recorded. Non-enrolled
+            # sources never enter this block.
+            ob = None
+            if experiment is None and _ownbook.enrolled(eng.settings, content.source_name):
+                ob = _ownbook.classify(sig, source_text, result=result)
+                ob["route"] = "pipeline"
+                if ob["class"] != "tip":
+                    ob = _ownbook.resolve(ob, sig, grounding=grounding,
+                                          quote=eng.quotes.get(row.ticker.upper()),
+                                          settings=eng.settings, stale=stale,
+                                          age_hours=age_hours)
+                    if _ownbook.mode(eng.settings) == "shadow":
+                        ob["route"] = "ownbook"
+                        try:
+                            ob = await _ownbook.book(self, row, sig, ob, source_text=source_text)
+                        except Exception as exc:          # never a silent drop
+                            log.exception("own-book booking failed for %s", row.id)
+                            ob["resolution"] = "unresolved"
+                            ob["reasons"] = [f"own-book booking failed: {exc}"[:300]]
+                            ob.pop("booked", None)
             replay = None
-            if stale or experiment is not None:
+            if ob is not None and ob.get("route") == "ownbook":
+                status = _ownbook.status_for(ob)
+                verification["checks"].append({
+                    "name": "ownbook", "passed": True, "fatal": False,
+                    "detail": (f"own-book {ob['class']} ({ob.get('resolution')}): research "
+                               "ledger only — never a proposal, an armed plan or a Practice order"
+                               + (" — " + "; ".join(ob.get("reasons") or []) if ob.get("reasons") else ""))})
+                verification["passed"] = False
+                verification["park"] = False
+                verification["shadow_only"] = False
+            elif stale or experiment is not None:
                 # too old to trade (or an out-of-band experiment sample, which is
                 # NEVER traded regardless of age) — replay it on history so the
                 # content still teaches something (both books' counterfactuals,
@@ -2074,6 +2116,8 @@ class SignalService:
                 extra = {"statedAt": result.stated_at, "ageHours": age_hours}
                 if replay is not None:
                     extra["replay"] = replay
+                if ob is not None:
+                    extra["ownbook"] = ob
                 db_row.extraction = {**(db_row.extraction or {}), **extra}
                 await session.commit()
                 row = db_row
@@ -2091,6 +2135,28 @@ class SignalService:
                   ticker=row.ticker, status=status)
             if intake is not None:
                 await intake.checkpoint()
+
+            if ob is not None:
+                await eng.journal.append(
+                    ev.TIP_OWNBOOK_CLASSIFIED,
+                    {"signalId": row.id, "ticker": row.ticker, "source": content.source_name,
+                     "class": ob["class"], "route": ob.get("route"), "basis": ob.get("basis"),
+                     "resolution": ob.get("resolution"), "reasons": ob.get("reasons") or [],
+                     "cohort": ob.get("cohort") or None, "status": status,
+                     "booked": ob.get("booked"), "agreement": ob.get("agreement"),
+                     "quoteAtDecision": (ob.get("evidence") or {}).get("quote")},
+                    aggregate_type="signal", aggregate_id=row.id)
+                if ob.get("route") == "ownbook":
+                    istep("handoff",
+                          f"{row.ticker}: own-book {ob['class']} → {ob.get('resolution')} "
+                          "(research ledger only; no proposal, no plan, no Practice order)"
+                          + (" — " + "; ".join(ob.get("reasons") or []) if ob.get("reasons") else ""),
+                          ticker=row.ticker, status=status)
+                    out.append({"signal": signal_dict(row), "proposal": None, "armed": None,
+                                "shadowOrder": None, "ownbook": ob})
+                    continue
+                istep("note", f"{row.ticker}: own-book classifier (observe) says {ob['class']} — "
+                              "pipeline unchanged.")
 
             proposal = None
             shadow_order = None
@@ -2434,7 +2500,7 @@ class SignalService:
 
         shadow = next((p for p in eng.positions.portfolios() if match(p)), None)
         if shadow is None:
-            name = f"Shadow: {source}" + (" (armed)" if book == "armed" else "")
+            name = f"Shadow: {source}" + {"armed": " (armed)", "ownbook": " (own book)"}.get(book, "")
             row = PortfolioRow(id=new_id(), name=name, kind="shadow",
                                starting_cash=10_000.0, cash=10_000.0,
                                source_name=source, book=book)
