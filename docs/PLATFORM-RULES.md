@@ -1783,3 +1783,19 @@ alone cannot bypass ownership. Dead local marker owners can be recovered; live o
 not stolen on an age threshold. The R4 acknowledged-and-read-back quiesce requirement remains.
 Foreground manual start releases ownership at process handoff while preserving the existing
 watchdog startup grace period; detached deployment holds it through health/restore checks.
+
+### Dark app at 16:22 PT 2026-09-14 (after hours; ~2.5 minutes) — a conflict resolution broke the build
+
+Merging main v0.7.73 into the running checkout (which carried the watch job's unmerged 0.7.72) produced a changelog
+conflict; the Team2 desk's resolver concatenated the two release blocks and dropped the `]},` that closed the first.
+`restart.ps1` stopped the engine, then `start.ps1`'s frontend build failed on the TypeScript error and the restart
+exited 1 — with the new deploy lease still held, so the watchdog would have deferred for up to 10 minutes. Fixed by
+hand within ~2.5 minutes (block closed, lease removed, task re-run; v0.7.73 healthy, three Team2 plans for 09-15
+armed). Two rules from it: (1) `restart.ps1` releases the lease on EVERY failure exit and a lease whose owner
+process is gone is stale for both the next deploy and the watchdog — landed by the Cartel desk's
+`scripts/deployment-lock.ps1` convergence in v0.7.74 (OS mutex, dead-owner recovery, finally-released), which
+supersedes the Team2 desk's file-lease draft; (2) a merge into the running
+checkout must be built (`node scripts/check-release.mjs && npx tsc -b`) BEFORE the restart task is started — the
+door does not protect against a broken build because the stop happens before the build. The watch job's Team2
+commits (F123, F126, 0.7.72) had never been merged to main; they are brought to main with this change so the running
+checkout and main agree again.

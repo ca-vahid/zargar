@@ -187,7 +187,7 @@ class Team2Runner(PlanRunner):
         if kind == ev.TECHNIQUE_PLAN_CONTRACT:
             # R5: the contract verdicts of the day, kept for the close funnel (the journal is the durable copy;
             # `load_contract_verdicts` re-reads it after a restart)
-            self.__dict__.setdefault("_contract_verdicts", {}).setdefault(run_id, []).append({"event": event, "reason": reason, **detail})
+            self.__dict__.setdefault("_contract_verdicts", {}).setdefault(run_id, []).append(dict(payload))
         try:
             await journal.append(kind, payload, aggregate_type="technique_run", aggregate_id=run_id)
         except Exception as exc:  # noqa: BLE001 - a hole in the record is itself evidence (Codex, 2026-09-10)
