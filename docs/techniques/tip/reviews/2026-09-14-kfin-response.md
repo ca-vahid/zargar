@@ -89,8 +89,26 @@ None is a KFIN regression; they are listed here rather than hidden.
 |---|---|---|
 | 1 (on `e4290e7`) | the 6 EOD regression files, completion boundaries, delivery_health, deployment_lock, ops_tip_run_liveness, audit_chunks, retro_digest_accounting, kfin09_experiments | 60 passed |
 | 2 (on `a670457`) | tip_ownbook, tip_multi_image_intake, signals_tip, platform_separation, tip_caption_grounding_review | 78 passed |
-| 3 (on `a670457`) | tip_integrity, tip_geometry_wiring, tip_activation, tip_knowledge, knowledge_governance, completion boundaries, audit_chunks, retro_digest_accounting, kfin09, delivery_health, ops liveness, eod restart | see below |
+| 3 (on `a670457`) | tip_integrity, tip_geometry_wiring, tip_activation, tip_knowledge, knowledge_governance, completion boundaries, audit_chunks, retro_digest_accounting, kfin09, delivery_health, ops liveness, eod restart | 86 passed, 1 failed under host load (`test_retro_timeout_keeps_paid_calls_and_receipts`; 15/15 on rerun of its file) |
 
 Effective settings after deploy: Practice only, `geometry_gate=enforce`, `entry_pause_mode=integrity`,
 `risk_pct` 1.0, `risk_budget_per_tip` 0, `knowledge_apply_enabled` false, `mk_ownbook_mode` off,
 `entry_cohort_enabled` false, `frozen_capture_context` false, `allow_live_auto` false.
+
+## Deployed and applied
+
+- **Live:** v0.7.80, build `3b31f31` — the Team2 desk's 23:35 ET restart carried every KFIN merge
+  (the running checkout contains `a670457`); no additional restart. Verified on the live app:
+  `/api/ops/delivery-health` and the `delivery` block in `/api/health`, `/api/tip/intake/liveness`
+  live, `/api/tip/ownbook/MK-alpha-trades` (mode off, not enrolled), readiness `tipRuns` /
+  `tipRunsStale` / `tipRunsReconciled` all empty, 0 open incidents, gates enforce/integrity,
+  every new knob at its inert default.
+- **Reviewed rejection applied** (23:42 ET) through the hardened wrapper on the live app: manifest
+  `9e12f30ac31f4014bf7c556ecfa2acb1a9bd0d574cb97ef21454c99dfe0be766`, receipt
+  `consolidation:9e12f30a…` status applied; `e02fbae2`, `e7a30cb4`, `2c8ed73d` released at their
+  reviewed revision 2 (→3), expired in batch `rejection-policy-proposals-2026-09-14` at revision 3
+  (now revision 4, `superseded_by expired:consolid…`), preserved verbatim with the reviewer's
+  rationale as `evidence:policy-proposals` records `54216f58`, `2ea6747a`, `2bbed243`; rollback plan
+  (9 steps) on the receipt. Live rulebook: 37 rules.
+- Tool follow-up: PR #123 (module-level `subprocess` import on the `--reject-proposals --apply`
+  path; the apply above was posted from the planned manifest file).
