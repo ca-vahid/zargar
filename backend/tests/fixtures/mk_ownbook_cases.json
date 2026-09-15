@@ -1,0 +1,155 @@
+{
+  "_about": "KFIN-08 labeled case set for the MK own-book classifier (techniques/tip/ownbook.py). Each case is one message from an ENROLLED own-book source (explicit source identity) with the extraction the model would produce (never called in tests) and the expected class + evidence resolution GIVEN a warm, qualified quote at the decision. 'resolution' is what resolve() must say before booking: resolved = executable evidence present, unresolved = grounding/evidence missing, noop = context that never opens.",
+  "source": "MK-alpha-trades",
+  "cases": [
+    {
+      "id": "own_open_shares_priced",
+      "text": "Just added $50k of NVDA at $118.20 to the portfolio this morning.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "add", "instrument": "shares",
+                 "entry_price": 118.2, "evidence_quotes": ["Just added $50k of NVDA at $118.20"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_open", "resolution": "resolved", "basis": "evidence_quotes"}
+    },
+    {
+      "id": "own_open_shares_no_price",
+      "text": "I added more NVDA this morning, another $200k basket across the accounts.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "add", "instrument": "shares",
+                 "evidence_quotes": ["I added more NVDA this morning"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_open", "resolution": "unresolved", "reason_contains": "grounded entry price"}
+    },
+    {
+      "id": "own_open_option_contract",
+      "text": "Bought TSLA 300c 10/17 for 12.40 today.",
+      "signal": {"ticker": "TSLA", "direction": "long", "action": "open", "instrument": "call",
+                 "strike": 300.0, "expiry": "2026-10-17", "premium": 12.4,
+                 "evidence_quotes": ["Bought TSLA 300c 10/17 for 12.40"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_open", "resolution": "resolved"}
+    },
+    {
+      "id": "own_open_option_no_expiry",
+      "text": "I picked up some TSLA 300 calls.",
+      "signal": {"ticker": "TSLA", "direction": "long", "action": "open", "instrument": "call",
+                 "strike": 300.0, "evidence_quotes": ["I picked up some TSLA 300 calls"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_open", "resolution": "unresolved", "reason_contains": "without an expiry"}
+    },
+    {
+      "id": "own_open_fresh_beats_recap",
+      "text": "I bought NVDA today at 118.20, already up 2%.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "open", "instrument": "shares",
+                 "entry_price": 118.2, "evidence_quotes": ["I bought NVDA today at 118.20"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_open", "resolution": "resolved"}
+    },
+    {
+      "id": "own_open_short_shares",
+      "text": "I shorted AMC at 5.10 today, small size.",
+      "signal": {"ticker": "AMC", "direction": "short", "action": "open", "instrument": "shares",
+                 "entry_price": 5.1, "evidence_quotes": ["I shorted AMC at 5.10"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_open", "resolution": "unresolved", "reason_contains": "short share"}
+    },
+    {
+      "id": "own_open_via_extraction_fields",
+      "text": "In NVDA 118.20.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "open", "instrument": "shares",
+                 "entry_price": 118.2, "evidence_quotes": ["In NVDA 118.20"],
+                 "confidence": "implied", "is_actionable": true,
+                 "actor": "author", "activity": "own_trade"},
+      "expect": {"class": "own_open", "resolution": "resolved", "basis": "extraction"}
+    },
+    {
+      "id": "own_exit_half",
+      "text": "Sold half my NVDA today, still holding the rest.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "trim", "instrument": "shares",
+                 "evidence_quotes": ["Sold half my NVDA today"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_exit", "resolution": "resolved", "fraction": 0.5}
+    },
+    {
+      "id": "own_exit_out",
+      "text": "I'm out of TSLA, closed the whole position at 242.",
+      "signal": {"ticker": "TSLA", "direction": "long", "action": "close", "instrument": "shares",
+                 "evidence_quotes": ["I'm out of TSLA, closed the whole position at 242"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_exit", "resolution": "resolved", "fraction": 1.0}
+    },
+    {
+      "id": "own_exit_size_ambiguous",
+      "text": "Trimmed some NVDA into the pop.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "trim", "instrument": "shares",
+                 "evidence_quotes": ["Trimmed some NVDA"],
+                 "confidence": "explicit_call", "is_actionable": true},
+      "expect": {"class": "own_exit", "resolution": "resolved", "fraction": null}
+    },
+    {
+      "id": "recap_scorecard",
+      "text": "Bought NVDA at 95 last year - up 40% since. Here's how the portfolio did this quarter.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "open", "instrument": "shares",
+                 "entry_price": 95.0, "evidence_quotes": ["Bought NVDA at 95 last year"],
+                 "confidence": "commentary_only", "is_actionable": false},
+      "expect": {"class": "recap", "resolution": "noop"}
+    },
+    {
+      "id": "recap_up_pct",
+      "text": "My AMD position is up 12% ytd, best call of the year.",
+      "signal": {"ticker": "AMD", "direction": "long", "action": "open", "instrument": "shares",
+                 "evidence_quotes": ["My AMD position is up 12% ytd"],
+                 "confidence": "implied", "is_actionable": false},
+      "expect": {"class": "recap", "resolution": "noop"}
+    },
+    {
+      "id": "hypothetical_dip",
+      "text": "If NVDA dips to 110 I'd buy more.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "add", "instrument": "shares",
+                 "entry_price": 110.0, "evidence_quotes": ["If NVDA dips to 110 I'd buy more"],
+                 "confidence": "implied", "is_actionable": false},
+      "expect": {"class": "hypothetical", "resolution": "noop"}
+    },
+    {
+      "id": "hypothetical_considering",
+      "text": "I'm thinking about adding to AAPL here at 231.",
+      "signal": {"ticker": "AAPL", "direction": "long", "action": "add", "instrument": "shares",
+                 "entry_price": 231.0, "evidence_quotes": ["I'm thinking about adding to AAPL here at 231"],
+                 "confidence": "implied", "is_actionable": true},
+      "expect": {"class": "hypothetical", "resolution": "noop"}
+    },
+    {
+      "id": "third_party_screenshot",
+      "text": "A member sent me his TSLA position - nice fills at 240.",
+      "signal": {"ticker": "TSLA", "direction": "long", "action": "open", "instrument": "shares",
+                 "entry_price": 240.0, "evidence_quotes": ["A member sent me his TSLA position - nice fills at 240"],
+                 "confidence": "implied", "is_actionable": false},
+      "expect": {"class": "third_party", "resolution": "noop"}
+    },
+    {
+      "id": "third_party_via_extraction",
+      "text": "TSLA fills at 240 (screenshot)",
+      "signal": {"ticker": "TSLA", "direction": "long", "action": "open", "instrument": "shares",
+                 "entry_price": 240.0, "evidence_quotes": ["TSLA fills at 240"],
+                 "confidence": "implied", "is_actionable": false,
+                 "actor": "third_party", "activity": "own_trade"},
+      "expect": {"class": "third_party", "resolution": "noop", "basis": "extraction"}
+    },
+    {
+      "id": "tip_call_to_reader",
+      "text": "Buy NVDA here, target 130, stop 110.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "open", "instrument": "shares",
+                 "target_price": 130.0, "stop_price": 110.0,
+                 "evidence_quotes": ["Buy NVDA here, target 130, stop 110"],
+                 "confidence": "explicit_call", "is_actionable": true,
+                 "actor": "unknown", "activity": "call"},
+      "expect": {"class": "tip"}
+    },
+    {
+      "id": "stop_move_never_opens",
+      "text": "Moving my NVDA stop up to 110.",
+      "signal": {"ticker": "NVDA", "direction": "long", "action": "update_stop", "instrument": "shares",
+                 "stop_price": 110.0, "evidence_quotes": ["Moving my NVDA stop up to 110"],
+                 "confidence": "implied", "is_actionable": false},
+      "expect": {"class": "tip", "note": "falls through to the normal pipeline where opens_position fails fatally - a follow-up never opens"}
+    }
+  ]
+}
