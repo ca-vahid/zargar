@@ -435,5 +435,10 @@ prior ownership cases + wiring, revisions, watermark, ordering, backfill, gatewa
 promotion, team2_close, entry quality = **78 passed**. Own suites (em2): ingest + ingest flow (real board_check),
 reconcile, gateway envelope/ack/modes, separation, reviewer execution/evidence/preopen/exits, technique API =
 104 passed, 1 flake (`test_chart_png_endpoint_on_sim_symbol`, a network-timing case that passes alone and touches
-nothing on this branch). Team2 runner + EOD + arming: see the line below.
+nothing on this branch). Team2 runner + EOD + arming 49 passed, 1 pre-existing (WF tree). After integrating main again (0.7.78 Team2
+E/F/G + KFIN-01/02/09; three runner hunks merged - both desks' restored trade fields, EM's `_entry_guard`
+beside Team2's composed retry guard): reviewer groups 78/78 in a fresh exclusive window, own suites 105/105,
+arming solo 29 passed + the pre-existing `test_auto_options_one_contract_lifecycle`. One load-sensitive case
+(`test_restore_reattaches_an_open_trade`) failed only while a second arming run shared the machine; it passes
+alone and in the solo full-file run on this tree and on unmodified main - not counted as a regression.
 
