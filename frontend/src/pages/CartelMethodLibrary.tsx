@@ -14,9 +14,11 @@ import ledger from "../../../docs/techniques/options-cartel/LEDGER-REVIEW.md?raw
 import industry from "../../../docs/techniques/options-cartel/INDUSTRY-DATA.md?raw";
 import replay from "../../../docs/techniques/options-cartel/REPLAY.md?raw";
 import scanning from "../../../docs/techniques/options-cartel/SCANNING.md?raw";
+import profitability from "../../../docs/techniques/options-cartel/PROFITABILITY-RESEARCH.md?raw";
 
 const documents = [
   {file:"DELIVERY-STATUS.md", title:"Current capabilities and limits", text:currentStatus},
+  {file:"PROFITABILITY-RESEARCH.md", title:"Profitability research: collection and comparisons", text:profitability},
   {file:"READINESS-2026-09-13.md", title:"Practice readiness and evidence protocol", text:readiness},
   {file:"IGNITION.md", title:"Post-ignition workflow", text:ignition},
   {file:"METHOD.md", title:"Detailed method", text:method},

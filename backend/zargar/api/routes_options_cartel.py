@@ -49,6 +49,25 @@ def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
 
+    @app.get('/api/options-cartel/profitability-research', dependencies=[auth])
+    async def profitability_research_status(workspace: Workspace | None = None, day: str | None = None):
+        import datetime as dt
+        from ..marketstructure.sessions import ET
+        from ..techniques.options_cartel import profitability_research
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        if (workspace or active_workspace(eng)) != 'practice':
+            return {'enabled': False, 'phase': 'practice_only', 'rows': [], 'contexts': [],
+                    'placesOrders': False, 'automaticPermissionChanged': False}
+        selected_day = day or dt.datetime.now(ET).date().isoformat()
+        try:
+            parsed = dt.date.fromisoformat(selected_day)
+            if parsed.isoformat() != selected_day:
+                raise ValueError('Use YYYY-MM-DD')
+        except ValueError as exc:
+            raise HTTPException(400, 'Invalid research session; use YYYY-MM-DD') from exc
+        policy = read_policy(eng, 'practice')
+        return await profitability_research.status(eng, selected_day, policy.portfolio_id)
+
     @app.get('/api/options-cartel/intraday-research', dependencies=[auth])
     async def intraday_research_status(workspace: Workspace | None = None, day: str | None = None):
         import datetime as dt

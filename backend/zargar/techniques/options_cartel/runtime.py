@@ -44,6 +44,13 @@ class CartelRuntime(CartelObserver):
         self._intraday_research_started = None
         self._intraday_research_watched = set()
         self._intraday_research_status = {'phase':'waiting_session'}
+        self._profitability_task = None
+        self._profitability_last = 0
+        self._profitability_started = None
+        self._profitability_status = {'phase': 'awaiting_preparation'}
+        self._profitability_quote_task = None
+        self._profitability_quote_last = 0
+        self._profitability_targets = {}
 
     async def arm(self, run_id, config=None):
         from sqlalchemy import text
@@ -422,6 +429,13 @@ class CartelRuntime(CartelObserver):
         if not self.stopping and self.clock()-self._intraday_research_last >= 60_000 and (self._intraday_research_task is None or self._intraday_research_task.done()):
             self._intraday_research_last = self.clock()
             self._intraday_research_task = asyncio.create_task(self._observe_intraday_research(), name='cartel-intraday-research')
+        if not self.stopping and self.clock()-self._profitability_last >= 60_000 and (self._profitability_task is None or self._profitability_task.done()):
+            self._profitability_last = self.clock()
+            self._profitability_task = asyncio.create_task(self._observe_profitability(), name='cartel-profitability-research')
+        if (not self.stopping and self._profitability_targets and self.clock()-self._profitability_quote_last >= 5000
+                and (self._profitability_quote_task is None or self._profitability_quote_task.done())):
+            self._profitability_quote_last = self.clock()
+            self._profitability_quote_task = asyncio.create_task(self._capture_profitability_quotes(), name='cartel-profitability-quotes')
         from .observation_health import repair_gaps
         task = getattr(self, 'history_repair_task', None)
         if not self.stopping and (task is None or task.done()):
@@ -480,6 +494,29 @@ class CartelRuntime(CartelObserver):
             self._intraday_research_status={'phase':'data_unavailable','reason':f'{type(exc).__name__}: research observation unavailable'}
             self._intraday_research_last = self.clock()+240_000
 
+    async def _observe_profitability(self):
+        from .profitability_research import collect
+        try:
+            async with asyncio.timeout(90):
+                await collect(self)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - research cannot interrupt protective management
+            self._profitability_status = {'phase': 'data_unavailable',
+                'reason': f'{type(exc).__name__}: profitability observation unavailable'}
+            self._profitability_last = self.clock()+240_000
+
+    async def _capture_profitability_quotes(self):
+        from .profitability_research import capture_quotes
+        try:
+            async with asyncio.timeout(20):
+                await capture_quotes(self)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - missing research observations never interrupt trading
+            self._profitability_status = {**self._profitability_status,
+                'quoteError': f'{type(exc).__name__}: research quote capture unavailable'}
+
     async def flatten_trade(self, run_id, trigger_id=None):
         positions = self._positions(run_id)
         for p in positions:
@@ -498,6 +535,12 @@ class CartelRuntime(CartelObserver):
 
     async def stop(self):
         self.stopping = True
+        if self._profitability_task is not None and not self._profitability_task.done():
+            self._profitability_task.cancel()
+            await asyncio.gather(self._profitability_task, return_exceptions=True)
+        if self._profitability_quote_task is not None and not self._profitability_quote_task.done():
+            self._profitability_quote_task.cancel()
+            await asyncio.gather(self._profitability_quote_task, return_exceptions=True)
         if self._intraday_research_task is not None and not self._intraday_research_task.done():
             self._intraday_research_task.cancel()
             await asyncio.gather(self._intraday_research_task, return_exceptions=True)

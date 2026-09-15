@@ -630,6 +630,15 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- **2026-09-15 · Cartel profitability research has no trading authority.** The
+  Practice collection switch and bounded pool controls live under
+  `techniques.options_cartel.profitability_research`. Source/policy-frozen research
+  contexts and observations use separate non-plan run modes; they never become
+  executable arms, approvals or orders. The authenticated research read endpoint
+  is account-scoped and empty in Live. Candidate rankings, bearish cohorts and
+  exit comparisons do not modify the production market gate or existing saved
+  campaigns. See [the protocol](techniques/options-cartel/PROFITABILITY-RESEARCH.md).
+
 - 2026-09-10 · **A verification `npm run build` is also a UI deploy — the version chip can report a release the
   engine is not running** (Team2 watch run 51, finding F94; nothing changed, this is a policy question for
   whoever owns `scripts/start.ps1`). Facts: the running engine is the 01:29 ET boot on **v0.7.36** (F89 — it is

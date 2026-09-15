@@ -248,8 +248,13 @@ class CartelService:
             query = query.where(TechniqueRun.symbol == symbol.upper())
         if mode:
             query = query.where(TechniqueRun.mode == mode)
+        else:
+            # High-frequency observations have their own dated research view.
+            query = query.where(TechniqueRun.mode.not_in(('profit_context', 'profit_watch', 'profit_quote')))
         if workspace is not None:
             scope = case(
+                (TechniqueRun.mode.in_(('profit_context', 'profit_watch', 'profit_quote')),
+                 TechniqueRun.config['workspace'].as_string()),
                 (TechniqueRun.mode == 'preparation', func.coalesce(TechniqueRun.config['workspace'].as_string(), 'practice')),
                 (func.jsonb_exists(TechniqueRun.config, 'preparation'), func.coalesce(TechniqueRun.config['preparation']['workspace'].as_string(), 'practice')),
                 else_=None)
