@@ -530,3 +530,49 @@ the v2 columns and `ix_tip_hold_observation_key` additively and re-labeled the t
 re-qualification gap - none of them is pre-close evidence; their next-open sample will read
 insufficient. The running build (5b7542d) still carries `holdstudy-v1`; tomorrow's 15:50 ET capture
 is protocol-correct only once this commit is deployed (merged, not deployed at the time of writing).
+
+## R147-01/02 corrections (2026-09-15 late evening, research only)
+
+Reviewer verdict `2026-09-15-pr147-verdict.md` on merged `9082bfa`: the HOLD142 corrections pass and
+the live cleanup / unique index are verified; two narrow items remained. The reviewer's checks
+`tests/test_pr147_observation_review.py` are adopted verbatim (three failed on `9082bfa`, the index
+migration check already passed; all four pass now).
+
+**R147-01 the ACTUAL sample time governs admission.** Both collectors judged the window on the
+job's start clock and persisted it as the observation time, so a job starting at 15:59:59 could
+store a quote sampled at 16:00:02 as `fresh`. Now: the clock is re-read per row and per attempt
+(`_clock`: the real clock, or the pinned instant a caller supplied), the window is judged BEFORE
+sampling a row and AGAIN on the quote's own `sampledAt` (stamped by the quote store when the sample
+was read; `sourceTs` stays the venue print, `jobStartedAt` the job's clock - all three persisted,
+`observed_at` / `next_open_sampled_at` = the actual sample time). A qualified quote sampled outside
+its window is stored with status `late` (quote kept, never protocol-qualified, `compare_row`
+insufficient); a row the window ended before is `late` / `missed` without a quote. The managed-outcome
+attribution uses the actual sample time. Tests: the reviewer's two clock-crossing cases, a slow
+two-row capture (15:59:40 fresh, 16:00:10 late) and the engine case's persisted times.
+**Calendar-relative wiring:** `Scheduler.register` accepts a per-day resolver (`at_et(date) ->
+"HH:MM"`, `resolve_at`, shown in `status()` as `calendarRelative`), and the runner registers the
+pre-close job at `session_close - hold_snapshot_before_close_minutes` (10: 15:50 on a normal day,
+12:50 on a 13:00 early close - `holdstudy.preclose_job_time`) and the next-open job AT the opening
+window's start, 09:30 (`next_open_job_time`), searching the first qualified quote inside 09:30-09:45
+with in-window retries (`hold_next_open_attempts` 40 x 20 s). The old fixed `hold_snapshot_at` /
+`hold_next_open_at` knobs are empty by default and override only when set. Tests:
+`test_job_times_follow_the_exchange_calendar` (Black Friday 12:50, a 5-minute offset on Christmas
+Eve, the scheduler resolving the callable per day).
+
+**R147-02 the emitted gap fields.** `frozen.replay` emits `bundleGaps` (capture-time gaps such as
+"view_image output is not capturable") and `manifestGaps` (header/system reconstruction gaps);
+`compare` read legacy `gaps` / `headerGaps` only, so an image-only gap with zero missing tool calls
+read complete. `compare` now unions `bundleGaps` + `manifestGaps` (legacy names kept) and reports
+`coverage = {missingToolCalls, imageGap, bundleGaps, manifestGaps}` beside `coverageLimited` - the
+reasons stay independently visible and none masks another. Tests: the reviewer's image case plus
+complete-evidence, manifest-only, both-reasons and legacy-field controls. The NVDA pair's reading is
+unchanged (coverage-limited, mixed; compact not adopted).
+
+Runs on the final commit: `tests/test_pr147_observation_review.py` + `test_prof142_research_boundaries_review.py`
++ `test_tip_hold_study.py` + `test_tip_frozen_compact.py` + `test_profitability_preview_review.py` +
+`test_tip_payoff_feasibility.py` = **27 passed**; scheduler-touching slice `test_platform_phase3.py` +
+`test_flow_api.py` + `test_tip_knowledge_review_20260913.py` = 29 passed, 1 failed
+(`test_flow_api.py::test_repair_rescans_degraded_day` - fails identically on the unmodified checkout,
+Flow desk, not touched here); `test_tip_activation.py` (attaches the runner with the calendar-relative
+registration) 4 passed. Merged, not deployed (live 5b7542d); the affected samples are not to be used
+for any holding or model-context decision until the corrections are live and verified.
