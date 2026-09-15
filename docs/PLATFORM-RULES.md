@@ -1717,6 +1717,19 @@ check is `execution/origins.py::scenario_origin` (no technique import in the run
 gateway now forwards EM-channel EDITS to EM's inbox (`kind=update`) - the tips mirror/intake path is unchanged.
 
 
+### Restart safety after the 17:37 health-500 incident — 2026-09-14 (EM desk, shared scripts/restart.ps1)
+
+A process that ANSWERS /api/health with an HTTP error is a live, unhealthy engine, not an absent one: restart.ps1
+now keeps the entry pause, before-inventory and readiness safeguards in that case (only a refused connection means
+"no process"); it PERSISTS the before-inventory by id (`logs/restart-inventory-<ts>.json`) and reports `restoration`
+= ok | mismatch | skipped-no-baseline on the deployment receipt (never inferred from counts alone); and it probes the
+TARGET checkout (`python -c "import zargar, zargar.api.app; zargar.build_sha()"`) BEFORE stopping the running
+process - a post-start file rewrite is not a loaded fix (exit 8; -Force is an override). Open for the watchdog
+owner: bound repeated restarts of an unchanged deterministic import/health failure with an incident record.
+Gateway: `MESSAGE_DELETE` on EM channels becomes an EM tombstone revision (`TechniqueSourceRevised`); the tips
+mirror/intake never receives deletions; deletions never touch positions, exits or arms.
+
+
 ### Session findings — 2026-09-14 (first enforce/integrity day; v0.7.68 → 0.7.71)
 
 - **Bar DELIVERY stalls (3×):** 13:09–13:13, 13:23–13:27 and 15:26–15:29 ET every armed
