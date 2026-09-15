@@ -34,8 +34,13 @@ async def setup(repo, monkeypatch, mode="auto", *, arm=True):
     monkeypatch.setattr(engine, "ensure_symbol", ensure)
     monkeypatch.setattr(engine.quotes, "age_seconds", lambda symbol: (now-engine.quotes.get(symbol).ts)/1000)
     await engine.positions.load()
+    # The rig's whole tape runs on one synthetic RTH clock (`now`): the simulator
+    # must judge quote evidence against THAT clock, or every quote stamped `now`
+    # reads as stale on the wall clock (`SimExecutor.quote_rejection`, EOD-05).
+    # `option_sessions=False` fills options at any hour (the session gate is
+    # tested on its own); the evidence rules themselves stay fully in force.
     engine.sim_executor = SimExecutor(latency_ms=0, slippage_bps=0, size_impact_bps=0, settings=engine.settings,
-                                      option_sessions=False)   # rig fills options at any hour (EOD-05 gate is tested on its own)
+                                      option_sessions=False, clock=lambda: now)
     engine.orders = OrderManager(engine.sf, engine.bus, engine.journal, engine.risk, engine.settings,
                                  engine.positions, engine.quotes, engine.executor_for, ensure)
     engine.sim_executor.on_report = engine.orders.on_report
@@ -204,13 +209,17 @@ async def test_option_submission_preserves_contract_units_debit_and_overnight_ac
     monkeypatch.setattr(repo.engine.quotes, "source_age_seconds", lambda symbol: 0.)
     repo.engine.options = SimpleNamespace(snapshot_cached=lambda _: {
         "greeks": {"delta": .5}, "greeksFieldAsOf": {"delta": controller.clock()}})
-    repo.engine.quotes.on_quote(Quote(symbol, bid=.39, ask=.4, last=.4, source="opra", ts=controller.clock()))
+    # An option fill needs real NBBO provenance: source identity AND the source's
+    # own print time (`source_ts`), both fresh on the rig's clock.
+    repo.engine.quotes.on_quote(Quote(symbol, bid=.39, ask=.4, last=.4, source="opra",
+                                      ts=controller.clock(), source_ts=controller.clock()))
     result = await controller.submit("r1")
     assert result["status"] == "working", result
     async with repo.engine.sf() as session:
         order = await session.get(Order, result["orderId"])
     assert order.symbol == symbol and order.sec_type == "OPT" and order.qty == 2 and order.limit_price == .4
-    quote = Quote(symbol, bid=.34, ask=.35, last=.35, source="opra", ts=controller.clock())
+    quote = Quote(symbol, bid=.34, ask=.35, last=.35, source="opra",
+                  ts=controller.clock(), source_ts=controller.clock())
     repo.engine.quotes.on_quote(quote)
     await repo.engine.sim_executor.on_quote(quote)
     result = await controller.poll("r1")
