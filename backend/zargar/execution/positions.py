@@ -1579,137 +1579,173 @@ class PositionManager:
             await asyncio.sleep(max(0.05, float(self._setting("execution.quote_exit_seconds", 2.0) or 2.0)))
 
     async def _watch_once(self) -> None:
+        """One pass of the quote watch / failed-exit watchdog over every
+        position. EOD-04 (2026-09-14): positions progress INDEPENDENTLY — each
+        one runs as its own task (its per-position guard keeps ordering and
+        prevents duplicates within the position), a pass waits a bounded time
+        for them, and a position whose previous step is still blocked (a held
+        guard, a slow venue) is skipped by the next pass instead of blocking
+        every other position's protective work behind it."""
         if not self._pos:
             return
         excess = float(self._setting("execution.quote_exit_excess_r", 0.25) or 0.25)
         need = max(1, int(self._setting("execution.quote_exit_polls", 2) or 2))
         stale_ms = int(self._setting("execution.stale_seconds", 180) or 180) * 1000
         now = self.now_ms()
+        inflight: dict = self.__dict__.setdefault("_watch_tasks", {})
+        for pid_, t in list(inflight.items()):
+            if t.done():
+                inflight.pop(pid_, None)
+                exc = t.exception() if not t.cancelled() else None
+                if exc is not None:
+                    log.error("position watch step failed for %s: %r", pid_, exc)
+        started = []
         for p in list(self._pos.values()):
             if p.status not in ("open", "closing", "attention") or not p.open_legs:
                 continue
-            adapter = self._policy_adapter(p)
-            if adapter is not None and hasattr(adapter, "on_watch"):
-                if await adapter.on_watch(self, p):
-                    continue
-                if p.status == "closed" or not p.open_legs:
-                    continue
-            # failed-exit watchdog
-            last = p.exits[-1] if p.exits else None
-            if last and last.get("status") in ("ERROR", "REJECTED", "REJECTED_RISK") \
-                    and not getattr(adapter, "handles_exit_retries", False):
-                key = (p.id, "exit")          # one counter per position: each retry mints a new order id
-                ts0, attempts = self._exit_retries.get(key, (0.0, 0))
-                if attempts < 5 and self._now() - ts0 >= 30.0:
-                    self._exit_retries[key] = (self._now(), attempts + 1)
-                    self._log(p, "exit_retry", f"watchdog retry {attempts + 1}/5 for {last.get('kind')}")
-                    await self.close(p.id, fraction=1.0, reason=f"watchdog retry {attempts + 1}",
-                                     kind="stop", force_market=True)
-                    continue
-                if attempts >= 5 and ts0 < 1e12:      # not yet alerted (the sentinel below)
-                    await self._alert(p, "exit still failing after 5 retries — needs a person "
-                                      "(close it at the broker)", stage="exit_watchdog")
-                    self._exit_retries[key] = (1e18, attempts)   # alert exactly once
-                    continue
-            # expiry-day flatten by the CLOCK (a policy that holds into expiry
-            # day — the tips lotto lane): the bar-driven decision is primary,
-            # this is the net under it if the closing bars never arrive
-            flat_et = p.policy.get("expiry_day_flatten_et")
-            if flat_et:
+            if p.id in inflight:
+                continue                        # still busy from an earlier pass — never a second step
+            t = asyncio.create_task(self._watch_position(p, now=now, excess=excess, need=need, stale_ms=stale_ms))
+            inflight[p.id] = t
+            started.append(t)
+        if started:
+            wait_s = float(self._setting("execution.watch_pass_timeout_seconds", 5.0) or 5.0)
+            await asyncio.wait(started, timeout=wait_s)
+            for t in started:
+                if t.done():
+                    for pid_, tt in list(inflight.items()):
+                        if tt is t:
+                            inflight.pop(pid_, None)
+                    if not t.cancelled() and t.exception() is not None:
+                        log.error("position watch step failed: %r", t.exception())
+
+    async def _watch_position(self, p: Managed, *, now: int, excess: float, need: int, stale_ms: int) -> None:
+        """The per-position step of `_watch_once` (adapter watch, failed-exit
+        watchdog, expiry-day clock flatten, roll-up, premium watch, the
+        underlying crash brake). `return` = this position is done for the pass."""
+        adapter = self._policy_adapter(p)
+        if adapter is not None and hasattr(adapter, "on_watch"):
+            if await adapter.on_watch(self, p):
+                return
+            if p.status == "closed" or not p.open_legs:
+                return
+        # failed-exit watchdog
+        last = p.exits[-1] if p.exits else None
+        if last and last.get("status") in ("ERROR", "REJECTED", "REJECTED_RISK") \
+                and not getattr(adapter, "handles_exit_retries", False):
+            key = (p.id, "exit")          # one counter per position: each retry mints a new order id
+            ts0, attempts = self._exit_retries.get(key, (0.0, 0))
+            if attempts < 5 and self._now() - ts0 >= 30.0:
+                self._exit_retries[key] = (self._now(), attempts + 1)
+                self._log(p, "exit_retry", f"watchdog retry {attempts + 1}/5 for {last.get('kind')}")
+                await self.close(p.id, fraction=1.0, reason=f"watchdog retry {attempts + 1}",
+                                 kind="stop", force_market=True)
+                return
+            if attempts >= 5 and ts0 < 1e12:      # not yet alerted (the sentinel below)
+                await self._alert(p, "exit still failing after 5 retries — needs a person "
+                                  "(close it at the broker)", stage="exit_watchdog")
+                self._exit_retries[key] = (1e18, attempts)   # alert exactly once
+                return
+        # expiry-day flatten by the CLOCK (a policy that holds into expiry
+        # day — the tips lotto lane): the bar-driven decision is primary,
+        # this is the net under it if the closing bars never arrive
+        flat_et = p.policy.get("expiry_day_flatten_et")
+        if flat_et:
+            today = dt.datetime.fromtimestamp(now / 1000, ET).date()
+            d = p.dte_min(today)
+            if d is not None and d <= 0:
+                now_et = dt.datetime.fromtimestamp(now / 1000, ET)
+                hh, mm = (int(x) for x in str(flat_et).split(":"))
+                if now_et.hour * 60 + now_et.minute >= hh * 60 + mm \
+                        and not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
+                                    for x in p.exits if x.get("orderId")):
+                    self._log(p, "dte", f"expiry day — clock flatten at {flat_et} ET")
+                    await self.close(p.id, fraction=1.0, kind="dte", force_market=True,
+                                     reason=f"expiry day — flattened at {flat_et} ET (clock)")
+                    return
+        # roll-up check at a slow cadence (~every 30th watch pass ≈ 60 s, RTH only)
+        if p.policy.get("rollup", {}).get("enabled"):
+            self._roll_ticks[p.id] = self._roll_ticks.get(p.id, 0) + 1
+            if self._roll_ticks[p.id] % 30 == 1 and session_window(now) == "regular":
+                with contextlib.suppress(Exception):
+                    if await self._maybe_rollup(p):
+                        return
+        # premium watch (the tips lotto lane): the contract's own mark judged
+        # every tick — a 0DTE tripled and gave it all back inside one 15m bar
+        # on 2026-09-02 (GOOGL 340C) while the underlying ladder never hit
+        if p.policy.get("premium_watch") and p.entry_mark and \
+                not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
+                        for x in p.exits if x.get("orderId")):
+            # SOURCE-age-aware mark, same evaluator as the bar path (Codex
+            # v0.7.44 review 1B, 2026-09-10): receipt time is not evidence —
+            # an hour-old OPRA bid re-received a second ago must not fire a
+            # market exit. Delayed/chain sources are refused outright; the
+            # mark's provenance lands on the exit record.
+            mark = self._fresh_net_mark(p)
+            if mark is not None:
                 today = dt.datetime.fromtimestamp(now / 1000, ET).date()
-                d = p.dte_min(today)
-                if d is not None and d <= 0:
-                    now_et = dt.datetime.fromtimestamp(now / 1000, ET)
-                    hh, mm = (int(x) for x in str(flat_et).split(":"))
-                    if now_et.hour * 60 + now_et.minute >= hh * 60 + mm \
-                            and not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
-                                        for x in p.exits if x.get("orderId")):
-                        self._log(p, "dte", f"expiry day — clock flatten at {flat_et} ET")
-                        await self.close(p.id, fraction=1.0, kind="dte", force_market=True,
-                                         reason=f"expiry day — flattened at {flat_et} ET (clock)")
-                        continue
-            # roll-up check at a slow cadence (~every 30th watch pass ≈ 60 s, RTH only)
-            if p.policy.get("rollup", {}).get("enabled"):
-                self._roll_ticks[p.id] = self._roll_ticks.get(p.id, 0) + 1
-                if self._roll_ticks[p.id] % 30 == 1 and session_window(now) == "regular":
-                    with contextlib.suppress(Exception):
-                        if await self._maybe_rollup(p):
-                            continue
-            # premium watch (the tips lotto lane): the contract's own mark judged
-            # every tick — a 0DTE tripled and gave it all back inside one 15m bar
-            # on 2026-09-02 (GOOGL 340C) while the underlying ladder never hit
-            if p.policy.get("premium_watch") and p.entry_mark and \
-                    not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
-                            for x in p.exits if x.get("orderId")):
-                # SOURCE-age-aware mark, same evaluator as the bar path (Codex
-                # v0.7.44 review 1B, 2026-09-10): receipt time is not evidence —
-                # an hour-old OPRA bid re-received a second ago must not fire a
-                # market exit. Delayed/chain sources are refused outright; the
-                # mark's provenance lands on the exit record.
-                mark = self._fresh_net_mark(p)
-                if mark is not None:
-                    today = dt.datetime.fromtimestamp(now / 1000, ET).date()
-                    uq = self.engine.quotes.get(p.symbol)
-                    und_move = ((float(uq.last) / p.entry - 1) * 100
-                                if uq is not None and uq.last and uq.last > 0 and p.entry else None)
-                    d = evaluate_premium(p.policy, p.state, mark, p.entry_mark,
-                                         dte=p.dte_min(today), iv_ratio=self._iv_ratio(p),
-                                         underlying_move_pct=und_move)
-                    if d is None or d.kind != "premium_stop":
-                        # no breach, or a NON-stop outcome (a take): an earlier
-                        # adverse sighting must not be preserved by accident
-                        self._premium_confirm.pop(p.id, None)
-                    if d is not None and d.kind == "premium_stop":
-                        d = self._confirm_premium_stop(p, d, now)
-                    if d is not None and d.kind == "premium_take" \
-                            and self._take_units(p, d.fraction) < 1:
-                        # a 1-lot cannot sell half: skip the take, the ratchet
-                        # floors and (for deep-ITM winners) the roll-up govern
-                        p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
-                        self._log(p, "premium_take_skipped",
-                                  f"{d.reason} — but selling {d.fraction:.0%} of "
-                                  f"{sum(abs(l.qty) for l in p.open_legs):g} contract(s) rounds to 0; "
-                                  "floors govern instead")
-                        d = None
-                    if d is not None:
-                        p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
-                        p.state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
-                                                        dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
-                        wreason = (f"{d.reason} (quote watch) "
-                                   f"[mark: {self._mark_evidence.get(p.id, '?')}]")
-                        self._log(p, d.kind, wreason)
-                        await self.close(p.id, fraction=d.fraction, reason=wreason, kind=d.kind,
-                                         force_market=d.kind == "premium_stop",
-                                         evidence=(self._premium_confirmation_record(p) if d.kind == "premium_stop" else None))
-                        continue
-                    new_state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
-                                                      dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
-                    if new_state is not p.state:
-                        floor_moved = new_state.premium_floor_gain != p.state.premium_floor_gain
-                        p.state = new_state
-                        if floor_moved:                     # write-ahead only for the money-relevant change;
-                            await self._persist(p)          # the peak persists with the next bar close
-                            self._log(p, "premium_floor",
-                                      f"ratchet floor -> +{new_state.premium_floor_gain:.0f}% "
-                                      f"(peak {((new_state.premium_peak or 0) / p.entry_mark - 1) * 100:+.0f}%)")
-            # crash brake on the underlying
-            stop = stop_price(p.policy, p.state)
-            q = self.engine.quotes.get(p.symbol)
-            fresh = q is not None and (now - q.ts) <= stale_ms
-            if stop is not None and fresh and q.last and q.last > 0:
-                short = p.direction == "short"
-                beyond = (float(q.last) - stop) if short else (stop - float(q.last))
-                if beyond >= excess * p.risk:
-                    k = (p.id, "quote")
-                    n = self._breaches.get(k, 0) + 1
-                    self._breaches[k] = n
-                    if n >= need:
-                        self._breaches.pop(k, None)
-                        self._log(p, "quote_stop", f"underlying {q.last} decisively through the stop {stop:.4f}")
-                        await self.close(p.id, fraction=1.0, kind="stop", force_market=True,
-                                         reason=f"intra-bar quote breach ({q.last} vs stop {stop:.4f})")
-                    continue
-                self._breaches.pop((p.id, "quote"), None)
+                uq = self.engine.quotes.get(p.symbol)
+                und_move = ((float(uq.last) / p.entry - 1) * 100
+                            if uq is not None and uq.last and uq.last > 0 and p.entry else None)
+                d = evaluate_premium(p.policy, p.state, mark, p.entry_mark,
+                                     dte=p.dte_min(today), iv_ratio=self._iv_ratio(p),
+                                     underlying_move_pct=und_move)
+                if d is None or d.kind != "premium_stop":
+                    # no breach, or a NON-stop outcome (a take): an earlier
+                    # adverse sighting must not be preserved by accident
+                    self._premium_confirm.pop(p.id, None)
+                if d is not None and d.kind == "premium_stop":
+                    d = self._confirm_premium_stop(p, d, now)
+                if d is not None and d.kind == "premium_take" \
+                        and self._take_units(p, d.fraction) < 1:
+                    # a 1-lot cannot sell half: skip the take, the ratchet
+                    # floors and (for deep-ITM winners) the roll-up govern
+                    p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
+                    self._log(p, "premium_take_skipped",
+                              f"{d.reason} — but selling {d.fraction:.0%} of "
+                              f"{sum(abs(l.qty) for l in p.open_legs):g} contract(s) rounds to 0; "
+                              "floors govern instead")
+                    d = None
+                if d is not None:
+                    p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
+                    p.state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
+                                                    dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
+                    wreason = (f"{d.reason} (quote watch) "
+                               f"[mark: {self._mark_evidence.get(p.id, '?')}]")
+                    self._log(p, d.kind, wreason)
+                    await self.close(p.id, fraction=d.fraction, reason=wreason, kind=d.kind,
+                                     force_market=d.kind == "premium_stop",
+                                     evidence=(self._premium_confirmation_record(p) if d.kind == "premium_stop" else None))
+                    return
+                new_state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
+                                                  dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
+                if new_state is not p.state:
+                    floor_moved = new_state.premium_floor_gain != p.state.premium_floor_gain
+                    p.state = new_state
+                    if floor_moved:                     # write-ahead only for the money-relevant change;
+                        await self._persist(p)          # the peak persists with the next bar close
+                        self._log(p, "premium_floor",
+                                  f"ratchet floor -> +{new_state.premium_floor_gain:.0f}% "
+                                  f"(peak {((new_state.premium_peak or 0) / p.entry_mark - 1) * 100:+.0f}%)")
+        # crash brake on the underlying
+        stop = stop_price(p.policy, p.state)
+        q = self.engine.quotes.get(p.symbol)
+        fresh = q is not None and (now - q.ts) <= stale_ms
+        if stop is not None and fresh and q.last and q.last > 0:
+            short = p.direction == "short"
+            beyond = (float(q.last) - stop) if short else (stop - float(q.last))
+            if beyond >= excess * p.risk:
+                k = (p.id, "quote")
+                n = self._breaches.get(k, 0) + 1
+                self._breaches[k] = n
+                if n >= need:
+                    self._breaches.pop(k, None)
+                    self._log(p, "quote_stop", f"underlying {q.last} decisively through the stop {stop:.4f}")
+                    await self.close(p.id, fraction=1.0, kind="stop", force_market=True,
+                                     reason=f"intra-bar quote breach ({q.last} vs stop {stop:.4f})")
+                return
+            self._breaches.pop((p.id, "quote"), None)
+
 
     # ---------------------------------------------------------------- reconciliation
     async def reconcile(self) -> dict:

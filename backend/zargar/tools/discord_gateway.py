@@ -521,6 +521,22 @@ class Gateway:
         self._queue: asyncio.Queue | None = None
         self._chan_locks: dict[str, asyncio.Lock] = {}
         self._dropped = 0
+        # EOD-01 (2026-09-14): LIVENESS is a first-class fact. A user-token
+        # session receives dispatch frames continuously (presence, typing,
+        # messages across every guild); a connected socket that delivers no
+        # frame for `idle_seconds` is a stuck pipe whatever the heartbeat says
+        # — the 12:35–16:12 ET silence today (26 RTH messages first seen after
+        # the close) left no trace because the console was the only log.
+        self.idle_seconds = 180.0
+        self._connected_at: float | None = None
+        self._last_frame: float | None = None       # any frame from Discord
+        self._last_dispatch: float | None = None    # any DISPATCH (t) frame
+        self._last_message: float | None = None     # a matched MESSAGE_CREATE/UPDATE
+        self._chan_last: dict[str, dict] = {}       # cid -> {at, mid, source}
+        self._reconnects = 0
+        self._idle_reconnects = 0
+        self._recovering = False
+        self.status_path = Path.cwd() / "gateway_status.json"
 
     async def run(self) -> None:
         import websockets
@@ -531,6 +547,9 @@ class Gateway:
                     await self._session(ws)
                 backoff = 1.0
             except Exception as exc:
+                self._reconnects += 1
+                self._connected_at = None
+                self._write_status(state="disconnected", note=str(exc)[:200])
                 print(f"[gateway] disconnected: {exc}; reconnecting in {backoff:.0f}s")
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
@@ -542,8 +561,12 @@ class Gateway:
             raise RuntimeError(f"expected HELLO, got op {hello.get('op')}")
         self._hb_interval = hello["d"]["heartbeat_interval"] / 1000.0
         self._acked = True
+        self._connected_at = time.time()
+        self._last_frame = time.time()
         hb = asyncio.create_task(self._heartbeat(ws))
         status = asyncio.create_task(self._status_loop())
+        idle = asyncio.create_task(self._idle_watchdog(ws))
+        live = asyncio.create_task(self._liveness_loop())
         await ws.send(json.dumps(_identify(self.token)))
         print(f"[gateway] connected; heartbeat every {self._hb_interval:.1f}s; "
               f"{'DUMP only' if not self.ingest else 'ingesting to ' + self.api}")
@@ -825,6 +848,56 @@ class Gateway:
             print(f"[{dt.datetime.now():%H:%M:%S}] listening ({mins:.0f} min up, "
                   f"{self.seen_count} matching DM(s) so far{extra})")
 
+    async def _idle_watchdog(self, ws) -> None:
+        """EOD-01: no frame at all for `idle_seconds` on a connected socket =
+        a stuck pipe (heartbeat ACKs alone are not proof of delivery). Close
+        it; `run()` reconnects and READY's gap recovery refetches what each
+        watched channel posted past its cursor."""
+        while True:
+            await asyncio.sleep(15)
+            last = self._last_frame or self._connected_at or time.time()
+            idle = time.time() - last
+            if idle > float(self.idle_seconds):
+                self._idle_reconnects += 1
+                self._write_status(state="idle-reconnect", note=f"no frame for {idle:.0f}s")
+                print(f"[gateway] no frame from Discord for {idle:.0f}s — forcing reconnect (idle watchdog)")
+                await ws.close(code=4000)
+                return
+
+    async def _liveness_loop(self) -> None:
+        while True:
+            self._write_status(state="connected")
+            await asyncio.sleep(30)
+
+    def _write_status(self, *, state: str, note: str = "") -> None:
+        """`gateway_status.json` next to the cursors: the app's
+        /api/tip/intake/liveness reads it — the console is not a record."""
+        try:
+            pending, dead = self._store.counts()
+        except Exception:
+            pending = dead = None
+        now = time.time()
+        doc = {"pid": os.getpid(), "at": dt.datetime.now(dt.timezone.utc).isoformat(), "state": state,
+               "note": note, "connectedAt": self._iso(self._connected_at),
+               "lastFrameAt": self._iso(self._last_frame), "lastDispatchAt": self._iso(self._last_dispatch),
+               "lastMessageAt": self._iso(self._last_message),
+               "frameAgeS": (round(now - self._last_frame, 1) if self._last_frame else None),
+               "seenCount": self.seen_count, "reconnects": self._reconnects,
+               "idleReconnects": self._idle_reconnects, "recovering": self._recovering,
+               "ledger": {"pending": pending, "dead": dead, "dropped": self._dropped},
+               "watched": len(self._watch), "channels": self._chan_last,
+               "idleSeconds": self.idle_seconds, "heartbeatS": self._hb_interval}
+        try:
+            tmp = self.status_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(doc), encoding="utf-8")
+            os.replace(tmp, self.status_path)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _iso(t: float | None) -> str | None:
+        return dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat() if t else None
+
     async def _heartbeat(self, ws) -> None:
         # jittered first beat per the docs, then every interval; drop the link
         # if a beat goes un-ACKed (zombied connection)
@@ -842,6 +915,9 @@ class Gateway:
         op = data.get("op")
         if data.get("s") is not None:
             self._seq = data["s"]
+        self._last_frame = time.time()
+        if op == OP_DISPATCH:
+            self._last_dispatch = self._last_frame
         if op == OP_HEARTBEAT_ACK:
             self._acked = True
             return
@@ -862,6 +938,7 @@ class Gateway:
             # gap recovery (gateway envelope): a reconnect re-identifies with no
             # session resume — fetch what each watched channel posted past its
             # cursor while we were dark, oldest first, through the same queue
+            self._recovering = True
             asyncio.create_task(self._recover_gaps(http, headers))
             print("[gateway] listening.")
             return
@@ -1041,6 +1118,11 @@ class Gateway:
         text = flatten_message(msg)
         images = collect_images(msg)
         self.seen_count += 1
+        self._last_message = time.time()
+        self._chan_last[str(cid)] = {"at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                                     "mid": str(msg.get("id") or ""),
+                                     "posted": str(msg.get("timestamp") or ""),
+                                     "source": str(env.get("source") or "")}
         rec = {"at": dt.datetime.now(dt.timezone.utc).isoformat(),
                "channelId": cid, "isDM": env.get("isDM"),
                "author": describe_author(msg), "authorId": (msg.get("author") or {}).get("id"),
@@ -1199,6 +1281,38 @@ class Gateway:
                       "text": flatten_message(msgs[0])[:200], **res})
 
 
+class _Tee:
+    """stdout that also appends to a file (line-buffered, size-rotated)."""
+    def __init__(self, console, path: Path, max_bytes: int = 20 * 1024 * 1024):
+        self._console = console
+        self._path = path
+        self._max = max_bytes
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(self, text: str) -> int:
+        try:
+            self._console.write(text)
+        except Exception:
+            pass
+        try:
+            if self._path.exists() and self._path.stat().st_size > self._max:
+                self._path.replace(self._path.with_suffix(self._path.suffix + ".1"))
+            with self._path.open("a", encoding="utf-8") as f:
+                f.write(text)
+        except Exception:
+            pass
+        return len(text)
+
+    def flush(self) -> None:
+        try:
+            self._console.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._console, name)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--api", default=os.environ.get("ZARGAR_API", API_DEFAULT))
@@ -1219,6 +1333,10 @@ def main() -> None:
                    help="mirror this many recent messages per WATCHED channel on startup (0 = off)")
     p.add_argument("--status-minutes", type=float, default=15.0,
                    help="proof-of-life line every N minutes (0 = off)")
+    p.add_argument("--idle-seconds", type=float, default=180.0,
+                   help="force a reconnect when no frame arrives for this long (EOD-01; 0 = off)")
+    p.add_argument("--log-file", default=os.environ.get("ZARGAR_GATEWAY_LOG", "logs/discord-gateway.log"),
+                   help="append the console output here too (rotated at 20 MB; '' = console only)")
     p.add_argument("--no-auto-token", action="store_true",
                    help="do NOT auto-grab the token from the local Discord app")
     a = p.parse_args()
@@ -1233,12 +1351,15 @@ def main() -> None:
         print("No token: set ZARGAR_DISCORD_TOKEN, or let it auto-grab from the "
               "local Discord app (drop --no-auto-token).")
         sys.exit(2)
+    if a.log_file:
+        sys.stdout = _Tee(sys.stdout, Path(a.log_file))       # EOD-01: the console is not a record
     gw = Gateway(a.token, a.api, a.session, Path(a.log),
                  ingest=a.ingest and not a.dump, dump=a.dump,
                  bots_only=a.from_bots_only, author_id=a.author_id,
                  channel_id=a.channel_id, include_self=a.include_self,
                  status_minutes=a.status_minutes, all_dms=a.all_dms,
                  backfill=a.backfill)
+    gw.idle_seconds = float(a.idle_seconds or 0) or 10 ** 9
     try:
         asyncio.run(gw.run())
     except KeyboardInterrupt:

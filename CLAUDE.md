@@ -147,6 +147,11 @@ a persisted `TipExecutionIncident` pauses EVERY automated tip entry — auto-app
 submission/retry — never exits; released only on evidence bound to the incident or a labeled
 override; a valid fast loss is a `TipFastStopDiagnostic`, the loss limits are independent).
 Rollback = `PATCH /api/settings` back to `shadow`/`clock` (journaled; incidents and stops stay).
+**EOD review 2026-09-14 (v0.7.73, `reviews/2026-09-14-eod-response.md`):** intake LIVENESS is
+journaled (`gateway_status.json`, idle watchdog, `GET /api/tip/intake/liveness`, `TipIntakeStalled`);
+a model-written `rule` under propose-only is a PROPOSAL (born `needs_human`, rendered PENDING REVIEW);
+Practice OPTION fills need an eligible session (`sim_option_sessions`; tests off); incidents count
+only typed `reviewClass=evidence` failures; research books can be quarantined.
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries

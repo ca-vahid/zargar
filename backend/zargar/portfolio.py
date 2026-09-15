@@ -84,6 +84,8 @@ class PositionKeeper:
                     "startingCash": p.starting_cash, "baseCurrency": p.base_currency,
                     "sourceName": p.source_name, "isDefault": p.is_default,
                     "book": getattr(p, "book", None), "archived": bool(getattr(p, "archived", False)),
+            "quarantined": bool(getattr(p, "quarantined", False)),
+            "quarantineNote": getattr(p, "quarantine_note", None),
                     "venue": venues.get(p.id, "ibkr"),
                 }
             for pos in (await session.execute(select(Position))).scalars():
@@ -100,8 +102,26 @@ class PositionKeeper:
             "startingCash": p.starting_cash, "baseCurrency": p.base_currency,
             "sourceName": p.source_name, "isDefault": p.is_default,
             "book": getattr(p, "book", None), "archived": bool(getattr(p, "archived", False)),
+            "quarantined": bool(getattr(p, "quarantined", False)),
+            "quarantineNote": getattr(p, "quarantine_note", None),
             "venue": venue,
         }
+
+    async def set_quarantine(self, pid: str, on: bool, note: str = "") -> dict:
+        """EOD-09: flag / clear a research book's quarantine (persisted, journaled by the caller)."""
+        info = self._portfolios.get(pid)
+        if info is None:
+            raise ValueError("unknown portfolio")
+        async with self._sf() as session:
+            row = await session.get(Portfolio, pid)
+            if row is None:
+                raise ValueError("unknown portfolio")
+            row.quarantined = bool(on)
+            row.quarantine_note = (note or None) if on else None
+            await session.commit()
+        info["quarantined"] = bool(on)
+        info["quarantineNote"] = (note or None) if on else None
+        return dict(info)
 
     async def remove_shadow(self, pid: str) -> dict:
         """Delete a SHADOW research book (demo/test cleanup, user 2026-08-30).

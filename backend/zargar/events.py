@@ -172,3 +172,8 @@ class Journal:
         self._bus.publish(topics.EVENTS, record)
         return record
 AUTH_SIGN_IN = "AuthSignIn"
+
+# EOD-01 (2026-09-14): the Discord pipe's liveness is journaled, not inferred from API health
+TIP_INTAKE_STALLED = "TipIntakeStalled"
+TIP_INTAKE_RECOVERED = "TipIntakeRecovered"
+

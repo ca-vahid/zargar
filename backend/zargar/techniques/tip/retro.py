@@ -285,7 +285,7 @@ async def grade_lanes(eng, *, limit: int = 25) -> dict:
             rows = []
             for o in orows:
                 pf = eng.positions.portfolio(o.portfolio_id) or {}
-                if pf.get("book") != book:
+                if pf.get("book") != book or pf.get("quarantined"):     # EOD-09: quarantined lanes are not evidence
                     continue
                 if o.status not in ("FILLED", "PARTIALLY_FILLED"):
                     continue

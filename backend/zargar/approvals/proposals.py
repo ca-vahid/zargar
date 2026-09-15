@@ -805,9 +805,11 @@ class ProposalService:
                         {"proposalId": proposal_id, "signalId": signal_id, "underlying": underlying,
                          "entryRef": None, "repairs": [], "phase": phase, "enforced": True, "mode": mode,
                          "entryPath": entry_path, "reviewRequired": out[2].reviewRequired,
+                         "reviewClass": "evidence",
                          "analystRunId": analyst_run_id, "source": source},
                         aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
-                await self._note_pre_entry_failure(pid, entry_path, out[2].reviewRequired, signal_id)
+                await self._note_pre_entry_failure(pid, entry_path, out[2].reviewRequired, signal_id,
+                                                   review_class="evidence")
             return out
         with contextlib.suppress(Exception):
             await eng.journal.append(
@@ -819,7 +821,8 @@ class ProposalService:
                  "stressRisk": rp.stressRisk, "finalRisk": rp.plannedRisk,
                  "estimatorVersion": rp.estimatorVersion, "resizedFrom": rp.qtyRequested,
                  "resizedTo": rp.qty, "budget": rp.budget, "budgetSource": rp.budgetSource,
-                 "reviewRequired": rp.reviewRequired, "decisions": list(rp.decisions),
+                 "reviewRequired": rp.reviewRequired, "reviewClass": rp.reviewClass,
+                 "decisions": list(rp.decisions),
                  "quote": rp.quote, "greeks": {k: v for k, v in rp.greeks.items() if k != "text"},
                  "analystRunId": analyst_run_id, "source": source},
                 aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
@@ -829,7 +832,8 @@ class ProposalService:
                 note = (f"Geometry gate: NO automatic entry — {rp.reviewRequired}. "
                         f"The card waits for you.")
                 if phase == "pre-entry":
-                    await self._note_pre_entry_failure(pid, entry_path, rp.reviewRequired, signal_id)
+                    await self._note_pre_entry_failure(pid, entry_path, rp.reviewRequired, signal_id,
+                                                       review_class=rp.reviewClass)
                 return final_plan, qty, rp, note
             if rp.resized:
                 note = f"Geometry gate: {rp.resizeReason}."
@@ -842,14 +846,17 @@ class ProposalService:
                     (f"; review: {rp.reviewRequired}" if rp.reviewRequired else "") + ".")
         return exit_plan, qty, rp, note
 
-    async def _note_pre_entry_failure(self, pid: str, entry_path: str, reason: str, ref: str | None) -> None:
+    async def _note_pre_entry_failure(self, pid: str, entry_path: str, reason: str, ref: str | None,
+                                      review_class: str | None = None) -> None:
         """KB-06 wiring: a review-gated pre-entry result is refused on its own;
-        REPEATED ones on one entry path in a session open an integrity
-        incident for that path (recorded in every pause mode)."""
+        REPEATED SYSTEMIC ones (typed `reviewClass == "evidence"`) on one entry
+        path in a session open an integrity incident for that path (recorded
+        in every pause mode); budget / plan review gates never count."""
         with contextlib.suppress(Exception):
             from ..techniques.tip import integrity as _ig
             await _ig.record_pre_entry_failure(self.engine, portfolio_id=pid, entry_path=entry_path,
-                                               reason=str(reason or "")[:160], ref=ref)
+                                               reason=str(reason or "")[:160], ref=ref,
+                                               review_class=review_class)
 
     async def _compute_risk_plan(self, *, mode: str, underlying: str, direction: str, pid: str,
                                  exit_plan: dict, vehicle: dict, sec_type: str, symbol: str,
@@ -878,6 +885,21 @@ class ProposalService:
                 raise ValueError("no executable limit for a share entry")
             entry_ref = float(limit)
             quote_meta["entryRefBasis"] = "limit"
+            # EOD-06: the share plan carries the SAME quote-freshness evidence the
+            # incident classifier requires (source, age, delayed) — a valid fresh
+            # share entry used to read as "missing evidence" after a fast loss
+            sq = None
+            with contextlib.suppress(Exception):
+                sq = eng.quotes.get(underlying)
+            if sq is not None:
+                age = _age_s(sq)
+                quote_meta.update({"source": getattr(sq, "source", None), "ageS": age,
+                                   "delayed": bool(getattr(sq, "delayed", False)),
+                                   "underlyingDelayed": bool(getattr(sq, "delayed", False))})
+                if bool(getattr(sq, "delayed", False)):
+                    problems.append("share reference quote is delayed")
+                elif age is not None and age > q_max_age:
+                    problems.append(f"share reference quote is {age:.0f}s old (max {q_max_age:.0f}s)")
         else:
             await eng.ensure_symbol(underlying)
             uq = eng.quotes.get(underlying)
