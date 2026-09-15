@@ -746,6 +746,22 @@ function ProposalCard({ p }: { p: Proposal }) {
             ? ` (analyst: ${fmtMoney(plan?.originalStop ?? rp?.originalStop)})` : ""}</b>
           <span>quote</span>
           <b>{(plan?.quoteSource ?? rp?.quote?.source) ?? "none"}{(plan?.quoteAgeS ?? rp?.quote?.ageS) != null ? ` · ${Math.round(plan?.quoteAgeS ?? rp?.quote?.ageS)}s old` : ""}{(plan?.quoteDelayed ?? rp?.quote?.delayed) ? " · delayed" : ""}</b>
+          {(plan?.payoff ?? rp?.payoff)?.scenarios && (() => {
+            const po = plan?.payoff ?? rp?.payoff;
+            const sc = po.scenarios;
+            const fmtR = (x: any) => (x?.R != null ? ` (${x.R > 0 ? "+" : ""}${x.R}R)` : "");
+            return (<>
+              <span>payoff (estimate)</span>
+              <b title="Arithmetic on the declared plan: every target hit / first target then the stop / the stop alone. An estimate (delta-linear for options), never a forecast.">
+                all targets {sc.allTargets.net >= 0 ? "+" : ""}${fmtMoney(sc.allTargets.net, 0)}{fmtR(sc.allTargets)} · TP1 then stop ${fmtMoney(sc.tp1ThenStop.net, 0)}{fmtR(sc.tp1ThenStop)} · stop ${fmtMoney(sc.stopOnly.net, 0)}
+              </b>
+              <span>ladder</span>
+              <b className={po.ladder?.executable ? "" : "neg"} title={po.ladder?.note ?? "units sold at each rung at this size"}>
+                {po.ladder?.units?.join(" / ")}{po.ladder?.runner ? ` +${po.ladder.runner} runner` : ""}{po.ladder?.executable ? " · executable" : " · NOT executable as declared"}
+                {po.oneLot ? ` · one-lot: ${po.oneLot.policy} ${po.oneLot.net >= 0 ? "+" : ""}$${fmtMoney(po.oneLot.net, 0)}` : ""}
+              </b>
+            </>);
+          })()}
           {(plan?.adjustments ?? rp?.decisions ?? []).length > 0 && (<>
             <span>adjustments</span>
             <b className="muted">{(plan?.adjustments ?? rp?.decisions).join("; ")}</b>

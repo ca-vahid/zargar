@@ -300,3 +300,47 @@ Tips Practice book (order `4bfd05bd`, filled 13.0926; the excess short cost -$9.
 -$39.31 in total, of which -$30.15 is the legitimate long episode), then the managed position
 closed through the venue-clamped exit path with no order ("venue already flat"). Root-cause fix
 merged (PLATFORM-RULES 2026-09-15 venue-stop entry), rides the next deploy.
+
+## PROF-01 / PROF-02 (profitability sweep 2026-09-15; built the same day, code only)
+
+**PROF-01 - risk budget before the verdict.** `techniques/tip/feasibility.py` (pure):
+`unit_risk` (shares = |entry - stop|; options = the geometry gate's delta-linear estimator, premium
+stop / full premium without an underlying stop), `feasibility` (units that fit the approved
+planned-risk budget AND the purchase allocation; qty 0 = an honest no-trade), `share_alternative`
+and `chain_alternatives` (RESEARCH comparisons at equal dollar risk - labelled, never a
+substitution, never for a bearish thesis as shares). The analyst's system prompt now puts the
+risk budget first and requires a `check_feasibility` call before a take; the header states the
+approved planned-risk budget and labels the per-tip budget as the PURCHASE allocation; two tools
+(`check_feasibility`, `preview_payoff`) serve the same numbers the gate sizes with; every TAKE is
+assessed server-side after the answer (`expression` + `thesisVerdict` on the opinion, journaled on
+the run). `techniques.tip.analyst_feasibility_gate`: `annotate` (default - verdict kept) |
+`downgrade` (an unfittable take becomes watch; flipping it is a reviewed method decision).
+Acceptance: `python -m zargar.tools.tip_feasibility replay --since 2026-09-14` re-judges the
+recent TAKE cards at their stored contemporaneous unit loss / budget and prints feasible quantity
+or the honest no-trade plus the shares alternative at equal risk (chain alternatives at the time
+were not stored - reported as unavailable, not invented).
+
+**PROF-02 - the whole exit path.** `techniques/tip/payoff.py` (pure): `integer_ladder` (units per
+rung, runner, executable / collapsed), `unit_gains`, `payoff_preview` (every target / first target
+then the stop / the stop alone, in $ and R, fees per unit; the coherent one-lot policy when the
+ladder cannot be followed), `realized_from_fills` (round-trip reconciliation, excess exits kept
+apart). The risk plan carries `payoff` and the card's risk grid shows it; the analyst has a one-lot
+rule and the `preview_payoff` tool. `python -m zargar.tools.tip_payoff_report --since 2026-09-08`
+lists closed Tips positions with ladder executability, the plan's arithmetic and the realized
+round trip from fills. Tests: `tests/test_tip_payoff_feasibility.py` (integer arithmetic for
+1/2/3 contracts and odd shares, the reviewer's five cases, RKT long-only = -$30.15 with the 59
+excess apart, alternatives, the gate modes) and `tests/test_tip_expression_gate.py` (the real
+analyst path with a scripted client). No risk limit changed; no source policy changed.
+
+**Replay results (contemporaneous stored evidence, 2026-09-15 12:1x ET).** `tip_feasibility replay --since 2026-09-14`:
+nine TAKE cards - feasible 4 (SLV 65C qty 1, MRNA 11 shares, AAL 14C 2, HIMS 30C 1), honest no-trade 5
+(PLTR 195C $130.00 vs $89.62, AFRM 80C $200.08 vs $89.11, AMZN 300C $191.53 vs $89.60, TSLA 340P
+$100.11 vs $89.43, MSFT 505C $96.00 vs $88.93 - the reviewer's five, reproduced exactly); labelled
+shares alternatives at equal risk where the tip carried a stop (AFRM 14 @ $86.00, AMZN 7 @ $75.96,
+MSFT 3 @ $55.32); chain alternatives reported unavailable (the chain at the time was not stored).
+`tip_payoff_report --since 2026-09-08`: 30 closed Tips positions; RKT reconciles from the book's
+executions to **-$30.15** on the long episode (entry 148 @13.46, trim 59 @13.7373 = +16.36, stop 89
+of the 148 @12.9374 = -46.51) with the **59 excess units reported apart**, declared ladder 59/51/37
++1 executable, plan arithmetic: all targets +$91 (1.2R), TP1-then-stop -$26, stop -$31; the one-lot
+option positions (GS 1 contract on a 40/35/25 ladder: units 0/0/0 - NOT executable as declared) show
+the PROF-02 defect the preview now surfaces before admission.
