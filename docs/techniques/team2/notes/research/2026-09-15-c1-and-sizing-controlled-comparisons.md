@@ -1,4 +1,9 @@
-# C1 conjunction and the sizing map — controlled comparisons on the canonical tape (2026-09-15)
+# C1 conjunction and the sizing map — controlled comparisons on the exploratory tape (2026-09-15)
+
+> **Corrected 2026-09-15 after the other team's review of PR #140** (`…/2026-09-15-c1-sizing-proposal-review.md`): the tape is
+> EXPLORATORY (pre-C6; the hash equality is a reproduction, not canonical data); the sizing attribution and the C1 classifier
+> accounting are corrected below; the recommendation is superseded by the sizing-cap-first sheet
+> `2026-09-15-sizing-cap-experiment-sheet.md`, which recomputes the sizing basis with the intended Practice sizing.
 
 **Recommendation in one line: run C1 conjunction as the next labelled Practice experiment (settings and risk budget in
 §5); measure the sizing cap (`size_full` 0.5) as the follow-on — it improves both return and drawdown without touching
@@ -17,11 +22,12 @@ C2's validation window (2026-09-14 → 10-09) untouched.
   36 book trades +$471 / DD $320; C1 50 / +$1,514 / DD $565). C6's per-provider canonical tape is still pending; this
   is the same pre-C6 exchange-provenance tape as theirs, with the synthetic $1 strike grid and flat-IV model prices.
 - Every arm is a full in-process rerun of the read (`Team2Service.sweep` with a knob overlay), never a filter on the
-  baseline table. Costs: $1.04 per contract per side and one slippage tick in every arm; the "worse fills" arms rerun
+  baseline table. Side effects of the script: `SettingsService.load()` (a read of the runtime settings) and the
+  dataset-version record every sweep writes; no settings write, no order path, no arming. Costs: $1.04 per contract per side and one slippage tick in every arm; the "worse fills" arms rerun
   the whole method with **two** slippage ticks (entries, exits and the loss cap all move, unlike a fixed-trade
   deduction). $ figures = the existing chronological book at **$600 per full unit** (one open position desk-wide, two
   losses end the day; closed-trade equity, so drawdown is not intratrade). Script and JSON:
-  `profitability-20260915-canonical/`.
+  `profitability-20260915-exploratory/`.
 
 ## 2. Results on the same 48 cells
 
@@ -41,8 +47,10 @@ By date for every arm is in `comparisons.json` (`arms.<name>.book.byDate`).
 
 ### 2a. C1 conjunction vs baseline (+$1,043; DD +$245, +77 %)
 
-- Matched trades: 44 unchanged, 0 changed exits, 4 displaced (−63.8 %-pts), **34 new (+198.3 %-pts)**, 7 lost
-  (−105.4 %-pts). The gain is new small-size entries reaching the book, not changed exits.
+- Matched trades: 44 unchanged, 0 changed exits, 4 displaced (−63.8 %-pts) replacing 3 baseline counterparts
+  (`displacedFrom`, corrected 2026-09-15 — the earlier classifier omitted them), **34 new (+198.3 %-pts)**, 7 lost
+  (−105.4 %-pts); the components now reconcile to the model difference of +149.1 %-pts (`netVsBase`). The gain is
+  new small-size entries reaching the book, not changed exits.
 - Every new entry is bucket `small` by construction (the truth table never grants `full` inside the PM range): C1's
   three full-unit trades lose $410, its 35 half-size trades make $1,867.
 - Remove the best day: both arms' best absolute day is 09-02 (+$401) — without it baseline +$70, C1 +$1,113. Remove
@@ -54,9 +62,11 @@ By date for every arm is in `comparisons.json` (`arms.<name>.book.byDate`).
 
 ### 2b. Sizing cap vs baseline (+$292; DD −$133, −42 %)
 
-- **Entries and exits are identical**: 54 unchanged matched trades, 0 new/lost/displaced. The whole effect is the
-  arithmetic of the 7 full-unit trades (−$367 at 1.0 → −$183 at 0.5) plus P7's shrink-after-win re-sizing later the
-  same day (x0.25 trades 6 → 9), which is why it is +$292 rather than +$184.
+- **Entries and exits are identical**: 54 unchanged matched trades, 0 new/lost/displaced. 19 model trades change size
+  (14 full-location trades at 1.0 → 0.5 and 5 full-location trades P7 had already reduced, at 0.5 → 0.25); of the 36
+  the book selected, 10 change (7 at 1.0 → 0.5, 3 at 0.5 → 0.25). The gain beyond halving the first seven (−$367 →
+  −$183) is those already-reduced full-location exposures being halved too — not a newly induced P7 response
+  (corrected 2026-09-15; the original text attributed it to P7 re-sizing).
 - Worst day −$141 vs −$271; profit factor 1.86; units deployed 15.75 vs 20.0; maximum premium at risk $300 vs $600.
 - Remove the best incremental date (09-03, the day the full-unit losers hit): **+$132 remains**. Worse fills: +$414
   advantage (+$293 vs −$121), drawdown $340 vs $459.
@@ -78,7 +88,7 @@ By date for every arm is in `comparisons.json` (`arms.<name>.book.byDate`).
 experiment after C1's review (or measured by paired replay on C1's sessions, since it changes no entry or exit — the
 same live trades re-priced at 0.5 are a valid measurement without a second live experiment). Nothing else changes.
 
-## 5. Proposed C1 Practice experiment (for approval — not activated)
+## 5. Proposed C1 Practice experiment (SUPERSEDED 2026-09-15 — see the sizing-cap sheet; kept for the record)
 
 | Item | Setting |
 |---|---|
@@ -95,6 +105,6 @@ same live trades re-priced at 0.5 are a valid measurement without a second live 
 ## 6. Reproduction
 
 ```
-cd backend && .venv/Scripts/python.exe ../docs/techniques/team2/notes/research/profitability-20260915-canonical/research_profit.py
+cd backend && .venv/Scripts/python.exe ../docs/techniques/team2/notes/research/profitability-20260915-exploratory/research_profit.py
 ```
 (reads the runtime DB read-only through `backend/.env`; writes only the dataset-version record every sweep writes).

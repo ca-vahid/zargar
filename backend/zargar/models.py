@@ -861,8 +861,12 @@ class TipHoldSnapshotRow(Base):
     session's first qualified quote is sampled separately. Research evidence
     only - never a position, an order or a policy change."""
     __tablename__ = "tip_hold_snapshots"
+    # HOLD142-02: ONE observation per (study version, session, position, leg, arm)
+    __table_args__ = (Index("ix_tip_hold_observation_key", "observation_key", unique=True),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    observation_key: Mapped[str | None] = mapped_column(String(200))
+    study_version: Mapped[str | None] = mapped_column(String(24))
     position_id: Mapped[str] = mapped_column(String(64), index=True)
     session_date: Mapped[str] = mapped_column(String(10), index=True)
     arm: Mapped[str] = mapped_column(String(16), index=True)            # carry | intraday_exit
@@ -870,13 +874,22 @@ class TipHoldSnapshotRow(Base):
     leg_symbol: Mapped[str] = mapped_column(String(32))
     sec_type: Mapped[str] = mapped_column(String(8))
     qty: Mapped[float] = mapped_column(Float)
+    entry_qty: Mapped[float | None] = mapped_column(Float)          # the entry's full size (fee allocation)
     entry_price: Mapped[float] = mapped_column(Float)
     direction: Mapped[str] = mapped_column(String(8), default="long")
     source: Mapped[str | None] = mapped_column(String(128))
     horizon: Mapped[dict] = mapped_column(JSONVariant, default=dict)
     exits_policy: Mapped[dict] = mapped_column(JSONVariant, default=dict)
     planned_risk: Mapped[float | None] = mapped_column(Float)
+    planned_risk_qty: Mapped[float | None] = mapped_column(Float)   # the size the planned risk was for
     fees: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    # HOLD142-01: the protocol windows and the actual observation times
+    observed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    window: Mapped[dict | None] = mapped_column(JSONVariant)
+    expected_next_session: Mapped[str | None] = mapped_column(String(10))
+    next_open_window: Mapped[dict | None] = mapped_column(JSONVariant)
+    # HOLD142-03: what the position's own management did before the next-open sample
+    carry_outcome: Mapped[dict | None] = mapped_column(JSONVariant)
     preclose_quote: Mapped[dict | None] = mapped_column(JSONVariant)
     preclose_status: Mapped[str] = mapped_column(String(16), default="missing")
     exit_price: Mapped[float | None] = mapped_column(Float)

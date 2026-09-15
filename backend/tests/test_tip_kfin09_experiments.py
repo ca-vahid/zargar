@@ -241,6 +241,7 @@ async def test_frozen_bundle_captures_exact_context_and_replays_in_isolation(rig
     assert STARTER_RULES in c3.requests[0]["messages"][0]["content"]
 
     cmp = frozen.compare([rep, rep_core, rep_none])
+    assert "coverageLimited" in cmp and "coverageNote" in cmp
     assert set(cmp["variants"]) == {"current", "core_only", "no_knowledge"}
     assert cmp["evidence"] == "adequate" and cmp["baseline"]["verdict"] == "skip"
     assert cmp["variants"]["current"]["noVerdictRate"] == 0.0

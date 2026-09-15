@@ -54,16 +54,22 @@ def classify(base_rows: list[dict], var_rows: list[dict]) -> dict:
     fams_a = {fam(k) for k in only_a}
     displaced = [k for k in only_b if fam(k) in fams_a]
     new = [k for k in only_b if k not in displaced]
-    lost = [k for k in only_a if fam(k) not in {fam(k2) for k2 in displaced}]
+    fams_d = {fam(k) for k in displaced}
+    displaced_from = [k for k in only_a if fam(k) in fams_d]        # the baseline counterparts the displacement replaced
+    lost = [k for k in only_a if fam(k) not in fams_d]
     def rows_for(keys, src):
         return [{"symbol": k[0], "date": k[1], "setup": k[2], "entryTs": k[3], "kind": k[4], "pnlPct": src[k]["pnlPct"],
                  "bucket": src[k].get("bucket"), "keyLevel": src[k].get("keyLevel")} for k in keys]
+    sums = {"changedExit": round(sum(b[k]["pnlPct"] - a[k]["pnlPct"] for k in changed_exit), 1),
+            "displaced": round(sum(b[k]["pnlPct"] for k in displaced), 1),
+            "displacedFrom": round(sum(a[k]["pnlPct"] for k in displaced_from), 1),
+            "new": round(sum(b[k]["pnlPct"] for k in new), 1), "lost": round(sum(a[k]["pnlPct"] for k in lost), 1)}
+    # both sides of every difference: variant − baseline = changedExit + new + displaced − displacedFrom − lost
+    sums["netVsBase"] = round(sums["changedExit"] + sums["new"] + sums["displaced"] - sums["displacedFrom"] - sums["lost"], 1)
     return {"unchanged": len(unchanged),
             "changedExit": [{**r, "pnlPctBefore": a[k]["pnlPct"]} for r, k in zip(rows_for(changed_exit, b), changed_exit)],
-            "displaced": rows_for(displaced, b), "new": rows_for(new, b), "lost": rows_for(lost, a),
-            "sums": {"changedExit": round(sum(b[k]["pnlPct"] - a[k]["pnlPct"] for k in changed_exit), 1),
-                     "displaced": round(sum(b[k]["pnlPct"] for k in displaced), 1),
-                     "new": round(sum(b[k]["pnlPct"] for k in new), 1), "lost": round(sum(a[k]["pnlPct"] for k in lost), 1)}}
+            "displaced": rows_for(displaced, b), "displacedFrom": rows_for(displaced_from, a), "new": rows_for(new, b), "lost": rows_for(lost, a),
+            "sums": sums}
 
 
 def book_sim(rows: list[dict], unit: float = UNIT) -> dict:
