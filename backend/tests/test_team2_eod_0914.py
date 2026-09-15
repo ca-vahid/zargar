@@ -594,3 +594,38 @@ async def test_f2_cancel_after_a_partial_fill_never_looks_like_a_zero_fill():
     assert t.status == "open" and t.filled_qty == 1 and t.remaining == 1, "the partial stays managed"
     assert t.trigger_id not in runner.state_extras(ap)["executionRefused"]
     assert t.to_dict()["filledQty"] == 1 and t.to_dict()["submitUncertain"] is False
+
+
+# ================================================================ F, terminal cumulative fill (2026-09-14)
+async def test_f3_a_terminal_report_is_classified_by_its_cumulative_fill_not_by_what_was_seen_before():
+    runner, ap = _rrig()
+    t = await _uncertain(runner, ap)
+    # the partial-fill callback never arrived; the first evidence of the fill is the CANCELLED report itself
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 1.0, "avgFillPrice": .5,
+                                  "rejectReason": "remaining quantity cancelled"})
+    assert t.status == "open" and t.filled_qty == 1.0 and t.remaining == 1.0 and t.avg_fill == .5 and not t.submit_uncertain
+    assert t.trigger_id not in runner.state_extras(ap)["executionRefused"]
+    opened = [c for c in runner._log.call_args_list if c.args[1] == "position_open"]
+    assert len(opened) == 1
+    # a duplicate of the same terminal report changes nothing
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 1.0, "avgFillPrice": .5})
+    assert t.status == "open" and t.filled_qty == 1.0 and len([c for c in runner._log.call_args_list if c.args[1] == "position_open"]) == 1
+    # a terminal report that carries a SMALLER figure than what is booked never regresses the position
+    await runner.on_order_update({"id": "ord-9", "status": "CANCELLED", "filledQty": 0.0})
+    assert t.status == "open" and t.filled_qty == 1.0
+
+
+async def test_f3_zero_fill_controls_still_exempt_and_a_working_entry_cancelled_with_a_fill_is_kept():
+    runner, ap = _rrig()
+    t = await _uncertain(runner, ap)
+    await runner.on_order_update({"id": "ord-9", "status": "REJECTED", "filledQty": 0, "rejectReason": "venue: rejected"})
+    assert t.status == "failed" and runner.state_extras(ap)["executionRefused"] == [t.trigger_id]
+    # an ordinary (never uncertain) working entry whose partial callback was missed: the cancel report books the fill
+    w = Trade(trigger_id="scenario_1@11:00#1", kind="scenario_1", window="team2", direction="long", fired_ts=_ms(11, 2), entry=100,
+              stop=99, targets=[104], status="working", instrument="options", filled_qty=0, entry_order_id="ord-w", qty=2)
+    w.setup_id = "scenario_1@11:00"
+    ap.trades[w.trigger_id] = w
+    runner.register_order("ord-w", (ap.run_id, w.trigger_id))
+    await runner.on_order_update({"id": "ord-w", "status": "EXPIRED", "filledQty": 2.0, "avgFillPrice": .4})
+    assert w.status == "open" and w.filled_qty == 2.0 and w.remaining == 2.0
+    assert w.trigger_id not in runner.state_extras(ap)["executionRefused"]
