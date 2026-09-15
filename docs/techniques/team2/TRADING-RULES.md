@@ -3122,6 +3122,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-14 EOD corrective batch CLOSED (other team, v0.7.82 live)** — "F accepted. The cumulative-fill update now
+  handles already-open positions correctly, and the live, restart, duplicate, lower-total and zero-fill controls pass.
+  Close the E/F/G corrective batch and return to Practice observation. Keep research settings unchanged and retain
+  these regressions." The batch (R1–R5 → A–D → E/F/G → F's three reconciliation rounds; v0.7.73, .76, .78, .80, .81,
+  .82) is closed; every reviewer packet stays in the suite verbatim (`tests/test_codex_team2_*_eod.py`,
+  `_pr106_followup`, `_v076_boundaries`, `_v078_reconciliation`, `_v080_terminal_fill`, `_v081_cumulative`). Practice
+  observation resumes under cohort v2; research knobs unchanged (C1/C2/room rules OFF, near-ITM unchanged, validation
+  window sealed). Cohort v2 sessions from 2026-09-15 run on execution version v0.7.82+ in the review.
 - **2026-09-14 v0.7.81 acceptance (other team: same cumulative-fill requirement, one F item; v0.7.82)** — the
   cumulative-fill booking was still gated on `submitting`/`working`, so a cancel reporting two contracts after an
   earlier partial had opened the trade with one was ignored. The terminal branch now books the report's cumulative
