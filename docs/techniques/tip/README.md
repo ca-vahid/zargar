@@ -160,6 +160,14 @@ server-side and the result rides on `extraction.analyst.expression` / `.payoff`;
 `payoff`, shown on the card. Tools: `zargar.tools.tip_feasibility replay`,
 `zargar.tools.tip_payoff_report`. Code: `techniques/tip/feasibility.py`, `payoff.py`.
 
+## Research studies (PROF-03/05, 2026-09-15, observation only)
+
+`tip_hold_snapshots` (jobs `tip_hold_snapshot` 15:50 ET / `tip_hold_next_open` 09:36 ET; knob
+`techniques.tip.hold_study_enabled`) pair carry-to-next-open against a predeclared intraday close
+on qualified quotes by setup - `zargar.tools.tip_hold_study report`. The frozen replay has a
+`compact` variant (core rules + relevant notes + newest history lines) with cache-aware usage -
+`zargar.tools.tip_frozen replay --variants current,compact`. Neither changes method behaviour.
+
 ## Approval cards (readiness-v1, 2026-09-15)
 
 A Tips card shows the analyst's OPINION and the EXECUTION READINESS as two independent statuses.

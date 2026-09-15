@@ -853,6 +853,40 @@ class TipEntryCohortRow(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class TipHoldSnapshotRow(Base):
+    """PROF-03 (2026-09-15) overnight-hold study: one pre-close snapshot per
+    open Tips position (arm `carry`) or per Tips position that exited intraday
+    that session (arm `intraday_exit`), with the exact leg's qualified pre-close
+    quote, the declared horizon/exits, planned risk and costs; the next
+    session's first qualified quote is sampled separately. Research evidence
+    only - never a position, an order or a policy change."""
+    __tablename__ = "tip_hold_snapshots"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    position_id: Mapped[str] = mapped_column(String(64), index=True)
+    session_date: Mapped[str] = mapped_column(String(10), index=True)
+    arm: Mapped[str] = mapped_column(String(16), index=True)            # carry | intraday_exit
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    leg_symbol: Mapped[str] = mapped_column(String(32))
+    sec_type: Mapped[str] = mapped_column(String(8))
+    qty: Mapped[float] = mapped_column(Float)
+    entry_price: Mapped[float] = mapped_column(Float)
+    direction: Mapped[str] = mapped_column(String(8), default="long")
+    source: Mapped[str | None] = mapped_column(String(128))
+    horizon: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    exits_policy: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    planned_risk: Mapped[float | None] = mapped_column(Float)
+    fees: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    preclose_quote: Mapped[dict | None] = mapped_column(JSONVariant)
+    preclose_status: Mapped[str] = mapped_column(String(16), default="missing")
+    exit_price: Mapped[float | None] = mapped_column(Float)
+    next_open_quote: Mapped[dict | None] = mapped_column(JSONVariant)
+    next_open_status: Mapped[str] = mapped_column(String(16), default="pending")
+    next_open_sampled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    gaps: Mapped[list] = mapped_column(JSONVariant, default=list)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class TipEntryVariantResult(Base):
     """One entry variant's SEPARATE result book for one cohort row
     (book = "variant:<name>"): the simulated fill under the shared budget /

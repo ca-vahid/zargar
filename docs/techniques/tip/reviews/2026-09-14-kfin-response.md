@@ -344,3 +344,42 @@ of the 148 @12.9374 = -46.51) with the **59 excess units reported apart**, decla
 +1 executable, plan arithmetic: all targets +$91 (1.2R), TP1-then-stop -$26, stop -$31; the one-lot
 option positions (GS 1 contract on a 40/35/25 ladder: units 0/0/0 - NOT executable as declared) show
 the PROF-02 defect the preview now surfaces before admission.
+
+## PROF-03 / PROF-05 built (2026-09-15, research only; code rides the next deploy)
+
+**PROF-03 overnight-hold comparison.** `techniques/tip/holdstudy.py` + table `tip_hold_snapshots`
++ scheduler jobs `tip_hold_snapshot` (15:50 ET) and `tip_hold_next_open` (09:36 ET), gated by
+`techniques.tip.hold_study_enabled` (True; observation only - no order, no policy change). The
+snapshot records, per open Tips position (arm `carry`) and per position that exited intraday that
+session (arm `intraday_exit`): the exact leg, quantity, entry, declared horizon (hold cap,
+sessions held, DTE), the active exits (stop, ladder, premium stop), planned risk, costs, the source
+and the QUALIFIED pre-close quote (`cohort.qualify_quote`: venue provenance, delayed flag, genuine
+source time, session). The next session's first qualified quote is sampled separately.
+`tools/tip_hold_study.py report` pairs carry-to-next-open (the next session's FIRST qualified bid,
+never a later peak) against the predeclared intraday close (the pre-close bid; the actual exit price
+for the intraday arm) net of the same costs, in $ and R, by setup (shares / option DTE buckets);
+unqualified or missing samples are counted as insufficient; sacrificed next-day winners are
+flagged; no blanket rule is derived. Tests: `tests/test_tip_hold_study.py` (missing quote =
+insufficient; only the two contemporaneous bids; sacrificed winner; aggregation counts; on the
+engine: a snapshot + next-open sample leave the position's stop and the order book untouched).
+
+**PROF-05 frozen full-versus-compact.** `frozen.variant_knowledge` gains `compact`: the CORE rules,
+the notes relevant to the tip (ticker / source scopes plus core notes) and the newest
+`COMPACT_HISTORY_LINES` (12) history lines - on the identical frozen evidence, today line, tool
+outputs and system prompt as `current`; replay reports now carry `cacheRead`, `cacheCreation`,
+`effectiveInput` tokens and `headerChars`, and `compare` lists contracts, stops and quantities
+beside verdicts, latency and tokens. Tests: `tests/test_tip_frozen_compact.py` (same evidence and
+time in both variants, selection counts, no mutation path). The first paired report is recorded
+below once run on a bundle captured after `frozen_capture_context` was on.
+
+**First paired frozen report (PROF-05, 2026-09-15 13:2x ET, one bundle, one paid replay per variant).**
+Bundle `fb-16d3146639a86744` (NVDA, eva, run `60d279a3` appraised at 13:21 ET with the manifest
+captured EXACT - the first bundle taken after `frozen_capture_context` was on; one gap: the
+view_image output is not capturable). Baseline verdict skip. `current`: verdict skip, 2 calls,
+input None (cache read None, cache creation None, effective None),
+output None, latency 14.4 s, tools served/missing 1/1. `compact` (core rules + ticker/source
+notes + newest 12 history lines): verdict skip, 3 calls, input None (cache read None,
+cache creation None, effective None), output None, latency 17.0 s, tools
+served/missing 1/3 (it asked for evidence the original run never fetched). Decision, contract and
+protections identical on this one case; the compact context read fewer input tokens per call but
+made one more call and was slower. ONE case - no conclusion; the study continues on new bundles.
