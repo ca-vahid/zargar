@@ -1254,8 +1254,10 @@ class ProposalService:
         items: list[dict] = []
         try:
             items = await _ig.applicable_incidents(self.engine, portfolio_id=pid, entry_path="proposal", symbol=underlying)
-        except Exception:                                   # noqa: BLE001 - the store answered in prose only
-            items = []
+        except Exception as exc:                            # noqa: BLE001
+            # a structured read that fails is UNAVAILABLE state - never a partial
+            # identity built from prose (review 2026-09-15, v0.7.87 verdict)
+            return {"unavailable": f"execution-integrity state unavailable ({type(exc).__name__}: {str(exc)[:80]})"}
         pi = _rd.incident_identity(prose)
         if pi and not any(i["id"].startswith(pi["incidentId"]) for i in items):
             items.append({"id": pi["incidentId"]})
@@ -1327,6 +1329,8 @@ class ProposalService:
             if why:
                 code = _rd.integrity_code(why)
                 ident = await self._incident_set(pid, underlying, why) if code == "integrity_incident" else None
+                if ident and ident.get("unavailable"):
+                    code, why, ident = "integrity_unavailable", ident["unavailable"], None
                 detail = why if not ident else (why + " | applicable incidents: " + ", ".join(
                     f"{i['id'][:8]}@r{i.get('revision', '?')}" for i in ident["incidents"]))
                 blockers.append(_rd.blocker(code, detail, identity=ident))
@@ -1586,6 +1590,8 @@ class ProposalService:
                 code = _rd.integrity_code(paused)
                 underlying_ = str(((pdict.get("context") or {}).get("vehicle") or {}).get("underlying") or pdict.get("symbol") or "").upper()
                 ident = await self._incident_set(pdict["portfolioId"], underlying_, paused) if code == "integrity_incident" else None
+                if ident and ident.get("unavailable"):
+                    code, paused, ident = "integrity_unavailable", ident["unavailable"], None
                 acknowledged = [i for i in ((override_record or {}).get("identities") or []) if i]
                 # A86-01: exact equality of the complete set (ids, revisions, evidence)
                 ok = (code == "integrity_incident" and ident is not None and ident in acknowledged)
