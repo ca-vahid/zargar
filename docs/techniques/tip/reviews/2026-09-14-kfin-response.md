@@ -282,3 +282,10 @@ fixtures now carry the capture-time fields the capture path writes (positive ass
 Slice on this commit: reviewer A86 + AP85, readiness, KF83 follow-ups, KFIN-09, integrity,
 activation - 46 passed. The manual approval hold stays until the review team confirms; live is
 0.7.86 and no restart is requested for this change.
+
+### v0.7.87 verdict follow-through (2026-09-15)
+
+`_incident_set` no longer builds a partial identity when the structured read fails: the result is
+`integrity_unavailable` (non-overridable) in both the card and the final admission. Adoption
+(`adopt_when_filled`) consumes `approvedPlan.vehicle` and `approvedPlan.riskPlan` alongside the
+frozen exit plan. Reviewer file `test_v087_confirmation_review.py` adopted verbatim.
