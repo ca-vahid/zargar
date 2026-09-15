@@ -2497,6 +2497,13 @@ class PlanRunner(SessionListener):
             trade.status = "skipped"
             trade.reason = "short setups trade puts only — this plan is armed for shares"
             self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+            # journal the decision like every other trigger skip (2026-09-15: a
+            # fired TSLA reject on a shares-armed shadow plan left no record)
+            with contextlib.suppress(Exception):
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "skipped",
+                    "reason": trade.reason, "instrument": cfg.instrument, "direction": trade.direction},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id)
             return
         contract = None
         if use_options:
