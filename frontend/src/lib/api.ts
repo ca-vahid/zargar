@@ -63,7 +63,7 @@ export const api = {
   resumeBook: (pid: string) => request<any>("POST", `/api/portfolios/${pid}/resume`),
   patchSettings: (values: Record<string, unknown>) =>
     request<Record<string, unknown>>("PATCH", "/api/settings", values),
-  approveProposal: (id: string, opts: boolean | { half?: boolean; expected?: string | null; override?: { checks: string[]; reason: string } | null } = false) =>
+  approveProposal: (id: string, opts: boolean | { half?: boolean; expected?: string | null; override?: { checks: string[]; acknowledged?: any[]; reason: string } | null } = false) =>
     request<any>("POST", `/api/proposals/${id}/approve`,
       typeof opts === "boolean" ? { half: opts } : { half: !!opts.half, expected: opts.expected ?? null, override: opts.override ?? null }),
   /** readiness-v1: refresh quotes, recompute geometry/sizing, re-check incidents and gates - never an order */

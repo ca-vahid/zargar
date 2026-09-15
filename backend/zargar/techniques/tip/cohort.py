@@ -424,8 +424,14 @@ async def sample_one(eng, cohort_id: str, *, now: dt.datetime | None = None) -> 
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(eng.options.refresh_now(sym), timeout=5.0)
             quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="delayed")
+        return await _finalize_sample(eng, cohort_id, quote, qstatus, now=now, now_injected=now_injected,
+                                      due=due, tolerance_s=tolerance_s)
     finally:
-        claims.discard(cohort_id)
+        claims.discard(cohort_id)              # held through finalization (and on cancellation)
+
+
+async def _finalize_sample(eng, cohort_id: str, quote, qstatus, *, now, now_injected, due, tolerance_s):
+    observed_at = now
     # timing eligibility is judged at the ACTUAL sample time (after any awaited
     # refresh), on the same clock the row was gated with
     if quote is not None and not now_injected:

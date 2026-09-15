@@ -1244,6 +1244,23 @@ class ProposalService:
             return f"auto not earned: hit rate {float(hr):.2f} below the {need_hit:.2f} bar ({trust.get('graded')} graded)"
         return None
 
+    async def _incident_set(self, pid: str, underlying: str, prose: str | None) -> dict | None:
+        """A86-01: the COMPLETE applicable incident state as one identity
+        (every open incident on this book/path with id, revision and evidence
+        hash); a prose refusal naming an incident the store does not hold
+        (unavailable rows) contributes its id alone. None only when nothing applies."""
+        from . import readiness as _rd
+        from ..techniques.tip import integrity as _ig
+        items: list[dict] = []
+        try:
+            items = await _ig.applicable_incidents(self.engine, portfolio_id=pid, entry_path="proposal", symbol=underlying)
+        except Exception:                                   # noqa: BLE001 - the store answered in prose only
+            items = []
+        pi = _rd.incident_identity(prose)
+        if pi and not any(i["id"].startswith(pi["incidentId"]) for i in items):
+            items.append({"id": pi["incidentId"]})
+        return {"incidents": sorted(items, key=lambda x: x["id"])} if items else None
+
     async def assess(self, pdict: dict, *, via: str, half: bool = False, refresh: bool = True,
                      phase: str = "revalidate", limit_basis: float | None = None) -> tuple[dict, dict, float, float | None]:
         """Execution readiness of a Tips card RIGHT NOW (readiness-v1, 2026-09-15):
@@ -1308,7 +1325,11 @@ class ProposalService:
         if not expired and _ig.pauses(eng.settings):
             why = await _ig.admission(eng, portfolio_id=pid, entry_path="proposal", symbol=underlying)
             if why:
-                blockers.append(_rd.blocker(_rd.integrity_code(why), why))
+                code = _rd.integrity_code(why)
+                ident = await self._incident_set(pid, underlying, why) if code == "integrity_incident" else None
+                detail = why if not ident else (why + " | applicable incidents: " + ", ".join(
+                    f"{i['id'][:8]}@r{i.get('revision', '?')}" for i in ident["incidents"]))
+                blockers.append(_rd.blocker(code, detail, identity=ident))
         gate = await self._auto_qualification((pdict.get("context") or {}).get("sourceName"))
         if gate:
             info.append(_rd.blocker("source_not_qualified", gate))
@@ -1500,8 +1521,17 @@ class ProposalService:
                 # AP85-02 compare-and-claim: the row's persisted plan must still be
                 # the one the person confirmed - a concurrent refresh or writer that
                 # changed the readiness, the bracket or the limit means no claim
-                claim_ok = ((row.context or {}).get("readiness") or {}).get("fingerprint") == expected
+                stored = (row.context or {}).get("readiness") or {}
                 sp = snapshot.get("plan") or {}
+                claim_ok = stored.get("fingerprint") == expected
+                if claim_ok:
+                    # A86-02: never trust the cached hash - recompute the canonical plan
+                    # from the row's CURRENT state (exit policy, bracket, vehicle, risk
+                    # plan) and require the same fingerprint the person confirmed
+                    from . import readiness as _rd
+                    cur = _rd.plan_summary(proposal_dict(row), (row.context or {}).get("riskPlan"),
+                                           limit=sp.get("limit"), qty=float(sp.get("qty") or 0))
+                    claim_ok = _rd.fingerprint(cur, stored.get("blockers") or []) == expected
                 if claim_ok and sp.get("finalStop") is not None and row.sec_type == "STK":
                     rs = (row.bracket or {}).get("stop_loss")
                     claim_ok = rs is not None and abs(float(rs) - float(sp["finalStop"])) < 1e-6
@@ -1518,6 +1548,18 @@ class ProposalService:
             row.decided_via = via
             if override_record is not None:
                 row.context = {**(row.context or {}), "override": override_record}
+            if snapshot is not None:
+                # A86-02: the claimed payload is immutable from here - dispatch and
+                # adoption read it, never the live row fields a later writer may touch
+                approved = {"fingerprint": expected, "qty": qty, "plan": snapshot.get("plan"),
+                            **(snapshot.get("snapshot") or {}), "claimedAt": dt.datetime.now(dt.timezone.utc).isoformat()}
+                row.context = {**(row.context or {}), "approvedPlan": approved}
+                if approved.get("exitPlan") is not None:
+                    row.context["exitPlan"] = approved["exitPlan"]
+                if approved.get("vehicle") is not None:
+                    row.context["vehicle"] = approved["vehicle"]
+                if approved.get("bracket") is not None:
+                    row.bracket = approved["bracket"]
             await session.commit()
             pdict = proposal_dict(row)
 
@@ -1542,8 +1584,10 @@ class ProposalService:
                 if _ig.pauses(eng.settings) else None
             if paused:
                 code = _rd.integrity_code(paused)
-                ident = _rd.incident_identity(paused)
+                underlying_ = str(((pdict.get("context") or {}).get("vehicle") or {}).get("underlying") or pdict.get("symbol") or "").upper()
+                ident = await self._incident_set(pdict["portfolioId"], underlying_, paused) if code == "integrity_incident" else None
                 acknowledged = [i for i in ((override_record or {}).get("identities") or []) if i]
+                # A86-01: exact equality of the complete set (ids, revisions, evidence)
                 ok = (code == "integrity_incident" and ident is not None and ident in acknowledged)
                 if not ok:
                     rd = dict(snapshot or {})

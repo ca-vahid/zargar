@@ -149,8 +149,8 @@ def plan_summary(pdict: dict, rp: dict | None, *, limit: float | None, qty: floa
         "symbol": pdict.get("symbol"),
         "secType": sec_type,
         "portfolioId": pdict.get("portfolioId"),
-        "exitPlanHash": hashlib.sha256(json.dumps({k: exit_plan.get(k) for k in ("targets", "fractions", "underlyingStop", "premiumStopPct", "maxHoldSessions", "stop")},
-                                                  sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12] if exit_plan else None,
+        # A86-02: the COMPLETE protection policy is bound, not selected keys
+        "exitPlanHash": hashlib.sha256(json.dumps(exit_plan, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12] if exit_plan else None,
         "bracket": ({"stop_loss": bracket.get("stop_loss"), "take_profit": bracket.get("take_profit")} if bracket else None),
         "vehicle": ((ctx.get("vehicle") or {}).get("legs") if sec_type == "SPREAD" else (ctx.get("vehicle") or {}).get("display")),
         "planQty": int(rp.get("qty") or 0) if rp else None,
@@ -220,8 +220,12 @@ def build(*, pdict: dict, rp: dict | None, blockers: list[dict], info: list[dict
         # card is a human decision on the evidence shown (never claims "ready")
         state = "unverified"
     plan = plan_summary(pdict, rp, limit=limit, qty=qty)
+    ctx = pdict.get("context") or {}
     return {
         "version": READINESS_VERSION,
+        # A86-02: the frozen protection policy the claim dispatches and adopts from
+        "snapshot": {"exitPlan": ctx.get("exitPlan"), "vehicle": ctx.get("vehicle"), "bracket": pdict.get("bracket"),
+                     "riskPlan": ctx.get("riskPlan")},
         "state": state,
         "blockers": hard,
         "info": info,
@@ -255,6 +259,16 @@ def validate_override(readiness: dict, override: dict | None) -> tuple[list[dict
     missing = [b["code"] for b in hard if b["code"] not in checks]
     if missing:
         raise ValueError("the override must acknowledge every failed check: " + ", ".join(missing))
+    # A86-01: a blocker with an identity (an incident set: ids, revisions,
+    # evidence) must be acknowledged by EXACTLY that identity - a bare code
+    # acknowledges nothing specific
+    acked = override.get("acknowledged") or []
+    acked_norm = {json.dumps(a, sort_keys=True, default=str) for a in acked if isinstance(a, dict)}
+    unack = [b for b in hard if b.get("identity") and json.dumps(b["identity"], sort_keys=True, default=str) not in acked_norm]
+    if unack:
+        raise ValueError("the override must acknowledge the exact incident state displayed ("
+                         + "; ".join(str(b.get("detail") or b["label"])[:80] for b in unack)
+                         + ") - refresh the card and acknowledge what it shows")
     unknown = checks - {b["code"] for b in hard}
     if unknown:
         raise ValueError("override names checks that are not failing: " + ", ".join(sorted(unknown)))

@@ -265,3 +265,20 @@ actual sample time (after any awaited refresh), an in-process pre-fetch claim st
 recovery double fetches, legacy records are re-judged at `sampledAt` (option session at capture,
 missing age = never adequate). Tests written by the reviewer only, per the user's instruction
 to ship fast; the existing suites were updated to pass the fingerprint.
+
+## A86-01/02 (review verdict `2026-09-15-v086-final-verdict.md`; release 0.7.87, code only - no restart)
+
+Reviewer file `test_v086_final_boundaries_review.py` adopted verbatim (3 passed) alongside the seven
+AP85 checks. A86-01: `integrity.applicable_incidents` returns the COMPLETE applicable open set as
+identity records (id, revision, evidence hash); the card's `integrity_incident` blocker carries that
+set as its identity (bound by the fingerprint); an override must pass `acknowledged` identities
+equal to what the card showed (a bare code acknowledges nothing); the final admission rebuilds the
+set and requires exact equality; an unavailable store always refuses. A86-02: the claim recomputes
+the canonical plan from the row's CURRENT exit policy (full hash), bracket, vehicle and risk plan
+under the row lock and compares it with the confirmed fingerprint; the claimed payload is frozen as
+`context.approvedPlan` (exit plan, vehicle, bracket, risk plan, quantity) and both the dispatch and
+`adopt_when_filled` read it. Research: the sampling claim is held through finalization; the two
+fixtures now carry the capture-time fields the capture path writes (positive assertions preserved).
+Slice on this commit: reviewer A86 + AP85, readiness, KF83 follow-ups, KFIN-09, integrity,
+activation - 46 passed. The manual approval hold stays until the review team confirms; live is
+0.7.86 and no restart is requested for this change.
