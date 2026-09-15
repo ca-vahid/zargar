@@ -410,3 +410,44 @@ exceeds the held quantity and flatten the shorts with reduce-only buys, journale
 reset, then re-seed the armed scorecards from that date. The TSLA record 8fd43463 that the sweep
 saw "closed on a stale record" at 15:15 ET is that class: its 13-share stop filled on 09-04 against
 8 held after trims, and the record stayed `closing` for 11 days until today's clamp closed it.
+
+## 2026-09-15 end of session: 0.7.87 LIVE, manual-approval hold lifted
+
+**Deployment verified 16:37 ET.** Build `5b7542d` (EM desk's combined merge = Tips `c06fb0b` + EM
+`a1a408a`) is live; `git merge-base` confirms `6dcc06b` (v087 follow-through), `c06fb0b` and
+`d5034a2` (PR #145 one-exit-authority) are ancestors. Restoration: 7/7 armed plans, 3/3 managed
+positions (Tips Practice MRNA shares with venue stop `a948b077` re-registered, SLV and T calls
+`app_managed` + acknowledged), 22/22 resting orders, sim book restored; no
+`ManagedPositionBracketReleased` at boot (MRNA's children were already cancelled at 15:22 ET).
+Gates unchanged (`geometry_gate=enforce`, `entry_pause_mode=integrity`, `allow_live_auto=False`,
+Practice). No pending cards, so nothing to revalidate. **The Tips manual-approval hold that stood
+since the AP85/A86 review rounds is LIFTED** - the review-cleared code is the running code; cards
+decide themselves under the unattended-practice rule again (take approves, skip/watch declines,
+review-required cards wait for a person).
+
+**The day in numbers (Tips desk).** 20 cards: 2 executed (MRNA 7 shares @ 141.96; SLV Nov 65 call
+x1 @ 10:05), 4 expired ("no quote"/"no live reference" review-required cards the analyst had marked
+take), 14 declined by the analyst (skip). 32 `TipGeometryRepaired` records: 15 review-required
+"no quantity satisfies the $89-90 risk budget" (one-lot option risk above the budget - the PROF-01
+feasibility annotation now says so on the analyst record; the knob stays `annotate`), 6 stop
+re-placements at submission/revalidation (MRNA, AFRM, AMZN, GS, MSFT, GOOGL, HIMS), 2 wrong-side
+target drops (AMZN). No incident opened today (the four `repeated_pre_entry_failure` incidents were
+2026-09-14 evening and resolved at the session boundary); one `TipAutoPaused` at 09:34 = the AFRM
+review-required card. Closed on Tips Practice: HIMS call (premium bled 40 %, -$25), RKT (the
+reconciled short, manual close). Desk ledger realized today -$267.21 including EM's ORCL call
+(-$79.08); ledger balanced (unexplained 0).
+
+**Carried overnight (Tips Practice):** MRNA 7 shares, stop 134.37 (venue GTC, single authority);
+SLV Nov 65 call x1 and T Jan-27 29 call x4, `app_managed` + acknowledged. Armed multi-day plans
+rolling: 7 (restored). Tonight: `tip_retro` on HIMS/RKT (retro_enabled), `tip_knowledge_maintenance`
+PROPOSE-ONLY (`knowledge_apply_enabled=False`), digests on; the hold study's first snapshot is
+tomorrow 15:50 ET (the job shipped after today's close); cohort + frozen capture + MK observe on.
+`TipIntakeStalled` fired 19 times today under 0.7.86 (briefly pending envelopes) - the pending-streak
+rule (PR #137) is now live and should silence it.
+
+**Defects found today and their state:** RKT venue-stop resize + restore re-registration (PR #138,
+live); MRNA double exit authority (PR #145, live); shadow-book phantom shorts (13 positions across
+eva/ab/common-stock/muggzone armed books, APLD -40,600) - NOT touched; needs the user's go for a
+journaled research reset (cancel oversize stops eva TSLA 14/-5, muggzone INTU 6/0, RKLB 31/0; reduce-only
+buys; re-seed the armed scorecards). EM desk note: `test_grade_lanes_writes_verdict` failed once in
+a full-file run on the combined tree and passes alone - order-sensitive, watch it.
