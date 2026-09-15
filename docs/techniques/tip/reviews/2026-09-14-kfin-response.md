@@ -375,14 +375,30 @@ below once run on a bundle captured after `frozen_capture_context` was on.
 **First paired frozen report (PROF-05, 2026-09-15 13:2x ET, one bundle, one paid replay per variant).**
 Bundle `fb-16d3146639a86744` (NVDA, eva, run `60d279a3` appraised at 13:21 ET with the manifest
 captured EXACT - the first bundle taken after `frozen_capture_context` was on; one gap: the
-view_image output is not capturable). Baseline verdict skip. `current`: verdict skip, 2 calls,
-input None (cache read None, cache creation None, effective None),
-output None, latency 14.4 s, tools served/missing 1/1. `compact` (core rules + ticker/source
-notes + newest 12 history lines): verdict skip, 3 calls, input None (cache read None,
-cache creation None, effective None), output None, latency 17.0 s, tools
-served/missing 1/3 (it asked for evidence the original run never fetched). Decision, contract and
-protections identical on this one case; the compact context read fewer input tokens per call but
-made one more call and was slower. ONE case - no conclusion; the study continues on new bundles.
+view_image output is not capturable). Baseline verdict skip. **Corrected 2026-09-15 evening from the
+persisted `report.tokens` (the first write of this paragraph printed None for fields the report did
+carry - a reporting mistake, PR #141/#142 review):**
+
+| metric | current | compact |
+|---|---:|---:|
+| verdict | skip | skip |
+| input tokens | 68,917 | 37,235 |
+| output tokens | 844 | 1,128 |
+| calls | 2 | 3 |
+| latency | 14.4 s | 17.0 s |
+| header characters | 63,899 | 10,167 |
+| tool calls served / missing | 1 / 1 | 1 / 3 |
+| cache read / creation | 0 / 0 | 0 / 0 |
+
+**This pair is COVERAGE-LIMITED:** the full run lacked `get_positions`, the compact run lacked
+`get_quote`, `get_flow` and `get_positions` (it asked for evidence the original run never fetched),
+and the image output was not capturable - so a verbatim header does not mean every requested tool
+input was served, and two identical skip verdicts are NOT decision equivalence. The reading stays
+mixed: about 46 % fewer input tokens, but more output tokens, one more call and about 17 % slower;
+not an invoice-level cost comparison, not a validated optimization. `frozen.compare` now flags
+`coverageLimited` / `coverageNote` on every pair (missing tool calls or an image gap). ONE case - no
+conclusion, compact is not adopted; complete-evidence pairs are kept apart from missing-evidence
+stress cases and gaps are never filled with today's data.
 
 ## 15:15 ET tick: a second over-sell class (MRNA) and the shadow books' phantom shorts
 
@@ -451,3 +467,66 @@ eva/ab/common-stock/muggzone armed books, APLD -40,600) - NOT touched; needs the
 journaled research reset (cancel oversize stops eva TSLA 14/-5, muggzone INTU 6/0, RKLB 31/0; reduce-only
 buys; re-seed the armed scorecards). EM desk note: `test_grade_lanes_writes_verdict` failed once in
 a full-file run on the combined tree and passes alone - order-sensitive, watch it.
+
+## HOLD142-01..03 corrections (2026-09-15 evening, research only; `holdstudy-v2`)
+
+Reviewer verdict `2026-09-15-pr141-142-verdict.md` (PR #141 arithmetic accepted). The four supplied
+regressions are adopted verbatim as `tests/test_prof142_research_boundaries_review.py`; all four
+failed on `b9fbc6c` and pass now. Nothing here touches risk limits, permissions, stops or entry/exit
+policy; feasibility stays `annotate`; ordinary trading was never stopped.
+
+**HOLD142-01 sampling windows.** Every observation now carries its protocol window and the actual
+observation time (`observed_at`, `window{start,end,verdict,observedAt,sourceTs,toleranceS}`). A
+pre-close observation must fall inside the last `hold_preclose_window_minutes` (15) before the
+exchange close of a trading day - early closes included (`market_calendar.session_close_minutes`);
+too early records nothing (the timely run will), after the close or on a non-trading day (an
+after-close boot's scheduler catch-up) the observation is recorded as `outside_window` WITHOUT a
+quote - a miss, never back-labeled pre-close. The next-open observation is bound to the EXPECTED
+next trading session (`expected_next_session` = `market_calendar.next_trading_day`, weekends and
+holidays skipped) and to the opening window 09:30 + `hold_next_open_window_minutes` (15): it is the
+FIRST qualified quote inside that window (the 09:36 job retries in-window, 20 s apart, up to
+`hold_next_open_attempts`; with none qualifying the row is settled terminally with the attempt count);
+before the expected session or before 09:30 nothing happens; a pending row whose expected session
+has passed is `missed` - a later day never replaces it. **Tonight's after-close boot (16:42 ET)
+had already produced the reproduction: three v1 rows labeled pre-close, MRNA `fresh`.** The one-shot
+`python -m zargar.tools.tip_hold_study requalify` (adds the v2 columns/index additively, then
+re-labels any v1 observation captured outside its window `outside_window`, fills the identity key
+and expected session) was run against the live DB the same evening - see the record below.
+
+**HOLD142-02 identity.** `observation_key` = study version | session | position (holding episode) |
+leg | arm, enforced by a UNIQUE index (`ix_tip_hold_observation_key`; `db.create_all` now also
+creates declared indexes an existing table lacks - PLATFORM-RULES change log). Capture checks the
+key first and swallows the concurrent-writer IntegrityError; the original observation is never
+replaced. The next-open settle runs under a row lock and only on `pending` rows. Every OPT/STK leg
+is observed (spreads no longer sample only the first leg). Summaries count position-session
+observations and list distinct positions separately (`distinctPositions`, `unit`).
+
+**HOLD142-03 costs and meaning.** `compare_row` nets the allocated ENTRY fee and the EXIT cost:
+options a per-contract fee (+ `sim.reg_fee_per_contract`, carried on the row as
+`fees.regPerContract`) on each side; shares a per-order commission on each side with the entry
+commission allocated pro rata to the sampled remainder (`entry_qty` persisted) - unknown inputs stay
+visible in `costs.notes` (sell-side SEC/FINRA charges are not modelled). The reviewer's case (2
+contracts at 1.50, bids 1.40 / 1.80, $1 per contract per side) reads -24 / +56; the paired
+difference +80 is unchanged. The R denominator is rebased to the sampled size
+(`planned_risk_qty` persisted; `riskForSample`, `riskBasis`). The carry arm is reported as what it
+is: `carryToNextOpen` = OVERNIGHT QUOTE DRIFT (the next-open bid on the sampled size), and
+separately `managedCarry` = the strategy's own result when its stop/exit closed the position before
+the next-open sample (`carry_outcome` read from the durable managed record at settle time: closed
+before the sample, exits between the two endpoints, price, reason) - `known: false` while the
+position is still open. No fill is ever inferred from an endpoint quote. The study is therefore a
+labelled quote-drift comparison plus the managed outcome where known - not yet a policy-faithful
+"retain the stop" experiment; that stays a separate, explicitly defined protocol.
+
+Tests: `tests/test_prof142_research_boundaries_review.py` (4, reviewer), `tests/test_tip_hold_study.py`
+(fee both sides, sampled-size R, managed-vs-drift, exchange-calendar windows incl. early close /
+holiday / weekend, on the engine: timely capture is idempotent, too-early next-open does nothing,
+in-window first qualified quote with attempts + managed outcome, orders and stop untouched),
+`tests/test_tip_frozen_compact.py`, `tests/test_profitability_preview_review.py`,
+`tests/test_tip_payoff_feasibility.py`: **20 passed** (the reviewer's 4 + the existing 16).
+
+**Live repair record (2026-09-15 ~18:20 ET):** `tip_hold_study requalify` against the runtime DB added
+the v2 columns and `ix_tip_hold_observation_key` additively and re-labeled the three 16:42 ET rows
+(MRNA, SLV, T; session 2026-09-15, expected next session 2026-09-16) `outside_window` with the
+re-qualification gap - none of them is pre-close evidence; their next-open sample will read
+insufficient. The running build (5b7542d) still carries `holdstudy-v1`; tomorrow's 15:50 ET capture
+is protocol-correct only once this commit is deployed (merged, not deployed at the time of writing).

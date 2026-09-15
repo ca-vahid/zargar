@@ -163,8 +163,10 @@ server-side and the result rides on `extraction.analyst.expression` / `.payoff`;
 ## Research studies (PROF-03/05, 2026-09-15, observation only)
 
 `tip_hold_snapshots` (jobs `tip_hold_snapshot` 15:50 ET / `tip_hold_next_open` 09:36 ET; knob
-`techniques.tip.hold_study_enabled`) pair carry-to-next-open against a predeclared intraday close
-on qualified quotes by setup - `zargar.tools.tip_hold_study report`. The frozen replay has a
+`techniques.tip.hold_study_enabled`) pair overnight quote drift (and the managed outcome where the
+position's own exit closed it first) against a predeclared intraday close on qualified quotes inside
+declared exchange-calendar windows, one durable observation per position/session/leg/arm, nets
+including entry and exit costs (`holdstudy-v2`, HOLD142-01..03) - `zargar.tools.tip_hold_study report`. The frozen replay has a
 `compact` variant (core rules + relevant notes + newest history lines) with cache-aware usage -
 `zargar.tools.tip_frozen replay --variants current,compact`. Neither changes method behaviour.
 
