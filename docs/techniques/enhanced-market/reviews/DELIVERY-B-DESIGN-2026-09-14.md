@@ -220,5 +220,5 @@ extraction.
 | gateway delete forwarding | deferred to the next PR (API + ledger accept `kind=delete`) |
 | transcription / extraction through artifacts + `checkpoint` | deferred to the next PR |
 | scenario records, alignment, source-informed candidate | not started (design accepted) |
-| source backfill application | HELD by the reviewers; dry run only |
+| source backfill application | APPLIED 2026-09-14 evening under the scoped GO (19 revisions / 24 artifacts / 19 jobs; readback in DELIVERY-A-RESPONSE) |
 

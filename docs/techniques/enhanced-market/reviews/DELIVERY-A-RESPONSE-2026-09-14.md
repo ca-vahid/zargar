@@ -335,3 +335,40 @@ machine had ~1 GB free and background runs were killed for memory.)
 clean merge, no conflicts; version 0.7.74 agrees; `planFor` present once. Exclusive window on the final tree
 (0 other clients before/after): reviewer groups + watermark + `test_team2_close` + entry quality 42/42; own
 Delivery B + reconcile + ingest + gateway + separation + Team2 runner + reviewer execution 72/72.
+
+---
+
+# Release verdict at 3f1d665 (`2026-09-14-3f1d665-release-verdict.md`) - deployed, same evening
+
+**Build-helper integration defect, repaired twice in parallel.** The Ledger merge (49f91da, v0.7.75) dropped
+`_read_build` / `BUILD` / `build_sha` from `backend/zargar/__init__.py` while the health route still imports
+`build_sha`. The EM desk restored it on the branch as 309280b (with `test_health_and_state` now REQUIRING the
+`build` field - a version-only check cannot see a dropped helper); the runtime checkout's session restored it
+as 0014640 (same helper + a PLATFORM-RULES note). Both are merged (c266361 on the remote branch contains
+0014640). Before the repair booted, the runtime restarted on 2a02844 at 17:37:16 with the file rewritten at
+17:37:26: the process ran without the helper, health answered 500, and the watchdog looped. Lesson recorded:
+a file written after the process starts is not in the process.
+
+**Deployment (by the deployment protocol, receipt `logs/deployment-receipt.json`):** target
+`0014640bf530e4751dc37e70eec53a89213c7b16`, expected 0.7.75, phase `verified`, completed 2026-09-15T00:44:03Z,
+restart log `restart-20260914-174252.log` "Healthy: v0.7.75 | armed 11 | runs in flight 0". Health afterwards:
+`{"ok":true,"version":"0.7.75","build":"0014640bf530e4751dc37e70eec53a89213c7b16","local":{"armed":11}}`.
+Restoration: 11 armed plans (3 Team2 + 8 Tips, the same inventory as the readiness snapshot before the
+restart), 3 managed positions open + 2 closed, 23 resting orders, no open trades / in-flight orders, not
+quiesced. Market closed at the time. The EM desk did not run the restart: its own lease attempt found the
+watchdog holding the runtime, and the release owner's deployment then completed.
+
+**Delivery B source backfill - APPLIED under the scoped GO.** Post-deploy dry run
+(`DELIVERY-B-backfill-dryrun-postdeploy-2026-09-14.json`) was identical to the reviewed one: 19 notes, 0
+already revisioned, 24 artifacts (8 transcripts, 16 extractions, all `availability: unknown`), digest
+`f3931513580afb0c`; the three tables existed after the boot. Applied through the locked evidence checks in
+one transaction: readback 19 revisions (all revision 1, kind create), 24 artifacts (16 extraction, 8
+transcript, all `completed_at` NULL), 19 jobs (16 done / board_checked, 3 retryable / received), 19 of 19
+EM notes revisioned, original notes untouched. A second apply wrote nothing (19 skipped as already
+revisioned).
+
+**FIX-01 v4 money repair:** unchanged scoped GO; still a human step, not run by this desk.
+
+**Next PR (proceeding):** gateway deletion forwarding; the transcription/extraction workers through immutable
+artifacts + fenced checkpoints; the sequence-reset ordering through the real gateway/API path; tombstones that
+keep history and leave managed positions under their exit owner. Candidates stay order-free.
