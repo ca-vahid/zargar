@@ -103,6 +103,9 @@ class AnalystOpinion(BaseModel):
                     'single-leg trades. Never a lone short leg.')
     legs_expiry: Optional[str] = Field(
         default=None, description="Shared expiry (YYYY-MM-DD) for the spread legs")
+    expression_note: Optional[str] = Field(
+        default=None, description="One sentence: how the expression fits the approved risk budget "
+                                  "(check_feasibility result) and, for 1-2 units, the coherent exit")
 
 
 TOOLS = [
@@ -132,6 +135,30 @@ TOOLS = [
          "symbol": {"type": "string"}, "expiry": {"type": "string"},
          "strike": {"type": "number"}, "contract": {"type": "string"}},
          "required": ["symbol", "expiry"]}},
+    {"name": "check_feasibility",
+     "description": "PROF-01: how many units of an expression fit the approved planned-risk "
+                    "budget at the stop you declare, from the same estimator the risk gate "
+                    "uses. Args: contract (OCC symbol, or 'shares'), limit (premium or share "
+                    "price), underlying_stop, premium_stop_pct (optional). Returns unit risk, "
+                    "feasible quantity (0 = an honest no-trade for that expression) and LABELLED "
+                    "research alternatives at equal risk (shares; same-expiry strikes from a "
+                    "chain you already fetched). Alternatives are comparisons, never substitutions.",
+     "input_schema": {"type": "object", "properties": {
+         "contract": {"type": "string"}, "limit": {"type": "number"},
+         "underlying_stop": {"type": "number"}, "premium_stop_pct": {"type": "number"}},
+         "required": ["contract", "limit"]}},
+    {"name": "preview_payoff",
+     "description": "PROF-02: the whole exit path in INTEGER units for a quantity: units sold "
+                    "at each rung, whether the ladder is executable at that size, the net "
+                    "result if every target fills, if the first target is followed by the "
+                    "stop, and the stop alone (in $ and R, fees included) - an estimate, not a "
+                    "forecast. Args: contract (OCC or 'shares'), quantity, limit, "
+                    "underlying_stop, exit_targets, exit_fractions, premium_stop_pct (optional).",
+     "input_schema": {"type": "object", "properties": {
+         "contract": {"type": "string"}, "quantity": {"type": "integer"}, "limit": {"type": "number"},
+         "underlying_stop": {"type": "number"}, "exit_targets": {"type": "array", "items": {"type": "number"}},
+         "exit_fractions": {"type": "array", "items": {"type": "number"}}, "premium_stop_pct": {"type": "number"}},
+         "required": ["contract", "quantity", "limit", "exit_targets"]}},
     {"name": "get_flow",
      "description": "The options-flow desk's full evidence for the symbol: today's flagged "
                     "contracts (both sides), overnight open-interest confirmations, repeat "
@@ -242,6 +269,18 @@ budget), entry_mode "now" ONLY (a lotto never waits at a level), and the platfor
 flattens it on expiry day before the close. Judge a lotto on the source's lotto record \
 and the tape, not on "it's short-dated" — that is the lane's nature, not a flaw.
 - size within the stated per-tip budget: quantity = floor(budget / (ask x 100)) for options
+- THE RISK BUDGET COMES FIRST (2026-09-15): the header states the approved planned-risk \
+budget B. A "take" must fit at least ONE unit of the expression you name inside B at the \
+stop you declare (one contract's loss at your underlying stop, delta-linear, or the premium \
+stop when there is no underlying stop; one share's loss = entry - stop). Call \
+check_feasibility BEFORE answering "take": if the named contract cannot fit one unit, say so \
+- answer "watch" with the thesis, or name an expression that fits (the tool lists labelled \
+alternatives at equal risk: shares, or another strike of the same expiry). Never raise \
+the budget, never pretend a fraction of a contract exists.
+- ONE-LOT EXITS (2026-09-15): fractional exit_fractions cannot sell fractions of a contract. \
+With 1-2 contracts declare a coherent plan a single lot can execute (one target, or a \
+premium-based exit) - call preview_payoff to see what your ladder actually does in integer \
+units, the net if the first target is followed by the stop, and the fee drag.
 - your verdict becomes an order only through a proposal + the risk gate; a human (or an \
 earned auto mode) pulls the trigger
 
@@ -500,6 +539,112 @@ def _et_label(when) -> str | None:
         t = t.replace(tzinfo=dt.timezone.utc)
     from ...marketstructure.sessions import ET
     return t.astimezone(ET).strftime("%Y-%m-%d %H:%M ET")
+
+
+async def _expression_context(eng, ctx: dict) -> dict:
+    """The book's approved planned-risk budget and purchase allocation for
+    the tip being appraised (the same policy the geometry gate sizes with)."""
+    from . import geometry as _geo
+    s = eng.settings
+    pid = str(s.get("techniques.tip.default_portfolio", "") or s.get("trading.default_portfolio", "") or "")
+    equity = None
+    if pid:
+        with contextlib.suppress(Exception):
+            equity = float(await eng.positions.equity(pid) or 0) or None
+    budget, source = _geo.risk_budget(s, equity)
+    allocation = ctx.get("budgetPerTip")
+    return {"riskBudget": budget, "riskBudgetSource": source, "allocationLimit": allocation,
+            "feePerContract": float(s.get("options.fee_per_contract", 0.0) or 0.0)}
+
+
+async def _contract_evidence(eng, contract: str) -> dict:
+    """Delta, ask, underlying and type for an OCC symbol from the cached chain
+    snapshot plus the live quote store - never invented."""
+    from ...options import occ as _occ
+    out: dict = {"symbol": contract}
+    with contextlib.suppress(Exception):
+        o = _occ.parse(contract)
+        out.update(underlying=o.underlying, optionType=("call" if o.right.upper().startswith("C") else "put"),
+                   strike=float(o.strike), expiry=str(o.expiry))
+    snap = None
+    with contextlib.suppress(Exception):
+        snap = eng.options.snapshot_cached(contract)
+    g = (snap or {}).get("greeks") or {}
+    out["delta"] = g.get("delta")
+    q = None
+    with contextlib.suppress(Exception):
+        q = eng.quotes.get(contract)
+    if q is not None:
+        out.update(bid=float(q.bid or 0), ask=float(q.ask or 0), quoteSource=getattr(q, "source", None))
+    u = out.get("underlying")
+    if u:
+        uq = None
+        with contextlib.suppress(Exception):
+            uq = eng.quotes.get(u)
+        if uq is not None and uq.last:
+            out["spot"] = float(uq.last)
+    return out
+
+
+async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
+    from . import feasibility as _fz
+    from . import payoff as _po
+    book = await _expression_context(eng, ctx)
+    contract = str(args.get("contract") or "").strip()
+    is_shares = contract.lower() in ("shares", "stock", "")
+    limit = float(args.get("limit") or 0)
+    stop = args.get("underlying_stop")
+    psp = args.get("premium_stop_pct")
+    direction = "long"
+    ev: dict = {}
+    if is_shares:
+        under = str(ctx.get("ticker") or "").upper()
+        entry_ref = limit
+        ul, basis, meta = _fz.unit_risk(vehicle="shares", entry_ref=entry_ref, stop=stop, direction="long")
+        mult = 1.0
+        unit_cost = limit
+    else:
+        ev = await _contract_evidence(eng, contract)
+        under = str(ev.get("underlying") or ctx.get("ticker") or "").upper()
+        direction = "short" if ev.get("optionType") == "put" else "long"
+        entry_ref = ev.get("spot")
+        ul, basis, meta = _fz.unit_risk(vehicle="option", entry_ref=entry_ref, stop=stop, direction=direction,
+                                        premium=limit, delta=ev.get("delta"), option_type=ev.get("optionType") or "call",
+                                        multiplier=100.0, premium_stop_pct=psp)
+        mult = 100.0
+        unit_cost = limit * 100.0
+    if name == "check_feasibility":
+        f = _fz.feasibility(budget=float(book["riskBudget"] or 0), unit_loss=ul, unit_cost=unit_cost,
+                            allocation_limit=book.get("allocationLimit"))
+        alts: list = []
+        if not is_shares:
+            sa = _fz.share_alternative(entry=entry_ref, stop=stop, direction=direction, budget=float(book["riskBudget"] or 0),
+                                       allocation_limit=book.get("allocationLimit"))
+            if sa:
+                alts.append(sa)
+            rows = []
+            for t in (ctx.get("toolsUsed") or []):
+                if t.get("name") == "get_chain" and isinstance(t.get("result"), dict) and t["result"].get("expiry") == ev.get("expiry"):
+                    rows = t["result"].get("strikes") or []
+            if rows:
+                alts += _fz.chain_alternatives(rows, direction=direction, entry_ref=entry_ref, stop=stop,
+                                              budget=float(book["riskBudget"] or 0), allocation_limit=book.get("allocationLimit"),
+                                              premium_stop_pct=psp, exclude_symbol=contract)
+        return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
+                "unitRisk": ul, "unitRiskBasis": basis, "evidence": {**meta, **{k: ev.get(k) for k in ("delta", "ask", "spot", "quoteSource")}},
+                "riskBudget": book["riskBudget"], "riskBudgetSource": book["riskBudgetSource"],
+                "allocationLimit": book.get("allocationLimit"), **{k: f.get(k) for k in ("feasible", "qty", "qtyByRisk", "qtyByAllocation", "reason")},
+                "alternatives": alts,
+                "note": "alternatives are labelled research comparisons at equal dollar risk - the original expression stays the card"}
+    qty = int(args.get("quantity") or 0)
+    targets = [float(t) for t in (args.get("exit_targets") or [])]
+    fractions = [float(x) for x in (args.get("exit_fractions") or [])] or ([1.0] if targets else [])
+    gains = _po.unit_gains(vehicle=("shares" if is_shares else "option"), entry_ref=float(entry_ref or 0), targets=targets,
+                           direction=direction, delta=ev.get("delta"), multiplier=mult)
+    pv = _po.payoff_preview(qty=qty, fractions=fractions, gains=gains, unit_loss=ul,
+                            fee_per_unit=(0.0 if is_shares else float(book.get("feePerContract") or 0.0)))
+    return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
+            "unitRisk": ul, "unitRiskBasis": basis, **pv}
 
 
 async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
@@ -828,6 +973,11 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         want = float(args.get("strike")) if args.get("strike") else None
         chain = await eng.options.chain(sym, str(args.get("expiry")))
         return _compact_chain(chain, want=want)
+    if name in ("check_feasibility", "preview_payoff"):
+        try:
+            return await _expression_tool(eng, name, args, ctx or {})
+        except Exception as exc:                          # noqa: BLE001 - a tool error is an answer
+            return {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
     if name == "get_flow":
         flow = getattr(eng, "flow_service", None)
         if flow is None:
@@ -1444,7 +1594,16 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                       f"{s.get('techniques.tip.lotto_max_dte', 3)} days): lotto budget "
                       f"${_lotto_budget(s, policy.budget_per_tip):,.0f}, entry now only, "
                       f"flattened on expiry day at {s.get('techniques.tip.lotto_flatten_et', '15:45')} ET.\n")
+    risk_line = ""
+    try:
+        _bk = await _expression_context(eng, {"budgetPerTip": float(policy.budget_per_tip)})
+        risk_line = (f"Approved planned-risk budget: ${float(_bk['riskBudget'] or 0):,.2f} ({_bk['riskBudgetSource']}) - "
+                     f"a take must fit >= 1 unit at your declared stop (check_feasibility); the per-tip budget "
+                     f"below is the PURCHASE allocation limit, not the risk budget.\n")
+    except Exception:                                   # noqa: BLE001 - the header never fails on this
+        risk_line = ""
     header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
+              + risk_line +
               f"Per-tip budget: ${policy.budget_per_tip:,.0f} · option DTE window "
               f"{policy.dte_min}-{policy.dte_max} (tip's own contract may override)\n"
               + lotto_line +
@@ -1481,7 +1640,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
                 "experiment": experiment, "asOfMs": as_of_ms,
-                "stage": "appraise"}
+                "stage": "appraise", "budgetPerTip": float(policy.budget_per_tip),
+                "toolsUsed": tools_used}
 
     loop_state: dict = {}
 
@@ -1550,6 +1710,35 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               "usage": loop_state.get("usage"),
               **({"receipts": tool_ctx["receipts"]} if tool_ctx.get("receipts") else {}),
               **({"experiment": experiment} if experiment else {})}
+    # PROF-01/02 (2026-09-15): the expression's feasibility and the plan's
+    # payoff are assessed server-side on every TAKE - the same numbers the
+    # tools offered - and recorded beside the opinion; `analyst_feasibility_gate`
+    # = annotate (default) keeps the verdict, downgrade turns an unfittable
+    # take into watch with the thesis verdict kept apart. Never in historical mode.
+    if opinion.verdict == "take" and not experiment:
+        try:
+            from . import feasibility as _fz
+            expr_args = {"contract": (opinion.contract if opinion.instrument == "option" and opinion.contract else "shares"),
+                         "limit": float(opinion.limit_price or 0), "underlying_stop": opinion.underlying_stop,
+                         "premium_stop_pct": opinion.premium_stop_pct}
+            expression = await _expression_tool(eng, "check_feasibility", expr_args, tool_ctx)
+            payoff = None
+            if opinion.exit_targets:
+                payoff = await _expression_tool(eng, "preview_payoff", {
+                    **expr_args, "quantity": int(opinion.quantity or expression.get("qty") or 1),
+                    "exit_targets": list(opinion.exit_targets), "exit_fractions": list(opinion.exit_fractions or [])}, tool_ctx)
+            mode = str(s.get("techniques.tip.analyst_feasibility_gate", "annotate") or "annotate")
+            result = _fz.apply_gate(result, {k: v for k, v in expression.items() if k != "alternatives"}
+                                    | {"alternatives": expression.get("alternatives")}, mode)
+            if payoff:
+                result["payoff"] = {k: payoff.get(k) for k in ("qty", "ladder", "scenarios", "oneLot", "unitRisk", "reason")}
+            rec.step("expression", (f"Expression check: {'fits' if expression.get('feasible') else 'does NOT fit'} - "
+                                    f"unit risk {expression.get('unitRisk')}, budget {expression.get('riskBudget')}, "
+                                    f"qty {expression.get('qty')}; gate={result.get('expressionGate')}"
+                                    + (f"; ladder executable={result['payoff']['ladder']['executable']}" if payoff else "")),
+                     expression=result.get("expression"), payoff=result.get("payoff"))
+        except Exception:                               # noqa: BLE001 - advisory; the opinion stands
+            log.debug("expression assessment failed for %s", run_id, exc_info=True)
     exit_bits = []
     if opinion.exit_targets:
         fr = opinion.exit_fractions or []

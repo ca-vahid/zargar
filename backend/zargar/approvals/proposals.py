@@ -979,6 +979,15 @@ class ProposalService:
             limit=float(limit), qty_requested=int(qty), multiplier=multiplier,
             option_type=option_type, delta=delta, greeks_meta=greeks_meta,
             budget=budget, budget_source=budget_source, quote_meta=quote_meta, currency=currency)
+        # PROF-02: the whole exit path in integer units, beside the risk numbers
+        with contextlib.suppress(Exception):
+            from ..techniques.tip import payoff as _po
+            _targets = [float(t) for t in (final_plan.get("targets") or [])]
+            _fr = [float(x) for x in (final_plan.get("fractions") or [])] or ([1.0] if _targets else [])
+            _gains = _po.unit_gains(vehicle=("shares" if sec_type == "STK" else "option"), entry_ref=float(entry_ref or 0),
+                                    targets=_targets, direction=direction, delta=delta, multiplier=(1.0 if sec_type == "STK" else multiplier))
+            rp.payoff = _po.payoff_preview(qty=int(rp.qty or qty), fractions=_fr, gains=_gains, unit_loss=rp.unitLoss,
+                                           fee_per_unit=(0.0 if sec_type == "STK" else float(s.get("options.fee_per_contract", 0.0) or 0.0)))
         if problems:
             rp.evidence = [{"code": c, "detail": d} for c, d in problems]
             rp.reviewRequired = "; ".join(d for _c, d in problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")

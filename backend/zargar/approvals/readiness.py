@@ -174,6 +174,7 @@ def plan_summary(pdict: dict, rp: dict | None, *, limit: float | None, qty: floa
         "quoteDelayed": q.get("delayed", q.get("underlyingDelayed")),
         "adjustments": list(rp.get("decisions") or []),
         "estimatorVersion": rp.get("estimatorVersion"),
+        "payoff": rp.get("payoff") or None,
         "multiplier": mult,
     }
 

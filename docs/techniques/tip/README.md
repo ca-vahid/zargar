@@ -149,6 +149,17 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
 
+## Feasibility before the verdict and the whole exit path (PROF-01/02, 2026-09-15)
+
+The analyst is told the approved planned-risk budget (not just the purchase allocation), must
+`check_feasibility` before a take (units that fit at the declared stop; labelled research
+alternatives at equal risk), and can `preview_payoff` (integer-unit ladder, every-target /
+first-target-then-stop / stop-only arithmetic, fees, one-lot policy). Every TAKE is assessed
+server-side and the result rides on `extraction.analyst.expression` / `.payoff`;
+`techniques.tip.analyst_feasibility_gate` annotate (default) | downgrade. The risk plan carries
+`payoff`, shown on the card. Tools: `zargar.tools.tip_feasibility replay`,
+`zargar.tools.tip_payoff_report`. Code: `techniques/tip/feasibility.py`, `payoff.py`.
+
 ## Approval cards (readiness-v1, 2026-09-15)
 
 A Tips card shows the analyst's OPINION and the EXECUTION READINESS as two independent statuses.
