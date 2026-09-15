@@ -1837,6 +1837,7 @@ class SignalService:
             source_text, blocks = build_grounding_corpus(
                 text, [{**e, "total": n_total} for e in manifest])
             await self._persist_attachments(content_id, manifest, vision_calls=vision_calls)
+            content.meta = {**(content.meta or {}), "attachments": manifest}     # the signals read it below
             covered = sum(1 for e in manifest if e["status"] == ATT_PROCESSED)
             intake.step("extract", f"Attachment coverage: {covered} of {n_total} processed — "
                         + ", ".join(f"{e.get('n')}:{e['status']}" for e in manifest) + ".")
@@ -1994,12 +1995,20 @@ class SignalService:
         attachment status + transcript) and journal it (KFIN-07)."""
         eng = self.engine
         try:
+            summary = [{"id": a.get("id"), "n": a.get("n"), "status": a.get("status"),
+                        "chars": len(a.get("transcript") or ""), "error": (a.get("error") or "")[:160] or None}
+                       for a in manifest]
             async with eng.sf() as session:
                 row = await session.get(RawContent, content_id)
                 if row is not None:
                     row.meta = {**(row.meta or {}), "attachments": manifest,
                                 "visionCalls": vision_calls}
-                    await session.commit()
+                # the UI reads the signal, not the content: stamp the coverage
+                # summary (never the transcripts) on every signal of this content
+                sigs = (await session.execute(select(Signal).where(Signal.raw_content_id == content_id))).scalars().all()
+                for sg in sigs:
+                    sg.extraction = {**(sg.extraction or {}), "attachments": summary}
+                await session.commit()
             await eng.journal.append(
                 ev.TIP_ATTACHMENTS_PROCESSED,
                 {"contentId": content_id, "total": len(manifest), "visionCalls": vision_calls,
@@ -2156,6 +2165,11 @@ class SignalService:
                 extraction={"signal": sig.model_dump(), "grounding": grounding,
                             "sourceType": result.source_type,
                             "policy": policy.to_dict(),
+                            **({"attachments": [{"id": a.get("id"), "n": a.get("n"), "status": a.get("status"),
+                                                 "chars": len(a.get("transcript") or ""),
+                                                 "error": (a.get("error") or "")[:160] or None}
+                                                for a in ((getattr(content, "meta", None) or {}).get("attachments") or [])]}
+                               if (getattr(content, "meta", None) or {}).get("attachments") else {}),
                             **({"experiment": experiment} if experiment else {})},
             )
             async with eng.sf() as session:
@@ -3566,6 +3580,8 @@ async def attach_signal_layer(engine) -> None:
     try:
         from ..techniques.tip.intake_liveness import monitor_loop as _intake_monitor
         engine._tasks.append(asyncio.create_task(_intake_monitor(engine), name="tip-intake-liveness"))
+        from ..techniques.tip.cohort import recovery_loop as _cohort_recovery
+        engine._tasks.append(asyncio.create_task(_cohort_recovery(engine), name="tip-cohort-recovery"))
     except Exception:
         log.exception("intake liveness monitor did not start")
     # POST-SOAK 4.1/4.3: cold parks re-verify, error content retries once
