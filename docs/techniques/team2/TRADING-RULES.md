@@ -3122,6 +3122,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-14 v0.7.78 acceptance (other team: E and G ACCEPTED, F's initial protection ACCEPTED; one F reconciliation
+  item; v0.7.79)** — `submit_uncertain` was set and persisted but never cleared: a confirmed REJECTED / CANCELLED with zero
+  fills left the trade uncertain, so `_sync_unfilled` kept withholding the exemption. `on_order_update` now resolves the
+  uncertainty on ANY venue-sourced report of the entry order (`_resolve_uncertain`, `entry_reconciled`, journaled as
+  TechniquePlanOrderResult stage `entry_reconciled`) before the ordinary bookkeeping, and `_restore_trades` judges a
+  still-uncertain entry against the persisted ORDER row through the same callback (terminal or filled row = authoritative;
+  in-flight or missing row keeps the uncertainty). Duplicate confirmations are idempotent; cancel-after-partial keeps the
+  fill and is never exempt. Their packet `tests/test_codex_team2_v078_reconciliation.py` verbatim. No threshold or setting
+  changed.
 - **2026-09-14 v0.7.76 acceptance review (other team: A–D ACCEPTED; E/F P1 open; v0.7.78)** — their packet
   `notes/research/2026-09-14-v076-acceptance-review.md` (Codex checkout) is adopted in `tests/test_codex_team2_v076_boundaries.py`
   (verbatim; its first case calls the EM desk's FA-01 `_entry_guard`, which lives on their branch and not on main — skipped
