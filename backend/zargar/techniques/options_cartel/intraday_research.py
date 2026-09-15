@@ -179,7 +179,12 @@ async def collect(runtime):
                 continue
             plan=CartelPlan.model_validate(candidate['plan'])
             after=max(market['improvedSince'],context.result['watchStartedAt'],runtime._intraday_research_started)
-            result=read_entry(plan,[b for b in bars if b.symbol==symbol],boundary,entry_after=after)
+            try:
+                result=read_entry(plan,[b for b in bars if b.symbol==symbol],boundary,entry_after=after)
+            except ValueError as exc:
+                item.update(status='data_unavailable',reason=str(exc)[:250])
+                observations.append(item)
+                continue
             status=('hypothetical_stock_confirmation' if result['signal']['at']==boundary else 'previous_confirmation') if result.get('signal') else result['status']
             item.update(status=status,
                 entryRead=result,entryAfter=after,sourceEvidence=evidence({str(b.ts):pack(b) for b in bars if b.symbol==symbol}), sourceBars=[pack(b) for b in bars if b.symbol==symbol])
