@@ -22,6 +22,7 @@ and restore `superseded_by = NULL` on each source ONLY at its recorded revision.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import asyncio
 import hashlib
 import json
@@ -93,8 +94,10 @@ async def plan(db: str) -> dict:
                                      + _walk_evidence_text(dict(r))})
     finally:
         await conn.close()
+    resolve = [{"id": r["id"], "revision": r["revision"]} for r in family if r["disputed"]] + \
+              ([{"id": ks["id"], "revision": int(ks["revision_no"] or 1)}] if ks is not None and ks["needs_human"] else [])
     batches = {
-        "A_resolveDisputes": {"ids": [r["id"] for r in family if r["disputed"]] + ([ks["id"]] if ks is not None and ks["needs_human"] else []),
+        "A_resolveDisputes": {"ids": [x["id"] for x in resolve], "resolve": resolve,
                               "reason": "human decision 2026-09-14: the approved session policy is the execution-integrity pause (batch C); the geometry base note folds into the canonical family (batch B)"},
         "B_geometryFamily": {"batchId": "consolidation-geometry-2026-09-14", "scope": "rule",
                              "merge": {"supersedes": [r["id"] for r in family], "new_rule": FAMILY_TEXT},
@@ -107,15 +110,18 @@ async def plan(db: str) -> dict:
         "D_evidence": evidence,
         "missing": missing,
     }
-    canon = json.dumps({"B": batches["B_geometryFamily"]["expected_revisions"], "C": batches["C_killSwitch"]["expected_revisions"],
-                        "familyText": hashlib.sha256(FAMILY_TEXT.encode()).hexdigest(),
-                        "ksText": hashlib.sha256(KILLSWITCH_TEXT.encode()).hexdigest(),
-                        "evidence": [(e["sourceId"], e["sourceRevision"]) for e in evidence]}, sort_keys=True)
-    batches["manifestHash"] = hashlib.sha256(canon.encode()).hexdigest()
-    batches["rollback"] = ("supersede the family note and the kill-switch note with expired:rollback (snapshot), then "
-                           "restore superseded_by=NULL on each source ONLY where its revision_no still equals the value in "
-                           "expected_revisions (+1 for the supersede snapshot); evidence records stay; re-dispute the two rules "
-                           "if the policy question reopens")
+    # KFIN-05: ONE canonical payload hash shared with the server (`consolidation.payload_hash`):
+    # every release (id + reviewed revision), every batch (id, scope, sources, expected
+    # revisions, exact output text) and every evidence record (scope, source id + revision,
+    # content). The server recomputes it from the payload it receives — a changed text
+    # under the same hash is refused before any write.
+    from ..techniques.tip.consolidation import payload_hash as _payload_hash
+    server_batches = [b for b in (batches["B_geometryFamily"], batches["C_killSwitch"]) if b["merge"]["supersedes"]]
+    batches["manifestHash"] = _payload_hash(resolve=resolve, batches=server_batches, evidence=evidence)
+    batches["rollback"] = ("rollback guards are generated from the ACTUAL receipt after apply "
+                           "(`tip_knowledge_batches` id consolidation:<hash>, field applied.rollbackPlan): per source the "
+                           "revision at supersede time, the new rule id, the release transitions and the evidence note ids; "
+                           "never assume +1 per source; evidence records stay; re-dispute a rule only if the policy question reopens")
     return batches
 
 
@@ -140,21 +146,77 @@ async def apply(m: dict, api: str, token: str) -> dict:
     out: dict = {}
     async with httpx.AsyncClient(base_url=api, headers={"Authorization": f"Bearer {token}"}, timeout=60) as c:
         r = await c.post("/api/tip/knowledge/consolidate", json={
-            "manifestHash": m["manifestHash"], "resolve": m["A_resolveDisputes"]["ids"],
+            "manifestHash": m["manifestHash"], "resolve": m["A_resolveDisputes"]["resolve"],
             "family": m["B_geometryFamily"], "killSwitch": m["C_killSwitch"], "evidence": m["D_evidence"]})
         out["status"] = r.status_code
         out["body"] = r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text[:400]
     return out
 
 
+async def plan_rejection(db: str, ids: list[str], rationale: str, *, batch_id: str) -> dict:
+    """A reviewed REJECTION of model-proposed rules (KFIN packet disposition,
+    2026-09-14): each proposal is released at its reviewed revision, expired in
+    ONE batch with the stated reason, and preserved verbatim as an
+    `evidence:policy-proposals` record (research, never injected). Identity =
+    the shared payload hash; the server refuses any drift before writing."""
+    from ..techniques.tip.consolidation import payload_hash as _payload_hash
+    conn = await asyncpg.connect(db)
+    try:
+        rows = await conn.fetch("SELECT id, revision_no, needs_human, superseded_by, text, created_at, author, valid_until "
+                                "FROM tip_notes WHERE id = ANY($1::text[])", ids)
+    finally:
+        await conn.close()
+    by_id = {r["id"]: r for r in rows}
+    missing = [i for i in ids if i not in by_id]
+    resolve = [{"id": i, "revision": int(by_id[i]["revision_no"] or 1)} for i in ids if i in by_id and by_id[i]["needs_human"]]
+    expire = {"batchId": batch_id, "scope": "rule",
+              "expire": {"ids": [i for i in ids if i in by_id], "reason": f"reviewed rejection {batch_id}: hypothesis, not policy"},
+              "expected_revisions": {i: int(by_id[i]["revision_no"] or 1) for i in ids if i in by_id},
+              "author": "review:2026-09-14"}
+    evidence = [{"scope": "evidence:policy-proposals", "sourceId": i, "sourceRevision": int(by_id[i]["revision_no"] or 1),
+                 "author": "review:2026-09-14",
+                 "text": (f"[REJECTED PROPOSAL — rule {i} rev {by_id[i]['revision_no']}, {by_id[i]['created_at']:%Y-%m-%d}, by {by_id[i]['author']}] "
+                          f"Reviewer disposition: {rationale.strip()}\n--- original text ---\n{by_id[i]['text']}")}
+                for i in ids if i in by_id]
+    payload = {"resolve": resolve, "batches": [expire], "evidence": evidence, "missing": missing}
+    payload["manifestHash"] = _payload_hash(resolve=resolve, batches=[expire], evidence=evidence)
+    return payload
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--reject-proposals", default="", help="comma-separated note ids to reject through the audited wrapper")
+    ap.add_argument("--rationale-file", default="", help="markdown/text with the reviewer's rationale (required with --reject-proposals)")
+    ap.add_argument("--batch-id", default="rejection-policy-proposals-2026-09-14")
     ap.add_argument("--db", default=DEFAULT_DB)
     ap.add_argument("--out", default="")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--confirm", default="")
     ap.add_argument("--api", default=DEFAULT_API)
     args = ap.parse_args()
+    a = args
+    if a.reject_proposals:
+        ids = [x.strip() for x in a.reject_proposals.split(",") if x.strip()]
+        rationale = open(a.rationale_file, encoding="utf-8").read() if a.rationale_file else ""
+        if not rationale:
+            print("REFUSED: --rationale-file is required"); return
+        m = await plan_rejection(a.db, ids, rationale, batch_id=a.batch_id)
+        print(f"rejection manifestHash {m['manifestHash']}; ids {len(ids)} (missing {m['missing']}); release {len(m['resolve'])}; "
+              f"expire {len(m['batches'][0]['expire']['ids'])}; evidence {len(m['evidence'])}")
+        if a.out:
+            out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+            (out / "rejection-manifest.json").write_text(json.dumps(m, indent=1, default=str), encoding="utf-8")
+            print("wrote", out / "rejection-manifest.json")
+        if a.apply:
+            if not a.confirm or a.confirm != m["manifestHash"]:
+                print(f"REFUSED: --confirm must equal the fresh manifest hash ({m['manifestHash']})"); return
+            token = subprocess.run([sys.executable, "-m", "zargar.tools.mint_session"], capture_output=True, text=True,
+                                   check=True).stdout.strip().splitlines()[-1]
+            async with httpx.AsyncClient(base_url=a.api, headers={"Authorization": f"Bearer {token}"}, timeout=120) as c:
+                r = await c.post("/api/tip/knowledge/consolidate", json={
+                    "manifestHash": m["manifestHash"], "resolve": m["resolve"], "batches": m["batches"], "evidence": m["evidence"]})
+                print(json.dumps({"status": r.status_code, "body": r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text[:400]}, indent=1)[:3000])
+        return
     m = await plan(args.db)
     if args.out:
         os.makedirs(args.out, exist_ok=True)
