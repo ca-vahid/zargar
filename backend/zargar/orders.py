@@ -7,6 +7,7 @@ state transitions.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 import inspect
 import logging
@@ -192,6 +193,9 @@ class OrderManager:
         self._executor_for = executor_for
         self._ensure_symbol = ensure_symbol
         self._report_lock = asyncio.Lock()
+        # set by the PositionManager: a fully filled entry that a managed position
+        # already owns spawns NO bracket children (one exit authority, 2026-09-15)
+        self.bracket_guard: Callable[[str], bool] | None = None
         # venue capability gate for option orders: portfolio_id -> (ok, reason);
         # the engine points this at OptionsService.allows_options
         self.option_gate: Callable[[str], tuple[bool, str]] | None = None
@@ -506,7 +510,19 @@ class OrderManager:
                     await self._journal.append("SimFillWaiting", {"reason": report.reason, "evidence": report.evidence},
                         aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
         if bracket_parent is not None:
-            await self._spawn_bracket_children(bracket_parent)
+            guard = self.bracket_guard
+            owned = False
+            if guard is not None:
+                with contextlib.suppress(Exception):
+                    owned = bool(guard(bracket_parent.id))
+            if owned:
+                await self._journal.append(
+                    ev.ORDER_BRACKET_SKIPPED,
+                    {"reason": "a managed position already owns this entry - its exits are the manager's",
+                     "bracket": bracket_parent.bracket},
+                    aggregate_type="order", aggregate_id=bracket_parent.id, portfolio_id=bracket_parent.portfolio_id)
+            else:
+                await self._spawn_bracket_children(bracket_parent)
 
     async def _apply_fill(self, report: ExecReport) -> Order | None:
         """Apply one fill. Returns the parent Order when its bracket children

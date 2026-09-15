@@ -56,7 +56,7 @@ from sqlalchemy import select
 from .. import bus as topics
 from ..domain import Bar, new_id
 from ..marketstructure.sessions import ET, session_date, session_window
-from ..models import ManagedPositionRow
+from ..models import ManagedPositionRow, Order
 from ..options import occ as occ_mod
 from .exits import reduce_only_exit_intent
 from .serialization import serialized_adapter
@@ -86,6 +86,10 @@ POSITION_RECONCILED = "ManagedPositionReconciled"
 POSITION_ATTENTION = "ManagedPositionAttention"
 POSITION_SCALED = "ManagedPositionScaledIn"
 POSITION_ROLLED = "ManagedPositionRolledUp"
+POSITION_BRACKET_RELEASED = "ManagedPositionBracketReleased"
+# an order the venue may still work (the OrderManager's OPEN_STATUSES plus NEW, which
+# has been written ahead but not yet handed over)
+_WORKING_ORDER = ("NEW", "SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED", "WORKING")
 
 TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "1d": 390}
 
@@ -361,6 +365,11 @@ class PositionManager:
 
     # ---------------------------------------------------------------- lifecycle
     def start(self) -> None:
+        om = getattr(self.engine, "orders", None)
+        if om is not None and getattr(om, "bracket_guard", None) is None:
+            # a bracket that would spawn AFTER adoption (the entry filled the rest of
+            # a partial) is refused - the manager is already the exit authority
+            om.bracket_guard = self.owns_entry_order
         if self._bar_task is None:
             self._bar_task = asyncio.create_task(self._bar_loop(), name="positions-bars")
         if self._watch_task is None:
@@ -411,6 +420,12 @@ class PositionManager:
                 # at 11:17 ET and the manager, which had forgotten the id, kept 89 open)
                 if p.status == "open" and p.venue_stop_order_id:
                     self._register_exit_order(p, p.venue_stop_order_id)
+                # a record adopted before the one-exit-authority rule (2026-09-15) may
+                # still have its entry's bracket children resting beside the manager's
+                # stop: release them now, before the first bar is judged
+                if p.status in ("open", "attention"):
+                    with contextlib.suppress(Exception):
+                        await self._release_bracket_children(p, phase="restore")
                 # the feeds must follow the position across a restart: the stop
                 # is judged on the UNDERLYING's bars/quotes and the premium stop
                 # on each leg's — RKLB's underlying went unwatched after an
@@ -661,9 +676,64 @@ class PositionManager:
                 if iv:
                     p.entry_iv = float(iv)
                     await self._persist(p)
+        # the entry's bracket children go BEFORE the venue stop rests: never two
+        # stops on one lot, not even for a beat
+        await self._release_bracket_children(p, phase="adopt")
         await self._ensure_venue_stop(p)
         self.start()
         return p.to_dict()
+
+    def owns_entry_order(self, order_id: str | None) -> bool:
+        """True when a live managed position (not an adapter's) was built on this
+        entry order - its exits are the manager's, so no bracket may spawn on it."""
+        if not order_id:
+            return False
+        for p in self._pos.values():
+            if p.status in ("open", "attention", "closing") and not p.policy.get("adapter") \
+                    and any(l.entry_order_id == order_id for l in p.legs):
+                return True
+        return False
+
+    async def _release_bracket_children(self, p: Managed, *, phase: str) -> int:
+        """ONE exit authority (MRNA 2026-09-15). The entry order's bracket children
+        (the proposal's take-profit + stop-loss, GTC, spawned by the OrderManager on
+        the fill) protect the fill until the manager adopts it; left resting they
+        DOUBLE every exit - at the target the bracket sells the whole lot and the
+        ladder trims on top, at the stop both stops fire (Tips Practice held 7 MRNA
+        with 14 resting to sell at 134.37 - the RKT short, one bug class over).
+        Cancel them at adoption, scale-in and restore (records adopted before this
+        rule). Adapter positions run their own venue orders - untouched."""
+        if p.policy.get("adapter"):
+            return 0
+        parents = sorted({l.entry_order_id for l in p.legs if l.entry_order_id})
+        if not parents:
+            return 0
+        try:
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(Order).where(
+                    Order.parent_id.in_(parents), Order.source == "bracket",
+                    Order.status.in_(_WORKING_ORDER)))).scalars().all()
+        except Exception as exc:
+            await self._alert(p, f"could not read the entry's bracket orders: {exc}", level="warning",
+                              stage="bracket_release")
+            return 0
+        released: list[dict] = []
+        for o in rows:
+            try:
+                await self.engine.orders.cancel(o.id)
+                released.append({"orderId": o.id, "type": o.order_type, "qty": float(o.qty),
+                                 "price": o.limit_price if o.order_type == "LMT" else o.stop_price,
+                                 "parentId": o.parent_id})
+            except Exception as exc:
+                await self._alert(p, f"could not release the entry's resting bracket order {o.id[:8]} "
+                                     f"({o.order_type} {o.qty:g}) - two exit authorities rest on this lot: {exc}",
+                                  stage="bracket_release")
+        if released:
+            self._log(p, "bracket_released",
+                      f"{len(released)} resting bracket order(s) from the entry cancelled ({phase}) - "
+                      f"the manager's stop and exits are the only exit authority", orders=released)
+            await self._journal(POSITION_BRACKET_RELEASED, p, {"phase": phase, "orders": released})
+        return len(released)
 
     async def append_leg(self, pid: str, leg: dict, *,
                          entry_ref: float | None = None) -> dict | None:
@@ -689,6 +759,7 @@ class PositionManager:
                                                  "entry": round(p.entry, 4)})
         self._log(p, "scaled_in",
                   f"+{abs(new.qty):g} {new.symbol} — entry re-averaged to {p.entry:.4f}")
+        await self._release_bracket_children(p, phase="scale_in")
         await self._ensure_venue_stop(p)
         return p.to_dict()
 
