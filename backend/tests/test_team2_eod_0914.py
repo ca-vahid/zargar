@@ -331,3 +331,191 @@ def test_d_a_deferral_then_a_pick_and_fill_is_one_opportunity_with_two_verdicts(
     assert jo["attempt"]["evidence"] == "journal-only" and jo["attempt"]["attemptKind"] == "policy_refusal" and jo["attempt"]["verdictCount"] == 2
     assert jo["note"].startswith("journaled verdict without a trade projection")
     assert card["matched"] == 1 and len(card["rows"]) == 2
+
+
+# ================================================================ v0.7.76 acceptance review (E, F, G), 2026-09-14
+def _sub_trade(ap, status="submitting"):
+    t = Trade(trigger_id="scenario_1@14:45#1", kind="scenario_1", window="team2", direction="long", fired_ts=_ms(15, 28),
+              entry=100, stop=99, targets=[104], status=status, instrument="options", filled_qty=0)
+    t.setup_id = "scenario_1@14:45"
+    ap.trades[t.trigger_id] = t
+    return t
+
+
+@pytest.mark.parametrize("cross_cutoff, expected_calls", [(False, 2), (True, 1)])
+async def test_e_transport_retry_is_judged_on_the_wall_clock_without_fa01(monkeypatch, cross_cutoff, expected_calls):
+    """The same boundary as the reviewer's first case, with a plain guard callable (no FA-01 on this checkout)."""
+    import zargar.techniques.team2.runner as module
+    import zargar.execution.planrunner as shared
+    runner, ap = _rrig()
+    t = _sub_trade(ap)
+    clock = [_ms(15, 29) + 59_000]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0] / 1000)
+    monkeypatch.setattr(shared, "now_ms", lambda: clock[0])
+    attempts = []
+
+    async def place(intent, *, before_submit=None):
+        if before_submit:
+            before_submit()
+        attempts.append(clock[0])
+        if len(attempts) == 1:
+            raise ConnectionError("temporarily unavailable before submission")
+        return {"id": "synthetic-order", "status": "SUBMITTED"}
+
+    async def delay(_s):
+        clock[0] = _ms(15, 30) + 1000 if cross_cutoff else _ms(15, 29) + 59_500
+    monkeypatch.setattr(shared.asyncio, "sleep", delay)
+    runner.engine.orders = SimpleNamespace(place=place)
+    assert await runner.entry_gate(ap, t, "order") is None
+    await runner._place_with_retry(ap, t, SimpleNamespace(), stage="entry", before_submit=lambda: None)
+    assert len(attempts) == expected_calls
+    if cross_cutoff:
+        assert t.status == "skipped" and "cutoff" in t.reason
+        rows = [c.args[1] for c in runner.engine.journal.append.call_args_list if c.args[1].get("event") == "entry_gate_refused"]
+        assert rows and rows[0]["stage"] == "retry" and rows[0]["decisionTs"] == _ms(15, 30) + 1000
+        assert runner.state_extras(ap)["executionRefused"] == [t.trigger_id], "a timed-out opportunity: skipped, no proxy"
+
+
+async def test_e_the_cutoff_crossed_inside_the_order_manager_refuses_before_the_venue(monkeypatch):
+    """OrderManager runs `before_submit` after its LAST await: the composed Team2 predicate refuses there."""
+    import zargar.techniques.team2.runner as module
+    runner, ap = _rrig()
+    t = _sub_trade(ap)
+    clock = [_ms(15, 29) + 58_000]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0] / 1000)
+    sent = []
+
+    async def place(intent, *, before_submit=None):
+        clock[0] = _ms(15, 30) + 200                       # the manager's own awaits crossed the cutoff
+        try:
+            before_submit()
+        except Exception as exc:                            # what OrderManager does: REJECTED_RISK, never a venue call
+            return {"id": "o-1", "status": "REJECTED_RISK", "rejectReason": f"Pre-submit validation failed: {exc}"}
+        sent.append(1)
+        return {"id": "o-1", "status": "SUBMITTED"}
+    runner.engine.orders = SimpleNamespace(place=place)
+    res = await runner._place_with_retry(ap, t, SimpleNamespace(), stage="entry")
+    assert not sent and res["status"] == "REJECTED_RISK" and "entry gate:" in res["rejectReason"] and "cutoff" in res["rejectReason"]
+
+
+async def test_e_a_session_date_change_refuses_the_retry_and_an_exit_still_goes_out(monkeypatch):
+    import zargar.techniques.team2.runner as module
+    import zargar.execution.planrunner as shared
+    runner, ap = _rrig()
+    t = _sub_trade(ap)
+    clock = [_ms(15, 20)]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0] / 1000)
+    monkeypatch.setattr(shared, "now_ms", lambda: clock[0])
+    calls = []
+
+    async def place(intent, *, before_submit=None):
+        if before_submit:
+            before_submit()
+        calls.append(getattr(intent, "reduce_only", False))
+        if len(calls) == 1:
+            raise ConnectionError("connection reset")
+        return {"id": "o", "status": "SUBMITTED"}
+
+    async def delay(_s):
+        clock[0] = _ms(15, 20) + 86_400_000                 # the retry lands on the next session date
+    monkeypatch.setattr(shared.asyncio, "sleep", delay)
+    runner.engine.orders = SimpleNamespace(place=place)
+    assert await runner._place_with_retry(ap, t, SimpleNamespace(reduce_only=False), stage="entry") is None
+    assert len(calls) == 1 and t.status == "skipped" and "not the plan's session" in t.reason
+    # a protective exit after the cutoff / on another date is never gated
+    clock[0] = _ms(15, 40)
+    ex = Trade(trigger_id="x", kind="scenario_1", window="team2", direction="long", fired_ts=_ms(10, 0), entry=100, stop=99, targets=[104],
+               status="open", instrument="options", filled_qty=2, remaining=2)
+    assert (await runner._place_with_retry(ap, ex, SimpleNamespace(reduce_only=True), stage="exit"))["status"] == "SUBMITTED"
+
+
+async def test_f_a_venue_handoff_without_an_answer_keeps_the_order_identity_and_the_exposure():
+    from zargar.orders import SubmitUncertain
+    runner, ap = _rrig()
+    t = _sub_trade(ap)
+    ap.config.max_retries = 3
+    runner._alert = AsyncMock()
+    runner.engine.orders = SimpleNamespace(place=AsyncMock(side_effect=SubmitUncertain("ord-77", TimeoutError("no ACK after send"))))
+    assert await runner._place_with_retry(ap, t, SimpleNamespace(), stage="entry") is None
+    assert runner.engine.orders.place.await_count == 1, "an ambiguous submission is never retried as a fresh order"
+    assert t.status == "submitting" and t.submit_uncertain and t.entry_order_id == "ord-77"
+    assert runner._order_index.get("ord-77") == (ap.run_id, t.trigger_id), "fills for that order still find the trade"
+    assert runner._alert.await_count == 1
+    extras = runner.state_extras(ap)
+    assert t.trigger_id not in extras["executionRefused"]
+    # persisted and restored as uncertain — a restart never turns it into a zero fill
+    d = t.to_dict()
+    assert d["submitUncertain"] is True
+    runner2, ap2 = _rrig()
+    await runner2._restore_trades(ap2, state={"trades": [d]})
+    assert ap2.trades[t.trigger_id].submit_uncertain and ap2.trades[t.trigger_id].status == "submitting"
+    assert t.trigger_id not in runner2.state_extras(ap2)["executionRefused"]
+
+
+def test_f_fill_evidence_withdraws_a_stored_exemption_and_a_confirmed_rejection_keeps_it():
+    runner, ap = _rrig()
+    t = _sub_trade(ap, status="failed")
+    assert runner.state_extras(ap)["executionRefused"] == [t.trigger_id]
+    t.status, t.filled_qty = "open", 1.0                    # a late partial fill arrives for the "failed" entry
+    assert runner.state_extras(ap)["executionRefused"] == [], "the overlay reconciles on evidence; it is not append-only"
+    t.status, t.filled_qty = "rejected", 0.0
+    t.reason = "venue confirmed rejection; no fill"
+    assert runner.state_extras(ap)["executionRefused"] == [t.trigger_id]
+
+
+async def test_g_a_held_position_the_model_no_longer_holds_still_gets_the_present_time_candle_stop(monkeypatch):
+    """The reviewer's control: an actual held position, a suppressed historical model exit, then a present-time
+    method stop (S1: the 2m close through the EMA13) issued NOW."""
+    import zargar.techniques.team2.runner as module
+    import zargar.execution.planrunner as shared
+    runner, ap = _rrig()
+    clock = [_ms(10, 2)]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0] / 1000)
+    monkeypatch.setattr(shared, "now_ms", lambda: clock[0])
+    past_exit = {"event": "exit", "ts": _ms(10, 2), "setup": "scenario_1@09:45", "fraction": 1.0, "pnlPct": -40.0,
+                 "why": "stop on the corrected 10:01 close"}
+
+    def read(plan, bars, *a, **k):
+        revised = any(b.ts == _ms(10, 1) and b.close == 98 for b in bars)
+        r = _result([past_exit] if revised else [])
+        r.open_position = None if revised else {"setup": "scenario_1@09:45", "entryKind": "ema"}
+        r.regime_last = {"ema13": 99.5, "ema48": 99.0, "ema200": 98.0, "stack": "bull"}
+        return r
+    monkeypatch.setattr(module, "simulate_session", read)
+    runner._exit = AsyncMock()
+    held = Trade(trigger_id="scenario_1@09:45#1", kind="scenario_1", direction="long", fired_ts=_ms(9, 46), window="team2",
+                 entry=100, stop=98.5, targets=[104], status="open", filled_qty=2, remaining=2, instrument="options")
+    held.setup_id, held._entry_kind = "scenario_1@09:45", "ema"
+    ap.trades[held.trigger_id] = held
+    await runner.on_minute_bar("SPY", _rbar(10, 1, 100))          # decision at 10:02: model holds, close above EMA13 — nothing
+    assert runner._exit.await_count == 0
+    clock[0] = _ms(10, 3)
+    await runner.on_minute_bar("SPY", _rbar(10, 1, 98))            # the correction: the model's position is now closed at 10:02
+    clock[0] = _ms(10, 4)
+    await runner.on_minute_bar("SPY", _rbar(10, 3, 99.8))          # decision at 10:04: close 99.8 ABOVE the EMA13 99.5 — hold
+    assert runner._exit.await_count == 0, "the suppressed historical exit is not replayed and no stop is due yet"
+    clock[0] = _ms(10, 6)
+    await runner.on_minute_bar("SPY", _rbar(10, 5, 99.2))          # decision at 10:06: 2m close 99.2 through the EMA13 — stop NOW
+    assert runner._exit.await_count == 1
+    args, kw = runner._exit.call_args
+    assert args[1] is held and args[2] == "stop" and args[3] == 2 and kw["force_market"] and "present-time S1" in kw["reason"]
+    rows = [c.args[1] for c in runner.engine.journal.append.call_args_list if c.args[1].get("event") == "orphan_stop"]
+    assert rows and rows[0]["decisionTs"] == _ms(10, 6) and rows[0]["close"] == 99.2 and rows[0]["guard"] == 99.5
+
+
+async def test_g_the_model_s_own_held_position_is_left_to_the_model(monkeypatch):
+    import zargar.techniques.team2.runner as module
+    import zargar.execution.planrunner as shared
+    runner, ap = _rrig()
+    clock = [_ms(10, 2)]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0] / 1000)
+    monkeypatch.setattr(shared, "now_ms", lambda: clock[0])
+    r = _result([]); r.open_position = {"setup": "scenario_1@09:45"}; r.regime_last = {"ema13": 99.5}
+    monkeypatch.setattr(module, "simulate_session", lambda *a, **k: r)
+    runner._exit = AsyncMock()
+    held = Trade(trigger_id="scenario_1@09:45#1", kind="scenario_1", direction="long", fired_ts=_ms(9, 46), window="team2",
+                 entry=100, stop=98.5, targets=[104], status="open", filled_qty=2, remaining=2, instrument="options")
+    held.setup_id, held._entry_kind = "scenario_1@09:45", "ema"
+    ap.trades[held.trigger_id] = held
+    await runner.on_minute_bar("SPY", _rbar(10, 1, 99.0))          # through the EMA13, but the MODEL holds it: its own exit rules speak
+    assert runner._exit.await_count == 0
