@@ -35,3 +35,5 @@ No full public-feed coverage, exact author replication, broker-verified author r
 
 - [Intraday market research: accepted decision and limits](INTRADAY-RESEARCH-DECISION-2026-09-14.md)
   records the user-approved observation-only experiment. It does not change trading permission.
+
+- [September 15 profitability review](PROFITABILITY-REVIEW-2026-09-15.md): cash-day accounting, 63 research cases, candidate/target selection and a prioritized prospective experiment queue. No execution settings changed.
