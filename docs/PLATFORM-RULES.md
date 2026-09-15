@@ -92,8 +92,10 @@ runtime ones to `execution.*`).
    of a two-sided quote (`bid > 0 and ask >= bid`); a lone `last` is the fallback for a one-sided
    book, then the broker's sync mark, then avg cost. Shares are unchanged - an equity print IS
    the valuation. One definition (`PositionKeeper._mark`) serves both the displayed P&L and the
-   equity the risk halt reads, so they cannot diverge. Thin contracts otherwise write permanent
-   fiction into `equity_points`. Tests: `tests/test_position_marking.py`.
+   equity the risk halt reads, so they cannot diverge. Callers that hold a LOT rather than a
+   position (the Ledger's FIFO lots) use `PositionKeeper.mark_price(symbol, sec_type)` - the same
+   rule - never a quote field of their own. Thin contracts otherwise write permanent
+   fiction into `equity_points`. Tests: `tests/test_position_marking.py`, `tests/test_ledger_day_move.py`.
 23. **Downsampling preserves range** (2026-09-14). `equity_series(points=N)` and any client
    thinning keep each bucket's min and max in time order (`portfolio._decimate`), never every
    Nth sample - a real intraday extreme must not depend on where the bucket boundaries fell.
@@ -1799,3 +1801,25 @@ checkout must be built (`node scripts/check-release.mjs && npx tsc -b`) BEFORE t
 door does not protect against a broken build because the stop happens before the build. The watch job's Team2
 commits (F123, F126, 0.7.72) had never been merged to main; they are brought to main with this change so the running
 checkout and main agree again.
+
+### Dashboard vs Ledger "today" - 2026-09-14 (v0.7.75)
+
+- **Report (user):** "the daily numbers don't really match. see dashboard vs ledger for today" -
+  Dashboard +429.97, Ledger TODAY +145.07, and a "+4.00 unexplained" pill.
+- **The pill was a marking mismatch (mine).** Since 0.7.70 the book marks an option at the mid
+  (invariant 22); `desk.ledger()` still valued open lots at `q.last`. (mid - last) x qty x 100 over
+  the three open lots = +3.00 (T) + 1.00 (HIMS) = 4.00 exactly. Fixed with `mark_price()`.
+- **The headline gap is two definitions, both correct.** EM (+364.49) and Cartel (-61.13) agree on
+  both screens to the cent. The whole +284.90 difference is Tips: the ledger's day row books a
+  trip's ENTIRE gain on the day it closes (APLD -210.33 over four days), the Dashboard counts
+  only today's mark-to-market slice plus the day's move on lots still open. The ledger payload
+  now carries `dayStart`/`dayMove` (invariant 21's anchor) and its TODAY tile shows that number,
+  with "closed . trips . open & carried" as the sub-line. Per-day rows keep realized-on-close.
+- **Merge lesson (deploy outage, ~10 min).** Resolving the five version-file conflicts as "take
+  HEAD" dropped the EM desk's new `build_sha()` from `zargar/__init__.py`; `/api/health` imports
+  it, so every health call returned 500 while the engine itself ran fine - `restart.ps1` gave up
+  at 30 s and the watchdog held off. Rule: a conflicted file that the OTHER side extended is
+  resolved from THEIR content with the version line re-set, and `from zargar import __version__,
+  build_sha` is part of the import smoke before any restart. `restart.ps1`'s 30 s health wait is
+  too short for a boot that restores this many plans (2-3 min today, twice) - it reports a
+  failure for a start that succeeds.
