@@ -18,7 +18,7 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "0.7.82",
+    version: "0.7.83",
     date: "2026-09-15",
     title: "Tips: retry-safe knowledge batches, recovered samples, visible attachment coverage",
     items: [
@@ -27,6 +27,9 @@ export const CHANGELOG: Release[] = [
       { tag: "new", text: "Tips card shows attachment coverage (per image: processed / failed / unreadable / skipped) and which block the extracted evidence came from (caption or attachment n)." },
     ],
   },
+  {version:"0.7.82",date:"2026-09-14",title:"A cancel that reports more contracts than were booked books them",items:[
+    {tag:"fixed",text:"Orders F: a terminal order report now books its cumulative fill for any entry, including one an earlier partial fill had already opened - a cancel reporting two contracts after one was booked adds the second and manages both. Duplicate reports, a smaller total and a confirmed zero fill still change nothing they should not."},
+  ]},
   {version:"0.7.81",date:"2026-09-14",title:"A cancel that says one contract filled is a position",items:[
     {tag:"fixed",text:"Orders F: a terminal order report (cancelled, expired, rejected) is now classified by the cumulative filled quantity it carries, not by what the app happened to see earlier - if the partial-fill callback was missed, a cancel reporting one contract filled books that contract and manages it instead of being treated as a zero fill. Live and after a restart (the persisted order row). Confirmed zero-fill outcomes still clear the way for Team2's proxy exemption."},
   ]},

@@ -1811,25 +1811,28 @@ class PlanRunner(SessionListener):
                 await self._resolve_uncertain(ap, tr, str(status), float(o.get("filledQty") or 0), source="order_update")
             if status in ("FILLED", "PARTIALLY_FILLED"):
                 await self._apply_entry_fill(ap, tr, tid, o)
-            elif status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED") and tr.status in ("submitting", "working"):
+            elif status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
                 # F (2026-09-14, terminal cumulative fill): a terminal report carries the venue's CUMULATIVE filled
-                # quantity — read it BEFORE classifying the outcome, because the intermediate partial-fill callback may
-                # have been missed (a restart, a dropped delivery). A cancel that says one contract filled is a managed
-                # position, never a zero fill; only a report with nothing filled is a confirmed zero-fill.
+                # quantity — book it FIRST, for ANY entry trade (one already opened by an earlier partial included:
+                # a cancel reporting two contracts after one was booked adds the second), because the intermediate
+                # fill callback may have been missed (a restart, a dropped delivery). Then classify: only an entry
+                # that was still submitting/working needs a terminal verdict, and only a report with nothing filled
+                # is a confirmed zero-fill.
                 if float(o.get("filledQty") or 0) > tr.filled_qty:
                     await self._apply_entry_fill(ap, tr, tid, o)
-                if tr.filled_qty > 0:
-                    tr.status = "open"           # partial then cancel: manage what we have
-                else:
-                    tr.status = "cancelled" if status in ("CANCELLED", "EXPIRED") else "failed"
-                    tr.reason = o.get("rejectReason") or status
-                    self._log(ap, "entry_" + status.lower(), f"{tid}: entry {status} {tr.reason}", trigger=tid)
-                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
-                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "stage": "entry", "status": status,
-                        "reason": tr.reason, "orderId": o["id"]},
-                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
-                await self._persist(ap)
-                self._publish(ap, "entry_" + status.lower())
+                if tr.status in ("submitting", "working"):
+                    if tr.filled_qty > 0:
+                        tr.status = "open"           # partial then cancel: manage what we have
+                    else:
+                        tr.status = "cancelled" if status in ("CANCELLED", "EXPIRED") else "failed"
+                        tr.reason = o.get("rejectReason") or status
+                        self._log(ap, "entry_" + status.lower(), f"{tid}: entry {status} {tr.reason}", trigger=tid)
+                        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                            "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "stage": "entry", "status": status,
+                            "reason": tr.reason, "orderId": o["id"]},
+                            aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+                    await self._persist(ap)
+                    self._publish(ap, "entry_" + status.lower())
         elif o["id"] in tr.exit_order_ids:
             x = next((e for e in tr.exits if e.get("orderId") == o["id"]), None)
             if x is None:
