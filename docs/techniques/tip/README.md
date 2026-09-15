@@ -21,7 +21,10 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## State of play (2026-09-14)
 
-- **Version:** v0.7.77 (deployed 21:35 ET 2026-09-14: EOD review fixes EOD-01..09, `reviews/2026-09-14-eod-response.md`; on top of the day's rollout PR #95, exit guard PR #98, counter fix PR #100). Practice only: `trading.mode=practice`,
+- **Version:** v0.7.83 (deployed 00:21 ET 2026-09-15: review follow-ups PR #127 — the dispute
+  release commits with its batch progress, pending delayed samples are recovered by the
+  `tip-cohort-recovery` task, the Tips card shows attachment coverage; record in
+  `reviews/2026-09-14-kfin-response.md` "Review follow-ups"). Before it v0.7.77 (deployed 21:35 ET 2026-09-14: EOD review fixes EOD-01..09, `reviews/2026-09-14-eod-response.md`; on top of the day's rollout PR #95, exit guard PR #98, counter fix PR #100). Practice only: `trading.mode=practice`,
   `techniques.tip.allow_live_auto=false`. The Tips Practice book (`techniques.tip.default_portfolio`)
   is the only book that trades tips; shadow books (immediate / armed) are research.
 - **Entry controls, both ACTIVE by journaled settings (2026-09-14 05:15Z):**
@@ -48,9 +51,10 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 - **Monitoring:** the desk's Claude session runs a pre-open tick (08:23 ET), 30-minute session
   ticks (:03/:33, 09:03–15:33 ET) and a 16:06 ET wrap-up. These are session-only crons — a
   session restart drops them and they must be re-armed.
-- **Meet Kevin own-book workflow (KFIN-08, built, NOT enrolled):** `techniques.tip.mk_ownbook_mode`
-  is `off` and `mk_ownbook_sources` is empty, so nothing changed at runtime. When enrolled
-  (`observe` first, then `shadow`), MK's "I bought / added / sold half" text is classified
+- **Meet Kevin own-book workflow (KFIN-08, ENROLLED in `observe` since 2026-09-15 00:26 ET):**
+  `techniques.tip.mk_ownbook_mode=observe`, `mk_ownbook_sources=["MK-alpha-trades"]` (journaled
+  PATCH) — classification + grading only, no ownbook book yet, no order path. Code defaults stay
+  `off` / empty. In `observe` (then `shadow` by a separate reviewed verdict), MK's "I bought / added / sold half" text is classified
   (`techniques/tip/ownbook.py`) and booked ONLY in a dedicated `book=ownbook` shadow book —
   never the Practice book, a proposal or an armed plan; ungrounded/stale disclosures stay
   `ownbook_unresolved`; recaps, hypotheticals and other people's screenshots are
@@ -144,7 +148,14 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
 
-## Experiments (KFIN-09, built 2026-09-14 - inert by default)
+## Experiments (KFIN-09, built 2026-09-14; collection switched ON 2026-09-15 00:26 ET)
+
+`techniques.tip.entry_cohort_enabled` and `techniques.tip.frozen_capture_context` are ON by journaled
+PATCH since 2026-09-15 (code defaults stay off): the cohort records and samples, the analyst run
+stamps its context manifest. Neither touches an order path; a pending delayed sample survives a
+restart through the `tip-cohort-recovery` task (0.7.83). Baseline at enablement: 0 eligible ideas;
+the first verbatim frozen bundle needs a run captured AFTER the flag (a pre-flag capture is
+labeled RECONSTRUCTED and its `core_only` variant is unavailable).
 
 Two evidence tools, both isolated by construction (`tests/test_tip_kfin09_experiments.py`
 proves write isolation, denominator correctness, missing-data handling and reproducibility):

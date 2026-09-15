@@ -112,3 +112,70 @@ Effective settings after deploy: Practice only, `geometry_gate=enforce`, `entry_
   (9 steps) on the receipt. Live rulebook: 37 rules.
 - Tool follow-up: PR #123 (module-level `subprocess` import on the `--reject-proposals --apply`
   path; the apply above was posted from the planned manifest file).
+
+## Review follow-ups (2026-09-15, branch `claude/kfin-followups`, PR #127, release 0.7.83)
+
+Commits: `45b0235` (the three fixes + `tests/test_kfin_followups.py`), `6e59f81` (merge of
+`origin/main` after the other desk's 0.7.82 took the number), `f9b9180` (renumber to 0.7.83);
+merge commit on main `c5bb01b`; running checkout `d95ab68`. Live since 00:21 ET (build
+`d95ab683…`, restart through the `ZargarRestart` task after `restart-check safe=true`,
+`techniqueRunning=0`; 0 open incidents, gates enforce/integrity, Practice, `allow_live_auto` off).
+
+| # | Item | What changed | Proof |
+|---|---|---|---|
+| 1 | Consolidation retry safety | `consolidation.py`: the dispute release (revision snapshot + `needs_human=False`) and the wrapper's progress (`rec.applied`) commit in ONE transaction, row-locked; the `TipRuleAudited` notification comes after the commit and is best-effort (logged, never fatal). Validation accepts a row the same manifest already released (revision == reviewed + 1 and the latest snapshot reason is `resolve`) as `recovered`; any other move past the reviewed revision is still refused ("not disputed"). | `test_release_commits_with_progress_and_retries_after_a_failed_notification` (journal raises once → release committed, receipt applied, identical retry `replay: true`), `test_release_without_saved_progress_is_recognised_on_retry` (`recovered: true`; a row moved twice by someone else refused) |
+| 2 | Delayed-sample recovery | `cohort.recovery_loop` (first pass 30 s after boot, then every 60 s while `entry_cohort_enabled`) calls `sample_due`; wired in `attach_signal_layer` as the engine task `tip-cohort-recovery`. A sample past its grace is `missed` with the gap recorded, never back-labelled. | `test_delayed_samples_are_recovered_after_a_restart` (2 pending rows → 1 sampled/1 missed; task present) |
+| 3 | Attachment coverage in the UI | `_persist_attachments` stamps a coverage summary (id, n, status, chars, error — never the transcripts) on `extraction.attachments` of every signal of the content, and new signals are born with it; `InboxPage.tsx` `AttachmentsBlock` renders per-image chips (processed / failed / unreadable / skipped) and "Evidence from: caption, attachment n" from `grounding.quoteSources`. | `test_tip_multi_image_intake.py` 15 passed; frontend build green; block present in the deployed bundle |
+
+### Item 4 — observation-only workflows started (00:26 ET, journaled `PATCH /api/settings`)
+
+`techniques.tip.mk_ownbook_mode=observe`, `techniques.tip.mk_ownbook_sources=["MK-alpha-trades"]`
+(`GET /api/tip/ownbook/MK-alpha-trades` → enrolled, mode observe, book null, all counts 0),
+`techniques.tip.entry_cohort_enabled=true`, `techniques.tip.frozen_capture_context=true`.
+Nothing else moved: Practice, `risk_pct` 1.0, `risk_budget_per_tip` 0, `knowledge_apply_enabled`
+false, `allow_live_auto` false, geometry enforce, integrity pause. No order path is touched by any
+of the four keys (observe = classify + grade only; cohort = record + sample; frozen = stamp the
+manifest on the run's start step). Practice promotion stays a separate reviewed verdict.
+
+Initial reports at enablement:
+
+- Entry cohort (`tip_entry_cohort report`): 0 eligible ideas, all sample counters 0 — the cohort
+  starts with the 2026-09-15 session (`cohort-baseline.json` kept in the session scratchpad).
+- Frozen capture: `tip_frozen capture --run ca5c37db…` (ZS, eva, 21:45 UTC) built bundle
+  `fb-d74a31d83dc9162c` — manifest RECONSTRUCTED (the flag was off when the run happened),
+  `core_only` unavailable (the rule snapshot predates the core flag). A stub replay
+  (`--dry-run`) exercised both variants end to end without a provider call. **No paid replay was
+  spent on a reconstructed bundle**: the first real paired report comes from a run captured
+  AFTER the flag (tomorrow's session), which is the only capture that is verbatim.
+
+### Item 5 — clean integrated verification (fresh DB, one pytest at a time)
+
+Main `c5bb01b`, database `zargar_test_hubfix` dropped and recreated first, the other desks'
+pytest processes polled to zero before every slice (slice 4's first run overlapped one and was
+repeated clean), every slice under 9 minutes, no wider 590-second run:
+
+| Slice | Files | Result |
+|---|---|---|
+| 1 | kfin_followups, tip_knowledge, knowledge_governance, tip_multi_image_intake | 35 passed (85 s) |
+| 2 | tip_ownbook, signals_tip, platform_separation, tip_caption_grounding_review, tip_integrity, tip_geometry_wiring, tip_activation | 94 passed (170 s) |
+| 3 | tip_audit_chunks, tip_retro_digest_accounting, tip_kfin09_experiments, delivery_health, ops_tip_run_liveness, ops_restart, tip_runner | 87 passed, **4 failed** in `test_tip_runner.py` (482 s) — see below |
+| 3b | `test_tip_runner.py` alone after the fix below | 52 passed (194 s) |
+| 4 | the six `test_tip_eod_20260914_*` files, tip_completion_boundaries | 15 passed (17 s) |
+
+None of the reviewer's ten missing-row / FK failures reproduced on the fresh database.
+
+**The four `test_tip_runner.py` failures are not from PR #127** — they reproduce identically on
+`98bfdc3` (main before the PR), on `a670457` (main after KFIN-08) and with the test clock pinned
+to 11:00 ET. Cause: the Options Cartel desk's `12491f2` (2026-09-14, "reconcile execution
+evidence") made the sim venue refuse an OPTION fill on any quote without a venue identity and a
+fresh source time (`SimExecutor.quote_rejection`: "Delayed quotes cannot price simulated fills",
+"Option fill source identity or timestamp is unknown"). The runner tests' contract quotes carried
+no source, and the chain overlay installed at `track()` stamps every incoming quote
+`chain`/delayed — so the entries that used to fill off the DELAYED chain quote (a fantasy fill,
+the very thing the rule closes) now sit `ACCEPTED` and the tests time out. The live runtime is
+unaffected: the OPRA research feed installs an `opra` overlay with a fresh `source_ts`
+(`options/service.py`), and 37 Practice option orders filled in the 36 hours before this check.
+Fix (tests only, no production change): `_opt_quote` now does exactly what the OPRA feed does —
+`set_overlay(..., source="opra", source_ts=now)` + `on_quote` — and the two end-to-end tests
+publish a post-fire quote that is executable at the entry limit (ask 1.15 = the chain ask the
+limit came from; the old 1.15-mid quote had ask 1.20 and never crossed).
