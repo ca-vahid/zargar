@@ -1773,3 +1773,10 @@ branch now books the report's cumulative fill first (`_apply_entry_fill`, the sa
 regresses a larger local figure, opens the position once, persists, publishes) and classifies afterwards; the restore
 path inherits it because `_reconcile_uncertain_from_row` goes through the same callback. Shared behaviour (every
 technique's entries); no threshold changed.
+
+### Orders: a terminal report's cumulative fill is booked for any entry trade — 2026-09-14 (Team2 review F; v0.7.82)
+
+The v0.7.81 booking ran only for entries still `submitting`/`working`; an entry an earlier partial had already opened
+ignored a cancel that reported more contracts. `on_order_update` now books the terminal report's cumulative fill for
+ANY entry trade (`_apply_entry_fill`: never regresses, opens once, nets against booked exits) and classifies only the
+entries that were still submitting/working. Shared behaviour; no threshold changed.
