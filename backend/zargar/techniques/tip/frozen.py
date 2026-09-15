@@ -36,7 +36,8 @@ log = logging.getLogger("zargar.tip.frozen")
 BUNDLE_VERSION = 1
 MISSING = ("(unavailable in the frozen bundle - not persisted at run time; "
            "a frozen replay never fetches today's data)")
-VARIANTS = ("current", "core_only", "no_knowledge")
+VARIANTS = ("current", "core_only", "no_knowledge", "compact")
+COMPACT_HISTORY_LINES = 12      # PROF-05: the compact context keeps the newest N history lines
 # settings a run's behaviour depends on - captured verbatim on the bundle
 SETTINGS_KEYS = (
     "techniques.tip.analyst_model", "techniques.tip.analyst_max_tools",
@@ -113,7 +114,16 @@ def format_notes(notes: list[dict]) -> str:
         for i, n in enumerate(notes)) or "(none yet)"
 
 
-def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str) -> tuple[str, list[str]]:
+def trim_history(text: str | None, lines: int) -> str:
+    """The newest N lines of a history block (the block is newest first)."""
+    if not text:
+        return text or ""
+    rows = str(text).split("\n")
+    return "\n".join(rows[:max(1, int(lines))])
+
+
+def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
+                    history_lines: int | None = None) -> tuple[str, list[str]]:
     """The run's header with the rules and notes blocks replaced. An EXACT
     manifest is sliced at its markers (verbatim otherwise); a reconstructed
     one is assembled from the bundle's components with every unknown block
@@ -128,7 +138,13 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str) -> tupl
         if i < 0 or j < 0 or k < 0:
             gaps.append("header markers not found - rules/notes blocks could not be swapped")
             return h, gaps
-        return (h[:i + len(mark)] + rules_text + _NOTES_MARK + notes_text + h[k:]), gaps
+        tail = h[k:]
+        if history_lines is not None:
+            # PROF-05: the history block starts after its marker line
+            nl = tail.find("\n", 1)                    # the marker line may begin with a newline
+            if nl >= 0:
+                tail = tail[:nl + 1] + trim_history(tail[nl + 1:], history_lines)
+        return (h[:i + len(mark)] + rules_text + _NOTES_MARK + notes_text + tail), gaps
     tip = manifest.get("tip") or {}
     ver = manifest.get("verification") or {}
     pol = manifest.get("policy") or {}
@@ -148,7 +164,8 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str) -> tupl
                + "\nTHIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "
                  "backstory this tip arrived in: earlier OPENs, trims, exits, mood. Read it "
                  "before judging; search_messages digs deeper/older):\n"
-               + str(manifest.get("historyText") or MISSING))
+               + (trim_history(str(manifest.get("historyText")), history_lines)
+                  if history_lines is not None and manifest.get("historyText") else str(manifest.get("historyText") or MISSING)))
     if manifest.get("siblings"):
         header = ("THIS MESSAGE HAS SEVERAL BRANCHES and is appraised ONCE, on this one: "
                   + "; ".join(manifest["siblings"]) + ". Judge the MESSAGE (is it a map, a "
@@ -379,6 +396,30 @@ def variant_knowledge(bundle: dict, variant: str) -> dict:
                 "starterRules": not core_r,
                 **({"degenerate": "no core rules in the bundle - starter rules supplied"}
                    if not core_r else {})}
+    if variant == "compact":
+        # PROF-05 (2026-09-15): the CORE (mandatory) rules plus the notes that
+        # are RELEVANT to this tip - its ticker, its source, and core notes -
+        # with the source history trimmed to the newest lines; everything
+        # else the full context supplied is dropped and counted
+        if rules and any(r.get("core") is None for r in rules):
+            return {"variant": variant, "available": False,
+                    "reason": "bundle's rule snapshot carries no core flags"}
+        tip = (bundle.get("run") or {}).get("tip") or (bundle.get("manifest") or {}).get("tip") or {}
+        ticker = str(tip.get("ticker") or "").upper()
+        source = str(tip.get("source") or "")
+        core_r = [r for r in rules if r.get("core")]
+        keep_n = [n for n in notes if n.get("core") or str(n.get("scope") or "") in (f"ticker:{ticker}", f"source:{source}")]
+        return {"variant": variant, "available": True,
+                "rulesText": format_rules(core_r), "notesText": format_notes(keep_n),
+                "ruleIds": [r.get("id") for r in core_r], "noteIds": [n.get("id") for n in keep_n],
+                "rulesSupplied": len(core_r), "notesSupplied": len(keep_n),
+                "dropped": (len(rules) - len(core_r)) + (len(notes) - len(keep_n)),
+                "rulesHash": _sha(_canonical([r.get("id") for r in core_r]))[:12],
+                "starterRules": not core_r, "historyLines": COMPACT_HISTORY_LINES,
+                "selection": {"rules": "core only", "notes": f"core + ticker:{ticker} + source:{source}",
+                              "history": f"newest {COMPACT_HISTORY_LINES} lines"},
+                **({"degenerate": "no core rules in the bundle - starter rules supplied"}
+                   if not core_r else {})}
     if variant == "no_knowledge":
         return {"variant": variant, "available": True,
                 "rulesText": format_rules([]), "notesText": format_notes([]),
@@ -456,7 +497,8 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
 
     man = bundle.get("manifest") or {}
     settings = bundle.get("settings") or {}
-    header, header_gaps = _rebuild_header(man, rules_text=kv["rulesText"], notes_text=kv["notesText"])
+    header, header_gaps = _rebuild_header(man, rules_text=kv["rulesText"], notes_text=kv["notesText"],
+                                          history_lines=kv.get("historyLines"))
     if man.get("exact") and man.get("system"):
         system = str(man["system"])
         system_gap = None
@@ -475,7 +517,7 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
 
     served = _Served(bundle)
     messages: list = [{"role": "user", "content": header}]
-    usage = {"in": 0, "out": 0, "calls": 0, "stops": []}
+    usage = {"in": 0, "out": 0, "calls": 0, "stops": [], "cacheRead": 0, "cacheCreation": 0}
     tools_used = 0
     text: str | None = None
     error: str | None = None
@@ -490,6 +532,9 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
             if u is not None:
                 usage["in"] += int(getattr(u, "input_tokens", 0) or 0)
                 usage["out"] += int(getattr(u, "output_tokens", 0) or 0)
+                # PROF-05: effective billed usage includes the cache side
+                usage["cacheRead"] += int(getattr(u, "cache_read_input_tokens", 0) or 0)
+                usage["cacheCreation"] += int(getattr(u, "cache_creation_input_tokens", 0) or 0)
             calls = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
             think = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
             if not calls:
@@ -543,7 +588,9 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
                             and opinion.verdict != baseline_verdict),
         "latencyMs": round(latency_ms, 1),
         "tokens": {"in": usage["in"], "out": usage["out"], "calls": usage["calls"],
-                   "stops": usage["stops"]},
+                   "stops": usage["stops"], "cacheRead": usage["cacheRead"], "cacheCreation": usage["cacheCreation"],
+                   "effectiveInput": usage["in"] + usage["cacheRead"] + usage["cacheCreation"]},
+        "headerChars": len(header),
         "toolCalls": {"served": len(served.served), "missing": len(served.missing),
                       "servedCalls": served.served, "missingCalls": served.missing},
         "proposedNotes": served.proposed_notes,     # captured, NEVER written
@@ -601,6 +648,10 @@ def compare(reports: list[dict]) -> dict:
             "proposedNotes": sum(len(r.get("proposedNotes") or []) for r in rs),
             "latencyMs": [r.get("latencyMs") for r in rs],
             "tokens": [r.get("tokens") for r in rs],
+            "headerChars": [r.get("headerChars") for r in rs],
+            "contracts": [r.get("contract") for r in rs],
+            "stops": [((r.get("protections") or {}).get("underlyingStop"), (r.get("protections") or {}).get("premiumStop")) for r in rs],
+            "quantities": [r.get("quantity") for r in rs],
             "skipped": [r.get("reason") for r in rs if r.get("skipped")],
             "reportHashes": [r.get("reportHash") for r in rs],
         }

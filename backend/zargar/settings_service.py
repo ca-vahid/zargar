@@ -224,6 +224,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_cohort_enabled": False,     # record EVERY eligible open/add idea (skips, declines, blocked cards, shadows, parks, failures) with its decision-time quote
     "techniques.tip.entry_cohort_delay_minutes": 3.0, # the configured LATER sample (labeled delayed - never alert-time evidence)
     "techniques.tip.entry_cohort_premium_cap": 1.05,  # the cap variant: fill only when the ask <= cap x the source-stated premium
+    "techniques.tip.hold_study_enabled": True,          # PROF-03: pre-close + next-open research snapshots of Tips positions (observation only)
+    "techniques.tip.hold_snapshot_at": "15:50",          # ET, pre-close snapshot job
+    "techniques.tip.hold_next_open_at": "09:36",         # ET, next-session first qualified quote
     "techniques.tip.analyst_feasibility_gate": "annotate",  # PROF-01: annotate (record the expression check beside the verdict) | downgrade (an unfittable TAKE becomes WATCH; thesis verdict kept) - a reviewed method decision flips it
     "techniques.tip.entry_cohort_delay_tolerance_seconds": 60.0,  # KF83-03: a delayed sample observed later than due + tolerance is LATE (diagnostic, never the delay variant's evidence)
     "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
