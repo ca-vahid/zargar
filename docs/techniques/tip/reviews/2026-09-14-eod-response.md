@@ -41,3 +41,15 @@ recommended; the research items (feasibility shown to the analyst before tool wo
 Deployment-intent lease (EOD-07); per-call usage on retros/digests and the bounded audit
 judgment (EOD-08); pipeline latency instrumentation (EOD-04); source→receipt→appraisal timing
 report and contemporaneous-option-evidence research for the 26 late messages (EOD-01).
+
+## Deployed
+
+v0.7.77 = main `411bc2a` (PR #108, renumbered after main moved to 0.7.76), restarted through the
+readiness gate at 21:34 ET on 2026-09-14 (task last run 33 min earlier, checkout head checked);
+health 0.7.77 at 21:35:34 ET. Verified after restart: RKT/T/HIMS restored with their stops, 0 open
+incidents, gates enforce/integrity, `gateway_status.json` + `logs/discord-gateway.log` written by
+the restarted gateway, `/api/tip/intake/liveness` answering. Shadow books `ab` (armed) and `eva`
+(armed) quarantined via `POST /api/portfolios/{id}/quarantine` (journaled `PortfolioQuarantine`).
+Follow-up the same night: a PAST late delivery inside the 24 h look-back is a `warnings` entry,
+never a current-stall verdict (it would have journaled a false `TipIntakeStalled` at 04:00 ET).
+
