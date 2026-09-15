@@ -319,9 +319,20 @@ def canned_option_tip(expiry: str):
 
 
 async def _opt_quote(eng, occ_sym: str, mid: float):
-    q = Quote(symbol=occ_sym, bid=round(mid - 0.05, 2), ask=round(mid + 0.05, 2), last=mid,
-              bid_size=500, ask_size=500, volume=1_000)
-    q.ts = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    """Publish a contract quote the way the OPRA research feed does
+    (options/service.py: overlay + on_quote with source ``opra`` and a source
+    timestamp). Since 12491f2 (2026-09-14) the sim fills an OPT order only on a
+    quote with a venue identity and a fresh source time — the chain overlay
+    installed at track() time stamps every incoming quote ``chain``/delayed
+    otherwise, and the fill that used to ride the delayed chain quote is
+    (correctly) refused."""
+    ts = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    bid, ask = round(mid - 0.05, 2), round(mid + 0.05, 2)
+    eng.quotes.set_overlay(occ_sym, bid=bid, ask=ask, bid_size=500, ask_size=500,
+                           source="opra", source_ts=ts, anchor_last=mid)
+    q = Quote(symbol=occ_sym, bid=bid, ask=ask, last=mid,
+              bid_size=500, ask_size=500, volume=1_000, source="opra", source_ts=ts)
+    q.ts = ts
     eng.quotes.on_quote(q)     # cache + bus in one call (gate freshness + sim fills)
     await asyncio.sleep(0.15)
 
@@ -388,8 +399,10 @@ async def test_option_tip_both_books_end_to_end(tip_rig):
     assert trade["status"] in ("submitting", "working", "open"), trade
 
     # fill the option entry, then the 2b handoff carries the OPT leg
+    # executable at the entry limit (the chain ask, 1.15): ask = mid + 0.05. Before
+    # 12491f2 the fill rode the DELAYED chain quote itself, which the sim now refuses.
     for _ in range(6):
-        await _opt_quote(eng, occ_sym, 1.15)
+        await _opt_quote(eng, occ_sym, 1.10)
 
     async def handed_off():
         pos = [p for p in eng.position_manager.positions()
@@ -465,8 +478,10 @@ async def test_short_tip_puts_end_to_end(tip_rig):
     trade = s2["trades"][0]
     assert trade["instrument"] == "options" and trade["orderSymbol"] == occ_sym, trade
 
+    # executable at the entry limit (the chain ask, 1.15): ask = mid + 0.05. Before
+    # 12491f2 the fill rode the DELAYED chain quote itself, which the sim now refuses.
     for _ in range(6):
-        await _opt_quote(eng, occ_sym, 1.15)
+        await _opt_quote(eng, occ_sym, 1.10)
 
     async def handed_off():
         pos = [p for p in eng.position_manager.positions()
