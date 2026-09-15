@@ -246,9 +246,12 @@ async def test_reviewed_consolidation_applies_through_audited_paths(app_client):
             "expected_revisions": {ks["id"]: revs[ks["id"]]}, "author": "consolidation:test"}
     evidence = [{"scope": "evidence:adoption-geometry", "sourceId": ref1["id"], "sourceRevision": revs[ref1["id"]],
                  "text": f"[EVIDENCE — cites rule {ref1['id']}] the case-5 arithmetic gate record."}]
-    out = await apply_consolidation(eng, manifest_hash="abc123", resolve=[base["id"], ks["id"]],
+    from zargar.techniques.tip.consolidation import payload_hash
+    resolve = [{"id": base["id"], "revision": revs[base["id"]]}, {"id": ks["id"], "revision": revs[ks["id"]]}]
+    h = payload_hash(resolve=resolve, batches=[family, kill], evidence=evidence)
+    out = await apply_consolidation(eng, manifest_hash=h, resolve=resolve,
                                     family=family, kill_switch=kill, evidence=evidence)
-    assert set(out["resolved"]) == {base["id"], ks["id"]}
+    assert {t["id"] for t in out["resolved"]} == {base["id"], ks["id"]}
     assert out["batches"]["family"]["merged"] == 2 and out["batches"]["killSwitch"]["merged"] == 1
     assert len(out["evidence"]) == 1 and out["evidence"][0].get("id")
     async with eng.sf() as session:
@@ -265,13 +268,100 @@ async def test_reviewed_consolidation_applies_through_audited_paths(app_client):
     supplied = await svc.notes_for_tip("AAPL", "Src", limit=50)
     assert all(not n["scope"].startswith("evidence:") for n in supplied)
     # replay: idempotent (receipts), nothing merged twice, evidence not duplicated
-    again = await apply_consolidation(eng, manifest_hash="abc123", resolve=[], family=family, kill_switch=kill, evidence=evidence)
-    assert again["batches"]["family"].get("alreadyApplied") and again["evidence"][0].get("existing")
+    again = await apply_consolidation(eng, manifest_hash=h, resolve=resolve, family=family, kill_switch=kill, evidence=evidence)
+    assert again.get("replay") is True and again["batches"]["family"]["merged"] == 2
     # a stale manifest revision on a fresh batch id refuses (whole batch)
     stale = {**family, "batchId": "consolidation-geometry-stale", "merge": {"supersedes": [other["id"]], "new_rule": "x"},
              "expected_revisions": {other["id"]: 99}}
+    hs = payload_hash(resolve=[], batches=[stale], evidence=[])
     with pytest.raises(ValueError, match="revision"):
-        await apply_consolidation(eng, manifest_hash="stale", resolve=[], family=stale, kill_switch={}, evidence=[])
+        await apply_consolidation(eng, manifest_hash=hs, resolve=[], family=stale, kill_switch={}, evidence=[])
     # the API route exists and refuses the same way
-    r = await client.post("/api/tip/knowledge/consolidate", json={"manifestHash": "stale", "family": stale})
+    r = await client.post("/api/tip/knowledge/consolidate", json={"manifestHash": hs, "family": stale})
     assert r.status_code == 409
+
+async def test_consolidation_payload_integrity_kfin05(app_client):
+    """KFIN-05: one canonical payload hash; every reviewed revision validated
+    before ANY mutation (including releases); changed text under the same hash,
+    a stale revision during resolution, a changed payload under an applied batch
+    id and a changed evidence revision are refused with nothing written; an
+    identical replay is idempotent; the receipt carries the actual transitions."""
+    from zargar.models import TipKnowledgeBatch, TipNote
+    from zargar.techniques.tip.consolidation import apply_consolidation, payload_hash, rollback_plan
+    client, eng = app_client
+    svc = eng.signals_service
+    await eng.settings.set("techniques.tip.knowledge_apply_enabled", False, journal=False)
+    a = await svc.add_tip_note("rule", "RULE (widget family — base): one.")
+    b = await svc.add_tip_note("rule", "RULE (widget family — case): two.", family_dedupe=False)
+    c = await svc.add_tip_note("rule", "RULE (other): untouched.")
+    await svc.flag_tip_notes([a["id"]], needs_human=True)
+    async with eng.sf() as session:
+        revs = {r.id: r.revision_no for r in (await session.execute(select(TipNote))).scalars().all()}
+    resolve = [{"id": a["id"], "revision": revs[a["id"]]}]
+    fam = {"batchId": "kfin05-family", "scope": "rule",
+           "merge": {"supersedes": [a["id"], b["id"]], "new_rule": "RULE (widget family — canonical): one and two."},
+           "expected_revisions": {a["id"]: revs[a["id"]], b["id"]: revs[b["id"]]}, "author": "consolidation:test"}
+    evd = [{"scope": "evidence:widget", "sourceId": b["id"], "sourceRevision": revs[b["id"]], "text": "case two record"}]
+    good = payload_hash(resolve=resolve, batches=[fam], evidence=evd)
+
+    async def snapshot():
+        async with eng.sf() as session:
+            rows = {r.id: (r.revision_no, r.needs_human, r.superseded_by) for r in (await session.execute(select(TipNote))).scalars().all()}
+            n_batches = len((await session.execute(select(TipKnowledgeBatch))).scalars().all())
+        return rows, n_batches
+    before = await snapshot()
+    # (1) changed text under the same claimed hash -> refused, nothing written (not even the release)
+    tampered = {**fam, "merge": {**fam["merge"], "new_rule": "RULE (widget family — canonical): one and TWO."}}
+    with pytest.raises(ValueError, match="identity mismatch"):
+        await apply_consolidation(eng, manifest_hash=good, resolve=resolve, family=tampered, evidence=evd)
+    assert await snapshot() == before
+    # (2) stale revision during dispute resolution -> refused before any mutation
+    stale_resolve = [{"id": a["id"], "revision": revs[a["id"]] + 5}]
+    h2 = payload_hash(resolve=stale_resolve, batches=[fam], evidence=evd)
+    with pytest.raises(ValueError, match="refused before any mutation"):
+        await apply_consolidation(eng, manifest_hash=h2, resolve=stale_resolve, family=fam, evidence=evd)
+    assert await snapshot() == before, "a stale reviewed revision left the dispute and the sources untouched"
+    # (3) changed evidence revision -> refused, nothing written
+    evd_bad = [{**evd[0], "sourceRevision": revs[b["id"]] + 3}]
+    h3 = payload_hash(resolve=resolve, batches=[fam], evidence=evd_bad)
+    with pytest.raises(ValueError, match="evidence for"):
+        await apply_consolidation(eng, manifest_hash=h3, resolve=resolve, family=fam, evidence=evd_bad)
+    assert await snapshot() == before
+    # (4) the good payload applies: release + merge + evidence, receipt with transitions
+    out = await apply_consolidation(eng, manifest_hash=good, resolve=resolve, family=fam, evidence=evd)
+    assert out["resolved"][0]["id"] == a["id"] and out["resolved"][0]["revisionTo"] == out["resolved"][0]["revisionFrom"] + 1
+    fam_out = out["batches"]["family"]
+    assert fam_out["merged"] == 2 and fam_out["newRuleId"] and {s["id"] for s in fam_out["superseded"]} == {a["id"], b["id"]}
+    assert out["evidence"][0]["id"] and "cites rule" in out["evidence"][0]["marker"]
+    plan = rollback_plan(out)
+    assert {p["step"] for p in plan} >= {"re-dispute", "restore-superseded", "expire-new-rule", "keep"}
+    async with eng.sf() as session:
+        rec = await session.get(TipKnowledgeBatch, f"consolidation:{good}")
+        brec = await session.get(TipKnowledgeBatch, "kfin05-family")
+    assert rec.status == "applied" and rec.applied["rollbackPlan"] and brec.applied.get("consolidationIdentity")
+    # (5) identical replay is idempotent — the recorded receipt comes back, nothing new written
+    after = await snapshot()
+    again = await apply_consolidation(eng, manifest_hash=good, resolve=resolve, family=fam, evidence=evd)
+    assert again.get("replay") is True and again["batches"]["family"]["newRuleId"] == fam_out["newRuleId"]
+    assert await snapshot() == after
+    # (6) a DIFFERENT payload under the already-applied batch id -> refused, nothing written
+    other = {**fam, "merge": {"supersedes": [c["id"]], "new_rule": "RULE (other): rewritten."},
+             "expected_revisions": {c["id"]: revs[c["id"]]}}
+    h6 = payload_hash(resolve=[], batches=[other], evidence=[])
+    with pytest.raises(ValueError, match="DIFFERENT payload"):
+        await apply_consolidation(eng, manifest_hash=h6, resolve=[], family=other, evidence=[])
+    assert await snapshot() == after
+    # the API refuses the same way (409) and still applies nothing
+    r = await client.post("/api/tip/knowledge/consolidate", json={"manifestHash": good, "family": tampered, "resolve": resolve, "evidence": evd})
+    assert r.status_code == 409 and await snapshot() == after
+    # (7) an expire batch (reviewed rejection) works through the same wrapper with its own receipt
+    d = await svc.add_tip_note("rule", "RULE (proposal to reject): hypothetical.", family_dedupe=False)
+    async with eng.sf() as session:
+        drev = await session.scalar(select(TipNote.revision_no).where(TipNote.id == d["id"]))
+    rej = {"batchId": "kfin05-reject", "scope": "rule", "expire": {"ids": [d["id"]], "reason": "reviewed rejection: hypothesis, not policy"},
+           "expected_revisions": {d["id"]: drev}, "author": "consolidation:test"}
+    h7 = payload_hash(resolve=[], batches=[rej], evidence=[])
+    out7 = await apply_consolidation(eng, manifest_hash=h7, batches=[rej])
+    assert out7["batches"]["kfin05-reject"]["kind"] == "expire" and out7["batches"]["kfin05-reject"]["expired"][0]["id"] == d["id"]
+    live = {n["id"] for n in await svc.tip_notes(["rule"], limit=100)}
+    assert d["id"] not in live and c["id"] in live

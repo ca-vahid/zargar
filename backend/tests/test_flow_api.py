@@ -3,6 +3,8 @@ context deliveries, and the server-composed brief. Reads are seeded directly —
 no chain fetches, no LLM."""
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 from zargar.domain import new_id
@@ -12,7 +14,35 @@ from zargar.techniques.flow.service import FlowService
 
 from .conftest import make_test_config
 
-DAYS = ["2026-09-02", "2026-09-03", "2026-09-04"]
+
+def _scan_days(n: int = 3) -> list[str]:
+    """The last `n` weekdays ending at the most recent weekday on or before
+    today (local date, the same clock `FlowService.context_for` measures
+    freshness against). The fixture is "the last 3 scan days": a context line
+    is only served while the latest read is <= `max_age_days` (3) old, so the
+    reads must be dated from the real clock — a pinned calendar (the original
+    2026-09-02..04) silently aged out and every consumer lost its context.
+    Ending on the last weekday keeps the newest read <= 2 days old even on a
+    Sunday; nothing here relaxes the production freshness rule."""
+    d = dt.date.today()
+    while d.weekday() >= 5:
+        d -= dt.timedelta(days=1)
+    out: list[str] = []
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d.isoformat())
+        d -= dt.timedelta(days=1)
+    return sorted(out)
+
+
+def _next_weekday(day: str) -> str:
+    d = dt.date.fromisoformat(day) + dt.timedelta(days=1)
+    while d.weekday() >= 5:
+        d += dt.timedelta(days=1)
+    return d.isoformat()
+
+
+DAYS = _scan_days()
 
 
 def flag(contract="COIN260912C00300000", opt="call", prem=4_200_000.0, vol=9850, oi=7410,
@@ -303,7 +333,7 @@ async def test_repair_rescans_degraded_day(flow_rig):
     from zargar.domain import new_id
     eng = flow_rig
     eng.options = None    # offline: no live CBOE fallback in tests
-    day = "2026-09-08"                             # newer than the fixture days
+    day = _next_weekday(DAYS[2])                   # newer than the fixture days
     async with eng.sf() as session:
         session.add(FlowRead(id=new_id(), day=day, symbol="ZETA", score=4.0, lean="none",
                              read={"flags": [], "confirmed": [{"contract": "X"}],
