@@ -226,3 +226,12 @@ remain blocking evidence. An alternative provider's candle is not permission to 
 adjustment/volume datasets. Simulated executions need verifiable fresh observations; orders
 may remain working while such observations are unavailable. Daily accounting reports actual
 fills/fees independently of the original signal classification.
+
+## September 14 decision: observe intraday improvement, do not unlock entries
+
+The user approved non-executing Practice monitoring and explicitly asked to preserve the
+reasoning. See [the decision and full research protocol](INTRADAY-RESEARCH-DECISION-2026-09-14.md).
+Sean's sizing/abstention guidance does not establish our proposed 15-minute automatic reopening
+rule. The earlier suggestion to turn intraday reassessment into permission was withdrawn.
+Daily EMA references stay daily; the 15-minute cadence is observation, not a new EMA timeframe.
+Research snapshots and hypothetical underlying confirmations cannot arm, approve or submit.

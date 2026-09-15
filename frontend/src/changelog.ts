@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.83";
+export const APP_VERSION = "0.7.84";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.84",date:"2026-09-15",title:"Intraday market research without automatic unlocking",items:[
+    {tag:"new",text:"Cartel Practice can observe blocked-market shortlists during the session, comparing completed 15-minute index candles with saved daily EMA levels and recording hypothetical stock confirmations. It cannot arm plans or place orders."},
+    {tag:"improved",text:"The accepted research-only decision and its distinction from Sean's guidance are documented. Missing evidence stays unavailable, and existing execution permissions and risk settings remain unchanged."},
+  ]},
   {
     version: "0.7.83",
     date: "2026-09-15",

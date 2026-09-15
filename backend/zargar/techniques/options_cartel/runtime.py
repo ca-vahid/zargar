@@ -39,6 +39,11 @@ class CartelRuntime(CartelObserver):
         from .quote_observations import QuoteRecorder
         from .service import CartelService
         self.quote_recorder = QuoteRecorder(CartelService(engine), clock=lambda: self.clock())
+        self._intraday_research_task = None
+        self._intraday_research_last = 0
+        self._intraday_research_started = None
+        self._intraday_research_watched = set()
+        self._intraday_research_status = {'phase':'waiting_session'}
 
     async def arm(self, run_id, config=None):
         from sqlalchemy import text
@@ -414,6 +419,9 @@ class CartelRuntime(CartelObserver):
             self._publish(rid)
 
     async def on_quote_watch(self):
+        if not self.stopping and self.clock()-self._intraday_research_last >= 60_000 and (self._intraday_research_task is None or self._intraday_research_task.done()):
+            self._intraday_research_last = self.clock()
+            self._intraday_research_task = asyncio.create_task(self._observe_intraday_research(), name='cartel-intraday-research')
         from .observation_health import repair_gaps
         task = getattr(self, 'history_repair_task', None)
         if not self.stopping and (task is None or task.done()):
@@ -461,6 +469,17 @@ class CartelRuntime(CartelObserver):
                 self.engine._cartel_preparation_activations = {}
             self.engine._cartel_preparation_activations[self.preparation_activation_workspace] = {'at': self.clock(), 'error': f'{type(exc).__name__}: activation unavailable'}
 
+    async def _observe_intraday_research(self):
+        from .intraday_research import collect
+        try:
+            async with asyncio.timeout(90):
+                await collect(self)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - research must not interrupt execution or exits
+            self._intraday_research_status={'phase':'data_unavailable','reason':f'{type(exc).__name__}: research observation unavailable'}
+            self._intraday_research_last = self.clock()+240_000
+
     async def flatten_trade(self, run_id, trigger_id=None):
         positions = self._positions(run_id)
         for p in positions:
@@ -479,6 +498,9 @@ class CartelRuntime(CartelObserver):
 
     async def stop(self):
         self.stopping = True
+        if self._intraday_research_task is not None and not self._intraday_research_task.done():
+            self._intraday_research_task.cancel()
+            await asyncio.gather(self._intraday_research_task, return_exceptions=True)
         task = getattr(self, 'history_repair_task', None)
         if task is not None and not task.done():
             task.cancel()
