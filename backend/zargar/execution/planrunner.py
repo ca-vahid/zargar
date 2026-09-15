@@ -617,11 +617,15 @@ class PlanRunner(SessionListener):
             hit = (obs <= target) if tr.direction == "short" else (obs >= target)
             if not hit:
                 return
-            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx if label != "tp1-candidate" else "tp1-candidate")
+            candidate = label == "tp1-candidate"
+            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx if not candidate else "tp1-candidate")
             pending = self.__dict__.setdefault("_shadow_pending", set())
-            if key in seen or key in pending:
-                return                                          # acknowledged, or captured and awaiting its write
-            pending.add(key)
+            if not candidate:
+                if key in seen or key in pending:
+                    return                                      # acknowledged, or captured and awaiting its write
+                pending.add(key)
+            elif key in seen or key in pending:
+                return                                          # the candidate's first COVERED observation is recorded
             contract = None
             oq = self.engine.quotes.get(tr.order_symbol) if (tr.instrument == "options" and tr.order_symbol) else q
             if oq is not None:
@@ -672,6 +676,14 @@ class PlanRunner(SessionListener):
                 why = "displayed size unknown"
             if disposition != "observed" and why is None:
                 why = disposition
+            if candidate:
+                # PF-01 (2026-09-15): the frozen policy takes the FIRST COVERED opportunity - an unscorable touch is
+                # recorded once as raw evidence (its own key) and leaves the candidate eligible for a later covered one
+                if not scorable:
+                    key = key[:4] + ("tp1-candidate-raw",)
+                    if key in seen or key in pending:
+                        return
+                pending.add(key)
             out.append({"runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "tradeInstance": key[2],
                         "rung": label, "rungIndex": idx, "target": target, "version": "shadow-exit-v1", "disposition": disposition,
                         "underlying": {"price": obs, "source": str(getattr(q, "source", "") or ""), "sourceTs": src_ts, "receivedTs": q.ts, "ageS": round(age_s, 2)},

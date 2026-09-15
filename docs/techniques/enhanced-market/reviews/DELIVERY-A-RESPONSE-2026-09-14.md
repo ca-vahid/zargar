@@ -503,3 +503,23 @@ openTrades 0/0, workingEntries 0/0, pendingExits 0/0, restingOrders 22/22, infli
 managedOpen 3/3), before-inventory `logs/restart-inventory-20260915-061945.json`. Live armed afterwards: 52 EM, 24 Tips,
 3 Team2. Both observer keys remain False; activation is a separate decision.
 
+---
+
+# Profitability cohorts review at ba2eccb (`reviews/profitability-cohort-regressions/`) - PF-01..03 + entry label, same day
+
+Research definitions accepted for prospective comparison; scoped integration GO with both experiments disabled.
+Reviewer cases adopted unchanged: `tests/test_p02_real_payload_and_fee_conservation.py` (3),
+`tests/test_codex_profitability_report_scope.py` (2) - 5 failed -> 5 pass; the 15 prior cases still pass (31 total with
+the measurement suites).
+
+| Item | Fix | Regression |
+|---|---|---|
+| PF-01 | Reducer consumes the actual capture payload (observed + modeled.scorable/coveredQty/bid + observedAt) and the documented shape; binds to trade instance, contract and lifetime; producer keeps the first COVERED opportunity (unscorable touch recorded once on its own raw key, candidate stays eligible). | `test_p02_reducer_consumes_the_actual_production_capture_payload` (185.84 vs 195.84, forgone 10), `test_p02_later_first_covered_bid_survives_an_unscorable_first_touch` |
+| PF-02 | Actual entry fee and actual retained-contract fees allocated by fill; modeled exit fee only on the hypothetical sale; components must reconcile with the execution-backed net. | `test_p02_keeps_actual_entry_and_retained_exit_fees_in_the_pair` (194 = 194, delta 0) |
+| PF-03 | Every intent kept in P-03 with explicit unknowns; `riskBudgetQty` wired and labelled a budget bound; signed-delta payoff proxy (puts). | `test_economics_table_keeps_refused_intents_with_unknown_quotes`, `test_put_delta_can_produce_a_positive_downside_payoff_proxy` |
+| Label | `roomPlannedR` vs `roomAtActualEntryR` (unknown); `sourceSymbolDirectionMatch`. P-02/P-03 marked PROVISIONAL in the report. | rendered in every report |
+
+Both experiments stay off (`execution.shadow_exit_observe`, `techniques.enhanced_market.shadow_exit_observe`,
+`execution.shadow_p02_candidate`, `techniques.enhanced_market.shadow_p02_candidate` = False). Disabled integration
+proceeds through the normal after-close release checks; the exact combined build and receipt follow in this file.
+

@@ -1100,3 +1100,11 @@ fires were refused (three by the position caps, one stale quote), P-02 is unknow
 Gap-day wait unchanged; no early-profit rule; no entry broadening; `shadow_exit_observe` and the new
 `shadow_p02_candidate` knob both False.
 
+### 2026-09-15 - profitability measurement corrected (PF-01..03), P-02/P-03 provisional, both experiments off
+
+Reducer joins the observer's actual `tp1-candidate` payload bound to the trade instance/contract/lifetime; the
+candidate keeps its first COVERED opportunity (raw touch recorded once); fees are conserved in the pair (actual entry
+and retained fees, modeled exit fee only on the hypothetical sale, reconciliation required); every intent stays in the
+economics table with explicit unknowns, `riskBudgetQty` is a budget bound only, the payoff proxy is signed (puts count);
+planned room is labelled planned and the actual-entry room is unknown. No trading rule changed.
+

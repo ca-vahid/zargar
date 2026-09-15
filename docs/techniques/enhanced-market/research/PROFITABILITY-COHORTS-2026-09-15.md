@@ -48,6 +48,16 @@ removed trades; missed-winner candidates with the underlying proxy; strata; P-02
 alternative / delta / forgone / why); P-03 table; explicit unknown counts. Chronological blocks accumulate across
 sessions in `research/profitability/`.
 
+## PF-01..03 and the entry-label correction (same day, reviewer packet `reviews/profitability-cohort-regressions/`)
+
+| Item | Correction |
+|---|---|
+| PF-01 observation contract | The reducer consumes the observer's ACTUAL payload (disposition `observed`, `modeled.scorable` / `coveredQty` / `bid`, `observedAt`) as well as the documented shape, and binds each observation to the trade instance (entry order), the same contract and the position's lifetime; coverage below the alternative's quantity, pending/stop-first and wrong-time evidence stay unknown with the reason. The producer keeps the FIRST covered opportunity: an unscorable touch is recorded once as raw evidence (own key `tp1-candidate-raw`) and leaves the candidate eligible for a later covered observation. The production rung's first-raw-observation semantics are unchanged. |
+| PF-02 fee conservation | The alternative's sold contract keeps its ACTUAL entry fee (allocated by filled quantity) and pays the declared modeled exit fee only on the hypothetical sale; retained contracts keep their ACTUAL per-contract result (entry and exit fees allocated per fill); production components must sum to the execution-backed net or the pair is unknown. Same price and exit cost = zero delta. Forgone-on-winner uses the same basis. |
+| PF-03 economics | Every intent stays in the P-03 table (friction unknown with the reason when no quote was captured - the oversized share fallbacks included); `riskBudgetQty` is wired (risk % x book equity at the fire from `equity_points`, premium stop % from settings, default 50) and labelled a budget bound only; the payoff proxy is SIGNED delta x SIGNED move (puts included), unknown when delta is missing/zero/invalid. |
+| Entry label | `roomPlannedR` = TP1 room from the plan's intended underlying entry; `roomAtActualEntryR` is unknown for every fill (no underlying observation at dispatch is recorded; an option premium is never plugged into underlying geometry). `sourceSymbolDirectionMatch` replaces "aligned": symbol + direction in the ledger only. |
+| Status | P-02 and P-03 sections are PROVISIONAL in every report until the reviewers accept these corrections; both knobs (`shadow_exit_observe`, `shadow_p02_candidate`) stay False. No strategy conclusion is drawn from the all-baseline P-01 cohort. |
+
 ## What could be wrong
 
 - The cohort is small and confounded with direction and family (the reviewers' own caveat); the report separates
