@@ -113,6 +113,13 @@ for history (no as-of listings) and scores the model's premium path, not fills.
 - **The watch job and the desk both edit TRADING-RULES and release versions**; three desks release several versions
   a day; version collisions happened five times. Always check origin/main's `APP_VERSION` before stamping, and never
   resolve a version-file conflict by keeping both sides.
+- **Execution-state durability (v0.7.76)**: the refused-fire list and the decision watermark ride the armed state on
+  every persist and are rebuilt from the journal; a crash between a journaled verdict and the next persist is reported
+  as `journalOnly` evidence in the funnel, never as zero. Not yet exercised by a real mid-session restart.
+- **Corrections**: a fire/add/trim/exit that a corrected minute surfaces after its minute was judged is recorded
+  (`backdated_signal_skip`), not acted on — including a historical EXIT, so the book's position then relies on the
+  live trims, target breach, quote stop and flatten rather than the model's revised stop. A deliberate judgement,
+  open for the other team's review.
 - **Journal completeness**: `_log` events are in-memory (capped, lost on restart); only `_trail` writes are durable.
   A plan whose snapshot shows `trailGaps` is an incompletely observed session. The morning-report line, the
   `/team2-review` skill, the 5m flag detector (A5) and intraday zones (A11) were never built.

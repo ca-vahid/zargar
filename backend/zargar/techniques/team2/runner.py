@@ -88,6 +88,9 @@ class Team2Runner(PlanRunner):
         # bar) can never re-fire or skip one. `_seen` (the count) stays for the tests/UI that read it.
         self._seen_fp: dict[str, set[str]] = {}
         self._rewrite_noted: dict[str, int] = {}
+        # R3 (2026-09-14): the last decision's clock per plan — an event whose close is at or before it was NOT
+        # there when that minute was judged (a revision surfaced it) and is analytical state, never an order
+        self._decision_wm: dict[str, int] = {}
         self._small_noted: set[tuple[str, str]] = set()
         self._flatten_noted: set[str] = set()          # F106: the flatten's once-per-run note
         self._loss_tally: dict[str, dict[str, tuple[int, str]]] = {}   # day -> run_id -> (losers, basis) (F37/F38)
@@ -160,15 +163,80 @@ class Team2Runner(PlanRunner):
             return band
         return round(min(ask + rules.tick, band), 2)
 
-    def _record_unfilled(self, ap: ArmedPlan, tid: str) -> None:
-        """R1: tell the read that this fire never became a position (refused / deferred / cutoff). Persisted with the
-        plan, so replay reproduces the live day and a restart does not resurrect the proxy."""
+    _UNFILLED_TERMINAL = ("failed", "cancelled", "skipped", "rejected", "expired")
+
+    def _record_unfilled(self, ap: ArmedPlan, tid: str) -> bool:
+        """R1: tell the read that this fire never became a position (refused / deferred / cutoff / stale / rejected
+        / unfilled / sizing). The list rides the ordinary persist (`state_extras`), comes back on restore
+        (`restore_extras`) and is rebuilt from the durable verdicts (`load_contract_verdicts`), so a restart does not
+        resurrect the proxy. Returns True when the trigger was newly recorded."""
         plan = ap.plan if isinstance(getattr(ap, "plan", None), dict) else None
         if plan is None:
-            return
+            return False
         lst = plan.setdefault("executionRefused", [])
-        if tid not in lst:
-            lst.append(tid)
+        if tid in lst:
+            return False
+        lst.append(tid)
+        return True
+
+    def _sync_unfilled(self, ap: ArmedPlan) -> int:
+        """R1: every ZERO-FILL outcome exempts its fire from the read's proxy, wherever it happened — the picker,
+        the stale gate, the entry gate, the order (rejected / cancelled unfilled / capped away), sizing or budget.
+        An unknown-ACK order (submitting / working) and a partial fill are NOT exempt: the book may hold them."""
+        n = 0
+        for t in list(ap.trades.values()):
+            if getattr(t, "is_add", False):
+                continue
+            if float(t.filled_qty or 0) <= 0 and t.status in self._UNFILLED_TERMINAL and self._record_unfilled(ap, t.trigger_id):
+                n += 1
+        return n
+
+    def _exempt_from_verdicts(self, ap: ArmedPlan) -> int:
+        """R1: a durable refusal / deferral whose trade projection is absent (or terminal and unfilled) is an exemption
+        after a restart too — the journal is the record, not the in-memory list. The LAST verdict of a trigger
+        decides (a deferral followed by a pick is not a refusal)."""
+        last: dict[str, str] = {}
+        for v in self._contract_verdicts.get(ap.run_id) or []:
+            last[str(v.get("trigger"))] = str(v.get("verdict") or "")
+        n = 0
+        for tid, verdict in last.items():
+            if verdict not in ("refused", "deferred") or tid == "None":
+                continue
+            t = ap.trades.get(tid)
+            if t is None or (float(t.filled_qty or 0) <= 0 and t.status in self._UNFILLED_TERMINAL):
+                if self._record_unfilled(ap, tid):
+                    n += 1
+        return n
+
+    def state_extras(self, ap: ArmedPlan) -> dict:
+        self._sync_unfilled(ap)
+        plan = ap.plan if isinstance(getattr(ap, "plan", None), dict) else {}
+        return {"executionRefused": list(plan.get("executionRefused") or []),
+                "decisionWatermark": self._decision_wm.get(ap.run_id)}
+
+    def restore_extras(self, ap: ArmedPlan, state: dict) -> None:
+        for tid in (state or {}).get("executionRefused") or []:
+            self._record_unfilled(ap, str(tid))
+        wm = (state or {}).get("decisionWatermark")
+        if wm:
+            self._decision_wm[ap.run_id] = max(int(wm), int(self._decision_wm.get(ap.run_id) or 0))
+
+    async def entry_gate(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
+        """R2: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
+        is sent, whether the order is an entry, an X5 add on a cached contract or a re-price retry. The signal-age rule
+        stays at the origin (`_stale_signal`): the chain itself may legitimately take a minute."""
+        if ap.config.mode == "alert":
+            return None
+        rules = self.rules()
+        now = int(time.time() * 1000)
+        now_et = dt.datetime.fromtimestamp(now / 1000, ET)
+        if now_et.strftime("%Y-%m-%d") != ap.plan_for:
+            return f"order boundary ({stage}): {now_et.strftime('%Y-%m-%d')} is not the plan's session {ap.plan_for} (R2)"
+        m = now_et.hour * 60 + now_et.minute
+        if m >= int(rules.last_entry_min):
+            return (f"order boundary ({stage}): the entry cutoff ({rules.last_entry_min // 60:02d}:{rules.last_entry_min % 60:02d}) "
+                    f"had passed at {now_et.strftime('%H:%M:%S')} — no new order (R2)")
+        return None
 
     async def _trail(self, ap: ArmedPlan, kind: str, event: str, reason: str, **detail) -> None:
         """Cohort v2 (2026-09-10, user decision): the candidate -> quote -> order -> fill -> exit trail is journaled under
@@ -460,26 +528,39 @@ class Team2Runner(PlanRunner):
                 await svc.stamp_run(ap)
 
     # ------------------------------------------------------------- bars
-    def _merge_revision(self, ap: ArmedPlan, bar: Bar) -> None:
+    def _merge_revision(self, ap: ArmedPlan, bar: Bar) -> dict | None:
+        """R3: merge a corrected / late minute into the private tape. Returns the revision record (None when the
+        bar is identical to what the desk already holds — a duplicate delivery changes nothing and writes nothing);
+        `_on_bar` journals it, so the decision-time inputs can be reconstructed from the record."""
         bars = self._bars.setdefault(ap.run_id, [])
+        hhmm = dt.datetime.fromtimestamp(bar.ts / 1000, ET).strftime('%H:%M')
         for i, b in enumerate(bars):
             if b.ts == bar.ts:
                 same = (b.open, b.high, b.low, b.close, b.volume) == (bar.open, bar.high, bar.low, bar.close, bar.volume)
                 if same:
-                    return
+                    return None
                 bars[i] = bar
-                self._log(ap, "bar_revised", f"the {dt.datetime.fromtimestamp(bar.ts / 1000, ET).strftime('%H:%M')} bar was corrected "
-                          f"({b.source or 'unknown'} o/h/l/c/v {b.open}/{b.high}/{b.low}/{b.close}/{b.volume} → "
-                          f"{bar.source or 'unknown'} {bar.open}/{bar.high}/{bar.low}/{bar.close}/{bar.volume}); the next read runs on "
-                          f"the corrected tape (R3)", ts_=bar.ts, before=[b.open, b.high, b.low, b.close, b.volume],
-                          after=[bar.open, bar.high, bar.low, bar.close, bar.volume], source=bar.source)
-                return
+                text = (f"the {hhmm} bar was corrected ({b.source or 'unknown'} o/h/l/c/v {b.open}/{b.high}/{b.low}/{b.close}/{b.volume} → "
+                        f"{bar.source or 'unknown'} {bar.open}/{bar.high}/{bar.low}/{bar.close}/{bar.volume}); the next read runs on "
+                        f"the corrected tape (R3)")
+                rec = {"event": "bar_revised", "text": text, "ts_": bar.ts, "before": [b.open, b.high, b.low, b.close, b.volume],
+                       "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "source": bar.source,
+                       "decisionWatermark": self._decision_wm.get(ap.run_id)}
+                self._log(ap, "bar_revised", text, **{k: v for k, v in rec.items() if k not in ("event", "text")})
+                return rec
             if b.ts > bar.ts:
                 bars.insert(i, bar)
-                self._log(ap, "bar_recovered", f"the missing {dt.datetime.fromtimestamp(bar.ts / 1000, ET).strftime('%H:%M')} bar "
-                          f"arrived late and was inserted; the next read runs on the completed tape (R3)", ts_=bar.ts, source=bar.source)
-                return
+                text = f"the missing {hhmm} bar arrived late and was inserted; the next read runs on the completed tape (R3)"
+                rec = {"event": "bar_recovered", "text": text, "ts_": bar.ts, "source": bar.source,
+                       "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "decisionWatermark": self._decision_wm.get(ap.run_id)}
+                self._log(ap, "bar_recovered", text, **{k: v for k, v in rec.items() if k not in ("event", "text")})
+                return rec
         bars.append(bar)
+        text = f"the {hhmm} bar arrived late and was appended (R3)"
+        rec = {"event": "bar_recovered", "text": text, "ts_": bar.ts, "source": bar.source,
+               "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "decisionWatermark": self._decision_wm.get(ap.run_id)}
+        self._log(ap, "bar_recovered", text, **{k: v for k, v in rec.items() if k not in ("event", "text")})
+        return rec
 
     async def load_contract_verdicts(self) -> int:
         """R5: after a restart the in-memory verdict list is empty; re-read today's durable `TechniquePlanContract`
@@ -495,6 +576,11 @@ class Team2Runner(PlanRunner):
                     if rows:
                         self._contract_verdicts[ap.run_id] = [dict(r.payload or {}) for r in rows]
                         n += len(rows)
+                        # R1: reporting AND the read's exemption come back from the same durable rows
+                        added = self._exempt_from_verdicts(ap)
+                        if added:
+                            self._log(ap, "execution_overlay_restored", f"{added} refused/deferred fire(s) re-exempted from the "
+                                      f"read's proxy from the journal (R1)", restored=added)
         except Exception:  # noqa: BLE001
             log.warning("team2 contract verdicts not reloaded", exc_info=True)
         return n
@@ -645,7 +731,10 @@ class Team2Runner(PlanRunner):
             # the next 2m close recomputes the read from the corrected history, `_seen_fp` keeps acted events from
             # repeating, and `read_rewritten` states when a conclusion changed. Decision-time inputs stay in the
             # journal; the revision is recorded with before/after.
-            self._merge_revision(ap, bar)
+            rec = self._merge_revision(ap, bar)
+            if rec is not None and journal:
+                await self._trail(ap, ev.TECHNIQUE_PLAN_READ, rec["event"], rec["text"],
+                                  **{k: v for k, v in rec.items() if k not in ("event", "text")})
             return
         ap.last_bar_ts = bar.ts
         ap.stale = False
@@ -713,9 +802,28 @@ class Team2Runner(PlanRunner):
         new = [e for e, fp in zip(res.events, fps) if fp not in seen_fp]
         self._seen[ap.run_id] = len(res.events)
         halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
+        wm = self._decision_wm.get(ap.run_id)
+        self._decision_wm[ap.run_id] = max(int(wm or 0), int(now_ms))
         for e in new:
             seen_fp.add(self._fingerprint(e))           # before handling: a failing event is dropped, the rest still act
             what = e["event"]
+            if what in ("fire", "add", "trim", "exit") and wm is not None and int(e.get("ts") or 0) <= int(wm):
+                # R3 (2026-09-14): this minute was already judged (decision at `wm`) and the event was not there —
+                # a revision or a recovered hole surfaced it. It is a changed analytical conclusion, recorded here,
+                # never a backdated order, add, trim or exit: the book's position stays under present-time
+                # management (live trims, target breach, quote stop, clock flatten) and a setup price creates NOW
+                # arrives as a new event with a current close.
+                tid = f"{e.get('setup')}#{e.get('touch')}" if what == "fire" else str(e.get("setup") or "?")
+                rec = {"sourceTs": int(e.get("ts") or 0), "judgedAt": int(wm), "decisionTs": int(now_ms), "instruction": what}
+                self._log(ap, "backdated_signal_skip", f"{tid}: a {what} at {e.get('time') or e.get('ts')} surfaced by a revision "
+                          f"after that minute was judged — recorded, not acted on (R3)", trigger=tid, **rec)
+                if what == "fire":
+                    self._record_unfilled(ap, tid)
+                if journal:
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "backdated_signal_skip", **rec,
+                        "ts": e.get("ts"), "why": str(e.get("why") or "")}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                continue
             if what == "fire":
                 await self._fire_from_event(ap, e, bar, res, halted=halted, journal=journal)
             elif what == "add":
@@ -789,6 +897,7 @@ class Team2Runner(PlanRunner):
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "max_concurrent_positions",
                         "open": across, "max": cap, "ts": e.get("ts")},
                         aggregate_type="technique_run", aggregate_id=ap.run_id)
+                    self._record_unfilled(ap, tid)          # R1: the book never held it
                 return
         # R2 (2026-09-14): the read's clock is the bar's; the ORDER's clock is the wall. A signal recovered from a
         # delayed or replayed bar must not enter after the actual cutoff, outside its session, or when it is older
@@ -800,6 +909,7 @@ class Team2Runner(PlanRunner):
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "stale_signal_skip", **stale,
                     "ts": e.get("ts")}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                self._record_unfilled(ap, tid)              # R1: a zero-fill outcome outside the picker
                 return
         direction = "long" if e.get("regime", {}).get("stack") == "bull" else "short"
         setup = next((s for s in res.setups if s["id"] == e.get("setup")), {})
@@ -1121,6 +1231,16 @@ class Team2Runner(PlanRunner):
             return
         if base.remaining <= 0 or base.instrument != "options" or not base.contract or frac <= 0:
             return
+        # R2 (2026-09-14): an add increases exposure — it obeys the same session / cutoff / freshness rule as a fire
+        # at its origin, and the shared entry gate again at the order boundary (it rides a cached contract, so the
+        # picker's re-check never sees it)
+        stale = self._stale_signal(ap, e, self.rules())
+        if stale is not None:
+            self._log(ap, "stale_signal_skip", f"{tid}: add {stale['why']}", trigger=tid, **{k: v for k, v in stale.items() if k != "why"})
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "stale_signal_skip", "instruction": "add", **stale,
+                "ts": e.get("ts")}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+            return
         c = dict(base.contract)
         q = self.engine.quotes.get(base.order_symbol) if base.order_symbol else None
         if q is not None and q.ask and q.ask > 0:
@@ -1252,9 +1372,25 @@ class Team2Runner(PlanRunner):
         # reason a model trade was not taken, and it must survive the close, a restart and the capped event list
         verdicts = getattr(self, "_contract_verdicts", {}).get(ap.run_id) or []
         by_trigger: dict[str, dict] = {}
+        verdict_count: dict[str, int] = {}
         for v in verdicts:
-            by_trigger[str(v.get("trigger"))] = v                     # the LAST verdict for a trigger is its final one
+            k = str(v.get("trigger"))
+            by_trigger[k] = v                                         # the LAST verdict for a trigger is its final one
+            verdict_count[k] = verdict_count.get(k, 0) + 1            # … the count keeps the retries visible
         attempts = [t for t in ap.trades.values() if float(t.filled_qty or 0) <= 0 and not getattr(t, "is_add", False)]
+        # R5 (follow-up): attempt IDENTITIES come from the durable verdicts, then the trade projection is joined — a
+        # verdict journaled before the projection was persisted (a crash in between) is still an attempt, reported
+        # as journal-only evidence rather than silently counted as zero
+        known = {str(t.trigger_id) for t in ap.trades.values()}
+        journal_only = []
+        for k, v in by_trigger.items():
+            if k in known or k == "None":
+                continue
+            journal_only.append(SimpleNamespace(
+                trigger_id=k, setup_id=k.split("#")[0], status="unknown", order_symbol=v.get("symbol") if str(v.get("symbol") or "") != ap.symbol else None,
+                reason="journal-only: the trade projection was never persisted", errors=[], fired_ts=int(v.get("ts") or 0),
+                entry_order_id=None, filled_qty=0.0, is_add=False, _journal_only=True))
+        attempts += journal_only
         rows = []
         matched = 0
         used: set[str] = set()
@@ -1265,8 +1401,10 @@ class Team2Runner(PlanRunner):
                     else "order_rejected" if t.status in ("failed", "cancelled", "rejected") and getattr(t, "entry_order_id", None)
                     else "not_sent")
             return {"trigger": t.trigger_id, "status": t.status, "attemptKind": kind, "contract": t.order_symbol,
-                    "verdict": v.get("verdict"), "verdictStage": v.get("stage"), "decisiveReason": v.get("reason") or t.reason or (t.errors[-1] if t.errors else None),
-                    "examined": v.get("examined"), "livePrice": ({"bid": v.get("bid"), "ask": v.get("ask")} if v.get("ask") is not None else None)}
+                    "verdict": v.get("verdict"), "verdictStage": v.get("stage"), "verdictCount": verdict_count.get(str(t.trigger_id), 0),
+                    "decisiveReason": v.get("reason") or t.reason or (t.errors[-1] if t.errors else None),
+                    "examined": v.get("examined"), "livePrice": ({"bid": v.get("bid"), "ask": v.get("ask")} if v.get("ask") is not None else None),
+                    "evidence": "journal-only" if getattr(t, "_journal_only", False) else "projection"}
 
         for mt in model:
             cands = [t for t in real if t.setup_id == mt.get("setup") and t.trigger_id not in used]
@@ -1294,9 +1432,11 @@ class Team2Runner(PlanRunner):
             rows.append(row)
         for t in attempts:
             if t.trigger_id not in used:
-                rows.append({"setup": t.setup_id, "entryTs": t.fired_ts, "trigger": t.trigger_id, "status": t.status,
+                rows.append({"setup": t.setup_id, "entryTs": t.fired_ts or None, "trigger": t.trigger_id, "status": t.status,
                              "qty": 0.0, "contract": t.order_symbol, "realizedPnl": 0.0, "attempt": _attempt_row(t),
-                             "note": "attempted where the read (as recomputed now) shows no model trade"})
+                             "note": ("journaled verdict without a trade projection — incomplete evidence, not zero"
+                                      if getattr(t, "_journal_only", False)
+                                      else "attempted where the read (as recomputed now) shows no model trade")})
         for t in real:
             if t.trigger_id not in used:
                 rows.append({"setup": t.setup_id, "entryTs": t.fired_ts, "trigger": t.trigger_id, "status": t.status,
@@ -1307,10 +1447,12 @@ class Team2Runner(PlanRunner):
         for e in ap.events:
             k = str(e.get("event") or "")
             if k.startswith("skip_") or k.startswith("contract_") or k in ("max_concurrent_skip", "max_open_skip", "halt_skip", "entry_capped",
-                                                                          "technique_loss_halt", "loss_halt", "stale_signal_skip"):
+                                                                          "technique_loss_halt", "loss_halt", "stale_signal_skip",
+                                                                          "backdated_signal_skip", "entry_gate_refused"):
                 skips[k] = skips.get(k, 0) + 1
         # the durable funnel (from the verdict list, which the journal backs — not the capped event list)
-        funnel = {"attempts": len(attempts) + len(real), "filled": len(real),
+        opportunities = {str(t.trigger_id) for t in attempts} | {str(t.trigger_id) for t in real}
+        funnel = {"attempts": len(opportunities), "filled": len(real), "verdicts": len(verdicts), "journalOnly": len(journal_only),
                   "policyRefused": sum(1 for v in by_trigger.values() if v.get("verdict") == "refused"),
                   "transientDeferred": sum(1 for v in by_trigger.values() if v.get("verdict") == "deferred"),
                   "picked": sum(1 for v in by_trigger.values() if v.get("verdict") == "picked"),
