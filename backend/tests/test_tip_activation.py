@@ -104,8 +104,10 @@ async def test_every_automated_entry_path_honours_both_controls(rig):
     fp = (await eng.proposals.revalidate(pending["id"]))["readiness"]["fingerprint"]
     plain = await eng.proposals.approve(pending["id"], via="app", expected=fp)
     assert plain["order"] is None and inc["id"][:8] in plain.get("refused", "")
+    ack = [b["identity"] for b in (await eng.proposals.revalidate(pending["id"]))["readiness"]["blockers"] if b.get("identity")]
+    fp = (await eng.proposals.revalidate(pending["id"]))["readiness"]["fingerprint"]
     human = await eng.proposals.approve(pending["id"], via="app", expected=fp,
-                                        override={"checks": ["integrity_incident"],
+                                        override={"checks": ["integrity_incident"], "acknowledged": ack,
                                                   "reason": "test: the desk accepts trading through this incident"})
     assert human["order"] is not None
     q = await _quote(eng, "ACTE")

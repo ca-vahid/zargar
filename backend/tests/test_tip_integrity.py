@@ -256,8 +256,10 @@ async def test_case4_automated_paths_are_refused_human_proceeds(rig):
     fp = (await eng.proposals.revalidate(pdict["id"]))["readiness"]["fingerprint"]
     plain = await eng.proposals.approve(pdict["id"], via="app", expected=fp)
     assert plain["order"] is None and "incident" in plain.get("refused", "")
+    ack = [b["identity"] for b in (await eng.proposals.revalidate(pdict["id"]))["readiness"]["blockers"] if b.get("identity")]
+    fp = (await eng.proposals.revalidate(pdict["id"]))["readiness"]["fingerprint"]
     human = await eng.proposals.approve(pdict["id"], via="app", expected=fp,
-                                        override={"checks": ["integrity_incident"],
+                                        override={"checks": ["integrity_incident"], "acknowledged": ack,
                                                   "reason": "test: the desk accepts trading through this incident"})
     assert human["order"] is not None
 

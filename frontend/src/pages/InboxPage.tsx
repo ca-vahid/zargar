@@ -842,7 +842,7 @@ function ProposalCard({ p }: { p: Proposal }) {
             setOverrideOpen(false);
             act(() => api.approveProposal(p.id, {
               half, expected: rd.fingerprint,
-              override: { checks: blockers.map((b) => b.code), reason },
+              override: { checks: blockers.map((b) => b.code), acknowledged: blockers.map((b) => b.identity).filter(Boolean), reason },
             }), `Approved ${p.symbol} with an override`);
           }} />
       )}
