@@ -1073,3 +1073,13 @@ records, failures retryable), and the source-candidate evaluator requires contig
 confirmation/retest and to the 11:30 deadline (a missing interval = unknown, also for never-confirmed claims).
 Sep 14 retrospective rows unchanged. No trading rule changed; `shadow_exit_observe` stays off.
 
+### 2026-09-15 - shares fallback sized to the book's caps (defect, not a rule change)
+
+Session evidence: WDC b1 (89 sh x 416), INTU b1 (100 x 330), AMAT b2 (97 x 420) fired, fell back to shares because
+the option was untradeable, and were sized from risk % alone (2% of a $10.2k book / stop distance, capped only by
+maxQty 100) - $33-41k positions on a $10k Practice book, every one REJECTED_RISK by the position caps (notional
+$25k, 50% of equity, gross 100%). Fix on the EM branch (`_shares_position_cap`, `tests/test_em_shares_position_cap.py`):
+a share entry is sized DOWN to the tightest of the gate's own caps (shadow research books keep only the $ cap, as the
+gate does); below one share it is a journaled `size_zero` skip. The RiskGate stays the authority; no threshold moved.
+Not deployed during the session - rides the next verified combined release.
+
