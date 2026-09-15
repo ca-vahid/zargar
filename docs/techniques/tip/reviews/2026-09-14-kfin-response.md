@@ -289,3 +289,14 @@ activation - 46 passed. The manual approval hold stays until the review team con
 `integrity_unavailable` (non-overridable) in both the card and the final admission. Adoption
 (`adopt_when_filled`) consumes `approvedPlan.vehicle` and `approvedPlan.riskPlan` alongside the
 frozen exit plan. Reviewer file `test_v087_confirmation_review.py` adopted verbatim.
+
+## RKT exposure exception (profitability sweep 2026-09-15, reconciled 11:54 ET)
+
+Sequence: BUY 148 @13.46 (Sep 11), trim SELL 59 @13.7373 (Sep 14), venue GTC stop SELL 148
+@12.9374 (Sep 15 11:17 ET) - the resting stop was never resized after the trim, and after the
+morning restarts the manager had forgotten the stop's order id, so the fill did not reach the
+position (it stayed open at 89 while the ledger read -59). Reconciled: reduce-only BUY 59 in the
+Tips Practice book (order `4bfd05bd`, filled 13.0926; the excess short cost -$9.16, RKT realized
+-$39.31 in total, of which -$30.15 is the legitimate long episode), then the managed position
+closed through the venue-clamped exit path with no order ("venue already flat"). Root-cause fix
+merged (PLATFORM-RULES 2026-09-15 venue-stop entry), rides the next deploy.
