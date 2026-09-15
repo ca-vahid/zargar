@@ -1801,6 +1801,12 @@ entries that were still submitting/working. Shared behaviour; no threshold chang
   cards additionally carry `context.readiness` (typed blockers, final plan, fingerprint) and a
   human approval revalidates first — see `docs/techniques/tip/README.md` "Approval cards".
 
+- **2026-09-15 (Tips desk, shared db) - `create_all` also creates declared indexes an existing table lacks.**
+  `db._ensure_columns_sync` added missing COLUMNS to live tables but never their declared indexes,
+  so a UNIQUE index on a column added after the table's first creation (the hold study's
+  observation identity, HOLD142-02) would only ever exist on fresh databases. It now creates any
+  index in `table.indexes` whose name the live table lacks and whose columns exist (or were just
+  added) - additive only, never dropped or altered here; logged with the added columns.
 - **2026-09-15 (Tips desk, shared execution) - ONE exit authority: adoption releases the entry's bracket.**
   A share tip proposal carries a bracket (the finalized stop + first target, geometry rev 2) so the
   fill is protected until the manager adopts it; the OrderManager spawns the two GTC children on the

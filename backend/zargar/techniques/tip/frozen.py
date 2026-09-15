@@ -657,9 +657,20 @@ def compare(reports: list[dict]) -> dict:
         }
     baseline = next(((r.get("baseline") or {}) for r in reports), {})
     verdict_sets = {v: sorted({str(x) for x in d["verdicts"]}) for v, d in rows.items()}
+    # PROF-05 review (2026-09-15): a pair in which any variant asked for evidence the
+    # bundle could not serve (missing tool calls, an uncapturable image output) is
+    # COVERAGE-LIMITED - identical verdicts on it are not decision equivalence
+    missing_total = sum(d["toolCalls"]["missing"] for d in rows.values())
+    image_gap = any("image" in str(g).lower() for r in reports for g in (r.get("gaps") or r.get("headerGaps") or []))
+    coverage_limited = bool(missing_total > 0 or image_gap)
     return {"bundleId": next((r.get("bundleId") for r in reports), None),
             "baseline": baseline, "variants": rows,
             "decisionDiffers": len({tuple(s) for s in verdict_sets.values()}) > 1,
+            "coverageLimited": coverage_limited,
+            "coverageNote": ("some requested evidence was not in the frozen bundle (missing tool calls "
+                             f"{missing_total}{', uncapturable image output' if image_gap else ''}): "
+                             "same verdicts do not establish decision equivalence"
+                             if coverage_limited else "every requested tool input was served from the bundle"),
             "evidence": ("adequate" if reports and not any(r.get("skipped") for r in reports)
                          and all(not r.get("noVerdict") for r in reports) else "insufficient"),
             "disclaimer": ("Counts and differences on ONE frozen case under isolated replays. "
