@@ -987,7 +987,8 @@ class ProposalService:
             _gains = _po.unit_gains(vehicle=("shares" if sec_type == "STK" else "option"), entry_ref=float(entry_ref or 0),
                                     targets=_targets, direction=direction, delta=delta, multiplier=(1.0 if sec_type == "STK" else multiplier))
             rp.payoff = _po.payoff_preview(qty=int(rp.qty or qty), fractions=_fr, gains=_gains, unit_loss=rp.unitLoss,
-                                           fee_per_unit=(0.0 if sec_type == "STK" else float(s.get("options.fee_per_contract", 0.0) or 0.0)))
+                                           fee_per_unit=(0.0 if sec_type == "STK" else float(s.get("options.fee_per_contract", 0.0) or 0.0)),
+                                           vehicle=("shares" if sec_type == "STK" else "option"))
         if problems:
             rp.evidence = [{"code": c, "detail": d} for c, d in problems]
             rp.reviewRequired = "; ".join(d for _c, d in problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")

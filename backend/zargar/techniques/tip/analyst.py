@@ -642,7 +642,8 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
     gains = _po.unit_gains(vehicle=("shares" if is_shares else "option"), entry_ref=float(entry_ref or 0), targets=targets,
                            direction=direction, delta=ev.get("delta"), multiplier=mult)
     pv = _po.payoff_preview(qty=qty, fractions=fractions, gains=gains, unit_loss=ul,
-                            fee_per_unit=(0.0 if is_shares else float(book.get("feePerContract") or 0.0)))
+                            fee_per_unit=(0.0 if is_shares else float(book.get("feePerContract") or 0.0)),
+                            vehicle=("shares" if is_shares else "option"))
     return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
             "unitRisk": ul, "unitRiskBasis": basis, **pv}
 
