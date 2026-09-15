@@ -378,8 +378,10 @@ class DeskService:
         for (pid, sym), lots in open_lots.items():
             for lot in lots:
                 mult = 100.0 if len(sym) > 10 else 1.0
-                q = eng.quotes.get(sym)
-                mark = float(q.last) if q is not None and q.last and q.last > 0 else None
+                # the SAME valuation equity() uses (invariant 22) — marking a
+                # lot at the last print while the book marks the mid is what
+                # put a "+4.00 unexplained" on this page (2026-09-14)
+                mark = eng.positions.mark_price(sym, "OPT" if len(sym) > 10 else "STK")
                 fee_in = round(lot["fee_unit"] * lot["qty"], 2)
                 open_positions.append({
                     "symbol": sym, "qty": lot["qty"] * lot["sgn"],
@@ -420,6 +422,22 @@ class DeskService:
         for pid in real:
             with contextlib.suppress(Exception):
                 equity += float(await eng.positions.equity(pid) or 0)
+        # Today, the way the Dashboard says it: mark-to-market against the
+        # previous session's close (invariant 21). The per-day rows below book
+        # a trip's WHOLE gain on the day it closes, so a day's "realized" and
+        # its move are different questions — a trade that lost $200 over four
+        # days and closed today shows −200 here and only today's slice there.
+        # The page shows both, labelled, instead of two numbers called "today".
+        day_start = 0.0
+        anchored = True
+        for pid in real:
+            start = None
+            with contextlib.suppress(Exception):
+                start = await eng.positions.day_start_equity(pid)
+            if start is None:
+                anchored = False
+                break
+            day_start += float(start)
         starting = round(sum(float(p.get("startingCash") or 0) for p in real.values()), 2)
         # since the baseline: EVERY trip + adjustment (the window only scopes the
         # day list) — so start + banked + riding == total, by construction
@@ -444,6 +462,8 @@ class DeskService:
             "banked": banked_all,                     # after fees, since the baseline
             "riding": riding,                         # after entry fees, at the live mark
             "unexplained": (round(equity - starting - banked_all - riding, 2) if practice else None),
+            "dayStart": round(day_start, 2) if anchored else None,
+            "dayMove": round(equity - day_start, 2) if anchored else None,
             "realized": round(sum(t["gain"] for t in window_trips)
                               + sum(a["amount"] for a in adjustments), 2),
             "openValue": round(sum(x["cost"] for x in open_positions), 2),

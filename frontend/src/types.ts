@@ -338,6 +338,10 @@ export interface Ledger {
   total: number; startingCash: number | null; startedAt: string | null;
   /** practice: startingCash + banked + riding == total (unexplained ≈ 0); live: null */
   sinceStart: number | null; banked: number; riding: number; unexplained: number | null;
+  /** today, mark to market against the previous session's close — the Dashboard's
+      number (invariant 21). The day rows book a trip's WHOLE gain on its close day,
+      which is a different question; optional so an older server still renders. */
+  dayStart?: number | null; dayMove?: number | null;
   realized: number; openValue: number;
   days: { date: string; realized: number; trips: LedgerTrip[];
     adjustments: { day: string; at: string; amount: number; reason: string }[] }[];

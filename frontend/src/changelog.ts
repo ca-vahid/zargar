@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.74";
+export const APP_VERSION = "0.7.75";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.75",
+    date: "2026-09-14",
+    title: "The Ledger and the Dashboard agree on today",
+    items: [
+      { tag: "fixed", text: "The Ledger's TODAY tile is now the same number as the Dashboard: how the book moved today against the previous session's close. What CLOSED today is its sub-line, with the remainder labelled 'open & carried' - the Ledger's day rows book a trade's whole gain on the day it closes, so a position that lost $210 over four days and closed today reads -210 there and only today's slice on the Dashboard. The two screens read +429.97 and +145.07 for the same day; both were right, and neither said which question it was answering." },
+      { tag: "fixed", text: "The Ledger values an open position exactly as the book does. It marked at the last print while the book (since 0.7.70) marks an option at the mid of its market, and the gap - (mid minus last) times the contracts, across three open lots - surfaced as a '+4.00 unexplained' pill. Same mark, no gap." },
+    ],
+  },
   {version:"0.7.74",date:"2026-09-14",title:"Recover preparation and reconcile daily results",items:[
     {tag:"fixed",text:"Partial Cartel preparation retries unresolved history with bounded recovery, preserving successful analyses, existing arms and immutable plan revisions."},
     {tag:"fixed",text:"Simulated fills require fresh eligible quotes and retain exact source evidence. Protective orders keep waiting for usable quotes rather than claiming stale fills."},

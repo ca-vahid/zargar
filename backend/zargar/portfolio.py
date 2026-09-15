@@ -205,6 +205,22 @@ class PositionKeeper:
             return q.last
         return pos.get("mark") or pos["avgCost"]
 
+    def mark_price(self, symbol: str, sec_type: str = "STK") -> float | None:
+        """The valuation `equity()` uses for one unit of `symbol` — for callers
+        that hold a LOT rather than a position (the ledger's FIFO lots).
+
+        Same rule as `_mark` (PLATFORM-RULES invariant 22). The ledger used to
+        take the last print here while the book marked options at the mid, so
+        the day the mid rule shipped the ledger grew a "+4.00 unexplained" gap
+        that was nothing but (mid − last) × qty across three open lots
+        (2026-09-14). None when there is nothing to mark against.
+        """
+        held = next((p for (_pid, s, st), p in self._positions.items()
+                     if s == symbol and st == sec_type and p.get("mark")), None)
+        probe = {"symbol": symbol, "secType": sec_type, "avgCost": 0.0,
+                 **({"mark": held["mark"]} if held else {})}
+        return self._mark(probe) or None
+
     def _pos_value(self, pos: dict, target_ccy: str) -> float:
         """Position market value converted into target_ccy (signed)."""
         native = pos["qty"] * self._mark(pos) * _mult(pos["secType"])
