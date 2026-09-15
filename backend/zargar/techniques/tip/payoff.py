@@ -15,30 +15,45 @@ import math
 PAYOFF_VERSION = "payoff-v1"
 
 
-def integer_ladder(qty: int, fractions: list[float]) -> dict:
-    """Units sold at each rung = floor(fraction x qty); what the fractions do
-    not cover (or rounding leaves) is the runner. `executable` = every rung
-    sells at least one unit; `collapsed` = the declared ladder cannot be
-    followed at this size (some rung is empty)."""
+def integer_ladder(qty: int, fractions: list[float], *, vehicle: str = "option") -> dict:
+    """The EXECUTABLE unit sequence of a declared ladder - the same rule the
+    position manager applies (PROF-F2, 2026-09-15): each rung's fraction is
+    of the REMAINING size (`policies._ladder` converts the declared weights),
+    an option rung sells round(remaining x fraction) and at least one contract
+    for a positive fraction (`PositionManager.close`), a share rung sells what
+    the venue normalizes (whole shares, rounded down). `declaredUnits` is what
+    the fractions asked for (floor of fraction x qty); `executable` = every
+    declared rung sells at least one unit; `collapsed` = the declared ladder
+    cannot be followed at this size, and the executed sequence differs."""
     q = int(max(0, qty))
     fr = [float(f) for f in (fractions or []) if f is not None]
+    declared = [int(math.floor(f * q + 1e-9)) for f in fr]
     units: list[int] = []
-    used = 0
-    for f in fr:
-        u = int(math.floor(f * q + 1e-9))
+    remaining = q
+    for i, f in enumerate(fr):
+        rem_frac = 1.0 - sum(fr[:i])
+        rel = min(1.0, f / rem_frac) if rem_frac > 1e-9 else 1.0
+        want = remaining * rel
+        if vehicle == "shares":
+            u = int(math.floor(want + 1e-9))
+        else:
+            u = int(round(want)) or (1 if f > 0 else 0)
+        u = max(0, min(u, remaining))
         units.append(u)
-        used += u
-    runner = max(0, q - used)
+        remaining -= u
+    runner = max(0, remaining)
     executable = bool(units) and all(u >= 1 for u in units)
-    collapsed = bool(units) and any(u == 0 for u in units)
+    collapsed = bool(units) and (any(u == 0 for u in units) or (units != declared and any(d == 0 for d in declared)))
     note = None
     if q == 1 and len(fr) > 1:
-        note = "one unit cannot follow a multi-rung ladder: in practice the whole position exits at the first rung that sells"
-    elif collapsed:
+        note = "one unit cannot follow a multi-rung ladder: the whole position exits at the first rung (execution sells at least one contract)"
+    elif any(u == 0 for u in units):
         empty = [i + 1 for i, u in enumerate(units) if u == 0]
         note = f"rung(s) {empty} sell nothing at {q} unit(s) - the ladder is not executable as declared"
-    return {"qty": q, "fractions": fr, "units": units, "runner": runner,
-            "executable": executable, "collapsed": collapsed, "note": note}
+    elif units != declared:
+        note = "execution rounds each rung against the remaining size: the executed sequence differs from the declared weights"
+    return {"qty": q, "fractions": fr, "declaredUnits": declared, "units": units, "runner": runner,
+            "executable": executable, "collapsed": collapsed, "vehicle": vehicle, "note": note}
 
 
 def unit_gains(*, vehicle: str, entry_ref: float, targets: list[float], direction: str = "long",
@@ -61,12 +76,12 @@ def unit_gains(*, vehicle: str, entry_ref: float, targets: list[float], directio
 
 def payoff_preview(*, qty: int, fractions: list[float], gains: list[float | None],
                    unit_loss: float | None, fee_per_unit: float = 0.0,
-                   runner_gain: float | None = None) -> dict:
+                   runner_gain: float | None = None, vehicle: str = "option") -> dict:
     """The declared scenarios in $ and in R (R = the PLANNED stop loss for the
     whole size, an estimate, never a guaranteed maximum loss). Fees are paid
     per unit on entry and on every exit unit."""
     q = int(max(0, qty))
-    lad = integer_ladder(q, fractions)
+    lad = integer_ladder(q, fractions, vehicle=vehicle)
     units = lad["units"]
     fee_in = fee_per_unit * q
     planned_risk = (float(unit_loss) * q) if unit_loss is not None else None
@@ -98,10 +113,15 @@ def payoff_preview(*, qty: int, fractions: list[float], gains: list[float | None
         "stopOnly": {"net": round(stop_only, 2), "R": _r(stop_only)},
     }
     if q == 1 or lad["collapsed"]:
-        # the coherent one-lot policy: a single declared exit, compared honestly
-        single = g[0] - 2 * fee_per_unit
-        out["oneLot"] = {"policy": "single exit at the first target", "net": round(single, 2), "R": _r(single),
-                         "note": "the declared ladder cannot be followed at this size; this is what actually executes"}
+        # the coherent one-lot line: what actually executes at this size - the
+        # same number as allTargets (PROF-F2: after the first rung sells the whole
+        # lot, no later target or stop applies)
+        exec_net = sum(u * g[i] for i, u in enumerate(units)) + runner * last_gain - fee_in - fee_per_unit * q
+        out["oneLot"] = {"policy": ("single exit at the first target" if first_units == q
+                                    else "executed sequence " + "/".join(str(u) for u in units)),
+                         "net": round(exec_net, 2), "R": _r(exec_net),
+                         "note": "the declared ladder cannot be followed at this size; this is what actually executes "
+                                 "(an option rung sells at least one contract; a share rung sells whole shares)"}
     return out
 
 

@@ -6,17 +6,19 @@ from zargar.techniques.tip import payoff as po
 
 # ---------------------------------------------------------------- integer ladders
 def test_integer_ladder_for_one_two_three_contracts_and_odd_shares():
+    # execution's rule: a rung is a fraction of the REMAINING size, an option rung
+    # sells round(remaining x fraction) and at least one contract, shares round down
     lad = po.integer_ladder(1, [0.4, 0.35, 0.25])
-    assert lad["units"] == [0, 0, 0] and lad["runner"] == 1 and not lad["executable"] and lad["collapsed"]
-    assert "one unit" in lad["note"]
+    assert lad["declaredUnits"] == [0, 0, 0] and lad["units"] == [1, 0, 0] and lad["runner"] == 0
+    assert not lad["executable"] and lad["collapsed"] and "one unit" in lad["note"]
     lad2 = po.integer_ladder(2, [0.4, 0.35, 0.25])
-    assert lad2["units"] == [0, 0, 0] and lad2["collapsed"]
+    assert lad2["units"] == [1, 1, 0] and lad2["collapsed"]
     lad3 = po.integer_ladder(3, [0.4, 0.35, 0.25])
-    assert lad3["units"] == [1, 1, 0] and lad3["runner"] == 1 and not lad3["executable"]
+    assert lad3["units"] == [1, 1, 1] and lad3["runner"] == 0 and lad3["executable"] and lad3["declaredUnits"] == [1, 1, 0]
     ok = po.integer_ladder(5, [0.4, 0.6])
     assert ok["units"] == [2, 3] and ok["runner"] == 0 and ok["executable"]
-    odd = po.integer_ladder(89, [0.4, 0.35, 0.25])
-    assert odd["units"] == [35, 31, 22] and odd["runner"] == 1 and odd["executable"]
+    odd = po.integer_ladder(89, [0.4, 0.35, 0.25], vehicle="shares")
+    assert odd["units"] == [35, 31, 23] and odd["runner"] == 0 and odd["executable"]
 
 
 def test_rkt_long_only_round_trip_reconciles_and_excess_is_separate():
@@ -32,8 +34,8 @@ def test_rkt_long_only_round_trip_reconciles_and_excess_is_separate():
 def test_payoff_preview_scenarios_and_one_lot_policy():
     # RKT's declared plan on 148 shares: entry 13.46, stop 12.9378, targets 13.8/14.1/14.45 at 40/35/25 %
     gains = po.unit_gains(vehicle="shares", entry_ref=13.46, targets=[13.8, 14.1, 14.45])
-    pv = po.payoff_preview(qty=148, fractions=[0.4, 0.35, 0.25], gains=gains, unit_loss=round(13.46 - 12.9378, 4))
-    assert pv["ladder"]["units"] == [59, 51, 37] and pv["ladder"]["executable"]
+    pv = po.payoff_preview(qty=148, fractions=[0.4, 0.35, 0.25], gains=gains, unit_loss=round(13.46 - 12.9378, 4), vehicle="shares")
+    assert pv["ladder"]["units"] == [59, 51, 38] and pv["ladder"]["executable"]   # 59 at TP1 = the actual RKT trim
     sc = pv["scenarios"]
     assert sc["stopOnly"]["R"] == -1.0
     assert sc["tp1ThenStop"]["net"] < 0, "a profitable first trim followed by the stop is a losing trade"
@@ -41,8 +43,14 @@ def test_payoff_preview_scenarios_and_one_lot_policy():
     # one contract cannot follow the ladder: the coherent policy is a single exit
     g1 = po.unit_gains(vehicle="option", entry_ref=74.0, targets=[76.0, 78.5, 81.5], delta=0.29, multiplier=100)
     one = po.payoff_preview(qty=1, fractions=[0.4, 0.3, 0.2], gains=g1, unit_loss=101.25, fee_per_unit=1.04)
-    assert one["ladder"]["collapsed"] and one["oneLot"]["policy"].startswith("single exit")
-    assert one["oneLot"]["net"] == round(0.29 * 2.0 * 100 - 2 * 1.04, 2)
+    assert one["ladder"]["units"] == [1, 0, 0] and one["ladder"]["collapsed"] and one["oneLot"]["policy"].startswith("single exit")
+    single = round(0.29 * 2.0 * 100 - 2 * 1.04, 2)
+    assert one["oneLot"]["net"] == single
+    # PROF-F2: the whole contract leaves at TP1 - no later target or stop can touch it
+    assert one["scenarios"]["allTargets"]["net"] == single and one["scenarios"]["tp1ThenStop"]["net"] == single
+    two = po.payoff_preview(qty=2, fractions=[0.4, 0.35, 0.25], gains=[10, 20, 30], unit_loss=5, fee_per_unit=1)
+    assert two["ladder"]["units"] == [1, 1, 0]
+    assert two["scenarios"]["allTargets"]["net"] == 10 + 20 - 2 - 2 and two["scenarios"]["tp1ThenStop"]["net"] == 10 - 5 - 2 - 2
     missing = po.payoff_preview(qty=1, fractions=[1.0], gains=[None], unit_loss=50.0)
     assert missing["scenarios"] is None and "gain estimate" in missing["reason"]
 
@@ -61,6 +69,14 @@ def test_feasibility_reproduces_the_reviewers_five_cases_and_a_fitting_one():
     assert f2["qty"] == 3 and f2["qtyByRisk"] == 50 and f2["qtyByAllocation"] == 3
     nope = fz.feasibility(budget=89.0, unit_loss=None)
     assert nope["feasible"] is None and "review" in nope["reason"]
+    # PROF-F1: $0 allocation is no capital, None is unknown, negatives are invalid
+    zero = fz.feasibility(budget=100, unit_loss=10, unit_cost=50, allocation_limit=0)
+    assert zero["feasible"] is False and zero["qty"] == 0 and "allocation" in zero["reason"]
+    unknown = fz.feasibility(budget=None, unit_loss=10, unit_cost=50, allocation_limit=None)
+    assert unknown["feasible"] is None and "unknown" in unknown["reason"]
+    bad = fz.feasibility(budget=100, unit_loss=10, unit_cost=-5, allocation_limit=1000)
+    assert bad["feasible"] is None and "invalid" in bad["reason"]
+    assert fz.share_alternative(entry=74.0, stop=68.0, direction="long", budget=89.11, allocation_limit=0) is None
 
 
 def test_unit_risk_and_labelled_alternatives_at_equal_risk():

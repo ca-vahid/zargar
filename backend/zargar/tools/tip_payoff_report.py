@@ -88,7 +88,8 @@ def analyse_row(row: ManagedPositionRow, execs: dict[str, list[dict]] | None = N
             unit_loss = round(dist * mult, 4) if leg.get("secType") == "STK" else None
     gains = po.unit_gains(vehicle=("shares" if leg.get("secType") == "STK" else "option"), entry_ref=entry_ref,
                           targets=targets, direction=direction, delta=None, multiplier=mult)
-    preview = po.payoff_preview(qty=int(entry_qty), fractions=fractions, gains=gains, unit_loss=unit_loss)
+    preview = po.payoff_preview(qty=int(entry_qty), fractions=fractions, gains=gains, unit_loss=unit_loss,
+                                vehicle=("shares" if leg.get("secType") == "STK" else "option"))
     realized = po.realized_from_fills(entry_qty=entry_qty, entry_price=entry_price, fills=fills,
                                       multiplier=mult, direction=direction)
     realized["source"] = source
