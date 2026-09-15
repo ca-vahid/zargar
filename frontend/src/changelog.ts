@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.74";
+export const APP_VERSION = "0.7.75";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.75",
+    date: "2026-09-14",
+    title: "The Ledger and the Dashboard agree on today",
+    items: [
+      { tag: "fixed", text: "The Ledger's TODAY tile is now the same number as the Dashboard: how the book moved today against the previous session's close. What CLOSED today is its sub-line, with the remainder labelled 'open & carried' - the Ledger's day rows book a trade's whole gain on the day it closes, so a position that lost $210 over four days and closed today reads -210 there and only today's slice on the Dashboard. The two screens read +429.97 and +145.07 for the same day; both were right, and neither said which question it was answering." },
+      { tag: "fixed", text: "The Ledger values an open position exactly as the book does. It marked at the last print while the book (since 0.7.70) marks an option at the mid of its market, and the gap - (mid minus last) times the contracts, across three open lots - surfaced as a '+4.00 unexplained' pill. Same mark, no gap." },
+    ],
+  },
   {version:"0.7.74",date:"2026-09-14",title:"Recover preparation and reconcile daily results",items:[
     {tag:"fixed",text:"Partial Cartel preparation retries unresolved history with bounded recovery, preserving successful analyses, existing arms and immutable plan revisions."},
     {tag:"fixed",text:"Simulated fills require fresh eligible quotes and retain exact source evidence. Protective orders keep waiting for usable quotes rather than claiming stale fills."},
@@ -29,6 +38,7 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"Team2 R3: a corrected or late-recovered minute is now merged into the desk's private tape by timestamp and recorded (bar_revised / bar_recovered) instead of being dropped because a later minute had already been seen; the next read runs on the corrected history without re-acting on anything already acted on."},
     {tag:"fixed",text:"Restart scripts R4: a deploy takes an exclusive lease (logs/deploy.lock, owner-named, stale after ten minutes), the entry pause must be acknowledged by the engine AND read back from its state before anything is stopped, and the watchdog will not start a second engine while a deploy holds the lease. A pause that is not confirmed refuses the ordinary restart; -Force / -Override remain the journaled exceptions."},
     {tag:"improved",text:"Team2 R5: the close scorecard keeps every attempt, filled or not, with its decisive contract verdict (policy refusal, transient deferral, order rejected) and the live price examined, and adds a durable funnel (attempts / filled / refused / deferred / book losses) rebuilt from the journal after a restart. Today's refused IWM 290 call read 'not taken - see skips' with no reason."},
+  ]},
   {version:"0.7.72",date:"2026-09-14",title:"Team2 close record",items:[
     {tag:"fixed",text:"Team2: the end-of-day scorecard now names its session (planFor), so the close no longer logs an event-contract warning per plan and scored rows can be joined to their day without the plan row."},
   ]},
