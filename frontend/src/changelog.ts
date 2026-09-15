@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.81";
+export const APP_VERSION = "0.7.82";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.82",
+    date: "2026-09-15",
+    title: "Tips: retry-safe knowledge batches, recovered samples, visible attachment coverage",
+    items: [
+      { tag: "fixed", text: "Knowledge consolidation: a dispute release now commits together with the batch's progress record, and the journal notification comes after - a failed notification can no longer leave a released rule that an identical retry refuses. A release that committed without its progress is recognised on retry (reviewed revision + 1 with a resolve snapshot)." },
+      { tag: "fixed", text: "Entry-variant cohort: pending delayed samples are recovered after a restart (startup and every minute while the cohort is enabled); a sample far past its due time is marked missed, never back-labelled." },
+      { tag: "new", text: "Tips card shows attachment coverage (per image: processed / failed / unreadable / skipped) and which block the extracted evidence came from (caption or attachment n)." },
+    ],
+  },
   {version:"0.7.81",date:"2026-09-14",title:"A cancel that says one contract filled is a position",items:[
     {tag:"fixed",text:"Orders F: a terminal order report (cancelled, expired, rejected) is now classified by the cumulative filled quantity it carries, not by what the app happened to see earlier - if the partial-fill callback was missed, a cancel reporting one contract filled books that contract and manages it instead of being treated as a zero fill. Live and after a restart (the persisted order row). Confirmed zero-fill outcomes still clear the way for Team2's proxy exemption."},
   ]},
