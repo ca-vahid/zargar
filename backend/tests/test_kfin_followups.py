@@ -185,8 +185,11 @@ async def test_delayed_sample_timing_and_provenance_eligibility(app_client, monk
     from zargar.models import TipEntryCohortRow
     now = dt.datetime.now(dt.timezone.utc)
     now_ms = int(now.timestamp() * 1000)
+    # a record as the capture path writes it: capture time, receipt time and the
+    # capture-time verdict (eligibility evaluated) - deterministic, in-session
     opra = {"symbol": "X260101C00100000", "bid": 1.0, "ask": 1.1, "last": 1.05, "source": "opra", "sourceTs": now_ms - 2000,
-            "ageSeconds": 2.0, "delayed": False, "quoteStatus": "fresh"}
+            "receivedTs": now_ms - 1900, "ageSeconds": 2.0, "delayed": False, "quoteStatus": "fresh",
+            "sampledAt": now.isoformat(), "eligibility": [], "isOption": True}
     a = cohort.assumptions(eng.settings)
     # (04) provenance
     st, why = cohort.qualify_quote({**opra, "source": "chain", "delayed": True}, is_option=True, max_age_s=300, now_ms=now_ms, check_session=False)

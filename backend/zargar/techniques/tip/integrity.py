@@ -191,6 +191,29 @@ async def entry_paused(eng, *, portfolio_id: str | None, technique: str = "tip",
     return None
 
 
+def incident_identity_record(inc: dict) -> dict:
+    """The identity a person acknowledges (A86-01): id, revision and the
+    evidence content - any appended evidence or a different incident set is
+    a different identity."""
+    import hashlib
+    import json
+    ev_hash = hashlib.sha256(json.dumps(inc.get("evidence") or [], sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12]
+    return {"id": str(inc.get("id")), "revision": int(inc.get("revision") or 1), "evidenceHash": ev_hash,
+            "kind": inc.get("kind"), "cause": inc.get("cause")}
+
+
+async def applicable_incidents(eng, *, portfolio_id: str | None, technique: str = "tip",
+                               entry_path: str | None = None, symbol: str | None = None) -> list[dict]:
+    """ALL open incidents whose scope applies (complete set, sorted by id) as
+    identity records - the structured companion of `entry_paused` (which
+    reports the first one in prose). Raises when the store is unavailable."""
+    incidents = await list_incidents(eng, status="open", limit=None)
+    out = [incident_identity_record(inc) for inc in incidents
+           if _scope_matches(inc["scope"], technique=technique, portfolio_id=portfolio_id,
+                             entry_path=entry_path, symbol=symbol)]
+    return sorted(out, key=lambda x: x["id"])
+
+
 async def admission(eng, *, portfolio_id: str | None, entry_path: str,
                     symbol: str | None = None, detect: bool = True) -> str | None:
     """The ONE final-admission boundary for every automated entry path
