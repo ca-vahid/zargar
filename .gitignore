@@ -43,3 +43,6 @@ docs/techniques/team2/notes/research/week37-author-charts/*.jpg
 backend/logs/
 backend/gateway_cursors.json
 backend/gateway_spool.jsonl
+
+# the Discord gateway's live status snapshot (written every minute into backend/ by the running gateway; never source)
+backend/gateway_status.json
