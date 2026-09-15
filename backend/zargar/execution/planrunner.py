@@ -2790,6 +2790,22 @@ class PlanRunner(SessionListener):
         qty = int(max(0, equity * cfg.risk_pct / 100 / per_share))
         return float(min(qty, cfg.max_qty))
 
+    @staticmethod
+    def _contract_is_0dte(contract: dict) -> bool:
+        """Does the SELECTED contract expire today? The OCC symbol is the identity the RiskGate judges (`occ.dte()`,
+        the same `date.today()` basis); the pick's `expiry` field is the fallback. Unknown = not 0DTE (no clamp)."""
+        from ..options import occ
+        o = occ.parse(str(contract.get("symbol") or "")) if contract.get("symbol") else None
+        if o is not None:
+            return o.dte() == 0
+        exp = contract.get("expiry")
+        if exp:
+            try:
+                return dt.date.fromisoformat(str(exp)[:10]) == dt.date.today()
+            except ValueError:
+                return False
+        return False
+
     async def _size_contracts(self, ap: ArmedPlan, trade: Trade, contract: dict) -> int:
         """R1 on the instrument we actually trade. Fixed `contracts` wins (R5 one-
         contract rule while learning); otherwise size by risk: the dollars at risk
@@ -2826,12 +2842,29 @@ class PlanRunner(SessionListener):
         # explicit knob `execution.min_one_contract` (default off). A fixed `contracts` count and the
         # tip technique's premium-budget floor above are separate, unchanged semantics.
         floor = 1 if bool(self.rt("min_one_contract", False)) else 0
-        n = int(max(floor, min(n, cfg.max_contracts)))
+        cap = int(cfg.max_contracts)
+        # F127 (2026-09-15): a technique's 0DTE policy (`techniques.<id>.zero_dte.max_contracts`) is enforced by the
+        # RiskGate as a REFUSAL, while this sizer only knew `max_contracts` (risk.max_option_contracts, 50): Team2's
+        # IWM 284P at $0.33 was sized to 50 and refused against the policy's 40 — every contract cheaper than the
+        # budget/40 boundary was unfillable. The policy cap is a bound on the size, applied here before the order.
+        # The clamp is scoped to the SELECTED contract's actual expiry — the OCC identity on the RiskGate's own date
+        # basis (`occ.dte()` == 0), never a policy default — so a longer-dated contract keeps its existing cap
+        # (reviewer regression, 2026-09-15).
+        pol = s.get(f"techniques.{self.TECHNIQUE_ID}.zero_dte", None)
+        if isinstance(pol, dict) and bool(pol.get("enabled", False)) and self._contract_is_0dte(contract):
+            try:
+                pol_cap = int(pol.get("max_contracts") or 0)
+            except (TypeError, ValueError):
+                pol_cap = 0
+            if pol_cap > 0 and pol_cap < cap:
+                cap = pol_cap
+                why.append(f"0DTE policy cap {pol_cap}")
+        n = int(max(floor, min(n, cap)))
         self._log(ap, "sized",
                   f"{trade.trigger_id}: {n} contract(s) — ${equity * cfg.risk_pct / 100:,.0f} at risk "
                   f"({cfg.risk_pct:g}% of ${equity:,.0f}) / ${risk_per:,.0f} per contract"
                   + (f" ({prem_stop:g}% premium stop on ${premium:,.0f})" if 0 < prem_stop < 100 else "")
-                  + (", " + ", ".join(why) if why else "") + f", cap {cfg.max_contracts}",
+                  + (", " + ", ".join(why) if why else "") + f", cap {cap}",
                   trigger=trade.trigger_id, contracts=n)
         return n
 

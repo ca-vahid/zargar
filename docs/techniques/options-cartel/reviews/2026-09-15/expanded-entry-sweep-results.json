@@ -1,0 +1,1209 @@
+{
+  "session": "2026-09-15",
+  "preparationId": "b026e513a1714235ad78b417803f5f8e",
+  "basis": "Retrospective underlying-only study of nine preselected research candidates across seven policies. Original five use pre-open saved baseline caches; four additional names use post-close Alpaca retrieval. Market permission remained blocked. No option return, live fill or optimum is inferred.",
+  "summary": [
+    {
+      "variant": "baseline",
+      "eligibleCoverage": 7,
+      "signals": 1,
+      "firstTouches": [
+        "BOX:neither"
+      ]
+    },
+    {
+      "variant": "5m",
+      "eligibleCoverage": 9,
+      "signals": 1,
+      "firstTouches": [
+        "BOX:neither"
+      ]
+    },
+    {
+      "variant": "30m",
+      "eligibleCoverage": 6,
+      "signals": 0,
+      "firstTouches": []
+    },
+    {
+      "variant": "volume_1x",
+      "eligibleCoverage": 7,
+      "signals": 1,
+      "firstTouches": [
+        "BOX:neither"
+      ]
+    },
+    {
+      "variant": "volume_2x",
+      "eligibleCoverage": 7,
+      "signals": 0,
+      "firstTouches": []
+    },
+    {
+      "variant": "breakout_bar_stop",
+      "eligibleCoverage": 7,
+      "signals": 1,
+      "firstTouches": [
+        "BOX:stop"
+      ]
+    },
+    {
+      "variant": "retest",
+      "eligibleCoverage": 7,
+      "signals": 0,
+      "firstTouches": []
+    }
+  ],
+  "rows": [
+    {
+      "symbol": "DT",
+      "variant": "baseline",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789480800000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Close is not near the directional edge of the confirmation candle. First target offers 0.249R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 53.595,
+            "trigger": 53.5099983215332,
+            "volume": 224932,
+            "baselineVolume": 188769.5,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.1915696126757764,
+            "closeLocation": 0.6610424826755035,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.24855650091446968,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "DT",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789480200000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "First target offers 0.155R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 53.665,
+            "trigger": 53.5099983215332,
+            "volume": 87116,
+            "baselineVolume": 51582.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.688883719126827,
+            "closeLocation": 0.9443207126948756,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.15508168266418837,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "DT",
+      "variant": "30m",
+      "baseline": "13/13",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789480800000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. First target offers 0.249R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 53.595,
+            "trigger": 53.5099983215332,
+            "volume": 422973,
+            "baselineVolume": 417091.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.0141024380770622,
+            "closeLocation": 0.7935779816513755,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.24855650091446968,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "DT",
+      "variant": "volume_1x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789480800000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Close is not near the directional edge of the confirmation candle. First target offers 0.249R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 53.595,
+            "trigger": 53.5099983215332,
+            "volume": 224932,
+            "baselineVolume": 188769.5,
+            "requiredVolumeMultiple": 1.0,
+            "volumeRatio": 1.1915696126757764,
+            "closeLocation": 0.6610424826755035,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.24855650091446968,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "DT",
+      "variant": "volume_2x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789480800000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Close is not near the directional edge of the confirmation candle. First target offers 0.249R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 53.595,
+            "trigger": 53.5099983215332,
+            "volume": 224932,
+            "baselineVolume": 188769.5,
+            "requiredVolumeMultiple": 2.0,
+            "volumeRatio": 1.1915696126757764,
+            "closeLocation": 0.6610424826755035,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.24855650091446968,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "DT",
+      "variant": "breakout_bar_stop",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789480800000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Close is not near the directional edge of the confirmation candle.",
+          "measurements": {
+            "close": 53.595,
+            "trigger": 53.5099983215332,
+            "volume": 224932,
+            "baselineVolume": 188769.5,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.1915696126757764,
+            "closeLocation": 0.6610424826755035,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.48997578234051165,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "DT",
+      "variant": "retest",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "NTNX",
+      "variant": "baseline",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789484400000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Cannot determine the session extreme with missing minutes since the open.",
+          "measurements": {
+            "close": 68.13990020751953,
+            "trigger": 68.125,
+            "volume": 38529,
+            "baselineVolume": 57225.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 0.6732896461336828,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.38380258260842565,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "NTNX",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789484400000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Cannot determine the session extreme with missing minutes since the open.",
+          "measurements": {
+            "close": 68.13990020751953,
+            "trigger": 68.125,
+            "volume": 12161,
+            "baselineVolume": 12447.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 0.9770225757210573,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.38380258260842565,
+            "requiredTargetR": 0.25
+          }
+        },
+        {
+          "at": 1789495200000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Close is not near the directional edge of the confirmation candle. Cannot determine the session extreme with missing minutes since the open.",
+          "measurements": {
+            "close": 68.12999725341797,
+            "trigger": 68.125,
+            "volume": 6379,
+            "baselineVolume": 13401.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 0.47600925304081787,
+            "closeLocation": 0.4999364272091545,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.3918164661161007,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "NTNX",
+      "variant": "30m",
+      "baseline": "13/13",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789484400000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Cannot determine the session extreme with missing minutes since the open.",
+          "measurements": {
+            "close": 68.13990020751953,
+            "trigger": 68.125,
+            "volume": 95300,
+            "baselineVolume": 123775.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 0.7699454655625126,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.38380258260842565,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "NTNX",
+      "variant": "volume_1x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789484400000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Cannot determine the session extreme with missing minutes since the open.",
+          "measurements": {
+            "close": 68.13990020751953,
+            "trigger": 68.125,
+            "volume": 38529,
+            "baselineVolume": 57225.0,
+            "requiredVolumeMultiple": 1.0,
+            "volumeRatio": 0.6732896461336828,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.38380258260842565,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "NTNX",
+      "variant": "volume_2x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789484400000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. Cannot determine the session extreme with missing minutes since the open.",
+          "measurements": {
+            "close": 68.13990020751953,
+            "trigger": 68.125,
+            "volume": 38529,
+            "baselineVolume": 57225.0,
+            "requiredVolumeMultiple": 2.0,
+            "volumeRatio": 0.6732896461336828,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.38380258260842565,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "NTNX",
+      "variant": "breakout_bar_stop",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789484400000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold.",
+          "measurements": {
+            "close": 68.13990020751953,
+            "trigger": 68.125,
+            "volume": 38529,
+            "baselineVolume": 57225.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 0.6732896461336828,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 1.9420663958160311,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "NTNX",
+      "variant": "retest",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "BOX",
+      "variant": "baseline",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "triggered",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [],
+      "signal": {
+        "id": "research-BOX-baseline:entry:1789488000000",
+        "at": 1789488000000,
+        "direction": "long",
+        "referencePrice": 35.22999954223633,
+        "stop": 34.45000076293945,
+        "risk": 0.779998779296875,
+        "targets": [
+          36.04999923706055,
+          36.34000015258789,
+          37.65999984741211
+        ],
+        "volume": 96323,
+        "volumeRatio": 1.6304377263956127,
+        "closeLocation": 0.785711366330159,
+        "stopMode": "session_extreme"
+      },
+      "path": {
+        "nextMinuteOpen": 35.2400016784668,
+        "stop": 34.45000076293945,
+        "firstTarget": 36.04999923706055,
+        "stopAt": null,
+        "targetAt": null,
+        "firstTouch": "neither",
+        "underlyingClose": 34.814998626708984,
+        "closeR": -0.5379779230687514,
+        "maxFavorableR": 0.006325629907191903,
+        "maxAdverseR": -0.7088616763402127
+      }
+    },
+    {
+      "symbol": "BOX",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "triggered",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [],
+      "signal": {
+        "id": "research-BOX-5m:entry:1789479600000",
+        "at": 1789479600000,
+        "direction": "long",
+        "referencePrice": 35.25,
+        "stop": 34.45000076293945,
+        "risk": 0.7999992370605469,
+        "targets": [
+          36.04999923706055,
+          36.34000015258789,
+          37.65999984741211
+        ],
+        "volume": 44203,
+        "volumeRatio": 2.1058072507265018,
+        "closeLocation": 0.8478264475146369,
+        "stopMode": "session_extreme"
+      },
+      "path": {
+        "nextMinuteOpen": 35.20000076293945,
+        "stop": 34.45000076293945,
+        "firstTarget": 36.04999923706055,
+        "stopAt": null,
+        "targetAt": null,
+        "firstTouch": "neither",
+        "underlyingClose": 34.814998626708984,
+        "closeR": -0.513336181640625,
+        "maxFavorableR": 0.12000020345052083,
+        "maxAdverseR": -0.6933339436848959
+      }
+    },
+    {
+      "symbol": "BOX",
+      "variant": "30m",
+      "baseline": "13/13",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789488000000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold.",
+          "measurements": {
+            "close": 35.22999954223633,
+            "trigger": 35.18000030517578,
+            "volume": 153440,
+            "baselineVolume": 130073.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.179645276114182,
+            "closeLocation": 0.789468752927949,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 1.0512833052936343,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "BOX",
+      "variant": "volume_1x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "triggered",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [],
+      "signal": {
+        "id": "research-BOX-volume_1x:entry:1789488000000",
+        "at": 1789488000000,
+        "direction": "long",
+        "referencePrice": 35.22999954223633,
+        "stop": 34.45000076293945,
+        "risk": 0.779998779296875,
+        "targets": [
+          36.04999923706055,
+          36.34000015258789,
+          37.65999984741211
+        ],
+        "volume": 96323,
+        "volumeRatio": 1.6304377263956127,
+        "closeLocation": 0.785711366330159,
+        "stopMode": "session_extreme"
+      },
+      "path": {
+        "nextMinuteOpen": 35.2400016784668,
+        "stop": 34.45000076293945,
+        "firstTarget": 36.04999923706055,
+        "stopAt": null,
+        "targetAt": null,
+        "firstTouch": "neither",
+        "underlyingClose": 34.814998626708984,
+        "closeR": -0.5379779230687514,
+        "maxFavorableR": 0.006325629907191903,
+        "maxAdverseR": -0.7088616763402127
+      }
+    },
+    {
+      "symbol": "BOX",
+      "variant": "volume_2x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789488000000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold.",
+          "measurements": {
+            "close": 35.22999954223633,
+            "trigger": 35.18000030517578,
+            "volume": 96323,
+            "baselineVolume": 59078.0,
+            "requiredVolumeMultiple": 2.0,
+            "volumeRatio": 1.6304377263956127,
+            "closeLocation": 0.785711366330159,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 1.0512833052936343,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "BOX",
+      "variant": "breakout_bar_stop",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "triggered",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [],
+      "signal": {
+        "id": "research-BOX-breakout_bar_stop:entry:1789488000000",
+        "at": 1789488000000,
+        "direction": "long",
+        "referencePrice": 35.22999954223633,
+        "stop": 35.0099983215332,
+        "risk": 0.220001220703125,
+        "targets": [
+          36.04999923706055,
+          36.34000015258789,
+          37.65999984741211
+        ],
+        "volume": 96323,
+        "volumeRatio": 1.6304377263956127,
+        "closeLocation": 0.785711366330159,
+        "stopMode": "breakout_bar"
+      },
+      "path": {
+        "nextMinuteOpen": 35.2400016784668,
+        "stop": 35.0099983215332,
+        "firstTarget": 36.04999923706055,
+        "stopAt": 1789498080000,
+        "targetAt": null,
+        "firstTouch": "stop",
+        "underlyingClose": 34.814998626708984,
+        "closeR": -1.8478123859753872,
+        "maxFavorableR": 0.021726871662188608,
+        "maxAdverseR": -2.4347530434205726
+      }
+    },
+    {
+      "symbol": "BOX",
+      "variant": "retest",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "EL",
+      "variant": "baseline",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "EL",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "EL",
+      "variant": "30m",
+      "baseline": "13/13",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "EL",
+      "variant": "volume_1x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "EL",
+      "variant": "volume_2x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "EL",
+      "variant": "breakout_bar_stop",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "EL",
+      "variant": "retest",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "BILL",
+      "variant": "baseline",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "BILL",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "BILL",
+      "variant": "30m",
+      "baseline": "13/13",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "BILL",
+      "variant": "volume_1x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "BILL",
+      "variant": "volume_2x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "BILL",
+      "variant": "breakout_bar_stop",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "BILL",
+      "variant": "retest",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "ARE",
+      "variant": "baseline",
+      "baseline": "25/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "ARE",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": [
+        {
+          "at": 1789501500000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Cannot determine the session extreme with missing minutes since the open. First target offers 0.182R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 52.970001220703125,
+            "trigger": 52.709999084472656,
+            "volume": 54921,
+            "baselineVolume": 30101.5,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.8245270169260668,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.1818177877383641,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "ARE",
+      "variant": "30m",
+      "baseline": "6/13",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "ARE",
+      "variant": "volume_1x",
+      "baseline": "25/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "ARE",
+      "variant": "volume_2x",
+      "baseline": "25/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "ARE",
+      "variant": "breakout_bar_stop",
+      "baseline": "25/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "ARE",
+      "variant": "retest",
+      "baseline": "25/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "OCUL",
+      "variant": "baseline",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "OCUL",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "OCUL",
+      "variant": "30m",
+      "baseline": "12/13",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "OCUL",
+      "variant": "volume_1x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "OCUL",
+      "variant": "volume_2x",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "OCUL",
+      "variant": "breakout_bar_stop",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "OCUL",
+      "variant": "retest",
+      "baseline": "26/26",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": []
+    },
+    {
+      "symbol": "GH",
+      "variant": "baseline",
+      "baseline": "22/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789479900000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "First target has already been reached before entry. First target offers -0.291R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 172.46,
+            "trigger": 168.97000122070312,
+            "volume": 127822,
+            "baselineVolume": 78859.5,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.6208827091219193,
+            "closeLocation": 0.9820143884892096,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": -0.2912096854967959,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "GH",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789479300000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "First target offers 0.103R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 170.51,
+            "trigger": 168.97000122070312,
+            "volume": 56003,
+            "baselineVolume": 35520.5,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.576638842358638,
+            "closeLocation": 0.8191365227537908,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": 0.10256271144943306,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "GH",
+      "variant": "30m",
+      "baseline": "8/13",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": true
+    },
+    {
+      "symbol": "GH",
+      "variant": "volume_1x",
+      "baseline": "22/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789479900000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "First target has already been reached before entry. First target offers -0.291R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 172.46,
+            "trigger": 168.97000122070312,
+            "volume": 127822,
+            "baselineVolume": 78859.5,
+            "requiredVolumeMultiple": 1.0,
+            "volumeRatio": 1.6208827091219193,
+            "closeLocation": 0.9820143884892096,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": -0.2912096854967959,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "GH",
+      "variant": "volume_2x",
+      "baseline": "22/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789479900000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "Breakout volume is below the snapshotted confirmation threshold. First target has already been reached before entry. First target offers -0.291R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 172.46,
+            "trigger": 168.97000122070312,
+            "volume": 127822,
+            "baselineVolume": 78859.5,
+            "requiredVolumeMultiple": 2.0,
+            "volumeRatio": 1.6208827091219193,
+            "closeLocation": 0.9820143884892096,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": -0.2912096854967959,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "GH",
+      "variant": "breakout_bar_stop",
+      "baseline": "22/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789479900000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "First target has already been reached before entry. First target offers -0.291R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 172.46,
+            "trigger": 168.97000122070312,
+            "volume": 127822,
+            "baselineVolume": 78859.5,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 1.6208827091219193,
+            "closeLocation": 0.9820143884892096,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": -0.2912096854967959,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "GH",
+      "variant": "retest",
+      "baseline": "22/26",
+      "coverageAllowed": true,
+      "status": "expired",
+      "marketPermission": false,
+      "postcloseData": true,
+      "rejections": [
+        {
+          "at": 1789483500000,
+          "rule": "M4/M3",
+          "decision": "watch_only",
+          "reason": "First target has already been reached before entry. First target offers -0.072R from confirmation; requires 0.25R.",
+          "measurements": {
+            "close": 171.17,
+            "trigger": 168.97000122070312,
+            "volume": 98567,
+            "baselineVolume": 49240.0,
+            "requiredVolumeMultiple": 1.5,
+            "volumeRatio": 2.0017668562144597,
+            "closeLocation": 1.0,
+            "requiredCloseLocation": 0.7,
+            "firstTargetR": -0.07194361698141208,
+            "requiredTargetR": 0.25
+          }
+        }
+      ]
+    },
+    {
+      "symbol": "PPC",
+      "variant": "baseline",
+      "baseline": "24/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "PPC",
+      "variant": "5m",
+      "baseline": "78/78",
+      "coverageAllowed": true,
+      "status": "invalidated",
+      "marketPermission": false,
+      "postcloseData": false,
+      "rejections": []
+    },
+    {
+      "symbol": "PPC",
+      "variant": "30m",
+      "baseline": "6/13",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "PPC",
+      "variant": "volume_1x",
+      "baseline": "24/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "PPC",
+      "variant": "volume_2x",
+      "baseline": "24/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "PPC",
+      "variant": "breakout_bar_stop",
+      "baseline": "24/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    },
+    {
+      "symbol": "PPC",
+      "variant": "retest",
+      "baseline": "24/26",
+      "coverageAllowed": false,
+      "status": "coverage_excluded",
+      "marketPermission": false,
+      "postcloseData": false
+    }
+  ]
+}
