@@ -176,3 +176,7 @@ AUTH_SIGN_IN = "AuthSignIn"
 TIP_INTAKE_STALLED = "TipIntakeStalled"
 TIP_INTAKE_RECOVERED = "TipIntakeRecovered"
 
+# KFIN-09 (2026-09-14): frozen knowledge comparison + entry-variant cohort (evidence only)
+TIP_FROZEN_BUNDLE = "TipFrozenBundle"          # an immutable case bundle was captured (id = content hash)
+TIP_FROZEN_REPLAY = "TipFrozenReplay"          # one isolated replay under one knowledge variant
+TIP_ENTRY_COHORT = "TipEntryCohort"            # one eligible idea recorded at its decision (all dispositions)

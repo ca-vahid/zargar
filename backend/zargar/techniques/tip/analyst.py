@@ -928,6 +928,7 @@ async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
         "rulesHash": hashlib.sha1(canon.encode("utf-8")).hexdigest()[:12],
         "rules": [{"id": str(n["id"]), "text": n["text"],
                    "disputed": bool(n.get("needsHuman")),
+                   "core": bool(n.get("core")),          # KFIN-09: the compact (core-only) variant reads this
                    "createdAt": n.get("createdAt")} for n in ordered],
     }
     _rules_text.last_snapshot = snapshot
@@ -1360,6 +1361,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 else " · starter rules (none saved yet)."),
              tip=tip, notes=notes, rules=rules_n,
              verification={k: verification.get(k) for k in ("passed", "park", "shadow_only")})
+    capture_ctx = bool(s.get("techniques.tip.frozen_capture_context", False))
 
     from .lotto import is_lotto as _is_lotto, lotto_budget as _lotto_budget
     lotto_line = ""
@@ -1389,6 +1391,18 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     if historical_note:
         header = historical_note + "\n\n" + header
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))
+    if capture_ctx:
+        # KFIN-09: the EXACT context manifest, as components, so a frozen
+        # bundle can rebuild this header verbatim (and swap one block for a
+        # knowledge variant) without fetching anything today. Diagnostics only.
+        from .frozen import manifest_from_components
+        rec.step("context", "Context manifest captured for frozen replay.",
+                 contextManifest=manifest_from_components(
+                     header=header, system=system, today_line=header.split("\n", 1)[0],
+                     rules_text=rules_txt, notes_text=notes_txt,
+                     history_text=history_txt, lotto_line=lotto_line,
+                     verification=verification, tip=tip, policy=policy,
+                     siblings=siblings, historical_note=historical_note))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
