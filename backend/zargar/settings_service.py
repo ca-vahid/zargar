@@ -212,6 +212,13 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_study_enabled": True,   # journal-only NBBO sampling at alert and +delay for every option proposal (entry-quality study, P3 2026-09-10)
     "techniques.tip.entry_study_delay_seconds": 180.0,
     "techniques.tip.analyst_max_output_tokens": 3000,
+    # KFIN-09 (2026-09-14) experiments - ALL inert by default
+    "techniques.tip.frozen_capture_context": False,   # stamp the exact context manifest (header components) on each analyst run's start step so a frozen bundle can be captured verbatim
+    "techniques.tip.frozen_variants": "current,core_only",   # knowledge variants a frozen replay runs (current | core_only | no_knowledge)
+    "techniques.tip.entry_cohort_enabled": False,     # record EVERY eligible open/add idea (skips, declines, blocked cards, shadows, parks, failures) with its decision-time quote
+    "techniques.tip.entry_cohort_delay_minutes": 3.0, # the configured LATER sample (labeled delayed - never alert-time evidence)
+    "techniques.tip.entry_cohort_premium_cap": 1.05,  # the cap variant: fill only when the ask <= cap x the source-stated premium
+    "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
     "techniques.tip.analyst_max_rules": 50,             # rulebook budget per run: CORE (pinned) rules always, then newest (KB-04)
     "techniques.tip.knowledge_maintenance_at": "17:25", # ET, EVERY day incl. weekends; runs the audit on rule_audit_day or as catch-up (KB-01)
     "techniques.tip.knowledge_audit_max_groups": 12,    # scope groups per maintenance run; the rest are deferred VISIBLY, least-recently-audited first (KB-04)
