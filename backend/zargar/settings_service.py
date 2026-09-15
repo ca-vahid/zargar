@@ -224,6 +224,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_cohort_enabled": False,     # record EVERY eligible open/add idea (skips, declines, blocked cards, shadows, parks, failures) with its decision-time quote
     "techniques.tip.entry_cohort_delay_minutes": 3.0, # the configured LATER sample (labeled delayed - never alert-time evidence)
     "techniques.tip.entry_cohort_premium_cap": 1.05,  # the cap variant: fill only when the ask <= cap x the source-stated premium
+    "techniques.tip.entry_cohort_delay_tolerance_seconds": 60.0,  # KF83-03: a delayed sample observed later than due + tolerance is LATE (diagnostic, never the delay variant's evidence)
     "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
     "techniques.tip.analyst_max_rules": 50,             # rulebook budget per run: CORE (pinned) rules always, then newest (KB-04)
     "techniques.tip.knowledge_maintenance_at": "17:25", # ET, EVERY day incl. weekends; runs the audit on rule_audit_day or as catch-up (KB-01)

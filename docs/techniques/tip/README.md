@@ -21,7 +21,8 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## State of play (2026-09-14)
 
-- **Version:** v0.7.83 (deployed 00:21 ET 2026-09-15: review follow-ups PR #127 — the dispute
+- **Version:** v0.7.85 (2026-09-15: approval-card readiness + KF83-01..04, record in
+  `reviews/2026-09-14-kfin-response.md` "Approval-card readiness + KF83"). Before it v0.7.83 (deployed 00:21 ET 2026-09-15: review follow-ups PR #127 — the dispute
   release commits with its batch progress, pending delayed samples are recovered by the
   `tip-cohort-recovery` task, the Tips card shows attachment coverage; record in
   `reviews/2026-09-14-kfin-response.md` "Review follow-ups"). Before it v0.7.77 (deployed 21:35 ET 2026-09-14: EOD review fixes EOD-01..09, `reviews/2026-09-14-eod-response.md`; on top of the day's rollout PR #95, exit guard PR #98, counter fix PR #100). Practice only: `trading.mode=practice`,
@@ -148,6 +149,27 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
 
+## Approval cards (readiness-v1, 2026-09-15)
+
+A Tips card shows the analyst's OPINION and the EXECUTION READINESS as two independent statuses.
+`context.readiness` (persisted by every refresh / automated refusal / manual approval attempt)
+lists the actual blocking reasons by code - source not qualified for automatic trading (auto-only,
+informational), planned risk over the approved budget, missing / stale / delayed quote, contract
+metadata missing, risk evidence unavailable, exit plan review, an open execution-integrity
+incident, an unsupported instrument, expiry - the final plan (purchase allocation limit vs the
+approved planned-risk budget, risk per unit and its basis, final qty x risk, final stop, quote
+provenance, adjustments) and a fingerprint (final stop + admissible size + blocker set).
+"Refresh & revalidate" (`POST /api/proposals/{id}/revalidate`) re-fetches quotes, recomputes
+geometry and sizing, re-checks incidents and gates, saves the result - zero orders, the limit only
+ever lowered, a resolved incident's label cleared. Approve submits exactly the displayed plan
+(revalidated at that instant; refused when blocked, when the fingerprint changed, or when an
+incident opened meanwhile); a labeled override names every failed check it accepts (only
+overridable ones: budget, plan review, incident, unsupported instrument - never a missing / stale
+quote, missing evidence or expiry), needs a reason and is journaled `ProposalOverridden` with the
+exposure. The platform protections (risk gate, kill switch, loss halts) still apply to the order.
+Code: `backend/zargar/approvals/readiness.py`, `proposals.py::assess/revalidate`,
+`frontend/src/pages/InboxPage.tsx::ProposalCard`; tests `tests/test_proposal_readiness.py`.
+
 ## Experiments (KFIN-09, built 2026-09-14; collection switched ON 2026-09-15 00:26 ET)
 
 `techniques.tip.entry_cohort_enabled` and `techniques.tip.frozen_capture_context` are ON by journaled
@@ -155,7 +177,12 @@ PATCH since 2026-09-15 (code defaults stay off): the cohort records and samples,
 stamps its context manifest. Neither touches an order path; a pending delayed sample survives a
 restart through the `tip-cohort-recovery` task (0.7.83). Baseline at enablement: 0 eligible ideas;
 the first verbatim frozen bundle needs a run captured AFTER the flag (a pre-flag capture is
-labeled RECONSTRUCTED and its `core_only` variant is unavailable).
+labeled RECONSTRUCTED and its `core_only` variant is unavailable). KF83-03/04 (0.7.85): a delayed
+sample is the delay variant's evidence only inside `techniques.tip.entry_cohort_delay_tolerance_seconds`
+(60) - later observations are `late` diagnostics; a quote is executable comparison evidence only with
+venue provenance (`opra`/`ibkr` for options), no delayed flag, a genuine source time, a valid
+uncrossed bid/ask and an open option session (`cohort.qualify_quote`; stored records are re-judged).
+MK `observe` is classification + grading instrumentation, not a funded shadow cohort.
 
 Two evidence tools, both isolated by construction (`tests/test_tip_kfin09_experiments.py`
 proves write isolation, denominator correctness, missing-data handling and reproducibility):

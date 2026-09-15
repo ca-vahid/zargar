@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CopyChip } from "../components/CopyChip";
 import { SymIcon } from "../components/SymIcon";
-import { IconCheck, IconClock, IconHalf, IconX } from "../components/icons";
+import { IconCheck, IconClock, IconHalf, IconRefresh, IconWarn, IconX } from "../components/icons";
 import { ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, timeUntil } from "../lib/format";
@@ -11,6 +11,7 @@ import { useQuote, useStore } from "../store";
 import type { AnalystRun, AnalystStep, Proposal, RawContentItem, Signal, SourceScorecard } from "../types";
 import { useViewport } from "../lib/viewport";
 import { Sheet } from "../components/Sheet";
+import { Modal } from "../components/Modal";
 
 /* The Tips page (redesigned 2026-08-28): the composer is the product — paste
    text or a screenshot, the app extracts the trade AND the source, verifies it
@@ -569,6 +570,7 @@ function DecidedRow({ p }: { p: any }) {
 function ProposalCard({ p }: { p: Proposal }) {
   const toast = useStore((s) => s.toast);
   const [busy, setBusy] = useState(false);
+  const [overrideOpen, setOverrideOpen] = useState<false | { half: boolean }>(false);
   const [, force] = useState(0);
   useEffect(() => {
     const t = setInterval(() => force((x) => x + 1), 1000);
@@ -578,8 +580,16 @@ function ProposalCard({ p }: { p: Proposal }) {
   const act = async (fn: () => Promise<any>, label: string) => {
     setBusy(true);
     try {
-      await fn();
-      toast("success", label);
+      const r = await fn();
+      if (r && r.refused) {
+        toast("error", r.changed ? `Plan changed - review the refreshed card: ${r.refused}` : `Not approved: ${r.refused}`);
+      } else if (r && r.readiness && !r.order) {
+        const st = r.readiness.state;
+        toast(st === "ready" ? "success" : "info",
+          st === "ready" ? `${p.symbol}: revalidated - ready` : `${p.symbol}: revalidated - ${st.replace("_", " ")}`);
+      } else {
+        toast("success", label);
+      }
     } catch (e: any) {
       toast("error", e.message);
     } finally {
@@ -592,6 +602,8 @@ function ProposalCard({ p }: { p: Proposal }) {
   const vehicle = p.context?.vehicle;
   const analyst = p.context?.analyst;
   const exitPlan = p.context?.exitPlan;
+  const rp = p.context?.riskPlan;
+  const rd = p.context?.readiness;
   const openAnalystRun = useStore((s) => s.openAnalystRun);
   const isOpt = p.secType === "OPT";
   const mult = isOpt || p.secType === "SPREAD" ? 100 : 1;
@@ -613,6 +625,38 @@ function ProposalCard({ p }: { p: Proposal }) {
         return fr != null ? `${Math.round(fr * 100)}% @ ${t}` : `@ ${t}`;
       }).join(", ")
     : null;
+
+  // ---- execution readiness (readiness-v1): independent of the analyst's opinion
+  const validUntil = rd?.validUntil ? new Date(rd.validUntil).getTime() : 0;
+  const stale = !rd || (validUntil > 0 && Date.now() > validUntil);
+  const state: "ready" | "blocked" | "needs_refresh" | "unverified" | "expired" =
+    !rd ? "needs_refresh"
+      : rd.state === "expired" ? "expired"
+      : rd.state === "blocked" ? "blocked"
+      : stale ? "needs_refresh"
+      : rd.state === "ready" ? "ready" : "unverified";
+  const blockers: any[] = rd?.blockers ?? [];
+  const info: any[] = rd?.info ?? [];
+  const plan = rd?.plan ?? null;
+  const canApprove = !busy && (state === "ready" || state === "unverified");
+  const canOverride = !busy && state === "blocked" && !!rd?.overridable;
+  const budgetBlocked = blockers.some((b) => b.code === "risk_budget_exceeded");
+  const stateLabel = state === "ready" ? "ready" : state === "blocked" ? "blocked"
+    : state === "needs_refresh" ? "needs refresh" : state === "expired" ? "expired" : "unverified";
+  const stateCls = state === "ready" ? "ok" : state === "blocked" || state === "expired" ? "bad"
+    : state === "needs_refresh" ? "wait" : "dim";
+  const stateTitle = state === "ready"
+    ? `Every execution check passed at ${fmtDateTime(rd.computedAt)}: fresh quotes, final stop, size within the approved risk budget, no open incident. Approve submits exactly this plan.`
+    : state === "blocked" ? "One or more execution checks fail - the reasons are listed below. Refresh to re-run them; an override must name each check and give a reason."
+    : state === "needs_refresh" ? (rd ? `Last validated ${fmtDateTime(rd.computedAt)} - quotes and checks are older than the gate allows. Refresh before deciding.`
+      : "This card has never been validated with the readiness checks - refresh before deciding.")
+    : state === "expired" ? "This card expired - it cannot be approved."
+    : "No enforced risk plan on this book (geometry gate shadow/off or a non-Practice book): the checks shown are advisory and Approve is your decision on the evidence.";
+
+  const approve = (half: boolean) =>
+    act(() => api.approveProposal(p.id, { half, expected: rd?.fingerprint ?? null }),
+      `Approved ${p.symbol}${half ? " (half)" : ""}`);
+
   return (
     <div className="proposal-card">
       <div className="head">
@@ -626,52 +670,106 @@ function ProposalCard({ p }: { p: Proposal }) {
         {p.secType === "SPREAD" && <span className="status-pill dim">defined-risk spread</span>}
         {analyst?.verdict && (
           <span className={`status-pill ${analyst.verdict === "take" ? "ok" : analyst.verdict === "watch" ? "wait" : "bad"}`}
-            title={analyst.rationale ?? undefined}>
+            title={`The analyst's OPINION (${analyst.verdict}) - it says nothing about whether the final quantity, price and risk checks passed. ${analyst.rationale ?? ""}`}>
             analyst: {analyst.verdict}
           </span>
         )}
+        <span className={`status-pill ${stateCls}`} title={stateTitle}>
+          execution: {stateLabel}
+        </span>
         {vehicle?.substituted && (
           <span className="status-pill bad" title="The proposed contract differs from the one the tip/analyst named">
             substituted: {vehicle.substituted}
           </span>
         )}
-        {p.context?.autoGate && (
-          <span className="status-pill wait"
-            title={`${p.context.autoGate} — the platform-default auto is earned per source on closed tips; this one waits for you`}>
-            {String(p.context.autoGate).includes("hit rate") ? "auto: hit rate below bar" : "auto: not yet earned"}
-          </span>
-        )}
         <span className="ttl"
-          title={`Suggested ${fmtDateTime(p.createdAt)}${afterHours ? " — after the close, held so you can decide at the open" : ""}. Expires ${fmtDateTime(p.expiresAt)}. Approving is always safe on an old card: the click re-prices at the live ask (never up) and re-runs every risk check at that moment.`}>
+          title={`Suggested ${fmtDateTime(p.createdAt)}${afterHours ? " — after the close, held so you can decide at the open" : ""}. Expires ${fmtDateTime(p.expiresAt)}. Approve re-runs every check at that moment and submits only the plan shown; if anything changed you are asked to look again.`}>
           <IconClock size={11} /> suggested {fmtDateTime(p.createdAt)}{afterHours ? " (after close)" : ""} · expires in {timeUntil(p.expiresAt)}
         </span>
         {p.signalId && <CopyChip value={p.signalId}
           title={`tip ${p.signalId} — click to copy; quote this id to review the tip behind this proposal`} />}
       </div>
       <div className="prop-suggest">
-        <span className={p.side === "BUY" ? "pos" : "neg"}><b>{p.side} {p.qty} × {what}</b></span>
-        {p.limitPrice != null && <span>@ {fmtMoney(p.limitPrice)} {p.orderType}</span>}
-        {cost != null && <span className="cost">≈ <b>{fmtMoney(cost, 0)}</b></span>}
+        <span className={p.side === "BUY" ? "pos" : "neg"}><b>{p.side} {plan?.qty ?? p.qty} × {what}</b></span>
+        {p.limitPrice != null && <span>@ {fmtMoney(plan?.limit ?? p.limitPrice)} {p.orderType}</span>}
+        {cost != null && <span className="cost">≈ <b>{fmtMoney(plan?.cost ?? cost, 0)}</b></span>}
         {p.limitPrice != null && live != null && (
           <span className={`muted ${Math.abs(live / p.limitPrice - 1) > 0.02 ? (live > p.limitPrice ? "neg" : "pos") : ""}`}
-            title="the market since this card was suggested — approval re-prices at the live ask, so an old card never fills at an old price">
+            title="the market since this card was suggested — a refresh re-prices at the live ask (never up)">
             now {fmtMoney(live)} ({live >= p.limitPrice ? "+" : ""}{((live / p.limitPrice - 1) * 100).toFixed(1)}% since)
           </span>
         )}
       </div>
+
+      {(blockers.length > 0 || info.length > 0 || (!rd && p.context?.autoGate)) && (
+        <ul className="blocker-list">
+          {blockers.map((b) => (
+            <li key={b.code} className="blocker fail" title={b.overridable
+              ? "This check can be acknowledged by a labeled override with a reason (journaled). It is never bypassed by the plain Approve button."
+              : "This check cannot be overridden - refresh once the evidence exists."}>
+              <b>{b.label}</b>{b.detail ? ` — ${b.detail}` : ""}
+              <span className="muted"> · {b.overridable ? "override possible" : "not overridable"}</span>
+            </li>
+          ))}
+          {info.map((b) => (
+            <li key={`i-${b.code}`} className="blocker info"
+              title="Why this card was not approved automatically. It does not block your decision.">
+              <b>waits for you</b> — {b.detail ?? b.label}
+            </li>
+          ))}
+          {!rd && p.context?.autoGate && (
+            <li className="blocker info" title="The last automatic check, before this card was ever validated with the readiness checks. Refresh to replace it with the current state.">
+              <b>last automatic check</b> — {p.context.autoGate}
+            </li>
+          )}
+        </ul>
+      )}
+
+      {(plan || rp) && (
+        <div className="risk-grid" title="The FINAL plan Approve would submit - separate from the analyst's sizing narrative.">
+          <span>purchase allocation limit</span><b>{sizing?.budget != null ? `$${fmtMoney(sizing.budget, 0)}` : "—"}</b>
+          <span>approved planned-risk budget</span>
+          <b title={plan?.riskBudgetSource ?? rp?.budgetSource ?? ""}>{(plan?.riskBudget ?? rp?.budget) != null ? `$${fmtMoney(plan?.riskBudget ?? rp?.budget, 2)}` : "—"}</b>
+          <span>est. risk per {isOpt ? "contract" : "share"}</span>
+          <b title={`basis: ${plan?.unitLossBasis ?? rp?.unitLossBasis ?? "none"} · estimator ${plan?.estimatorVersion ?? rp?.estimatorVersion ?? "?"}`}>
+            {(plan?.unitLoss ?? rp?.unitLoss) != null ? `$${fmtMoney(plan?.unitLoss ?? rp?.unitLoss, 2)}` : "no estimate"}
+          </b>
+          <span>final quantity × risk</span>
+          <b className={plan?.withinBudget === false ? "neg" : plan?.withinBudget ? "pos" : ""}>
+            {plan ? `${plan.qty} × ${plan.unitLoss != null ? `$${fmtMoney(plan.unitLoss, 2)}` : "?"} = ${plan.plannedRisk != null ? `$${fmtMoney(plan.plannedRisk, 2)}` : "no estimate"}` : "—"}
+            {plan?.withinBudget === false ? " · exceeds budget" : plan?.withinBudget ? " · within budget" : ""}
+            {plan?.requestedQty != null && plan?.planQty != null && plan.requestedQty !== plan.qty ? ` (analyst asked ${plan.requestedQty})` : ""}
+          </b>
+          <span>final stop</span>
+          <b>{(plan?.finalStop ?? rp?.finalStop) != null ? fmtMoney(plan?.finalStop ?? rp?.finalStop)
+            : "—"}{(plan?.originalStop ?? rp?.originalStop) != null && (plan?.originalStop ?? rp?.originalStop) !== (plan?.finalStop ?? rp?.finalStop)
+            ? ` (analyst: ${fmtMoney(plan?.originalStop ?? rp?.originalStop)})` : ""}</b>
+          <span>quote</span>
+          <b>{(plan?.quoteSource ?? rp?.quote?.source) ?? "none"}{(plan?.quoteAgeS ?? rp?.quote?.ageS) != null ? ` · ${Math.round(plan?.quoteAgeS ?? rp?.quote?.ageS)}s old` : ""}{(plan?.quoteDelayed ?? rp?.quote?.delayed) ? " · delayed" : ""}</b>
+          {(plan?.adjustments ?? rp?.decisions ?? []).length > 0 && (<>
+            <span>adjustments</span>
+            <b className="muted">{(plan?.adjustments ?? rp?.decisions).join("; ")}</b>
+          </>)}
+          <span className="muted note" style={{ gridColumn: "1 / -1" }}>
+            Planned stop risk is an estimate, not a guaranteed maximum loss
+            {(plan?.stressRisk ?? rp?.stressRisk) ? ` (theoretical maximum ≈ $${fmtMoney(plan?.stressRisk ?? rp?.stressRisk, 0)})` : ""}.
+            {rd?.computedAt ? ` Validated ${fmtDateTime(rd.computedAt)}.` : " Not yet validated."}
+          </span>
+        </div>
+      )}
+
       <div className="prop-facts">
         <span className="prop-fact"><b>{p.context?.sourceName ?? "unknown source"}</b> · {p.context?.confidence ?? "?"}</span>
-        {sizing?.budget != null && <span className="prop-fact">budget <b>${fmtMoney(sizing.budget, 0)}</b></span>}
         {trims && <span className="prop-fact">trims <b>{trims}</b></span>}
-        {exitPlan?.underlyingStop != null && <span className="prop-fact">stop <b>{exitPlan.underlyingStop}</b></span>}
         {exitPlan?.premiumStopPct != null && <span className="prop-fact">premium stop <b>{exitPlan.premiumStopPct}%</b></span>}
         {exitPlan?.maxHoldSessions != null && <span className="prop-fact">time box <b>{exitPlan.maxHoldSessions} sessions</b></span>}
         {!exitPlan && p.bracket?.take_profit && <span className="prop-fact">target <b>{fmtMoney(p.bracket.take_profit)}</b></span>}
         {!exitPlan && p.bracket?.stop_loss && <span className="prop-fact">stop <b>{fmtMoney(p.bracket.stop_loss)}</b></span>}
       </div>
       {analyst?.rationale && (
-        <div className="muted" style={{ fontSize: 12, margin: "4px 0" }}>
-          {analyst.rationale}
+        <div className="muted" style={{ fontSize: 12, margin: "4px 0" }}
+          title="The analyst's own reasoning and sizing narrative - an opinion, kept apart from the final approved plan above">
+          <b>analyst's view{rp?.qtyRequested ? ` (asked for ${rp.qtyRequested})` : ""}:</b> {analyst.rationale}
           {p.context?.analystRunId && (
             <>{" "}
               <button className="link-btn" onClick={() => openAnalystRun(p.context.analystRunId)}
@@ -708,20 +806,93 @@ function ProposalCard({ p }: { p: Proposal }) {
         </ul>
       )}
       <div className="proposal-actions">
-        <button className="approve-btn" disabled={busy}
-          onClick={() => act(() => api.approveProposal(p.id), `Approved ${p.symbol}`)}>
+        <button className="half-btn" disabled={busy}
+          title="Refresh the quotes this plan needs, recompute the stop and size, re-check incidents and every gate, and save the result. Places no order and never raises the entry limit."
+          onClick={() => act(() => api.revalidateProposal(p.id), `Revalidated ${p.symbol}`)}>
+          <IconRefresh size={12} /> Refresh & revalidate
+        </button>
+        <button className="approve-btn" disabled={!canApprove}
+          title={canApprove ? "Submit exactly the validated plan shown (re-checked at this instant)"
+            : state === "blocked" ? "Blocked - see the reasons above" : state === "expired" ? "Expired" : "Refresh and revalidate first"}
+          onClick={() => approve(false)}>
           <IconCheck size={12} /> Approve
         </button>
-        <button className="half-btn" disabled={busy}
-          onClick={() => act(() => api.approveProposal(p.id, true), `Approved ${p.symbol} (half)`)}>
+        <button className="half-btn" disabled={!canApprove || budgetBlocked}
+          title={budgetBlocked ? "Half size does not help: one unit already exceeds the risk budget"
+            : "Half of the validated plan (same limit, same stop)"}
+          onClick={() => approve(true)}>
           <IconHalf size={12} /> half size
         </button>
+        {state === "blocked" && (
+          <button className="half-btn" disabled={!canOverride}
+            title={canOverride ? "Acknowledge each failed check by name, see the resulting exposure, and give a reason (journaled)"
+              : "At least one failed check cannot be overridden"}
+            onClick={() => setOverrideOpen({ half: false })}>
+            <IconWarn size={12} /> Override…
+          </button>
+        )}
         <button className="reject-btn" disabled={busy}
           onClick={() => act(() => api.rejectProposal(p.id), `Rejected ${p.symbol}`)}>
           <IconX size={12} /> Reject
         </button>
       </div>
+      {overrideOpen && rd && (
+        <OverrideDialog p={p} rd={rd} busy={busy} onClose={() => setOverrideOpen(false)}
+          onSubmit={(reason, half) => {
+            setOverrideOpen(false);
+            act(() => api.approveProposal(p.id, {
+              half, expected: rd.fingerprint,
+              override: { checks: blockers.map((b) => b.code), reason },
+            }), `Approved ${p.symbol} with an override`);
+          }} />
+      )}
     </div>
+  );
+}
+
+function OverrideDialog({ p, rd, busy, onClose, onSubmit }: {
+  p: Proposal; rd: any; busy: boolean; onClose: () => void;
+  onSubmit: (reason: string, half: boolean) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [half, setHalf] = useState(false);
+  const plan = rd.plan ?? {};
+  const qty = half ? Math.max(1, Math.floor((plan.qty ?? p.qty) / 2)) : (plan.qty ?? p.qty);
+  const unit = plan.unitLoss;
+  const isOpt = p.secType === "OPT";
+  return (
+    <Modal title={`Override — ${p.symbol}`} onClose={onClose}
+      footer={<>
+        <button className="half-btn" onClick={onClose}>Cancel</button>
+        <button className="approve-btn" disabled={busy || reason.trim().length < 20}
+          title={reason.trim().length < 20 ? "A reason of at least 20 characters is required" : "Submit with this override (journaled)"}
+          onClick={() => onSubmit(reason.trim(), half)}>
+          Submit override
+        </button>
+      </>}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        You are accepting the following failed checks by name. The platform protections that cannot be overridden
+        (the risk gate, the kill switch, the loss halts, quote freshness at submission) still apply to the order.
+      </p>
+      <ul className="blocker-list">
+        {(rd.blockers ?? []).map((b: any) => (
+          <li key={b.code} className="blocker fail"><b>{b.label}</b>{b.detail ? ` — ${b.detail}` : ""}</li>
+        ))}
+      </ul>
+      <div className="risk-grid">
+        <span>resulting exposure</span>
+        <b>{qty} × {unit != null ? `$${fmtMoney(unit, 2)}` : "no estimate"} = {unit != null ? `$${fmtMoney(unit * qty, 2)}` : "no estimate"} planned risk
+          {plan.riskBudget != null ? ` vs $${fmtMoney(plan.riskBudget, 2)} budget` : ""}</b>
+        <span>purchase</span>
+        <b>{plan.limit != null ? `${qty} × $${fmtMoney(plan.limit)}${isOpt ? " × 100" : ""} ≈ $${fmtMoney(plan.limit * qty * (isOpt ? 100 : 1), 0)}` : "—"}</b>
+        {plan.stressRisk != null && (<><span>theoretical maximum</span><b>≈ ${fmtMoney((plan.stressRisk / Math.max(1, plan.qty || 1)) * qty, 0)}</b></>)}
+      </div>
+      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, margin: "6px 0" }}>
+        <input type="checkbox" checked={half} onChange={(e) => setHalf(e.target.checked)} /> half size ({Math.max(1, Math.floor((plan.qty ?? p.qty) / 2))})
+      </label>
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} style={{ width: "100%" }}
+        placeholder="Why the desk accepts this (at least 20 characters) — this is written to the journal with the checks and the exposure" />
+    </Modal>
   );
 }
 

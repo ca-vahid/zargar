@@ -702,8 +702,15 @@ class SignalService:
                                     contradictions: list, author: str, run_id: str,
                                     live_ids: set[str], batch_id: str,
                                     expected_revisions: dict | None = None,
-                                    mode: str = "apply") -> dict:
+                                    mode: str = "apply",
+                                    releases: dict[str, str] | None = None) -> dict:
         """KB-02: the ONE apply path for audit-proposed knowledge changes.
+
+        `releases` (KF83-01, 2026-09-15): {note id -> ownership marker} — a
+        reviewed REJECTION releases the dispute and expires the rule in THIS
+        transaction: the row stays `needs_human` (non-operative) until the
+        expiry is durable, and the release snapshot carries the marker
+        (`resolve:c:<manifest>`) as the durable ownership proof.
 
         Contract (reviewer-tightened 2026-09-13):
         - IDENTITY: the receipt (`tip_knowledge_batches`, PK = batch_id) is
@@ -790,9 +797,19 @@ class SignalService:
                     if exp is not None and int(getattr(row, "revision_no", 1) or 1) != int(exp):
                         raise ValueError(f"batch aborted: {nid} is revision "
                                          f"{getattr(row, 'revision_no', 1)}, judged at {exp} — re-read required")
+            released: list[dict] = []
             for nid, row in rows.items():
                 if row.superseded_by is not None and nid not in conflict:
                     raise ValueError(f"batch aborted: {nid} was superseded concurrently")
+                if row.needs_human and releases and nid in releases and mode == "apply":
+                    # KF83-01: the reviewed release and the mutation commit together
+                    before = int(getattr(row, "revision_no", 1) or 1)
+                    self._snapshot(session, row, now, str(releases[nid])[:40])
+                    row.needs_human = False
+                    released.append({"id": nid, "revisionFrom": before,
+                                     "revisionTo": int(getattr(row, "revision_no", 1) or 1),
+                                     "marker": str(releases[nid])[:40]})
+                    continue
                 if row.needs_human:
                     conflict.add(nid)                 # persisted dispute: locked until resolved
             kept_merges = []
@@ -812,7 +829,8 @@ class SignalService:
                         "expectedRevisions": expected_revisions or {}, "mode": mode}
             applied = {"merged": 0, "expired": 0, "contradictions": 0, "newRules": [],
                        "newNotes": [], "flagged": [], "rejected": rejected, "mode": mode,
-                       "proposedMerges": len(kept_merges), "proposedExpires": len(kept_expires)}
+                       "proposedMerges": len(kept_merges), "proposedExpires": len(kept_expires),
+                       **({"released": released} if released else {})}
             # ---- write (flags always; merges/expiries only in apply mode) -------
             ttl = self._note_ttl_days(scope)
             if mode == "apply":

@@ -251,8 +251,13 @@ async def test_case4_automated_paths_are_refused_human_proceeds(rig):
         portfolio_id=pid, symbol="PAUC", sec_type="STK", side="BUY", qty=1, order_type="LMT",
         limit_price=10.0, source="technique", technique_id="tip"), stage="entry")
     assert res is None and trade.status == "skipped" and "execution-integrity" in trade.reason
-    # a person's click is a decision, not an automated entry
-    human = await eng.proposals.approve(pdict["id"], via="app")
+    # a person's decision is a LABELED override of the named incident check
+    # (readiness-v1, 2026-09-15: a plain click is refused, the reason shown)
+    plain = await eng.proposals.approve(pdict["id"], via="app")
+    assert plain["order"] is None and "incident" in plain.get("refused", "")
+    human = await eng.proposals.approve(pdict["id"], via="app",
+                                        override={"checks": ["integrity_incident"],
+                                                  "reason": "test: the desk accepts trading through this incident"})
     assert human["order"] is not None
 
 

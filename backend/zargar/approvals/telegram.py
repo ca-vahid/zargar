@@ -173,9 +173,14 @@ class TelegramBot:
                 result = await self.engine.proposals.approve(
                     proposal_id, via="telegram", half=(action == "half"))
                 order = result["order"]
+                if order is None and result.get("refused"):
+                    # readiness-v1: a blocked card is not approved by a tap - the
+                    # actual reason comes back; overrides live in the app only
+                    await self.send(f"⛔ Not approved — {result['refused']}")
+                    return
                 await self.send(
                     f"✅ Approved{' (half size)' if action == 'half' else ''} — "
-                    f"order {order.get('status', '?')}")
+                    f"order {(order or {}).get('status', '?')}")
         except ValueError as exc:
             await self.send(f"⚠️ {exc}")
 
