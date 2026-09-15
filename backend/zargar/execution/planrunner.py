@@ -596,16 +596,32 @@ class PlanRunner(SessionListener):
             idx, label = self._full_exit_rung(ap, tr, tr.filled_qty)
             if idx is None:
                 continue
+            rungs = [(idx, label, self._production_exit_qty(ap, tr, idx, label))]
+            # P-02 candidate (small-position-exit-v1, frozen 2026-09-15): a <=2-contract option position whose first
+            # PRODUCTION sale is >= 2R away also gets ONE observation at the plan's TP1 - the candidate's first sale
+            # (one contract of two, the whole position of one). Order-free; same evidence rules; own key.
+            if (bool(self.rt("shadow_p02_candidate", False)) and tr.instrument == "options" and tr.filled_qty
+                    and float(tr.filled_qty) <= 2 and idx != 0 and tr.targets and tr.entry is not None and tr.stop is not None):
+                risk = abs(float(tr.entry) - float(tr.stop))
+                first_sale_r = (abs(float(tr.targets[idx]) - float(tr.entry)) / risk) if risk > 0 else None
+                if first_sale_r is not None and first_sale_r >= 2.0:
+                    rungs.append((0, "tp1-candidate", (1.0 if float(tr.filled_qty) >= 2 else float(tr.filled_qty))))
+            for idx, label, proposed in rungs:
+                self._shadow_capture_rung(ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out)
+        return out
+
+    def _shadow_capture_rung(self, ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out):
+        """One rung of `_shadow_capture` (pure). `label` `tp1-candidate` carries the P-02 candidate's own key."""
+        if True:
             target = float(tr.targets[idx])
             hit = (obs <= target) if tr.direction == "short" else (obs >= target)
             if not hit:
-                continue
-            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx)
+                return
+            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx if label != "tp1-candidate" else "tp1-candidate")
             pending = self.__dict__.setdefault("_shadow_pending", set())
             if key in seen or key in pending:
-                continue                                        # acknowledged, or captured and awaiting its write
+                return                                          # acknowledged, or captured and awaiting its write
             pending.add(key)
-            proposed = self._production_exit_qty(ap, tr, idx, label)
             contract = None
             oq = self.engine.quotes.get(tr.order_symbol) if (tr.instrument == "options" and tr.order_symbol) else q
             if oq is not None:
@@ -668,7 +684,6 @@ class PlanRunner(SessionListener):
                                     "conventions": {"latencyS": 2.0, "slippageTicks": 1,
                                                     "note": "metadata for the reducer - no fill is simulated here; a contemporaneous bid is a modeled liquidation opportunity, not a fill"}},
                         "capture": "raw-observation-only", "observedAt": now_ms, "_key": key})
-        return out
 
     async def _shadow_record(self, ap: ArmedPlan, payloads: list[dict]) -> None:
         """Durable append of captured observations; a trade/rung is marked seen ONLY after its write succeeded

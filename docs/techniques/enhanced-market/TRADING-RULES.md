@@ -1083,3 +1083,20 @@ a share entry is sized DOWN to the tightest of the gate's own caps (shadow resea
 gate does); below one share it is a journaled `size_zero` skip. The RiskGate stays the authority; no threshold moved.
 Not deployed during the session - rides the next verified combined release.
 
+### 2026-09-15 - profitability cohorts frozen (reviewers' P-01..P-03; order-free, nothing activated)
+
+Packet `reviews/profitability-sweep-2026-09-15/`. Definitions in `research/PROFITABILITY-COHORTS-2026-09-15.md`
+(`profitability-cohorts-v1`): P-01 cohort `long_bounce_next_resistance` reported beside the full baseline with
+removed trades, missed-winner candidates (underlying-only proxy) and strata (confirmation, room at the actual entry,
+quantity, source alignment); P-02 `small-position-exit-v1` (<= 2 contracts, first production sale >= 2R: sell one of
+two / the whole single contract at the first covered executable bid at the plan TP1; forgone profit on winners
+counted; unknown without an observation) with faster-execution-at-unchanged-targets kept as the separate
+shadow-exit-v1 experiment; P-03 friction (concession + fees as a share of premium, 8% = ranking marker, never a
+gate), affordable quantity, delta-based payoff proxy or unknown. Per-session report:
+`python -m zargar.tools.em_profitability report --date <session>` -> `research/profitability/<date>.md`.
+First report (Sep 15, intraday cutoff) reproduces the reviewers' trade-book friction figures exactly (CVNA 10.12%,
+IREN 6.22%, NFLX 4.64%, ORCL 4.08%, CRWV 3.75%); all five fills ARE the cohort (removed = none), four cohort-eligible
+fires were refused (three by the position caps, one stale quote), P-02 is unknown for all four eligible positions.
+Gap-day wait unchanged; no early-profit rule; no entry broadening; `shadow_exit_observe` and the new
+`shadow_p02_candidate` knob both False.
+
