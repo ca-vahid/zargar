@@ -3122,6 +3122,17 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 profitability: C1 and the sizing map, controlled comparisons (GO from the other team; no activation)** —
+  `notes/research/2026-09-15-c1-and-sizing-controlled-comparisons.md` (+ `profitability-20260915-canonical/`). Their sweep
+  reproduced EXACTLY on the banked tape (dataset `27516b61…`, 48 paired cells, none dropped): baseline 36 book trades
+  +$471 / DD $320; C1 conjunction 50 / +$1,514 / DD $565 (PF 1.36 → 1.96; 34 new small-size entries, 7 lost, 0 changed
+  exits; +$654 without its best incremental date; two-tick fills: −$121 vs +$820 but DD $772). Sizing cap `size_full` 0.5,
+  measured SEPARATELY: +$763 / DD $187 / worst day −$141 with 54 identical trades (the 7 full-unit losers halved + P7
+  re-sizing); +$132 without its best incremental date; two-tick fills +$293 vs −$121. Recommendation: C1 as the next
+  labelled Practice experiment (§5 of the note: knob only, newly eligible entries small by construction, $700 drawdown
+  budget, 10 sessions / 20 new entries, paired live-vs-replay measurement); the sizing cap as the follow-on, judged on
+  its own sessions or by paired replay. Deprioritized as they asked: no-adds, $0.80 premium, single entry styles,
+  10:00 start, no target exits. Research knobs UNCHANGED; C2 validation sealed. All $ at the $600/unit research scale.
 - **2026-09-14 EOD corrective batch CLOSED (other team, v0.7.82 live)** — "F accepted. The cumulative-fill update now
   handles already-open positions correctly, and the live, restart, duplicate, lower-total and zero-fill controls pass.
   Close the E/F/G corrective batch and return to Practice observation. Keep research settings unchanged and retain

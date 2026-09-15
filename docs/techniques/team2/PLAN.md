@@ -337,6 +337,10 @@ and are now part of the plan; each carries the phase it belongs to.
   (12 sessions) is preserved as read evidence. The 30-minute watch job tallies per plan: listing, warm-up identity,
   model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,
   and trail gaps (a plan with `trailGaps` is an incompletely observed session).
+- **Profitability track (2026-09-15):** the other team's sweep reproduced exactly on the banked tape; C1 conjunction
+  (+$1,043 book, DD +77 %) proposed as the next labelled Practice experiment with a $700 drawdown budget and a
+  10-session / 20-entry horizon; the sizing cap (`size_full` 0.5: +$292, DD −42 %, identical trades) is the follow-on.
+  Awaiting their review; nothing activated — `notes/research/2026-09-15-c1-and-sizing-controlled-comparisons.md`.
 - **EOD corrective batch 2026-09-14 (v0.7.73 → v0.7.82): CLOSED 2026-09-14** — A–G accepted by the other team
   (durable refusal overlay, entry gate at every order path incl. transport retries, decision watermark, funnel from
   durable verdicts, uncertain submissions reconciled by the venue's report with cumulative fills, present-time stop
