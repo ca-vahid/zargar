@@ -515,13 +515,16 @@ class PlanRunner(SessionListener):
         """The quantity production would send at that rung: the whole remainder for a small option position or the
         last rung; otherwise round(original filled × ladder share), capped by the UNCOMMITTED remainder."""
         uncommitted = max(0.0, float(tr.remaining) - float(tr.pending_exit_qty))
-        if label.endswith("-full") or idx >= len(EXIT_LADDER) or idx == len(tr.targets or []) - 1:
-            return uncommitted
-        share = EXIT_LADDER[idx]
-        proposed = float(int(round(float(tr.filled_qty or 0) * share)))
-        if float(tr.remaining) - proposed < 1:
-            proposed = uncommitted
-        return max(0.0, min(proposed, uncommitted))
+        if label.endswith("-full"):
+            return uncommitted                              # a small option position exits in full at its rung
+        # the ladder arithmetic of `exits.plan_exit` (MF-01): share of the ORIGINAL quantity, capped by what remains;
+        # the last rung takes the remainder only when the runner would be fractional - production keeps a runner
+        share = EXIT_LADDER[idx] if idx < len(EXIT_LADDER) else 1.0
+        qty = float(int(round(float(tr.filled_qty or 0) * share)))
+        qty = min(qty, float(tr.remaining))
+        if idx == len(tr.targets or []) - 1 and float(tr.remaining) - qty < 1:
+            qty = float(tr.remaining)
+        return max(0.0, min(qty, uncommitted))
 
     def _target_distance(self, ap: ArmedPlan, tr: Trade, *, stage: str, qty: float | None) -> dict:
         """Diagnostic only (target-distance-v1). Units kept apart: the plan's INTENDED underlying entry/stop
@@ -532,7 +535,11 @@ class PlanRunner(SessionListener):
         next_idx, next_label = self._full_exit_rung(ap, tr, qty)
         small = tr.instrument == "options" and qty is not None and float(qty) < 3
         full_idx = (next_idx if small else (len(tr.targets) - 1 if tr.targets else None))
+        # a ladder position is never fully out at its last target (MF-01): 30/40/15 leaves a runner that only the
+        # stop or the session flatten closes - `fullExitPolicy` says so; the label is the rung, not a liquidation
         full_label = next_label if small else (f"tp{full_idx + 1}-runner" if full_idx is not None else "none")
+        full_policy = ("single_contract_exit: the whole position leaves at this rung" if small else
+                       "ladder: the last rung trims its share; the runner remains until the stop or the session flatten")
 
         def dist(i):
             if i is None or risk <= 0 or not tr.targets or i >= len(tr.targets):
@@ -544,6 +551,7 @@ class PlanRunner(SessionListener):
                 "optionPremiumFill": (tr.avg_fill if (stage == "fill" and tr.instrument == "options") else None),
                 "nextRung": next_label, "nextRungIndex": next_idx, "nextRungDistanceR": dist(next_idx),
                 "fullExitRung": full_label, "fullExitRungIndex": full_idx, "distanceR": dist(full_idx),
+                "fullExitPolicy": full_policy,
                 "vehicle": tr.instrument, "quantity": qty, "quantityKnown": qty is not None,
                 "session": ap.plan_for,
                 "policy": {"singleContractExit": ap.config.single_contract_exit, "ladder": list(EXIT_LADDER)},
@@ -587,8 +595,10 @@ class PlanRunner(SessionListener):
             if not hit:
                 continue
             key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx)
-            if key in seen:
-                continue                                        # one durable record per trade instance per rung
+            pending = self.__dict__.setdefault("_shadow_pending", set())
+            if key in seen or key in pending:
+                continue                                        # acknowledged, or captured and awaiting its write
+            pending.add(key)
             proposed = self._production_exit_qty(ap, tr, idx, label)
             contract = None
             oq = self.engine.quotes.get(tr.order_symbol) if (tr.instrument == "options" and tr.order_symbol) else q
@@ -658,12 +668,23 @@ class PlanRunner(SessionListener):
         """Durable append of captured observations; a trade/rung is marked seen ONLY after its write succeeded
         (FM-04: a failed write stays retryable on the next observation, with that observation's own timing)."""
         seen = self.__dict__.setdefault("_shadow_seen", set())
+        pending = self.__dict__.setdefault("_shadow_pending", set())
         for p in payloads:
             key = p.pop("_key", None)
-            await self.engine.journal.append(ev.TECHNIQUE_EXIT_SHADOW, p, aggregate_type="technique_run",
-                                             aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+            if key is not None and key in seen:
+                pending.discard(key)
+                continue                                        # a queued duplicate: the first write already succeeded
+            try:
+                await self.engine.journal.append(ev.TECHNIQUE_EXIT_SHADOW, {**p, "idempotencyKey": list(map(str, key)) if key else None},
+                                                 aggregate_type="technique_run", aggregate_id=ap.run_id,
+                                                 portfolio_id=ap.config.portfolio_id)
+            except Exception:
+                if key is not None:
+                    pending.discard(key)                        # failed: the rung is capturable again (retryable)
+                raise
             if key is not None:
                 seen.add(key)
+                pending.discard(key)
 
     def _shadow_enqueue(self, ap: ArmedPlan, payloads: list[dict]) -> None:
         """Hand captured observations to the bounded background recorder (FM-01): the quote watch never awaits
