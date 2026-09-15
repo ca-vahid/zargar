@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.85";
+export const APP_VERSION = "0.7.86";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.86",
+    date: "2026-09-15",
+    title: "Tips: an approval is bound to the whole plan you saw",
+    items: [
+      { tag: "fixed", text: "AP85-01: an incident override acknowledges one specific incident; a different incident or an unavailable integrity store at the final check always blocks, for single orders and spreads alike." },
+      { tag: "fixed", text: "AP85-02: the confirmation now binds the complete displayed plan (stop, size, risk per unit, planned risk, budget, approved maximum limit, book/instrument, exit plan, bracket, each blocker's identity); every manual approval must carry it (Telegram first shows the revalidated plan, then confirms); the claim re-checks the row's plan atomically and the order is built from the confirmed snapshot - a concurrent refresh or edit refuses with zero orders." },
+      { tag: "fixed", text: "AP85-03: half size = half of the displayed quantity (never below one), validated as that explicit action; the exposure recorded matches." },
+      { tag: "improved", text: "Entry-variant study: a delayed sample is timed at the actual sample moment, one fetch per row even when the timer and the recovery pass coincide, and legacy records are re-judged at their capture time (after-hours or age-less observations never count)." },
+    ],
+  },
   {
     version: "0.7.85",
     date: "2026-09-15",

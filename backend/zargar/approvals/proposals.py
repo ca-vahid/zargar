@@ -1245,7 +1245,7 @@ class ProposalService:
         return None
 
     async def assess(self, pdict: dict, *, via: str, half: bool = False, refresh: bool = True,
-                     phase: str = "revalidate") -> tuple[dict, dict, float, float | None]:
+                     phase: str = "revalidate", limit_basis: float | None = None) -> tuple[dict, dict, float, float | None]:
         """Execution readiness of a Tips card RIGHT NOW (readiness-v1, 2026-09-15):
         refresh the quotes the plan needs, re-price the limit (the live ask may
         only IMPROVE it - never raise), recompute geometry + sizing under the
@@ -1271,7 +1271,8 @@ class ProposalService:
         sec_type = pdict.get("secType")
         underlying = str(vehicle.get("underlying") or pdict.get("symbol") or "").upper()
         limit0 = float(pdict.get("limitPrice") or 0) or None
-        limit = limit0
+        limit = float(limit_basis) if limit_basis else limit0    # AP85-02: the approved maximum the person saw
+        limit_submit = limit
         if refresh and not expired:
             with contextlib.suppress(Exception):
                 await eng.ensure_symbol(underlying)
@@ -1287,7 +1288,9 @@ class ProposalService:
                         q = eng.quotes.get(pdict["symbol"])
                         ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
                 if ask and ask < limit:
-                    limit = round(ask, 2)                    # never-chase: improve only
+                    limit_submit = round(ask, 2)             # never-chase: an explicitly permitted improvement
+                    if not limit_basis:
+                        limit = limit_submit                 # a refresh displays the improved limit as the new maximum
         req_qty = max(1.0, float(pdict.get("qty") or 1) / 2 if half else float(pdict.get("qty") or 1))
         scope = self._geometry_scope(pid)
         q_final = req_qty
@@ -1305,7 +1308,7 @@ class ProposalService:
         if not expired and _ig.pauses(eng.settings):
             why = await _ig.admission(eng, portfolio_id=pid, entry_path="proposal", symbol=underlying)
             if why:
-                blockers.append(_rd.blocker("integrity_unavailable" if "unavailable" in why else "integrity_incident", why))
+                blockers.append(_rd.blocker(_rd.integrity_code(why), why))
         gate = await self._auto_qualification((pdict.get("context") or {}).get("sourceName"))
         if gate:
             info.append(_rd.blocker("source_not_qualified", gate))
@@ -1315,8 +1318,8 @@ class ProposalService:
         # persist: the typed state, the auto label (first reason, prose kept for older readers),
         # a stale review flag cleared, the improved limit
         async with eng.sf() as session:
-            row = await session.get(Proposal, pdict["id"])
-            if row is not None:
+            row = await session.get(Proposal, pdict["id"], with_for_update=True)
+            if row is not None and row.status == "pending":      # a claimed (approved) plan is never rewritten
                 c = {k: v for k, v in (row.context or {}).items() if k not in ("readiness", "autoGate")}
                 c["readiness"] = readiness
                 first = (readiness["blockers"] or readiness["info"] or [None])[0]
@@ -1327,11 +1330,11 @@ class ProposalService:
                            for b in readiness["blockers"]):
                     c.pop("reviewRequired", None)
                 row.context = c
-                if limit and limit0 and limit < limit0 and row.status == "pending":
+                if limit and limit0 and limit < limit0 and not limit_basis:
                     row.limit_price = limit
                 await session.commit()
                 pdict = proposal_dict(row)
-        return readiness, pdict, q_final, limit
+        return readiness, pdict, q_final, (min(limit_submit, limit) if limit_submit and limit else limit)
 
     async def revalidate(self, proposal_id: str, *, via: str = "app") -> dict:
         """Refresh and revalidate a pending card: quotes, geometry, sizing,
@@ -1430,9 +1433,22 @@ class ProposalService:
         assessed = False
         override_record: dict | None = None
         limit_pre: float | None = None
+        snapshot: dict | None = None
         if via != "auto" and (pre.get("context") or {}).get("techniqueId") == "tip":
             from . import readiness as _rd
-            readiness, pre, q_final, limit_pre = await self.assess(pre, via=via, half=half, refresh=True, phase="submit")
+            shown = (pre.get("context") or {}).get("readiness") or {}
+            if not expected:
+                # AP85-02: every manual entry point must say which displayed plan it approves
+                rd0 = shown or self._readiness_from_refusal(pre, "no displayed plan confirmed")
+                return await self._refuse_human(
+                    proposal_id, rd0,
+                    reason="approval needs the confirmation of the displayed plan (fingerprint) - "
+                           "refresh the card and approve exactly what it shows")
+            basis = float(((shown.get("plan") or {}).get("limit") or 0) or 0) or None
+            if shown.get("fingerprint") != expected:
+                basis = None
+            readiness, pre, q_final, limit_pre = await self.assess(pre, via=via, half=False, refresh=True,
+                                                                   phase="submit", limit_basis=basis)
             if readiness["state"] == "expired":
                 async with eng.sf() as session:
                     row = await session.get(Proposal, proposal_id, with_for_update=True)
@@ -1450,12 +1466,18 @@ class ProposalService:
                 accepted, reason_text = _rd.validate_override(readiness, override)
             except ValueError as exc:
                 return await self._refuse_human(proposal_id, readiness, reason=str(exc))
+            # AP85-03: Half is an explicit transformation of the DISPLAYED plan
+            qty = float(_rd.half_qty(readiness["plan"].get("qty") or q_final)) if half else float(q_final)
             if accepted:
                 override_record = {"checks": [b["code"] for b in accepted], "labels": [b["label"] for b in accepted],
-                                   "details": [b.get("detail") for b in accepted], "reason": reason_text,
-                                   "by": via, "exposure": readiness["plan"], "fingerprint": readiness["fingerprint"],
+                                   "details": [b.get("detail") for b in accepted],
+                                   "identities": [b.get("identity") for b in accepted], "reason": reason_text,
+                                   "by": via, "exposure": {**readiness["plan"], "qty": int(qty),
+                                                           "plannedRisk": (round(float(readiness["plan"]["unitLoss"]) * qty, 2)
+                                                                           if readiness["plan"].get("unitLoss") is not None else None)},
+                                   "fingerprint": readiness["fingerprint"],
                                    "at": dt.datetime.now(dt.timezone.utc).isoformat()}
-            qty = float(q_final)
+            snapshot = dict(readiness)
             assessed = True
         # GEOMETRY rev 2: an AUTOMATED approval is admitted only if the enforced
         # risk plan still holds at the current limit — a refused card stays
@@ -1474,6 +1496,23 @@ class ProposalService:
                 row.status = "expired"
                 await session.commit()
                 raise ValueError("proposal has expired")
+            if snapshot is not None:
+                # AP85-02 compare-and-claim: the row's persisted plan must still be
+                # the one the person confirmed - a concurrent refresh or writer that
+                # changed the readiness, the bracket or the limit means no claim
+                claim_ok = ((row.context or {}).get("readiness") or {}).get("fingerprint") == expected
+                sp = snapshot.get("plan") or {}
+                if claim_ok and sp.get("finalStop") is not None and row.sec_type == "STK":
+                    rs = (row.bracket or {}).get("stop_loss")
+                    claim_ok = rs is not None and abs(float(rs) - float(sp["finalStop"])) < 1e-6
+                if claim_ok and sp.get("limit") and row.limit_price and float(row.limit_price) > float(sp["limit"]) + 1e-9:
+                    claim_ok = False
+                if not claim_ok:
+                    await session.rollback()
+                    return await self._refuse_human(
+                        proposal_id, snapshot, changed=True,
+                        reason="the plan changed while it was being approved (concurrent refresh or edit) - "
+                               "review the refreshed card and approve again")
             row.status = "approved"
             row.decided_at = dt.datetime.now(dt.timezone.utc)
             row.decided_via = via
@@ -1493,6 +1532,30 @@ class ProposalService:
                 ev.PROPOSAL_OVERRIDDEN, {"proposalId": proposal_id, **override_record},
                 aggregate_type="proposal", aggregate_id=proposal_id, portfolio_id=pdict["portfolioId"])
 
+        if assessed:
+            # AP85-01 final admission BEFORE any dispatch (single order or spread):
+            # an unavailable integrity store always blocks; an incident is admitted
+            # only when the override acknowledged exactly THAT incident identity
+            from . import readiness as _rd
+            from ..techniques.tip import integrity as _ig
+            paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal") \
+                if _ig.pauses(eng.settings) else None
+            if paused:
+                code = _rd.integrity_code(paused)
+                ident = _rd.incident_identity(paused)
+                acknowledged = [i for i in ((override_record or {}).get("identities") or []) if i]
+                ok = (code == "integrity_incident" and ident is not None and ident in acknowledged)
+                if not ok:
+                    rd = dict(snapshot or {})
+                    rd["blockers"] = [b for b in (rd.get("blockers") or []) if b["code"] not in ("integrity_incident", "integrity_unavailable")] + \
+                        [_rd.blocker(code, paused)]
+                    rd["state"] = "blocked"
+                    rd["fingerprint"] = _rd.fingerprint(rd.get("plan") or {}, rd["blockers"])
+                    return await self._refuse_human(proposal_id, rd, reason=paused, changed=True, revert=True)
+            # the order is built from the CLAIMED snapshot, never re-read from the row
+            sp = snapshot.get("plan") or {}
+            if sp.get("bracket") and pdict.get("secType") == "STK":
+                pdict = {**pdict, "bracket": {**sp["bracket"], "stop_loss": sp.get("finalStop", sp["bracket"].get("stop_loss"))}}
         # defined-risk spread approval (ARM-PLAN P5): leg-sequenced open, not a
         # single OrderIntent — risk stays defined at every instant
         if pdict["secType"] == "SPREAD":
@@ -1569,21 +1632,6 @@ class ProposalService:
             paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal")
             if paused:
                 return await self._refuse_automated(proposal_id, reason=paused, revert=True)
-        elif assessed:
-            # an incident that opened between the displayed validation and this
-            # order is a NEW failure the person has not seen (unless the override
-            # named the incident check) - revert, show it, place nothing
-            from . import readiness as _rd
-            from ..techniques.tip import integrity as _ig
-            paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal") \
-                if _ig.pauses(eng.settings) else None
-            if paused and not (override_record and "integrity_incident" in override_record["checks"]):
-                rd = dict((pdict.get("context") or {}).get("readiness") or {})
-                rd["blockers"] = [b for b in (rd.get("blockers") or []) if b["code"] != "integrity_incident"] + \
-                    [_rd.blocker("integrity_unavailable" if "unavailable" in paused else "integrity_incident", paused)]
-                rd["state"] = "blocked"
-                rd["fingerprint"] = _rd.fingerprint(rd.get("plan") or {}, rd["blockers"])
-                return await self._refuse_human(proposal_id, rd, reason=paused, changed=True, revert=True)
         order = await eng.orders.place(intent)
         order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
 

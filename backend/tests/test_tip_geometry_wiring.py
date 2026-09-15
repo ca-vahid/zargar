@@ -122,7 +122,8 @@ async def test_review_gated_card_never_auto_approves_but_a_person_may(rig):
     # failure - the person names the check and gives a reason (journaled)
     plain = await eng.proposals.approve(pdict["id"], via="app")
     assert plain["order"] is None and plain.get("refused")
-    human = await eng.proposals.approve(pdict["id"], via="app",
+    fp = (await eng.proposals.revalidate(pdict["id"]))["readiness"]["fingerprint"]
+    human = await eng.proposals.approve(pdict["id"], via="app", expected=fp,
                                         override={"checks": ["risk_budget_exceeded"],
                                                   "reason": "test: the desk accepts the full stop risk"})
     assert human["order"] is not None and human["proposal"]["status"] in ("executed", "failed")

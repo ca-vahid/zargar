@@ -253,9 +253,10 @@ async def test_case4_automated_paths_are_refused_human_proceeds(rig):
     assert res is None and trade.status == "skipped" and "execution-integrity" in trade.reason
     # a person's decision is a LABELED override of the named incident check
     # (readiness-v1, 2026-09-15: a plain click is refused, the reason shown)
-    plain = await eng.proposals.approve(pdict["id"], via="app")
+    fp = (await eng.proposals.revalidate(pdict["id"]))["readiness"]["fingerprint"]
+    plain = await eng.proposals.approve(pdict["id"], via="app", expected=fp)
     assert plain["order"] is None and "incident" in plain.get("refused", "")
-    human = await eng.proposals.approve(pdict["id"], via="app",
+    human = await eng.proposals.approve(pdict["id"], via="app", expected=fp,
                                         override={"checks": ["integrity_incident"],
                                                   "reason": "test: the desk accepts trading through this incident"})
     assert human["order"] is not None

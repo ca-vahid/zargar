@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import re
 
 READINESS_VERSION = "readiness-v1"
 
@@ -45,10 +46,37 @@ CATALOG: dict[str, tuple[str, bool, str]] = {
 EVIDENCE_CODES = {"quote_missing", "quote_stale", "quote_delayed", "contract_metadata"}
 
 
-def blocker(code: str, detail: str | None = None) -> dict:
+def blocker(code: str, detail: str | None = None, identity: dict | None = None) -> dict:
+    """`identity` (AP85-01): what a labeled override acknowledges - for an
+    incident its id (and revision when known); a different incident is a
+    different identity and needs a new explicit decision."""
     label, overridable, scope = CATALOG.get(code, (code.replace("_", " "), False, "all"))
+    if identity is None and code in ("integrity_incident", "integrity_unavailable"):
+        identity = incident_identity(detail)
     return {"code": code, "label": label, "detail": (str(detail or "")[:300] or None),
-            "overridable": bool(overridable), "scope": scope}
+            "overridable": bool(overridable), "scope": scope, **({"identity": identity} if identity else {})}
+
+
+_INCIDENT_RE = re.compile(r"incident\s+([A-Za-z0-9_-]+)")
+
+
+def incident_identity(reason: str | None) -> dict | None:
+    """The incident an admission refusal names (`... incident <id> ...`)."""
+    m = _INCIDENT_RE.search(str(reason or ""))
+    return {"incidentId": m.group(1)} if m else None
+
+
+def integrity_code(reason: str | None) -> str:
+    """AP85-01: an unavailable integrity store is ALWAYS `integrity_unavailable`
+    (non-overridable); anything else naming an incident is `integrity_incident`."""
+    r = str(reason or "").lower()
+    return "integrity_unavailable" if ("unavailable" in r or "detection unavailable" in r) else "integrity_incident"
+
+
+def half_qty(plan_qty: int | float | None) -> int:
+    """AP85-03: Half = an explicit transformation of the DISPLAYED plan:
+    floor(displayed quantity / 2), never below one unit."""
+    return max(1, int(float(plan_qty or 1)) // 2)
 
 
 def plan_blockers(rp: dict | None, *, enforced_scope: bool) -> list[dict]:
@@ -114,8 +142,17 @@ def plan_summary(pdict: dict, rp: dict | None, *, limit: float | None, qty: floa
     unit = rp.get("unitLoss")
     planned = (round(float(unit) * float(qty), 2) if unit is not None and rp.get("enforced") else None)
     q = rp.get("quote") or {}
+    exit_plan = ctx.get("exitPlan") or {}
+    bracket = pdict.get("bracket") or {}
     return {
         "qty": int(qty),
+        "symbol": pdict.get("symbol"),
+        "secType": sec_type,
+        "portfolioId": pdict.get("portfolioId"),
+        "exitPlanHash": hashlib.sha256(json.dumps({k: exit_plan.get(k) for k in ("targets", "fractions", "underlyingStop", "premiumStopPct", "maxHoldSessions", "stop")},
+                                                  sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12] if exit_plan else None,
+        "bracket": ({"stop_loss": bracket.get("stop_loss"), "take_profit": bracket.get("take_profit")} if bracket else None),
+        "vehicle": ((ctx.get("vehicle") or {}).get("legs") if sec_type == "SPREAD" else (ctx.get("vehicle") or {}).get("display")),
         "planQty": int(rp.get("qty") or 0) if rp else None,
         "requestedQty": int(rp.get("qtyRequested") or 0) if rp else None,
         "limit": lim,
@@ -142,15 +179,27 @@ def plan_summary(pdict: dict, rp: dict | None, *, limit: float | None, qty: floa
 
 
 def fingerprint(plan: dict, blockers: list[dict]) -> str:
-    """What a click must match: the plan's GEOMETRY (final stop, the admissible
-    quantity) and the blocker set. The limit is deliberately excluded: the
-    service only ever LOWERS it (a live ask may improve the entry, never raise
-    it), so the submitted limit is always at or below the one displayed; a
-    change that matters - a moved stop, a different size, a new failed check -
-    changes this value and the click is refused. The requested quantity is
-    not part of it either: "half size" halves the same displayed plan."""
-    core = {"finalStop": plan.get("finalStop"), "planQty": plan.get("planQty"),
-            "blockers": sorted({b["code"] for b in blockers})}
+    """What a click must match (AP85-02): the COMPLETE displayed plan - final
+    stop, admissible quantity, unit loss, planned risk, risk budget, the
+    approved maximum limit, book/instrument identity, the exit plan, the
+    bracket - and every blocker with its identity. The submitted limit may
+    only be an explicitly permitted improvement (at or below the approved
+    maximum). The requested quantity is not part of it: "half size" is an
+    explicit transformation of this same displayed plan."""
+    def _r(v):
+        try:
+            return round(float(v), 4) if v is not None else None
+        except (TypeError, ValueError):
+            return v
+    core = {"finalStop": _r(plan.get("finalStop")), "planQty": plan.get("planQty"),
+            "unitLoss": _r(plan.get("unitLoss")), "plannedRisk": _r(plan.get("plannedRisk")),
+            "riskBudget": _r(plan.get("riskBudget")), "limitMax": _r(plan.get("limit")),
+            "symbol": plan.get("symbol"), "secType": plan.get("secType"), "portfolioId": plan.get("portfolioId"),
+            "exitPlanHash": plan.get("exitPlanHash"), "bracket": plan.get("bracket"), "vehicle": plan.get("vehicle"),
+            # AP85-02: a blocker is bound by its code AND its identity/detail - a
+            # replacement incident is a different plan to acknowledge
+            "blockers": sorted(f"{b['code']}|{json.dumps(b.get('identity') or b.get('detail') or '', sort_keys=True, default=str)}"
+                               for b in blockers)}
     raw = json.dumps(core, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
