@@ -332,7 +332,8 @@ def aggregate(results: list[dict]) -> dict:
                             if b["meanCarryR"] is not None and b["meanIntradayR"] is not None else None)
         b["distinctPositions"] = len(b["positions"])
         del b["carryR"], b["intradayR"], b["positions"]
-    return {"version": STUDY_VERSION, "setups": by,
+    from .experiments_register import identity as _xid
+    return {"version": STUDY_VERSION, "setups": by, "experiment": _xid("overnight-hold"),
             "unit": "position-session observations (a position held several nights is counted once per session)",
             "disclaimer": "paired arithmetic on contemporaneous qualified quotes inside declared windows; "
                           "carry is quote drift unless managedCarry is known; small samples, no rule derived"}
