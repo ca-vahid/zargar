@@ -29,7 +29,7 @@ from ...marketstructure.market_calendar import is_trading_day, next_trading_day,
 from ...marketstructure.sessions import ET, session_date
 from ...models import TechniqueArmed, TechniqueRun
 from .plan import build_skeleton, complete_plan
-from .rules import Team2Rules, rules_from_settings
+from .rules import experiment_books, rules_for_book, Team2Rules, rules_from_settings
 from .session import simulate_session
 
 log = logging.getLogger("zargar.techniques.team2.service")
@@ -153,7 +153,7 @@ class Team2Service:
         return {"eventDay": bool(evs), "eventDayName": ", ".join(e.name for e in evs) if evs else None}
 
     async def mint_plan_run(self, symbol: str, date: str, *, rules: Team2Rules | None = None,
-                            fifteen: list[Bar] | None = None) -> dict | None:
+                            fifteen: list[Bar] | None = None, experiment: dict | None = None) -> dict | None:
         rules = rules or rules_from_settings(self.engine.settings)
         prior_1m: list[Bar] | None = None
         if fifteen is None:
@@ -172,7 +172,8 @@ class Team2Service:
                            setup_type="team2", confidence=None, grounded=True, facts={},
                            result={"plan": plan, "trace": [{"step": "skeleton", "reason": plan["sheet"]}]},
                            images={}, usage={}, llm={},
-                           config={"thresholds": rules.to_dict(), "codeVersion": CODE_VERSION, "technique": "team2"})
+                           config={"thresholds": rules.to_dict(), "codeVersion": CODE_VERSION, "technique": "team2",
+                                   **({"experiment": dict(experiment)} if experiment else {})})
         async with self.engine.sf() as session:
             session.add(run)
             await session.commit()
@@ -192,15 +193,24 @@ class Team2Service:
             else:
                 for_date = today.isoformat()
         symbols = [str(x).upper() for x in (s.get("techniques.team2.symbols", []) or [])]
-        rules = rules_from_settings(self.engine.settings)
         out = {"planFor": for_date, "runs": [], "failed": [], "armed": [], "skipped": []}
         mode = str(s.get("techniques.team2.mode", "alert"))
+        # Parallel Practice experiments (2026-09-15): one plan per (symbol, BOOK). The default book runs the shared
+        # baseline; every enabled experiment book gets its own plan minted under ITS rules (`rules_for_book`) and
+        # labelled on the run. Experiment books must be Practice (sim) books — never real money.
+        default_pid = str(s.get("techniques.team2.default_portfolio", "") or s.get("trading.default_portfolio", "") or "")
+        books = [{"portfolioId": default_pid, "label": "", "overrides": {}}]
+        for b in experiment_books(s):
+            if b["portfolioId"] == default_pid or any(x["portfolioId"] == b["portfolioId"] for x in books):
+                continue
+            books.append(b)
+        out["books"] = [{"portfolioId": b["portfolioId"], "label": b["label"], "overrides": b["overrides"]} for b in books]
         # F41: one armed plan per symbol per session. The job is weekday-gated, not
         # trading-day-gated, so a weekday HOLIDAY runs it again for the same next session
         # (Fri 17:00 and Labor Day 17:00 both plan the Tuesday) — and each run minted AND
         # armed a second plan, which would trade the day twice. `force` is the manual
         # override behind `plan-now`.
-        already = {ap.symbol for ap in list(getattr(self.runner, "_armed", {}).values())
+        already = {(ap.symbol, ap.config.portfolio_id) for ap in list(getattr(self.runner, "_armed", {}).values())
                    if ap.plan_for == for_date}
         # R10 (audit 2026-09-04): a plan that disarmed on its own loss halt is no longer in memory — the
         # persisted rows are the record of "this symbol already had a plan for this session"
@@ -209,33 +219,50 @@ class Team2Service:
             async with self.engine.sf() as session:
                 rows = (await session.execute(select(TechniqueArmed).where(
                     TechniqueArmed.technique == "team2", TechniqueArmed.plan_for == for_date))).scalars().all()
-            already |= {r.symbol for r in rows}
+            already |= {(r.symbol, r.portfolio_id) for r in rows}
         except Exception:  # noqa: BLE001
             log.exception("team2 nightly: could not read the day's armed rows")
         for sym in symbols:
-            if sym in already and not force:
-                out["skipped"].append(f"{sym}: already armed for {for_date}")
+          for book in books:
+            pid = book["portfolioId"]; tag = f"{sym}" + (f" [{book['label']}]" if book["label"] else "")
+            if book["label"]:
+                pf = self.engine.positions.portfolio(pid) if pid else None
+                if pf is None or str(pf.get("kind")) != "sim":
+                    out["failed"].append(f"{tag}: experiment book {pid} is not a Practice (sim) book — never real money; not minted")
+                    continue
+                if book.get("refused"):
+                    out["failed"].append(f"{tag}: override keys refused {book['refused']} (only size_full / no_trade_zone may differ); not minted")
+                    continue
+            key = (sym, pid)
+            if key in already and not force:
+                out["skipped"].append(f"{tag}: already armed for {for_date}")
                 continue
-            if sym in already and force and self.runner is not None:
-                # a forced re-plan REPLACES the symbol's plan for that session — never a second armed plan
-                # that would trade the day twice (post-close 2026-09-04: force added three duplicates)
-                for ap in [a for a in list(self.runner._armed.values()) if a.symbol == sym and a.plan_for == for_date]:
+            if key in already and force and self.runner is not None:
+                # a forced re-plan REPLACES the symbol's plan for that session on that book — never a second armed
+                # plan that would trade the day twice (post-close 2026-09-04: force added three duplicates)
+                for ap in [a for a in list(self.runner._armed.values())
+                           if a.symbol == sym and a.plan_for == for_date and a.config.portfolio_id == pid]:
                     with contextlib.suppress(Exception):
                         await self.runner.disarm(ap.run_id, reason="replaced by a forced re-plan", flatten=False)
                     out.setdefault("replaced", []).append(ap.run_id)
+            rules = rules_for_book(s, pid)
             try:
-                r = await self.mint_plan_run(sym, for_date, rules=rules)
+                r = await self.mint_plan_run(sym, for_date, rules=rules,
+                                             experiment=({"label": book["label"], "portfolioId": pid, "overrides": book["overrides"]}
+                                                         if book["label"] else None))
             except Exception as exc:  # noqa: BLE001
-                log.exception("team2 nightly plan failed for %s", sym)
-                out["failed"].append(f"{sym}: {exc}")
+                log.exception("team2 nightly plan failed for %s", tag)
+                out["failed"].append(f"{tag}: {exc}")
                 continue
             if r is None:
-                out["failed"].append(f"{sym}: no previous-session bars")
+                out["failed"].append(f"{tag}: no previous-session bars")
                 continue
+            r["portfolioId"] = pid; r["label"] = book["label"]
             out["runs"].append(r)
             if arm and self.runner is not None:
                 try:
                     await self.runner.arm(r["runId"], {"mode": mode, "instrument": "options", "contracts": None,
+                                                        **({"portfolioId": pid} if pid else {}),
                                                         "maxContracts": max(int(s.get("risk.max_option_contracts", 10)),
                                                                             int((s.get("techniques.team2.zero_dte") or {}).get("max_contracts", 10) or 10)),
                                                         "premiumBudget": float(s.get("techniques.team2.budget_per_trade", 2000.0)),
@@ -244,8 +271,8 @@ class Team2Service:
                                                         "useCritic": False, "maxOpenTrades": 1})
                     out["armed"].append(r["runId"])
                 except Exception as exc:  # noqa: BLE001
-                    log.exception("team2 arm failed for %s", sym)
-                    out["failed"].append(f"{sym}: arm failed: {exc}")
+                    log.exception("team2 arm failed for %s", tag)
+                    out["failed"].append(f"{tag}: arm failed: {exc}")
         log.info("team2 nightly plans: %s", {k: (len(v) if isinstance(v, list) else v) for k, v in out.items()})
         return out
 
@@ -340,7 +367,7 @@ class Team2Service:
                 result["plan"] = dict(ap.plan)
                 run.result = result
                 cfg = dict(run.config or {})
-                cfg["thresholds"] = rules_from_settings(self.engine.settings).to_dict()
+                cfg["thresholds"] = rules_for_book(self.engine.settings, ap.config.portfolio_id).to_dict()   # the BOOK's rules (2026-09-15)
                 run.config = cfg
                 await session.commit()
         except Exception:  # noqa: BLE001

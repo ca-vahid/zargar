@@ -196,3 +196,44 @@ def rules_from_settings(settings) -> Team2Rules:
 
 
 __all__ = ["Team2Rules", "rules_from_settings", "SETTINGS_MAP", "SETTINGS_PREFIX"]
+
+
+# --- parallel Practice experiments (2026-09-15, review team's GO) -----------------------------------------------
+# `techniques.team2.experiments` = {"enabled": bool, "books": [{"portfolioId", "label", "overrides": {...}}]}.
+# ONLY these two rule fields may differ between books — the two isolated experiments (sizing cap, C1 conjunction).
+# Anything else in an override is refused (never applied, reported), so an experiment can never change C2, the
+# room rules, exits, adds or premium selection, and the shared `techniques.team2.*` settings remain the baseline
+# every book without an entry runs on.
+EXPERIMENT_OVERRIDE_KEYS = ("size_full", "no_trade_zone")
+
+
+def experiment_books(settings) -> list[dict]:
+    """The enabled experiment books with their APPLIED overrides (whitelisted) and the keys refused."""
+    exp = settings.get(SETTINGS_PREFIX + "experiments", None)
+    if not isinstance(exp, dict) or not bool(exp.get("enabled", False)):
+        return []
+    out: list[dict] = []
+    for b in exp.get("books") or []:
+        if not isinstance(b, dict) or not b.get("portfolioId"):
+            continue
+        ov = b.get("overrides") or {}
+        out.append({"portfolioId": str(b["portfolioId"]), "label": str(b.get("label") or ""),
+                    "overrides": {k: v for k, v in ov.items() if k in EXPERIMENT_OVERRIDE_KEYS},
+                    "refused": sorted(str(k) for k in ov if k not in EXPERIMENT_OVERRIDE_KEYS)})
+    return out
+
+
+def experiment_for(settings, portfolio_id: str | None) -> dict | None:
+    if not portfolio_id:
+        return None
+    return next((b for b in experiment_books(settings) if b["portfolioId"] == str(portfolio_id)), None)
+
+
+def rules_for_book(settings, portfolio_id: str | None) -> Team2Rules:
+    """The rules a plan on this book runs under: the shared baseline, plus that book's whitelisted overrides.
+    A book without an experiment entry (the Control, the historical Practice book) runs the baseline exactly."""
+    base = rules_from_settings(settings)
+    b = experiment_for(settings, portfolio_id)
+    if not b or not b["overrides"]:
+        return base
+    return Team2Rules.from_dict({**base.to_dict(), **b["overrides"]})
