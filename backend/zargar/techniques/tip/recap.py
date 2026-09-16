@@ -56,9 +56,9 @@ def build_candidate_context(*, rules: list[dict], notes: list[dict], history_tex
     sel_notes = compact_notes(notes, ticker=ticker, source=source)
     return {"config": dict(CANDIDATE), "ruleIds": [r.get("id") for r in sel_rules], "noteIds": [n.get("id") for n in sel_notes],
             "rules": sel_rules, "notes": sel_notes,
-            "historyText": trim_history(history_text, CANDIDATE["historyRecords"]),
-            "historyLines": CANDIDATE["historyRecords"], "prefix": candidate_prefix(confidence),
-            "maxTools": int(CANDIDATE["maxTools"])}
+            "historyText": trim_history_records(history_text, CANDIDATE["historyRecords"]),
+            "historyRecords": CANDIDATE["historyRecords"], "prefix": candidate_prefix(confidence),
+            "maxTools": int(CANDIDATE["maxTools"]), "classifierVersion": CLASSIFIER_VERSION}
 MANAGEMENT_ACTIONS = ("trim", "close", "update_stop")
 RECAP_CUES = ("map", "levels", "level map", "recap", "digest", "update", "unrealized", "positions", "holdings",
               "running", "scoreboard", "watchlist", "eyeing", "watching", "candidates", "summary", "review")
@@ -165,6 +165,28 @@ def compact_notes(notes: list[dict], *, ticker: str | None, source: str | None) 
     t = f"ticker:{(ticker or '').upper()}"
     s = f"source:{source or ''}"
     return [n for n in notes if n.get("core") or str(n.get("scope") or "") in (t, s)]
+
+
+RECORD_START = "- ["      # a mirrored history RECORD begins `- [<time label>] <author>: ...`; continuation lines do not
+
+
+def trim_history_records(text: str | None, records: int = 12) -> str:
+    """The newest N mirrored RECORDS of a history block (newest first), keeping each
+    record's continuation lines - production supplies records, so replay must count
+    records, never lines (a multi-line message is one record). Text without record
+    markers (a placeholder line) is returned unchanged."""
+    rows = str(text or "").split("\n") if text else []
+    if not rows or not any(r.startswith(RECORD_START) for r in rows):
+        return str(text or "")
+    out: list[str] = []
+    seen = 0
+    for r in rows:
+        if r.startswith(RECORD_START):
+            seen += 1
+            if seen > max(1, int(records)):
+                break
+        out.append(r)
+    return "\n".join(out)
 
 
 def trim_history(text: str | None, lines: int = 12) -> str:
