@@ -184,3 +184,63 @@ deployed; TMR-03 is inert code. Statuses now: TMR-01 built/merged/deployed/colle
 built/merged/deployed/collecting (first `TipFillVsQuote` on the next fill); TMR-03
 built/merged/deployed(inert)/n-a; TMR-04 collecting (15:50 ET capture on the corrected protocol);
 TMR-05 built/merged/deployed. Evaluated: nothing. Lessons: PLATFORM-RULES change log 2026-09-16.
+
+## INTRA-01..03 (review team, 2026-09-16 10:52 ET) - built the same day, research/reasoning only
+
+Source: `C:/Cursor/zargar-codex/docs/techniques/tip/reviews/2026-09-16-intraday-1052.md`. Risk limits, approvals,
+feasibility mode and the safety floor are unchanged; nothing forces a take.
+
+**INTRA-01 expiration break-even versus an earlier sale.** The GOOGL 10:49 ET appraisal (ab, Sep-18 350C,
+ask 2.19, delta 0.356, 2 DTE) reasoned "breakeven 352.19 sits ABOVE the 350 ceiling ... so the trade only
+pays on a decisive FOMC break" - that is the EXPIRATION break-even; a call sold before expiry pays whenever
+its executable bid exceeds entry + costs, whatever the underlying is versus 352.19. Built: `payoff.break_even`
+(strike +/- premium, labelled HELD-TO-EXPIRY only), `payoff.premium_exit` (P&L of a sale at a later executable
+- or labelled synthetic - bid, fees on both sides, unknown without both premiums), `payoff.expiry_value`;
+`payoff_preview` now prints `breakEven` and `horizon` (dte, declared hold sessions, exit assumption
+before/at expiry) BESIDE the before-expiry scenarios; the analyst's `preview_payoff` tool receives the
+contract's strike/type/expiry and the opinion's hold, and the record keeps both blocks. Prompt rule
+"BREAK-EVEN IS AN EXPIRATION NUMBER" with the independent skip reasons preserved. Acceptance (synthetic,
+labelled): a 2-DTE 350 call bought 2.19 and sold at a later bid 2.50 with the underlying at 349 (< strike
+< 352.19) nets +$28.92 after $2.08 of fees; held to expiry at 349 it is worth 0 (-$221.08); a missing exit
+premium is unknown. The GOOGL skip may still be right on the tape / source-record / attainable-gain reasons
+- those stand; only the break-even reasoning is corrected.
+
+**INTRA-02 one lot as an exit-plan question.** META 09:46 ET ("a single unmanageable binary while tt
+scales out in fragments") and GOOGL ("ONE binary lot cannot replicate ... fragment scale-outs"). Built:
+`payoff_preview.singleLot` - declared rungs vs executable rungs, `collapsed`, `canCopyPartials`, and the
+note that one contract executes ONE exit (first target or a premium exit) to be judged on its own net
+payoff (`oneLot` / `tp1ThenStop`), skipping only when the thesis DEPENDS on scaling or one unit does not
+fit the budget; prompt rule "ONE LOT IS AN EXIT-PLAN QUESTION, NOT A REJECTION". Acceptance: a 3-rung source
+plan on 1 contract -> declared 3 / executable 1 / cannot copy partials, `oneLot` = the first-target exit net
+(+$77.92 on the synthetic case) = `tp1ThenStop`; 3 contracts can copy the rungs; a one-unit budget failure
+still refuses (`feasibility` qty 0, reason = budget).
+
+**INTRA-03 recap cost - measured, a cheap read built, routing gated OFF for evaluation.** Today's four
+appraisals (`tip_analyst_runs.opinion.usage`): SPX map (eva) 2 calls 78,699 in / 981 out; META (tt) 3 calls
+125,296 / 3,758; APLD digest (ab) 4 calls 154,177 / 1,948; GOOGL (ab) 3 calls 124,248 / 3,223 - total
+**482,420 in / 9,910 out / 12 calls**, 37k-45k input per call (the header: rulebook + notes + 3-day
+history, re-read on every call; cache reads 0). The lever is per-call size x call count, not one context.
+Built (`techniques/tip/recap.py`, `recap-read-v1`): a deterministic message-shape read BEFORE the paid
+appraisal - branches vs fan-in, both sides of one underlying (a level map), priced opens, management
+actions (trim/close/update_stop), recap cues vs entry cues, distinct tickers -> category recap /
+management / new / mixed / single with a confidence and a recommended route; journaled on every
+multi-signal message as `TipRecapClassified` (category, confidence, recommended vs actual route, knob,
+reasons, features). Routing knob `techniques.tip.recap_route` = **off (default: classify + journal only)**
+| compact: a confident recap with no management instruction gets the COMPACT context (core rules only,
+notes for this ticker/source + core notes, 24 h / 12-line history, tool budget `recap_max_tools` 2) with a
+header line saying so; the verdict, tools, safety floor and card handling are unchanged; the run records
+`headerMode`, `headerChars` and the read. Management instructions and ambiguous mixed content stay on the
+full route by construction; a single priced BTO is untouched. Acceptance: the SPX-map shape reads recap
+(confidence >= 0.8, route compact); a trim/stop/close post reads management (full); a single priced BTO
+single (full); priced opens beside management -> mixed (full); entry cues + priced opens -> full.
+**Evaluation before switching the knob:** replay today's SPX-map and APLD-digest bundles under `current`
+vs `compact` after the close (paid, two pairs) and compare verdicts / header chars / tokens / calls with
+`frozen.compare` (coverage flagged); switching `recap_route` is a reviewer decision. Not done: suppressing
+entry-card creation/pricing for confirmed recaps - the cards are created before the appraisal; it needs
+the same evaluation first and is recorded as the next step.
+
+**Verification:** `tests/test_tip_intra_reasoning.py` (6) + payoff/feasibility + expression gate +
+profitability preview = 16 passed; intake pipeline slice (`test_signals_tip`, `test_tip_activation`,
+`test_tip_kfin09_experiments`) 37 passed. Status: built, merged - not deployed (the live 0.7.96 process
+predates it; ships on the next coordinated deployment after the close); INTRA-03 routing collecting
+classifications once deployed, evaluated after the frozen pairs.

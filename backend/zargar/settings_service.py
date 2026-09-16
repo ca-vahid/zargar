@@ -213,6 +213,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.discord.watch": [],      # allowlist of DMs/channels the gateway monitors (UI-managed)
     "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
+    "techniques.tip.recap_route": "off",      # INTRA-03: off (classify + journal only) | compact (confirmed maps/recaps get the compact context + a small tool budget)
+    "techniques.tip.recap_max_tools": 2,      # INTRA-03: tool budget on the compact route
     "techniques.tip.analyst_model": "",      # empty = the extraction model
     "techniques.tip.analyst_notes_max": 12,  # shared-knowledge notes handed to each run
     "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our positions

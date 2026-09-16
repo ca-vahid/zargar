@@ -160,6 +160,14 @@ server-side and the result rides on `extraction.analyst.expression` / `.payoff`;
 `payoff`, shown on the card. Tools: `zargar.tools.tip_feasibility replay`,
 `zargar.tools.tip_payoff_report`. Code: `techniques/tip/feasibility.py`, `payoff.py`.
 
+## Analyst reasoning corrections + recap read (INTRA-01..03, 2026-09-16)
+
+`payoff.break_even` / `premium_exit` / `expiry_value` and `payoff_preview.breakEven` + `horizon` +
+`singleLot` keep the expiration break-even apart from a sale before expiry and make one lot an exit-plan
+question (prompt rules of the same names). `techniques/tip/recap.py` reads a multi-signal message's shape
+before the paid appraisal (journaled `TipRecapClassified`); `techniques.tip.recap_route` (off) can route
+confirmed recaps to a compact context after evaluation on frozen examples.
+
 ## Event context + execution costs (TMR-01/02, 2026-09-16, advisory only)
 
 `techniques/tip/events.py` labels every decision with the VERIFIED macro-event context (Tips-scoped

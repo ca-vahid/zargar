@@ -62,6 +62,7 @@ TIP_EXIT_PLAN_UPDATED = "TipExitPlanUpdated"       # analyst rewrote an open pos
 TIP_GEOMETRY_REPAIRED = "TipGeometryRepaired"      # adoption gate fixed a handed plan's levels (wrong side / penny TP / stop in noise)
 TIP_AUTO_PAUSED = "TipAutoPaused"
 TIP_MESSAGE_REVISED = "TipMessageRevised"          # a source EDITED an already-seen message (mirror updated; never auto re-extracted)                  # session kill-switch: an adoption stopped out within minutes — autos wait for a person
+TIP_RECAP_CLASSIFIED = "TipRecapClassified"      # INTRA-03: the cheap message-shape read before the paid appraisal (route on the record)
 TIP_LANE_DECIDED = "TipLaneDecided"                # which lane a take went down (now-proposal vs at-level arm) + preflight warnings
 TIP_ATTACHMENTS_PROCESSED = "TipAttachmentsProcessed"  # multi-image intake coverage manifest: per-attachment status (KFIN-07)
 TIP_ATTACHMENT_CONFLICT = "TipAttachmentConflict"      # contradictory evidence across caption/attachments — recorded, never blended
