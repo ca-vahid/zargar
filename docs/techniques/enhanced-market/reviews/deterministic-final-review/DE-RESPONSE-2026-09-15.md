@@ -1,7 +1,9 @@
 # EM deterministic entry - response to the final review at 758ccfb (DE-01..DE-05)
 
 Corrected integrated delivery: **`8e641e9e7fd86f5b29beef339ad25401cd4c1a86`** on `claude/technique-review-trade-plan-fbb9ba` (the DE fixes on top of
-758ccfb / fc6a295, merged with `origin/main` at `cd4c1c6`). The four reviewer files were adopted UNCHANGED
+758ccfb / fc6a295, merged with `origin/main` at `cd4c1c6`). **Accepted by the corrected review (`deterministic-corrected-review/CORRECTED-REVIEW-8e641e9.md`);
+the CR-01/CR-02 follow-ups are closed below in the release tree `ab9238c`** (= 8e641e9 + CR fixes 89765c0 + `origin/main` e8c03ee (0.7.94) + the runtime
+checkout's local merge 1ee9a91; version 0.7.95). The four reviewer files were adopted UNCHANGED
 (`tests/test_codex_deterministic_rule_parity.py`, `tests/test_codex_deterministic_record_owner.py`,
 `tests/test_em_evidence_boundary_regressions.py`, `tests/test_policy_migration_reporting.py`; packet copied to this
 folder). The 20 prior cases and the `fc6a295` arming cases are preserved. Nothing is deployed; the current runtime
@@ -34,6 +36,23 @@ folder). The 20 prior cases and the `fc6a295` arming cases are preserved. Nothin
 - Migration preview (read-only, runtime database, after the DE-03 fix): effective mode `deterministic` (`deterministic-entry-v1`), evidence `off`; effective settings `techniques.enhanced_market.fire_decision_mode=deterministic`, `fire_evidence_mode=off`, `critic_mode=momentum_only`; 41 active EM arms for 2026-09-16, all `useCritic=true` -> new effective `deterministic`, 0 with critic-only state, 0 critic-only paused; no setting written, no arm rewritten (the projection never commits).
 - Known baseline failures on main, unchanged: `test_auto_options_one_contract_lifecycle` (sim option fills need the OPRA
   identity); `test_restore_reattaches_an_open_trade` is load-sensitive and passes alone.
+
+## CR-01 / CR-02 closure (corrected review at 8e641e9; fixed in 89765c0, release tree ab9238c)
+
+| ID | Finding | Fix | Regression |
+|---|---|---|---|
+| CR-01 (evidence only) | The after-close command trusted the record's declared `inputHash` / `frozenBarsHash` and rendered facts under current default thresholds. | `entry_evidence.verify_identity` runs BEFORE any rendering or model call: the snapshot + policy must reproduce `inputHash` (`entry_decision.recompute_input_hash`, the same `snapshot_hash`), the frozen bars must reproduce `frozenBarsHash` (`entry_decision.frozen_bars_hash`, the ONE canonical function the runner now also uses) and `frozenBarsCount`, and no frozen bar may close after `signalBarClose`; any mismatch is an `invalid` outcome with the reason named and no model request. Derived facts are computed under the FROZEN policy thresholds (`frozen_thresholds`: captured values over defaults for unrecorded keys) and the record discloses `evidenceAnalysisPolicy` + `identityVerified`. | reviewer `test_em_evidence_completed_path.py` (2: good path completed with usage / image / hash equality; corrupted bars -> invalid, zero model requests); `test_em_cr_identity_and_census.py::test_identity_verifies_from_the_captured_material_and_every_tamper_is_named`, `::test_derived_facts_use_the_frozen_policy_values_and_disclose_it` |
+| CR-02 (report only) | Refused / deferred attempts were counted only through trade rows; a refused attempt with no row vanished, the census dedupe key lacked the run id. | The attempt census is built per run from ALL `TechniquePlanTriggerFired` events before the trade-row loop (a refused attempt has no row), keyed once per (runId, trigger, decisionId) - or (runId, trigger, bar) for legacy attempts without a decision id; `byPolicy.refused` counts census dispositions in {vetoed, refused, deferred, policy_error, critic_unavailable, failure-budget-paused} once per attempt, a row bound to a counted attempt is never counted again, a refused row without a census attempt still counts once, and an unknown disposition is counted as an attempt but never classified. | reviewer `test_codex_policy_refusal_census.py` (1); `test_em_cr_identity_and_census.py::test_refusals_are_counted_once_per_full_attempt_identity_across_runs` (two runs, same trigger id, duplicate delivery, unknown disposition) |
+| Regression found while running the broader group | `test_em_review_da_reconcile.py::test_exhausted_critic_failure_budget_has_explicit_persisted_disposition` (a reviewer rig without the policy hook) failed with `AttributeError: fire_review_policy` since 163e4a6. | `_fire_rest` resolves the policy through `getattr(self, "fire_review_policy", None)`; a runner without the hook is legacy (the base hook's own default). No test changed. | that reviewer case (unchanged) |
+
+Results on the release tree `ab9238c` (both private databases, sequential, foreground):
+
+- Reviewer reproductions + prior + EM measurement / profitability / entry quality / review execution / final dispatch / separation / API / pre-open
+  (26 files incl. the two new reviewer files and my 3 CR cases): **119 passed, 5 skipped** (`zargar_test_em2`).
+- DB-backed dispatch / FC-01 / wiring / API / pre-open / evidence / separation / Team2 pick / Tip runner (the recorded 10-file group): **103 passed in 4:33** (`zargar_test_em`, on 89765c0 before the two merges; the merges touched no EM runtime code - the same API/pre-open/separation/dispatch files re-ran green in the 119 above).
+- Arming solo: **30 passed + 1 failed** = only the known baseline `test_auto_options_one_contract_lifecycle` (load-sensitive restore case passed) - run three times (89765c0, 7096732, ab9238c), same result each time.
+- Frontend: `npm run build` green, check-release "Release 0.7.95 ... agree" (0.7.94 was taken by the Team2 desk during the merge; this release renumbered to the next free number, nobody's block rewritten).
+- Migration preview (read-only, runtime database): see the "Release" section appended after deployment.
 
 ## Notes for the final review
 
