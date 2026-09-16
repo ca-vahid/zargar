@@ -254,14 +254,16 @@ if ($Detach) {
   Start-Process -FilePath $py -ArgumentList "-m", "zargar.main" `
     -WorkingDirectory (Join-Path $Root "backend") -WindowStyle Hidden
   $up = $false
-  foreach ($i in 1..30) {
+  # 180 s, not 30: this runtime restores 50+ armed plans and answers ~2 minutes after launch (the 09-14 and 09-15 doors
+  # reported 'did not answer within 30s' for restarts that had in fact succeeded); restart.ps1 waits 180 s too
+  foreach ($i in 1..180) {
     Start-Sleep -Seconds 1
     try {
       $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 2
       $up = $true; break
     } catch { }
   }
-  if (-not $up) { Fail "server did not answer on :8420 within 30s - check backend\zargar-8420.log" 1 }
+  if (-not $up) { Fail "server did not answer on :8420 within 180s - check backend\zargar-8420.log" 1 }
   # armed plans restore asynchronously after the API answers - wait for the
   # count to catch up with what was armed before the restart (or go stable)
   $restored = [int]$h.local.armed
