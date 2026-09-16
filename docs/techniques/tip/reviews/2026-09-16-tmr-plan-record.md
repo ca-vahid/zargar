@@ -72,3 +72,56 @@ in PR #163 - no further action unless the baseline fails again).
 alongside); 13:50 ET Fed pre-check (decisions before/after, time-to-event label); 15:52 ET capture
 verification; 09-17 09:47 ET overnight pair. The recurring 30-minute ticks and the 16:06 ET wrap-up
 carry the rest of the checklist.
+
+## Built 2026-09-16 (business hours): TMR-01 and TMR-02 - advisory / research only
+
+**TMR-01 verified event context** - `techniques/tip/events.py`. A Tips-scoped, provenance-carrying
+list (`techniques.tip.verified_events`; None = the module DEFAULT: FOMC statement 2026-09-16 14:00 ET
+and press conference 14:30 ET, official URL, `verifiedAt` 2026-09-16T03:35Z = 23:35 ET 09-15,
+`coverageThrough` 2026-09-18) beside the shared manual calendar (read separately as
+`sharedCalendar`, never merged into a verified claim). `event_context(now, as_of)` returns the
+session's label: `status` event-day / no-scheduled-event / unknown (a date beyond coverage is
+UNKNOWN, not "no event"), each event with ET and UTC instants, `secondsUntil`, `timeUntil`
+(T-2h14m / T+1h05m), phase before/after, URL and verification time; a knowledge cut hides entries
+verified after the decision instant (a historical replay never sees a fact first learned later;
+entries without a verification time are never shown). Surfaces: the analyst header
+(`EVENT CONTEXT (...)` line under "Today (ET)" on appraise and intake runs, so every frozen bundle
+captures it), the analyst record (`eventContext`, replays labelled at their own asOf), every new
+card's `context.eventContext` and the readiness plan (`plan.eventContext`, shown as the card's
+"event" row; NOT part of the fingerprint), cohort rows (`event_context` column, additive), hold-study
+observations (`window.event`) and adopted positions (`extras.eventContext`). Zero orders: labels
+only; no shared-calendar write (the Team2 desk owns `research.macro_events`; it stays empty).
+Tests: `tests/test_tip_event_context.py` (7: zones/time-until/provenance, phase flip, unknown vs
+no-event, knowledge cut, shared list apart, defaults/override, engine: label rides a card and
+places nothing).
+
+**TMR-02 execution-cost diagnostic** - `techniques/tip/execcost.py`. `round_trip()` on a QUALIFIED
+quote (the cohort's qualification: provenance, delayed flag, genuine source time, two-sided, option
+session): `roundTrip = (ask - bid) x multiplier x qty + entryFees + exitFees`, with `spreadPerUnit`,
+`spread`, `purchaseValue` (at the ask), `costShareOfPurchase`, `spreadPctOfAsk`, quoted `bidSize` /
+`askSize` (now carried on every cohort quote record), `sourceTs` / `sampledAt` / `quoteAgeS`, the fee
+basis (options per contract per side + `sim.reg_fee_per_contract`; shares a flat commission per
+order per side) and the reminder that a payoff scenario exiting at the bid already carries this
+spread. Stale / crossed / one-sided / missing evidence or a zero quantity -> every money field None,
+`status: unknown` with reasons. `fill_vs_quote()` compares ONE realised fill with the decision
+quote (vsLimit, vsAsk, vsAskDollars, vsMid; positive = worse), never averaged. Surfaces: the analyst's
+`check_feasibility` / `preview_payoff` tool outputs (`execCost`), the analyst record, the risk plan
+(`RiskPlan.execCost`, recomputed at every admission/revalidation on the FINAL size; NOT in the
+fingerprint), the readiness plan and the card's "round trip now" row, and at adoption the journal
+event `TipFillVsQuote` + `extras.fillVsQuote`. No gate, threshold, quantity, contract or limit is
+changed by any of it. Tests: `tests/test_tip_execcost.py` (5: option arithmetic incl. regulatory
+fee, shares flat commission, every unqualified case unknown, fill-vs-quote, engine diagnose touches
+nothing).
+
+**Sample (from the tests, option 2 x XYZ 100C, bid 1.40 / ask 1.50, $0.99 + $0.05 per contract):**
+spread $20.00 (0.10/unit) + entry $2.08 + exit $2.08 = **round trip $24.16 = 8.05 % of the $300
+purchase**; a $0.99 fee on shares reads $0 commission -> the spread is the whole cost. Card row:
+`round trip now  $24.16 (8.1% of $300) · bid 1.4 / ask 1.5 · size 12x30 · 1s`; event row:
+`FOMC statement 2026-09-16 14:00 ET (T-2h14m), FOMC press conference 2026-09-16 14:30 ET (T-2h44m)`.
+
+**Verification:** 12 new checks pass; regression slice readiness / v086 / geometry wiring /
+expression gate / payoff / hold study / prof142 / pr147 = 46 passed, 1 failed
+(`test_tip_geometry_wiring::test_enforce_mode_finalizes_stop_and_resizes_before_entry` - passes
+alone twice on this branch and on the unmodified checkout; sim-price sensitivity of the grouped run,
+not touched here). Frontend build green. Statuses at the time of writing: **built, merged - not
+deployed** (ships on the next coordinated deployment after the close); collecting: n/a; evaluated: n/a.

@@ -16,6 +16,16 @@ from ..models import ManagedPositionRow, Order, Proposal, Signal
 from ..orders import BracketSpec, OrderIntent
 from ..signals.schemas import TradeSignal
 
+def _event_context(eng) -> dict | None:
+    """TMR-01: the verified macro-event label stamped on a card at creation (advisory)."""
+    try:
+        from ..techniques.tip import events as _evc
+        c = _evc.context_for(eng)
+        return {k: c.get(k) for k in ("version", "session", "status", "coverage", "label", "events", "nextEvent", "asOf")}
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
 log = logging.getLogger("zargar.proposals")
 
 
@@ -291,7 +301,8 @@ class ProposalService:
                      "signalPrices": {"entry": entry, "stop": stop,
                                       "target": (targets[0] if targets else None)},
                      **({"exitPlan": exit_plan} if exit_plan else {}),
-                     **({"analystRunId": analyst_run_id} if analyst_run_id else {})},
+                     **({"analystRunId": analyst_run_id} if analyst_run_id else {}),
+                     "eventContext": _event_context(eng)},
             expires_at=_ttl_expiry(ttl_min))
         async with eng.sf() as session:
             session.add(row)
@@ -631,6 +642,7 @@ class ProposalService:
                              ("verdict", "rationale", "invalidation", "confidence")}
                             if analyst else None),
                 **({"riskWarning": "; ".join(warns)} if warns else {}),
+                "eventContext": _event_context(eng),
             },
             expires_at=_ttl_expiry(ttl_min),
         )
@@ -989,6 +1001,13 @@ class ProposalService:
             rp.payoff = _po.payoff_preview(qty=int(rp.qty or qty), fractions=_fr, gains=_gains, unit_loss=rp.unitLoss,
                                            fee_per_unit=(0.0 if sec_type == "STK" else float(s.get("options.fee_per_contract", 0.0) or 0.0)),
                                            vehicle=("shares" if sec_type == "STK" else "option"))
+        # TMR-02 (2026-09-16): the instantaneous round-trip cost of the FINAL size on the
+        # qualified quote - spread once, both sides' fees - a diagnostic beside the risk
+        # numbers, never a gate (unknown on a stale / crossed / missing quote)
+        with contextlib.suppress(Exception):
+            from ..techniques.tip import execcost as _ec
+            rp.execCost = _ec.diagnose(eng, symbol=str(pdict.get("symbol")), qty=float(rp.qty or qty),
+                                       sec_type=str(sec_type), multiplier=(1.0 if sec_type == "STK" else multiplier))
         if problems:
             rp.evidence = [{"code": c, "detail": d} for c, d in problems]
             rp.reviewRequired = "; ".join(d for _c, d in problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")
