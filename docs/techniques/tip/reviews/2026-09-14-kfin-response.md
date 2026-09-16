@@ -582,3 +582,22 @@ for any holding or model-context decision until the corrections are live and ver
 (and PR #147 `f41c0a3`, PR #145 `d5034a2` - merge-base verified). The hold study's next capture
 runs under the corrected protocol: pre-close at close - 10 min, next-open from 09:30 on the
 actual sample time. The affected 2026-09-15 samples stay excluded from any decision.
+
+## R147 closure and the next milestone (2026-09-15 evening, Codex confirmation)
+
+Codex confirms R147-01/02 closed on the deployed build (0.7.89 `a53c645`); no further Tips
+development is requested for these findings. Standing: feasibility stays `annotate`, the hold
+study stays research-only, compact context stays unadopted, and the three 2026-09-15 legacy
+observations (MRNA, SLV, T; `outside_window`) are preserved as insufficient - never repaired into
+evidence.
+
+**Next milestone:** the first VALID paired pre-close / next-open report from `holdstudy-v2`
+observations - eligible / missing / late counts per arm, fee basis and amounts, the actual sample
+times (jobStartedAt / observedAt / sourceTs), and managed exits reported separately from quote
+drift (`managedCarry` vs `carryToNextOpen`), by setup, no rule derived. Frozen comparisons continue
+with `coverageLimited` / `coverage` explicit on every pair.
+
+**Tracked with the other desk:** `tests/test_flow_api.py::test_repair_rescans_degraded_day` fails on
+unmodified main ("repair did not rebuild the degraded day", `read.read["flags"] == []`); the test was
+last touched by KFIN-06 `b48c73d` (2026-09-14). Not a Tips change; handed to the EM/other-techniques
+desk with that pointer.
