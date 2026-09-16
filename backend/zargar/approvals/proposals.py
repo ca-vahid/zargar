@@ -1004,10 +1004,15 @@ class ProposalService:
         # TMR-02 (2026-09-16): the instantaneous round-trip cost of the FINAL size on the
         # qualified quote - spread once, both sides' fees - a diagnostic beside the risk
         # numbers, never a gate (unknown on a stale / crossed / missing quote)
-        with contextlib.suppress(Exception):
+        try:
             from ..techniques.tip import execcost as _ec
-            rp.execCost = _ec.diagnose(eng, symbol=str(pdict.get("symbol")), qty=float(rp.qty or qty),
+            # TMR02-WIRE (2026-09-16): the EXACT symbol is the in-scope parameter; a failure of the
+            # diagnostic is reported on the plan, never swallowed into an empty field
+            rp.execCost = _ec.diagnose(eng, symbol=str(symbol), qty=float(rp.qty or qty),
                                        sec_type=str(sec_type), multiplier=(1.0 if sec_type == "STK" else multiplier))
+        except Exception as exc:                        # noqa: BLE001 - diagnostic only, but visible
+            log.warning("execution-cost diagnostic failed for %s: %s", symbol, exc)
+            rp.execCost = {"status": "unknown", "symbol": str(symbol), "reasons": [f"diagnostic failed: {exc}"]}
         if problems:
             rp.evidence = [{"code": c, "detail": d} for c, d in problems]
             rp.reviewRequired = "; ".join(d for _c, d in problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")

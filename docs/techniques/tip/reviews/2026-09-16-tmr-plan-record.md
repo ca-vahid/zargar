@@ -352,3 +352,27 @@ compact capture yields the candidate by exact hash and declares the full control
 two treatments explicitly). Results: reviewer 2 + parity 6 + PR177 2 + PR175 3 + intra reasoning 6 +
 frozen compact + KFIN-09 = **28 passed**. Standing: `recap_route` off; no risk, permission or
 card-suppression change; built, merged - not deployed.
+
+## Pre-EOD review items (2026-09-16 15:45 ET) - TMR02-WIRE fixed; paid pairs held; register updated
+
+**TMR02-WIRE (confirmed defect, fixed):** `_compute_risk_plan` attached the execution-cost diagnostic with an
+undefined name (`pdict`) inside a swallowed `try`, so every persisted risk plan carried an empty `execCost`
+(the live GOOGL card included). Fixed: the in-scope exact `symbol` is used and a diagnostic failure is
+reported on the plan (`status: unknown`, `reasons: ["diagnostic failed: ..."]`) and logged - never
+swallowed. The reviewer's integration test is adopted verbatim (`tests/test_tmr02_card_wiring_review.py`:
+a qualified share card, revalidated, persists `riskPlan.execCost.status == known` and the readiness plan's
+`roundTrip`; zero orders). One of this desk's engine tests compared the diagnostic with a second quote read
+that ticked in between - it now judges the diagnostic on its own captured fields. Results: wiring 1 +
+execcost 5 + event context 7 + proposal readiness = 19 passed on the first run (one race fixed), then the
+wiring + execcost files 6 passed. Status: built, merged - not deployed (the live 0.7.96 process still
+carries the empty field; the fix rides the next coordinated deployment).
+
+**Paid pairs HELD:** unpaid assembly (`tip_frozen assemble`) of the 2026-09-16 SPX-map and APLD-digest
+bundles shows no captured classifier read, so the `recap_candidate` inputs are unavailable (non-parity) -
+no paid replay was run. Adequate inputs come from prospective captures once a classifier read is on the
+record (live now on 0.7.96? no - the read is journaled by `TipRecapClassified` only from the next deploy)
+or from isolated frozen inputs assembled through the harness. Live recap routing stays OFF.
+
+**Register:** the `frozen-context` entry now distinguishes the captured `current` request (a control only
+on a full-route capture) from a genuine full control, lists `recap_candidate` as the production candidate,
+requires a captured classifier read for the recap question, and records the held SPX/APLD pairs.

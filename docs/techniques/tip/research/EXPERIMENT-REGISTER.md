@@ -53,15 +53,24 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 
 - **Hypothesis:** a compact analyst context (core rules + relevant notes + newest history lines) reaches the same
   decisions as the full context on identical frozen evidence at lower cost.
-- **Variants:** current (full, verbatim); core_only; no_knowledge; compact.
-- **Eligible setup:** analyst runs captured with `frozen_capture_context` on (exact manifest), replayed on the
-  identical bundle. **Unit:** one bundle x one variant replay; a pair is complete only when every requested tool
-  input was served (`coverageLimited` false). **Episode identity:** bundle id + variant + report hash.
+- **Variants:** current (the CAPTURED request verbatim - the full-route CONTROL only when the run was on the
+  full route; on a compact-route capture it is the compact treatment and is flagged `isFullControl=False`);
+  core_only; no_knowledge; compact (the generic PROF-05 trim, not the production candidate); recap_candidate
+  (the production recap route, `recap-candidate-v1`, assembled by the same builder production uses - exact
+  parity by request hash on a compact capture, treatment-only on a full capture).
+- **Eligible setup:** analyst runs captured with `frozen_capture_context` on (exact manifest) and, for the recap
+  question, a captured classifier read (`recapRead`) - bundles without it are non-parity / coverage-limited;
+  replayed on the identical bundle. **Unit:** one bundle x one variant replay; a pair is complete only when every
+  requested tool input was served (`coverageLimited` false) AND both treatments were assembled from the same
+  frozen inputs (`frozen.assemble_treatments`, offline, before any paid call). **Episode identity:** bundle id +
+  variant + report hash.
 - **Primary metric:** verdict / contract / protections equality; input, output and cached tokens; calls;
   latency; coverage.
 - **Costs:** paid model calls per replay (recorded in the report usage).
 - **Regime:** `techniques/tip/frozen.py`, bundle version 1; knobs `frozen_capture_context` (True), `frozen_variants`.
-- **Alternatives tried:** one NVDA pair (`fb-16d3146639a86744`) - coverage-limited, mixed reading, not adopted.
+- **Alternatives tried:** one NVDA pair (`fb-16d3146639a86744`) - coverage-limited, mixed reading, not adopted;
+  the 2026-09-16 SPX-map / APLD-digest bundles are HELD - unpaid assembly shows no captured classifier read, so
+  their recap_candidate inputs are unavailable (non-parity); no paid pair was run.
 - **Evaluation window:** opened 2026-09-15; closes after >= 10 complete-evidence pairs. **Decision rule:** compact
   is never adopted from coverage-limited pairs; the reviewer decides on complete pairs.
 - **Status:** collecting.
