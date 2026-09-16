@@ -2072,6 +2072,12 @@ boundaries can be measured separately from provider and venue latency.
   depends on belongs on main, or the route tolerates its absence (start-path owner's call); (4) "merged,
   not deployed" is a fiction while the watchdog can launch the checkout - treat every convergence as a
   possible deploy.
+  *EM desk follow-up, same day:* the engine the watchdog judged DOWN at 07:40:09 PT was logging normally until
+  07:39:59 and showed no shutdown or traceback - a single 4 s probe timed out under load and a LIVE engine was
+  killed; a second identical timeout was observed at 08:56 PT with health answering in 20 ms before and after.
+  `/api/health` now answers `build=unknown` instead of a 500 when `zargar.build_sha` is absent (EM branch, PR #174,
+  which also puts the helper on `main`). The probe policy (confirm DOWN with a second probe before any kill) is the
+  start-path owner's decision; until it changes, every load stall longer than 4 s is a restart risk in RTH.
 - **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
   `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
   returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and

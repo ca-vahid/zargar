@@ -72,11 +72,17 @@ a number** (p. 72).
   different things. Scorecards for 08-26 are the first real test of which read is right
   (feeds 1.2 as well).
 
-### 1.4 Fire-time critic — net saver or net cost? → DEMOTED to advisory on at-level triggers (2026-09-09, §5)
-**Status:** the decision threshold below was applied on day 10: 25 scored kills, net +0.5R, five of the nine
-wrong ones the same at-level-reject shape (1.4b). `critic_mode=momentum_only`: bounces/rejects proceed with
-the verdict recorded (`criticAdvisory`), breakouts/breakdowns are still vetoed. The question is now the
-mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally at 10 sessions of fills.
+### 1.4 Fire-time critic — net saver or net cost? → DEMOTED 2026-09-09, then RETIRED from the entry path 2026-09-15 (§5 `deterministic-entry-v1`)
+**Status (2026-09-16):** CLOSED as a live question. Since v0.7.95 the fire-time critic is neither the decision
+authority nor on the latency path: the app's encoded rules decide (`fire_decision_mode=deterministic`), the
+momentum-family veto is retired, and the critic runs only under the explicit `legacy` rollback. The "advisory-no vs
+yes fills" re-tally can no longer accumulate; the comparison that replaces it is **outcomes by policy version**
+(`legacy-critic:*` rows vs `deterministic-entry-v1` rows in the profitability report) and, if a person enables
+`fire_evidence_mode=after_close`, the model's after-the-fact opinion over the frozen decision as evidence only.
+The history below is kept as the evidence that led to the demotion.
+- *Status on day 10 (2026-09-09):* the decision threshold below was applied: 25 scored kills, net +0.5R, five of the nine
+wrong ones the same at-level-reject shape (1.4b). `critic_mode=momentum_only`: bounces/rejects proceeded with
+the verdict recorded (`criticAdvisory`), breakouts/breakdowns were still vetoed.
 - 2 kills on day one, **both wrong** (ZS: data artifact + missing plan provenance;
   SNOW: "fabricated targets" prompt gap). Both causes fixed (plan provenance + data-quality
   + ladder clauses in the prompt; veto now re-arms the trigger, cap 3/day).
@@ -126,7 +132,7 @@ mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally a
   the correct call end to end. Bonus: first **[pass]** on a book claim — prior-day
   HOD/LOD levels respected 27.1% vs 23.0% for other levels (tested n=554, T1.3a).
 
-### 1.4b Critic vs T4.2: a systematic bias against at-level rejects? ⚠ new, watching
+### 1.4b Critic vs T4.2: a systematic bias against at-level rejects? → moot since 2026-09-15 (critic off the entry path; kept as evidence)
 - **2026-08-31 (day 5): the critic's first two WRONG kills since the fixes, both the
   same shape.** MUU r3 (killed ×2 → TP2, **+1.77R foregone**) and SOLS r1 (killed →
   TP3, **+2.44R foregone**, MFE 6.7R): in both, the critic argued "price already
@@ -230,6 +236,10 @@ in R and in $? Shorts still need a tradeable put.
   DOES produce trigger conditions, and so far they're garbage the critic must filter.
   If that pattern holds, the finding may be "R6.3 is right about the tape but the
   critic can substitute for the clock" — n=4, keep counting.
+- **2026-09-16:** the "critic as chop filter" branch of this question is moot - the critic no longer decides
+  entries (§5 2026-09-15). If mid-day is ever re-tested, the filter is the encoded rule set (volume floor, R3.2
+  false-break cap, decisive-candle checks) and the finding must be read against `deterministic-entry-v1`. The
+  toggle stays OFF.
 
 ### 1.8 Is the R2 bar (3.0) leaving a 2.0-3.0 band on the table? ⏳ open - R2 stays by user decision (2026-09-09); the weekly gate audit keeps the number
 - **First gate audit (2026-08-26 session, include-invalid sweep `57156a57`):** every
@@ -812,15 +822,20 @@ tempo is not where our edge is hiding either.
    vs captured R (realized), with the friction reason for every gap. This is THE metric;
    the daily scorecards already contain the raw material.
 2. **Gap rule decision** (1.1) once ≥20 voided samples exist.
-3. **Critic scorecard** (1.4) — auto-tally kill counterfactuals AND, since 2026-09-09, advisory-"no"
-   fills vs "yes" fills (the `criticAdvisory` flag on the trade is the join key).
+3. ~~**Critic scorecard** (1.4)~~ — superseded 2026-09-15: the profitability report groups attempts, fills and
+   refusals by policy version (`byPolicy`), and the optional after-close evidence records the model's opinion over
+   the frozen decision. The kill-counterfactual tally is historical evidence only.
 4. **Grade/analyst calibration** (1.2/1.3) at the 100-fire mark.
 5. **IBKR activation** — execution + second data source; retire the sim-only options fills
    with real paper fills.
 6. ~~Next-strike/next-expiry contract retry~~ — BUILT 2026-09-12 (C1, `pick_for_setup(retry_wide=)`).
 7. **Blue-sky TP1 from ATR** (1.5) — pending fired-breakout data.
 8. **Full Settings redesign** (task chip exists); slow-DB-writes investigation (chip
-   exists); persist critic veto counts across restarts.
+   exists); ~~persist critic veto counts across restarts~~ (no veto counter exists on the deterministic path).
+10. **Over-budget option, affordable shares** (2026-09-16): 4 of the first 7 deterministic fires were refused by
+   the F33 daily-loss bound or the FIX-03 2% trade budget because ONE contract risked more than the budget. Decide
+   whether a shares fallback should be tried in that case (it is not built; today the fallback covers only
+   untradeable options). Needs the user's decision and a cohort, not a threshold tweak.
 9. **T-6 continuation-breakout walk-forward** (2026-08-29): sweep the archetype over
    60 days on the universe + SPY/QQQ/IWM before any live arming — deterministic,
    free, and it directly answers "are we too strict or missing a lane". (Exit-tempo half
@@ -1163,3 +1178,35 @@ Records: `TechniqueEntryDecision` (every attempt, allowed or refused, with timin
 `TechniqueEntryEvidence` (`authority = evidence_only`). Reports group outcomes by policy version; faster entry is a
 latency fact, not a profit claim.
 
+
+### 2026-09-15 22:04 PT - deterministic live entry DEPLOYED (v0.7.95 build 414a86c); CR-01/CR-02 closed
+
+The `deterministic-entry-v1` delivery above was accepted by the review team at 8e641e9 (DE-01..05 closed; record in
+`reviews/deterministic-final-review/DE-RESPONSE-2026-09-15.md`) and deployed after the close through the protocol
+(readiness safe, `deploy.ps1` under the lease, `ZargarRestart` task, restoration 56/56 by id: 41 EM arms, all
+effective `deterministic`, `fire_evidence_mode=off`). Two bounded follow-ups shipped in the same release, neither a
+trading-policy change: CR-01 - the after-close evidence command recomputes `inputHash`, `frozenBarsHash`, the bar
+count and the cutoff from the captured material before rendering or buying an opinion (a mismatch is an `invalid`
+outcome with no model request) and derives facts under the FROZEN policy thresholds; CR-02 - the profitability
+report builds the attempt census from every run's immutable fire events, so refused attempts without a trade row are
+counted once per (run, trigger, decision) and a row is never double-counted against its attempt.
+
+### 2026-09-16 - first deterministic session (FOMC day), interim read at 09:40 PT; unplanned restarts 10:40-10:53 ET
+
+- 7 fires, 7 `allow` decisions (0.25-0.92 ms each, 240 frozen bars each), bar close -> received 44 ms-3.3 s, bar
+  close -> order submit 1.6-2.2 s (legacy path Sep 15: 18-23 s). 3 orders: NOW b1 shares unfilled and cancelled at
+  T4.1 (not chased); CRCL b1 option filled 09:32:04 and stopped by the 0.25R quote breach at 09:35:40; CVNA b1 75
+  shares filled 09:34:02 and stopped by the quote breach at 09:39:12. 4 fires refused BEFORE any order by budget
+  bounds: DELL r2 and BE r1 (F33 daily-loss bound: one contract risked $708 / $415 against $403 left), NBIS r2 and r3
+  (FIX-03: one contract at 5.90 / 5.70 risks more than the 2% trade budget). Zero EM model calls since the open (all
+  EM technique runs were pre-market plan builds 09:17-09:27 ET). Realized -$123.60 at the interim. Faster entry is a
+  latency fact; the day's profitability read is the after-close report by policy version.
+- Skips at the open were dominated by `gap_void` (51) and `invalidated` (28) on the gap-up FOMC morning; the 09:25
+  pre-open re-plan disarmed 17 plans whose pre-market print killed every trigger and 44 stayed armed.
+- **Ops, not method:** at 10:40 ET the watchdog's single 4 s health probe timed out once while the engine was logging
+  normally and it killed the live v0.7.95 process; the checkout it relaunched (converged to 0.7.96 by another desk)
+  had lost the health route's build helper, so health returned 500 and the watchdog looped twice more. Healthy again
+  at 10:52 ET on 0.7.96 build 4c84697 with all 44 EM arms restored, no EM fire in the dark window, four SPY 1m bars
+  missing 10:40-10:44. Fix on the EM branch: `/api/health` answers `build=unknown` instead of a 500 when the helper is
+  absent, and PR #174 puts the EM branch (helper included) on `main`. The probe policy belongs to the start-path owner
+  (PLATFORM-RULES 2026-09-16). New backlog item 10 (over-budget option, affordable shares) opened from today's refusals.

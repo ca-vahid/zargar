@@ -43,7 +43,7 @@ Code: `backend/zargar/options/` (occ symbology, chain providers, OptionsService)
 `components/OptionChain.tsx` / `OptionTicket.tsx`. Internal option symbol =
 **unpadded OCC** (`F260828C00014500`); `occ.to_snaptrade()` pads at the venue.
 
-Technique pipeline (EnhancedMarket method): spec in `docs/techniques/enhanced-market/METHOD.md`,
+Technique pipeline (EnhancedMarket method): **start at `docs/techniques/enhanced-market/README.md`** (doc map, state of play, known gaps); spec in `docs/techniques/enhanced-market/METHOD.md`,
 build plan + lessons in `docs/techniques/enhanced-market/PIPELINE-PLAN.md`, code in
 `backend/zargar/technique/`, UI in `frontend/src/pages/TechniquePage.tsx`.
 Review loop (trace, provenance, outcomes, reviews, replay, bundle):
@@ -465,7 +465,7 @@ frontend production build runs this check automatically.
   < 3 contracts); tests that encode the book's TP3 arithmetic pin `tp3` in their rig.
 - Live 1m bars: `BarAggregator` holds a sampled bar ~5 s for the Alpaca exchange bar
   (`feed.exchange_bar_hold_seconds`); consumers get ONE bar per minute (`source: exchange`
-  when corrected). The fire→critic→order chain runs off the bar loop (`_spawn_fire`);
+  when corrected). The fire→decision→order chain runs off the bar loop (`_spawn_fire`; EM's decision is the pure deterministic rule set since 2026-09-15, the critic only under `legacy`);
   tests/manual feeds call `armer.on_bar()` which awaits `wait_fires()`.
 - **Both sides are planned** (`technique.long_only` off): trigger kinds `bounce`/`breakout`/
   `wedge_break` (long, calls) and `reject`/`breakdown` (short, PUTS only — never share
@@ -482,11 +482,14 @@ frontend production build runs this check automatically.
   and may re-plan with `build_session_plan(reference_price=)`; a re-planned run's
   `referencePrice` is the tracker's prev_close for the gap rule.
 - Auto mode never arms without a loss halt (`_ensure_loss_halt`, fallback
-  `technique.arm.daily_loss_fallback`); the critic fails OPEN with a timeout + per-day
-  budget (`technique.arm.critic_fail_budget`) that pauses the plan. **The critic's veto is a knob**
-  (`execution.critic_mode` = veto | momentum_only | advisory; EM runs `momentum_only` since
-  2026-09-09: a "no" on an at-level bounce/reject is recorded and the entry proceeds; breakouts,
-  breakdowns and wedge breaks are still vetoed - TRADING-RULES §5).
+  `technique.arm.daily_loss_fallback`). **EM's live entry is DETERMINISTIC since 2026-09-15**
+  (`techniques.enhanced_market.fire_decision_mode=deterministic`, `deterministic-entry-v1`: the app's rules judge
+  the tracker's actual transition in <1 ms, journal `TechniqueEntryDecision` with frozen snapshot + bars, no model
+  on the entry path; `fire_evidence_mode=off` | `after_close` = optional evidence-only model pass later). The
+  critic machinery below applies only under the explicit `legacy` rollback (and to other desks' runners): the
+  critic fails OPEN with a timeout + per-day budget (`technique.arm.critic_fail_budget`) that pauses the plan, and
+  its veto is a knob (`execution.critic_mode` = veto | momentum_only | advisory; EM ran `momentum_only`
+  2026-09-09..15 - TRADING-RULES §1.4, §5). EM doc map + state of play: `docs/techniques/enhanced-market/README.md`.
 - Armed plans also run a ~2s **quote stop watch** (`technique.arm.quote_exit*`):
   exit-only, fires when the underlying's live quote is decisively through the stop
   (excess_r × risk beyond, N consecutive polls). Never add an entry path to

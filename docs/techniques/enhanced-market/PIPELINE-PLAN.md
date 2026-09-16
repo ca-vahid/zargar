@@ -68,6 +68,12 @@ bars + (optional uploaded chart image)
 Pass 4 is deliberately adversarial: the book spends more pages on *not* taking
 bad breakouts than on taking good ones, so the critic pass earns its cost.
 
+*Scope note (2026-09-15):* this loop is the PREMARKET analysis (plan building, sheet
+promotion, analyst review). The LIVE entry decision at fire time is no longer a model pass:
+`technique/entry_decision.py` (`deterministic-entry-v1`) judges the tracker's actual
+transition and the critic runs at fire only under the explicit `legacy` rollback
+(TRADING-RULES §5 2026-09-15; WALKFORWARD-PLAN §9 item 3).
+
 ---
 
 ## 4. Options (CBOE, was Tradier)
@@ -166,8 +172,9 @@ Reuses existing Highcharts wiring (`StockChart.tsx`) per the CLAUDE.md rules
 | **8** | Scheduled scans (`technique.scan.*` settings, RTH-only, daily cap) | ✅ built, default off |
 | **9** | Review loop — decision trace + provenance per run, bars snapshot, outcome scoring, reviews, bundle/CLI, replay + diff, `/technique-review` skill (`docs/techniques/enhanced-market/REVIEW-PLAN.md`) | ✅ built |
 | **10** | Session plans + walk-forward validation + live arming — R6 schedule, 30m/1h structure tfs, plan mode, sweeps, claims grid, `PlanArmer` (`docs/techniques/enhanced-market/WALKFORWARD-PLAN.md`) | ✅ built |
+| **11** | Deterministic live entry (`technique/entry_decision.py`, runner hooks `fire_review_policy` / `fire_decision` / `fire_evidence_*`, `TechniqueEntryDecision` records with frozen snapshot + bars, optional after-close evidence `tools/em_entry_evidence.py`, migration preview) — `reviews/deterministic-entry-2026-09-15/`, closure `reviews/deterministic-final-review/DE-RESPONSE-2026-09-15.md` | ✅ built, reviewed, LIVE since v0.7.95 (2026-09-15 22:04 PT) |
 
-Everything is wired and live; no credentials outstanding.
+Everything is wired and live; no credentials outstanding (Tradier stays optional - CBOE serves the chains).
 
 ### What was learned building it (keep in mind)
 
@@ -226,12 +233,28 @@ Everything is wired and live; no credentials outstanding.
 
 ---
 
+- **2026-09-15 (deterministic live entry):** a decision that must be made in milliseconds
+  cannot wait on a model; the fire-time critic waited 14-22 s per fire and its momentum-family
+  veto was a coin flip on the counterfactuals. The encoded rule set judges the tracker's ACTUAL
+  transition (never the trigger's kind label), records what it did not evaluate as diagnostic,
+  and freezes its inputs (snapshot, policy, last 240 bars) on the record so a later model
+  opinion is evidence over the same material - never a second decision. Reviewer lessons that
+  shaped it: the tracker's own window gate is the authority (a second gate refused valid
+  late-confirmed candidates); saved geometry is validated against the SAVED entry, not the fill
+  proxy; the policy is built from the rules that actually fired the tracker; settings are read
+  through a non-mutating projection in tools; identities (hashes) are recomputed from captured
+  material before anything is rendered or bought.
+
+---
+
 ## 9. Open items
 
-- **Tradier developer token** — needed for phase 6. Free signup at
-  developer.tradier.com; goes in `backend/.env` as `ZARGAR_TRADIER_TOKEN`.
+- ~~**Tradier developer token**~~ — resolved: chains come from CBOE's free delayed endpoint;
+  Tradier is optional (`options.provider` + `ZARGAR_TRADIER_TOKEN`).
 - **Per-run cost** — a 4-pass vision run on Opus 5 is roughly $0.15–0.40
   depending on image sizes. Scheduled scans multiply this by symbols × frequency;
-  a budget cap setting (`technique.max_runs_per_day`) is included in phase 8.
-- **Symbol universe** — the book's examples are US large caps (SPY, TSLA, NVDA).
-  Which symbols the scheduled scan should sweep is still to be set.
+  a budget cap setting (`technique.max_runs_per_day`) is included in phase 8. Live fires
+  cost no model calls since 2026-09-15 (deterministic entry); the optional after-close
+  evidence pass is bounded by `fire_evidence_max_calls`.
+- ~~**Symbol universe**~~ — resolved: `technique/universe.py` (core list + extras + daily
+  most-actives − excludes; C1 liquidity screen marks the option-tradeable names).
