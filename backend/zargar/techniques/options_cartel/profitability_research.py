@@ -231,8 +231,13 @@ async def _warm_baselines(runtime, context, policy, *, fetch=fetch_window):
         runtime._profitability_status = {'phase': 'collecting', 'message': kwargs.get('message')}
     reader = PreparationHistory(runtime.engine, fetch, report, policy, runtime.clock)
     attempted = 0
+    # Scheduling order is separate from the frozen candidate/ranking order.
+    # Persisted attempt counts keep retries fair across passes and restarts.
+    due = [c for c in context.result['candidates'] if c['baselineStatus'] != 'ready'
+           and runtime.clock() >= c.get('nextBaselineAt', 0)]
+    due.sort(key=lambda c: (c.get('baselineAttempts', 0), c.get('nextBaselineAt', 0)))
     async with httpx.AsyncClient(timeout=18, headers={'User-Agent': UA}) as client:
-        for candidate in context.result['candidates']:
+        for candidate in due:
             if runtime.stopping or attempted >= 2 or not settings(runtime.engine)['enabled']:
                 break
             if candidate['baselineStatus']=='ready' or runtime.clock() < candidate.get('nextBaselineAt', 0):

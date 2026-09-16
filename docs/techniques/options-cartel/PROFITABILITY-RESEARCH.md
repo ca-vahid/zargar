@@ -105,3 +105,12 @@ for the experiment, not an acceptance sample used to choose thresholds.
 This chapter describes the new research release. Deployment and validation
 evidence are recorded in its release handoff; merging the chapter alone does not
 start collection. Old execution plans keep their original policies.
+
+## Baseline queue fairness — September 16 correction
+
+Due candidates with no prior baseline attempt run first. Remaining due retries run
+in ascending persisted attempt count, then oldest retry time. The two-attempt
+per-pass budget and five-minute cooldown remain unchanged. Ready candidates are
+skipped. This ordering survives restart and does not reorder the frozen candidate
+rankings, weaken coverage requirements or create retrospective entries. Existing
+saved study contexts benefit without rerunning preparation.
