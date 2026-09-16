@@ -397,3 +397,47 @@ separates the Practice book from the shadow books (`books` per setup). Test: the
 second position, closes it, and the snapshot records one `intraday_exit` observation with the exit price and
 the book kind (`late` when observed outside a pinned window - the R147 admission at work). Hold-study slices:
 16 passed. First protocol-correct PAIR candidates for 2026-09-17: MRNA (Practice) and AFRM (shadow).
+
+## End of session 2026-09-16 (16:06 ET) - fills, fees, marked equity, research coverage, deployment status
+
+Labels: every number below is an FOMC event-session number (`event-day`; decision 14:00 ET, presser 14:30 ET) -
+BEFORE/AFTER comparisons across this session are not a like-for-like read.
+
+**Tips Practice fills and exits (all managed exits, technique-sourced, sim book):**
+
+| Position | Entry | Exit | Fees (today) | Realized (trip) | Exit reason |
+|---|---|---|---|---|---|
+| T Jan-15-27 29C x4 (opened 09-10) | - | 13:15:02 ET @ 0.5499 | $4.16 | +$3.64 today (position lifetime +$131.96 incl. earlier scale-outs) | bar closed through the stop 26.30 (close 26.295) |
+| SLV Nov-20 65C x1 | - | 15:00:04 ET @ 1.7996 | $1.04 | -$40.12 | bar closed through the stop 57.40 (close 56.9505) |
+| GOOGL Oct-16 360C x1 (armed tips plan) | 15:17:00 ET @ 5.40 | 15:30:09 ET @ 5.149 | $2.08 (both sides) | -$27.18 | intra-bar quote breach (341.42 vs stop 345.2814) |
+| MRNA 7 sh | held | open | - | +$25.62 marked | venue GTC stop 134.37 (single exit authority) |
+
+Tips Practice today: fees $7.28 (4 executions), realized -$63.66 on the three trips; marked equity **$8,806.21** vs
+day start $8,923.85 (-$117.64 on the day, marks included), cash $7,786.87. Desk ledger (all books): today's
+realized -$690.91 (Team2 QQQ 0DTE -$479.69, EM CRCL/CVNA/CRWV/SNDK -$147.56 net, Tips -$63.66); banked
+-$1,899.80, riding +$24.71, unexplained $0.01. No open incidents; halt off; zero pending proposals; 4 proposals
+created and rejected by the analyst (SPY 760C x2 budget-gate, AMZN wish, TQQQ, GOOGL - all skips on the record).
+
+**Research coverage (0.7.96, the running build):** entry-timing cohort 14 rows (13 blocked / 1 declined; quote
+status 9 fresh / 5 ineligible, all delayed samples taken); analyst runs 81 (12 appraise, 69 intake) - all 12
+appraise runs carry the exact context manifest (`contextManifest`), no bundle materialised today (the two
+`tip_frozen_bundles` rows are 09-15; a bundle is built on demand from a captured run); `TipRecapClassified` 0
+and `TipFillVsQuote` 0 (both journals ship with the next deploy); hold study: 2 carry observations at 15:50 ET
+(MRNA Practice, AFRM ab armed shadow), intraday_exit 0 observed / 3 eligible (defect fixed in PR #184, not
+deployed - the three exits above are the missing rows, not repaired by hand). Paid frozen pairs: none run
+(held - no captured classifier read). Recap routing OFF; risk limits unchanged; no method change.
+
+**Deployment status:** running process 0.7.96 build 4c84697 (watchdog launch 10:52 ET); running checkout
+`C:/Cursor/zargar` at aef37c3 = origin/main 0.7.98 (import + check-release green, runtime branch pushed).
+Merged, NOT deployed: PR #175 (INTRA), #177/#178 (I175/PAR178 parity), #181, #183 (TMR02-WIRE), #184 (hold
+exits + book kind). Next coordinated deployment via the EM desk after the user's go; the ZargarRestart task
+only after `/api/ops/restart-check` (safe:true, techniqueRunning 0 at 16:01 ET).
+
+**Cross-desk note (INTC, 15:29 ET blip):** the "sim fill handling failed for INTC" line is the sim executor
+judging bracket SELL 19 INTC LMT 106 (`9423b723...`) on the **Tips shadow immediate book** "Shadow: eva"
+(`b56d8e5a...`, research): `SimFillWaiting` at 15:22 / 15:34 / 15:42 ET (uncrossed / stale-receipt quote
+during the blip), order still ACCEPTED, filled 0, executions 0, INTC ~100.7 vs the 106 target - nothing to
+reconcile, no unprotected money position (shadow book, no managed position). No order placed.
+
+**Thursday 2026-09-17:** 09:30 ET next-open sample for the MRNA / AFRM carry rows (calendar-relative job, in-window
+retries); 09:47 ET first paired report by book kind per `research/HOLD-STUDY-REPORT-TEMPLATE.md`.
