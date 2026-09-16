@@ -634,6 +634,7 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
                 "unitRisk": ul, "unitRiskBasis": basis, "evidence": {**meta, **{k: ev.get(k) for k in ("delta", "ask", "spot", "quoteSource")}},
                 "riskBudget": book["riskBudget"], "riskBudgetSource": book["riskBudgetSource"],
                 "allocationLimit": book.get("allocationLimit"), **{k: f.get(k) for k in ("feasible", "qty", "qtyByRisk", "qtyByAllocation", "reason")},
+                "execCost": _exec_cost(eng, is_shares=is_shares, symbol=(under if is_shares else contract), qty=int(f.get("qty") or 1)),
                 "alternatives": alts,
                 "note": "alternatives are labelled research comparisons at equal dollar risk - the original expression stays the card"}
     qty = int(args.get("quantity") or 0)
@@ -645,7 +646,19 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
                             fee_per_unit=(0.0 if is_shares else float(book.get("feePerContract") or 0.0)),
                             vehicle=("shares" if is_shares else "option"))
     return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
-            "unitRisk": ul, "unitRiskBasis": basis, **pv}
+            "unitRisk": ul, "unitRiskBasis": basis, **pv,
+            "execCost": _exec_cost(eng, is_shares=is_shares, symbol=(under if is_shares else contract), qty=qty)}
+
+
+def _exec_cost(eng, *, is_shares: bool, symbol: str, qty: int) -> dict:
+    """TMR-02: the round trip on the CURRENT qualified quote (diagnostic; unknown
+    when the quote is stale/crossed/missing). Payoff scenarios price their exits
+    at target prices, so this spread is charged here only."""
+    try:
+        from . import execcost as _ec
+        return _ec.diagnose(eng, symbol=symbol, qty=float(qty or 0), sec_type=("STK" if is_shares else "OPT"))
+    except Exception as exc:                            # noqa: BLE001
+        return {"status": "unknown", "reasons": [f"diagnostic unavailable: {exc}"]}
 
 
 async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
@@ -1603,8 +1616,14 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                      f"below is the PURCHASE allocation limit, not the risk budget.\n")
     except Exception:                                   # noqa: BLE001 - the header never fails on this
         risk_line = ""
+    event_line = ""
+    try:
+        from . import events as _evc
+        event_line = _evc.header_line(_evc.context_for(eng)) + "\n"
+    except Exception:                                   # noqa: BLE001 - the header never fails on this
+        event_line = ""
     header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
-              + risk_line +
+              + event_line + risk_line +
               f"Per-tip budget: ${policy.budget_per_tip:,.0f} · option DTE window "
               f"{policy.dte_min}-{policy.dte_max} (tip's own contract may override)\n"
               + lotto_line +
@@ -1711,6 +1730,15 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               "usage": loop_state.get("usage"),
               **({"receipts": tool_ctx["receipts"]} if tool_ctx.get("receipts") else {}),
               **({"experiment": experiment} if experiment else {})}
+    # TMR-01 (2026-09-16): the verified event label rides the record; a historical
+    # replay is labelled with the knowledge available AT its own instant
+    with contextlib.suppress(Exception):
+        from . import events as _evc
+        _asof = None
+        if experiment and tool_ctx.get("asOfMs"):
+            _asof = dt.datetime.fromtimestamp(int(tool_ctx["asOfMs"]) / 1000, tz=dt.timezone.utc)
+        _ec_ctx = _evc.context_for(eng, now=_asof, as_of=_asof)
+        result["eventContext"] = {k: _ec_ctx.get(k) for k in ("version", "session", "status", "coverage", "label", "events", "nextEvent", "knowledgeCut")}
     # PROF-01/02 (2026-09-15): the expression's feasibility and the plan's
     # payoff are assessed server-side on every TAKE - the same numbers the
     # tools offered - and recorded beside the opinion; `analyst_feasibility_gate`
@@ -1733,6 +1761,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                                     | {"alternatives": expression.get("alternatives")}, mode)
             if payoff:
                 result["payoff"] = {k: payoff.get(k) for k in ("qty", "ladder", "scenarios", "oneLot", "unitRisk", "reason")}
+            result["execCost"] = (payoff or expression).get("execCost")
             rec.step("expression", (f"Expression check: {'fits' if expression.get('feasible') else 'does NOT fit'} - "
                                     f"unit risk {expression.get('unitRisk')}, budget {expression.get('riskBudget')}, "
                                     f"qty {expression.get('qty')}; gate={result.get('expressionGate')}"
@@ -1923,7 +1952,14 @@ class IntakeRun:
                           "own book (positions, open tips, notes).")
         rules_txt, _rules_n, _snap = await _rules_text(eng)
         history_txt = await _source_history(eng, source)
+        event_line = ""
+        try:
+            from . import events as _evc
+            event_line = _evc.header_line(_evc.context_for(eng)) + "\n"
+        except Exception:                               # noqa: BLE001
+            event_line = ""
         header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
+                  + event_line +
                   f"SOURCE: {source}\n"
                   f"MESSAGE:\n{message_text[:4000]}\n\n"
                   f"PER-SIGNAL OUTCOMES: {json.dumps(outcomes, default=str)[:2500]}\n"

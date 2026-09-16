@@ -850,6 +850,7 @@ class TipEntryCohortRow(Base):
     delayed_status: Mapped[str] = mapped_column(String(16), default="unknown")  # pending | sampled | unknown | missed
     delayed_due_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     gaps: Mapped[list] = mapped_column(JSONVariant, default=list)
+    event_context: Mapped[dict | None] = mapped_column(JSONVariant)   # TMR-01: verified event label at decision
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 

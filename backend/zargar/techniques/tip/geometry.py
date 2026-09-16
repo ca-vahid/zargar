@@ -72,6 +72,7 @@ class RiskPlan:
     decisions: list = field(default_factory=list)
     evidence: list = field(default_factory=list)  # typed evidence problems [{code, detail}] (readiness-v1, 2026-09-15)
     payoff: dict = field(default_factory=dict)    # PROF-02: integer-unit ladder + scenario arithmetic (estimate, no claim)
+    execCost: dict = field(default_factory=dict)  # TMR-02: instantaneous round trip on the qualified quote (diagnostic, no gate)
 
     def to_dict(self) -> dict:
         d = asdict(self)

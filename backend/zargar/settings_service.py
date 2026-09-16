@@ -228,6 +228,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_cohort_enabled": False,     # record EVERY eligible open/add idea (skips, declines, blocked cards, shadows, parks, failures) with its decision-time quote
     "techniques.tip.entry_cohort_delay_minutes": 3.0, # the configured LATER sample (labeled delayed - never alert-time evidence)
     "techniques.tip.entry_cohort_premium_cap": 1.05,  # the cap variant: fill only when the ask <= cap x the source-stated premium
+    "techniques.tip.verified_events": None,           # TMR-01: {coverageThrough, events:[{date,time,kind,name,url,verifiedAt,verifiedBy}]}; None = techniques/tip/events.py DEFAULT (FOMC 2026-09-16 verified 09-15); advisory label only
     "techniques.tip.hold_study_enabled": True,          # PROF-03: pre-close + next-open research snapshots of Tips positions (observation only)
     "techniques.tip.hold_snapshot_at": "",               # ET; empty = calendar-relative (close - hold_snapshot_before_close_minutes)
     "techniques.tip.hold_snapshot_before_close_minutes": 10,   # R147-01: pre-close job runs N min before the EXCHANGE close (12:50 on an early close)

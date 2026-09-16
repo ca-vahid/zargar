@@ -72,3 +72,115 @@ in PR #163 - no further action unless the baseline fails again).
 alongside); 13:50 ET Fed pre-check (decisions before/after, time-to-event label); 15:52 ET capture
 verification; 09-17 09:47 ET overnight pair. The recurring 30-minute ticks and the 16:06 ET wrap-up
 carry the rest of the checklist.
+
+## Built 2026-09-16 (business hours): TMR-01 and TMR-02 - advisory / research only
+
+**TMR-01 verified event context** - `techniques/tip/events.py`. A Tips-scoped, provenance-carrying
+list (`techniques.tip.verified_events`; None = the module DEFAULT: FOMC statement 2026-09-16 14:00 ET
+and press conference 14:30 ET, official URL, `verifiedAt` 2026-09-16T03:35Z = 23:35 ET 09-15,
+`coverageThrough` 2026-09-18) beside the shared manual calendar (read separately as
+`sharedCalendar`, never merged into a verified claim). `event_context(now, as_of)` returns the
+session's label: `status` event-day / no-scheduled-event / unknown (a date beyond coverage is
+UNKNOWN, not "no event"), each event with ET and UTC instants, `secondsUntil`, `timeUntil`
+(T-2h14m / T+1h05m), phase before/after, URL and verification time; a knowledge cut hides entries
+verified after the decision instant (a historical replay never sees a fact first learned later;
+entries without a verification time are never shown). Surfaces: the analyst header
+(`EVENT CONTEXT (...)` line under "Today (ET)" on appraise and intake runs, so every frozen bundle
+captures it), the analyst record (`eventContext`, replays labelled at their own asOf), every new
+card's `context.eventContext` and the readiness plan (`plan.eventContext`, shown as the card's
+"event" row; NOT part of the fingerprint), cohort rows (`event_context` column, additive), hold-study
+observations (`window.event`) and adopted positions (`extras.eventContext`). Zero orders: labels
+only; no shared-calendar write (the Team2 desk owns `research.macro_events`; it stays empty).
+Tests: `tests/test_tip_event_context.py` (7: zones/time-until/provenance, phase flip, unknown vs
+no-event, knowledge cut, shared list apart, defaults/override, engine: label rides a card and
+places nothing).
+
+**TMR-02 execution-cost diagnostic** - `techniques/tip/execcost.py`. `round_trip()` on a QUALIFIED
+quote (the cohort's qualification: provenance, delayed flag, genuine source time, two-sided, option
+session): `roundTrip = (ask - bid) x multiplier x qty + entryFees + exitFees`, with `spreadPerUnit`,
+`spread`, `purchaseValue` (at the ask), `costShareOfPurchase`, `spreadPctOfAsk`, quoted `bidSize` /
+`askSize` (now carried on every cohort quote record), `sourceTs` / `sampledAt` / `quoteAgeS`, the fee
+basis (options per contract per side + `sim.reg_fee_per_contract`; shares a flat commission per
+order per side) and the reminder that a payoff scenario exiting at the bid already carries this
+spread. Stale / crossed / one-sided / missing evidence or a zero quantity -> every money field None,
+`status: unknown` with reasons. `fill_vs_quote()` compares ONE realised fill with the decision
+quote (vsLimit, vsAsk, vsAskDollars, vsMid; positive = worse), never averaged. Surfaces: the analyst's
+`check_feasibility` / `preview_payoff` tool outputs (`execCost`), the analyst record, the risk plan
+(`RiskPlan.execCost`, recomputed at every admission/revalidation on the FINAL size; NOT in the
+fingerprint), the readiness plan and the card's "round trip now" row, and at adoption the journal
+event `TipFillVsQuote` + `extras.fillVsQuote`. No gate, threshold, quantity, contract or limit is
+changed by any of it. Tests: `tests/test_tip_execcost.py` (5: option arithmetic incl. regulatory
+fee, shares flat commission, every unqualified case unknown, fill-vs-quote, engine diagnose touches
+nothing).
+
+**Sample (from the tests, option 2 x XYZ 100C, bid 1.40 / ask 1.50, $0.99 + $0.05 per contract):**
+spread $20.00 (0.10/unit) + entry $2.08 + exit $2.08 = **round trip $24.16 = 8.05 % of the $300
+purchase**; a $0.99 fee on shares reads $0 commission -> the spread is the whole cost. Card row:
+`round trip now  $24.16 (8.1% of $300) · bid 1.4 / ask 1.5 · size 12x30 · 1s`; event row:
+`FOMC statement 2026-09-16 14:00 ET (T-2h14m), FOMC press conference 2026-09-16 14:30 ET (T-2h44m)`.
+
+**Verification:** 12 new checks pass; regression slice readiness / v086 / geometry wiring /
+expression gate / payoff / hold study / prof142 / pr147 = 46 passed, 1 failed
+(`test_tip_geometry_wiring::test_enforce_mode_finalizes_stop_and_resizes_before_entry` - passes
+alone twice on this branch and on the unmodified checkout; sim-price sensitivity of the grouped run,
+not touched here). Frontend build green. Statuses at the time of writing: **built, merged - not
+deployed** (ships on the next coordinated deployment after the close); collecting: n/a; evaluated: n/a.
+
+## Built 2026-09-16 (second block): TMR-03 design, TMR-05 register, TMR-04 template - research only
+
+**TMR-03 time/volatility scenario design** - `docs/techniques/tip/research/2026-09-16-time-vol-scenarios.md`
++ prototype `techniques/tip/scenarios.py` (`bsm-local-v1`, NOT wired into any card, gate, sizing or order
+path; the delta-linear risk estimator and the execution gate are untouched). Grid: flat underlying after
+1/5/10 days, target reached soon (1 day) / later (half the remaining time), each at IV -5 / 0 / +5 points;
+dollars per contract against the premium paid; the model's value and mispricing at t0 printed beside it;
+theta per day and vega per IV point in dollars; every output carries model version, rate assumption,
+inputs with sources/timestamps and the limits (local approximation, no path/stop modelled, exits at model
+value - execution cost is execcost's job). Missing inputs -> `unknown` with the names. Worked example on
+frozen desk evidence (SLV Nov-20 65C: CBOE delayed snapshot 09-15 IV 0.4665 / venue delta 0.3144, SLV close
+57.55, 65 DTE, mid 2.085 as the premium stand-in, target 61.8): the local model reproduces the venue delta
+(0.3143) and mid (2.078); theta -$3.27/day, vega +$8.62/IV point; the same target reached at the halfway
+point with IV 5 points lower LOSES $21 while reached within a day it makes +$107..+$209 - the arithmetic
+behind "a good thesis is not a good option purchase". Labelled coverage-limited (delayed snapshot, close
+not a decision-time quote, local Greeks beyond delta). Tests: put-call parity, venue-delta agreement,
+grid dollars, declared limits, unknown inputs.
+
+**TMR-05 experiment register** - `techniques/tip/experiments_register.py` (`experiments-v1`) mirrored by
+`docs/techniques/tip/research/EXPERIMENT-REGISTER.md` (a test keeps the id lists equal): entry-timing-cohort,
+overnight-hold, frozen-context, mk-ownbook-observe, feasibility-annotate - each with hypothesis, variant
+definitions, eligible setup, unit of observation (repeated alerts/quotes are not independent trades),
+holding-episode identity, primary metric, costs, policy/build regime, alternatives tried, prospective
+evaluation window with a decision rule, and status. Reports now carry the identity block: the hold-study
+aggregate (`experiment`), `frozen.compare` (`experiment`), the cohort report (`experiment`); the identity's
+caveat states that partials and fees count once, event sessions and incomplete evidence stay visible, and
+no sample count is called proof. Documentation/reporting only - no allocation or promotion.
+
+**TMR-04 operate existing studies** - `docs/techniques/tip/research/HOLD-STUDY-REPORT-TEMPLATE.md` (the
+09-17 09:47 ET paired report: counts per arm/setup incl. missing/late/ineligible/outside_window, actual
+sample times vs sourceTs vs jobStartedAt, fee/risk basis per observation, quote drift apart from managed
+exits, aggregate, reading). The 15:50 ET capture is verified by the 15:53 ET checkpoint; the entry-timing
+cohort keeps collecting unchanged; new frozen pairs are run after the close only (paid) and marked
+complete vs coverage-limited by `frozen.compare`.
+
+**Verification:** `tests/test_tip_scenarios_register.py` (5) + hold study + frozen compact + KFIN-09
+experiments = 22 passed. Statuses: **built, merged - not deployed** (next coordinated deployment after
+the close); collecting: hold study (09-16 15:50 ET onward), cohort, frozen captures; evaluated: nothing.
+
+## Incident 10:40-10:53 ET: watchdog restart loop on a health 500 - caused by this desk, fixed
+
+At 10:40:09 ET the watchdog judged the running 414a86c process DOWN (no answer on :8420; the cause is
+not in the watchdog log) and started the checkout AS IT STOOD: `c3842eb` / 0.7.96 (the converged,
+merged-not-deployed tree). That process never answered `/api/health` (HTTP 500): the running checkout's
+`backend/zargar/__init__.py` had lost the EM desk's `build_sha` helper - a runtime-branch-only addition
+that the EM desk's `api/app.py` imports - because this desk's conflict resolution on 2026-09-15 evening
+took main's bare `__version__` file. The watchdog looped (start, 180 s without health, kill, start) at
+10:40 and 10:46 ET; the Discord intake died with each restart. Fix at 10:50 ET: the helper restored
+verbatim with version 0.7.96, committed on the runtime branch (`4c84697`, pushed); the watchdog's 10:52 ET
+start came up healthy - **0.7.96 build `4c84697`, 65 armed (60 plans restored), sim book restored,
+Tips Practice MRNA venue stop registered, SLV/T app-managed, gates unchanged (practice, live-auto off),
+no incident**. One Discord listener (the watchdog start relaunched one; this desk's duplicate stopped),
+liveness live, ledger pending 2 (recovering). Consequence: **0.7.96 is LIVE since 10:52 ET, unplanned**
+- TMR-01/02 (event context, execution cost), TMR-05 (register on reports), PR #145/#150 etc. are
+deployed; TMR-03 is inert code. Statuses now: TMR-01 built/merged/deployed/collecting; TMR-02
+built/merged/deployed/collecting (first `TipFillVsQuote` on the next fill); TMR-03
+built/merged/deployed(inert)/n-a; TMR-04 collecting (15:50 ET capture on the corrected protocol);
+TMR-05 built/merged/deployed. Evaluated: nothing. Lessons: PLATFORM-RULES change log 2026-09-16.

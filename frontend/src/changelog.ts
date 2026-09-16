@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.95";
+export const APP_VERSION = "0.7.96";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.96",date:"2026-09-16",title:"Tips see the day's event and the real cost of a trade",items:[
+      { tag: "new", text: "Tips: verified event context (TMR-01). The analyst header, every card, the cohort and hold-study records and adopted positions now carry the day's verified macro-event label - FOMC statement 2026-09-16 14:00 ET and press conference 14:30 ET from the official Federal Reserve calendar, with the verification time and time-to-event; a date the calendar has not been checked for reads UNKNOWN, never 'no event'. Awareness only: no automatic no-trade rule, no order placed or blocked." },
+      { tag: "new", text: "Tips research: an experiment register (TMR-05) gives every study one identity - hypothesis, variants, unit of observation, costs, regime, evaluation window - and every research report now carries it; a time/volatility scenario prototype (TMR-03, research only, wired to nothing) shows how elapsed time and an IV change would move a long option's value, with a worked example on frozen evidence." },
+      { tag: "new", text: "Tips: execution-cost diagnostic (TMR-02). Beside feasibility and payoff, the analyst tools, the risk plan and the card show the instantaneous round trip on the qualified quote - spread once plus both sides' fees at the venue basis, quoted size, cost as a share of the purchase - and each realised fill is journaled against the quote the decision saw. Unknown on stale, crossed or missing quotes; changes no quantity, contract, limit or gate." },
   {version:"0.7.95",date:"2026-09-15",title:"EM entries are decided by the app's own rules, not a model",items:[
     {tag:"major",text:"EM live entry authority is deterministic (techniques.enhanced_market.fire_decision_mode=deterministic): when a trigger fires, the app's encoded rules judge the saved geometry, the tracker's own window, volume and the confirmation branch that actually fired - in milliseconds, with no model call, no chart render and no timeout on the entry path. Every attempt is journaled as a TechniqueEntryDecision with its frozen snapshot, policy and the last 240 bars up to the signal close; refusals are recorded as no-setup with reason codes. The pre-market LLM plan builder is unchanged; legacy critic mode remains selectable."},
     {tag:"new",text:"Optional after-close LLM evidence (fire_evidence_mode=after_close, OFF): one bounded, evidence-only pass over the frozen decisions of a closed session - it verifies the record's declared identity (input hash, frozen-bar hash and count, cutoff) against the captured material before rendering or buying an opinion, and can never touch an order, an arm or a setting."},

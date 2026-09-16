@@ -160,6 +160,25 @@ server-side and the result rides on `extraction.analyst.expression` / `.payoff`;
 `payoff`, shown on the card. Tools: `zargar.tools.tip_feasibility replay`,
 `zargar.tools.tip_payoff_report`. Code: `techniques/tip/feasibility.py`, `payoff.py`.
 
+## Event context + execution costs (TMR-01/02, 2026-09-16, advisory only)
+
+`techniques/tip/events.py` labels every decision with the VERIFIED macro-event context (Tips-scoped
+`techniques.tip.verified_events` with official URL + verification time; unknown coverage is never
+"no event"; a replay sees only facts verified before its instant) - analyst header, record, cards,
+cohort and hold-study rows. `techniques/tip/execcost.py` prices the instantaneous round trip on the
+qualified quote (spread once + both sides' fees, quoted size, cost share of purchase; unknown on
+stale/crossed/missing evidence) on the tools, the risk plan and the card, and journals one
+`TipFillVsQuote` per realised fill. Neither gates, sizes or times anything.
+
+## Research register + scenario prototype (TMR-03/05, 2026-09-16)
+
+`docs/techniques/tip/research/EXPERIMENT-REGISTER.md` (mirror of `techniques/tip/experiments_register.py`)
+gives every study one identity - hypothesis, variants, unit, episode identity, metric, costs, regime,
+evaluation window - and every research report carries it. `techniques/tip/scenarios.py` (`bsm-local-v1`)
+is a research-only time/volatility grid for one long option (design + worked example in
+`research/2026-09-16-time-vol-scenarios.md`); it is wired to nothing. Hold-study reports follow
+`research/HOLD-STUDY-REPORT-TEMPLATE.md`.
+
 ## Research studies (PROF-03/05, 2026-09-15, observation only)
 
 `tip_hold_snapshots` (jobs `tip_hold_snapshot` 15:50 ET / `tip_hold_next_open` 09:36 ET; knob

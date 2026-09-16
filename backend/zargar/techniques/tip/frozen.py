@@ -671,7 +671,9 @@ def compare(reports: list[dict]) -> dict:
     coverage_limited = bool(missing_total > 0 or all_gaps)
     coverage = {"missingToolCalls": missing_total, "imageGap": image_gap,
                 "bundleGaps": sorted(set(bundle_gaps)), "manifestGaps": sorted(set(manifest_gaps))}
+    from .experiments_register import identity as _xid
     return {"bundleId": next((r.get("bundleId") for r in reports), None),
+            "experiment": _xid("frozen-context"),
             "baseline": baseline, "variants": rows,
             "decisionDiffers": len({tuple(s) for s in verdict_sets.values()}) > 1,
             "coverageLimited": coverage_limited,

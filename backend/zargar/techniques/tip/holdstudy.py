@@ -101,6 +101,16 @@ def next_open_job_time() -> str:
     return f"{RTH_OPEN_MIN // 60:02d}:{RTH_OPEN_MIN % 60:02d}"
 
 
+def _event_label(eng, now, sess) -> dict | None:
+    """TMR-01: the verified event label on the observation (event-day sessions stay distinguishable)."""
+    try:
+        from . import events as _evc
+        c = _evc.context_for(eng, now=now, session=sess)
+        return {k: c.get(k) for k in ("status", "coverage", "label")}
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
 def _knob(eng, key: str, default):
     try:
         v = eng.settings.get(key, default)
@@ -322,7 +332,8 @@ def aggregate(results: list[dict]) -> dict:
                             if b["meanCarryR"] is not None and b["meanIntradayR"] is not None else None)
         b["distinctPositions"] = len(b["positions"])
         del b["carryR"], b["intradayR"], b["positions"]
-    return {"version": STUDY_VERSION, "setups": by,
+    from .experiments_register import identity as _xid
+    return {"version": STUDY_VERSION, "setups": by, "experiment": _xid("overnight-hold"),
             "unit": "position-session observations (a position held several nights is counted once per session)",
             "disclaimer": "paired arithmetic on contemporaneous qualified quotes inside declared windows; "
                           "carry is quote drift unless managedCarry is known; small samples, no rule derived"}
@@ -495,6 +506,7 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
                 observed_at=observed_at,
                 window={**(window or {"kind": "preclose", "sessionDate": sess, "start": None, "end": None}),
                         "verdict": (judge_window(observed_at, window) if window else verdict),
+                        "event": _event_label(eng, now, sess),
                         "jobStartedAt": _iso(now), "observedAt": _iso(observed_at),
                         "sampledAt": (quote or {}).get("sampledAt"),
                         "sourceTs": (quote or {}).get("sourceTs"), "toleranceS": tol},

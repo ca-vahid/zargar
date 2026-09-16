@@ -1,0 +1,115 @@
+"""TMR-05 (2026-09-16): the Tips desk's EXPERIMENT REGISTER - one durable identity per
+research experiment, carried by every report the experiment produces.
+
+Why a register: a report that shows numbers without saying WHICH hypothesis, WHICH
+variant definition, WHICH eligible setup, WHAT the unit of observation is, WHICH policy
+and build regime produced the data and WHEN the prospective evaluation window closes,
+cannot support a decision - and a small sample dressed as proof is worse than none.
+Every entry here is documentation; nothing allocates, promotes or trades on it. The
+human-readable mirror is `docs/techniques/tip/research/EXPERIMENT-REGISTER.md` (a test
+keeps the two lists of ids equal).
+"""
+from __future__ import annotations
+
+REGISTER_VERSION = "experiments-v1"
+
+EXPERIMENTS: dict[str, dict] = {
+    "entry-timing-cohort": {
+        "hypothesis": "Entering a tip at the alert-time qualified quote versus the same idea a fixed delay later "
+                      "(or only when the ask stays within a cap of the source-stated premium) changes net outcomes by setup.",
+        "variants": ["immediate (decision-time qualified quote)", "delayed (techniques.tip.entry_cohort_delay_minutes, 3.0 min)",
+                     "capped (ask <= techniques.tip.entry_cohort_premium_cap 1.05 x source premium)"],
+        "eligibleSetup": "every eligible open/add idea on watched sources (skips, declines, blocked cards, shadows, parks, failures included)",
+        "unit": "one idea at one decision (a repeated alert/quote for the same idea is NOT a new observation)",
+        "episodeIdentity": "tip_entry_cohort.id (signal id + content id + decision kind)",
+        "primaryMetric": "net $ and R per variant book on qualified quotes; insufficient counted, never filled",
+        "costs": "options fee per contract per side (+ regulatory), shares commission per order; fills at the ask, exits at the bid",
+        "regime": {"module": "techniques/tip/cohort.py", "knobs": ["techniques.tip.entry_cohort_enabled", "entry_cohort_delay_minutes",
+                                                                    "entry_cohort_premium_cap", "entry_cohort_quote_max_age_seconds",
+                                                                    "entry_cohort_delay_tolerance_seconds"],
+                   "policyVersions": ["qualify_quote KF83-04", "evidence_ok (legacy re-judged at sampledAt)"]},
+        "alternativesTried": ["none promoted; a delayed-NBBO diagnostic (TipEntryStudy) preceded it"],
+        "evaluationWindow": {"opened": "2026-09-15", "closes": "after >= 30 adequate pairs per setup or 2026-10-15, whichever first",
+                             "decisionRule": "no rule change without a cost-aware validated cohort; reviewer decides"},
+        "status": "collecting",
+    },
+    "overnight-hold": {
+        "hypothesis": "Carrying a Tips position overnight versus a predeclared pre-close liquidation of the sampled size "
+                      "differs in net outcome by setup (shares / option DTE bucket).",
+        "variants": ["carry (quote drift to the next session's first qualified bid inside 09:30-09:45 ET; managed outcome shown apart)",
+                     "intraday_exit (sell the sampled size at the pre-close qualified bid in the last 15 min before the exchange close)"],
+        "eligibleSetup": "open Tips positions at the pre-close window + positions that exited intraday that session",
+        "unit": "one position-session observation (a position held several nights is counted once per session)",
+        "episodeIdentity": "tip_hold_snapshots.observation_key = study version | session | position | leg | arm",
+        "primaryMetric": "paired net $ and R (risk rebased to the sampled size), managedCarry separate from carryToNextOpen",
+        "costs": "allocated entry fee + exit cost (options per contract per side + regulatory; shares per order per side)",
+        "regime": {"module": "techniques/tip/holdstudy.py", "studyVersion": "holdstudy-v2",
+                   "knobs": ["techniques.tip.hold_study_enabled", "hold_snapshot_before_close_minutes", "hold_preclose_window_minutes",
+                             "hold_next_open_window_minutes", "hold_next_open_attempts"]},
+        "alternativesTried": ["v1 (2026-09-15) rejected: no windows, job-start clock, one fee side, first leg only - its rows stay outside_window"],
+        "evaluationWindow": {"opened": "2026-09-16 (first protocol-correct capture 15:50 ET)",
+                             "closes": "after >= 20 adequate pairs per setup or 2026-10-16, whichever first",
+                             "decisionRule": "no holding-policy change from this study alone; reviewer decides"},
+        "status": "collecting",
+    },
+    "frozen-context": {
+        "hypothesis": "A compact analyst context (core rules + relevant notes + newest history lines) reaches the same decisions "
+                      "as the full context on identical frozen evidence at lower cost.",
+        "variants": ["current (full context, verbatim)", "core_only", "no_knowledge", "compact"],
+        "eligibleSetup": "analyst runs captured with frozen_capture_context on (exact manifest); replays on the identical bundle",
+        "unit": "one bundle x one variant replay (a pair is complete only when every requested tool input was served)",
+        "episodeIdentity": "bundle id + variant + report hash",
+        "primaryMetric": "verdict / contract / protections equality; input, output and cached tokens; calls; latency; coverageLimited",
+        "costs": "paid model calls per replay (recorded in the report usage)",
+        "regime": {"module": "techniques/tip/frozen.py", "bundleVersion": 1, "knobs": ["techniques.tip.frozen_capture_context", "frozen_variants"]},
+        "alternativesTried": ["one NVDA pair (fb-16d3146639a86744): coverage-limited, mixed reading - not adopted"],
+        "evaluationWindow": {"opened": "2026-09-15", "closes": "after >= 10 complete-evidence pairs",
+                             "decisionRule": "compact is not adopted from coverage-limited pairs; reviewer decides on complete pairs"},
+        "status": "collecting",
+    },
+    "mk-ownbook-observe": {
+        "hypothesis": "Mirroring a source's own-book trades (MK-alpha-trades) would add a positive net edge; first, observe only.",
+        "variants": ["observe (record, no book)", "shadow (not enabled)", "mirror (not enabled)"],
+        "eligibleSetup": "own-book narration from techniques.tip.mk_ownbook_sources",
+        "unit": "one narrated trade",
+        "episodeIdentity": "signal id",
+        "primaryMetric": "n/a until shadow: observation counts and narration quality only",
+        "costs": "n/a (no fills)",
+        "regime": {"module": "techniques/tip/mk_ownbook (KFIN-08)", "knobs": ["techniques.tip.mk_ownbook_mode", "mk_ownbook_sources"]},
+        "alternativesTried": [],
+        "evaluationWindow": {"opened": "2026-09-15", "closes": "user decision; predefined promotion criteria required before shadow",
+                             "decisionRule": "narration is research, never permission (PLATFORM-RULES 19)"},
+        "status": "observing",
+    },
+    "feasibility-annotate": {
+        "hypothesis": "Annotating every TAKE with the expression's feasibility and payoff (without downgrading) reduces "
+                      "unfittable option purchases over time; downgrade mode is NOT enabled.",
+        "variants": ["annotate (live)", "downgrade (not enabled)"],
+        "eligibleSetup": "every analyst TAKE on a live (non-experiment) run",
+        "unit": "one analyst run",
+        "episodeIdentity": "analyst run id",
+        "primaryMetric": "share of takes that fit >= 1 unit; unit risk vs budget; later: realised outcomes by feasibility verdict",
+        "costs": "as booked (execcost diagnostic on the record from 2026-09-16)",
+        "regime": {"module": "techniques/tip/feasibility.py + payoff.py + execcost.py",
+                   "versions": ["feasibility-v1", "payoff-v1", "execcost-v1"], "knobs": ["techniques.tip.analyst_feasibility_gate"]},
+        "alternativesTried": [],
+        "evaluationWindow": {"opened": "2026-09-15", "closes": "reviewer decision", "decisionRule": "downgrade only on reviewer verdict"},
+        "status": "collecting",
+    },
+}
+
+
+def identity(experiment_id: str, *, build: str | None = None, extra: dict | None = None) -> dict:
+    """The identity block a report carries: which experiment, which regime, which
+    evaluation window - and the build that produced the report when known."""
+    e = EXPERIMENTS.get(experiment_id)
+    if e is None:
+        return {"registerVersion": REGISTER_VERSION, "experimentId": experiment_id, "registered": False}
+    return {"registerVersion": REGISTER_VERSION, "experimentId": experiment_id, "registered": True,
+            "hypothesis": e["hypothesis"], "variants": list(e["variants"]), "unit": e["unit"],
+            "episodeIdentity": e["episodeIdentity"], "primaryMetric": e["primaryMetric"], "costs": e["costs"],
+            "regime": {**e["regime"], **({"build": build} if build else {})},
+            "evaluationWindow": dict(e["evaluationWindow"]), "status": e["status"],
+            "caveat": "repeated alerts/quotes are not independent observations; partial realisations and fees count once; "
+                      "event sessions and incomplete evidence stay visible; no sample count is called proof",
+            **(extra or {})}

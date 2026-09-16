@@ -181,6 +181,7 @@ def _snap_quote(eng, sym: str, *, max_age_s: float, kind: str, is_option: bool |
     cfg = getattr(eng, "config", None)
     check_session = bool(getattr(cfg, "sim_option_sessions", True)) if cfg is not None else True
     rec = {"symbol": sym, "bid": q.bid, "ask": q.ask, "last": q.last,
+           "bidSize": getattr(q, "bid_size", None), "askSize": getattr(q, "ask_size", None),   # TMR-02: quoted size
            "source": getattr(q, "source", "") or "feed", "sourceTs": src_ts, "receivedTs": recv_ts,
            "ageSeconds": round(age_s, 1) if age_s is not None else None,
            "delayed": bool(getattr(q, "delayed", False)),
@@ -255,6 +256,16 @@ def _row_dict(r: TipEntryCohortRow) -> dict:
             "quoteStatus": r.quote_status, "delayedSample": r.delayed_sample,
             "delayedStatus": r.delayed_status, "delayedDueAt": _iso(r.delayed_due_at),
             "gaps": list(r.gaps or [])}
+
+
+def _event_label(eng, now) -> dict | None:
+    """TMR-01: the verified event label at decision time (advisory; never a gate)."""
+    try:
+        from . import events as _evc
+        c = _evc.context_for(eng, now=now)
+        return {k: c.get(k) for k in ("version", "session", "status", "coverage", "label", "events", "nextEvent")}
+    except Exception:                                   # noqa: BLE001 - a label never breaks a record
+        return None
 
 
 async def record_idea(eng, *, row, content, status: str, proposal: dict | None = None,
@@ -340,7 +351,8 @@ async def record_idea(eng, *, row, content, status: str, proposal: dict | None =
         decision=decision, decision_reason=reason, source_instrument=src,
         proposed_instrument=proposed, source_premium=premium, quote_symbol=sym,
         quote_at_decision=quote, quote_status=qstatus, delayed_sample=None,
-        delayed_status=delayed_status, delayed_due_at=due, gaps=gaps)
+        delayed_status=delayed_status, delayed_due_at=due, gaps=gaps,
+        event_context=_event_label(eng, now))
     async with eng.sf() as session:
         session.add(crow)
         await session.commit()
@@ -669,6 +681,7 @@ async def cohort_report(eng_or_sf, settings, *, since: dt.datetime | None = None
         "rows": rows,
         "results": [{**x.result, "id": x.id} for x in res_rows],
         "disclaimer": DISCLAIMER,
+        "experiment": __import__("zargar.techniques.tip.experiments_register", fromlist=["identity"]).identity("entry-timing-cohort"),
     }
 
 
