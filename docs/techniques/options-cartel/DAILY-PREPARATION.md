@@ -1,5 +1,10 @@
 # Automatic daily preparation
 
+Armed plans prepared ahead of their first session show **Armed for YYYY-MM-DD —
+waiting for market open**. They owe no observation minutes from the preparation
+day. Once their session starts, missing-minute warnings refer to that active
+session; genuine gaps and the normal delivery grace period remain visible.
+
 Current behavior, reviewed 2026-09-13. This is the operating guide; dated release notes are historical evidence.
 
 The [September 13 corrections](READINESS-2026-09-13.md) preserve contract limits through final submission, recheck pending invalidation after selection and retain nearer confirmed targets. Older unused automatic Practice arms need the explicit **Review entry contract limits** action before entry. It preserves their selected contract, chart targets and exit policy.
