@@ -199,6 +199,53 @@ async def test_preclose_snapshot_and_next_open_sample_touch_no_position(rig, mon
     assert ex[0].qty == 10.0 and ex[0].preclose_status in ("fresh", "stale", "ineligible", "missing", "outside_window", "late")
 
 
+async def test_close_transition_is_capture_safe_at_the_persistence_boundary(rig, monkeypatch):
+    """CAP187-01: a capture that runs exactly at the persistence boundary of a close (the
+    manager is writing the closed state) still observes the exit - from memory, because
+    the position is not dropped until the durable row carries it. Deterministic: the
+    snapshot is invoked from inside the manager's own persist call for the closed
+    transition, before the write happens."""
+    from sqlalchemy import select
+    from zargar.models import TipHoldSnapshotRow
+    from .test_tip_geometry_wiring import _adopt_shares, _quote
+    eng = rig
+    mgr = eng.position_manager
+    q = await _quote(eng, "HOLDC")
+    pos = await _adopt_shares(eng, "HOLDC", qty=10, stop=round(q.last * 0.95, 2))
+    et = dt.timezone(dt.timedelta(hours=-4))
+    close_day = dt.datetime.now(dt.timezone.utc).astimezone(et).date()
+    preclose_at = dt.datetime.combine(close_day, dt.time(15, 50), tzinfo=et)
+    from zargar.models import ManagedPositionRow as ManagedPositionRow_
+    real_persist = mgr._persist
+    boundary: dict = {}
+
+    async def persist_at_boundary(p):
+        if p.id == pos["id"] and p.status == "closed" and "captured" not in boundary:
+            # the boundary: closed in memory, durable row NOT yet written
+            boundary["inMemory"] = mgr.get(p.id) is not None
+            async with eng.sf() as session:
+                row = await session.get(ManagedPositionRow_, p.id)
+            boundary["durableStatus"] = row.status if row else None
+            boundary["captured"] = await hs.snapshot_preclose(eng, now=preclose_at)
+        await real_persist(p)
+    monkeypatch.setattr(mgr, "_persist", persist_at_boundary)
+    await mgr.close(pos["id"], reason="test boundary exit")
+
+    async def gone():
+        return mgr.get(pos["id"]) is None
+    await wait_for(gone, timeout=10)
+    assert boundary["inMemory"] is True and boundary["durableStatus"] != "closed"     # the boundary was real
+    assert boundary["captured"] >= 1                                                  # and the capture saw the exit
+    async with eng.sf() as session:
+        ex = (await session.execute(select(TipHoldSnapshotRow).where(TipHoldSnapshotRow.position_id == pos["id"]))).scalars().all()
+    assert len(ex) == 1 and ex[0].arm == "intraday_exit" and ex[0].exit_price and ex[0].exit_price > 0
+    # after the boundary the durable record carries the close and a second capture adds nothing (one observation per key)
+    async with eng.sf() as session:
+        row = await session.get(ManagedPositionRow_, pos["id"])
+    assert row.status == "closed" and (row.state or {}).get("closedMs")
+    assert await hs.snapshot_preclose(eng, now=preclose_at) == 0
+
+
 async def _orders(eng):
     from sqlalchemy import select
     from zargar.models import Order
