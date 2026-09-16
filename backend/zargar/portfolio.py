@@ -19,7 +19,7 @@ from .domain import now_ms
 from .events import Journal
 from .fx import FxService, currency_for_symbol
 from .marketdata import QuoteCache
-from .models import BrokerageAccount, EquityPoint, Portfolio, Position
+from .models import BrokerageAccount, EquityPoint, Event, Portfolio, Position
 from .options import occ
 
 ET = ZoneInfo("America/New_York")
@@ -324,8 +324,8 @@ class PositionKeeper:
         key = (pid, today)
         if key in self._day_start_equity:
             return self._day_start_equity[key] or None
-        day0 = int(dt.datetime.now(tz=ET).replace(
-            hour=4, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        day0_dt = dt.datetime.now(tz=ET).replace(hour=4, minute=0, second=0, microsecond=0)
+        day0 = int(day0_dt.timestamp() * 1000)
         async with self._sf() as session:
             prev = (await session.execute(
                 select(EquityPoint).where(EquityPoint.portfolio_id == pid)
@@ -335,10 +335,20 @@ class PositionKeeper:
                 select(EquityPoint).where(EquityPoint.portfolio_id == pid)
                 .where(EquityPoint.ts >= day0)
                 .order_by(EquityPoint.ts).limit(1))).scalars().first()
+            # Broker level-sets since the open (cash in/out, holdings that
+            # appeared or vanished) were journaled as they happened; a process
+            # that starts mid-day replays them, or a $1,600 transfer reads as
+            # a -28% day the moment the engine restarts (2026-09-15).
+            shifts = (await session.execute(
+                select(Event).where(Event.type == ev.DAY_ANCHOR_SHIFTED)
+                .where(Event.portfolio_id == pid)
+                .where(Event.ts >= day0_dt))).scalars().all()
         row = prev or first
         if row is not None:
-            self._day_start_equity[key] = row.equity
-            return row.equity or None
+            shifted = float(row.equity) + sum(
+                float((e.payload or {}).get("delta") or 0.0) for e in shifts)
+            self._day_start_equity[key] = shifted
+            return shifted or None
         # a book with no samples at all: anchor on live equity once prices are
         # real, exactly as the old path did — but never on avgCost fallbacks
         if not self._quotes_ready(pid):
@@ -449,7 +459,6 @@ class PositionKeeper:
         pf = self._portfolios.get(pid)
         if pf is None:
             return {}
-        eq_before = await self.equity(pid)
         # Resolve the day anchor while the book still looks the way it did
         # BEFORE this level-set. Resolving it afterwards anchors on the new
         # equity and the shift below then counts the same delta twice — a book
@@ -507,12 +516,34 @@ class PositionKeeper:
                 pf_row.cash = pf["cash"]
             await session.commit()
 
-        eq_after = await self.equity(pid)
         # A broker sync is a level-set, not trading P&L — shift the day anchor
-        # (resolved above, against the pre-sync book).
-        day_key = (pid, dt.datetime.now(tz=ET).date().isoformat())
-        if day_key in self._day_start_equity:
-            self._day_start_equity[day_key] += eq_after - eq_before
+        # by what the sync actually LEVEL-SET: cash that moved, and holdings
+        # that appeared or vanished, valued at the book's own mark. Never by
+        # "equity after minus equity before": that difference also carries a
+        # currency correction, a broker mark replacing a fallback, or a tick
+        # that landed between the two reads, and 95 syncs of it manufactured
+        # +1,560 of anchor on a C$4,000 book (2026-09-15, WS Personal).
+        base = str(pf.get("baseCurrency") or "USD").upper()
+        holdings_delta = 0.0
+        for change in changes:
+            dq = float(change["qtyAfter"]) - float(change["qtyBefore"])
+            pos = self._positions.get((pid, change["symbol"], change["secType"]))
+            if abs(dq) < 1e-9 or pos is None:
+                continue
+            holdings_delta += self.fx.convert(
+                dq * self._mark(pos) * _mult(change["secType"]), self._pos_currency(pos), base)
+        cash_delta = pf["cash"] - cash_before
+        shift = cash_delta + holdings_delta
+        today = dt.datetime.now(tz=ET).date().isoformat()
+        day_key = (pid, today)
+        if abs(shift) >= 0.005:
+            if day_key in self._day_start_equity:
+                self._day_start_equity[day_key] += shift
+            await self._journal.append(
+                ev.DAY_ANCHOR_SHIFTED,
+                {"day": today, "delta": round(shift, 2), "cashDelta": round(cash_delta, 2),
+                 "holdingsDelta": round(holdings_delta, 2), "source": source},
+                aggregate_type="portfolio", aggregate_id=pid, portfolio_id=pid)
 
         diff = {
             "source": source,

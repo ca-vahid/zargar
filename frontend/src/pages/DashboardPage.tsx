@@ -3,7 +3,7 @@ import Highcharts from "highcharts/esm/highstock.js";
 import { api } from "../lib/api";
 import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtTime } from "../lib/format";
 import { baseChartOptions, cssVar } from "../lib/highchartsTheme";
-import { useLiveEquity } from "../lib/liveEquity";
+import { makeRate, useLiveEquity } from "../lib/liveEquity";
 import { useAsync } from "../lib/useAsync";
 import { netWorthByCurrency, useStore } from "../store";
 import { useViewport } from "../lib/viewport";
@@ -196,8 +196,13 @@ function inSession(ms: number): boolean {
 
 /** Equity samples for a window, session-filtered and flat-collapsed — the
     shape both the hero sparkline and the full curve draw from. */
-function useEquityWindow(pids: string[], hours: number, points: number) {
+function useEquityWindow(pids: string[], hours: number, points: number,
+                         weights?: Record<string, number>) {
   const key = pids.join(",");
+  // per-book multipliers: LIVE sums a CAD book and a USD book into one
+  // display currency at today's rate (history at today's rate is a known
+  // simplification; the footer says so). Practice books are all 1.
+  const wkey = weights ? pids.map((p) => (weights[p] ?? 1).toFixed(4)).join(",") : "";
   // `since` must NOT be recomputed every render: as a memo dependency it made
   // the whole pipeline re-run continuously while the DATA sat still. It steps
   // once a minute, which is finer than the 30 s sample rate anyway.
@@ -216,7 +221,10 @@ function useEquityWindow(pids: string[], hours: number, points: number) {
     const q = `limit=${limit}&points=${points}` + (since ? `&since=${Math.round(since)}` : "");
     const all = await Promise.all(
       pids.map((pid) => api.get<[number, number][]>(`/api/portfolios/${pid}/equity?${q}`)));
-    if (all.length === 1) return all[0];
+    if (all.length === 1) {
+      const w = weights?.[pids[0]] ?? 1;
+      return w === 1 ? all[0] : all[0].map((p) => [p[0], Math.round(p[1] * w * 100) / 100] as [number, number]);
+    }
     // Since 2026-09-07 each technique owns its own Practice book, so "equity" is
     // a SUM. The books sample independently, so walk the union of timestamps and
     // carry each book's last known value (seeded with its first sample, or a book
@@ -228,11 +236,11 @@ function useEquityWindow(pids: string[], hours: number, points: number) {
       let sum = 0;
       all.forEach((one, i) => {
         while (cursor[i] < one.length && one[cursor[i]][0] <= ts) { last[i] = one[cursor[i]][1]; cursor[i]++; }
-        sum += last[i];
+        sum += last[i] * (weights?.[pids[i]] ?? 1);
       });
       return [ts, Math.round(sum * 100) / 100] as [number, number];
     });
-  }, [key, hours, points, Math.floor(minute / REFETCH_MINUTES)]);
+  }, [key, wkey, hours, points, Math.floor(minute / REFETCH_MINUTES)]);
 
   // The server pushes an equity point per book every 30 s. Following that tape
   // is what makes the board live: the fetch above is history, these are the
@@ -249,11 +257,11 @@ function useEquityWindow(pids: string[], hours: number, points: number) {
       pids.forEach((p, i) => {
         const tape = ticks[p] ?? [];
         while (cursor[i] < tape.length && tape[cursor[i]][0] <= ts) { last[i] = tape[cursor[i]][1]; cursor[i]++; }
-        sum += last[i];
+        sum += last[i] * (weights?.[pids[i]] ?? 1);
       });
       return [ts, Math.round(sum * 100) / 100] as [number, number];
     });
-  }, [ticks, key]);
+  }, [ticks, key, wkey]);
 
   const pts = useMemo(() => {
     const fetched = series.data ?? [];
@@ -312,7 +320,8 @@ const REFETCH_MINUTES = 5;
 
     `dayStart` is the previous session's close, which is how a day change is
     defined everywhere else in this app (CLAUDE.md) and by every broker. */
-function dayMove(books: Portfolio[], liveEquity?: Record<string, number>) {
+function dayMove(books: Portfolio[], liveEquity?: Record<string, number>,
+                 toCcy?: string, rate?: (from: string, to: string) => number | null) {
   // `dayStart` is the anchor; `todayPct` carries the same one and has shipped
   // for longer, so a board loaded against an engine that has not restarted yet
   // still colours correctly (both arrive on the same 30 s push).
@@ -320,20 +329,37 @@ function dayMove(books: Portfolio[], liveEquity?: Record<string, number>) {
     const eq = p.equity ?? p.cash;
     if (p.dayStart != null) return p.dayStart;
     if (p.todayPct != null && eq != null) return eq / (1 + p.todayPct / 100);
+    // an empty account has nothing to price: it is priced, at zero
+    if (eq === 0) return 0;
     return null;
   };
   const now = (p: Portfolio) => liveEquity?.[p.id] ?? p.equity ?? p.cash;
-  const priced = books.filter((p) => anchorOf(p) != null && now(p) != null);
+  // LIVE mixes a CAD book and a USD book — each is converted into the display
+  // currency at today's rate BEFORE summing (a Webull book holding SPCX in
+  // USD summed raw into CAD read as a −24% day, 2026-09-15)
+  const fx = (p: Portfolio) => (toCcy && rate ? rate(p.baseCurrency || "USD", toCcy) : 1);
+  const priced = books.filter((p) => anchorOf(p) != null && now(p) != null && fx(p) != null);
+  const unpriced = books.filter((p) => !priced.includes(p)).map((p) => p.name);
   if (!priced.length) return null;
-  const from = priced.reduce((t, p) => t + (anchorOf(p) as number), 0);
-  const to = priced.reduce((t, p) => t + now(p), 0);
+  const from = priced.reduce((t, p) => t + (anchorOf(p) as number) * (fx(p) as number), 0);
+  const to = priced.reduce((t, p) => t + now(p) * (fx(p) as number), 0);
   if (!from) return null;
   return {
     abs: to - from, pct: ((to - from) / from) * 100, from, to,
-    partial: priced.length < books.length,   // a book with no anchor yet is left out
+    partial: unpriced.length > 0, unpriced,
   };
 }
 const ET_DAY_KEY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+
+/** The currency to show a set of books in: the one holding the most of the money. */
+function dominantCurrency(books: Portfolio[], live: Record<string, number>): string {
+  const by: Record<string, number> = {};
+  for (const b of books) {
+    const c = (b.baseCurrency || "USD").toUpperCase();
+    by[c] = (by[c] ?? 0) + Math.abs(live[b.id] ?? b.equity ?? b.cash);
+  }
+  return Object.entries(by).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "USD";
+}
 
 /** Axis-sized money: "8.85k" beats "US$8,850.00" on a 40px gutter. */
 function fmtCompact(v: number, ccy: string): string {
@@ -396,16 +422,27 @@ function EquityCurvePanel() {
       : p.kind === "sim") && !p.archived)
       .sort((a, b) => a.name.localeCompare(b.name)),
     [portfolios, mode]);
-  const [bookId, setBookId] = useState<string>(() => lsGet("zargar_dash_curve_book", "all"));
+  const bookId = useStore((st) => st.dashBook);
+  const setBookId = useStore((st) => st.setDashBook);
+  const usdCad = useStore((st) => st.quotes["USDCAD=X"]?.last);
+  const rate = useMemo(() => makeRate(usdCad), [usdCad]);
   const target = books.find((p) => p.id === bookId);
   const pids = useMemo(
     () => (target ? [target.id] : books.map((p) => p.id)), [target, books]);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
 
-  const { series, pts } = useEquityWindow(pids, spec.hours, spec.points);
   const bookLive = useLiveEquity(pids);
-  const ccy = target?.baseCurrency ?? books[0]?.baseCurrency ?? "USD";
+  const ccy = target?.baseCurrency ?? dominantCurrency(books, bookLive);
+  // LIVE: every book's series is converted into the display currency at
+  // today's rate before the sum; practice books are all one currency
+  const weights = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const b of (target ? [target] : books)) out[b.id] = rate(b.baseCurrency || "USD", ccy) ?? 1;
+    return out;
+  }, [books, target, ccy, rate]);
+  const converted = Object.values(weights).some((w) => w !== 1);
+  const { series, pts } = useEquityWindow(pids, spec.hours, spec.points, weights);
   const first = pts.length ? pts[0][1] : 0;
   const last = pts.length ? pts[pts.length - 1][1] : 0;
   const delta = last - first;
@@ -419,19 +456,19 @@ function EquityCurvePanel() {
     const hi = Math.max(...ys), lo = Math.min(...ys);
     // On 1D both ends come from the books themselves, so this panel and the
     // headline above it can never print two different numbers for the same day.
-    const anchor = spec.key === "1d" ? dayMove(target ? [target] : books, bookLive) : null;
+    const anchor = spec.key === "1d" ? dayMove(target ? [target] : books, bookLive, ccy, rate) : null;
     const open = anchor?.from ?? first;
     const now = anchor?.to ?? last;
     return { hi: Math.max(hi, now), lo: Math.min(lo, now), open, last: now,
              abs: now - open, pct: open ? ((now - open) / open) * 100 : 0 };
-  }, [pts, spec.key, target, books, bookLive, first, last]);
+  }, [pts, spec.key, target, books, bookLive, ccy, rate, first, last]);
 
   const openAt = stats?.open ?? 0;
 
   useEffect(() => {
     if (!containerRef.current || pts.length === 0) return;
     const base = baseChartOptions();
-    const up = delta >= 0;
+    const up = (stats?.abs ?? delta) >= 0;
     const col = up ? cssVar("--up") : cssVar("--down");
     chartRef.current?.destroy();
     chartRef.current = Highcharts.stockChart(containerRef.current, {
@@ -508,7 +545,7 @@ function EquityCurvePanel() {
       } as any],
     });
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
-  }, [pts, theme, target?.name, delta, openAt, ccy, spec.key]);
+  }, [pts, theme, target?.name, delta, stats?.abs, openAt, ccy, spec.key]);
 
   return (
     <div className="panel dash-curve">
@@ -516,9 +553,14 @@ function EquityCurvePanel() {
         <span>Equity</span>
         {books.length > 1 && (
           <select className="dash-curve-book" value={bookId} aria-label="Which book"
-            onChange={(e) => { setBookId(e.target.value); lsSet("zargar_dash_curve_book", e.target.value); }}>
+            onChange={(e) => setBookId(e.target.value)}>
             <option value="all">All {books.length} books</option>
-            {books.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {/* funded books only, like the chips; two accounts can share a name
+                (Wealthsimple CAD and USD) so the currency disambiguates */}
+            {books.filter((b) => (bookLive[b.id] ?? b.equity ?? b.cash) !== 0 || b.id === bookId).map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}{books.some((o) => o.id !== b.id && o.name === b.name) ? ` (${b.baseCurrency || "USD"})` : ""}
+              </option>))}
           </select>
         )}
         {stats && (
@@ -551,6 +593,7 @@ function EquityCurvePanel() {
         </div>
       )}
       <div className="dash-curve-foot muted">market hours only — nights and weekends are skipped
+        {converted && <span title="Each book is converted at the current USD/CAD rate — history is not re-rated day by day"> · in {ccy} at today's FX</span>}
         <span className="dash-curve-live" title="Equity is pushed every 30 seconds — this updates on its own">live</span>
       </div>
     </div>
@@ -711,6 +754,9 @@ function EquityHero() {
   const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
   const live = mode === "live";
   const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
+  const rate = useMemo(() => makeRate(usdCad), [usdCad]);
+  const dashBook = useStore((s) => s.dashBook);
+  const setDashBook = useStore((s) => s.setDashBook);
   const totals = useMemo(() => netWorthByCurrency(portfolios, brokerages), [portfolios, brokerages]);
   const liveTotals = useMemo(
     () => totals.filter((t) => t.brokerage > 0).map((t) => ({ currency: t.currency, total: t.brokerage })),
@@ -744,44 +790,66 @@ function EquityHero() {
   };
 
   // accounts, as compact rows under the headline — one place, not two cards
-  const accounts: { name: string; ccy: string; value: number; sub?: string }[] = live
+  const accounts: { id: string; name: string; ccy: string; value: number; sub?: string }[] = live
     ? (brokerages?.providers ?? []).flatMap((p) => (p.accounts ?? []).map((a) => ({
-        name: a.name, ccy: a.currency, value: a.equity, sub: p.broker })))
-    : sims.map((p) => ({ name: p.name, ccy: p.baseCurrency ?? "USD",
+        id: a.portfolioId, name: a.name, ccy: a.currency, value: a.equity, sub: p.broker })))
+    : sims.map((p) => ({ id: p.id, name: p.name, ccy: p.baseCurrency ?? "USD",
         value: simLive[p.id] ?? p.equity ?? p.cash }));
+  // an account holding nothing is a chip that says nothing — fold them into one
+  const funded = accounts.filter((a) => a.value !== 0);
+  const empty = accounts.filter((a) => a.value === 0);
 
   // the shape of the day, in the headline — the board's one real visual
   // the headline totals every book, so its move and its shape must too — it
   // used to sparkline ONE arbitrary sim book under a four-book total
-  const heroPids = useMemo(
+  const wsBooks = useMemo(
     () => (live
-      ? portfolios.filter((p) => (p.kind === "live" || p.kind === "paper") && !p.archived).map((p) => p.id)
-      : sims.map((p) => p.id)),
+      ? portfolios.filter((p) => (p.kind === "live" || p.kind === "paper") && !p.archived)
+      : sims),
     [live, portfolios, sims]);
-  const { pts } = useEquityWindow(heroPids, 24, 60);
-  const heroBooks = useMemo(
-    () => portfolios.filter((p) => heroPids.includes(p.id)), [portfolios, heroPids]);
+  // the board's selected book (the curve's picker, or a chip below) — the
+  // headline shows THAT book, not the sum, when one is chosen (2026-09-15)
+  const selected = wsBooks.find((p) => p.id === dashBook);
+  const heroBooks = useMemo(() => (selected ? [selected] : wsBooks), [selected, wsBooks]);
+  const heroPids = useMemo(() => heroBooks.map((p) => p.id), [heroBooks]);
   const heroLive = useLiveEquity(heroPids);
-  const move = dayMove(heroBooks, heroLive);
+  // one display currency for the headline: the chosen book's, else the one
+  // holding most of the money (CAD for this desk's real accounts)
+  const heroCcy = selected ? (selected.baseCurrency || "USD") : live ? dominantCurrency(wsBooks, heroLive) : practiceCcy;
+  const heroWeights = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const b of heroBooks) out[b.id] = rate(b.baseCurrency || "USD", heroCcy) ?? 1;
+    return out;
+  }, [heroBooks, heroCcy, rate]);
+  const { pts } = useEquityWindow(heroPids, 24, 60, heroWeights);
+  const move = dayMove(heroBooks, heroLive, heroCcy, rate);
   const upMove = (move?.abs ?? 0) >= 0;
+  const heroTotal = heroBooks.reduce(
+    (t, b) => t + (heroLive[b.id] ?? b.equity ?? b.cash) * (heroWeights[b.id] ?? 1), 0);
   return (
     <div className="panel dash-hero">
       <div className="dash-hero-top">
         <div className="dash-hero-main">
           <div className="dash-hero-lbl">
-            {live ? "Real money · all accounts" : "Practice book"}
+            {selected ? selected.name : live ? "Real money · all accounts" : "Practice book"}
             {!live && <span className="dash-hero-tag">simulated</span>}
+            {selected && <> · <button className="link-btn dash-hero-all" onClick={() => setDashBook("all")}>all books</button></>}
           </div>
           <div className="dash-hero-num">
-            {live
-              ? (liveTotals.length ? liveTotals.map((t) => fmtCcy(t.total, t.currency)).join("  ·  ") : "—")
-              : fmtCcy(practiceTotal, practiceCcy)}
+            {selected
+              ? fmtCcy(heroTotal, heroCcy)
+              : live
+                ? (liveTotals.length ? liveTotals.map((t) => fmtCcy(t.total, t.currency)).join("  ·  ") : "—")
+                : fmtCcy(practiceTotal, practiceCcy)}
           </div>
           {move && (
             <div className={`dash-hero-move ${upMove ? "pos" : "neg"}`}>
-              {upMove ? "▲" : "▼"} {fmtCcy(Math.abs(move.abs), live ? (liveTotals[0]?.currency ?? "USD") : practiceCcy)}
+              {upMove ? "▲" : "▼"} {fmtCcy(Math.abs(move.abs), heroCcy)}
               <span className="dash-hero-pct">{upMove ? "+" : "−"}{Math.abs(move.pct).toFixed(2)}%</span>
-              <span className="muted" title={`Since the previous session's close, ${fmtCcy(move.from, practiceCcy)}`}>
+              <span className="muted"
+                title={`Since the previous session's close, ${fmtCcy(move.from, heroCcy)}`
+                  + (live && !selected ? ` — each account converted to ${heroCcy} at today's USD/CAD` : "")
+                  + (move.partial ? `. Not yet priced: ${move.unpriced.join(", ")}` : "")}>
                 today{move.partial ? " (so far as priced)" : ""}</span>
             </div>
           )}
@@ -812,13 +880,21 @@ function EquityHero() {
       {/* one account restates the headline verbatim — only a real split is worth the row */}
       {accounts.length > 1 && (
         <div className="dash-hero-accts">
-          {accounts.map((a, i) => (
-            <button key={i} className="dash-acct" onClick={() => setPage("portfolios")}
-              title="Open Portfolios">
+          {funded.map((a) => (
+            <button key={a.id} className={"dash-acct" + (a.id === dashBook ? " on" : "")}
+              aria-pressed={a.id === dashBook}
+              onClick={() => setDashBook(a.id === dashBook ? "all" : a.id)}
+              title={a.id === dashBook ? "Showing this book — click for all books" : "Show this book on the board"}>
               <span className="dash-acct-name">{a.name}{a.sub ? <span className="muted"> · {a.sub}</span> : null}</span>
               <span className="dash-acct-val">{fmtCcy(a.value, a.ccy)}</span>
             </button>
           ))}
+          {empty.length > 0 && (
+            <button className="dash-acct dash-acct-empty" onClick={() => setPage("portfolios")}
+              title={`Nothing held: ${empty.map((a) => a.name).join(", ")} — open Portfolios`}>
+              <span className="dash-acct-name">+{empty.length} empty</span>
+            </button>
+          )}
         </div>
       )}
       {live && (!brokerages || brokerages.providers.length === 0) && (

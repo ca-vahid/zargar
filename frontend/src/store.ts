@@ -69,6 +69,12 @@ export interface AppState {
       on its own instead of waiting for a reload (2026-09-14). Bounded: this is
       a tape, not a store of record — the API is. */
   equityTicks: Record<string, [number, number][]>;
+  /** The book the Dashboard is looking at ("all" or a portfolio id). The
+      curve's picker and the headline's account chips both set it, and the
+      headline follows it (user 2026-09-15: "when I change a book, show the
+      book's total on top"). */
+  dashBook: string;
+  setDashBook: (id: string) => void;
   openOrders: Record<string, Order>;
   recentOrders: Order[];
   executions: Execution[];
@@ -186,6 +192,11 @@ export const useStore = create<AppState>((set, get) => ({
   portfolios: [],
   positions: {},
   equityTicks: {},
+  dashBook: (() => { try { return localStorage.getItem("zargar_dash_curve_book") || "all"; } catch { return "all"; } })(),
+  setDashBook: (id) => {
+    try { localStorage.setItem("zargar_dash_curve_book", id); } catch { /* private mode */ }
+    set({ dashBook: id });
+  },
   openOrders: {},
   recentOrders: [],
   executions: [],

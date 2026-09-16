@@ -98,8 +98,13 @@ runtime ones to `execution.*`).
    and flat-collapsed, and the baseline moved on every reload. The anchor was previously
    in-memory only and seeded with "equity the first time we looked today", so a mid-session
    restart re-based the day at the restart price and the daily-loss halt forgot an existing
-   drawdown. A broker sync is a level-set: it shifts the anchor (resolving it first) instead of
-   booking as today's P&L. Tests: `tests/test_day_start_equity.py`.
+   drawdown. A broker sync is a LEVEL-SET and shifts the anchor by exactly what it level-set:
+   cash that moved plus holdings that appeared or vanished, valued at the book's own mark -
+   never by `equity_after - equity_before` (that difference also carries a currency
+   correction, a broker mark replacing a fallback, or a tick between the two reads; 95 syncs
+   of it manufactured +1,560 of anchor on a C$4,000 book, 2026-09-15). Every shift is journaled
+   as `DayAnchorShifted` {day, delta, cashDelta, holdingsDelta} and a process that starts
+   mid-day replays them onto the persisted point. Tests: `tests/test_day_start_equity.py`.
 22. **A position is valued on a market, not on a print** (2026-09-14). An OPTION marks at the mid
    of a two-sided quote (`bid > 0 and ask >= bid`); a lone `last` is the fallback for a one-sided
    book, then the broker's sync mark, then avg cost. Shares are unchanged - an equity print IS
@@ -2102,3 +2107,30 @@ book keeps trading, and unlike a book halt it has NO day: `HaltState.restore` br
 of the date and the session roll never releases it. Releasing it touches nothing else, and releasing the global
 switch or the book halt never releases it. The record snapshots the Team2 sizing settings at pause time; the pause
 changes no setting. Tests: `tests/test_book_pause.py`. Nothing is paused by this release.
+
+### LIVE read -24% on a -2% day - 2026-09-15 (Dashboard, v0.7.91)
+
+- **Report (user):** "when i change from practice to live, the numbers are inaccurate. says i lost
+  close to 24 percent today"; also the chart coloured opposite to its header, and the book picker
+  only drove the curve.
+- **Three causes, reconciled to the cent.** (1) The client's live marking (`useLiveEquity`) summed a
+  position's value in the INSTRUMENT's currency into a CAD book: Webull's SPCX (US$8,609) went in
+  raw, so the board's "now" for the real accounts was 20,402 against an anchor of 26,986 - 4,505 of
+  the "loss" was FX. (2) `dayMove` and the summed curve added a CAD book and a USD book without
+  conversion. (3) Wealthsimple Personal's anchor: persisted 4,096.92, in-memory 5,657.56 - the
+  15-minute sync shift (`equity_after - equity_before`) leaked marking/currency differences into
+  the anchor all day (+1,560), read as -28% on that book. Webull's -447 was real.
+- **Fix.** Invariant 21 (level-set definition, journaled shifts, replay on restart). Client: every
+  book is converted at today's USD/CAD before any sum - live marking (`makeRate`, same
+  `USDCAD=X` the server's `FxService` reads; a book that cannot be converted keeps the server's
+  equity), the day move, the curve's weights - and the footer says "in CAD at today's FX". An
+  account that cannot be priced is named in the tooltip. Verified in the browser mid-fix: -7.70%
+  (FX fixed, old anchor still drifted) -> after the anchor rebuild, the real day.
+- **Chart colour.** The curve coloured itself against the window's FIRST sample (04:00 ET) while its
+  header measures from the previous close - a green "+US$220 today" over a red line whenever the
+  window opened above the close. One number now decides both.
+- **Picker.** `store.dashBook` is the board's selection: the curve's select and the headline's
+  account chips both set it; the headline shows that book's total and move. Empty accounts fold
+  into one "+N empty" chip and stay out of the picker; same-named accounts get their currency.
+- **Known simplification.** History is converted at TODAY's rate (no FX series per day); the
+  footer says so. The USD/CAD move within a day is ~0.3%, below what the board resolves.

@@ -786,6 +786,7 @@ button.bl-card:active { background: var(--surface-2); }
   .dash-hero-sync { min-height: 40px; }
   .dash-hero-accts { gap: 6px; }
   .dash-acct { flex: 1 1 100%; justify-content: space-between; min-height: 40px; border-radius: 8px; }
+  .dash-hero-all { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; }
   .dash-curve-head { gap: 8px; }
   .dash-curve-range { margin-left: 0; width: 100%; }
   .dash-curve-range button { flex: 1 1 auto; min-width: 40px; }

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.90";
+export const APP_VERSION = "0.7.91";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,18 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.91",
+    date: "2026-09-15",
+    title: "The Dashboard's colour, its picker, and real money in one currency",
+    items: [
+      { tag: "fixed", text: "The equity chart is coloured by the same number its header prints. It used to colour itself against the first sample in the window (04:00 ET pre-market), while the header measures from the previous close - so a green '+US$220 today' sat over a red line whenever the window opened above the close." },
+      { tag: "improved", text: "Picking a book drives the whole board: the headline shows that book's total and its move, its account chip lights up, and the curve follows. Chips are the picker - click one for that book, again for all." },
+      { tag: "fixed", text: "LIVE reads in one currency. The real accounts are a CAD book holding US listings and a USD book; the day move, the headline's live marking and the summed curve added those together raw, and the board said -24% on a day the money moved -2%. Every book is now converted at today's USD/CAD before it is summed, the footer says so, and an account that cannot be priced is named instead of silently skipped." },
+      { tag: "fixed", text: "The day anchor for a real account no longer drifts. A broker sync shifted it by 'equity after minus equity before', which also carried a currency correction or a mark replacing a fallback - 95 syncs manufactured +1,560 of anchor on a C$4,000 Wealthsimple book and read as -28% today. It shifts only for cash that moved and holdings that appeared or vanished, at the book's own mark, and every shift is journaled (DayAnchorShifted) so a restart replays it instead of forgetting a transfer." },
+      { tag: "improved", text: "Empty accounts fold into one '+N empty' chip instead of four C$0.00 tiles." },
+    ],
+  },
   {version:"0.7.90",date:"2026-09-15",title:"A book can be paused until someone releases it",items:[
     {tag:"new",text:"Per-book pause (POST /api/portfolios/{id}/pause with a reason and label, /unpause to release): every new entry and add on that book is refused - by the runners and by the risk gate - while protective exits keep working and every other book trades on. Unlike the daily-loss halt it has no day: it survives restarts and the day roll and ends only when released. Releasing it never clears the kill switch or a daily-loss halt, and those never clear it. The record snapshots the book's sizing settings; the pause changes no setting. Built as the loss-stop action of the Team2 sizing experiment; nothing is paused by this release."},
   ]},
