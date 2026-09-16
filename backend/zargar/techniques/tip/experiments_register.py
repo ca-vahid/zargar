@@ -41,7 +41,9 @@ EXPERIMENTS: dict[str, dict] = {
         "eligibleSetup": "open Tips positions at the pre-close window + positions that exited intraday that session",
         "unit": "one position-session observation (a position held several nights is counted once per session)",
         "episodeIdentity": "tip_hold_snapshots.observation_key = study version | session | position | leg | arm",
-        "primaryMetric": "paired net $ and R (risk rebased to the sampled size), managedCarry separate from carryToNextOpen",
+        "primaryMetric": "paired net $ and R (risk rebased to the sampled size) PER BOOK KIND x setup (never pooled as performance; "
+                         "HOLD-SCOPE-01), managedCarry separate from carryToNextOpen; quarantined / attention / unknown-scope "
+                         "inventory is diagnostic only, never adequate (HOLD-SCOPE-02)",
         "costs": "allocated entry fee + exit cost (options per contract per side + regulatory; shares per order per side)",
         "regime": {"module": "techniques/tip/holdstudy.py", "studyVersion": "holdstudy-v2",
                    "knobs": ["techniques.tip.hold_study_enabled", "hold_snapshot_before_close_minutes", "hold_preclose_window_minutes",
