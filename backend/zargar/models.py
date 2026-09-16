@@ -891,6 +891,8 @@ class TipHoldSnapshotRow(Base):
     next_open_window: Mapped[dict | None] = mapped_column(JSONVariant)
     # HOLD142-03: what the position's own management did before the next-open sample
     carry_outcome: Mapped[dict | None] = mapped_column(JSONVariant)
+    portfolio_id: Mapped[str | None] = mapped_column(String(64))     # 2026-09-16: the book the observation belongs to
+    book_kind: Mapped[str | None] = mapped_column(String(12))        # sim (Practice) | shadow | live - reported apart
     preclose_quote: Mapped[dict | None] = mapped_column(JSONVariant)
     preclose_status: Mapped[str] = mapped_column(String(16), default="missing")
     exit_price: Mapped[float | None] = mapped_column(Float)
