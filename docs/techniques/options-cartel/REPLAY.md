@@ -1,6 +1,6 @@
 # Replay, comparisons and session evidence
 
-Reviewed 2026-09-13. Research output never grants arming permission or edits the original plan.
+Reviewed 2026-09-16. Research output never grants arming permission or edits the original plan.
 
 Quantity defaults to original confirmed fills when known, otherwise a current fresh budget/equity estimate, otherwise one explicitly hypothetical unit. Explicit overrides remain hypothetical. A 100-unit percentage ladder cannot be divided down to represent a one-contract campaign. Saved replay records include quantity provenance and reachable exit allocations. Stored premium valuation uses bounded pages across long quote windows and preserves gap markers; it no longer rejects merely because 40,000 observations were recorded. See [the current evidence protocol](READINESS-2026-09-13.md).
 
@@ -47,3 +47,19 @@ Durable quote coverage is account/session/contract scoped and survives worker re
 Gap counts describe gaps in the sampled archive, not proved live-feed outages. No post-close
 mark is needed for a flat campaign. The report uses a requested-session cutoff and never
 substitutes a future fill or current quote into a past outcome.
+
+## Prospective profitability panel
+
+Validation → Profitability research is separate from manual replay and actual
+Daily review. It freezes the pre-session candidate pool, two rankings, policy and
+source identity. Contexts resume from durable baseline progress; untried due names
+precede retries, while ready results and retry cooldowns are preserved.
+
+Stock confirmations, target-only diagnostic probes, campaign-aware entries and
+option observations are distinct fields. A target-only probe is not an accepted
+entry. Integer exit comparisons need known quantity. Modeled option returns need
+recorded quotes and fees and must still fit the frozen funding limit at modeled
+entry; the model does not resize one challenger silently. Missing evidence remains
+unknown. The research records cannot become executable plans.
+
+See [the full definitions and limitations](PROFITABILITY-RESEARCH.md).

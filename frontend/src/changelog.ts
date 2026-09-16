@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.96";
+export const APP_VERSION = "0.7.98";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,8 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.98",date:"2026-09-16",title:"Current Cartel guidance and integrated release identity",items:[
+    {tag:"improved",text:"Cartel's Method documentation now explains research readiness, fair baseline retries, short-pool counts, data warnings and actual versus modeled results. Stale operational snapshots are replaced with dated references."},
+    {tag:"fixed",text:"The shared build-identity helper is retained on main, and health remains available if build identification fails. Deployment still requires verified source, artifact and restored state."},
+  ]},
+  {version:"0.7.97",date:"2026-09-16",title:"Cartel research gives every candidate a turn",items:[
+    {tag:"fixed",text:"Research now loads never-attempted volume baselines before retrying failed names. Retries rotate by persisted attempt count and oldest due time, so early failures cannot starve the rest of the pool after a restart. Trading rules and candidate rankings are unchanged."},
+  ]},
   {version:"0.7.96",date:"2026-09-16",title:"Tips see the day's event and the real cost of a trade",items:[
       { tag: "new", text: "Tips: verified event context (TMR-01). The analyst header, every card, the cohort and hold-study records and adopted positions now carry the day's verified macro-event label - FOMC statement 2026-09-16 14:00 ET and press conference 14:30 ET from the official Federal Reserve calendar, with the verification time and time-to-event; a date the calendar has not been checked for reads UNKNOWN, never 'no event'. Awareness only: no automatic no-trade rule, no order placed or blocked." },
+      { tag: "improved", text: "Tips analyst reasoning (INTRA-01/02): the payoff preview now prints the EXPIRATION break-even beside the before-expiry scenarios with the declared holding horizon, and a one-contract plan is judged on the single exit it can execute (first target or a premium exit) instead of being called unmanageable for not copying a source's partial scale-outs; the prompt carries both rules and keeps every independent reason to skip." },
+      { tag: "new", text: "Tips intake (INTRA-03): a cheap deterministic read of a multi-signal message (map / recap / management / new / mixed) is journaled before the paid appraisal; routing confirmed recaps to a compact analyst context is built but OFF (techniques.tip.recap_route) until evaluated on frozen examples." },
       { tag: "new", text: "Tips research: an experiment register (TMR-05) gives every study one identity - hypothesis, variants, unit of observation, costs, regime, evaluation window - and every research report now carries it; a time/volatility scenario prototype (TMR-03, research only, wired to nothing) shows how elapsed time and an IV change would move a long option's value, with a worked example on frozen evidence." },
       { tag: "new", text: "Tips: execution-cost diagnostic (TMR-02). Beside feasibility and payoff, the analyst tools, the risk plan and the card show the instantaneous round trip on the qualified quote - spread once plus both sides' fees at the venue basis, quoted size, cost as a share of the purchase - and each realised fill is journaled against the quote the decision saw. Unknown on stale, crossed or missing quotes; changes no quantity, contract, limit or gate." },
   ]},

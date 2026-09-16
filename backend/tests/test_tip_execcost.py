@@ -68,7 +68,9 @@ async def test_diagnose_reads_the_live_quote_and_touches_nothing(rig):
     r = ec.diagnose(eng, symbol="ECXA", qty=10, sec_type="STK")
     assert r["symbol"] == "ECXA" and r["qty"] == 10.0 and r["multiplier"] == 1.0
     if r["status"] == "known":
-        assert r["bid"] == q.bid and r["ask"] == q.ask and r["roundTrip"] == round((q.ask - q.bid) * 10, 2)
+        # the sim quote ticks between reads: judge the diagnostic on ITS OWN captured fields
+        assert r["bid"] > 0 and r["ask"] >= r["bid"] and r["roundTrip"] == round((r["ask"] - r["bid"]) * 10, 2)
+        assert r["purchaseValue"] == round(r["ask"] * 10, 2) and r["quoteStatus"] == "fresh"
     else:
         assert r["reasons"], "an unknown diagnostic always says why"
     missing = ec.diagnose(eng, symbol="NOSUCHQUOTE", qty=1, sec_type="OPT")

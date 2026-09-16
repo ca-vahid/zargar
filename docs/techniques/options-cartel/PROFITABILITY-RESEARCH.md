@@ -105,3 +105,30 @@ for the experiment, not an acceptance sample used to choose thresholds.
 This chapter describes the new research release. Deployment and validation
 evidence are recorded in its release handoff; merging the chapter alone does not
 start collection. Old execution plans keep their original policies.
+
+## Baseline queue fairness — September 16 correction
+
+Due candidates with no prior baseline attempt run first. Remaining due retries run
+in ascending persisted attempt count, then oldest retry time. The two-attempt
+per-pass budget and five-minute cooldown remain unchanged. Ready candidates are
+skipped. This ordering survives restart and does not reorder the frozen candidate
+rankings, weaken coverage requirements or create retrospective entries. Existing
+saved study contexts benefit without rerunning preparation.
+
+## Pool direction, readiness and continuity
+
+The primary research pool follows the direction of the saved preparation. A
+primary pool can already consist of short setups; in that case a zero count for
+the *additional* bearish proxy does not mean downside names were omitted. The
+proxy is only added when the primary inputs are not already short.
+
+“Observed” counts candidates included in snapshots, not candidates with usable
+history or qualifying entries. Read baseline-ready, pending and unavailable
+counts separately. Research can wait for a stricter intraday observation condition
+while an independently armed production plan retains its original policy.
+
+New research entries require subsequent fresh confirmation after the actual
+watch/baseline readiness and sustained market observation cutoffs. A restart or
+recovery must not create an earlier fill. Exact option quote observations retain
+availability and source time; gaps cannot be skipped to reuse an older favorable
+quote. Existing decisions and completed baseline work are preserved.

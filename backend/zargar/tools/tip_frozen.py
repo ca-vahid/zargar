@@ -121,6 +121,11 @@ async def run(a) -> int:
                           f"proposedNotes={len(rep.get('proposedNotes') or [])} hash={rep.get('reportHash', '')[:12]}")
             _print_report(frozen.compare(reports))
             return 0
+        if a.cmd == "assemble":
+            # PAR178: offline treatment assembly - hashes, sizes, budgets; no model, no writes
+            asm = frozen.assemble_treatments(bundle)
+            print(json.dumps(asm, indent=2, default=str))
+            return 0
         if a.cmd == "report":
             async with sf() as session:
                 rows = (await session.execute(select(TipFrozenReplay).where(
@@ -147,7 +152,7 @@ async def run(a) -> int:
 def main() -> None:
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("cmd", choices=["capture", "show", "replay", "report"])
+    ap.add_argument("cmd", choices=["capture", "show", "replay", "report", "assemble"])
     ap.add_argument("--signal")
     ap.add_argument("--run")
     ap.add_argument("--bundle")

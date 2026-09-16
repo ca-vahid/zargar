@@ -74,9 +74,88 @@ def unit_gains(*, vehicle: str, entry_ref: float, targets: list[float], directio
     return out
 
 
+def break_even(*, option_type: str, strike: float | None, premium: float | None) -> dict:
+    """INTRA-01 (2026-09-16): strike +/- premium is the EXPIRATION break-even - where the
+    contract pays if HELD TO EXPIRY. It says nothing about an exit before expiry, which
+    pays whenever the executable premium exceeds entry + costs (delta, time and IV decide
+    that), whatever the underlying is versus this level."""
+    if strike is None or premium is None:
+        return {"expiration": None, "unknown": ["strike" if strike is None else "premium"],
+                "note": "expiration break-even needs the strike and the premium"}
+    is_call = str(option_type or "call").lower().startswith("c")
+    be = float(strike) + float(premium) if is_call else float(strike) - float(premium)
+    return {"expiration": round(be, 4), "basis": "strike + premium (call) / strike - premium (put) - HELD TO EXPIRY only",
+            "note": "an exit BEFORE expiry pays when the executable bid exceeds entry + costs; the underlying need not "
+                    "reach this level for that - the target scenarios above value exits before expiry (delta-linear)"}
+
+
+def expiry_value(*, option_type: str, strike: float, underlying: float) -> float:
+    """Intrinsic value per unit at expiry."""
+    is_call = str(option_type or "call").lower().startswith("c")
+    return max(0.0, (float(underlying) - float(strike)) if is_call else (float(strike) - float(underlying)))
+
+
+def premium_exit(*, entry_premium: float | None, exit_premium: float | None, qty: float, fee_per_unit: float = 0.0,
+                 multiplier: float = 100.0, evidence: str = "unknown") -> dict:
+    """INTRA-01: the P&L of selling `qty` contracts at `exit_premium` (an EXECUTABLE bid,
+    or a labelled synthetic one) after buying at `entry_premium` - independent of where
+    the underlying sits versus the expiration break-even. Unknown without both premiums."""
+    if entry_premium is None or exit_premium is None or not qty:
+        return {"status": "unknown", "unknown": [k for k, v in (("entryPremium", entry_premium), ("exitPremium", exit_premium),
+                                                                 ("qty", qty)) if not v],
+                "evidence": evidence, "gross": None, "fees": None, "net": None}
+    q = float(qty)
+    gross = (float(exit_premium) - float(entry_premium)) * float(multiplier) * q
+    fees = float(fee_per_unit) * q * 2.0
+    net = gross - fees
+    return {"status": "known", "evidence": evidence, "entryPremium": float(entry_premium), "exitPremium": float(exit_premium),
+            "qty": q, "multiplier": float(multiplier), "gross": round(gross, 2), "fees": round(fees, 2), "net": round(net, 2),
+            "perUnitNet": round(net / q, 4),
+            "note": "profit on an EARLIER SALE depends on the premium then, not on the expiration break-even"}
+
+
+def horizon_block(*, dte: int | None, hold_sessions: int | None, expiry_date: str | None = None, as_of=None,
+                  exit_at_expiry: bool = False) -> dict:
+    """I175-03: the MAXIMUM holding cap, the expiry date and the scenario's exit assumption
+    are three different things. A hold cap never declares an expiry exit (targets, stops or
+    the source can close earlier); only an explicit `exit_at_expiry` does. Trading sessions
+    are converted to a calendar date on the exchange calendar; unknown stays unknown."""
+    import datetime as _dt
+    from ...marketstructure import market_calendar as _cal
+    today = as_of or _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-4))).date()
+    if isinstance(today, _dt.datetime):
+        today = today.date()
+    hold_end = None
+    if hold_sessions is not None and int(hold_sessions) > 0:
+        d = today
+        for _ in range(int(hold_sessions)):
+            d = _cal.next_trading_day(d)
+        hold_end = d.isoformat()
+    exp = None
+    if expiry_date:
+        try:
+            exp = _dt.date.fromisoformat(str(expiry_date)).isoformat()
+        except ValueError:
+            exp = None
+    reaches = (hold_end is not None and exp is not None and hold_end >= exp)
+    if exit_at_expiry:
+        assumption = "declared: held to expiry"
+    elif hold_sessions is not None or dte is not None:
+        assumption = "before expiry (target / stop / premium exit) - a hold cap is a maximum, not an exit time"
+    else:
+        assumption = "unknown"
+    return {"dte": dte, "expiryDate": exp, "maxHoldSessions": hold_sessions, "holdCapEndsOn": hold_end,
+            "holdCapReachesExpiry": reaches, "exitAssumption": assumption,
+            "note": ("the scenarios value exits BEFORE expiry (delta-linear at the target); intrinsic value applies only to a "
+                     "DECLARED held-to-expiry exit (expiryScenario); the hold cap says when the desk stops waiting, not when it sells")}
+
+
 def payoff_preview(*, qty: int, fractions: list[float], gains: list[float | None],
                    unit_loss: float | None, fee_per_unit: float = 0.0,
-                   runner_gain: float | None = None, vehicle: str = "option") -> dict:
+                   runner_gain: float | None = None, vehicle: str = "option",
+                   strike: float | None = None, premium: float | None = None, option_type: str | None = None,
+                   dte: int | None = None, hold_sessions: int | None = None, expiry_date: str | None = None,
+                   as_of=None, exit_at_expiry: bool = False, underlying_targets: list[float] | None = None) -> dict:
     """The declared scenarios in $ and in R (R = the PLANNED stop loss for the
     whole size, an estimate, never a guaranteed maximum loss). Fees are paid
     per unit on entry and on every exit unit."""
@@ -91,6 +170,42 @@ def payoff_preview(*, qty: int, fractions: list[float], gains: list[float | None
            "feePerUnit": fee_per_unit, "gainsPerUnit": gains,
            "basis": "delta-linear estimate for options, price distance for shares; fees per unit in and out",
            "claim": "arithmetic on the declared plan - no statement that any target is reached"}
+    if vehicle == "option":
+        # INTRA-01: the expiration break-even printed BESIDE the before-expiry scenarios,
+        # with the declared horizon, so the two are never confused
+        out["breakEven"] = break_even(option_type=option_type or "call", strike=strike, premium=premium)
+        out["horizon"] = horizon_block(dte=dte, hold_sessions=hold_sessions, expiry_date=expiry_date, as_of=as_of,
+                                       exit_at_expiry=exit_at_expiry)
+        if exit_at_expiry and strike is not None and premium is not None and underlying_targets:
+            # I175-03: intrinsic value is used ONLY for an explicitly declared held-to-expiry exit
+            fee_all = fee_per_unit * q * 2.0
+            out["expiryScenario"] = {"declared": True, "basis": "intrinsic value at expiry minus premium and both sides' fees",
+                                     "perTarget": [{"underlying": float(u), "intrinsic": expiry_value(option_type=option_type or "call", strike=strike, underlying=u),
+                                                    "net": round((expiry_value(option_type=option_type or "call", strike=strike, underlying=u) - float(premium)) * 100.0 * q - fee_all, 2)}
+                                                   for u in underlying_targets]}
+    # INTRA-02: one lot is an EXIT-PLAN question - what a single contract can execute
+    # versus the rungs the plan declares - never a rejection by itself
+    if vehicle == "option" and q >= 1:
+        # I175-02: the capability is DERIVED from the executed unit sequence, never from a
+        # quantity-vs-rungs count: every positive rung must receive at least one unit to
+        # "cover" the partials, and the weights are reproduced only when the integer split
+        # equals the declared fractions
+        pos = [(i, f) for i, f in enumerate(fractions or []) if f and f > 0]
+        units = list(lad["units"])
+        covered = bool(pos) and len(pos) > 1 and all(i < len(units) and units[i] > 0 for i, _f in pos)
+        reproduced = covered and all(abs(units[i] / q - f) < 1e-9 for i, f in pos)
+        uncovered = [i + 1 for i, _f in pos if not (i < len(units) and units[i] > 0)]
+        out["singleLot"] = {"declaredRungs": len(pos), "executableRungs": len([u for u in units if u > 0]),
+                            "executedUnits": units, "collapsed": bool(lad.get("collapsed")) or q == 1,
+                            "canCopyPartials": covered, "reproducesWeights": reproduced,
+                            "uncoveredRungs": uncovered,
+                            "note": ("one contract executes ONE exit (the first target, or a premium-based exit); it cannot "
+                                     "copy several partial scale-outs - judge that single-exit plan on its own net payoff "
+                                     "(oneLot / tp1ThenStop), and skip only when the thesis DEPENDS on scaling or one unit "
+                                     "does not fit the budget" if q == 1 else
+                                     ("every declared rung receives at least one unit" + (" and the weights are reproduced exactly"
+                                      if reproduced else " but the weights are NOT the declared fractions - see executedUnits")) if covered else
+                                     f"rung(s) {uncovered} receive no unit at this size - the ladder is not copied; see executedUnits")}
     if not have_gains or unit_loss is None:
         out["scenarios"] = None
         out["reason"] = "no unit loss estimate" if unit_loss is None else "no gain estimate for every rung (missing delta or targets)"

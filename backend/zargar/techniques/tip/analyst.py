@@ -281,6 +281,21 @@ the budget, never pretend a fraction of a contract exists.
 With 1-2 contracts declare a coherent plan a single lot can execute (one target, or a \
 premium-based exit) - call preview_payoff to see what your ladder actually does in integer \
 units, the net if the first target is followed by the stop, and the fee drag.
+- BREAK-EVEN IS AN EXPIRATION NUMBER (2026-09-16): strike + premium is where a call pays \
+if HELD TO EXPIRY. Your exit is almost never at expiry: before expiry the contract is SOLD at \
+its premium, and that sale pays whenever the executable bid exceeds entry + costs - delta, \
+time and IV decide it, whatever the underlying is versus the expiration break-even. Never \
+say an interim profit needs the expiration break-even unless holding to expiry IS your exit \
+assumption. Tie "reach" to your declared holding period and to preview_payoff's scenarios \
+(it prints the expiration break-even beside them so you can tell the two apart). Independent \
+reasons to skip - tape, source record, budget, attainable gain - stand on their own; never \
+force a take from this rule.
+- ONE LOT IS AN EXIT-PLAN QUESTION, NOT A REJECTION (2026-09-16): one contract cannot copy a \
+source's several partial scale-outs - that is a fact, not a verdict. Judge the executable \
+single-lot plan on its OWN net payoff (preview_payoff -> singleLot / oneLot / tp1ThenStop): a \
+complete first-target exit or a premium-based exit can be a coherent plan. Skip a one-lot \
+when the thesis DEPENDS on scaling you cannot reproduce, or when one unit does not fit the \
+budget - and say which. Never call one contract "unmanageable" by itself.
 - your verdict becomes an order only through a proposal + the risk gate; a human (or an \
 earned auto mode) pulls the trigger
 
@@ -642,9 +657,19 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
     fractions = [float(x) for x in (args.get("exit_fractions") or [])] or ([1.0] if targets else [])
     gains = _po.unit_gains(vehicle=("shares" if is_shares else "option"), entry_ref=float(entry_ref or 0), targets=targets,
                            direction=direction, delta=ev.get("delta"), multiplier=mult)
+    dte_days = None
+    if not is_shares and ev.get("expiry"):
+        with contextlib.suppress(Exception):
+            dte_days = (dt.date.fromisoformat(str(ev["expiry"])) - dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))).date()).days
+    hold = args.get("hold_sessions")
     pv = _po.payoff_preview(qty=qty, fractions=fractions, gains=gains, unit_loss=ul,
                             fee_per_unit=(0.0 if is_shares else float(book.get("feePerContract") or 0.0)),
-                            vehicle=("shares" if is_shares else "option"))
+                            vehicle=("shares" if is_shares else "option"),
+                            strike=(None if is_shares else ev.get("strike")), premium=(None if is_shares else limit),
+                            option_type=(None if is_shares else (ev.get("optionType") or "call")),
+                            dte=dte_days, hold_sessions=(int(hold) if hold is not None else None),
+                            expiry_date=(None if is_shares else ev.get("expiry")),
+                            exit_at_expiry=bool(args.get("exit_at_expiry") or False))
     return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
             "unitRisk": ul, "unitRiskBasis": basis, **pv,
             "execCost": _exec_cost(eng, is_shares=is_shares, symbol=(under if is_shares else contract), qty=qty)}
@@ -1044,7 +1069,7 @@ async def _source_history(eng, source: str | None, *, hours: float = 72,
                      for r in rows)
 
 
-async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
+async def _rules_text(eng, *, as_of=None, core_only: bool = False) -> tuple[str, int, dict | None]:
     """The analyst's own rulebook (tip_notes scope 'rule'), oldest first so the
     rulebook reads in the order it was written; starter rules until one exists.
     `as_of` (historical experiments) bounds the rulebook to event time.
@@ -1071,10 +1096,15 @@ async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
         budget = 50
     core = [r for r in rules if r.get("core")]
     rest = [r for r in rules if not r.get("core")]          # newest first
-    selected = core + rest[:max(0, budget - len(core))]
+    if core_only:
+        # INTRA-03 compact route: the CORE rules only (the newest few when nothing is pinned)
+        from . import recap as _recap
+        selected = _recap.compact_rules(rules)
+    else:
+        selected = core + rest[:max(0, budget - len(core))]
     selection = {"total": len(rules), "core": len(core),
                  "recent": len(selected) - len(core), "omitted": len(rules) - len(selected),
-                 "order": "core-first, then newest", "budget": budget}
+                 "order": ("core-only (compact route)" if core_only else "core-first, then newest"), "budget": budget}
     rules = selected
     ordered = list(reversed(rules))
     lines = "\n".join(
@@ -1494,7 +1524,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                       client=None, parent_run_id: str | None = None,
                       experiment: str | None = None,
                       historical_note: str | None = None,
-                      siblings: list[str] | None = None) -> dict | None:
+                      siblings: list[str] | None = None,
+                      header_mode: str = "full", recap_read: dict | None = None) -> dict | None:
     """Appraise one tip. Persists a full TipAnalystRun (trace + tools + opinion),
     streams the play-by-play live, and returns the opinion dict (stored on
     extraction.analyst) or None on failure — strictly advisory.
@@ -1512,6 +1543,13 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         return None
     model = str(s.get("techniques.tip.analyst_model") or "") or eng.config.extraction_model
     max_tools = int(s.get("techniques.tip.analyst_max_tools", 8))
+    # INTRA-03: a confirmed recap routed compact reads the CORE rules, the notes relevant
+    # to this ticker/source, a short history and a small tool budget - the verdict, the
+    # tools and the safety floor are unchanged; the route is on the record
+    compact = str(header_mode or "full") == "compact"
+    if compact:
+        from . import recap as _recap
+        max_tools = min(max_tools, int(s.get("techniques.tip.recap_max_tools", _recap.CANDIDATE["maxTools"]) or _recap.CANDIDATE["maxTools"]))
     if client is None:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=api_key)
@@ -1570,10 +1608,13 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         log.debug("notes lookup failed for %s", signal_row.id)
     # N-labels (Codex finding 7): the model reports which notes it actually
     # USED via used_notes — supplied is no longer conflated with used
+    if compact:
+        from . import recap as _recap
+        notes = _recap.compact_notes(notes, ticker=signal_row.ticker, source=signal_row.source_name)
     notes_txt = "\n".join(
         f"- N{i + 1} [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
         for i, n in enumerate(notes)) or "(none yet)"
-    rules_txt, rules_n, snap = await _rules_text(eng, as_of=as_of_dt)
+    rules_txt, rules_n, snap = await _rules_text(eng, as_of=as_of_dt, core_only=compact)
     if rules_n and snap:
         rec.step("note", f"Rulebook snapshot: {rules_n} rule(s), hash "
                          f"{snap['rulesHash']}.", **snap)
@@ -1589,10 +1630,16 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         history_txt = ("(withheld in historical mode — search_messages is capped "
                        "to the tip's own time)")
     else:
-        history_txt = await _source_history(eng, signal_row.source_name)
+        if compact:
+            from . import recap as _recap
+            history_txt = await _source_history(eng, signal_row.source_name, hours=float(_recap.CANDIDATE["historyHours"]),
+                                                limit=int(_recap.CANDIDATE["historyRecords"]))
+        else:
+            history_txt = await _source_history(eng, signal_row.source_name)
 
     rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
-             f"from {signal_row.source_name or 'unknown'}. Tools available: "
+             f"from {signal_row.source_name or 'unknown'}"
+             + (" [COMPACT route - confirmed recap/map]" if compact else "") + ". Tools available: "
              f"{', '.join(tool_names)}."
              + (f" {len(notes)} shared note(s)" if notes else "")
              + (f" · {rules_n} own rule(s) handed to the run." if rules_n
@@ -1635,6 +1682,9 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"THIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "
               f"backstory this tip arrived in: earlier OPENs, trims, exits, mood. Read it "
               f"before judging; search_messages digs deeper/older):\n{history_txt}")
+    if compact:
+        from . import recap as _recap
+        header = _recap.candidate_prefix((recap_read or {}).get("confidence")) + "\n\n" + header
     if siblings:
         header = ("THIS MESSAGE HAS SEVERAL BRANCHES and is appraised ONCE, on this one: "
                   + "; ".join(siblings) + ". Judge the MESSAGE (is it a map, a digest, a "
@@ -1655,7 +1705,11 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                      rules_text=rules_txt, notes_text=notes_txt,
                      history_text=history_txt, lotto_line=lotto_line,
                      verification=verification, tip=tip, policy=policy,
-                     siblings=siblings, historical_note=historical_note))
+                     siblings=siblings, historical_note=historical_note,
+                     header_mode=("compact" if compact else "full"), recap_read=recap_read, max_tools=max_tools,
+                     candidate=(__import__("zargar.techniques.tip.recap", fromlist=["CANDIDATE"]).CANDIDATE["version"] if compact else None),
+                     compact_prefix=(__import__("zargar.techniques.tip.recap", fromlist=["candidate_prefix"]).candidate_prefix(
+                         (recap_read or {}).get("confidence")) if compact else None)))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
@@ -1728,6 +1782,9 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     result = {**opinion.model_dump(), "model": model, "toolsUsed": tools_used,
               "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat(),
               "usage": loop_state.get("usage"),
+              "headerMode": ("compact" if compact else "full"), "headerChars": len(header),
+              **({"recapCandidate": __import__("zargar.techniques.tip.recap", fromlist=["CANDIDATE"]).CANDIDATE["version"]} if compact else {}),
+              **({"recapRead": recap_read} if recap_read else {}),
               **({"receipts": tool_ctx["receipts"]} if tool_ctx.get("receipts") else {}),
               **({"experiment": experiment} if experiment else {})}
     # TMR-01 (2026-09-16): the verified event label rides the record; a historical
@@ -1755,12 +1812,13 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             if opinion.exit_targets:
                 payoff = await _expression_tool(eng, "preview_payoff", {
                     **expr_args, "quantity": int(opinion.quantity or expression.get("qty") or 1),
-                    "exit_targets": list(opinion.exit_targets), "exit_fractions": list(opinion.exit_fractions or [])}, tool_ctx)
+                    "exit_targets": list(opinion.exit_targets), "exit_fractions": list(opinion.exit_fractions or []),
+                    "hold_sessions": opinion.max_hold_sessions}, tool_ctx)
             mode = str(s.get("techniques.tip.analyst_feasibility_gate", "annotate") or "annotate")
             result = _fz.apply_gate(result, {k: v for k, v in expression.items() if k != "alternatives"}
                                     | {"alternatives": expression.get("alternatives")}, mode)
             if payoff:
-                result["payoff"] = {k: payoff.get(k) for k in ("qty", "ladder", "scenarios", "oneLot", "unitRisk", "reason")}
+                result["payoff"] = {k: payoff.get(k) for k in ("qty", "ladder", "scenarios", "oneLot", "singleLot", "breakEven", "horizon", "unitRisk", "reason")}
             result["execCost"] = (payoff or expression).get("execCost")
             rec.step("expression", (f"Expression check: {'fits' if expression.get('feasible') else 'does NOT fit'} - "
                                     f"unit risk {expression.get('unitRisk')}, budget {expression.get('riskBudget')}, "

@@ -36,7 +36,7 @@ log = logging.getLogger("zargar.tip.frozen")
 BUNDLE_VERSION = 1
 MISSING = ("(unavailable in the frozen bundle - not persisted at run time; "
            "a frozen replay never fetches today's data)")
-VARIANTS = ("current", "core_only", "no_knowledge", "compact")
+VARIANTS = ("current", "core_only", "no_knowledge", "compact", "recap_candidate")
 COMPACT_HISTORY_LINES = 12      # PROF-05: the compact context keeps the newest N history lines
 # settings a run's behaviour depends on - captured verbatim on the bundle
 SETTINGS_KEYS = (
@@ -50,6 +50,7 @@ _RULES_MARK = "YOUR TRADING RULES (self-maintained — follow them):\n"   # the 
 _RULES_MARK_LEGACY = "YOUR TRADING RULES (self-maintained - follow them):\n"
 _NOTES_MARK = "\nSHARED NOTES (desk knowledge from earlier runs):\n"
 _HISTORY_MARK = "\nTHIS SOURCE'S LAST ~3 DAYS"
+_COMPACT_MARK = "COMPACT ROUTE:"          # the compact prefix's first words (recap.CANDIDATE prefixTemplate)
 
 
 def _sha(text: str) -> str:
@@ -70,7 +71,9 @@ def _iso(x) -> str | None:
 def manifest_from_components(*, header: str, system: str, today_line: str,
                              rules_text: str, notes_text: str, history_text: str,
                              lotto_line: str, verification: dict, tip: dict, policy,
-                             siblings=None, historical_note=None) -> dict:
+                             siblings=None, historical_note=None, header_mode: str | None = None,
+                             recap_read: dict | None = None, max_tools: int | None = None,
+                             candidate: str | None = None, compact_prefix: str | None = None) -> dict:
     """The EXACT context of one live appraisal, kept as components so a
     frozen replay rebuilds the header verbatim and can swap ONE block
     (rules / notes) for a knowledge variant. Called by the analyst behind
@@ -92,6 +95,14 @@ def manifest_from_components(*, header: str, system: str, today_line: str,
                    "dteMax": getattr(policy, "dte_max", None)},
         "siblings": list(siblings) if siblings else None,
         "historicalNote": historical_note,
+        # I175-04: the route, the classifier read, the effective tool budget and the
+        # candidate version the request was ASSEMBLED with - parity is judged on these
+        "headerMode": header_mode, "recapRead": recap_read, "maxTools": max_tools, "recapCandidate": candidate,
+        "classifierVersion": (recap_read or {}).get("version") if recap_read else None,
+        # PAR178-01: the exact prefix text and the ORDER production composed the request in
+        "compactPrefix": compact_prefix,
+        "componentOrder": [c for c, present in (("historicalNote", bool(historical_note)), ("siblings", bool(siblings)),
+                                                 ("compactPrefix", bool(compact_prefix)), ("base", True)) if present],
     }
 
 
@@ -123,7 +134,8 @@ def trim_history(text: str | None, lines: int) -> str:
 
 
 def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
-                    history_lines: int | None = None) -> tuple[str, list[str]]:
+                    history_lines: int | None = None, prefix: str | None = None,
+                    history_records: int | None = None) -> tuple[str, list[str]]:
     """The run's header with the rules and notes blocks replaced. An EXACT
     manifest is sliced at its markers (verbatim otherwise); a reconstructed
     one is assembled from the bundle's components with every unknown block
@@ -139,12 +151,28 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
             gaps.append("header markers not found - rules/notes blocks could not be swapped")
             return h, gaps
         tail = h[k:]
-        if history_lines is not None:
-            # PROF-05: the history block starts after its marker line
+        if history_lines is not None or history_records is not None:
+            # PROF-05: the history block starts after its marker line; I175-04: the
+            # candidate counts RECORDS (a multi-line message is one record), never lines
             nl = tail.find("\n", 1)                    # the marker line may begin with a newline
             if nl >= 0:
-                tail = tail[:nl + 1] + trim_history(tail[nl + 1:], history_lines)
-        return (h[:i + len(mark)] + rules_text + _NOTES_MARK + notes_text + tail), gaps
+                from .recap import trim_history_records
+                body = tail[nl + 1:]
+                tail = tail[:nl + 1] + (trim_history_records(body, history_records) if history_records is not None
+                                        else trim_history(body, history_lines))
+        out = h[:i + len(mark)] + rules_text + _NOTES_MARK + notes_text + tail
+        # PAR178-01: the captured text IS the production request - component order (historical
+        # note, siblings, compact prefix, base) is preserved verbatim by the block swap; a prefix
+        # is added only when the captured head does not already carry it, and then in
+        # production's position (after historical note + siblings, before the base)
+        head = h[:i]
+        if prefix and _COMPACT_MARK not in head:
+            base_at = head.find("Today (ET):")
+            if base_at > 0:
+                out = out[:base_at] + prefix + "\n\n" + out[base_at:]
+            else:
+                out = prefix + "\n\n" + out
+        return out, gaps
     tip = manifest.get("tip") or {}
     ver = manifest.get("verification") or {}
     pol = manifest.get("policy") or {}
@@ -164,8 +192,13 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
                + "\nTHIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "
                  "backstory this tip arrived in: earlier OPENs, trims, exits, mood. Read it "
                  "before judging; search_messages digs deeper/older):\n"
-               + (trim_history(str(manifest.get("historyText")), history_lines)
-                  if history_lines is not None and manifest.get("historyText") else str(manifest.get("historyText") or MISSING)))
+               + (__import__("zargar.techniques.tip.recap", fromlist=["trim_history_records"]).trim_history_records(str(manifest.get("historyText")), history_records)
+                  if history_records is not None and manifest.get("historyText") else
+                  (trim_history(str(manifest.get("historyText")), history_lines)
+                   if history_lines is not None and manifest.get("historyText") else str(manifest.get("historyText") or MISSING))))
+    # PAR178-01: production order = historical note, siblings, compact prefix, base
+    if prefix:
+        header = prefix + "\n\n" + header
     if manifest.get("siblings"):
         header = ("THIS MESSAGE HAS SEVERAL BRANCHES and is appraised ONCE, on this one: "
                   + "; ".join(manifest["siblings"]) + ". Judge the MESSAGE (is it a map, a "
@@ -178,6 +211,59 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
     if not manifest.get("historyText"):
         gaps.append("source history block missing (not persisted at run time)")
     return header, gaps
+
+
+def request_hash(header: str) -> str:
+    """The identity of one assembled request text (the manifest's headerSha basis)."""
+    return _sha(header)
+
+
+def assemble_treatments(bundle: dict) -> dict:
+    """PAR178: an ISOLATED, side-effect-free harness - assemble the FULL and the CANDIDATE
+    requests from the same frozen inputs and report their hashes, sizes and budgets, so
+    unpaid parity checks run before any paid pair. No client, no DB, no fetch.
+
+    On a FULL-route capture both treatments are available (full = the captured request
+    verbatim; candidate = the compact treatment applied to the same captured inputs). On a
+    COMPACT-route capture the candidate is the captured request itself (exact parity is
+    verified by hash) and the full control is UNAVAILABLE - a compact capture holds only the
+    compact selections; capture the full treatment separately."""
+    man = bundle.get("manifest") or {}
+    captured_route = man.get("headerMode") or ("unknown" if not man.get("exact") else "full")
+    out: dict = {"bundleId": bundle.get("id"), "captured": {"route": captured_route, "headerSha": man.get("headerSha"),
+                                                           "systemSha": man.get("systemSha"), "maxTools": man.get("maxTools"),
+                                                           "componentOrder": man.get("componentOrder"), "exact": bool(man.get("exact"))},
+                 "treatments": {}, "gaps": []}
+    cur = variant_knowledge(bundle, "current")
+    h_cur, g_cur = _rebuild_header(man, rules_text=cur["rulesText"], notes_text=cur["notesText"])
+    cand = variant_knowledge(bundle, "recap_candidate")
+    if captured_route == "compact":
+        out["treatments"]["full"] = {"available": False,
+                                     "reason": "a compact-route capture holds only the compact selections - the full-route "
+                                               "control must be captured separately"}
+        if cand.get("available"):
+            h_c, g_c = _rebuild_header(man, rules_text=cand["rulesText"], notes_text=cand["notesText"],
+                                       history_records=cand["historyRecords"], prefix=cand["prefix"])
+            out["treatments"]["candidate"] = {"available": True, "requestHash": request_hash(h_c), "chars": len(h_c),
+                                              "maxTools": cand["maxTools"], "exactParity": request_hash(h_c) == man.get("headerSha"),
+                                              "gaps": list(g_c) + list(cand.get("gaps") or []), "parity": cand.get("parity")}
+        else:
+            out["treatments"]["candidate"] = {"available": False, "reason": cand.get("reason")}
+    else:
+        out["treatments"]["full"] = {"available": True, "requestHash": request_hash(h_cur), "chars": len(h_cur),
+                                     "maxTools": man.get("maxTools"), "exactParity": request_hash(h_cur) == man.get("headerSha"),
+                                     "gaps": list(g_cur)}
+        if cand.get("available"):
+            h_c, g_c = _rebuild_header(man, rules_text=cand["rulesText"], notes_text=cand["notesText"],
+                                       history_records=cand["historyRecords"], prefix=cand["prefix"])
+            out["treatments"]["candidate"] = {"available": True, "requestHash": request_hash(h_c), "chars": len(h_c),
+                                              "maxTools": cand["maxTools"], "differsFromFull": request_hash(h_c) != request_hash(h_cur),
+                                              "gaps": list(g_c) + list(cand.get("gaps") or []), "parity": cand.get("parity")}
+        else:
+            out["treatments"]["candidate"] = {"available": False, "reason": cand.get("reason")}
+    out["note"] = ("assembled offline from the frozen inputs; a paid pair replays these two requests and nothing else - "
+                   "a compact-route capture's `current` is the compact treatment, not the full control")
+    return out
 
 
 # ------------------------------------------------------------------- capture
@@ -307,7 +393,10 @@ async def build_bundle(sf, *, run_id: str | None = None, signal_id: str | None =
                               "confidence", "entry_mode", "entry_level", "used_notes",
                               "exit_targets", "exit_fractions", "underlying_stop",
                               "premium_stop_pct", "max_hold_sessions", "rationale")},
-                 "usage": op.get("usage"), "tools": list(run.tools or [])}
+                 "usage": op.get("usage"), "tools": list(run.tools or []),
+                 # I175-04: the classifier read and the route the run actually took travel with the bundle
+                 "recapRead": op.get("recapRead"), "headerMode": op.get("headerMode"),
+                 "headerChars": op.get("headerChars"), "recapCandidate": op.get("recapCandidate")}
                 if run else None),
         "toolOutputs": tool_outputs,
         "knowledge": knowledge,
@@ -376,11 +465,20 @@ def variant_knowledge(bundle: dict, variant: str) -> dict:
                       else format_rules(rules))
         notes_text = (man.get("notesText") if man.get("exact") and man.get("notesText")
                       else format_notes(notes))
+        compact_capture = man.get("headerMode") == "compact"
         return {"variant": variant, "available": True, "rulesText": rules_text,
                 "notesText": notes_text, "ruleIds": [r.get("id") for r in rules],
                 "noteIds": [n.get("id") for n in notes], "rulesSupplied": len(rules),
                 "notesSupplied": len(notes), "dropped": 0,
-                "rulesHash": k.get("rulesHash"), "starterRules": bool(k.get("starterRules"))}
+                "rulesHash": k.get("rulesHash"), "starterRules": bool(k.get("starterRules")),
+                # PAR178: `current` replays the CAPTURED request; on a compact-route capture that is
+                # already the compact treatment - it is NOT the full-route control
+                "treatment": ("compact (captured request)" if compact_capture else "full (captured request)"),
+                "isFullControl": not compact_capture,
+                **({"maxTools": man.get("maxTools")} if man.get("maxTools") is not None else {}),
+                **({"gaps": ["this capture is a compact-route request: `current` is the compact treatment, not the "
+                             "full-route control - capture the full treatment separately (assemble_treatments)"]}
+                   if compact_capture else {})}
     if variant == "core_only":
         if rules and any(r.get("core") is None for r in rules):
             return {"variant": variant, "available": False,
@@ -420,6 +518,65 @@ def variant_knowledge(bundle: dict, variant: str) -> dict:
                               "history": f"newest {COMPACT_HISTORY_LINES} lines"},
                 **({"degenerate": "no core rules in the bundle - starter rules supplied"}
                    if not core_r else {})}
+    if variant == "recap_candidate":
+        # I175-04 (2026-09-16): the PRODUCTION recap route's exact treatment, assembled by the
+        # same builder production uses (recap.build_candidate_context) on the bundle's captured
+        # rules / notes / history - the comparison changes only that treatment. The 24-hour
+        # history bound cannot be verified on captured lines: declared, never filled.
+        from . import recap as _recap
+        if rules and any(r.get("core") is None for r in rules):
+            return {"variant": variant, "available": False,
+                    "reason": "bundle's rule snapshot carries no core flags"}
+        man = bundle.get("manifest") or {}
+        run = bundle.get("run") or {}
+        tip = run.get("tip") or man.get("tip") or {}
+        # the classifier read as CAPTURED (the run's record or the manifest) - never invented
+        read = run.get("recapRead") or man.get("recapRead") or None
+        if not read or read.get("confidence") is None:
+            return {"variant": variant, "available": False,
+                    "reason": "classifier read not captured with this run (bundle predates recapRead capture) - "
+                              "non-parity: the candidate prefix cannot be assembled from the record",
+                    "coverageLimited": True}
+        conf = float(read["confidence"])
+        cand = _recap.build_candidate_context(rules=rules, notes=notes, history_text=man.get("historyText"),
+                                              ticker=tip.get("ticker"), source=tip.get("source"), confidence=conf)
+        parity_gaps: list[str] = []
+        if man.get("headerMode") != "compact":
+            parity_gaps.append("captured run was NOT on the compact route: the candidate treatment is applied to a full-route "
+                               "capture (a treatment comparison, not a replay of a production compact request)")
+        if man.get("recapCandidate") and man.get("recapCandidate") != _recap.CANDIDATE["version"]:
+            parity_gaps.append(f"captured candidate {man.get('recapCandidate')} != {_recap.CANDIDATE['version']} - non-parity")
+        if read.get("version") and read.get("version") != _recap.CLASSIFIER_VERSION:
+            parity_gaps.append(f"captured classifier {read.get('version')} != {_recap.CLASSIFIER_VERSION} (read is kept as captured)")
+        # PAR178-02: an EXACT replay of a compact capture uses the CAPTURED effective tool budget;
+        # the candidate default applies only when assembling the treatment on a full capture, and
+        # a changed budget is a separate treatment, never "parity"
+        exact = man.get("headerMode") == "compact" and man.get("maxTools") is not None
+        max_tools = int(man["maxTools"]) if exact else cand["maxTools"]
+        if exact and int(man["maxTools"]) != cand["maxTools"]:
+            parity_gaps.append(f"captured effective tool budget {man['maxTools']} differs from the candidate default "
+                               f"{cand['maxTools']} - the captured budget is replayed; a changed budget is a separate treatment")
+        return {"variant": variant, "available": True,
+                "parity": {"headerMode": man.get("headerMode"), "capturedCandidate": man.get("recapCandidate"),
+                           "capturedMaxTools": man.get("maxTools"), "budgetSource": ("captured" if exact else "candidate-default"),
+                           "classifierVersion": read.get("version"),
+                           "promptIdentity": man.get("systemSha"), "capturedHeaderSha": man.get("headerSha"),
+                           "componentOrder": man.get("componentOrder"), "gaps": parity_gaps,
+                           "status": ("production-request" if not [g for g in parity_gaps if "separate treatment" not in g]
+                                      else "treatment-only")},
+                "historyRecords": cand["historyRecords"],
+                "rulesText": format_rules(cand["rules"]), "notesText": format_notes(cand["notes"]),
+                "ruleIds": cand["ruleIds"], "noteIds": cand["noteIds"],
+                "rulesSupplied": len(cand["rules"]), "notesSupplied": len(cand["notes"]),
+                "dropped": (len(rules) - len(cand["rules"])) + (len(notes) - len(cand["notes"])),
+                "rulesHash": _sha(_canonical(cand["ruleIds"]))[:12],
+                "starterRules": not cand["rules"],
+                "prefix": (man.get("compactPrefix") if (exact and man.get("compactPrefix")) else cand["prefix"]),
+                "maxTools": max_tools, "candidate": cand["config"]["version"],
+                "selection": {"rules": cand["config"]["rules"], "notes": cand["config"]["notes"],
+                              "history": f"newest {cand['historyRecords']} captured RECORDS (multi-line records kept whole)", "tools": cand["maxTools"]},
+                "gaps": ["history: the candidate's 24-hour bound is not verifiable on the captured lines (newest 12 records used)",
+                         "prompt: the bundle's captured system prompt is kept (baseline parity); INTRA prompt rules may be absent"]}
     if variant == "no_knowledge":
         return {"variant": variant, "available": True,
                 "rulesText": format_rules([]), "notesText": format_notes([]),
@@ -498,7 +655,9 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
     man = bundle.get("manifest") or {}
     settings = bundle.get("settings") or {}
     header, header_gaps = _rebuild_header(man, rules_text=kv["rulesText"], notes_text=kv["notesText"],
-                                          history_lines=kv.get("historyLines"))
+                                          history_lines=kv.get("historyLines"), prefix=kv.get("prefix"),
+                                          history_records=kv.get("historyRecords"))
+    header_gaps = list(header_gaps) + list(kv.get("gaps") or [])
     if man.get("exact") and man.get("system"):
         system = str(man["system"])
         system_gap = None
@@ -512,7 +671,8 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
                "proposedNotes": []}
         rep["reportHash"] = _report_hash(rep)
         return rep
-    max_tools = int(max_tools if max_tools is not None else (settings.get("techniques.tip.analyst_max_tools") or 8))
+    max_tools = int(max_tools if max_tools is not None else
+                    (kv.get("maxTools") if kv.get("maxTools") is not None else (settings.get("techniques.tip.analyst_max_tools") or 8)))
     max_tokens = int(max_tokens if max_tokens is not None else (settings.get("techniques.tip.analyst_max_output_tokens") or 3000))
 
     served = _Served(bundle)

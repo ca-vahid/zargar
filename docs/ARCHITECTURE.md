@@ -75,7 +75,7 @@ Identity: `technique` column on `technique_runs/outcomes/sweeps/armed/setups` (D
 `enhanced_market`), `OrderIntent.technique_id`, `ArmedPlan.technique`. Docs: `docs/PLATFORM-RULES.md`
 (shared lessons) and `docs/techniques/<id>/` (the technique's spec, plans and `TRADING-RULES.md`).
 
-**Team2 technique (2026-09-03, `docs/techniques/team2/`).** Fourth registered technique (`team2`): `techniques/team2/` = rules (a `MarketRules` superset snapshotted per plan), regime (13/48/200 EMA on 2m, extended hours), scenario (prior-day-zone bias + 15m-close confirmation), plan (nightly skeleton → 09:25 completion), premium (Black–Scholes 0DTE model, premium-targeted strike), `session.simulate_session` (the ONE pure read used live and in replay), `Team2Runner(PlanRunner)` (overrides the bar loop: re-runs the read on every 2m close and acts on new events through the shared fire/exit path) and `Team2Service` (plan runs, nightly + pre-open jobs, replay, sweep). API `/api/team2/*`; page `Team2Page`. Shared additions it brought: extended-hours bars + `aggregate`/`indicators`/`dailylevels`/`market_calendar` in `marketstructure/`, the nightly `ext_bars` and `vix_bars` research jobs, `options/pick.py`, `research/macro_calendar.py` (`engine.macro`), and the per-technique 0DTE policy in `RiskGate` (`techniques.<id>.zero_dte`).
+**Team2 technique (2026-09-03, `docs/techniques/team2/`).** Fourth registered technique (`team2`): `techniques/team2/` = rules (a `MarketRules` superset snapshotted per plan), regime (13/48/200 EMA on 2m, extended hours), scenario (prior-day-zone bias + 15m-close confirmation), plan (nightly skeleton → 09:25 completion), premium (Black–Scholes 0DTE model, premium-targeted strike), `session.simulate_session` (the ONE pure read used live and in replay), `Team2Runner(PlanRunner)` (overrides the bar loop: re-runs the read on every 2m close and acts on new events through the shared fire/exit path) and `Team2Service` (plan runs, nightly + pre-open jobs, replay, sweep). API `/api/team2/*`; page `Team2Page`. Shared additions it brought: extended-hours bars + `aggregate`/`indicators`/`dailylevels`/`market_calendar` in `marketstructure/`, the nightly `ext_bars` and `vix_bars` research jobs, `options/pick.py`, `research/macro_calendar.py` (`engine.macro`), and the per-technique 0DTE policy in `RiskGate` (`techniques.<id>.zero_dte`). Later shared additions from the same desk (2026-09-14/15): the `state_extras`/`restore_extras`/`entry_gate`/`entry_guard_predicate` PlanRunner hooks, `SubmitUncertain` in `OrderManager.place`, the per-book pause (`HaltState.pauses`, `engine.pause_book`, `POST /api/portfolios/{id}/pause`), and labelled Practice experiment books (`techniques.team2.experiments`, sim-only, one plan per (symbol, book), read-only receipt `zargar.tools.team2_receipt`).
 
 ### Live entry decision policy (2026-09-15)
 
@@ -202,3 +202,13 @@ hidden workspace are never silent: the top bar and the Armed tab show an
 ### Options Cartel documentation and data boundaries (2026-09-13)
 
 The Cartel desk uses the shared engine/order/risk infrastructure with its own preparation, observation, execution policy and research modules. `cartel_history_cache`, `cartel_ignition_theses` and `cartel_preparation_leases` hold replaceable history cache, research lifecycle state and preparation ownership respectively. They do not replace the order/position ledger. Cartel's source-bearing minute snapshots are additive; shared Bar.to_row() stays compatible. See [current Cartel guide](techniques/options-cartel/README.md) and [implementation boundaries](techniques/options-cartel/TRACEABILITY.md).
+
+### Cartel research and execution boundary (2026-09-16)
+
+`techniques/options_cartel/profitability_research.py` persists non-plan Practice
+contexts, observations and quote evidence separately from executable arms. Its
+bounded baseline warmer schedules untried due work before retries using persisted
+counts, without reordering frozen selection rankings. Pure economics comparisons
+live in `research_economics.py`; source/funding observations in `research_quotes.py`.
+The Validation panel reads these records; Daily review reads actual execution and
+fee evidence. Neither research mode nor a successful replay grants order permission.
