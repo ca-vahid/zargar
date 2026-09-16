@@ -244,3 +244,15 @@ diagnostics and predefined exit challengers are Practice observations. They do n
 the automatic market gate, production target veto, 10% ceiling, premium budget, or saved
 campaigns. Research run IDs are not executable plan IDs. Source-backed method descriptions
 and fixed engineering hypotheses remain distinct, with no automatic promotion.
+
+## September 16 operating corrections
+
+A future-session plan owes no observation minutes from its arming day. Active-session
+missing-minute and source-quality checks remain separate. Research baseline scheduling
+now gives untried due candidates priority and rotates retries using persisted counts;
+this changes collection fairness, not candidate rank, eligibility or trade risk.
+
+A gap below a short trigger is not automatically a fresh breakdown. The saved breakout
+or retest mode governs the decision; source examples motivate a separate experiment,
+not a silent entry-rule change. Actual daily accounting remains distinct from proxy
+paths and quote-valued research scenarios. See [the current protocol](PROFITABILITY-RESEARCH.md).

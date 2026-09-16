@@ -1,6 +1,6 @@
 # Current rule and implementation traceability
 
-Reviewed 2026-09-13. Source IDs resolve in [SOURCES.md](SOURCES.md). Module names below are relative to `backend/zargar/techniques/options_cartel/` unless noted. A code path/test verifies mechanics, not author fidelity or investment performance.
+Reviewed 2026-09-16. Source IDs resolve in [SOURCES.md](SOURCES.md). Module names below are relative to `backend/zargar/techniques/options_cartel/` unless noted. A code path/test verifies mechanics, not author fidelity or investment performance.
 
 | Concern | Code | Contract / limits |
 |---|---|---|
@@ -16,6 +16,9 @@ Reviewed 2026-09-13. Source IDs resolve in [SOURCES.md](SOURCES.md). Module name
 | Fills and held positions | `settlement.py`, `adoption.py`, `residuals.py`, `position_adapter.py`, `exit_router.py`, `catchup.py` | Actual fills, provisional partial protection, missed-close adaptation, residual handling and restore |
 | Contracts and risk | `automatic_plans.py`, `contracts.py`, `execution.py`, `loss.py`, `marks.py`, `accounts.py` | Planning vs executable quotes, explicit budgets/Greeks, dedicated book, loss and prior marks |
 | Replays/comparisons | `replay.py`, `replay_service.py`, `sweeps.py`, `premium_replay.py`, `quote_observations.py` | Non-executing research; underlying and recorded-premium results remain distinct |
+| Prospective research | `profitability_research.py`, `intraday_research.py` | Practice-only contexts/observations; full bounded pool; persisted fair retry order; no automatic unlock or orders |
+| Economics and quote studies | `research_economics.py`, `research_quotes.py` | Frozen ranking/target/exit variants, integer units, observation-time causality, entry-time funding limits; absent evidence is unknown |
+| Future-session warnings | `observation_health.py`, `observer.py`, `runtime.py` | A plan owes no minutes before its first session; genuine active-session gaps remain visible |
 | Session review | `session_review.py`; `api/routes_options_cartel.py` | Account/session-scoped decisions and source counts; not estimated option P&L |
 | UI | `frontend/src/pages/CartelPreparation.tsx`, `CartelIgnition.tsx`, `CartelPlanOverview.tsx`, `CartelSessionReview.tsx`, `CartelMethodLibrary.tsx` | Preparation, research, actual arms, quantity previews and method documentation |
 
@@ -32,3 +35,8 @@ The original stage-by-stage matrix is [archived](archive/TRACEABILITY-PRE-2026-0
 - Provider identity: preparation_io.py; test_options_cartel_provider_identity.py.
 - Quantity-dependent exits and evidence: exits.py, replay_service.py, quote_observations.py, premium_replay.py; test_options_cartel_monday_economics.py and existing exit/replay/quote suites.
 - Advisory leader observations and preparation-policy cohorts: leader_context.py; test_options_cartel_leader_context.py. These grant no trading permission and are not profitability measurements.
+
+Current research regression entry points: `test_options_cartel_profitability_research.py`,
+`test_options_cartel_profitability_api.py`, `test_options_cartel_research_economics.py`,
+`test_options_cartel_research_quotes.py`, `test_options_cartel_session_warning.py`.
+These supplement the execution/replay suites rather than replacing them.

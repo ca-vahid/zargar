@@ -43,7 +43,7 @@ Code: `backend/zargar/options/` (occ symbology, chain providers, OptionsService)
 `components/OptionChain.tsx` / `OptionTicket.tsx`. Internal option symbol =
 **unpadded OCC** (`F260828C00014500`); `occ.to_snaptrade()` pads at the venue.
 
-Technique pipeline (EnhancedMarket method): spec in `docs/techniques/enhanced-market/METHOD.md`,
+Technique pipeline (EnhancedMarket method): **start at `docs/techniques/enhanced-market/README.md`** (doc map, state of play, known gaps); spec in `docs/techniques/enhanced-market/METHOD.md`,
 build plan + lessons in `docs/techniques/enhanced-market/PIPELINE-PLAN.md`, code in
 `backend/zargar/technique/`, UI in `frontend/src/pages/TechniquePage.tsx`.
 Review loop (trace, provenance, outcomes, reviews, replay, bundle):
@@ -465,7 +465,7 @@ frontend production build runs this check automatically.
   < 3 contracts); tests that encode the book's TP3 arithmetic pin `tp3` in their rig.
 - Live 1m bars: `BarAggregator` holds a sampled bar ~5 s for the Alpaca exchange bar
   (`feed.exchange_bar_hold_seconds`); consumers get ONE bar per minute (`source: exchange`
-  when corrected). The fire→critic→order chain runs off the bar loop (`_spawn_fire`);
+  when corrected). The fire→decision→order chain runs off the bar loop (`_spawn_fire`; EM's decision is the pure deterministic rule set since 2026-09-15, the critic only under `legacy`);
   tests/manual feeds call `armer.on_bar()` which awaits `wait_fires()`.
 - **Both sides are planned** (`technique.long_only` off): trigger kinds `bounce`/`breakout`/
   `wedge_break` (long, calls) and `reject`/`breakdown` (short, PUTS only — never share
@@ -482,11 +482,14 @@ frontend production build runs this check automatically.
   and may re-plan with `build_session_plan(reference_price=)`; a re-planned run's
   `referencePrice` is the tracker's prev_close for the gap rule.
 - Auto mode never arms without a loss halt (`_ensure_loss_halt`, fallback
-  `technique.arm.daily_loss_fallback`); the critic fails OPEN with a timeout + per-day
-  budget (`technique.arm.critic_fail_budget`) that pauses the plan. **The critic's veto is a knob**
-  (`execution.critic_mode` = veto | momentum_only | advisory; EM runs `momentum_only` since
-  2026-09-09: a "no" on an at-level bounce/reject is recorded and the entry proceeds; breakouts,
-  breakdowns and wedge breaks are still vetoed - TRADING-RULES §5).
+  `technique.arm.daily_loss_fallback`). **EM's live entry is DETERMINISTIC since 2026-09-15**
+  (`techniques.enhanced_market.fire_decision_mode=deterministic`, `deterministic-entry-v1`: the app's rules judge
+  the tracker's actual transition in <1 ms, journal `TechniqueEntryDecision` with frozen snapshot + bars, no model
+  on the entry path; `fire_evidence_mode=off` | `after_close` = optional evidence-only model pass later). The
+  critic machinery below applies only under the explicit `legacy` rollback (and to other desks' runners): the
+  critic fails OPEN with a timeout + per-day budget (`technique.arm.critic_fail_budget`) that pauses the plan, and
+  its veto is a knob (`execution.critic_mode` = veto | momentum_only | advisory; EM ran `momentum_only`
+  2026-09-09..15 - TRADING-RULES §1.4, §5). EM doc map + state of play: `docs/techniques/enhanced-market/README.md`.
 - Armed plans also run a ~2s **quote stop watch** (`technique.arm.quote_exit*`):
   exit-only, fires when the underlying's live quote is decisively through the stop
   (excess_r × risk beyond, N consecutive polls). Never add an entry path to
@@ -554,5 +557,5 @@ frontend production build runs this check automatically.
   (`/opt/pw-browsers` chromium in the dev container).
 **Team2 technique (BUILT v0.1 2026-09-03; the Team2 desk = this session's group):** `docs/techniques/team2/` — Casey/@Team2Trading's SPY/QQQ/IWM 0DTE method (4 levels + 13/48/200 EMA on 2m + 15m-close confirmation, EMA13 pullback entries, ~$0.50 premium-targeted contracts, +50/+100% trims, flatten 15:45). `README.md` (doc map, capture recipe), `METHOD.md` (numbered rules, §7b/§7c from images + videos), `PLAN.md` (decisions D1–D14, engine list §3b, review §3c, phases with checkboxes), `TRADING-RULES.md`, `SOURCES.md` + `notes/` (49 posts, 2 transcripts, 145 images — jpg local only). Code: `zargar/techniques/team2/` (rules/regime/scenario/levels/plan/premium/**session.py = the one pure read**/runner/service), `api/routes_team2.py`, `frontend/src/pages/Team2Page.tsx`, `tools/team2_sweep.py`. **Built completely separately from EM** — shared engine additions (ext-hours bars, `marketstructure/aggregate|indicators|dailylevels|market_calendar`, `options/pick`, `research/macro_calendar`, per-technique 0DTE RiskGate policy `techniques.<id>.zero_dte`) are logged in PLATFORM-RULES; never edit EM's `zargar/technique/` for Team2. User decision 2026-09-03: **Team2 IS a 0DTE technique** (its own gated policy). Tests: `pytest tests/test_team2_*.py tests/test_codex_*.py tests/test_marketstructure_extended.py` (own DB `zargar_test_team2` on :5433; `test_codex_*` = reviewers' regressions adopted verbatim). **Status 2026-09-16 (live v0.7.94):** AUTO on the `Team2 Practice` book ($10k) since 2026-09-08; cohort v2 (from 2026-09-11) is the evaluation set — listed strikes, live NBBO the only contract authority (`require_fresh_quote`), one warm-up rule, the full candidate→quote→order→fill→exit trail journaled (`TechniquePlanContract`); first v2 fills 2026-09-16; twenty sessions trigger a review, never a promotion (PLAN §3d). The 2026-09-14 EOD corrective batch is CLOSED (v0.7.82: durable refusal overlay on the shared `state_extras`/`entry_gate`/`entry_guard_predicate` hooks, decision watermark, `SubmitUncertain` resolved only by the venue's report with cumulative fills, orphan stop); F127 0DTE cap clamp v0.7.88. F81b (`target_replan=structure`, gap days) ON under observation. Research knobs OFF: `no_trade_zone` (C1 conjunction), `pm_room_atr`, `min_target_atr`, `key_levels` (C2 D1/D2/D3, built + accepted, sweeps via `zargar.tools.team2_c2_report` once C6 lands; validation 09-14..10-09 sealed); C4/C5 undefined; near-ITM eligibility = user decision. **Profitability track:** exploratory comparisons + sheet rev. 2 accepted (sizing cap `size_full=0.5` first, C1 follow-on; sampled −$800 MTM threshold → per-book PAUSE `POST /api/portfolios/{id}/pause`, never auto-revert); parallel experiments BUILT and OFF on three labelled sim books (`Team2 Control` / `Team2 Sizing 0.5` / `Team2 C1 Conjunction`; `techniques.team2.experiments` whole-map schema with roles, overrides frozen on the plan at mint, per-book counters, verified transitions; read-only receipt `zargar.tools.team2_receipt` = PREPARED, blocker C6) — activation needs the reviewed `notes/research/c6-evidence.json` + the other team's GO; sim-only, never real money. Deploys only via the `ZargarRestart` task after `/api/ops/restart-check` (assistant shells are elevated; `start.ps1` refuses them). Watch job: `team2-market-watch` (30 min) → `notes/market-watch.md`, findings F13–F127 in TRADING-RULES. State of play: PLAN §3e; known gaps: README "Known gaps, risks and what could be wrong"; the week-37 plan: `notes/research/2026-09-12-week37-review-and-change-plan.md`; C2 spec: `notes/research/2026-09-13-c2-key-levels-spec.md`. A change to `session.py` touches the live read unless a before/after test proves otherwise (the 0.7.60 lesson).
 
-**Options Cartel documentation:** current guide in `docs/techniques/options-cartel/README.md`; operating policy in `DAILY-PREPARATION.md`, source/pilot distinction in `IGNITION.md`, current implementation limits in `DELIVERY-STATUS.md`. Historical plan/test/deployment records are not live state.
+**Options Cartel documentation:** current guide in `docs/techniques/options-cartel/README.md`; operating policy in `DAILY-PREPARATION.md`, source/pilot distinction in `IGNITION.md`, current implementation limits in `DELIVERY-STATUS.md`. Historical plan/test/deployment records are not live state. Prospective studies and fair baseline scheduling are documented in `PROFITABILITY-RESEARCH.md`; actual daily accounting is separate from research proxies. Use `RELEASE-HANDOFF.md` for reviewed-source, full-artifact and restoration checks.
 

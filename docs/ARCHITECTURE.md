@@ -202,3 +202,13 @@ hidden workspace are never silent: the top bar and the Armed tab show an
 ### Options Cartel documentation and data boundaries (2026-09-13)
 
 The Cartel desk uses the shared engine/order/risk infrastructure with its own preparation, observation, execution policy and research modules. `cartel_history_cache`, `cartel_ignition_theses` and `cartel_preparation_leases` hold replaceable history cache, research lifecycle state and preparation ownership respectively. They do not replace the order/position ledger. Cartel's source-bearing minute snapshots are additive; shared Bar.to_row() stays compatible. See [current Cartel guide](techniques/options-cartel/README.md) and [implementation boundaries](techniques/options-cartel/TRACEABILITY.md).
+
+### Cartel research and execution boundary (2026-09-16)
+
+`techniques/options_cartel/profitability_research.py` persists non-plan Practice
+contexts, observations and quote evidence separately from executable arms. Its
+bounded baseline warmer schedules untried due work before retries using persisted
+counts, without reordering frozen selection rankings. Pure economics comparisons
+live in `research_economics.py`; source/funding observations in `research_quotes.py`.
+The Validation panel reads these records; Daily review reads actual execution and
+fee evidence. Neither research mode nor a successful replay grants order permission.
