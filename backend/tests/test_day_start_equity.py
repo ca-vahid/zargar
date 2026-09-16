@@ -11,7 +11,10 @@ import datetime as dt
 import pytest
 from zoneinfo import ZoneInfo
 
-from zargar.models import EquityPoint, Portfolio
+from sqlalchemy import select
+
+from zargar.domain import Quote
+from zargar.models import EquityPoint, Event, Portfolio
 
 ET = ZoneInfo("America/New_York")
 
@@ -125,3 +128,72 @@ async def test_a_level_set_on_a_book_with_no_anchor_yet_is_not_a_loss(engine):
 
     assert await engine.positions.day_start_equity(pid) == pytest.approx(10_000.0)
     assert await engine.positions.daily_loss_pct(pid) == pytest.approx(0.0)
+
+
+def _hold(engine, pid: str, symbol: str, qty: float, avg: float, currency: str, sec_type: str = "STK"):
+    engine.positions._positions[(pid, symbol, sec_type)] = {
+        "portfolioId": pid, "symbol": symbol, "secType": sec_type,
+        "qty": qty, "avgCost": avg, "realizedPnl": 0.0, "currency": currency,
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_sync_that_changes_nothing_never_moves_the_anchor(engine):
+    """The 2026-09-15 leak: a broker sync that only CORRECTS a position's
+    currency (in-memory CAD, broker says USD) used to shift the anchor by the
+    whole FX difference of the holding - nothing moved, nothing should shift."""
+    pid = await _book(engine)
+    engine.quotes.on_quote(Quote(symbol="USDCAD=X", bid=1.39, ask=1.39, last=1.39))
+    engine.quotes.on_quote(Quote(symbol="TQQQ", bid=67.8, ask=68.0, last=67.9))
+    engine.positions._portfolios[pid]["baseCurrency"] = "CAD"
+    _hold(engine, pid, "TQQQ", 42.0, 32.17, currency="CAD")       # mislabelled, as loaded
+    await _points(engine, pid, [(_day0_ms() - 3600_000, 4_096.92)])
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(4_096.92)
+
+    await engine.positions.sync_portfolio_state(
+        pid, cash=10_000.0,
+        positions=[{"symbol": "TQQQ", "secType": "STK", "qty": 42.0, "avgCost": 32.17,
+                    "currency": "USD", "price": 67.9}],
+        source="test")
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(4_096.92)
+    async with engine.sf() as session:
+        n = len((await session.execute(select(Event).where(
+            Event.type == "DayAnchorShifted", Event.portfolio_id == pid))).scalars().all())
+    assert n == 0
+
+
+@pytest.mark.asyncio
+async def test_holdings_that_appear_at_a_sync_are_a_level_set(engine):
+    """Ten shares the broker reports for the first time are money that was
+    already there, valued at the book's mark - not a gain made today."""
+    pid = await _book(engine)
+    engine.quotes.on_quote(Quote(symbol="XYZ", bid=4.9, ask=5.1, last=5.0))
+    await _points(engine, pid, [(_day0_ms() - 3600_000, 10_000.0)])
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(10_000.0)
+
+    await engine.positions.sync_portfolio_state(
+        pid, cash=10_000.0,
+        positions=[{"symbol": "XYZ", "secType": "STK", "qty": 10.0, "avgCost": 4.0, "currency": "USD"}],
+        source="test")
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(10_050.0)
+    assert await engine.positions.daily_loss_pct(pid) == pytest.approx(0.0, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_level_sets_are_replayed_after_a_restart(engine):
+    """A transfer at 10:00 must still be a transfer, not a loss, after the
+    engine restarts at 14:00 - the shift is journaled and folded back in."""
+    pid = await _book(engine)
+    await _points(engine, pid, [(_day0_ms() - 3600_000, 10_000.0)])
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(10_000.0)
+    await engine.positions.sync_portfolio_state(pid, cash=8_400.0, positions=[], source="test")
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(8_400.0)
+
+    engine.positions._day_start_equity.clear()                    # the restart
+    assert await engine.positions.day_start_equity(pid) == pytest.approx(8_400.0)
+    assert await engine.positions.daily_loss_pct(pid) == pytest.approx(0.0, abs=0.01)
+    async with engine.sf() as session:
+        ev = (await session.execute(select(Event).where(
+            Event.type == "DayAnchorShifted", Event.portfolio_id == pid))).scalars().one()
+    assert ev.payload["delta"] == pytest.approx(-1_600.0)
+    assert ev.payload["cashDelta"] == pytest.approx(-1_600.0)

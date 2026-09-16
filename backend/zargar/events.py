@@ -86,6 +86,9 @@ BROKER_DISCONNECTED = "BrokerDisconnected"
 BROKER_SYNC = "BrokerSync"
 BROKER_SYNC_MISMATCH = "BrokerSyncMismatch"
 POSITION_RECONCILED = "PositionReconciled"
+# a broker level-set moved the day anchor (cash in/out, holdings that appeared
+# or vanished at the sync) - replayed after a restart so "today" survives it
+DAY_ANCHOR_SHIFTED = "DayAnchorShifted"
 BROKER_ORDER_LINKED = "BrokerOrderLinked"
 BROKER_SUBMIT_UNKNOWN = "BrokerSubmitUnknown"
 BROKERAGE_ACCOUNT_LINKED = "BrokerageAccountLinked"
