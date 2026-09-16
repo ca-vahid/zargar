@@ -36,7 +36,7 @@ log = logging.getLogger("zargar.tip.frozen")
 BUNDLE_VERSION = 1
 MISSING = ("(unavailable in the frozen bundle - not persisted at run time; "
            "a frozen replay never fetches today's data)")
-VARIANTS = ("current", "core_only", "no_knowledge", "compact")
+VARIANTS = ("current", "core_only", "no_knowledge", "compact", "recap_candidate")
 COMPACT_HISTORY_LINES = 12      # PROF-05: the compact context keeps the newest N history lines
 # settings a run's behaviour depends on - captured verbatim on the bundle
 SETTINGS_KEYS = (
@@ -123,7 +123,7 @@ def trim_history(text: str | None, lines: int) -> str:
 
 
 def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
-                    history_lines: int | None = None) -> tuple[str, list[str]]:
+                    history_lines: int | None = None, prefix: str | None = None) -> tuple[str, list[str]]:
     """The run's header with the rules and notes blocks replaced. An EXACT
     manifest is sliced at its markers (verbatim otherwise); a reconstructed
     one is assembled from the bundle's components with every unknown block
@@ -144,7 +144,8 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
             nl = tail.find("\n", 1)                    # the marker line may begin with a newline
             if nl >= 0:
                 tail = tail[:nl + 1] + trim_history(tail[nl + 1:], history_lines)
-        return (h[:i + len(mark)] + rules_text + _NOTES_MARK + notes_text + tail), gaps
+        out = h[:i + len(mark)] + rules_text + _NOTES_MARK + notes_text + tail
+        return ((prefix + "\n\n" + out) if prefix else out), gaps
     tip = manifest.get("tip") or {}
     ver = manifest.get("verification") or {}
     pol = manifest.get("policy") or {}
@@ -174,6 +175,8 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
                   + header)
     if manifest.get("historicalNote"):
         header = str(manifest["historicalNote"]) + "\n\n" + header
+    if prefix:
+        header = prefix + "\n\n" + header
     gaps.append("context manifest reconstructed from components (not captured verbatim)")
     if not manifest.get("historyText"):
         gaps.append("source history block missing (not persisted at run time)")
@@ -420,6 +423,31 @@ def variant_knowledge(bundle: dict, variant: str) -> dict:
                               "history": f"newest {COMPACT_HISTORY_LINES} lines"},
                 **({"degenerate": "no core rules in the bundle - starter rules supplied"}
                    if not core_r else {})}
+    if variant == "recap_candidate":
+        # I175-04 (2026-09-16): the PRODUCTION recap route's exact treatment, assembled by the
+        # same builder production uses (recap.build_candidate_context) on the bundle's captured
+        # rules / notes / history - the comparison changes only that treatment. The 24-hour
+        # history bound cannot be verified on captured lines: declared, never filled.
+        from . import recap as _recap
+        if rules and any(r.get("core") is None for r in rules):
+            return {"variant": variant, "available": False,
+                    "reason": "bundle's rule snapshot carries no core flags"}
+        tip = (bundle.get("run") or {}).get("tip") or (bundle.get("manifest") or {}).get("tip") or {}
+        conf = ((bundle.get("run") or {}).get("recapRead") or {}).get("confidence")
+        cand = _recap.build_candidate_context(rules=rules, notes=notes, history_text=(bundle.get("manifest") or {}).get("historyText"),
+                                              ticker=tip.get("ticker"), source=tip.get("source"), confidence=conf)
+        return {"variant": variant, "available": True,
+                "rulesText": format_rules(cand["rules"]), "notesText": format_notes(cand["notes"]),
+                "ruleIds": cand["ruleIds"], "noteIds": cand["noteIds"],
+                "rulesSupplied": len(cand["rules"]), "notesSupplied": len(cand["notes"]),
+                "dropped": (len(rules) - len(cand["rules"])) + (len(notes) - len(cand["notes"])),
+                "rulesHash": _sha(_canonical(cand["ruleIds"]))[:12],
+                "starterRules": not cand["rules"], "historyLines": cand["historyLines"],
+                "prefix": cand["prefix"], "maxTools": cand["maxTools"], "candidate": cand["config"]["version"],
+                "selection": {"rules": cand["config"]["rules"], "notes": cand["config"]["notes"],
+                              "history": f"newest {cand['historyLines']} captured lines", "tools": cand["maxTools"]},
+                "gaps": ["history: the candidate's 24-hour bound is not verifiable on the captured lines (newest 12 records used)",
+                         "prompt: the bundle's captured system prompt is kept (baseline parity); INTRA prompt rules may be absent"]}
     if variant == "no_knowledge":
         return {"variant": variant, "available": True,
                 "rulesText": format_rules([]), "notesText": format_notes([]),
@@ -498,7 +526,8 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
     man = bundle.get("manifest") or {}
     settings = bundle.get("settings") or {}
     header, header_gaps = _rebuild_header(man, rules_text=kv["rulesText"], notes_text=kv["notesText"],
-                                          history_lines=kv.get("historyLines"))
+                                          history_lines=kv.get("historyLines"), prefix=kv.get("prefix"))
+    header_gaps = list(header_gaps) + list(kv.get("gaps") or [])
     if man.get("exact") and man.get("system"):
         system = str(man["system"])
         system_gap = None
@@ -512,7 +541,8 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
                "proposedNotes": []}
         rep["reportHash"] = _report_hash(rep)
         return rep
-    max_tools = int(max_tools if max_tools is not None else (settings.get("techniques.tip.analyst_max_tools") or 8))
+    max_tools = int(max_tools if max_tools is not None else
+                    (kv.get("maxTools") if kv.get("maxTools") is not None else (settings.get("techniques.tip.analyst_max_tools") or 8)))
     max_tokens = int(max_tokens if max_tokens is not None else (settings.get("techniques.tip.analyst_max_output_tokens") or 3000))
 
     served = _Served(bundle)

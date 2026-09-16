@@ -667,7 +667,9 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
                             vehicle=("shares" if is_shares else "option"),
                             strike=(None if is_shares else ev.get("strike")), premium=(None if is_shares else limit),
                             option_type=(None if is_shares else (ev.get("optionType") or "call")),
-                            dte=dte_days, hold_sessions=(int(hold) if hold is not None else None))
+                            dte=dte_days, hold_sessions=(int(hold) if hold is not None else None),
+                            expiry_date=(None if is_shares else ev.get("expiry")),
+                            exit_at_expiry=bool(args.get("exit_at_expiry") or False))
     return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
             "unitRisk": ul, "unitRiskBasis": basis, **pv,
             "execCost": _exec_cost(eng, is_shares=is_shares, symbol=(under if is_shares else contract), qty=qty)}
@@ -1546,7 +1548,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     # tools and the safety floor are unchanged; the route is on the record
     compact = str(header_mode or "full") == "compact"
     if compact:
-        max_tools = min(max_tools, int(s.get("techniques.tip.recap_max_tools", 2) or 2))
+        from . import recap as _recap
+        max_tools = min(max_tools, int(s.get("techniques.tip.recap_max_tools", _recap.CANDIDATE["maxTools"]) or _recap.CANDIDATE["maxTools"]))
     if client is None:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=api_key)
@@ -1627,8 +1630,12 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         history_txt = ("(withheld in historical mode — search_messages is capped "
                        "to the tip's own time)")
     else:
-        history_txt = await (_source_history(eng, signal_row.source_name, hours=24, limit=12) if compact
-                             else _source_history(eng, signal_row.source_name))
+        if compact:
+            from . import recap as _recap
+            history_txt = await _source_history(eng, signal_row.source_name, hours=float(_recap.CANDIDATE["historyHours"]),
+                                                limit=int(_recap.CANDIDATE["historyRecords"]))
+        else:
+            history_txt = await _source_history(eng, signal_row.source_name)
 
     rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
              f"from {signal_row.source_name or 'unknown'}"
@@ -1676,11 +1683,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"backstory this tip arrived in: earlier OPENs, trims, exits, mood. Read it "
               f"before judging; search_messages digs deeper/older):\n{history_txt}")
     if compact:
-        header = ("COMPACT ROUTE: this message read as a confirmed map/recap/digest (deterministic read, "
-                  f"confidence {float((recap_read or {}).get('confidence') or 0):.2f}); you get the core rules, the notes "
-                  "relevant to this ticker/source and a short history, and a small tool budget. If it IS a real "
-                  "open or a management instruction after all, say so plainly ('watch' or the instruction) - "
-                  "the full route can be forced by the desk.\n\n" + header)
+        from . import recap as _recap
+        header = _recap.candidate_prefix((recap_read or {}).get("confidence")) + "\n\n" + header
     if siblings:
         header = ("THIS MESSAGE HAS SEVERAL BRANCHES and is appraised ONCE, on this one: "
                   + "; ".join(siblings) + ". Judge the MESSAGE (is it a map, a digest, a "
@@ -1775,6 +1779,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat(),
               "usage": loop_state.get("usage"),
               "headerMode": ("compact" if compact else "full"), "headerChars": len(header),
+              **({"recapCandidate": __import__("zargar.techniques.tip.recap", fromlist=["CANDIDATE"]).CANDIDATE["version"]} if compact else {}),
               **({"recapRead": recap_read} if recap_read else {}),
               **({"receipts": tool_ctx["receipts"]} if tool_ctx.get("receipts") else {}),
               **({"experiment": experiment} if experiment else {})}

@@ -32,11 +32,15 @@ def test_preview_prints_the_expiration_break_even_beside_before_expiry_scenarios
     gains = payoff.unit_gains(vehicle="option", entry_ref=346.03, targets=[349.0], delta=0.356, multiplier=100.0)
     pv = payoff.payoff_preview(qty=1, fractions=[1.0], gains=gains, unit_loss=109.5, fee_per_unit=FEE, vehicle="option",
                                strike=350.0, premium=2.19, option_type="call", dte=2, hold_sessions=1)
-    assert pv["breakEven"]["expiration"] == 352.19 and pv["horizon"]["exitAssumption"] == "before expiry"
+    assert pv["breakEven"]["expiration"] == 352.19 and pv["horizon"]["exitAssumption"].startswith("before expiry")
     assert pv["scenarios"]["allTargets"]["net"] > 0, "the delta-linear exit at 349 is a profit even though 349 < 352.19"
     at_expiry = payoff.payoff_preview(qty=1, fractions=[1.0], gains=gains, unit_loss=109.5, vehicle="option",
                                       strike=350.0, premium=2.19, option_type="call", dte=2, hold_sessions=2)
-    assert at_expiry["horizon"]["exitAssumption"] == "at expiry"
+    # I175-03: a hold cap that reaches the expiry is still NOT an expiry exit; only a declared one is
+    assert at_expiry["horizon"]["exitAssumption"].startswith("before expiry") and at_expiry["horizon"]["holdCapReachesExpiry"] in (True, False)
+    declared = payoff.payoff_preview(qty=1, fractions=[1.0], gains=gains, unit_loss=109.5, vehicle="option",
+                                     strike=350.0, premium=2.19, option_type="call", dte=2, hold_sessions=2, exit_at_expiry=True)
+    assert declared["horizon"]["exitAssumption"] == "declared: held to expiry"
     shares = payoff.payoff_preview(qty=10, fractions=[1.0], gains=[3.0], unit_loss=1.0, vehicle="shares")
     assert "breakEven" not in shares and "singleLot" not in shares
 

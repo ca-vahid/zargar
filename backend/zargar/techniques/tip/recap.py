@@ -19,7 +19,46 @@ from __future__ import annotations
 
 import re
 
-CLASSIFIER_VERSION = "recap-read-v1"
+CLASSIFIER_VERSION = "recap-read-v2"    # v2 (I175-01): a fresh priced entry / entry cues on an actionable open pre-empt recap scoring
+
+# I175-04: the ONE recap-candidate configuration the production compact route and the
+# isolated frozen replay both assemble from - so a paid comparison evaluates exactly the
+# treatment production would apply. Every field is frozen here; a change is a new version.
+CANDIDATE = {
+    "version": "recap-candidate-v1",
+    "rules": "core only (compact_rules: pinned rules; the newest 5 when nothing is pinned)",
+    "notes": "core notes + ticker:<ticker> + source:<source> (compact_notes)",
+    "historyHours": 24, "historyRecords": 12,
+    "historyNote": "production: the newest 12 mirrored records within 24 h; a frozen bundle holds the run's captured "
+                   "~72 h list newest-first, so replay takes its newest 12 lines and the 24 h bound is NOT verified "
+                   "(declared as a gap, never filled from today's data)",
+    "maxTools": 2,
+    "prefixTemplate": ("COMPACT ROUTE: this message read as a confirmed map/recap/digest (deterministic read, "
+                       "confidence {confidence:.2f}); you get the core rules, the notes relevant to this ticker/source "
+                       "and a short history, and a small tool budget. If it IS a real open or a management instruction "
+                       "after all, say so plainly ('watch' or the instruction) - the full route can be forced by the desk."),
+    "promptRules": ["BREAK-EVEN IS AN EXPIRATION NUMBER", "ONE LOT IS AN EXIT-PLAN QUESTION"],
+    "promptNote": "a frozen replay keeps the bundle's captured system prompt (baseline parity); when that prompt predates "
+                  "the INTRA rules the difference is declared on the report, not corrected from today",
+}
+
+
+def candidate_prefix(confidence: float | None) -> str:
+    return CANDIDATE["prefixTemplate"].format(confidence=float(confidence or 0.0))
+
+
+def build_candidate_context(*, rules: list[dict], notes: list[dict], history_text: str | None, ticker: str | None,
+                            source: str | None, confidence: float | None) -> dict:
+    """The exact compact context the candidate assembles from a given rulebook, note set and
+    history block - used by production (live selections) and by the frozen replay (the
+    bundle's captured selections) alike."""
+    sel_rules = compact_rules(rules)
+    sel_notes = compact_notes(notes, ticker=ticker, source=source)
+    return {"config": dict(CANDIDATE), "ruleIds": [r.get("id") for r in sel_rules], "noteIds": [n.get("id") for n in sel_notes],
+            "rules": sel_rules, "notes": sel_notes,
+            "historyText": trim_history(history_text, CANDIDATE["historyRecords"]),
+            "historyLines": CANDIDATE["historyRecords"], "prefix": candidate_prefix(confidence),
+            "maxTools": int(CANDIDATE["maxTools"])}
 MANAGEMENT_ACTIONS = ("trim", "close", "update_stop")
 RECAP_CUES = ("map", "levels", "level map", "recap", "digest", "update", "unrealized", "positions", "holdings",
               "running", "scoreboard", "watchlist", "eyeing", "watching", "candidates", "summary", "review")
@@ -42,7 +81,10 @@ def classify(signals, text: str | None, *, fan_in_min: int = 3) -> dict:
     n = len(sigs)
     t = (text or "").lower()
     mgmt = [s for s in sigs if s["action"] in MANAGEMENT_ACTIONS]
-    priced_opens = [s for s in sigs if s["action"] in ("open", "add") and (s["premium"] or s["entry_price"])]
+    # a recap's OLD averages arrive as non-actionable priced opens: they are not entries
+    # (the extractor sets is_actionable False on them); only actionable priced opens count
+    priced_opens = [s for s in sigs if s["action"] in ("open", "add") and (s["premium"] or s["entry_price"]) and s["is_actionable"]]
+    old_averages = [s for s in sigs if s["action"] in ("open", "add") and (s["premium"] or s["entry_price"]) and not s["is_actionable"]]
     unpriced_opens = [s for s in sigs if s["action"] in ("open", "add") and not (s["premium"] or s["entry_price"])]
     actionable = [s for s in sigs if s["is_actionable"]]
     by_under: dict[str, set] = {}
@@ -54,12 +96,22 @@ def classify(signals, text: str | None, *, fan_in_min: int = 3) -> dict:
     recap_cues = [c for c in RECAP_CUES if c in t]
     entry_cues = [c for c in ENTRY_CUES if re.search(r"\b" + re.escape(c) + r"\b", t)]
     features = {"branches": n, "distinctTickers": distinct, "management": len(mgmt), "pricedOpens": len(priced_opens),
-                "unpricedOpens": len(unpriced_opens), "actionable": len(actionable), "bothSidesSameUnderlying": both_sides,
+                "unpricedOpens": len(unpriced_opens), "oldAverages": len(old_averages), "actionable": len(actionable),
+                "bothSidesSameUnderlying": both_sides,
                 "recapCues": recap_cues, "entryCues": entry_cues}
+    fresh = [s for s in sigs if s["action"] in ("open", "add") and s["is_actionable"] and (s["premium"] or s["entry_price"])]
+    features["freshPricedEntries"] = len(fresh)
     reasons: list[str] = []
     if n <= 1:
         cat, conf = "single", 1.0
         reasons.append("one signal - the ordinary route")
+    elif fresh or (entry_cues and actionable):
+        # I175-01: a confirmed fresh entry (a priced, actionable open/add) or entry cues on
+        # actionable content is a FULL-route condition BEFORE any recap scoring - a map that
+        # carries one real BTO is a mixed message, never a recap
+        cat, conf = "mixed", 0.0
+        reasons.append((f"{len(fresh)} fresh priced actionable open(s) inside the message" if fresh else
+                        "entry cues (" + ", ".join(entry_cues[:3]) + ") on actionable content") + " - full route before scoring")
     elif mgmt and not priced_opens:
         cat, conf = "management", 0.9
         reasons.append(f"{len(mgmt)} management instruction(s) (trim/close/update_stop), no priced open")
