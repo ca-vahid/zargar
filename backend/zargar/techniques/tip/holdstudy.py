@@ -226,6 +226,23 @@ def _risk_for_sample(row: dict) -> tuple[float | None, str]:
     return planned, "legacy row: planned risk not rebased to the sampled size"
 
 
+def book_eligibility(row: dict) -> tuple[str, str | None]:
+    """HOLD-SCOPE-02 (2026-09-16): is this observation's INVENTORY trustworthy enough to
+    grade performance on? A quarantined book (an unreconciled or runaway shadow book), a
+    position in `attention` (reconcile discrepancy) or an unknown scope keeps the raw
+    observation as a DIAGNOSTIC and is never an adequate pair. Missing provenance is
+    `unknown`, never assumed Practice / clean."""
+    q = row.get("quarantined")
+    if q is True:
+        return "quarantined", "quarantined book: " + str(row.get("quarantineReason") or row.get("quarantineNote") or "inventory not trusted")
+    ps = str(row.get("positionStatus") or "")
+    if ps == "attention":
+        return "attention", "position in attention (unreconciled inventory)"
+    if q is None or not row.get("bookKind"):
+        return "unknown", "book scope / quarantine provenance unknown (historical row; resolve from the durable book or leave unknown)"
+    return "eligible", None
+
+
 def compare_row(row: dict, *, fee_per_contract: float = 0.0, stock_commission: float = 0.0,
                 reg_per_contract: float = 0.0) -> dict:
     """Pure: the two arms for one snapshot row, net of the allocated entry fee
@@ -238,7 +255,9 @@ def compare_row(row: dict, *, fee_per_contract: float = 0.0, stock_commission: f
                        a quote comparison, not what the managed strategy earned.
     `managedCarry`   = what the strategy actually did when its own stop/exit closed
                        the position before the next-open sample (known only then).
-    Insufficient whenever an arm lacks a qualified quote in its window."""
+    Insufficient whenever an arm lacks a qualified quote in its window; a quarantined /
+    attention / unknown-scope book is computed as a DIAGNOSTIC but never adequate
+    (HOLD-SCOPE-02)."""
     qty = float(row.get("qty") or 0)
     mult = float(row.get("multiplier") or (100.0 if row.get("secType") == "OPT" else 1.0))
     entry = float(row.get("entryPrice") or 0)
@@ -247,12 +266,15 @@ def compare_row(row: dict, *, fee_per_contract: float = 0.0, stock_commission: f
     fee = costs["total"]
     risk, risk_basis = _risk_for_sample(row)
     out = {"version": STUDY_VERSION, "id": row.get("id"), "positionId": row.get("positionId"),
-           "bookKind": row.get("bookKind"), "symbol": row.get("symbol"), "legSymbol": row.get("legSymbol"), "arm": row.get("arm"), "setup": setup_of(row), "qty": qty, "entryPrice": entry,
+           "bookKind": row.get("bookKind") or "unknown", "portfolioId": row.get("portfolioId"),
+           "eligibility": None, "eligibilityReason": None, "symbol": row.get("symbol"), "legSymbol": row.get("legSymbol"), "arm": row.get("arm"), "setup": setup_of(row), "qty": qty, "entryPrice": entry,
            "plannedRisk": row.get("plannedRisk"), "riskForSample": risk, "riskBasis": risk_basis, "costs": costs,
            "adequate": False, "reason": None,
            "meaning": {"carryToNextOpen": "overnight quote drift (next-open bid), not the strategy's realized result",
                        "intradayExit": "predeclared pre-close liquidation of the sampled size",
                        "managedCarry": "the strategy's own exit when it closed before the next-open sample"}}
+    elig, elig_reason = book_eligibility(row)
+    out["eligibility"], out["eligibilityReason"] = elig, elig_reason
     pre = row.get("precloseQuote") or {}
     nxt = row.get("nextOpenQuote") or {}
     pre_ok = row.get("precloseStatus") == "fresh" and float(pre.get("bid") or 0) > 0
@@ -282,7 +304,7 @@ def compare_row(row: dict, *, fee_per_contract: float = 0.0, stock_commission: f
                    "closedAt": co.get("closedAt"), "reason": co.get("reason")}
     elif row.get("arm") == "carry":
         managed = {"known": False, "note": "still open at the next-open sample - the strategy's result is not yet known"}
-    out.update(adequate=True,
+    out.update(adequate=(elig == "eligible"),
                intradayExit={"price": pre_bid, "net": round(intraday, 2), "R": r_of(intraday)},
                carryToNextOpen={"price": float(nxt["bid"]), "net": round(carry, 2), "R": r_of(carry)},
                carryMinusIntraday=round(carry - intraday, 2),
@@ -290,52 +312,82 @@ def compare_row(row: dict, *, fee_per_contract: float = 0.0, stock_commission: f
                sacrificedWinner=(row.get("arm") == "intraday_exit" and carry > intraday),
                note="carry is the next session's FIRST qualified bid inside the opening window (quote drift), "
                     "never a later peak; the position's real stops/exits were untouched")
+    if elig != "eligible":
+        out["reason"] = f"{elig_reason} - diagnostic only, not performance evidence"
+        out["diagnosticOnly"] = True
     return out
 
 
+def _agg_bucket() -> dict:
+    return {"n": 0, "insufficient": 0, "ineligible": 0, "carryNet": 0.0, "intradayNet": 0.0,
+            "carryR": [], "intradayR": [], "sacrificedWinners": 0, "managedKnown": 0, "managedNet": 0.0,
+            "positions": set(), "arms": {"carry": 0, "intraday_exit": 0}, "books": {}}
+
+
+def _agg_add(b: dict, r: dict) -> None:
+    b["arms"][r.get("arm") or "carry"] = b["arms"].get(r.get("arm") or "carry", 0) + 1
+    bk = r.get("bookKind") or "unknown"
+    b["books"][bk] = b["books"].get(bk, 0) + 1
+    if r.get("positionId"):
+        b["positions"].add(r["positionId"])
+    if r.get("eligibility") not in (None, "eligible"):
+        b["ineligible"] += 1               # diagnostic row (quarantined / attention / unknown scope)
+        return
+    if not r.get("adequate"):
+        b["insufficient"] += 1
+        return
+    b["n"] += 1
+    b["carryNet"] += r["carryToNextOpen"]["net"]
+    b["intradayNet"] += r["intradayExit"]["net"]
+    if r["carryToNextOpen"].get("R") is not None:
+        b["carryR"].append(r["carryToNextOpen"]["R"])
+        b["intradayR"].append(r["intradayExit"]["R"])
+    if r.get("sacrificedWinner"):
+        b["sacrificedWinners"] += 1
+    m = r.get("managedCarry") or {}
+    if m.get("known"):
+        b["managedKnown"] += 1
+        b["managedNet"] += m["net"]
+
+
+def _agg_finish(b: dict) -> None:
+    b["carryNet"] = round(b["carryNet"], 2)
+    b["intradayNet"] = round(b["intradayNet"], 2)
+    b["managedNet"] = round(b["managedNet"], 2)
+    b["meanCarryR"] = round(sum(b["carryR"]) / len(b["carryR"]), 3) if b["carryR"] else None
+    b["meanIntradayR"] = round(sum(b["intradayR"]) / len(b["intradayR"]), 3) if b["intradayR"] else None
+    b["pairedDiffR"] = (round(b["meanCarryR"] - b["meanIntradayR"], 3)
+                        if b["meanCarryR"] is not None and b["meanIntradayR"] is not None else None)
+    b["distinctPositions"] = len(b["positions"])
+    del b["carryR"], b["intradayR"], b["positions"]
+
+
 def aggregate(results: list[dict]) -> dict:
-    """Paired net by setup with counts; insufficient rows are counted, never
-    dropped silently. Position-session observations are what is counted here
-    (one position can appear on several sessions) - not independent trade
-    ideas. No winner is chosen here."""
+    """Paired net by BOOK KIND x setup (HOLD-SCOPE-01, 2026-09-16): Practice (sim),
+    shadow and live observations are never one performance bucket - `setups` is
+    keyed `<bookKind>:<setup>` and each group holds exactly one book kind. A pooled
+    per-setup view exists only as `pooledDiagnostic`, labeled as such and never a
+    Practice expectancy. Insufficient rows are counted, never dropped; ineligible
+    rows (quarantined / attention / unknown scope) are counted apart from
+    insufficient. Position-session observations are what is counted (one position
+    can appear on several sessions) - not independent trade ideas. No winner is
+    chosen here."""
     by: dict[str, dict] = {}
+    pooled: dict[str, dict] = {}
     for r in results:
-        b = by.setdefault(r["setup"], {"n": 0, "insufficient": 0, "carryNet": 0.0, "intradayNet": 0.0,
-                                       "carryR": [], "intradayR": [], "sacrificedWinners": 0,
-                                       "managedKnown": 0, "managedNet": 0.0,
-                                       "positions": set(), "arms": {"carry": 0, "intraday_exit": 0}})
-        b["arms"][r.get("arm") or "carry"] = b["arms"].get(r.get("arm") or "carry", 0) + 1
         bk = r.get("bookKind") or "unknown"
-        b.setdefault("books", {})[bk] = b.get("books", {}).get(bk, 0) + 1
-        if r.get("positionId"):
-            b["positions"].add(r["positionId"])
-        if not r.get("adequate"):
-            b["insufficient"] += 1
-            continue
-        b["n"] += 1
-        b["carryNet"] += r["carryToNextOpen"]["net"]
-        b["intradayNet"] += r["intradayExit"]["net"]
-        if r["carryToNextOpen"].get("R") is not None:
-            b["carryR"].append(r["carryToNextOpen"]["R"])
-            b["intradayR"].append(r["intradayExit"]["R"])
-        if r.get("sacrificedWinner"):
-            b["sacrificedWinners"] += 1
-        m = r.get("managedCarry") or {}
-        if m.get("known"):
-            b["managedKnown"] += 1
-            b["managedNet"] += m["net"]
-    for b in by.values():
-        b["carryNet"] = round(b["carryNet"], 2)
-        b["intradayNet"] = round(b["intradayNet"], 2)
-        b["managedNet"] = round(b["managedNet"], 2)
-        b["meanCarryR"] = round(sum(b["carryR"]) / len(b["carryR"]), 3) if b["carryR"] else None
-        b["meanIntradayR"] = round(sum(b["intradayR"]) / len(b["intradayR"]), 3) if b["intradayR"] else None
-        b["pairedDiffR"] = (round(b["meanCarryR"] - b["meanIntradayR"], 3)
-                            if b["meanCarryR"] is not None and b["meanIntradayR"] is not None else None)
-        b["distinctPositions"] = len(b["positions"])
-        del b["carryR"], b["intradayR"], b["positions"]
+        b = by.setdefault(f"{bk}:{r['setup']}", {**_agg_bucket(), "bookKind": bk, "setup": r["setup"]})
+        _agg_add(b, r)
+        _agg_add(pooled.setdefault(r["setup"], _agg_bucket()), r)
+    for b in list(by.values()) + list(pooled.values()):
+        _agg_finish(b)
+    for b in pooled.values():
+        b["label"] = "pooled across book kinds - DIAGNOSTIC ONLY, not Tips Practice expectancy"
+        b["performance"] = False
     from .experiments_register import identity as _xid
-    return {"version": STUDY_VERSION, "setups": by, "experiment": _xid("overnight-hold"),
+    return {"version": STUDY_VERSION, "setups": by, "pooledDiagnostic": pooled,
+            "grouping": "bookKind x setup (Practice=sim, shadow, live, unknown reported apart; pooled view is diagnostic only)",
+            "experiment": _xid("overnight-hold"),
             "unit": "position-session observations (a position held several nights is counted once per session)",
             "disclaimer": "paired arithmetic on contemporaneous qualified quotes inside declared windows; "
                           "carry is quote drift unless managedCarry is known; small samples, no rule derived"}
@@ -435,9 +487,10 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
         from ...models import ManagedPositionRow
         day_start_ms = int(dt.datetime.combine(today, dt.time(0, 0), tzinfo=ET).timestamp() * 1000)
         async with eng.sf() as session:
+            # the closure window selects (state.closedMs on the session date) - never the
+            # creation age, which would drop a campaign opened weeks ago and closed today
             closed = (await session.execute(select(ManagedPositionRow).where(
-                ManagedPositionRow.technique == "tip", ManagedPositionRow.status == "closed",
-                ManagedPositionRow.created_at >= now - dt.timedelta(days=45)))).scalars().all()
+                ManagedPositionRow.technique == "tip", ManagedPositionRow.status == "closed"))).scalars().all()
         for r in closed:
             cm = (r.state or {}).get("closedMs")
             if str(r.id) in seen or not cm or int(cm) < day_start_ms:
@@ -519,6 +572,9 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
                 id=new_id(), observation_key=key, study_version=STUDY_VERSION,
                 position_id=str(p["id"]), session_date=sess, arm=arm,
                 portfolio_id=str(p.get("portfolioId") or "") or None, book_kind=str(book.get("kind") or "") or None,
+                book_status=({"quarantined": bool(book.get("quarantined")), "quarantineNote": book.get("quarantineNote"),
+                              "archived": bool(book.get("archived")), "positionStatus": p.get("status"),
+                              "capturedAt": _iso(now)} if book else None),
                 symbol=str(p.get("symbol")), leg_symbol=sym, sec_type=str(leg.get("secType")),
                 qty=(exit_qty if arm == "intraday_exit" and exit_qty else remaining),
                 entry_qty=(entry_qty or None),
@@ -722,6 +778,10 @@ def row_dict(r) -> dict:
     return {"id": r.id, "observationKey": r.observation_key, "studyVersion": r.study_version,
             "positionId": r.position_id, "sessionDate": r.session_date, "arm": r.arm,
             "portfolioId": r.portfolio_id, "bookKind": r.book_kind,
+            "bookStatus": r.book_status,
+            "quarantined": (bool(r.book_status.get("quarantined")) if r.book_status else None),
+            "quarantineReason": ((r.book_status or {}).get("quarantineNote")),
+            "positionStatus": ((r.book_status or {}).get("positionStatus")),
             "symbol": r.symbol, "legSymbol": r.leg_symbol, "secType": r.sec_type, "qty": r.qty, "entryQty": r.entry_qty,
             "entryPrice": r.entry_price, "direction": r.direction, "source": r.source, "horizon": r.horizon,
             "dteAtSnapshot": (r.horizon or {}).get("dte"), "exitsPolicy": r.exits_policy,

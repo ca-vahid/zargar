@@ -9,7 +9,8 @@ def _row(**kw):
     base = {"id": "r1", "positionId": "p1", "arm": "carry", "symbol": "XYZ", "legSymbol": "XYZ260101C00100000", "secType": "OPT",
             "qty": 2, "entryPrice": 1.50, "multiplier": 100.0, "plannedRisk": 150.0, "dteAtSnapshot": 10,
             "precloseQuote": {"bid": 1.40, "ask": 1.50}, "precloseStatus": "fresh",
-            "nextOpenQuote": {"bid": 1.80, "ask": 1.90}, "nextOpenStatus": "fresh"}
+            "nextOpenQuote": {"bid": 1.80, "ask": 1.90}, "nextOpenStatus": "fresh",
+            "bookKind": "sim", "quarantined": False}
     base.update(kw)
     return base
 
@@ -66,12 +67,29 @@ def test_aggregate_counts_insufficient_rows_and_picks_no_winner():
             hs.compare_row(_row(id="r3", secType="STK", legSymbol="XYZ", multiplier=1.0, qty=10, entryPrice=100.0,
                                 plannedRisk=50.0, precloseQuote={"bid": 101.0}, nextOpenQuote={"bid": 99.0}))]
     agg = hs.aggregate(rows)
-    opt = agg["setups"]["option:short(<=14d)"]
+    opt = agg["setups"]["sim:option:short(<=14d)"]
     assert opt["n"] == 1 and opt["insufficient"] == 1 and opt["pairedDiffR"] is not None
-    shares = agg["setups"]["shares"]
+    shares = agg["setups"]["sim:shares"]
     assert shares["n"] == 1 and shares["carryNet"] == -10.0 and shares["intradayNet"] == 10.0
     assert "no rule derived" in agg["disclaimer"] and "winner" not in json_dumps(agg)
     assert opt["managedKnown"] == 0 and opt["distinctPositions"] == 1 and "position-session" in agg["unit"]
+
+
+def test_scope_provenance_is_never_assumed_practice():
+    # HOLD-SCOPE-01/02: a quarantined shadow book is diagnostic, never adequate; missing provenance is unknown
+    q = hs.compare_row(_row(bookKind="shadow", quarantined=True, quarantineReason="runaway short"))
+    assert q["adequate"] is False and q["diagnosticOnly"] is True and q["eligibility"] == "quarantined" \
+        and q["carryToNextOpen"]["net"] is not None
+    att = hs.compare_row(_row(positionStatus="attention"))
+    assert att["adequate"] is False and att["eligibility"] == "attention"
+    unk = hs.compare_row(_row(quarantined=None))
+    assert unk["adequate"] is False and unk["eligibility"] == "unknown"
+    agg = hs.aggregate([hs.compare_row(_row()), q, att, unk])
+    assert set(agg["setups"]) == {"sim:option:short(<=14d)", "shadow:option:short(<=14d)"}
+    assert agg["setups"]["sim:option:short(<=14d)"]["n"] == 1 and agg["setups"]["sim:option:short(<=14d)"]["ineligible"] == 2
+    assert agg["setups"]["shadow:option:short(<=14d)"]["n"] == 0 and agg["setups"]["shadow:option:short(<=14d)"]["ineligible"] == 1
+    pooled = agg["pooledDiagnostic"]["option:short(<=14d)"]
+    assert pooled["performance"] is False and "DIAGNOSTIC" in pooled["label"] and pooled["books"] == {"sim": 3, "shadow": 1}
 
 
 def test_windows_follow_the_exchange_calendar():

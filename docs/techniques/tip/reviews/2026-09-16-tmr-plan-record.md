@@ -441,3 +441,53 @@ reconcile, no unprotected money position (shadow book, no managed position). No 
 
 **Thursday 2026-09-17:** 09:30 ET next-open sample for the MRNA / AFRM carry rows (calendar-relative job, in-window
 retries); 09:47 ET first paired report by book kind per `research/HOLD-STUDY-REPORT-TEMPLATE.md`.
+
+## HOLD-SCOPE-01/02 (Codex final EOD verdict, 2026-09-16 evening) - performance by book kind; quarantined inventory is diagnostic
+
+**HOLD-SCOPE-01 (confirmed, fixed):** `aggregate` grouped by setup only and summed Practice (sim) and shadow
+results into one net figure beside a `books` count. Now `setups` is keyed `<bookKind>:<setup>` (Practice = `sim`,
+`shadow`, `live`, `unknown` - each group holds exactly one book kind, with its own denominators: adequate pairs,
+insufficient, ineligible); the pooled per-setup view survives only as `pooledDiagnostic` with
+`performance=false` and the label "DIAGNOSTIC ONLY, not Tips Practice expectancy". `compare_row` carries
+`bookKind` (`unknown` when absent - never assumed Practice) and `portfolioId`.
+
+**HOLD-SCOPE-02 (confirmed, fixed):** the observation did not carry the book's quarantine status and `compare_row`
+graded a quarantined shadow row adequate. Now every observation persists `book_status` at capture (quarantined,
+quarantine note, archived, the position's status); `book_eligibility(row)` returns `quarantined` / `attention` /
+`unknown` / `eligible`, and a non-eligible row keeps its computed arms as a DIAGNOSTIC (`diagnosticOnly=true`,
+reason on the row) but is never `adequate` and never enters a performance bucket (counted under `ineligible`,
+apart from `insufficient`). Rows captured before the column existed resolve their scope from the DURABLE
+relationship (position -> portfolio -> kind / quarantined, labeled "resolved from the durable book as it stands
+now") in the report tool; what cannot be resolved stays `unknown`. The prior shadow-book exclusion from trust /
+lane grading is untouched - the hold study never reintroduces those books as evidence.
+
+**Also (reviewer's coverage note):** the durable-close read now selects by the CLOSURE window (`state.closedMs` on
+the session date) instead of a 45-day creation age, so a campaign opened weeks ago and closed today is observed.
+
+**Tests:** the reviewer's `tests/test_hold_book_scope_review.py` adopted verbatim (2) + this desk's
+`test_scope_provenance_is_never_assumed_practice` + hold study = 11 passed; prof142 4 passed; pr147 4 passed.
+Sub-second pure checks; no broad cycle.
+
+**Separated report example (runtime DB, 2026-09-16 evening, before the next-open sample; every number is
+insufficient or diagnostic - nothing here is a result):**
+
+| book kind | setup | obs | positions | adequate pairs | insufficient | ineligible (diagnostic) |
+|---|---|---:|---:|---:|---:|---:|
+| shadow | shares | 1 (AFRM 27 sh, ab ARMED shadow) | 1 | 0 | 0 | 1 - quarantined (EOD-09 2026-09-14 runaway; results invalid until reconciled) |
+| sim | option:longer(>14d) | 2 (SLV, T on 2026-09-15) | 2 | 0 | 2 - outside_window (v1 rows) | 0 |
+| sim | shares | 2 (MRNA 09-15 outside_window; MRNA 09-16 next-open pending) | 1 | 0 | 2 | 0 |
+
+Pooled diagnostic (labeled, not performance): shares obs 3 = sim 2 + shadow 1. Honest sample for tomorrow: ONE
+prospective Practice carry pair (MRNA 7 sh, eligible if its 09:30-09:45 ET bid qualifies); ZERO validated shadow
+pairs (AFRM stays diagnostic). Today's three intraday exits (T, SLV, GOOGL Oct-16 360C) stay MISSING - not
+backfilled with later quotes.
+
+**Accounting labels (reviewer):** T's +$3.64 is today's FINAL TRANCHE (x4 @ 0.5499), not the round trip - the
+completed T campaign (opened 2026-09-10) earned +$102.84 net. Fees charged to cash today were $7.28 (4 executions);
+today's matched realized -$63.66 additionally allocates $5.20 of prior T/SLV entry fees (allocated entry + exit
+fees $12.48 against gross -$51.18). The two fee views are reported apart from now on. Equity baselines: day-boundary
+03:59:57 ET $8,923.85 (change -$117.64) and pre-open 09:29:52 ET $8,934.63 (RTH marked change -$128.42); neither
+is realized P&L.
+
+**Deployment:** merged, not deployed; recap routing stays OFF; paid pairs stay held. After the coordinated deploy:
+verify the live build and the MRNA venue stop (SELL 7 STP 134.37 GTC).
