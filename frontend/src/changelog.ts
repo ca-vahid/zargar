@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.95";
+export const APP_VERSION = "0.7.96";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.96",date:"2026-09-16",title:"Tips see the day's event and the real cost of a trade",items:[
+      { tag: "new", text: "Tips: verified event context (TMR-01). The analyst header, every card, the cohort and hold-study records and adopted positions now carry the day's verified macro-event label - FOMC statement 2026-09-16 14:00 ET and press conference 14:30 ET from the official Federal Reserve calendar, with the verification time and time-to-event; a date the calendar has not been checked for reads UNKNOWN, never 'no event'. Awareness only: no automatic no-trade rule, no order placed or blocked." },
+      { tag: "new", text: "Tips: execution-cost diagnostic (TMR-02). Beside feasibility and payoff, the analyst tools, the risk plan and the card show the instantaneous round trip on the qualified quote - spread once plus both sides' fees at the venue basis, quoted size, cost as a share of the purchase - and each realised fill is journaled against the quote the decision saw. Unknown on stale, crossed or missing quotes; changes no quantity, contract, limit or gate." },
+  ]},
   {version:"0.7.95",date:"2026-09-15",title:"EM entries are decided by the app's own rules, not a model",items:[
     {tag:"major",text:"EM live entry authority is deterministic (techniques.enhanced_market.fire_decision_mode=deterministic): when a trigger fires, the app's encoded rules judge the saved geometry, the tracker's own window, volume and the confirmation branch that actually fired - in milliseconds, with no model call, no chart render and no timeout on the entry path. Every attempt is journaled as a TechniqueEntryDecision with its frozen snapshot, policy and the last 240 bars up to the signal close; refusals are recorded as no-setup with reason codes. The pre-market LLM plan builder is unchanged; legacy critic mode remains selectable."},
     {tag:"new",text:"Optional after-close LLM evidence (fire_evidence_mode=after_close, OFF): one bounded, evidence-only pass over the frozen decisions of a closed session - it verifies the record's declared identity (input hash, frozen-bar hash and count, cutoff) against the captured material before rendering or buying an opinion, and can never touch an order, an arm or a setting."},
@@ -61,8 +65,6 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-15",
     title: "Tips: an override acknowledges the whole incident state; the claimed plan is immutable",
     items: [
-      { tag: "new", text: "Tips: verified event context (TMR-01). The analyst header, every card, the cohort and hold-study records and adopted positions now carry the day's verified macro-event label - FOMC statement 2026-09-16 14:00 ET and press conference 14:30 ET from the official Federal Reserve calendar, with the verification time and time-to-event; a date the calendar has not been checked for reads UNKNOWN, never 'no event'. Awareness only: no automatic no-trade rule, no order placed or blocked." },
-      { tag: "new", text: "Tips: execution-cost diagnostic (TMR-02). Beside feasibility and payoff, the analyst tools, the risk plan and the card show the instantaneous round trip on the qualified quote - spread once plus both sides' fees at the venue basis, quoted size, cost as a share of the purchase - and each realised fill is journaled against the quote the decision saw. Unknown on stale, crossed or missing quotes; changes no quantity, contract, limit or gate." },
       { tag: "fixed", text: "A86-01: a card shows EVERY applicable open incident (id, revision, evidence); an override must acknowledge exactly that set - appended evidence, another incident or a changed revision refuses with zero orders; an unavailable integrity store always blocks." },
       { tag: "fixed", text: "A86-02: the approval claim recomputes the card's full plan (exit policy, bracket, vehicle, risk plan) under the row lock instead of trusting the cached fingerprint; the claimed plan is frozen on the card and both the order and the later position adoption use it - a concurrent edit of the exit policy cannot be claimed." },
       { tag: "improved", text: "Entry-variant study: the sampling claim is held through finalization (timer and recovery never double-fetch); research fixtures carry capture-time verdict fields." },
