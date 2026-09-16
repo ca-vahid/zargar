@@ -1810,6 +1810,18 @@ entries that were still submitting/working. Shared behaviour; no threshold chang
   cards additionally carry `context.readiness` (typed blockers, final plan, fingerprint) and a
   human approval revalidates first — see `docs/techniques/tip/README.md` "Approval cards".
 
+- **2026-09-16 (Tips desk, ops) - the watchdog launches the checkout AS IT STANDS; a converged checkout must be launch-ready at every instant.**
+  At 10:40 ET the watchdog restarted a DOWN engine from `C:/Cursor/zargar` and got 0.7.96 (merged, not yet
+  deployed) - and a `/api/health` 500, because a conflict resolution had dropped the runtime-branch-only
+  `build_sha` helper from `backend/zargar/__init__.py` that the runtime branch's `api/app.py` imports.
+  A health import failure is a RESTART LOOP (start, 180 s, kill, start) during trading hours, and each
+  restart kills the helper windows. Rules: (1) after ANY merge into the running checkout, run
+  `python -c "import zargar.api.app"` and `node frontend/scripts/check-release.mjs` before leaving it;
+  (2) never resolve a conflict in a runtime-only file with `--theirs`/`--ours` blindly - diff the runtime
+  side for helpers main does not carry (`build_sha`, EM build helper); (3) a helper the health route
+  depends on belongs on main, or the route tolerates its absence (start-path owner's call); (4) "merged,
+  not deployed" is a fiction while the watchdog can launch the checkout - treat every convergence as a
+  possible deploy.
 - **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
   `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
   returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and
