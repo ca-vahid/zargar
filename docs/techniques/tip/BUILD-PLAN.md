@@ -2,8 +2,8 @@
 
 *Written 2026-08-27 on the Tips fork (`claude/adoring-thompson-c258ab`), while the Flow
 team builds `flow/UI-PLAN.md` in parallel. Companion: `PLAN.md` (Phase A as-built + the
-decisions), `docs/BUILDING-A-TECHNIQUE.md` (the platform contract). Status: **plan → in
-progress**; tick tasks as they land.*
+decisions), `docs/BUILDING-A-TECHNIQUE.md` (the platform contract). Status: **as-built (Phase B
+done; this file is history - the current state of play is `README.md`)**.*
 
 **Coordination boundary with the Flow team:** they own `techniques/flow/*`,
 `api/routes_flow.py`, and one call-site change in `signals/service.py` (their F1 adds a

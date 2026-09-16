@@ -331,3 +331,24 @@ deployment; the accepted reasoning/payoff fixes ship with the route off). The tw
 bundles that carry a captured classifier read; today's SPX-map and APLD bundles predate that capture and
 are declared non-parity / coverage-limited - the evidence set is compact-route captures once the route
 is allowed.
+
+## PAR178-01/02 (review of PR #178, 2026-09-16 afternoon) - exact order, captured budget, offline harness
+
+Reviewer's two cases adopted verbatim (`tests/test_pr178_route_parity_review.py`, parametrized siblings /
+tool_budget; both failed on `ea1f6f5`). **PAR178-01:** production composes a request as historical note,
+siblings, compact prefix, base; the manifest now records that `componentOrder` and the exact
+`compactPrefix`; the exact rebuild swaps only the rules/notes/history blocks and adds a prefix only when
+the captured head carries none (then in production's position), so a multi-branch compact capture rebuilds
+to the identical text - verified by the request hash (`frozen.request_hash` == the manifest's `headerSha`).
+The reconstructed path composes in the same order. **PAR178-02:** an exact replay of a compact capture uses
+the CAPTURED effective tool budget (a one-tool capture replays with one; `parity.budgetSource=captured`);
+the candidate default (2) applies only when the treatment is assembled on a full capture; a captured budget
+that differs from the default is declared "a separate treatment" on the parity block. **`current` on a
+compact capture is flagged** (`treatment: compact (captured request)`, `isFullControl: False`, gap) - it is
+not the full-route control. **Harness:** `frozen.assemble_treatments(bundle)` (CLI `tip_frozen assemble
+--bundle`) assembles both requests offline from the same frozen inputs - no model, no writes - with request
+hashes, sizes and budgets: a full-route capture yields full (hash == captured) and candidate (differs); a
+compact capture yields the candidate by exact hash and declares the full control unavailable (capture the
+two treatments explicitly). Results: reviewer 2 + parity 6 + PR177 2 + PR175 3 + intra reasoning 6 +
+frozen compact + KFIN-09 = **28 passed**. Standing: `recap_route` off; no risk, permission or
+card-suppression change; built, merged - not deployed.

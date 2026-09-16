@@ -331,20 +331,23 @@ and are now part of the plan; each carries the phase it belongs to.
   breaker / desk-wide two losses) while recovery (watchdog) and exit protection (F50 + premium stop + failed-exit
   watchdog) hold; any of those failing on a live day pauses the desk to alert mode.
 
-## 3e. State of play and the change pipeline (2026-09-13)
+## 3e. State of play and the change pipeline (2026-09-16)
 
-- **Running:** auto mode on `Team2 Practice`; cohort v2 (from 2026-09-11, v0.7.45+) is the evaluation set; cohort v1
-  (12 sessions) is preserved as read evidence. The 30-minute watch job tallies per plan: listing, warm-up identity,
-  model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,
+- **Running:** auto mode on `Team2 Practice` under live v0.7.94; cohort v2 (from 2026-09-11, v0.7.45+) is the
+  evaluation set (first fills 2026-09-16: two QQQ stop-outs, −$480); cohort v1 is preserved as read evidence. The
+  30-minute watch job tallies per plan: listing, warm-up identity, model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,
   and trail gaps (a plan with `trailGaps` is an incompletely observed session).
-- **Profitability track — status 2026-09-15 evening:** sheet rev. 2 ACCEPTED (sampled threshold, calibration disclosures,
-  scoped pause). Live: v0.7.90 (F127 clamp + per-book pause). Remaining before activation: **C6** (one tape; platform
-  owners) → final activation snapshot → their GO. Research settings unchanged; nothing paused.
-- **Profitability track (2026-09-15):** comparisons accepted by the other team (exploratory tape, pre-C6). Sequence:
-  **sizing cap first** (`size_full` 0.5; Practice-scale +$2,231 / DD −$635 vs baseline +$1,374 / DD −$993; loss stop
-  −$800 marked-to-market; ten completed sessions), C1 the follow-on (Practice-scale DD 26 % — sizing first). Sheet
-  awaiting approval; nothing activated. Prerequisite: the 0DTE cap clamp (F127) — the baseline refuses contracts under
-  ≈$0.50 today. `notes/research/2026-09-15-sizing-cap-experiment-sheet.md`.
+- **Profitability track — status 2026-09-16:** the exploratory controlled comparisons are ACCEPTED (pre-C6 tape;
+  `notes/research/2026-09-15-c1-and-sizing-controlled-comparisons.md`): **sizing cap first** (`size_full` 0.5,
+  Practice-scale +$2,231 / DD −$635 vs baseline +$1,374 / DD −$993 on the loss-risk sizing basis), C1 the follow-on
+  (DD 26 %). Experiment sheet rev. 2 ACCEPTED (`2026-09-15-sizing-cap-experiment-sheet.md` + §2b parallel design):
+  sampled −$800 marked-to-market review threshold → per-book PAUSE (never an automatic revert), ten completed
+  sessions, twenty fills = interim review, fills apart from the labelled replay. BUILT and OFF: three labelled sim
+  books (`Team2 Control` / `Team2 Sizing 0.5` / `Team2 C1 Conjunction`, $10,000 each), `techniques.team2.experiments`
+  (v0.7.93, reviewed boundaries v0.7.94), the F127 clamp (v0.7.88), the per-book pause (v0.7.90), the read-only receipt
+  (`zargar.tools.team2_receipt`, currently PREPARED). Remaining before activation: **C6** (one tape; platform owners,
+  recorded in `notes/research/c6-evidence.json`) → activation snapshot with the receipt READY → the other team's GO.
+  Research settings unchanged; nothing paused; `Team2 Practice` stays the default book; sim-only forever.
 - **EOD corrective batch 2026-09-14 (v0.7.73 → v0.7.82): CLOSED 2026-09-14** — A–G accepted by the other team
   (durable refusal overlay, entry gate at every order path incl. transport retries, decision watermark, funnel from
   durable verdicts, uncertain submissions reconciled by the venue's report with cumulative fills, present-time stop
@@ -355,8 +358,8 @@ and are now part of the plan; each carries the phase it belongs to.
 - **Research knobs, all OFF (v0.7.53):** `no_trade_zone` (pm_range | conjunction — C1), `pm_room_atr` (C1's explicit
   obstacle condition; measured negative), `min_target_atr` (C3; measured negative). Activating C1 waits for C6 (one
   tape, F119, platform owners) and a separately approved, labelled Practice experiment (other team's verdict
-  2026-09-13). Frozen-sample evidence and the book-level simulation are in
-  `notes/research/2026-09-12-week37-review-and-change-plan.md` (+ addendum).
+  2026-09-13); C1's labelled experiment book is PREPARED and OFF (above). Frozen-sample evidence and the book-level
+  simulation are in `notes/research/2026-09-12-week37-review-and-change-plan.md` (+ addendum).
 - **Research:** C2 multi-day key levels — three definitions FROZEN 2026-09-13 in
   `notes/research/2026-09-13-c2-key-levels-spec.md` (D1 session levels, D2 repeated reactions, D3 confirmed pivots; v2 after the other team's
   review — validation fixed 2026-09-14 → 10-09, acceptance gates predeclared); BUILT 2026-09-13 behind `key_levels` (OFF,
