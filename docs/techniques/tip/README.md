@@ -170,6 +170,15 @@ qualified quote (spread once + both sides' fees, quoted size, cost share of purc
 stale/crossed/missing evidence) on the tools, the risk plan and the card, and journals one
 `TipFillVsQuote` per realised fill. Neither gates, sizes or times anything.
 
+## Research register + scenario prototype (TMR-03/05, 2026-09-16)
+
+`docs/techniques/tip/research/EXPERIMENT-REGISTER.md` (mirror of `techniques/tip/experiments_register.py`)
+gives every study one identity - hypothesis, variants, unit, episode identity, metric, costs, regime,
+evaluation window - and every research report carries it. `techniques/tip/scenarios.py` (`bsm-local-v1`)
+is a research-only time/volatility grid for one long option (design + worked example in
+`research/2026-09-16-time-vol-scenarios.md`); it is wired to nothing. Hold-study reports follow
+`research/HOLD-STUDY-REPORT-TEMPLATE.md`.
+
 ## Research studies (PROF-03/05, 2026-09-15, observation only)
 
 `tip_hold_snapshots` (jobs `tip_hold_snapshot` 15:50 ET / `tip_hold_next_open` 09:36 ET; knob

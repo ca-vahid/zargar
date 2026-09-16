@@ -125,3 +125,42 @@ expression gate / payoff / hold study / prof142 / pr147 = 46 passed, 1 failed
 alone twice on this branch and on the unmodified checkout; sim-price sensitivity of the grouped run,
 not touched here). Frontend build green. Statuses at the time of writing: **built, merged - not
 deployed** (ships on the next coordinated deployment after the close); collecting: n/a; evaluated: n/a.
+
+## Built 2026-09-16 (second block): TMR-03 design, TMR-05 register, TMR-04 template - research only
+
+**TMR-03 time/volatility scenario design** - `docs/techniques/tip/research/2026-09-16-time-vol-scenarios.md`
++ prototype `techniques/tip/scenarios.py` (`bsm-local-v1`, NOT wired into any card, gate, sizing or order
+path; the delta-linear risk estimator and the execution gate are untouched). Grid: flat underlying after
+1/5/10 days, target reached soon (1 day) / later (half the remaining time), each at IV -5 / 0 / +5 points;
+dollars per contract against the premium paid; the model's value and mispricing at t0 printed beside it;
+theta per day and vega per IV point in dollars; every output carries model version, rate assumption,
+inputs with sources/timestamps and the limits (local approximation, no path/stop modelled, exits at model
+value - execution cost is execcost's job). Missing inputs -> `unknown` with the names. Worked example on
+frozen desk evidence (SLV Nov-20 65C: CBOE delayed snapshot 09-15 IV 0.4665 / venue delta 0.3144, SLV close
+57.55, 65 DTE, mid 2.085 as the premium stand-in, target 61.8): the local model reproduces the venue delta
+(0.3143) and mid (2.078); theta -$3.27/day, vega +$8.62/IV point; the same target reached at the halfway
+point with IV 5 points lower LOSES $21 while reached within a day it makes +$107..+$209 - the arithmetic
+behind "a good thesis is not a good option purchase". Labelled coverage-limited (delayed snapshot, close
+not a decision-time quote, local Greeks beyond delta). Tests: put-call parity, venue-delta agreement,
+grid dollars, declared limits, unknown inputs.
+
+**TMR-05 experiment register** - `techniques/tip/experiments_register.py` (`experiments-v1`) mirrored by
+`docs/techniques/tip/research/EXPERIMENT-REGISTER.md` (a test keeps the id lists equal): entry-timing-cohort,
+overnight-hold, frozen-context, mk-ownbook-observe, feasibility-annotate - each with hypothesis, variant
+definitions, eligible setup, unit of observation (repeated alerts/quotes are not independent trades),
+holding-episode identity, primary metric, costs, policy/build regime, alternatives tried, prospective
+evaluation window with a decision rule, and status. Reports now carry the identity block: the hold-study
+aggregate (`experiment`), `frozen.compare` (`experiment`), the cohort report (`experiment`); the identity's
+caveat states that partials and fees count once, event sessions and incomplete evidence stay visible, and
+no sample count is called proof. Documentation/reporting only - no allocation or promotion.
+
+**TMR-04 operate existing studies** - `docs/techniques/tip/research/HOLD-STUDY-REPORT-TEMPLATE.md` (the
+09-17 09:47 ET paired report: counts per arm/setup incl. missing/late/ineligible/outside_window, actual
+sample times vs sourceTs vs jobStartedAt, fee/risk basis per observation, quote drift apart from managed
+exits, aggregate, reading). The 15:50 ET capture is verified by the 15:53 ET checkpoint; the entry-timing
+cohort keeps collecting unchanged; new frozen pairs are run after the close only (paid) and marked
+complete vs coverage-limited by `frozen.compare`.
+
+**Verification:** `tests/test_tip_scenarios_register.py` (5) + hold study + frozen compact + KFIN-09
+experiments = 22 passed. Statuses: **built, merged - not deployed** (next coordinated deployment after
+the close); collecting: hold study (09-16 15:50 ET onward), cohort, frozen captures; evaluated: nothing.
