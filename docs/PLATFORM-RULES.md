@@ -74,7 +74,12 @@ runtime ones to `execution.*`).
    pending exits and resting/in-flight orders BY ID with the state before (restoration check, `logs/restore-mismatch-*.json`
    on a mismatch). Assistants restart via the scheduler's `ZargarRestart` task (same door, same refusal);
    `ZargarRestartOverride` (= `restart.ps1 -Force`) exists for emergencies and is logged as an override. Task
-   scripts are ASCII (Windows PowerShell 5.1). "No open positions" is not a restart test.
+   scripts are ASCII (Windows PowerShell 5.1). "No open positions" is not a restart test. Door details since 2026-09-15:
+   the engine runs UNELEVATED and `start.ps1` refuses an elevated shell (exit 8; assistant shells ARE elevated) — an
+   engine booted elevated is stopped only by the user's elevated `stop.ps1`; `restart.ps1` writes its transcript BEFORE
+   taking the deployment lease and waits up to 300 s for a held one (exit 7 names the owner); a build already equal to
+   HEAD exits 0; the restoration comparison is SKIPPED when the pre-stop inventory capture times out — the deployer
+   compares armed / resting / managed counts by hand.
 19. **A source's own-book narration is research, never permission** (KFIN-08, 2026-09-14). A source enrolled in
    `techniques.tip.mk_ownbook_sources` (Meet Kevin) narrates its OWN trades; "I bought / added / sold half" from it is
    classified (`techniques/tip/ownbook.py`: own_open / own_exit / recap / hypothetical / third_party, deterministic text
@@ -1167,7 +1172,9 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   Runners ask `engine.trading_halted(portfolio_id)` before a fire — never `halt.engaged` directly. The
   per-plan dollar loss halt (`_maybe_loss_halt`) is unchanged and sits below both. Rationale: the unit of
   a daily-loss rule is the book the money sits in; the unit of "this method is having a bad day" is the
-  technique. The old behaviour is one setting away (`scope=global`). `tests/test_book_halt.py`.
+  technique. The old behaviour is one setting away (`scope=global`). `tests/test_book_halt.py`. **A fourth scope
+  since 2026-09-15: the per-book PAUSE** (`HaltState.pauses`, `engine.pause_book`) — no day boundary, survives restart,
+  released only explicitly, independent of the three above; `tests/test_book_pause.py` and the entry below.
 - 2026-09-04 · `execution.planrunner.Trade` gained three technique-owned annotations: `is_add` (a scale-in that
   rides the same contract as its base trade — Team2 X5), `live_pct` (the contract's fee-adjusted premium % from
   its own fresh bid) and `target_kind` (planned level vs running high/low of day). Defaults keep EM/tips

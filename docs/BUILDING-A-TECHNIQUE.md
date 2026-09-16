@@ -40,6 +40,12 @@ class MyTechnique(PlanRunner):
                                                   # you own prompt + verdict; the RUNNER owns timeout,
                                                   # fail-open budget, veto cooldown, kill cap, re-arming
     async def record_fire(...); emit_proposal(...); after_fire(...)
+    def state_extras(ap) -> dict / restore_extras(ap, state)   # technique state that rides the armed record on
+                                                  # EVERY persist and is handed back before the seed replay (2026-09-14)
+    async def entry_gate(ap, trade, stage) -> reason | None   # the ONE late refusal of a NEW order, judged at
+                                                  # pre_order / order / retry (transport retries included); exits never pass here
+    def entry_guard_predicate(ap, trade) -> reason | None     # its SYNCHRONOUS twin, composed into OrderManager's
+                                                  # before_submit right before the venue hand-off — pure, no I/O
     async def pick_contract(...)                  # expression policy (which option, which DTE window)
     async def plan_horizon(run, plan)             # (sessions, last-session-date) — >1 session makes the
                                                   # plan MULTI-DAY: it rolls at each close instead of
