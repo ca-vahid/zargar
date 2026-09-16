@@ -20,7 +20,7 @@ from ...marketstructure.sessions import session_bounds, session_date
 from ...models import BarRow, Event, TechniqueRun
 from .data_quality import evidence, merge, unpack
 from .entry import read_entry
-from .observation_health import coverage, recovery_record
+from .observation_health import plan_coverage, recovery_record
 from .plans import CartelPlan
 from .preparation_readiness import baseline_coverage, retain_decisions
 from .state import ArmRepository
@@ -149,7 +149,7 @@ class CartelObserver(SessionListener):
         dto.bar_index = len(state.get("minutes", {}))
         result = dto.to_dict(portfolio=self.engine.positions.portfolio(row["portfolioId"]),
                              quote=self.engine.quotes.get(plan.symbol), now_ms=self.clock())
-        result.update(volumeCoverage=baseline_coverage(plan), observationHealth=coverage(state, self.clock(), day=session_date(self.clock()) if self._window_open(run_id) else None), decisionHistory=state.get("decisionHistory", []), observation=state.get("observation"), signal=state.get("signal"),
+        result.update(volumeCoverage=baseline_coverage(plan), observationHealth=plan_coverage(plan, state, self.clock()), decisionHistory=state.get("decisionHistory", []), observation=state.get("observation"), signal=state.get("signal"),
                       phase=state["phase"], executionAvailable=False)
         trigger = {"id": "cartel_entry", "label": "Cartel entry",
                    "kind": "breakdown" if plan.direction == "short" and plan.entry.mode == "breakout" else plan.entry.mode,
@@ -170,6 +170,8 @@ class CartelObserver(SessionListener):
                           summary=state["observationError"])
         elif row["status"] == "paused":
             result["summary"] = "Cartel alert observation paused."
+        elif row['status'] == 'armed' and state['phase'] == 'waiting' and self.clock() < state['opensAt']:
+            result['summary'] = f"Armed for {plan.first_session.isoformat()} — waiting for market open."
         return result
 
     def armed(self, *, slim=False):
