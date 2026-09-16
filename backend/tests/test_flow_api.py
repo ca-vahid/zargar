@@ -45,6 +45,22 @@ def _next_weekday(day: str) -> str:
 DAYS = _scan_days()
 
 
+def _expiry_for(day: str) -> str:
+    """A listed expiry (Friday) at least 7 days after `day`: the fixtures below are
+    scanned on days derived from TODAY, so a hard-coded expiry rots into the
+    calibrated 0-2 DTE noise floor (`techniques.flow.dte_min` = 3) as the calendar
+    advances - the 2026-09-15 failure of the repair test."""
+    d = dt.date.fromisoformat(day) + dt.timedelta(days=7)
+    while d.weekday() != 4:
+        d += dt.timedelta(days=1)
+    return d.isoformat()
+
+
+def _occ(sym: str, expiry: str, cp: str, strike: float) -> str:
+    e = dt.date.fromisoformat(expiry)
+    return f"{sym}{e:%y%m%d}{cp}{int(round(strike * 1000)):08d}"
+
+
 def flag(contract="COIN260912C00300000", opt="call", prem=4_200_000.0, vol=9850, oi=7410,
          dte=8, strong=True, vol_oi=5.7):
     return {"contract": contract, "expiry": "2026-09-12", "optionType": opt, "strike": 300.0,
@@ -270,8 +286,9 @@ async def test_analyst_gets_the_full_flow_evidence(flow_rig):
 
 
 def snap(day, sym, occ_sym, opt, strike, *, vol=5000, oi=1000, bid=2.0, ask=2.2,
-         expiry="2026-09-18"):
+         expiry=None):
     from zargar.models import OptionChainSnapshot
+    expiry = expiry or _expiry_for(day)
     return OptionChainSnapshot(date=day, occ=occ_sym, underlying=sym, expiry=expiry,
                                strike=strike, option_type=opt, volume=vol,
                                open_interest=oi, iv=0.4, bid=bid, ask=ask,
@@ -289,8 +306,8 @@ async def test_degraded_scan_never_overwrites(flow_rig):
         # COIN already has a good day-3 read (score 9). Calls-only snapshots:
         # parity has no put side -> spot stays 0 -> degraded path.
         session.add_all([
-            snap(day, "COIN", "COIN260918C00300000", "call", 300.0),
-            snap(day, "ZETA", "ZETA260918C00030000", "call", 30.0),
+            snap(day, "COIN", _occ("COIN", _expiry_for(day), "C", 300.0), "call", 300.0),
+            snap(day, "ZETA", _occ("ZETA", _expiry_for(day), "C", 30.0), "call", 30.0),
         ])
         await session.commit()
     out = await eng.flow_service.scan(day=day, symbols=["COIN", "ZETA"])
@@ -310,9 +327,9 @@ async def test_scan_uses_parity_spot_when_quotes_cold(flow_rig):
     day = DAYS[2]
     async with eng.sf() as session:
         session.add_all([
-            snap(day, "ZETA", "ZETA260918C00031000", "call", 31.0, vol=9000, oi=1500,
+            snap(day, "ZETA", _occ("ZETA", _expiry_for(day), "C", 31.0), "call", 31.0, vol=9000, oi=1500,
                  bid=1.9, ask=2.1),
-            snap(day, "ZETA", "ZETA260918P00031000", "put", 31.0, vol=100, oi=500,
+            snap(day, "ZETA", _occ("ZETA", _expiry_for(day), "P", 31.0), "put", 31.0, vol=100, oi=500,
                  bid=3.9, ask=4.1),   # parity: spot ≈ 31 + 2.0 − 4.0 = 29
         ])
         await session.commit()
@@ -322,7 +339,7 @@ async def test_scan_uses_parity_spot_when_quotes_cold(flow_rig):
     read = await eng.flow_service._read_row_for("ZETA", day)
     assert read.read["spot"] == 29.0
     [flag] = read.read["flags"]                   # 31C is ~6.9% OTM of 29 -> flagged
-    assert flag["contract"] == "ZETA260918C00031000"
+    assert flag["contract"] == _occ("ZETA", _expiry_for(day), "C", 31.0)
 
 
 async def test_repair_rescans_degraded_day(flow_rig):
@@ -340,10 +357,10 @@ async def test_repair_rescans_degraded_day(flow_rig):
                                    "repeatHits": {}, "reasons": ["confirm only"],
                                    "aggregates": {}, "spot": None}))
         session.add_all([
-            snap(day, "ZETA", "ZETA260918C00031000", "call", 31.0, vol=9000, oi=1500,
-                 bid=1.9, ask=2.1, expiry="2026-09-18"),
-            snap(day, "ZETA", "ZETA260918P00031000", "put", 31.0, vol=100, oi=500,
-                 bid=3.9, ask=4.1, expiry="2026-09-18"),
+            snap(day, "ZETA", _occ("ZETA", _expiry_for(day), "C", 31.0), "call", 31.0, vol=9000, oi=1500,
+                 bid=1.9, ask=2.1),
+            snap(day, "ZETA", _occ("ZETA", _expiry_for(day), "P", 31.0), "put", 31.0, vol=100, oi=500,
+                 bid=3.9, ask=4.1),
         ])
         await session.commit()
     await eng.flow_service._repair_last_scan(delay=0)
