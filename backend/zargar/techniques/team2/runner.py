@@ -918,7 +918,8 @@ class Team2Runner(PlanRunner):
         # same rule the caps below and `_add_from_event`'s `would_add` already follow ("money
         # modes only; alert/proposal keep recording every read").
         if halted and ap.config.mode != "alert":
-            self._log(ap, "halt_skip", f"{tid}: conditions met but the kill switch is engaged", trigger=tid)
+            why = self.engine.trading_halted(ap.config.portfolio_id) or "kill switch engaged"
+            self._log(ap, "halt_skip", f"{tid}: conditions met but trading is halted on this book — {why}", trigger=tid, why=why)
             return
         open_or_working = sum(1 for t in ap.trades.values() if t.status in ("fired", "submitting", "working", "open"))
         if ap.config.mode == "auto" and open_or_working >= max(1, ap.config.max_open_trades):
@@ -1282,8 +1283,8 @@ class Team2Runner(PlanRunner):
                       fraction=frac, premiumModel=e.get("premium"), avgPremiumModel=e.get("avgPremium"))
             return
         if ap.status == "paused" or halted:
-            self._log(ap, "add_skip", f"{base.trigger_id}: add wanted but the plan is {'paused' if ap.status == 'paused' else 'halted'}",
-                      trigger=base.trigger_id)
+            why = "the plan is paused" if ap.status == "paused" else f"trading is halted on this book — {self.engine.trading_halted(ap.config.portfolio_id) or 'kill switch engaged'}"
+            self._log(ap, "add_skip", f"{base.trigger_id}: add wanted but {why}", trigger=base.trigger_id, why=why)
             return
         if base.remaining <= 0 or base.instrument != "options" or not base.contract or frac <= 0:
             return
