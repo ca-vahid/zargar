@@ -18,7 +18,7 @@ _SINGLE_EXIT_INDEX = {"tp1": 0, "tp2": 1, "tp3": 2}
 
 @dataclass
 class ExitDecision:
-    kind: str                 # tp1 | tp2 | tp3 | stop | flatten
+    kind: str                 # tp1 | tp2 | tp3 | stop | flatten | scratch
     qty: float
     new_trims_done: int       # what the caller should set trade.trims_done to
     reason: str = ""
@@ -26,7 +26,9 @@ class ExitDecision:
 
 def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
               ladder: tuple[float, ...] = EXIT_LADDER, single_exit: str = "tp2",
-              stop_on: str = "low", direction: str | None = None) -> ExitDecision | None:
+              stop_on: str = "low", direction: str | None = None,
+              scratch_r: float = 0.0, scratch_trim: float = 0.5,
+              scratch_only_far_tp1: bool = False, far_tp1_r: float = 3.0) -> ExitDecision | None:
     """Decide the next exit on a *closed* bar. One exit per bar. Returns None when
     nothing should be sent (nothing hit, or a working exit is still pending).
 
@@ -51,16 +53,44 @@ def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
     flatten_at = close_ms - flatten_minutes * 60_000
     if bar.ts >= flatten_at:
         return ExitDecision("flatten", trade.remaining, len(trade.targets), "flatten before the close")
-    # 3) the 30/40/15 scale-out ladder at the targets
+    # 2b) T-14 scratch: the first bar `scratch_r` R in favour trims `scratch_trim` and moves the
+    #     stop to breakeven (the CALLER sets trade.stop = entry and trade.scratched = True when the
+    #     decision is applied). Only before the first target; a position that cannot be split keeps
+    #     everything and just earns the breakeven stop.
     k = trade.trims_done
+    if scratch_r > 0 and k == 0 and not getattr(trade, "scratched", False):
+        entry = float(getattr(trade, "entry", 0) or 0)
+        risk = abs(entry - float(trade.stop))
+        if entry and risk > 0 and scratch_only_far_tp1 and trade.targets:
+            if abs(float(trade.targets[0]) - entry) / risk < far_tp1_r:
+                risk = 0.0                                 # C4: near TP1 - no scratch, the ladder works
+        if entry and risk > 0:
+            line = entry - scratch_r * risk if short else entry + scratch_r * risk
+            if (bar.low <= line) if short else (bar.high >= line):
+                qty = float(int(trade.filled_qty * max(0.0, min(1.0, scratch_trim))))
+                qty = min(qty, trade.remaining)
+                if trade.remaining - qty < 1:
+                    qty = 0.0                              # never leave a fraction; keep the position, take the BE stop
+                what = f"trim {int(qty)} and " if qty else ""
+                return ExitDecision("scratch", qty, 0, f"+{scratch_r:g}R reached: {what}stop to breakeven")
+    # 3) the 30/40/15 scale-out ladder at the targets
     if k < len(trade.targets) and ((bar.low <= trade.targets[k]) if short else (bar.high >= trade.targets[k])):
         single_contract = trade.sec_type == "OPT" and trade.filled_qty < 3
         if single_contract:
             want = _SINGLE_EXIT_INDEX.get(single_exit, 1)
-            if k >= want:
+            hit = lambda n: n < len(trade.targets) and ((bar.low <= trade.targets[n]) if short else (bar.high >= trade.targets[n]))
+            # FIX-02 (2026-09-14): when one bar prints through several rungs, walk the rungs that need
+            # no order in THIS observation instead of consuming the bar on the first one (HPQ 09-14:
+            # TP1 and TP2 in one bar, the two-contract exit waited a bar). The caller sets trims_done
+            # from `new_trims_done`; only a confirmed fill closes the position.
+            while k < want and hit(k):
+                k += 1
+            if k >= want and hit(k):
                 return ExitDecision(f"tp{k + 1}", trade.remaining, len(trade.targets),
                                     f"single contract exits in full at {single_exit.upper()}")
-            return None                               # advance handled by caller via next_trim below
+            if k > trade.trims_done + 1:
+                return ExitDecision(f"tp{k}", 0.0, k, f"rungs reached in one bar, nothing to trim before {single_exit.upper()}")
+            return None                               # a single advance is handled by the caller
         share = ladder[k] if k < len(ladder) else 1.0
         qty = float(int(round(trade.filled_qty * share)))
         qty = min(qty, trade.remaining)

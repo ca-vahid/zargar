@@ -2615,6 +2615,11 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
   color: inherit; font: inherit; }
 .dash-acct:hover { border-color: var(--accent); }
+/* the chip that is driving the board */
+.dash-acct.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); }
+.dash-acct.on .dash-acct-name { color: var(--text-1); }
+.dash-acct-empty .dash-acct-name { color: var(--text-3); }
+.dash-hero-all { margin-left: 8px; font-size: var(--fs-0); }
 .dash-acct-name { font-size: var(--fs-1); color: var(--text-2); }
 .dash-acct-val { font-family: var(--mono); font-size: var(--fs-2); font-weight: 600;
   font-variant-numeric: tabular-nums; }
@@ -2638,7 +2643,24 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
   font-variant-numeric: tabular-nums; }
 .dash-curve-delta .muted { font-family: var(--font); font-weight: 400; }
 .dash-curve-range { margin-left: auto; }
-.dash-curve-foot { font-size: var(--fs-0); padding: 0 12px 10px; }
+.dash-curve-pct { margin-left: 6px; font-size: var(--fs-1); opacity: 0.85; }
+.dash-curve-foot { font-size: var(--fs-0); padding: 0 12px 10px;
+  display: flex; align-items: center; gap: 8px; }
+/* the reading you would otherwise have to hover for */
+.dash-curve-stats { display: flex; gap: 18px; flex-wrap: wrap; padding: 6px 12px 2px;
+  font-family: var(--mono); font-size: var(--fs-1); font-variant-numeric: tabular-nums;
+  color: var(--text-2); }
+.dash-curve-stats i { font-family: var(--font); font-style: normal; font-size: var(--fs-0);
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); margin-right: 6px; }
+.dash-curve-now { color: var(--text-1); font-weight: 600; }
+/* a quiet pulse: the board is following the tape, nothing to refresh */
+.dash-curve-live { display: inline-flex; align-items: center; gap: 4px; color: var(--text-3); }
+.dash-curve-live::before { content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--up); animation: dash-pulse 2.4s ease-in-out infinite; }
+@keyframes dash-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .dash-curve-live::before { animation: none; opacity: 0.7; }
+}
 
 /* the fleet card names itself and ranks by what is about to happen */
 .dash-armed-lbl { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.07em;

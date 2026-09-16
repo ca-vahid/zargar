@@ -279,7 +279,14 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
                   <input type="number" min={1} max={5} value={maxOpen} onChange={(e) => setMaxOpen(Number(e.target.value))} /></label>
                 {mode === "auto" && <label className="tq-ctl"><span className="tq-ctl-label">Flatten (min before close) <InfoTip>Nothing is held overnight — everything is sold this many minutes before the 4pm close.</InfoTip></span>
                   <input type="number" min={1} max={60} value={flatten} onChange={(e) => setFlatten(Number(e.target.value))} /></label>}
-                {mode === "auto" && <label className="tq-chipbtn"><input type="checkbox" checked={useCritic} disabled={!opts.llmAvailable} onChange={(e) => setUseCritic(e.target.checked)} />
+                {mode === "auto" && opts.fireDecisionMode === "deterministic" && (
+                  <span className="tq-chipbtn muted" title="deterministic-entry-v1">
+                    live entry decision: <b>deterministic</b> ({opts.decisionVersion || "deterministic-entry-v1"}) · later AI review: {opts.fireEvidenceMode === "after_close" ? "after close (evidence only)" : "off"}
+                    <InfoTip>The app's own rules (the trigger's completed-bar confirmation, volume, window, stop, R3.2) make the live entry decision; no AI is asked before an order. Premarket planning may still use AI. A later AI review, when on, only records an opinion and can never change a trade.</InfoTip>
+                  </span>)}
+                {mode === "auto" && opts.fireDecisionMode && opts.fireDecisionMode !== "deterministic" && opts.fireDecisionMode !== "legacy" && (
+                  <span className="neg small">live entry policy error: {opts.fireDecisionMode} — entries are refused until the EM setting is deterministic or legacy</span>)}
+                {mode === "auto" && (!opts.fireDecisionMode || opts.fireDecisionMode === "legacy") && <label className="tq-chipbtn"><input type="checkbox" checked={useCritic} disabled={!opts.llmAvailable} onChange={(e) => setUseCritic(e.target.checked)} />
                   double-check with AI before buying{!opts.llmAvailable ? " (no API key)" : ""}
                   <InfoTip>Before each auto-buy, an AI reads the live chart and can veto a weak setup. Needs an API key.</InfoTip></label>}
               </div>

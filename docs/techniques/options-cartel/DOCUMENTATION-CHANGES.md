@@ -1,5 +1,13 @@
 # Cartel documentation changes
 
+## 2026-09-16 — current operations and research consolidated
+
+- Refreshed operating, capability, work-plan, release, replay and traceability guides against the integrated code.
+- Replaced obsolete deployment/symbol/test snapshots in current guides with links to dated evidence; historical reports remain intact.
+- Added status interpretation, future-session gaps, source-quality distinctions, fair retries, primary-short versus additional bearish-proxy counts and funding limitations.
+- Updated shared architecture and agent guidance for research isolation and reviewed deployment identity.
+
+
 ## 2026-09-15 — profitability research protocol
 
 - Added the prospective pool, selection, bearish, campaign-target, exit and conditional

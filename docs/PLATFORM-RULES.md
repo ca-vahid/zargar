@@ -93,6 +93,36 @@ runtime ones to `execution.*`).
    reported, never acted on - promotion is a human verdict with no calendar deadline. Default mode `off`; guard tests in
    `tests/test_tip_ownbook.py`.
 
+21. **One day anchor, durable, and every "today" figure measures from it** (2026-09-14).
+   This ET day's opening equity is `PositionKeeper.day_start_equity(pid)`: the last PERSISTED
+   equity point before 04:00 ET (the previous session's close - the basis every broker quotes a
+   day change on, and the one `CLAUDE.md` already states for prices), else the day's first
+   sample, else live equity once quotes are real. It is published as `dayStart` next to `equity`
+   on `/api/portfolios`, the engine snapshot and every 30 s portfolio push, so no client derives
+   its own. Nothing may measure "today" from a chart array - those are session-filtered, thinned
+   and flat-collapsed, and the baseline moved on every reload. The anchor was previously
+   in-memory only and seeded with "equity the first time we looked today", so a mid-session
+   restart re-based the day at the restart price and the daily-loss halt forgot an existing
+   drawdown. A broker sync is a LEVEL-SET and shifts the anchor by exactly what it level-set:
+   cash that moved plus holdings that appeared or vanished, valued at the book's own mark -
+   never by `equity_after - equity_before` (that difference also carries a currency
+   correction, a broker mark replacing a fallback, or a tick between the two reads; 95 syncs
+   of it manufactured +1,560 of anchor on a C$4,000 book, 2026-09-15). Every shift is journaled
+   as `DayAnchorShifted` {day, delta, cashDelta, holdingsDelta} and a process that starts
+   mid-day replays them onto the persisted point. Tests: `tests/test_day_start_equity.py`.
+22. **A position is valued on a market, not on a print** (2026-09-14). An OPTION marks at the mid
+   of a two-sided quote (`bid > 0 and ask >= bid`); a lone `last` is the fallback for a one-sided
+   book, then the broker's sync mark, then avg cost. Shares are unchanged - an equity print IS
+   the valuation. One definition (`PositionKeeper._mark`) serves both the displayed P&L and the
+   equity the risk halt reads, so they cannot diverge. Callers that hold a LOT rather than a
+   position (the Ledger's FIFO lots) use `PositionKeeper.mark_price(symbol, sec_type)` - the same
+   rule - never a quote field of their own. Thin contracts otherwise write permanent
+   fiction into `equity_points`. Tests: `tests/test_position_marking.py`, `tests/test_ledger_day_move.py`.
+23. **Downsampling preserves range** (2026-09-14). `equity_series(points=N)` and any client
+   thinning keep each bucket's min and max in time order (`portfolio._decimate`), never every
+   Nth sample - a real intraday extreme must not depend on where the bucket boundaries fell.
+   Tests: `tests/test_equity_series.py`.
+
 ## 2. Findings (settled, with evidence)
 
 ### Cartel final-dispatch entry authority — 2026-09-13
@@ -609,6 +639,14 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   app-managed holding is ever acceptable is undecided.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
+
+- **2026-09-16 · Reviewed source and process identity remain separate.** Integrating
+  a desk's previously deployed branch into main preserves the launch-bound build
+  helper. A tolerant health response with build `unknown` prevents a missing-helper
+  500 but is not verified deployment identity. Preserve unrelated dirty research
+  files for their owner; do not commit or discard them to satisfy a clean-source
+  guard. Cartel's current handoff documents full-artifact and restoration checks.
+
 
 - **2026-09-15 · Cartel profitability research has no trading authority.** The
   Practice collection switch and bounded pool controls live under
@@ -1340,6 +1378,18 @@ armed, paused, closing and held campaigns before adding automatic arms. This
 changes no shared execution or risk thresholds. Regression coverage is in
 `test_options_cartel_preparation_safety.py`.
 
+
+
+### Shared exit knob: scratch rule — 2026-09-10 (EM desk, T-14)
+
+`MarketRules.scratch_r` / `scratch_trim` (default 0 = off). When a filled trade is `scratch_r` R in
+favour and no target has been hit, `exits.plan_exit` returns a `scratch` decision: the runner sells
+`scratch_trim` of the position (0 when the position cannot be split - a single contract keeps its
+size and only earns the breakeven stop), moves `trade.stop` to the entry and persists
+`trade.scratched`. `outcome.simulate_plan` mirrors it (`scratch_r=`, outcome `scratched`), so
+sweeps and live behave the same - change one, change both. Every technique reads it through its
+`rules()`; only EM plans to turn it on, after its sweep (TRADING-RULES T-14).
+
 ### Team2 picker gates and the EM scorer boundary — 2026-09-10 (Team2 desk, evening; v0.7.43)
 
 Codex's Thursday investigation (`C:/Cursor/zargar-codex/docs/techniques/team2/notes/research/2026-09-10-thursday-investigation.md`,
@@ -1386,6 +1436,35 @@ from `pick_contract`; other techniques may adopt it, none is changed. Team2 also
 candidate → quote → order → fill → exit trail must be on the append-only record, not only in the plan's capped
 in-memory events.
 
+
+### Shared knobs from EM's C1-C5 (2026-09-12) — all default off / EM-only
+
+`MarketRules`: `gap_day_pct` / `gap_day_wait_minutes` / `gap_day_continuation` (the tracker judges a
+gap day on the symbol's own open vs previous close and holds entries for N minutes; a gapped
+bounce/reject may re-aim as a continuation break), `scratch_only_far_tp1` / `far_tp1_r` (the scratch
+rule only when TP1 is far), `range_break` / `range_break_bars` / `range_break_max_range_mult` (a
+break out of an N-bar squeeze fires on the break close, volume floor only). `exits.plan_exit` and
+`outcome.simulate_plan` take the scratch knobs - change one, change both. `technique/options.py::
+pick_for_setup(retry_wide=, max_spread_pct=)` tries the next strike out and the next expiry when
+the just-OTM strike's spread is wide and keeps the tightest (`pickRetry` on the pick). EM-only:
+`technique.universe.option_liquidity` (nightly `em_option_liquidity` job at 16:40 ET from the
+chain snapshots; `max_spread_pct` 12, `min_oi` 500), `technique.universe.untradeable` (shares |
+skip | ignore, applied in `TechniqueService.arm_plan`), `techniques.enhanced_market.entry_fallback
+= shares`, `technique.arm.preopen_keep_triggers` (the re-plan carries the evening triggers as
+`e_<id>`). Tips/Team2/Cartel are untouched.
+
+
+### A burst of LLM runs wedges /api/health and the watchdog restarts the engine — 2026-09-13 (EM desk)
+
+Second occurrence (first 2026-09-09 21:31 ET): 102 `walkforward/{sheet}/promote` reads submitted
+within a minute; `/api/health` stopped answering within 3 s; `ZargarWatchdog` read DOWN, `start.ps1`
+first refused (exit 2, runs in flight) then on the next tick stopped the engine (pid 172936) and
+started a new one, killing every read. Nothing in the engine limits concurrent technique runs.
+Rules: (1) callers submit by the engine's in-flight count (`local.techniqueRunning` < 8), which the
+EM desk's batch now does; (2) proposed platform fix - an engine-side semaphore on concurrent LLM
+runs (`technique.max_concurrent_runs`, default 8) so a UI "Check & arm" on 100 rows cannot do the
+same; (3) the watchdog should require two consecutive silent ticks before it restarts a process
+that is still alive (a slow engine is not a dead one).
 
 ### Cartel source quality and preparation ownership — 2026-09-12
 
@@ -1587,6 +1666,134 @@ producer payload or risk setting changed. The journal registry invariant passes.
   number of positions is the signal. The shadow books keep the short (research P&L only);
   resetting them is the user's call.
 
+### The board showed red on a green morning — 2026-09-14 (Dashboard, v0.7.70)
+
+- **Report (user):** "this morning even though i was up in total, i kept seeing red chart in
+  color (for the total) ... i would refresh and it would go green and over and over", and "the
+  rate of the refresh is too low. i kept updating the page to see new numbers."
+- **Cause, two halves that compounded.** (1) The headline balance came from the store, which the
+  30 s `portfolio` push keeps current; the MOVE beside it came from `sessionMove(pts)`, derived
+  from the equity chart's own array. Nothing refetched that array — `useAsync` is fetch-on-mount
+  — so a board opened during a dip was pinned to that dip's reading all morning while the number
+  beside it climbed. Reloading refetched and the colour changed; reloading again during the next
+  dip changed it back. (2) Even fresh, the baseline was wrong: `pts` is session-filtered,
+  flat-collapsed and thinned, so "the first sample whose ET day is today" was whichever sample
+  survived thinning, and the multi-book sum seeded each book's carry-forward with its first
+  sample IN THE WINDOW — a sliding window that changed the early total as it slid.
+- **Evidence.** Replayed today's session from `equity_points` (`scratchpad/replay.py`): the
+  hero's own math went RED at 09:30 (−26.93) and GREEN by 10:00 (+101.02) off a 38,697.29
+  anchor. Live, the move's "now" (38,807.71) and the headline (38,756.23) were $51 apart —
+  two clocks, one panel.
+- **Fix.** Invariants 21 and 23 above; the client follows the 30 s push (`store.equityTicks`)
+  and re-pulls history every 5 minutes instead of once. The hero and the curve now read the
+  same two numbers, and both match `/api/portfolios`.
+- **Found on the way.** Two INTC 0DTE calls bought at $1.00 were marked near $7 by a single
+  print at 09:35: +$1,406 (+14%) of equity for one sample, persisted, and it set the whole
+  vertical range of the day's chart. That number feeds `daily_loss_pct` — the same print in the
+  other direction halts a book that never lost anything. Invariant 22.
+
+
+### Reviewer packet 2026-09-14, Delivery A — shared-runner corrections (EM desk)
+
+Response: `docs/techniques/enhanced-market/reviews/DELIVERY-A-RESPONSE-2026-09-14.md`. Shared-runner changes,
+all techniques: (FIX-01) `_enter` sets `trade.instrument` and `trade.multiplier` as one final decision - a
+shares fallback is x1, options x100; HPQ 09-14 booked -$719.30 on a -$7.19 share trade and false-halted;
+repair tool `tools/em_reconcile_fallback.py` (dry-run manifest, idempotent apply, `TechniqueTradeCorrected`
+events, never edits originals, never resumes plans). (FIX-02) `exits.plan_exit` walks several rungs reached
+in one bar for the one/two-contract full-exit policy. (FIX-03) options are re-priced on the NBBO BEFORE
+sizing; the risk budget is a bound - zero contracts is a journaled `size_zero` skip; the old one-contract
+floor is the opt-in knob `execution.min_one_contract` (default off; the tip technique's premium-budget floor
+is unchanged). (FIX-05) `Trade.critic / critic_advisory / errors / retries` survive restore; new
+`critic_disposition` (allowed | advisory | vetoed | timeout-allowed | error-allowed | not-run) persisted and
+journaled on TriggerFired with `criticMode`. (FIX-11 policy) `quote_exit_polls` counts DISTINCT quote
+observations by source timestamp - the same cached print cannot confirm a stop twice. Invariant added: **the
+multiplier belongs to the instrument that was actually ordered, never to the instrument that was requested.**
+
+
+### Reviewer re-review 2026-09-14 (DA-01..08) — shared-runner follow-ups (EM desk)
+
+`_admit_option_entry` is the ONE admission function for option entries (warning skips, premium caps,
+remaining daily-loss budget) and runs on the pick and again on the final price/quantity before dispatch;
+method quality re-judgement is the hook `rejudge_contract` (generic: spread only via
+`execution.spread_warn_pct`; EM: T5.4 + T5.3). `_manage` never advances a rung while an exit is pending.
+Quote-stop confirmation is forward-only (source timestamp strictly newer). `execution.min_one_contract`
+is registered with per-desk values (Tips/Team2/Cartel True = unchanged behaviour, EM False). `/api/health`
+carries `build` (short commit SHA). Repair tool contract: receipt journaled before commit, one row
+transition per plan, replay = `already_applied`, live rows skipped unless `--include-live` after quiescing.
+
+
+### Reviewer follow-up 2026-09-14 (FA-01..05) — shared-runner and repair contracts (EM desk)
+
+FA-01: entries pass a SYNCHRONOUS final guard (`PlanRunner._entry_guard`, via `OrderManager.place(before_submit=)`)
+after the manager's last await and before `executor.submit`, on every attempt incl. the collar retry; it
+re-judges the remaining daily loss budget and cached contract quality over the runner's own state and never
+resizes (a changed quantity/price is a fresh submission). Rule for every desk that places entries through the
+runner: state that can change during the order's awaits is judged in `before_submit`, not before them.
+FA-02..04 (repair tools): repaired state and audit receipts are written in ONE transaction (`Event` rows staged
+in the caller's session, row locked, hash re-checked); corrected values come from the Order/Execution ledger,
+never from the projection; ownership is validated before any read; `--include-live` verifies nothing.
+FA-05: a promotion's identity is the sweep's saved resolved thresholds + overlay + process version, never
+"same overlay". Build identity: `zargar.BUILD` bound at import (full SHA, `-dirty`), on `/api/health.build`.
+
+### Reviewer closure 2026-09-14 (FC-01) — the final entry guard judges the CURRENT quote (EM desk)
+
+Rule for every desk placing entries through the runner: `before_submit` evidence is the quote cache NOW, not
+a dict captured before the awaits. `PlanRunner._entry_guard` reads `engine.quotes.get(order_symbol)` and asks
+the technique's pure synchronous hook `judge_entry_quote(ap, trade, contract, quote)` (`execution/entry_quality.py`:
+two-sided uncrossed book, fresher than `execution.premium_mark_max_age_seconds`, spread within the technique's
+limit when the arm skips wide spreads - generic `execution.spread_warn_pct`, EM T5.4 10%). FC-02 (same day): NO quote =
+refusal; a delayed chain row = refusal when a real-time option source is configured; the freshness limit is the
+ENTRY policy `risk.stale_quote_seconds`, never an exit-mark age; the captured warning list admits nothing. The repair tool `tools/em_reconcile_fallback.py` has one
+code path (real session, row lock, receipts staged in the same transaction); fake-session test doubles are
+historical reproductions, never production evidence (`tests/test_em_reconcile_real_session.py`).
+
+
+### Order-free scenario candidates — 2026-09-14 (EM Delivery B, shared-runner boundary)
+
+A run whose `config.origin` or tag starts with `scenario:` is a research record: `PlanRunner.arm` journals
+`TechniqueArmRefused` (contract: runId, symbol, origin, reason) and raises, on EVERY path - API, restore,
+retry, auto-arm - independent of settings, until an activation decision adds an explicit allow-list. The
+check is `execution/origins.py::scenario_origin` (no technique import in the runner). EM's three new tables
+(`technique_source_revisions` / `_artifacts` / `_jobs`) are EM-only (`technique/source_revisions.py`); the
+gateway now forwards EM-channel EDITS to EM's inbox (`kind=update`) - the tips mirror/intake path is unchanged.
+
+
+### Restart safety after the 17:37 health-500 incident — 2026-09-14 (EM desk, shared scripts/restart.ps1)
+
+A process that ANSWERS /api/health with an HTTP error is a live, unhealthy engine, not an absent one: restart.ps1
+now keeps the entry pause, before-inventory and readiness safeguards in that case (only a refused connection means
+"no process"); it PERSISTS the before-inventory by id (`logs/restart-inventory-<ts>.json`) and reports `restoration`
+= ok | mismatch | skipped-no-baseline on the deployment receipt (never inferred from counts alone); and it probes the
+TARGET checkout (`python -c "import zargar, zargar.api.app; zargar.build_sha()"`) BEFORE stopping the running
+process - a post-start file rewrite is not a loaded fix (exit 8; -Force is an override). Open for the watchdog
+owner: bound repeated restarts of an unchanged deterministic import/health failure with an incident record.
+Gateway: `MESSAGE_DELETE` on EM channels becomes an EM tombstone revision (`TechniqueSourceRevised`); the tips
+mirror/intake never receives deletions; deletions never touch positions, exits or arms.
+
+
+### Arm authorization boundary — 2026-09-14 (EM desk, shared runner, optional)
+
+`PlanRunner.arm(run_id, config, authorize=None)` (forwarded by `TechniqueService.arm_plan`): an optional awaitable
+awaited after every earlier await and immediately before the FIRST arm mutation. A caller whose authority can lapse
+during the awaited preparation (EM's source-board attempt: its fenced lease and the source revision) raises there and
+nothing is registered or persisted. No behaviour change for callers that pass nothing. Never used as a cleanup hook:
+a refused arm disarms or flattens nothing.
+
+
+### Order-free measurement hooks — 2026-09-15 (EM desk; shared runner, observation only)
+
+`TechniqueTargetDistance` (target-distance-v1, journaled at fire and fill, never gates) is scoped per technique since
+2026-09-15: `execution.target_distance_diagnostic=false` for every desk, `techniques.enhanced_market.target_distance_diagnostic=true`
+- the Tips desk asked that its aggregates carry no EM research record after the shared runner journaled it on Tips fills.
+`PlanRunner.on_quote_watch` CAPTURES (pure, no awaits) the first fresh underlying observation at or beyond a trade's
+next production rung with the same-contract NBBO and hands it to a bounded background recorder that journals
+`TechniqueExitShadow` (shadow-exit-v1) - research I/O never runs ahead of the premium/quote stops; drops are counted
+and logged. OFF by default for every desk (`execution.shadow_exit_observe=false`); a technique opts in with
+`techniques.<id>.shadow_exit_observe=true` and then only its default (Practice) book is observed. `TechniqueTargetDistance` (target-distance-v1) is journaled at
+fill and embedded in TriggerFired - a diagnostic that never rejects, resizes or retargets. Both contracts are in
+`research/events_contract.py`. Any desk may read them; none may act on them.
+
+
 ### Session findings — 2026-09-14 (first enforce/integrity day; v0.7.68 → 0.7.71)
 
 - **Bar DELIVERY stalls (3×):** 13:09–13:13, 13:23–13:27 and 15:26–15:29 ET every armed
@@ -1692,6 +1899,27 @@ door does not protect against a broken build because the stop happens before the
 commits (F123, F126, 0.7.72) had never been merged to main; they are brought to main with this change so the running
 checkout and main agree again.
 
+### Dashboard vs Ledger "today" - 2026-09-14 (v0.7.75)
+
+- **Report (user):** "the daily numbers don't really match. see dashboard vs ledger for today" -
+  Dashboard +429.97, Ledger TODAY +145.07, and a "+4.00 unexplained" pill.
+- **The pill was a marking mismatch (mine).** Since 0.7.70 the book marks an option at the mid
+  (invariant 22); `desk.ledger()` still valued open lots at `q.last`. (mid - last) x qty x 100 over
+  the three open lots = +3.00 (T) + 1.00 (HIMS) = 4.00 exactly. Fixed with `mark_price()`.
+- **The headline gap is two definitions, both correct.** EM (+364.49) and Cartel (-61.13) agree on
+  both screens to the cent. The whole +284.90 difference is Tips: the ledger's day row books a
+  trip's ENTIRE gain on the day it closes (APLD -210.33 over four days), the Dashboard counts
+  only today's mark-to-market slice plus the day's move on lots still open. The ledger payload
+  now carries `dayStart`/`dayMove` (invariant 21's anchor) and its TODAY tile shows that number,
+  with "closed . trips . open & carried" as the sub-line. Per-day rows keep realized-on-close.
+- **Merge lesson (deploy outage, ~10 min).** Resolving the five version-file conflicts as "take
+  HEAD" dropped the EM desk's new `build_sha()` from `zargar/__init__.py`; `/api/health` imports
+  it, so every health call returned 500 while the engine itself ran fine - `restart.ps1` gave up
+  at 30 s and the watchdog held off. Rule: a conflicted file that the OTHER side extended is
+  resolved from THEIR content with the version line re-set, and `from zargar import __version__,
+  build_sha` is part of the import smoke before any restart. `restart.ps1`'s 30 s health wait is
+  too short for a boot that restores this many plans (2-3 min today, twice) - it reports a
+  failure for a start that succeeds.
 ### Shared runner: technique state extras and one entry gate — 2026-09-14 (Team2 EOD follow-up; v0.7.76)
 
 Two hooks on `PlanRunner`, default no-ops, both technique-resolved: `state_extras(ap) -> dict` is merged into the armed
@@ -1797,6 +2025,21 @@ ignored a cancel that reported more contracts. `on_order_update` now books the t
 ANY entry trade (`_apply_entry_fill`: never regresses, opens once, nets against booked exits) and classifies only the
 entries that were still submitting/working. Shared behaviour; no threshold changed.
 
+### 2026-09-15 - execution-review policy is a runner hook (deterministic-entry-v1)
+
+`PlanRunner.fire_review_policy(ap)` -> `legacy` (the awaited reviewer branch, unchanged for Tips / Team2 / Cartel) or
+`deterministic` (the technique's `fire_decision(ap, tid, tr, trade, attempt_id=)` hook returns a versioned decision
+dict; the runner journals `TechniqueEntryDecision`, refuses on `refuse`/`defer` with its own disposition, and continues
+into the UNCHANGED `_enter` chain on `allow`). Any other value refuses the entry with a policy error - never a silent
+model fallback. Generic defaults keep every other desk exactly as before; only EM overrides the hook from its own
+`techniques.enhanced_market.fire_decision_mode`. There is deliberately NO `execution.fire_decision_mode` default.
+Invariant: no model output may mutate an executed decision, sizing input, setup validity, proposal, stop, cooldown or
+plan state after the fact; optional evidence (`TechniqueEntryEvidence`, `authority=evidence_only`) is append-only over a
+frozen snapshot and is produced by an after-close command that opens no trading service. Trade records carry
+`decision`, `decisionDisposition` and `timing` (bar / received / decided / quoteReady / admission / submit) so the
+boundaries can be measured separately from provider and venue latency.
+
+
 - **2026-09-15 (Tips desk) — sim option fills need venue identity; tests must publish it.** Since
   `12491f2` (2026-09-14) `SimExecutor.quote_rejection` fills an OPT order only on a quote whose
   `source` is `opra`/`ibkr` with a fresh `source_ts`; a `chain`/delayed quote is "resting, not
@@ -1829,6 +2072,12 @@ entries that were still submitting/working. Shared behaviour; no threshold chang
   depends on belongs on main, or the route tolerates its absence (start-path owner's call); (4) "merged,
   not deployed" is a fiction while the watchdog can launch the checkout - treat every convergence as a
   possible deploy.
+  *EM desk follow-up, same day:* the engine the watchdog judged DOWN at 07:40:09 PT was logging normally until
+  07:39:59 and showed no shutdown or traceback - a single 4 s probe timed out under load and a LIVE engine was
+  killed; a second identical timeout was observed at 08:56 PT with health answering in 20 ms before and after.
+  `/api/health` now answers `build=unknown` instead of a 500 when `zargar.build_sha` is absent (EM branch, PR #174,
+  which also puts the helper on `main`). The probe policy (confirm DOWN with a second probe before any kill) is the
+  start-path owner's decision; until it changes, every load stall longer than 4 s is a restart risk in RTH.
 - **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
   `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
   returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and
@@ -1907,6 +2156,32 @@ of the date and the session roll never releases it. Releasing it touches nothing
 switch or the book halt never releases it. The record snapshots the Team2 sizing settings at pause time; the pause
 changes no setting. Tests: `tests/test_book_pause.py`. Nothing is paused by this release.
 
+### LIVE read -24% on a -2% day - 2026-09-15 (Dashboard, v0.7.91)
+
+- **Report (user):** "when i change from practice to live, the numbers are inaccurate. says i lost
+  close to 24 percent today"; also the chart coloured opposite to its header, and the book picker
+  only drove the curve.
+- **Three causes, reconciled to the cent.** (1) The client's live marking (`useLiveEquity`) summed a
+  position's value in the INSTRUMENT's currency into a CAD book: Webull's SPCX (US$8,609) went in
+  raw, so the board's "now" for the real accounts was 20,402 against an anchor of 26,986 - 4,505 of
+  the "loss" was FX. (2) `dayMove` and the summed curve added a CAD book and a USD book without
+  conversion. (3) Wealthsimple Personal's anchor: persisted 4,096.92, in-memory 5,657.56 - the
+  15-minute sync shift (`equity_after - equity_before`) leaked marking/currency differences into
+  the anchor all day (+1,560), read as -28% on that book. Webull's -447 was real.
+- **Fix.** Invariant 21 (level-set definition, journaled shifts, replay on restart). Client: every
+  book is converted at today's USD/CAD before any sum - live marking (`makeRate`, same
+  `USDCAD=X` the server's `FxService` reads; a book that cannot be converted keeps the server's
+  equity), the day move, the curve's weights - and the footer says "in CAD at today's FX". An
+  account that cannot be priced is named in the tooltip. Verified in the browser mid-fix: -7.70%
+  (FX fixed, old anchor still drifted) -> after the anchor rebuild, the real day.
+- **Chart colour.** The curve coloured itself against the window's FIRST sample (04:00 ET) while its
+  header measures from the previous close - a green "+US$220 today" over a red line whenever the
+  window opened above the close. One number now decides both.
+- **Picker.** `store.dashBook` is the board's selection: the curve's select and the headline's
+  account chips both set it; the headline shows that book's total and move. Empty accounts fold
+  into one "+N empty" chip and stay out of the picker; same-named accounts get their currency.
+- **Known simplification.** History is converted at TODAY's rate (no FX series per day); the
+  footer says so. The USD/CAD move within a day is ~0.3%, below what the board resolves.
 ### Team2 parallel Practice experiments — 2026-09-15 (technique-scoped; v0.7.93)
 
 Team2 can now run several Practice books at once with ONE rule difference each (`techniques.team2.experiments`; the

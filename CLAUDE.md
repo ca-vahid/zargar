@@ -43,7 +43,7 @@ Code: `backend/zargar/options/` (occ symbology, chain providers, OptionsService)
 `components/OptionChain.tsx` / `OptionTicket.tsx`. Internal option symbol =
 **unpadded OCC** (`F260828C00014500`); `occ.to_snaptrade()` pads at the venue.
 
-Technique pipeline (EnhancedMarket method): spec in `docs/techniques/enhanced-market/METHOD.md`,
+Technique pipeline (EnhancedMarket method): **start at `docs/techniques/enhanced-market/README.md`** (doc map, state of play, known gaps); spec in `docs/techniques/enhanced-market/METHOD.md`,
 build plan + lessons in `docs/techniques/enhanced-market/PIPELINE-PLAN.md`, code in
 `backend/zargar/technique/`, UI in `frontend/src/pages/TechniquePage.tsx`.
 Review loop (trace, provenance, outcomes, reviews, replay, bundle):
@@ -283,6 +283,18 @@ gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tool
 parallel with it.
 **Bug-missed trades (2026-09-02):** replay them AFTER the fix into the counterfactual ledger (`execution/counterfactual.py`, `technique_review counterfactual <run> --trigger r1 --reason ...`, Armed > History "Missed by a bug") - NEVER book a synthetic fill into a portfolio (PLATFORM-RULES invariant).
 **EM flow confirmation (T-12): MEASURED AND REJECTED on history 2026-09-09** - `docs/techniques/enhanced-market/FLOW-CONFIRMATION-PLAN.md` (verdicts in TRADING-RULES T-12). The sweep detector is research tooling only: `research/optiontrades.py` (Alpaca option trades -> sweeps; history uses the tick test, live would use the NBBO), `flow_sweeps` table, `tools/optiontrades_backfill.py` / `flow_variant.py` / `flow_sweep_universe.py`. Neither the confirm gate nor sweeps-as-trigger had an edge (847 sweep trades mean -13% premium); no `flow_confirm` runtime knob exists and none is planned unless 10 sessions of live NBBO-classified sweeps say otherwise.
+**EM external review (2026-09-14):** packet `docs/techniques/enhanced-market/reviews/DEV-TEAM-HANDOFF-2026-09-14.md`; Delivery A done (`reviews/DELIVERY-A-RESPONSE-2026-09-14.md`, reviewer cases adopted as `tests/test_em_review_*.py` - never weaken them), closure review `reviews/2026-09-14-fa-closure-review.md` (FC-01: the final entry guard judges the CURRENT quote via the pure hook `judge_entry_quote`), Delivery B designed (`reviews/DELIVERY-B-DESIGN-2026-09-14.md`) and its FIRST PR built (source revisions/artifacts/jobs ledger `technique/source_revisions.py`, backfill tool `tools/em_source_backfill.py`, order-free boundary `execution/origins.py` - a `scenario:*` run never arms; the 19-note backfill was applied 2026-09-14; next PR built the same evening: gateway deletions as tombstone revisions, transcription/extraction through fenced artifacts + checkpoints - `tests/test_em_source_wiring.py`; WI-01..05 ownership/revision fixes - `tests/test_codex_worker_revision_ownership.py`, `tests/test_em_worker_ownership.py`; WF-01..03 - `tests/test_codex_worker_followup_boundaries.py`, `tests/test_em_worker_followup.py`; the runner's optional `authorize` arm boundary), cleared and DEPLOYED as v0.7.75 build 0014640 (release verdict `reviews/2026-09-14-3f1d665-release-verdict.md`), C/D open. `/api/health.build` is the launch-bound SHA: a process started before a file edit does not contain the edit. FIX-01 repair: `tools/em_reconcile_fallback.py` (dry run; `--apply` is a human step). **Strategy research (2026-09-14/15, order-free):** `reviews/STRATEGY-PROPOSAL-2026-09-14.md` - source candidates `tools/em_source_candidates.py` (ledger in `research/`), shadow exit observations `TechniqueExitShadow`, target-distance diagnostic `TechniqueTargetDistance`; nothing from them arms or trades. **Deterministic live entry (2026-09-15, user decision, `deterministic-entry-v1`):** EM's live entry decision is made by
+application rules (`technique/entry_decision.py`, pure, over the actual tracker transition) through the runner hook
+`fire_review_policy` / `fire_decision`; the fire-time critic is off the entry path (setting
+`techniques.enhanced_market.fire_decision_mode` deterministic | legacy rollback; `fire_evidence_mode` off | after_close =
+optional evidence-only review via `tools/em_entry_evidence.py`); other desks keep the legacy hook default; plan + rule map in
+`reviews/deterministic-entry-2026-09-15/`; migration preview `tools/em_fire_policy_migration.py`.
+**Profitability cohorts (2026-09-15, reviewers' P-01..P-03):** frozen definitions
+`research/PROFITABILITY-COHORTS-2026-09-15.md`, per-session order-free report `tools/em_profitability.py` ->
+`research/profitability/<date>.md` (baseline beside the `long_bounce_next_resistance` cohort, `small-position-exit-v1`
+unknown until the observer + `shadow_p02_candidate` are activated, contract friction with an 8% ranking marker that is
+never a gate).
+**EM method change plan (2026-09-12, IMPLEMENTED the same day on the user's decision; C3 on, C4/C5 off after sweeps):** `docs/techniques/enhanced-market/METHOD-CHANGE-PLAN-2026-09-12.md` (C1 tradeable-vehicle universe, C2 shares fallback in Practice, C3 gap-day policy, C4 targeted scratch, C5 consolidation-break trigger, C6 keep/measure). Verdicts in TRADING-RULES §5 2026-09-12.
 **One Practice book per technique (2026-09-08):** `techniques.<id>.default_portfolio` routes each technique's fills (EM also `technique.arm.default_portfolio`); the old shared book is archived, never a fallback (PLATFORM-RULES invariant 15).
 **New technique? Start at `docs/BUILDING-A-TECHNIQUE.md`** — the engine's capabilities (marketstructure,
 PlanRunner hooks, settings resolver `techniques.<id>.<key>` → `execution.<key>`, scheduler, calendar,
@@ -421,7 +433,10 @@ frontend production build runs this check automatically.
   in `zargar/execution/` (`SessionListener` loops + order index, pure `exits`
   decision/intent, `ManagedTrade`); `PlanArmer` subclasses `SessionListener`. New
   techniques reuse that layer instead of re-implementing order management.
-- Armed plans default to the **options** instrument (just-OTM call via
+- Armed plans default to the **options** instrument, and since 2026-09-12 EM Practice arms fall back to SHARES when
+  the option is untradeable (`techniques.enhanced_market.entry_fallback=shares`; the nightly `em_option_liquidity`
+  screen marks 24/135 names option-tradeable; the pick retries the next strike / next expiry on a wide spread) -
+  a test that expects the no-contract FAILURE path must set the fallback off. Default pick: (just-OTM call via
   `technique.option_pick`, BUY LMT at ask, SELL at bid, P&L × 100, <3 contracts
   exit in full at TP2); tests that only need share fills must arm with
   `"instrument": "shares"`. Option quotes reach the risk gate only through
@@ -450,7 +465,7 @@ frontend production build runs this check automatically.
   < 3 contracts); tests that encode the book's TP3 arithmetic pin `tp3` in their rig.
 - Live 1m bars: `BarAggregator` holds a sampled bar ~5 s for the Alpaca exchange bar
   (`feed.exchange_bar_hold_seconds`); consumers get ONE bar per minute (`source: exchange`
-  when corrected). The fire→critic→order chain runs off the bar loop (`_spawn_fire`);
+  when corrected). The fire→decision→order chain runs off the bar loop (`_spawn_fire`; EM's decision is the pure deterministic rule set since 2026-09-15, the critic only under `legacy`);
   tests/manual feeds call `armer.on_bar()` which awaits `wait_fires()`.
 - **Both sides are planned** (`technique.long_only` off): trigger kinds `bounce`/`breakout`/
   `wedge_break` (long, calls) and `reject`/`breakdown` (short, PUTS only — never share
@@ -467,11 +482,14 @@ frontend production build runs this check automatically.
   and may re-plan with `build_session_plan(reference_price=)`; a re-planned run's
   `referencePrice` is the tracker's prev_close for the gap rule.
 - Auto mode never arms without a loss halt (`_ensure_loss_halt`, fallback
-  `technique.arm.daily_loss_fallback`); the critic fails OPEN with a timeout + per-day
-  budget (`technique.arm.critic_fail_budget`) that pauses the plan. **The critic's veto is a knob**
-  (`execution.critic_mode` = veto | momentum_only | advisory; EM runs `momentum_only` since
-  2026-09-09: a "no" on an at-level bounce/reject is recorded and the entry proceeds; breakouts,
-  breakdowns and wedge breaks are still vetoed - TRADING-RULES §5).
+  `technique.arm.daily_loss_fallback`). **EM's live entry is DETERMINISTIC since 2026-09-15**
+  (`techniques.enhanced_market.fire_decision_mode=deterministic`, `deterministic-entry-v1`: the app's rules judge
+  the tracker's actual transition in <1 ms, journal `TechniqueEntryDecision` with frozen snapshot + bars, no model
+  on the entry path; `fire_evidence_mode=off` | `after_close` = optional evidence-only model pass later). The
+  critic machinery below applies only under the explicit `legacy` rollback (and to other desks' runners): the
+  critic fails OPEN with a timeout + per-day budget (`technique.arm.critic_fail_budget`) that pauses the plan, and
+  its veto is a knob (`execution.critic_mode` = veto | momentum_only | advisory; EM ran `momentum_only`
+  2026-09-09..15 - TRADING-RULES §1.4, §5). EM doc map + state of play: `docs/techniques/enhanced-market/README.md`.
 - Armed plans also run a ~2s **quote stop watch** (`technique.arm.quote_exit*`):
   exit-only, fires when the underlying's live quote is decisively through the stop
   (excess_r × risk beyond, N consecutive polls). Never add an entry path to
@@ -503,6 +521,27 @@ frontend production build runs this check automatically.
   candidates on the NBBO before any refusal — never re-introduce a delayed-ask veto or a synthetic strike grid on the live path.
   **Restarts go through `scripts/start.ps1`'s readiness check** (`/api/ops/restart-check`); assistants use the scheduler's
   `ZargarRestart` task, never `start.ps1` from their own shell (PLATFORM-RULES invariants 17–18).
+- **"Today" has ONE anchor and it is the server's** (2026-09-14, PLATFORM-RULES 21):
+  `PositionKeeper.day_start_equity(pid)` = the last PERSISTED equity point before 04:00 ET
+  (the previous session's close — same basis as the day-change rule for prices above), and it
+  ships as `dayStart` beside `equity` on `/api/portfolios`, the snapshot and the 30 s portfolio
+  push. Never derive a day move from a chart array: those are session-filtered, thinned and
+  flat-collapsed, so the baseline moves on every reload — the Dashboard read RED on a green
+  morning for exactly that reason. A broker sync shifts the anchor (it is a level-set, not P&L).
+- **An option is valued on its book, not on a print** (2026-09-14, PLATFORM-RULES 22):
+  `PositionKeeper._mark` takes the mid whenever there is an ask (`ask > 0 and ask >= bid`,
+  a 0 bid included); a lone `last` is used only when there is no ask at all. Shares are
+  unchanged. `frontend/src/lib/liveEquity.ts` mirrors this rule — change one, change both.
+  One stale print on a thin 0DTE contract put +$1,406 into a book's persisted equity history.
+- **Downsampling keeps the extremes** (2026-09-14, PLATFORM-RULES 23): `portfolio._decimate`
+  (and the client thinning in `DashboardPage`) keep each bucket's min and max, never every Nth
+  sample — the same 1D window otherwise reported a different high depending on where the
+  buckets fell.
+- **The board follows the tape.** The engine pushes equity per book every 30 s on the
+  `portfolio` topic; the store keeps those in `equityTicks` and charts extend themselves from
+  it (`useAsync` is fetch-on-mount — anything that must stay current needs more than a fetch).
+  Between pushes, running totals mark live off the quote stream (`useLiveEquity`), so the top
+  bar, the Dashboard headline and the curve's NOW all show the same number at the same instant.
 - Patching files from scripts on Windows: open with `encoding="utf-8"`
   (the default cp1252 silently corrupts em dashes / arrows).
 
@@ -518,5 +557,5 @@ frontend production build runs this check automatically.
   (`/opt/pw-browsers` chromium in the dev container).
 **Team2 technique (BUILT v0.1 2026-09-03; the Team2 desk = this session's group):** `docs/techniques/team2/` — Casey/@Team2Trading's SPY/QQQ/IWM 0DTE method (4 levels + 13/48/200 EMA on 2m + 15m-close confirmation, EMA13 pullback entries, ~$0.50 premium-targeted contracts, +50/+100% trims, flatten 15:45). `README.md` (doc map, capture recipe), `METHOD.md` (numbered rules, §7b/§7c from images + videos), `PLAN.md` (decisions D1–D14, engine list §3b, review §3c, phases with checkboxes), `TRADING-RULES.md`, `SOURCES.md` + `notes/` (49 posts, 2 transcripts, 145 images — jpg local only). Code: `zargar/techniques/team2/` (rules/regime/scenario/levels/plan/premium/**session.py = the one pure read**/runner/service), `api/routes_team2.py`, `frontend/src/pages/Team2Page.tsx`, `tools/team2_sweep.py`. **Built completely separately from EM** — shared engine additions (ext-hours bars, `marketstructure/aggregate|indicators|dailylevels|market_calendar`, `options/pick`, `research/macro_calendar`, per-technique 0DTE RiskGate policy `techniques.<id>.zero_dte`) are logged in PLATFORM-RULES; never edit EM's `zargar/technique/` for Team2. User decision 2026-09-03: **Team2 IS a 0DTE technique** (its own gated policy). Tests: `pytest tests/test_team2_*.py tests/test_codex_*.py tests/test_marketstructure_extended.py` (own DB `zargar_test_team2` on :5433; `test_codex_*` = reviewers' regressions adopted verbatim). **Status 2026-09-16 (live v0.7.94):** AUTO on the `Team2 Practice` book ($10k) since 2026-09-08; cohort v2 (from 2026-09-11) is the evaluation set — listed strikes, live NBBO the only contract authority (`require_fresh_quote`), one warm-up rule, the full candidate→quote→order→fill→exit trail journaled (`TechniquePlanContract`); first v2 fills 2026-09-16; twenty sessions trigger a review, never a promotion (PLAN §3d). The 2026-09-14 EOD corrective batch is CLOSED (v0.7.82: durable refusal overlay on the shared `state_extras`/`entry_gate`/`entry_guard_predicate` hooks, decision watermark, `SubmitUncertain` resolved only by the venue's report with cumulative fills, orphan stop); F127 0DTE cap clamp v0.7.88. F81b (`target_replan=structure`, gap days) ON under observation. Research knobs OFF: `no_trade_zone` (C1 conjunction), `pm_room_atr`, `min_target_atr`, `key_levels` (C2 D1/D2/D3, built + accepted, sweeps via `zargar.tools.team2_c2_report` once C6 lands; validation 09-14..10-09 sealed); C4/C5 undefined; near-ITM eligibility = user decision. **Profitability track:** exploratory comparisons + sheet rev. 2 accepted (sizing cap `size_full=0.5` first, C1 follow-on; sampled −$800 MTM threshold → per-book PAUSE `POST /api/portfolios/{id}/pause`, never auto-revert); parallel experiments BUILT and OFF on three labelled sim books (`Team2 Control` / `Team2 Sizing 0.5` / `Team2 C1 Conjunction`; `techniques.team2.experiments` whole-map schema with roles, overrides frozen on the plan at mint, per-book counters, verified transitions; read-only receipt `zargar.tools.team2_receipt` = PREPARED, blocker C6) — activation needs the reviewed `notes/research/c6-evidence.json` + the other team's GO; sim-only, never real money. Deploys only via the `ZargarRestart` task after `/api/ops/restart-check` (assistant shells are elevated; `start.ps1` refuses them). Watch job: `team2-market-watch` (30 min) → `notes/market-watch.md`, findings F13–F127 in TRADING-RULES. State of play: PLAN §3e; known gaps: README "Known gaps, risks and what could be wrong"; the week-37 plan: `notes/research/2026-09-12-week37-review-and-change-plan.md`; C2 spec: `notes/research/2026-09-13-c2-key-levels-spec.md`. A change to `session.py` touches the live read unless a before/after test proves otherwise (the 0.7.60 lesson).
 
-**Options Cartel documentation:** current guide in `docs/techniques/options-cartel/README.md`; operating policy in `DAILY-PREPARATION.md`, source/pilot distinction in `IGNITION.md`, current implementation limits in `DELIVERY-STATUS.md`. Historical plan/test/deployment records are not live state.
+**Options Cartel documentation:** current guide in `docs/techniques/options-cartel/README.md`; operating policy in `DAILY-PREPARATION.md`, source/pilot distinction in `IGNITION.md`, current implementation limits in `DELIVERY-STATUS.md`. Historical plan/test/deployment records are not live state. Prospective studies and fair baseline scheduling are documented in `PROFITABILITY-RESEARCH.md`; actual daily accounting is separate from research proxies. Use `RELEASE-HANDOFF.md` for reviewed-source, full-artifact and restoration checks.
 

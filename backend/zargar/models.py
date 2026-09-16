@@ -1010,6 +1010,76 @@ class TechniqueMethodNote(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TechniqueSourceRevision(Base):
+    """Delivery B (2026-09-14): one IMMUTABLE observation of an EM source message's state - a distinct
+    accepted state per row (create | edit | delete | restore); identical redelivery is not a revision.
+    Identity, author, timestamps, verbatim text, attachment set, content hash, supersedes. No transcript,
+    no usability here (those are artifacts). EM-only (`technique/source_revisions.py`)."""
+    __tablename__ = "technique_source_revisions"
+    __table_args__ = (UniqueConstraint("note_id", "revision", name="uq_source_revision"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    note_id: Mapped[str] = mapped_column(String(64), index=True)          # technique_method_notes.id (the message identity)
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    kind: Mapped[str] = mapped_column(String(16), default="create")        # create | edit | delete | restore
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    source_edited_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))   # Discord edited_timestamp (ordering)
+    published_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    gateway_seq: Mapped[int | None] = mapped_column(BigInteger)             # gateway sequence (tie-break)
+    author_id: Mapped[str | None] = mapped_column(String(32))
+    author_name: Mapped[str] = mapped_column(String(128), default="")
+    channel_id: Mapped[str] = mapped_column(String(32), default="")
+    channel_name: Mapped[str] = mapped_column(String(128), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    attachments: Mapped[list] = mapped_column(JSONVariant, default=list)   # attachment URLs (hashes when fetched)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    supersedes: Mapped[str | None] = mapped_column(String(64))
+
+
+class TechniqueSourceArtifact(Base):
+    """Delivery B: an APPEND-ONLY derived output of one revision (transcript | extraction | scenarios),
+    keyed by (revision, kind, input hash, config hash) = the idempotent output key (`id`). `completed_at`
+    is the availability fact; NULL = unknown (legacy backfill), never derived from `updated_at`."""
+    __tablename__ = "technique_source_artifacts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)          # artifact_key(...)
+    revision_id: Mapped[str] = mapped_column(String(64), index=True)
+    note_id: Mapped[str] = mapped_column(String(64), index=True)
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market")
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    config_hash: Mapped[str] = mapped_column(String(64), default="")
+    input_hash: Mapped[str] = mapped_column(String(64), default="")
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TechniqueSourceJob(Base):
+    """Delivery B: MUTABLE progress for one revision - stage, lease, FENCE TOKEN (a worker commits only
+    while its token is current), per-item checkpoints, outcome (in_progress | retryable | permanent | done)."""
+    __tablename__ = "technique_source_jobs"
+    __table_args__ = (UniqueConstraint("revision_id", name="uq_source_job_revision"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    note_id: Mapped[str] = mapped_column(String(64), index=True)
+    revision_id: Mapped[str] = mapped_column(String(64))
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market")
+    stage: Mapped[str] = mapped_column(String(24), default="received", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    fence_token: Mapped[int] = mapped_column(Integer, default=0)
+    checkpoint: Mapped[list] = mapped_column(JSONVariant, default=list)    # completed item keys
+    outcome: Mapped[str] = mapped_column(String(16), default="in_progress", index=True)
+    next_due_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TechniqueCounterfactual(Base):
     """A trade the app MISSED through a bug (a restart stranded the entry, a
     crashed loop, a dead quote stream), reconstructed after the fix by replaying

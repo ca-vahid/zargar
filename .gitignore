@@ -38,3 +38,11 @@ backend/finpages.txt
 scripts/run-hidden.log
 
 docs/techniques/team2/notes/research/week37-author-charts/*.jpg
+
+# runtime noise: the gateway rewrites these every run (2026-09-14)
+backend/logs/
+backend/gateway_cursors.json
+backend/gateway_spool.jsonl
+
+# the Discord gateway's live status snapshot (written every minute into backend/ by the running gateway; never source)
+backend/gateway_status.json

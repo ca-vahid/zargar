@@ -151,7 +151,12 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     @app.get("/api/health")
     async def health(request: Request):
         from .. import __version__
-        out = {"ok": True, "started": eng.started, "version": __version__}
+        try:
+            from .. import build_sha                        # the launch-bound build helper (EM desk, 2026-09-14)
+            build = build_sha()
+        except Exception:                                   # a checkout without the helper must still answer health -
+            build = "unknown"                               # a 500 here made the watchdog restart-loop (2026-09-16 10:40 ET)
+        out = {"ok": True, "started": eng.started, "version": __version__, "build": build}
         # the restart guard (scripts/start.ps1) runs on this machine and must see whether
         # paid analyst reads / armed plans are in flight even though the API is closed.
         # Loopback AND no proxy headers = a local caller (Tailscale serve/funnel proxies
@@ -227,11 +232,13 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         for p in eng.positions.portfolios():
             eq = await eng.positions.equity(p["id"])
             today = await eng.positions.daily_loss_pct(p["id"])
+            start = await eng.positions.day_start_equity(p["id"])
             # open positions ride along, marked to the live quote — equity above
             # cash with an empty positions list read as an accounting error
             # (Practice's BBAI LEAP, 2026-08-31)
             pos = [x for x in eng.positions.positions_list(p["id"]) if abs(x.get("qty", 0)) > 1e-9]
             out.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2),
+                        "dayStart": round(start, 2) if start is not None else None,
                         "todayPct": round(today, 2) if today is not None else None,
                         "positions": pos})
         return out

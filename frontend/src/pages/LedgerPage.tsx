@@ -147,12 +147,38 @@ function Headline({ led, model, days, setDays, view, setView }: {
         </div>
       </div>
       <div className="led-stats">
-        <div className="led-stat2">
+        {/* The same "today" as the Dashboard: how the book moved, mark to market.
+            What CLOSED today is the sub-line — a trip's whole gain lands on the day
+            it closes, so the two are different questions (user 2026-09-14: the two
+            screens read +429.97 and +145.07 for the same day). */}
+        <div className="led-stat2"
+          title={led.dayMove != null
+            ? `The book moved ${fmtSigned(led.dayMove)} today against the previous session's close — the Dashboard's number. `
+              + `Of that, ${fmtSigned(todayRow?.realized ?? 0)} is trades that closed today (their whole gain since entry); `
+              + `the rest is positions still open, and gains or losses that were already on the book before today.`
+            : undefined}>
           <span className="k">Today</span>
-          <span className={`v ${todayRow?.realized == null ? "muted" : todayRow.realized >= 0 ? "pos" : "neg"}`}>
-            {todayRow?.realized == null ? "—" : fmtSigned(todayRow.realized)}
-          </span>
-          <span className="s">{todayRow?.realized == null ? "nothing closed" : `${todayRow.trips.length} closed`}</span>
+          {led.dayMove != null ? (
+            <>
+              <span className={`v ${led.dayMove >= 0 ? "pos" : "neg"}`}>{fmtSigned(led.dayMove)}</span>
+              <span className="s">
+                {todayRow?.realized == null
+                  ? "nothing closed"
+                  : <><span className={todayRow.realized >= 0 ? "pos" : "neg"}>{fmtSigned(todayRow.realized)}</span> closed · {todayRow.trips.length} trips</>}
+                {todayRow?.realized != null && Math.abs(led.dayMove - todayRow.realized) >= 1 && (
+                  <> · <span className={led.dayMove - todayRow.realized >= 0 ? "pos" : "neg"}>
+                    {fmtSigned(r2(led.dayMove - todayRow.realized))}</span> open &amp; carried</>
+                )}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={`v ${todayRow?.realized == null ? "muted" : todayRow.realized >= 0 ? "pos" : "neg"}`}>
+                {todayRow?.realized == null ? "—" : fmtSigned(todayRow.realized)}
+              </span>
+              <span className="s">{todayRow?.realized == null ? "nothing closed" : `${todayRow.trips.length} closed`}</span>
+            </>
+          )}
         </div>
         <div className="led-stat2">
           <span className="k">Riding</span>

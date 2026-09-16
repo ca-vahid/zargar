@@ -389,6 +389,7 @@ how to trade."
 | **R6.3** | 10:30–14:45 | **Avoid** | "lower volume, choppy price action, lack of clear direction"; theta decay, false breakouts, whipsaws |
 | **R6.4** | pre-market / after-hours | **Avoid** | thin volume, wide spreads, erratic swings |
 | **R6.5** | — | data | "Disable after-hours data" (p. 114) — `history.py` fetches regular-session bars only |
+| **R6.6** | gap day: first 30 min | **Wait** | added 2026-09-12 (author's practice, TRADING-RULES §5): when the symbol opens >= 0.5% from its previous close, no entry fires before 10:00 ET - "give the open time"; `technique.gap_day_pct` / `gap_day_wait_minutes` |
 
 > "Trading more does not equal making more. Focus on quality trades during
 > high-probability times." (p. 115)

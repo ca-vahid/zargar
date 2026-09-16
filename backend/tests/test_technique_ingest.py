@@ -18,7 +18,7 @@ def _gw(tmp_path, em: dict, tip_watch: dict):
     gw._em = em
     fwd, mirrored, ingested = [], [], []
 
-    async def fake_fwd(http, headers, msg, entry):
+    async def fake_fwd(http, headers, msg, entry, **kw):    # kind= / seq= arrived with Delivery B
         fwd.append((msg["id"], entry.get("label")))
 
     async def fake_mirror(http, headers, records):

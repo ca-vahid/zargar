@@ -640,6 +640,17 @@ export function PortfoliosPage() {
     (brokerages?.providers ?? []).flatMap((pr) => pr.accounts.map((a) => a.portfolioId))),
     [brokerages]);
   const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  // Only the books this chart can actually draw. The series list filters to the
+  // active workspace, so fetching the other 25 (mostly shadow research books)
+  // bought nothing and cost the page ~25 s before the chart appeared.
+  const chartBooks = useMemo(
+    () => portfolios.filter((p) => REAL_KINDS.has(p.kind) === (mode === "live")
+      && !p.archived
+      // shadow books are a per-source track record, not money (2026-09-07) —
+      // nineteen of them drowned the four books the desk actually trades
+      && p.kind !== "shadow"),
+    [portfolios, mode]);
+  const chartBookIds = chartBooks.map((p) => p.id).join(",");
   const ibkrConnected = useStore((s) => !!s.broker?.ibkrConnected);
   // brokerage-backed portfolios render inside their provider section — the
   // card grid carries only what's left. The empty IBKR placeholder hides
@@ -684,16 +695,33 @@ export function PortfoliosPage() {
     chart.redraw();
   };
 
+  // Re-pull on a slow timer and extend from the live tape in between, so this
+  // chart moves on its own like the Dashboard's (2026-09-14). `limit=2000` was
+  // ~16 h of 30 s samples with no budget — ask for a real window instead.
+  const [curveMinute, setCurveMinute] = useState(() => Math.floor(Date.now() / 60_000));
+  useEffect(() => {
+    const t = setInterval(() => setCurveMinute(Math.floor(Date.now() / 60_000)), 60_000);
+    return () => clearInterval(t);
+  }, []);
   const curves = useAsync(
     async () => {
-      const series = await Promise.all(portfolios.map(async (p) => ({
+      const series = await Promise.all(chartBooks.map(async (p) => ({
         portfolio: p,
-        points: await api.get<[number, number][]>(`/api/portfolios/${p.id}/equity?limit=2000`),
+        points: await api.get<[number, number][]>(
+          `/api/portfolios/${p.id}/equity?limit=200000&points=720`),
       })));
       return series;
     },
-    [portfolioIds],
+    [chartBookIds, Math.floor(curveMinute / 5)],
   );
+  // the 30 s equity push, spliced onto the end of each fetched series
+  const equityTicks = useStore((st) => st.equityTicks);
+  const curveData = useMemo(() => (curves.data ?? []).map((s) => {
+    const tape = equityTicks[s.portfolio.id] ?? [];
+    const edge = s.points.length ? s.points[s.points.length - 1][0] : 0;
+    const tail = tape.filter((p) => p[0] > edge);
+    return tail.length ? { ...s, points: [...s.points, ...tail] } : s;
+  }), [curves.data, equityTicks]);
 
   // build once per portfolio set / theme; visibility toggles reuse the instance
   useEffect(() => {
@@ -706,9 +734,11 @@ export function PortfoliosPage() {
       navigator: { enabled: false },
       legend: { ...baseChartOptions().legend, enabled: !phoneRef.current },
       tooltip: { ...baseChartOptions().tooltip, valueDecimals: 2 },
-      series: curves.data
-        // live mode: practice series don't even enter the chart or legend
-        .filter((s) => REAL_KINDS.has(s.portfolio.kind) === (mode === "live"))
+      series: curveData
+        // live mode: practice series don't even enter the chart or legend;
+        // research books never do (they are evidence, not a balance)
+        .filter((s) => REAL_KINDS.has(s.portfolio.kind) === (mode === "live")
+          && s.portfolio.kind !== "shadow")
         .map((s, i) => {
           const isReal = REAL_KINDS.has(s.portfolio.kind);
           const scope = chartScopeRef.current;
@@ -725,7 +755,7 @@ export function PortfoliosPage() {
     });
     return () => { chartInstance.current?.destroy(); chartInstance.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curves.data, theme, showPractice]);
+  }, [curveData, theme, showPractice]);
 
   const toggleVisible = (pid: string, visible: boolean) => {
     setHidden((h) => ({ ...h, [pid]: !visible }));

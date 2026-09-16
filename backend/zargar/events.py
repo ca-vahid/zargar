@@ -88,6 +88,9 @@ BROKER_DISCONNECTED = "BrokerDisconnected"
 BROKER_SYNC = "BrokerSync"
 BROKER_SYNC_MISMATCH = "BrokerSyncMismatch"
 POSITION_RECONCILED = "PositionReconciled"
+# a broker level-set moved the day anchor (cash in/out, holdings that appeared
+# or vanished at the sync) - replayed after a restart so "today" survives it
+DAY_ANCHOR_SHIFTED = "DayAnchorShifted"
 BROKER_ORDER_LINKED = "BrokerOrderLinked"
 BROKER_SUBMIT_UNKNOWN = "BrokerSubmitUnknown"
 BROKERAGE_ACCOUNT_LINKED = "BrokerageAccountLinked"
@@ -118,6 +121,12 @@ TECHNIQUE_PLAN_POSITION_OPENED = "TechniquePlanPositionOpened"
 TECHNIQUE_PLAN_EXIT = "TechniquePlanExit"
 TECHNIQUE_PLAN_POSITION_CLOSED = "TechniquePlanPositionClosed"
 TECHNIQUE_PLAN_ERROR = "TechniquePlanError"
+TECHNIQUE_ARM_REFUSED = "TechniqueArmRefused"
+TECHNIQUE_SOURCE_REVISED = "TechniqueSourceRevised"
+TECHNIQUE_ENTRY_DECISION = "TechniqueEntryDecision"      # deterministic-entry-v1 (2026-09-15): the app-owned live entry decision, frozen
+TECHNIQUE_ENTRY_EVIDENCE = "TechniqueEntryEvidence"      # optional LATER model opinion over the frozen decision snapshot - evidence only
+TECHNIQUE_EXIT_SHADOW = "TechniqueExitShadow"            # order-free exit observation (shadow-exit-v1): a target rung seen on a fresh quote
+TECHNIQUE_TARGET_DISTANCE = "TechniqueTargetDistance"    # diagnostic only: distance in R to the quantity-dependent full-exit rung      # Delivery B: an accepted source edit/delete/restore (never touches positions)          # Delivery B: an order-free scenario candidate asked to arm
 TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs the walk-forward replay
 TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time
 TECHNIQUE_PLAN_CONTRACT = "TechniquePlanContract"      # Team2 F108: candidate -> live quotes -> verdict (picked | deferred | refused), with every contract examined

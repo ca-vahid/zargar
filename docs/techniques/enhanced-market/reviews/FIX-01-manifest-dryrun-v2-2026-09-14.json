@@ -1,0 +1,184 @@
+{
+  "generatedAt": 1789412687669,
+  "fix": "FIX-01",
+  "items": [
+    {
+      "runId": "b62bb83cf32d4369a61d02624a67ccad",
+      "symbol": "USO",
+      "planFor": "2026-09-14",
+      "trigger": "b1",
+      "status": "armed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "32b12661c70db752",
+      "entryOrderId": "99180caefdd5450b8acf13f687f2ae49",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "fills": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": 0.0,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "b62bb83cf32d4369a61d02624a67ccad",
+      "symbol": "USO",
+      "planFor": "2026-09-14",
+      "trigger": "b2",
+      "status": "armed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "32b12661c70db752",
+      "entryOrderId": "2ed2ddfa4a82402c95fd630bf52869c0",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "fills": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": 0.0,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "0ea197926e2e4f2d8db239d9c73e8e62",
+      "symbol": "SWKS",
+      "planFor": "2026-09-14",
+      "trigger": "b1",
+      "status": "armed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "6e1d0268031080a1",
+      "entryOrderId": "0b4549843aaa4d2f97f56ec7785c37f9",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "fills": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": 0.0,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "0ea197926e2e4f2d8db239d9c73e8e62",
+      "symbol": "SWKS",
+      "planFor": "2026-09-14",
+      "trigger": "b2",
+      "status": "armed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "6e1d0268031080a1",
+      "entryOrderId": "fb582dda953a450ba237e075a05a88fd",
+      "exitOrderIds": [],
+      "filled": false,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": 0.0
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": 0.0
+      },
+      "fills": {
+        "qty": 0.0,
+        "avgFill": null,
+        "exits": []
+      },
+      "commissions": 0.0,
+      "dailyLossLimit": 397.19,
+      "haltOld": false,
+      "haltNew": false,
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    },
+    {
+      "runId": "4d46f31870224793aa3ad84345c4535e",
+      "symbol": "HPQ",
+      "planFor": "2026-09-14",
+      "trigger": "b1",
+      "status": "disarmed",
+      "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+      "technique": "enhanced_market",
+      "expectedStateHash": "ef17f95f1725c722",
+      "entryOrderId": "cb5d0e7492444a3fa296b7d62a134fe6",
+      "exitOrderIds": [
+        "0f9e3fd7115444269bc9b8c60d465573",
+        "89c4694af35b4981836bc3b19e3f3012"
+      ],
+      "filled": true,
+      "old": {
+        "multiplier": 100.0,
+        "realizedPnl": -719.3
+      },
+      "new": {
+        "multiplier": 1.0,
+        "realizedPnl": -7.193
+      },
+      "fills": {
+        "qty": 100.0,
+        "avgFill": 34.77,
+        "exits": [
+          {
+            "kind": "tp1",
+            "qty": 30.0,
+            "price": 34.803,
+            "status": "SUBMITTED"
+          },
+          {
+            "kind": "stop",
+            "qty": 70.0,
+            "price": 34.6531,
+            "status": "SUBMITTED"
+          }
+        ]
+      },
+      "commissions": 0.0,
+      "dailyLossLimit": 397.19,
+      "haltOld": true,
+      "haltNew": false,
+      "reason": "FIX-01: shares fallback kept the option multiplier (x100) on a share trade"
+    }
+  ],
+  "falseHalts": [
+    "4d46f31870224793aa3ad84345c4535e"
+  ],
+  "liveRows": [
+    "0ea197926e2e4f2d8db239d9c73e8e62",
+    "b62bb83cf32d4369a61d02624a67ccad"
+  ]
+}

@@ -36,6 +36,11 @@ async def test_health_and_state(app_client):
     client, eng = app_client
     r = await client.get("/api/health")
     assert r.status_code == 200 and r.json()["ok"]
+    # the launch-bound build identity (reviewer closure 2026-09-14): a health response without it means the
+    # helper was dropped from zargar/__init__ (the 0.7.75 Ledger merge did exactly that) and a restart would
+    # fail its readiness probe - a version-only check cannot see it
+    from zargar import BUILD, build_sha
+    assert r.json()["version"] and r.json()["build"] == build_sha() == BUILD and len(BUILD) >= 7
     r = await client.get("/api/state")
     state = r.json()
     assert state["settings"]["trading.mode"] == "practice"
@@ -1752,3 +1757,19 @@ async def test_lone_short_option_leg_is_still_naked(app_client):
     assert out["status"] == "REJECTED_RISK"
     assert "naked short options" in (out.get("rejectReason") or "")
 
+
+
+@pytest.mark.parametrize('missing', [True, False])
+async def test_health_reports_unknown_when_build_identity_is_unavailable(app_client, monkeypatch, missing):
+    import zargar
+    if missing:
+        monkeypatch.delattr(zargar, 'build_sha')
+    else:
+        def broken_build():
+            raise RuntimeError('fixture unavailable')
+        monkeypatch.setattr(zargar, 'build_sha', broken_build)
+    client, _ = app_client
+    result = await client.get('/api/health')
+    assert result.status_code == 200
+    assert result.json()['ok'] is True and result.json()['build'] == 'unknown'
+    assert result.json()['version'] == zargar.__version__

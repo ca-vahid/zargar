@@ -372,12 +372,16 @@ The book's "set alerts above and below key levels" (p. 117), done by the machine
    watchers on the quote/bar bus.
 2. A trigger fires only inside R6 prime windows; mid-day touches are logged as
    `observed_midday` (data for §6.4), not acted on.
-3. On fire: the deterministic checks run on the live bar; optionally the vision critic
-   (PASS 4) reviews the live chart before a setup is emitted; the setup then follows the
-   existing practice-proposal → approval → RiskGate path. **No new order path.**
-   *(2026-09-09: the critic's verdict is a knob, `execution.critic_mode`; EM runs
-   `momentum_only`, so a "no" on an at-level bounce/reject no longer blocks the entry -
-   it is journaled as advisory. TRADING-RULES §5.)*
+3. On fire: the app's encoded rules judge the tracker's actual transition
+   (`technique/entry_decision.py`, `deterministic-entry-v1`, since 2026-09-15) and journal a
+   `TechniqueEntryDecision` with the frozen snapshot, policy and bars; an `allow` follows the
+   unchanged order chain (contract pick, bounded quote refresh, sizing, admission, never-chase,
+   R2, final guard, RiskGate). **No new order path, no model on it.** The vision critic (PASS 4)
+   reviews a live fire only under the explicit `legacy` rollback
+   (`techniques.enhanced_market.fire_decision_mode=legacy`, where `execution.critic_mode` applies
+   again). *History: 2026-09-09 the critic's veto became a knob and EM ran `momentum_only`
+   (advisory on at-level bounces/rejects); 2026-09-15 the critic left the entry path
+   (TRADING-RULES §5, §1.4).*
 4. Every fire / skip / void is journaled against the plan run, so the evening review is
    plan-vs-reality, not memory.
 
@@ -524,6 +528,10 @@ builds the next session's sheet at 16:15 ET (`Auto sheet for <date>`, no LLM). T
 step is then run by the EM desk through the API - `POST /walkforward/{sheet}/promote` per setup
 row (with vision, `wait=false`, ~25 min for ~100 rows), then `POST /runs/{id}/arm` into EM Practice
 for every `analysis.verdict == setup` - or by the user from the Technique page ("Check & arm").
+**Throttle the reads (2026-09-13):** 102 promotes in flight at once made `/api/health` stop answering,
+the watchdog read that as DOWN and restarted the engine mid-batch (the same shape as 09-09 21:31).
+Submit by the engine's in-flight count (`/api/health local.techniqueRunning` < 8), never all at once;
+an engine-side cap on concurrent LLM runs is the platform fix (PLATFORM-RULES 2026-09-13).
 The morning board ingest auto-arms the author's names on top (INGESTION-PLAN). Whether the LLM
 review earns its time is measured in TRADING-RULES §2 (decision at ten sessions, ~09-19).
 
@@ -680,9 +688,11 @@ touch is a test of the level (extreme reaches the band, close holds); breakout s
 under the break base (`breakout_anchor` / `_break_base`, `stop_reference=below_break_base`);
 R2 is measured at the exit rung (`technique.rr_gate_target`, `riskRewardTp3` kept); one R3.1
 policy (unknown volume never enters; `technique.volume_floor_mult`); the aggregator holds a
-sampled bar for the exchange bar (`feed.exchange_bar_hold_seconds`); the fire → critic →
-order chain runs off the bar loop with the contract picked first, a timeout and a fail-open
-budget (`technique.arm.critic_timeout_seconds` / `critic_fail_budget`); option quotes stamp
+sampled bar for the exchange bar (`feed.exchange_bar_hold_seconds`); the fire → decision →
+order chain runs off the bar loop (since 2026-09-15 the decision is the pure deterministic
+rule set in well under a millisecond; under the `legacy` rollback it is the critic with the
+contract picked first, a timeout and a fail-open budget `technique.arm.critic_timeout_seconds` /
+`critic_fail_budget`); option quotes stamp
 `ts` on every chain refresh and OCC symbols stay off the Alpaca equity stream; a level whose
 break fails to hold twice is `exhausted` (`technique.max_false_breaks`, R3.2). Tests:
 `test_technique_walkforward.py` (review section), `test_technique_detection.py`

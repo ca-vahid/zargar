@@ -41,6 +41,7 @@ def plan_from_contract(contract: dict | None) -> dict | None:
         return None
     return {
         "setupType": contract.get("setupType") or "none",
+        "direction": "short" if str(contract.get("direction") or "long") == "short" else "long",   # FIX-06
         "entry": {"price": float(e["price"]), "basis": e.get("basis", "at_level")},
         "stop": {"price": float(s["price"])},
         "targets": [{"price": float(t["price"])} for t in contract["targets"] if t.get("price")],
@@ -58,6 +59,7 @@ def plan_from_candidate(cand: dict | None) -> dict | None:
     try:
         return {
             "setupType": cand.get("setupType") or "none",
+            "direction": "short" if str(cand.get("direction") or "long") == "short" else "long",   # FIX-06
             "entry": {"price": float(e["price"]), "basis": e.get("basis", "at_level")},
             "stop": {"price": float(s["price"])},
             "targets": [{"price": float(t["price"])} for t in cand["targets"] if t.get("price") is not None],
@@ -69,14 +71,26 @@ def plan_from_candidate(cand: dict | None) -> dict | None:
 
 
 def same_plan(a: dict | None, b: dict | None, tol: float = 1e-6) -> bool:
+    """Two plans are the same trade only when every outcome-relevant field agrees: direction, entry,
+    stop AND the targets (FIX-06, 2026-09-14 - a rejected candidate with different targets used to be
+    collapsed onto the accepted plan's score)."""
     if not a or not b:
         return False
-    return (abs(a["entry"]["price"] - b["entry"]["price"]) <= tol
-            and abs(a["stop"]["price"] - b["stop"]["price"]) <= tol)
+    if str(a.get("direction") or "long") != str(b.get("direction") or "long"):
+        return False
+    if abs(a["entry"]["price"] - b["entry"]["price"]) > tol or abs(a["stop"]["price"] - b["stop"]["price"]) > tol:
+        return False
+    if str(a["entry"].get("basis") or "at_level") != str(b["entry"].get("basis") or "at_level"):
+        return False                      # DA-07: the basis decides whether/when the simulator fills
+    ta = [float(t["price"]) for t in (a.get("targets") or [])]
+    tb = [float(t["price"]) for t in (b.get("targets") or [])]
+    return len(ta) == len(tb) and all(abs(x - y) <= tol for x, y in zip(ta, tb))
 
 
 def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int = 12,
-                  horizon: int = 60, stop_on: str = "close", breach_r: float = 0.25) -> dict:
+                  horizon: int = 60, stop_on: str = "close", breach_r: float = 0.25,
+                  scratch_r: float = 0.0, scratch_trim: float = 0.5,
+                  scratch_only_far_tp1: bool = False, far_tp1_r: float = 3.0) -> dict:
     """Walk `bars` forward from index `start` (the bar the decision was made on)
     and score `plan`. Returns a plain dict (see keys below). `bars` must be
     sorted by ts and include the start bar; bars after `start` are the future.
@@ -84,6 +98,9 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     Keys: filled, fillTs, fillIndex, outcome (not_filled|stopped|tp1|tp2|tp3|
     horizon), rMultiple, mfeR, maeR, barsHeld, barsAvailable, resolved (the
     outcome can no longer change with more bars), hits [ts per target hit].
+
+    `scratch_r` > 0 (T-14): the first bar that trades `scratch_r` R in favour sells `scratch_trim`
+    of the position at that level and moves the stop to the entry; mirrors `exits.plan_exit`.
 
     `stop_on` mirrors the live exit rule (`execution.exits.plan_exit`): "close" =
     stopped when a bar closes through the stop, filled at that close; "low" = the
@@ -179,6 +196,12 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     mae = 0.0
     i = fill_i + 1
     last_i = fill_i
+    scratched = False
+    if scratch_r > 0 and scratch_only_far_tp1 and targets:
+        tp1_r = abs(targets[0] - entry) / risk
+        if tp1_r < far_tp1_r:
+            scratch_r = 0.0                          # C4: the ladder's first rung is near - let it work
+    scratch_px = (entry - scratch_r * risk) if short else (entry + scratch_r * risk)
     while i <= end_i and remaining > 1e-9:
         b = bars[i]
         last_i = i
@@ -189,16 +212,22 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
         if (b.high >= brake) if short else (b.low <= brake):    # crash through: the quote brake
             realized += remaining * sgn * (brake - entry)
             remaining = 0.0
-            outcome = "stopped" if hit == 0 else f"tp{hit}"
+            outcome = ("scratched" if scratched else "stopped") if hit == 0 else f"tp{hit}"
             resolved = True
             break
         ref = b.close if stop_on == "close" else (b.high if short else b.low)
         if (ref >= stop) if short else (ref <= stop):
             realized += remaining * sgn * ((b.close if stop_on == "close" else stop) - entry)
             remaining = 0.0
-            outcome = "stopped" if hit == 0 else f"tp{hit}"
+            outcome = ("scratched" if scratched else "stopped") if hit == 0 else f"tp{hit}"
             resolved = True
             break
+        if scratch_r > 0 and not scratched and hit == 0 and ((b.low <= scratch_px) if short else (b.high >= scratch_px)):
+            part = min(remaining, max(0.0, min(1.0, scratch_trim)))
+            realized += part * sgn * (scratch_px - entry)
+            remaining -= part
+            stop = entry
+            scratched = True
         while hit < len(targets) and ((b.low <= targets[hit]) if short else (b.high >= targets[hit])):
             part = trims[hit] if hit < len(trims) else remaining
             part = min(part, remaining)
@@ -207,6 +236,9 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
             hit += 1
             hits.append(b.ts)
         i += 1
+    if remaining <= 1e-9 and outcome == "horizon" and hit > 0:
+        outcome = f"tp{hit}"          # the ladder consumed the whole position (a scratched trade runs out at TP2)
+        resolved = True
     if remaining > 1e-9:
         last = bars[last_i]
         realized += remaining * sgn * (last.close - entry)
@@ -217,7 +249,7 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     r_mult = realized / risk
     return {**base, "filled": True, "fillTs": bars[fill_i].ts, "fillIndex": fill_i, "outcome": outcome,
             "rMultiple": round(r_mult, 4), "mfeR": round(mfe / risk, 4), "maeR": round(mae / risk, 4),
-            "barsHeld": last_i - fill_i, "resolved": resolved, "hits": hits,
+            "barsHeld": last_i - fill_i, "resolved": resolved, "hits": hits, "scratched": scratched,
             "note": "" if resolved else "horizon not reached yet"}
 
 

@@ -5,7 +5,7 @@ waiting for market open**. They owe no observation minutes from the preparation
 day. Once their session starts, missing-minute warnings refer to that active
 session; genuine gaps and the normal delivery grace period remain visible.
 
-Current behavior, reviewed 2026-09-13. This is the operating guide; dated release notes are historical evidence.
+Current behavior, reviewed 2026-09-16. This is the operating guide; dated release notes are historical evidence.
 
 The [September 13 corrections](READINESS-2026-09-13.md) preserve contract limits through final submission, recheck pending invalidation after selection and retain nearer confirmed targets. Older unused automatic Practice arms need the explicit **Review entry contract limits** action before entry. It preserves their selected contract, chart targets and exit policy.
 
@@ -127,3 +127,21 @@ and run fresh preparation before the session. Validation's **Profitability resea
 compares the bounded full candidate pool, ranking alternatives and separate bearish
 and exit experiments. It does not increase executable shortlist capacity or grant
 entry permission. See [the collection and review protocol](PROFITABILITY-RESEARCH.md).
+
+## Common statuses and what to do
+
+| Status | Meaning | Appropriate action |
+|---|---|---|
+| Waiting for completed benchmark session | SPY or QQQ is missing the required completed daily bar | Leave enabled recovery/schedules running; inspect provider errors if persistent. Do not bypass freshness. |
+| Market blocked / research only | Fresh data does not satisfy the configured direction gate | Review evidence; these records do not auto-unlock. Fresh preparation is needed after alignment changes. |
+| Awaiting contract | No inspected contract passed all configured checks | Expand contract details. Pending activation may retry within its valid window; this is not automatically a budget problem. |
+| Armed for a future date | Entry session has not opened | No re-arming or prior-day gap repair is needed. |
+| Auto: waiting | No qualifying fresh closed-bar entry is currently recorded | A price touch alone is insufficient. Inspect trigger, volume, candle quality and entry mode. |
+| Overdue minute gaps during the active session | Expected observation minutes remain missing beyond delivery grace | Inspect source/recovery status. Recovery restores context, never a missed historical entry. |
+| Untrusted confirmation | Some minutes exist but their source classification is sampled or unknown | Treat this separately from missing timestamps; zero overdue gaps does not prove trusted data. |
+| Partial preparation with arms | Some candidates failed while others passed | Review individual exclusions; do not discard valid arms solely because the aggregate status is partial. |
+
+A downside plan whose stock opens below the trigger is not automatically a fresh
+breakdown. Gap/retest behavior depends on the saved entry mode; an enabled gap
+option does not convert a breakout plan into a different method. Any alternative
+belongs in a separately versioned research comparison before changing execution.
