@@ -164,3 +164,23 @@ complete vs coverage-limited by `frozen.compare`.
 **Verification:** `tests/test_tip_scenarios_register.py` (5) + hold study + frozen compact + KFIN-09
 experiments = 22 passed. Statuses: **built, merged - not deployed** (next coordinated deployment after
 the close); collecting: hold study (09-16 15:50 ET onward), cohort, frozen captures; evaluated: nothing.
+
+## Incident 10:40-10:53 ET: watchdog restart loop on a health 500 - caused by this desk, fixed
+
+At 10:40:09 ET the watchdog judged the running 414a86c process DOWN (no answer on :8420; the cause is
+not in the watchdog log) and started the checkout AS IT STOOD: `c3842eb` / 0.7.96 (the converged,
+merged-not-deployed tree). That process never answered `/api/health` (HTTP 500): the running checkout's
+`backend/zargar/__init__.py` had lost the EM desk's `build_sha` helper - a runtime-branch-only addition
+that the EM desk's `api/app.py` imports - because this desk's conflict resolution on 2026-09-15 evening
+took main's bare `__version__` file. The watchdog looped (start, 180 s without health, kill, start) at
+10:40 and 10:46 ET; the Discord intake died with each restart. Fix at 10:50 ET: the helper restored
+verbatim with version 0.7.96, committed on the runtime branch (`4c84697`, pushed); the watchdog's 10:52 ET
+start came up healthy - **0.7.96 build `4c84697`, 65 armed (60 plans restored), sim book restored,
+Tips Practice MRNA venue stop registered, SLV/T app-managed, gates unchanged (practice, live-auto off),
+no incident**. One Discord listener (the watchdog start relaunched one; this desk's duplicate stopped),
+liveness live, ledger pending 2 (recovering). Consequence: **0.7.96 is LIVE since 10:52 ET, unplanned**
+- TMR-01/02 (event context, execution cost), TMR-05 (register on reports), PR #145/#150 etc. are
+deployed; TMR-03 is inert code. Statuses now: TMR-01 built/merged/deployed/collecting; TMR-02
+built/merged/deployed/collecting (first `TipFillVsQuote` on the next fill); TMR-03
+built/merged/deployed(inert)/n-a; TMR-04 collecting (15:50 ET capture on the corrected protocol);
+TMR-05 built/merged/deployed. Evaluated: nothing. Lessons: PLATFORM-RULES change log 2026-09-16.
