@@ -84,7 +84,7 @@ def _bundle(rules, notes, history, ticker="SPX", source="eva", conf=0.85):
            "rulesText": frozen.format_rules(rules), "notesText": frozen.format_notes(notes), "historyText": history,
            "tip": {"ticker": ticker, "source": source}}
     return {"id": "fb-parity", "run": {"tip": {"ticker": ticker, "source": source}, "opinion": {"verdict": "skip"},
-                                       "recapRead": {"category": "recap", "confidence": conf, "route": "compact"}},
+                                       "recapRead": {"version": recap.CLASSIFIER_VERSION, "category": "recap", "confidence": conf, "route": "compact"}},
             "manifest": man, "knowledge": {"rules": rules, "notes": notes, "rulesHash": "x"}, "toolOutputs": [], "gaps": []}
 
 
@@ -106,10 +106,11 @@ def test_replay_recap_candidate_matches_the_production_route_unpaid():
     assert kv["ruleIds"] == prod["ruleIds"] == ["r1"]
     assert sorted(kv["noteIds"]) == sorted(prod["noteIds"]) == ["n1", "n2", "n4"]
     assert kv["rulesText"] == frozen.format_rules(prod["rules"]) and kv["notesText"] == frozen.format_notes(prod["notes"])
-    assert kv["historyLines"] == prod["historyLines"] == 12 and kv["maxTools"] == prod["maxTools"] == 2
+    assert kv["historyRecords"] == prod["historyRecords"] == 12 and kv["maxTools"] == prod["maxTools"] == 2
+    assert kv["parity"]["classifierVersion"] == recap.CLASSIFIER_VERSION and kv["parity"]["status"] == "treatment-only"
     assert kv["prefix"] == prod["prefix"] == recap.candidate_prefix(0.85) and "confidence 0.85" in kv["prefix"]
     header, gaps = frozen._rebuild_header(b["manifest"], rules_text=kv["rulesText"], notes_text=kv["notesText"],
-                                          history_lines=kv["historyLines"], prefix=kv["prefix"])
+                                          history_records=kv["historyRecords"], prefix=kv["prefix"])
     assert header.startswith(recap.candidate_prefix(0.85) + "\n\n")
     assert "- [Tue 09:09] eva: line 11" in header and "line 12" not in header, "the newest 12 captured lines, no more"
     assert header.split("\n\n", 1)[1].split("\n")[0] == "Today (ET): 2026-09-16 09:21", "same evidence time"
@@ -128,3 +129,44 @@ def test_replay_recap_candidate_matches_the_production_route_unpaid():
     kv2 = frozen.variant_knowledge(b2, "recap_candidate")
     assert kv2["available"] and kv2["ruleIds"] == ["r1"]
     assert recap.build_candidate_context(rules=rules, notes=notes, history_text=None, ticker="SPX", source="eva", confidence=0.85)["historyText"] == ""
+
+
+async def test_actual_compact_request_is_reproduced_by_the_replay_from_the_capture(rig, monkeypatch):
+    """The PRODUCTION request assembly (a compact-route run captured verbatim) versus the
+    replay's rebuild from that bundle: identical header text (prefix once), same effective
+    tool budget, same classifier version and prompt identity - unpaid (scripted client)."""
+    from .test_tip_kfin09_experiments import _run, _Scripted, _text, _opinion, canned
+    eng = rig
+    await eng.settings.set("techniques.tip.frozen_capture_context", True, journal=False)
+    await eng.settings.set("techniques.tip.recap_route", "compact", journal=False)
+    read = {"version": recap.CLASSIFIER_VERSION, "category": "recap", "route": "compact", "confidence": 0.87,
+            "reasons": ["test"], "features": {}}
+    monkeypatch.setattr(recap, "classify", lambda *a, **kw: read)
+    eng.signals_service._analyst_client = _Scripted([_text(_opinion("skip"))])
+    out = await _run(eng, canned(), source="ParitySrc")
+    signal = out[0]["signal"]
+    an = signal["extraction"]["analyst"]
+    assert an["headerMode"] == "compact" and an["recapCandidate"] == recap.CANDIDATE["version"] and an["recapRead"]["confidence"] == 0.87
+    bundle = await frozen.capture_bundle(eng.sf, signal_id=signal["id"], settings=eng.settings)
+    man = bundle["manifest"]
+    assert man["exact"] and man["headerMode"] == "compact" and man["maxTools"] == recap.CANDIDATE["maxTools"] == 2
+    assert man["recapCandidate"] == recap.CANDIDATE["version"] and man["classifierVersion"] == recap.CLASSIFIER_VERSION
+    assert man["header"].startswith(recap.candidate_prefix(0.87) + "\n\n"), "the production request carried the prefix once"
+    kv = frozen.variant_knowledge(bundle, "recap_candidate")
+    assert kv["available"] and kv["parity"]["status"] == "production-request" and kv["parity"]["gaps"] == []
+    assert kv["parity"]["promptIdentity"] == man["systemSha"] and kv["maxTools"] == man["maxTools"]
+    rebuilt, gaps = frozen._rebuild_header(man, rules_text=kv["rulesText"], notes_text=kv["notesText"],
+                                           history_records=kv["historyRecords"], prefix=kv["prefix"])
+    assert not gaps and rebuilt == man["header"], "replay rebuilds the exact production request (prefix once, same rules/notes/history)"
+    assert man["header"].count("COMPACT ROUTE:") == 1 and rebuilt.count("COMPACT ROUTE:") == 1
+    # and the FULL-route baseline stays the captured text when the run was full
+    await eng.settings.set("techniques.tip.recap_route", "off", journal=False)
+    eng.signals_service._analyst_client = _Scripted([_text(_opinion("skip"))])
+    out2 = await _run(eng, canned(ticker="MSFT"), source="ParitySrc2")
+    b2 = await frozen.capture_bundle(eng.sf, signal_id=out2[0]["signal"]["id"], settings=eng.settings)
+    assert b2["manifest"]["headerMode"] == "full" and not b2["manifest"]["header"].startswith("COMPACT ROUTE")
+    kv2 = frozen.variant_knowledge(b2, "recap_candidate")
+    assert kv2["available"] and kv2["parity"]["status"] == "treatment-only" and any("NOT on the compact route" in g for g in kv2["parity"]["gaps"])
+
+
+from .test_tip_kfin09_experiments import rig  # noqa: E402,F401
