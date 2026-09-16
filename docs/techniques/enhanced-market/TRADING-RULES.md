@@ -1108,3 +1108,28 @@ and retained fees, modeled exit fee only on the hypothetical sale, reconciliatio
 economics table with explicit unknowns, `riskBudgetQty` is a budget bound only, the payoff proxy is signed (puts count);
 planned room is labelled planned and the actual-entry room is unknown. No trading rule changed.
 
+### 2026-09-15 14:10 PT - order-free observation collection ENABLED for EM Practice only (user decision after the reviewers' close verdict)
+
+Journaled settings PATCH: `techniques.enhanced_market.shadow_exit_observe=true` (shadow-exit-v1: first fresh observation
+at the production rungs, unchanged targets) and `techniques.enhanced_market.shadow_p02_candidate=true` (frozen
+small-position-exit-v1 candidate observation at the plan TP1). `execution.*` defaults stay false, so no other desk
+observes; the observer is additionally gated to EM's default (Practice) book. Actual entries, exits, sizing and risk
+gates are UNCHANGED - the observer places no orders and never delays a protective exit (bounded background recorder).
+Purpose: obtain new-session P-02 evidence; without it the comparison stays unknown by construction. The per-session
+report (`tools/em_profitability.py`) consumes the records; conclusions only where covered evidence exists.
+Rollback = PATCH both keys back to false. Sep 16 baseline batch launched 14:05 PT against sheet 7da239dc (110 rows).
+
+### 2026-09-15 - entry quote refresh (entry-quote-refresh-v1), proposed, NOT deployed
+
+Corrected finding: the three Sep 15 refusals (RKLB 10.9 s, SMCI 12.6 s, DVN 14.5 s) failed the RiskGate's
+`risk.stale_quote_seconds` freshness check inside `OrderManager.place`, BEFORE the final dispatch guard, on quotes
+10.9-14.5 s old; the fire-to-intent processing took 18-23 s and nothing re-fetched the quote in between (`reprice()`
+returns the cached quote for an already-served contract). Change: one bounded PROVIDER refresh (`options.refresh_now`, timeout
+`entry_quote_refresh_timeout_s`: execution 0 = off, EM 2.5 s) after the analysis and immediately before final
+pricing/sizing; then the existing chain runs again unchanged on the refreshed price and quantity (re-price, T5.4/T5.3
+re-judgement, sizing, admission, never-chase cap, R2, final guard, RiskGate). A timed-out / failed / delayed /
+still-stale / crossed refresh leaves the contract as it was and those checks refuse exactly as before. Protective
+exits do not pass through it. The intent journal carries `quoteRefresh` (attempted, ok, age before/after, bid/ask
+before/after, elapsed) so admissions and later outcomes can be tracked - the three refused names are NOT three
+recovered winners; the profitability report will show what refreshing changed.
+

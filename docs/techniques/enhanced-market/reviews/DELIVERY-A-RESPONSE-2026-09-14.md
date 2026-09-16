@@ -523,3 +523,57 @@ Both experiments stay off (`execution.shadow_exit_observe`, `techniques.enhanced
 `execution.shadow_p02_candidate`, `techniques.enhanced_market.shadow_p02_candidate` = False). Disabled integration
 proceeds through the normal after-close release checks; the exact combined build and receipt follow in this file.
 
+---
+
+# Release 0.7.87 - combined build deployed 2026-09-15 13:36 PT (after the close), both experiments disabled
+
+Target **5b7542da7f07d4b97826ca5b54c740d2626aacac** = the Tips desk's converged runtime head c06fb0b (origin/main 91ae143:
+PRs #133-#145 incl. the reviewer-cleared 6dcc06b, #134 skip journal, #138 GTC stop resize, #145 one exit authority) merged
+with the EM branch head a1a408a (cb2f676 TargetDistance scoped per technique, 05fc223 shares fallback sized to the
+position caps, ba2eccb profitability cohorts, 90dbd16 PF-01..03 + entry label, the Sep 15 report). Clean merge, no Tips
+files touched; merge-base verified for 6dcc06b, c06fb0b and the EM head.
+
+Verification on that tree: check-release green (0.7.87); 52 EM pure cases; EM wiring/dispatch/FC-01 + EM review execution
++ tip runner 74 passed, 1 failed (`test_grade_lanes_writes_verdict`, `at_level_better` vs `now_better`) which passes alone
+twice on the combined tree and passes on c06fb0b - order/load-sensitive, no Tips code in the merge; arming solo 29 + the
+pre-existing `test_auto_options_one_contract_lifecycle`.
+
+Deployment through `scripts/deploy.ps1` under the lease (caller em-desk): readiness safe (armed 7, 0 open, 0 pending),
+market closed. Receipt `logs/deployment-receipt.json`: phase **verified**, expected 0.7.87, healthy v0.7.87, `healthBuild`
+5b7542d..., artifact manifest `B124D835AC5A...` (21 files), completed 2026-09-15T20:37:30Z, **restoration ok** (armed 7/7,
+openTrades 0/0, workingEntries 0/0, pendingExits 0/0, restingOrders 22/22, inflightOrders 0/0, managedPositions 3/3,
+managedOpen 3/3), before-inventory `logs/restart-inventory-20260915-133605.json`. Boot journal: 7 TechniquePlanRestored,
+1 SimBookRestored, no bracket releases. Live settings after the restart: `shadow_exit_observe` False/False,
+`shadow_p02_candidate` False/False, `target_distance_diagnostic` execution False / EM True, gap-day wait 0.5% / 30 min
+unchanged. No strategy or threshold changed.
+
+Earlier the same day (recorded here for the series): 0.7.85 build 8be1d24 deployed 06:21 PT pre-open (restoration 79/79)
+and 0.7.86 build d9319f6 deployed 06:32 PT across the open (restoration 81/81), both on the user's explicit decision.
+
+## Sep 15 EM session (order-free report `research/profitability/2026-09-15.md`)
+
+15 fires, 5 fills (NFLX, ORCL, CVNA, IREN, CRWV - all long-bounce calls, all in the P-01 cohort), 6 refused (3 position
+caps on the shares fallback, 3 stale option quotes 10.9-14.5 s at the final guard), 4 contract skips (spread, loss budget
+x2, budget bound), 5 stops, 0 errors; net realized **-220.30** (1 winner +2.84, 4 losers), fees 20.80, flat at the close.
+P-02 unknown for all four eligible positions (no observations - experiments off); P-03 provisional with all 15 intents.
+Source ledger: META gated 0.32R, ZS gated 2.61R, MU stopped (-1.07R proxy), AMZN gated (entry on the wrong side of the
+stop), SNDK / ZS-short never confirmed, MSFT unknown (no target). Defects fixed on the branch and now live: shares
+fallback sizing (4 refusals today); open finding for review: nothing refreshes the contract NBBO between the pick and the
+final guard (3 refusals today).
+
+## Post-start verification - two out-of-band restarts after the 13:36 PT release (record `logs/post-start-verification-20260915-1704.json`)
+
+The Cartel desk's 14:52-14:56 PT deploy of a53c645 (0.7.89) was refused by Windows (elevated engine PID) and left its
+receipt at phase **deferred** - preserved untouched. At ~17:03 PT the EM desk's engine was stopped out of band (no
+shutdown entry in its log); at 17:04 PT the **watchdog** started the engine on the checkout as it stood (a53c645,
+0.7.89; dist rebuilt 17:04, check-release agree; artifact manifest `05D32ACA...` recomputed and equal; 51 plans, 4
+managed positions restored, no bracket releases). At 17:10:49 PT a direct `scripts/restart.ps1` run (not the EM desk)
+moved live to **cd51bb34d8b7f757d47b8ec7f33aeb1aa65f1fe2** (0.7.89, same artifact manifest; before-inventory
+`restart-inventory-20260915-171049.json`). Verified at 17:30 PT: health ok on cd51bb3, restart-check safe, inventory
+51 armed (41 EM / 7 tip / 3 team2), 0 open, 0 pending exits, 22 resting, 3 managed open = before-inventory; the EM
+combined build 5b7542d is an ancestor of cd51bb3. Neither start wrote a receipt; no restart was made to tidy this.
+Helpers: the Discord gateway (relaunched by the Tips desk 17:28 PT) and the EM ingestion worker (relaunched by the EM
+desk 17:32 PT) had died with the stop - platform gap noted for the start path's owner. Live settings re-checked:
+EM `shadow_exit_observe` / `shadow_p02_candidate` true, execution defaults false. The session-local morning review
+(cron 64ad08c1, 06:20 PT then :20/:50 through 13:20 PT) is owned by the EM desk session and runs only while it is open.
+
