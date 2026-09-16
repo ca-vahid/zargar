@@ -52,7 +52,28 @@ Results on the release tree `ab9238c` (both private databases, sequential, foreg
 - DB-backed dispatch / FC-01 / wiring / API / pre-open / evidence / separation / Team2 pick / Tip runner (the recorded 10-file group): **103 passed in 4:33** (`zargar_test_em`, on 89765c0 before the two merges; the merges touched no EM runtime code - the same API/pre-open/separation/dispatch files re-ran green in the 119 above).
 - Arming solo: **30 passed + 1 failed** = only the known baseline `test_auto_options_one_contract_lifecycle` (load-sensitive restore case passed) - run three times (89765c0, 7096732, ab9238c), same result each time.
 - Frontend: `npm run build` green, check-release "Release 0.7.95 ... agree" (0.7.94 was taken by the Team2 desk during the merge; this release renumbered to the next free number, nobody's block rewritten).
-- Migration preview (read-only, runtime database): see the "Release" section appended after deployment.
+- Migration preview (read-only, runtime database, 21:58 PT before the deploy): effective mode `deterministic` (`deterministic-entry-v1`), evidence `off`;
+  41 active EM arms for 2026-09-16, all `useCritic=true` -> effective `deterministic`, 0 critic-only state, 0 critic-only paused; nothing written.
+
+## Release 0.7.95 - deployed 2026-09-15 22:04 PT (after the close, no open positions)
+
+- **Deployed SHA `414a86cc4a05cbb0dce017299cd7ddcd4840c3ca`** (`ab9238c` + this closure record) - `/api/health` version `0.7.95`, build `414a86cc…` (launch-bound).
+- Protocol: readiness `/api/ops/restart-check` safe (market closed, 0 open trades) -> `scripts/deploy.ps1 -TargetCommit 414a86c… -Expect 0.7.95`
+  under the deployment lease (before-inventory `logs/restart-inventory-20260915-220229.json`, health contract check, the elevated-shell start refused
+  as designed) -> `ZargarRestart` scheduled task (restart.ps1, consumed the pending handoff) -> healthy at 22:04:12 PT (dark ~90 s).
+  Receipt `logs/deployment-receipt.json`: phase `verified`, target 414a86c…, expectedVersion 0.7.95, healthyVersion 0.7.95, runtime clean, restoration
+  `skipped-no-baseline` -> verified by hand below.
+- **Restored-arm verification (by id, before-inventory vs `/api/ops/state` after restore):** 56 armed before, 56 after, 0 missing, 0 new -
+  enhanced_market 41, options_cartel 5, team2 3, tip 7; resting orders 22 -> 22; open trades 0 -> 0; 51 `TechniquePlanRestored` events.
+- **Effective deterministic mode:** all 41 EM armed snapshots report `effectiveFireDecisionMode=deterministic`, `fireEvidenceMode=off`,
+  `criticEffective=false`; effective settings `techniques.enhanced_market.fire_decision_mode=deterministic`, `fire_evidence_mode=off`,
+  `fire_evidence_max_calls=40`, `critic_mode=momentum_only` (legacy path only), `shadow_exit_observe=True`, `shadow_p02_candidate=True`
+  (the user's 14:06 PT observation decision, unchanged), `trading.mode=practice`. The 10 Tips/Team2 arms read `legacy` from the base hook
+  default and the 5 Cartel arms carry no policy view - untouched, out of scope.
+- **After-close LLM evidence is OFF** (`fire_evidence_mode=off`); zero model calls since the restart (0 technique runs, 0 `TechniqueEntryEvidence`,
+  0 `TechniqueEntryDecision` records exist yet - the first ones will be written by tomorrow's fires).
+- Helpers after the restart: Discord gateway connected (intake liveness `live`), `em-ingest` worker window up, watchdog task Ready.
+- Not deployed / not run: the FIX-01 v4 money repair (human step), the after-close evidence command (stays off until a person turns it on).
 
 ## Notes for the final review
 
