@@ -1850,3 +1850,28 @@ entries that were still submitting/working. Shared behaviour; no threshold chang
   phantom from selling again. Reconciled by hand the same day: reduce-only BUY 59 in Practice
   (order `4bfd05bd`, -$9.16 on the excess short) and the managed position closed through the
   clamped path with no order. Test: `tests/test_position_venue_stop_resize.py`.
+
+### The door, made usable by every desk — 2026-09-15 (Team2 desk; scripts only, no engine change)
+
+What happened: the user stopped an ELEVATED engine (started 13:36 PT by a desk's `deploy.ps1` from an elevated
+assistant shell — the 2026-09-10 failure mode again; two door runs at 14:52 and 14:53 had died on `Stop-Process`
+"Access is denied") with the elevated `stop.ps1`, then fired `ZargarRestart` — and "nothing happened": the task
+exited 1 with NO transcript because the watchdog's 3-minute tick had already found the engine down and held the
+deploy lease while it built and started the engine itself (which came up healthy on the checkout's HEAD, v0.7.89).
+`restart.ps1` took the lease BEFORE starting its transcript and the lease refused instantly (`WaitOne(0)`).
+
+Changes (all ASCII, CRLF): (1) `restart.ps1` starts its transcript before anything can refuse, so a run that does not
+restart always leaves `logs/restart-<ts>.log` saying why (exit 7 for a held lease); (2) `Enter-ZargarDeployment`
+gained `-WaitSeconds` — the restart door waits up to 5 minutes for another door (the watchdog mid-start, another
+desk's deploy) and a refusal names the owner (`host:pid`, alive/gone); (3) a restart that finds the engine healthy on
+HEAD (`/api/health.build` == `git rev-parse HEAD`) reports "already running this checkout" and exits 0 instead of
+bouncing it again; (4) `start.ps1` enforces the 2026-09-05 decision — the server runs UNELEVATED: an elevated shell is
+refused with exit 8 before anything is stopped (assistant shells ARE elevated on this machine; `-AllowElevated` is the
+deliberate override), and a `Stop-Process` denial now says what it is and what to do (exit 3). The scheduled tasks stay
+`RunLevel Limited` on purpose — a `Highest` task would deploy today and re-close the door tomorrow (09-10 record);
+the tasks were flipped to `Highest` for four minutes during this work and flipped back before any engine started.
+
+How to restart, any desk: `Start-ScheduledTask -TaskName ZargarRestart` after `/api/ops/restart-check` is `safe`;
+if the engine was started elevated (a desk's shell), the user runs `scripts\stop.ps1` from an elevated terminal, the
+watchdog or the task brings it back unelevated within three minutes, and from then on the task can always replace
+it. Never `start.ps1` / `deploy.ps1` from an assistant shell — it is elevated here and the guard now refuses it.

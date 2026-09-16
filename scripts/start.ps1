@@ -35,7 +35,8 @@ param(
   [switch]$Detach,
   [switch]$NoBuild,
   [switch]$NoDiscord,
-  [switch]$NoIngest
+  [switch]$NoIngest,
+  [switch]$AllowElevated
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -148,6 +149,16 @@ try {
   # nothing answering on :8420 - nothing to protect
 }
 
+# --- 1b. the server runs UNELEVATED (user decision 2026-09-05; PLATFORM-RULES 2026-09-10 / 09-15) -----------
+# An engine launched from an elevated shell cannot be stopped by the Limited door tasks (ZargarRestart, the
+# watchdog) - "Access is denied" - and every desk's restart is blocked until the user stops it by hand. Refuse
+# here, before anything is stopped: assistants and desks use the ZargarRestart task; a person who really wants an
+# elevated engine says so with -AllowElevated.
+$isElevated = $false
+try { $isElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch { }
+if ($isElevated -and -not $AllowElevated) {
+  Fail "This shell is ELEVATED: an engine started here could not be stopped by the ZargarRestart task or the watchdog (every desk's door would close). Run the ZargarRestart scheduled task (Start-ScheduledTask -TaskName ZargarRestart) or use a non-elevated terminal; -AllowElevated overrides deliberately." 8
+}
 # --- 2. stop the old server --------------------------------------------------
 # The server may have been started in another terminal or detached; find it by
 # the port it holds. Refuse to touch a process that is not python (typo'd
@@ -161,7 +172,13 @@ foreach ($procId in $procIds) {
     Fail "Port 8420 is held by '$($proc.ProcessName)' (pid $procId), not Zargar - not touching it." 3
   }
   Step "Stopping old server (pid $procId)"
-  Stop-Process -Id $procId -Force -Confirm:$false
+  try { Stop-Process -Id $procId -Force -Confirm:$false -ErrorAction Stop }
+  catch {
+    # 2026-09-15: an engine started from an ELEVATED shell cannot be stopped by the Limited door ("Access is denied").
+    # Recovery is the user's: scripts\stop.ps1 from the elevated terminal that owns it, then the ZargarRestart task.
+    Fail ("Cannot stop the running server (pid $procId): " + $_.Exception.Message +
+          " - it runs with higher privileges than this door (started from an elevated shell). Stop it with scripts\stop.ps1 from an ELEVATED terminal, then run the ZargarRestart task; never start a second engine beside it.") 3
+  }
 }
 if ($procIds.Count -gt 0) {
   foreach ($i in 1..20) {
