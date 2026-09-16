@@ -51,6 +51,11 @@ class HaltState:
       only the book that lost, so one technique's bad morning on Practice no longer stops every
       technique on every book. Cleared at the next ET session or by a manual release.
 
+    * ``pauses`` — EXPLICIT PER-PORTFOLIO PAUSES (2026-09-15, the Team2 sizing experiment's breach action):
+      entries AND adds on that book are refused, protective exits pass, every other book keeps trading. Unlike
+      a book halt it has NO day: it survives restarts and the ET day roll and is released only explicitly.
+      Releasing it never touches the global switch or the book's daily-loss halt, and vice versa.
+
     Both survive restarts via the settings table.
     """
 
@@ -60,6 +65,34 @@ class HaltState:
         self.ts: float = 0.0
         self.source = ""            # app | telegram | auto — auto = the daily-loss breaker
         self.books: dict[str, dict] = {}   # portfolio_id -> {reason, source, ts, day}
+        self.pauses: dict[str, dict] = {}  # portfolio_id -> {reason, source, label, ts, snapshot}
+
+    def pause_book(self, pid: str, reason: str, *, source: str = "app", label: str = "", snapshot: dict | None = None) -> dict:
+        self.pauses[pid] = {"reason": reason, "source": source, "label": label, "ts": time.time(), "snapshot": dict(snapshot or {})}
+        return self.pauses[pid]
+
+    def release_book_pause(self, pid: str) -> dict | None:
+        return self.pauses.pop(pid, None)
+
+    def book_paused(self, pid: str | None) -> dict | None:
+        return self.pauses.get(pid) if pid else None
+
+    @classmethod
+    def restore(cls, state: dict | None, *, today: str) -> "HaltState":
+        """Rebuild from the persisted `system.halt` dict: the global switch as saved, a book halt only within its
+        own ET session, a book PAUSE regardless of the day (it has none)."""
+        h = cls()
+        if not isinstance(state, dict):
+            return h
+        if state.get("engaged"):
+            h.engage(state.get("reason", "restored after restart"), source=state.get("source", "app"))
+        for pid, b in (state.get("books") or {}).items():
+            if isinstance(b, dict) and b.get("day") == today:
+                h.books[pid] = dict(b)
+        for pid, p in (state.get("pauses") or {}).items():
+            if isinstance(p, dict):
+                h.pauses[pid] = dict(p)
+        return h
 
     def engage_book(self, pid: str, reason: str, *, source: str = "auto", day: str = "") -> dict:
         self.books[pid] = {"reason": reason, "source": source, "ts": time.time(), "day": day}
@@ -85,7 +118,8 @@ class HaltState:
 
     def to_dict(self) -> dict:
         return {"engaged": self.engaged, "reason": self.reason, "ts": self.ts,
-                "source": self.source, "books": {k: dict(v) for k, v in self.books.items()}}
+                "source": self.source, "books": {k: dict(v) for k, v in self.books.items()},
+                "pauses": {k: dict(v) for k, v in self.pauses.items()}}
 
 
 def is_us_market_hours(now: dt.datetime | None = None) -> bool:
@@ -242,6 +276,11 @@ class RiskGate:
         checks.append(RiskCheck(
             "book_halt", book is None,
             "" if book is None else f"this book is halted for the day: {book.get('reason')}"))
+        # 1c. explicit per-book pause (2026-09-15): entries and adds refused until it is released by hand
+        pause = self._halt.book_paused(getattr(intent, "portfolio_id", None))
+        checks.append(RiskCheck(
+            "book_pause", pause is None,
+            "" if pause is None else f"this book is paused ({pause.get('label') or 'no label'}): {pause.get('reason')}"))
 
         # 2. quote freshness / halt -------------------------------------------
         quote = self._quotes.get(symbol)
@@ -484,6 +523,11 @@ class RiskGate:
             "book_halt", book is None or halt_allows_exits,
             "" if book is None or halt_allows_exits
             else f"book halted and risk.halt_allows_exits is off: {book.get('reason')}"))
+        pause = self._halt.book_paused(getattr(intent, "portfolio_id", None))
+        checks.append(RiskCheck(
+            "book_pause", pause is None or halt_allows_exits,
+            "" if pause is None or halt_allows_exits
+            else f"book paused and risk.halt_allows_exits is off: {pause.get('reason')}"))
         quote = self._quotes.get(symbol)
         if quote is not None:
             checks.append(RiskCheck("not_halted", not quote.halted,

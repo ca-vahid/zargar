@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.89";
+export const APP_VERSION = "0.7.90";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.90",date:"2026-09-15",title:"A book can be paused until someone releases it",items:[
+    {tag:"new",text:"Per-book pause (POST /api/portfolios/{id}/pause with a reason and label, /unpause to release): every new entry and add on that book is refused - by the runners and by the risk gate - while protective exits keep working and every other book trades on. Unlike the daily-loss halt it has no day: it survives restarts and the day roll and ends only when released. Releasing it never clears the kill switch or a daily-loss halt, and those never clear it. The record snapshots the book's sizing settings; the pause changes no setting. Built as the loss-stop action of the Team2 sizing experiment; nothing is paused by this release."},
+  ]},
   {version:"0.7.89",date:"2026-09-15",title:"Cartel: compare opportunities before changing the strategy",items:[
     {tag:"new",text:"Practice profitability research follows a wider candidate pool, compares selection rankings and adds a separate bearish study. Find dated observations in Options Cartel > Validation."},
     {tag:"new",text:"Compare campaign targets and predefined failed-break, time and early-trim exits. Whole units, source gaps and missing option costs stay visible; research cannot place orders or change your trading permissions."},

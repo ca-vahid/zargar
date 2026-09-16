@@ -202,6 +202,7 @@ async def restart_state(engine) -> dict:
         "proposalsPending": proposals_pending,
         "quiesced": q_until > now,
         "quiesceUntil": q_until or None,
+        "pausedBooks": sorted(getattr(getattr(engine, "halt", None), "pauses", {}) or {}),
     }
 
 

@@ -1875,3 +1875,15 @@ How to restart, any desk: `Start-ScheduledTask -TaskName ZargarRestart` after `/
 if the engine was started elevated (a desk's shell), the user runs `scripts\stop.ps1` from an elevated terminal, the
 watchdog or the task brings it back unelevated within three minutes, and from then on the task can always replace
 it. Never `start.ps1` / `deploy.ps1` from an assistant shell — it is elevated here and the guard now refuses it.
+
+### Per-book pause — 2026-09-15 (Team2 desk, for the sizing experiment's loss stop; v0.7.90)
+
+A third kill-switch scope beside the global switch and the per-book daily-loss halt: `HaltState.pauses`
+(`engine.pause_book(pid, reason, label)` / `release_book_pause`, `POST /api/portfolios/{id}/pause` and `/unpause`,
+journaled `BookPaused` / `BookPauseReleased`, `pausedBooks` in `/api/ops/state`). Semantics: every NEW entry and add on
+that book is refused — runners through `engine.trading_halted(pid)` (which now reports the pause with its label) and
+the RiskGate through the `book_pause` check — while reduce-only exits pass under `risk.halt_allows_exits`, every other
+book keeps trading, and unlike a book halt it has NO day: `HaltState.restore` brings it back after a restart regardless
+of the date and the session roll never releases it. Releasing it touches nothing else, and releasing the global
+switch or the book halt never releases it. The record snapshots the Team2 sizing settings at pause time; the pause
+changes no setting. Tests: `tests/test_book_pause.py`. Nothing is paused by this release.
