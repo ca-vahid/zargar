@@ -524,6 +524,10 @@ builds the next session's sheet at 16:15 ET (`Auto sheet for <date>`, no LLM). T
 step is then run by the EM desk through the API - `POST /walkforward/{sheet}/promote` per setup
 row (with vision, `wait=false`, ~25 min for ~100 rows), then `POST /runs/{id}/arm` into EM Practice
 for every `analysis.verdict == setup` - or by the user from the Technique page ("Check & arm").
+**Throttle the reads (2026-09-13):** 102 promotes in flight at once made `/api/health` stop answering,
+the watchdog read that as DOWN and restarted the engine mid-batch (the same shape as 09-09 21:31).
+Submit by the engine's in-flight count (`/api/health local.techniqueRunning` < 8), never all at once;
+an engine-side cap on concurrent LLM runs is the platform fix (PLATFORM-RULES 2026-09-13).
 The morning board ingest auto-arms the author's names on top (INGESTION-PLAN). Whether the LLM
 review earns its time is measured in TRADING-RULES §2 (decision at ten sessions, ~09-19).
 

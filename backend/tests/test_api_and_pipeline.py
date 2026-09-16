@@ -36,6 +36,11 @@ async def test_health_and_state(app_client):
     client, eng = app_client
     r = await client.get("/api/health")
     assert r.status_code == 200 and r.json()["ok"]
+    # the launch-bound build identity (reviewer closure 2026-09-14): a health response without it means the
+    # helper was dropped from zargar/__init__ (the 0.7.75 Ledger merge did exactly that) and a restart would
+    # fail its readiness probe - a version-only check cannot see it
+    from zargar import BUILD, build_sha
+    assert r.json()["version"] and r.json()["build"] == build_sha() == BUILD and len(BUILD) >= 7
     r = await client.get("/api/state")
     state = r.json()
     assert state["settings"]["trading.mode"] == "practice"

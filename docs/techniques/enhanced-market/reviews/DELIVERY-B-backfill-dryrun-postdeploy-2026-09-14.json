@@ -1,0 +1,572 @@
+{
+  "generatedAt": 1789433077873,
+  "delivery": "B-backfill",
+  "items": [
+    {
+      "noteId": "3baf327d18c54baa8349dc58214ceddc",
+      "messageId": "live-check-0901-broadcast",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "1ece88bfb84c64ff7c13c2165d4b1e7c12662073d358d2185d8dff312c1ad749",
+      "mediaUrl": "https://x.com/i/broadcasts/1DxLdZekNdRxm",
+      "transcriptHash": "ad47acfad2d3065c05096f7b30dd6f89",
+      "extractionHash": "bb3539cc1ae76bdfc41d631ddd140489",
+      "publishedAt": "2026-09-01T13:03:00+00:00",
+      "receivedAt": "2026-09-02T03:48:47.035708+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket",
+      "channelId": "1126325195301462117",
+      "channelName": "em-alerts",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "fe9bbbce9dbe6eb84e5324eae4912181",
+          "configHash": "legacy",
+          "outputHash": "ad47acfad2d3065c05096f7b30dd6f89",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "ad47acfad2d3065c05096f7b30dd6f89",
+          "configHash": "legacy",
+          "outputHash": "bb3539cc1ae76bdfc41d631ddd140489",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "00d5a9263e7b48ebb25ebf880df43809",
+      "messageId": "1544693862419923035",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "94af5a8568e7c7561021fddad81941391b737aef11a0305f3c88ed37690e4eed",
+      "mediaUrl": "https://x.com/i/broadcasts/1yJAPwbMWqaGb",
+      "transcriptHash": "141bdf016c49575b76d72024de6e9d7c",
+      "extractionHash": "4c42f77350f3e22c4d2f943121567eb5",
+      "publishedAt": "2026-09-02T13:01:55.825000+00:00",
+      "receivedAt": "2026-09-02T13:01:54.656221+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "6460ecae1695b2391d448138587a6f94",
+          "configHash": "legacy",
+          "outputHash": "141bdf016c49575b76d72024de6e9d7c",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "141bdf016c49575b76d72024de6e9d7c",
+          "configHash": "legacy",
+          "outputHash": "4c42f77350f3e22c4d2f943121567eb5",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "0c37e9ec038c4243b9fdcd6ac714726f",
+      "messageId": "1544698355681075272",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "dd0d2479e94cc7c8bcc182b7227c5fc061aefc214c76b49c703d15d4fea3ac42",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "39167f607988771bbe34ec031be02a89",
+      "publishedAt": "2026-09-02T13:19:47.102000+00:00",
+      "receivedAt": "2026-09-02T13:22:08.920900+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "4905ba946102b88cef18001e74610f38",
+          "configHash": "legacy",
+          "outputHash": "39167f607988771bbe34ec031be02a89",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "9dfd79863eec41f2b3157fe6547d76a0",
+      "messageId": "1545057322408345640",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "7b138d0d8bcbccac0e33978d663ec0e454e5cdefb8fdc979cb69868e8ea395e9",
+      "mediaUrl": "https://x.com/EnhancedMarket/status/2095498291488469265",
+      "transcriptHash": "8a6913bb72cfdf57ac967135de6ef0de",
+      "extractionHash": "6186410dbd762335d48a781fd859ba30",
+      "publishedAt": "2026-09-03T13:06:11.439000+00:00",
+      "receivedAt": "2026-09-03T13:06:11.108671+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "9c187691b14ba779dbbf30bbe7c5bc9c",
+          "configHash": "legacy",
+          "outputHash": "8a6913bb72cfdf57ac967135de6ef0de",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "8a6913bb72cfdf57ac967135de6ef0de",
+          "configHash": "legacy",
+          "outputHash": "6186410dbd762335d48a781fd859ba30",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "ca3a57f5309a4e14bb3bc740c6a19618",
+      "messageId": "1545061935685566514",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "5d8eb9b4621de3c171c8e9683886e22fb54b68d934f86f9d7b17500c207a4ae3",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "f844c5f54b12d6651767e8b56b576c3d",
+      "publishedAt": "2026-09-03T13:24:31.330000+00:00",
+      "receivedAt": "2026-09-03T13:27:44.217241+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "4f4fbc49ce66b2f0588e981ef391114d",
+          "configHash": "legacy",
+          "outputHash": "f844c5f54b12d6651767e8b56b576c3d",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "d58ea44a8c16468081d0c6f369a85e4a",
+      "messageId": "1545419788455776340",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "a47d6baf9c358ccdf48d2af10110125184e81257c469190fa1e85b2f6ac0b0ad",
+      "mediaUrl": "https://x.com/i/broadcasts/1vKpPNpbRqZKE",
+      "transcriptHash": "9343c6c5ad31ae51a7ab8436655095cc",
+      "extractionHash": "4bb47b5c92b4a3e6aad3980fd4c60bc4",
+      "publishedAt": "2026-09-04T13:06:30.079000+00:00",
+      "receivedAt": "2026-09-04T13:06:28.872048+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "8f39fcd2fe1a7aed88650f371f50411c",
+          "configHash": "legacy",
+          "outputHash": "9343c6c5ad31ae51a7ab8436655095cc",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "9343c6c5ad31ae51a7ab8436655095cc",
+          "configHash": "legacy",
+          "outputHash": "4bb47b5c92b4a3e6aad3980fd4c60bc4",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "53ef067fb7024471948b5dbd87ddcd73",
+      "messageId": "1545423989130789066",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "d00dae1428493bbedd0f5c774ff77d45f972e1a4a05c973c7216dcc03a22cc91",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "11707fcee1406b5e391d6970c957df69",
+      "publishedAt": "2026-09-04T13:23:11.598000+00:00",
+      "receivedAt": "2026-09-04T13:24:14.002658+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "d666d19b0f16d75d087253375283d403",
+          "configHash": "legacy",
+          "outputHash": "11707fcee1406b5e391d6970c957df69",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "16257ca9a43b4b93af9497151283c087",
+      "messageId": "1546873721845841940",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "2c52fea23433e32d8f86382c6cf570ddaf481e4db50890520dca8485b4121bda",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "e6c491a6e1896e46dc1d2e1a9d6f74a1",
+      "publishedAt": "2026-09-08T13:23:54.812000+00:00",
+      "receivedAt": "2026-09-08T13:25:40.359131+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "a1272ec4f68e6ca793c6c6d7c0a66891",
+          "configHash": "legacy",
+          "outputHash": "e6c491a6e1896e46dc1d2e1a9d6f74a1",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "96243adc5b6446ab8a2c9f5eb3eeafc0",
+      "messageId": "1547230787445858335",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "675e8e7489417d9e31c6bbc65c30cb029edd698d5497f1b96a2d827ae816c9fd",
+      "mediaUrl": "https://x.com/i/broadcasts/1dGYlagpVDzKX",
+      "transcriptHash": "b1d06d138086f4824374114281a1e486",
+      "extractionHash": "2fdcb071386ebce538ae54567aff1004",
+      "publishedAt": "2026-09-09T13:02:45.885000+00:00",
+      "receivedAt": "2026-09-09T13:02:43.836486+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "e7d26b38f7d4be3eef93c4820d2faf3d",
+          "configHash": "legacy",
+          "outputHash": "b1d06d138086f4824374114281a1e486",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "b1d06d138086f4824374114281a1e486",
+          "configHash": "legacy",
+          "outputHash": "2fdcb071386ebce538ae54567aff1004",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "9f13f5bff51a47cfac4bf9cb95ce4b6a",
+      "messageId": "1547236073451692142",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "0baaa7170f7a2cc394b4edd6dc212ca281136ff66f8e279bd84991483d2711f5",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "7dbc55669be96f7eb6b5a1feaf03b1db",
+      "publishedAt": "2026-09-09T13:23:46.167000+00:00",
+      "receivedAt": "2026-09-09T13:26:45.383619+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "5bb41adfb1704fd6f89e66bcc346c9e8",
+          "configHash": "legacy",
+          "outputHash": "7dbc55669be96f7eb6b5a1feaf03b1db",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "7e056663814c4038ba9bbefd0b2371c3",
+      "messageId": "1547593375136350258",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "39aa70fa134387d2e89a5538cf900051656e2deee1180dfb5ad1cccb07a97f36",
+      "mediaUrl": "https://x.com/i/broadcasts/1dKrPreyMayJX",
+      "transcriptHash": "df7ebbe5a8e25c060da1e11fdcbb4ef3",
+      "extractionHash": "0015f37fb707e3ab209afff763f312d8",
+      "publishedAt": "2026-09-10T13:03:33.527000+00:00",
+      "receivedAt": "2026-09-10T13:03:33.310051+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "8207a350b80f4c45d5b3f41266b6b315",
+          "configHash": "legacy",
+          "outputHash": "df7ebbe5a8e25c060da1e11fdcbb4ef3",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "df7ebbe5a8e25c060da1e11fdcbb4ef3",
+          "configHash": "legacy",
+          "outputHash": "0015f37fb707e3ab209afff763f312d8",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "032cb8f389ed4eaaabafd155b0e27678",
+      "messageId": "1547598791660544090",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "8ae15f1e7bb7893ba4ff6490540e5081e9e3cce72f29ae889031684a739e65fa",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "4f4dff94e0957101b40e4fccdf46bf5b",
+      "publishedAt": "2026-09-10T13:25:04.927000+00:00",
+      "receivedAt": "2026-09-10T13:27:02.634975+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "afd77a94f5cb583d5d795e79fe9f265e",
+          "configHash": "legacy",
+          "outputHash": "4f4dff94e0957101b40e4fccdf46bf5b",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "8a7f85ba914f410d93098666f91e6020",
+      "messageId": "1547955354531266653",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "e39f8fe6b0f01138349a302c06155aba6c2dace2ffdd663bce70393f0260d617",
+      "mediaUrl": "https://x.com/EnhancedMarket/status/2098396488166695387",
+      "transcriptHash": "7359fe2c7038e74121db0c8871dd46e2",
+      "extractionHash": "0603f7561bcd94d92dec2a7b6570656d",
+      "publishedAt": "2026-09-11T13:01:56.140000+00:00",
+      "receivedAt": "2026-09-11T13:01:55.101841+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "f8845cb4de03cdb52af3cb9d866a8092",
+          "configHash": "legacy",
+          "outputHash": "7359fe2c7038e74121db0c8871dd46e2",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "7359fe2c7038e74121db0c8871dd46e2",
+          "configHash": "legacy",
+          "outputHash": "0603f7561bcd94d92dec2a7b6570656d",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "d717880687724182b8825e94a243c62f",
+      "messageId": "1547960760792260671",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "3cb8d2c940ba63c60c6b484b71895f0ffd460ed7d4052fe3e8b7ca08641ef590",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "007606c8ec0a9a384895e24afe7c7040",
+      "publishedAt": "2026-09-11T13:23:25.093000+00:00",
+      "receivedAt": "2026-09-11T13:24:36.354702+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "fe8c7c6f7eed5fb3a93ca5664f99a8a1",
+          "configHash": "legacy",
+          "outputHash": "007606c8ec0a9a384895e24afe7c7040",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "08c902695d5344eebe7bbd76ce9bd62f",
+      "messageId": "1549042696847491154",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "a2fe65deb17ab696acf558b3ca610e5774f95f77e91e96fc25a3200801b0730b",
+      "mediaUrl": "https://x.com/i/broadcasts/1yKAPwBnQpbxb",
+      "transcriptHash": "36fa289160987a4e4d6def64b37bd072",
+      "extractionHash": "6037de6b4cebc1544d7504b91d739cb0",
+      "publishedAt": "2026-09-14T13:02:38.750000+00:00",
+      "receivedAt": "2026-09-14T13:02:36.165134+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "transcript",
+          "inputHash": "c6afc81f61f3c0e8b4af4cb424779670",
+          "configHash": "legacy",
+          "outputHash": "36fa289160987a4e4d6def64b37bd072",
+          "availability": "unknown"
+        },
+        {
+          "kind": "extraction",
+          "inputHash": "36fa289160987a4e4d6def64b37bd072",
+          "configHash": "legacy",
+          "outputHash": "6037de6b4cebc1544d7504b91d739cb0",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "a5a519f64605447b8d4ef69d2145267e",
+      "messageId": "1549047276586934344",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "7dac88cd8b49931b0a108009997995f0284c4fac2ebbdfdf52b2bc8ce6260df8",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": null,
+      "publishedAt": "2026-09-14T13:20:50.645000+00:00",
+      "receivedAt": "2026-09-14T13:20:48.234407+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "received",
+      "outcome": "retryable",
+      "artifacts": []
+    },
+    {
+      "noteId": "625d5a749ef54c4380600cada49a49be",
+      "messageId": "1549047330718617731",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "7c627ac5c264877536aca9c1e42454f7104bd874af097f38212dd3c0e54c7ca2",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": "22aeba237418faa6a6495c52567d7a14",
+      "publishedAt": "2026-09-14T13:21:03.551000+00:00",
+      "receivedAt": "2026-09-14T13:23:20.993876+00:00",
+      "authorId": null,
+      "authorName": "EvaPanda\ud83d\udc3c",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "board_checked",
+      "outcome": "done",
+      "artifacts": [
+        {
+          "kind": "extraction",
+          "inputHash": "81fa8676ea684ccd4cfd04d14c55c2b5",
+          "configHash": "legacy",
+          "outputHash": "22aeba237418faa6a6495c52567d7a14",
+          "availability": "unknown"
+        }
+      ]
+    },
+    {
+      "noteId": "5852d8befaee4816a2f9ef8d5432fad2",
+      "messageId": "1549047339480780800",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "eea6acee91ab0a78d148f542ace6e62dfbc989131491cdbeaffe9165c85e9c79",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": null,
+      "publishedAt": "2026-09-14T13:21:05.640000+00:00",
+      "receivedAt": "2026-09-14T13:23:21.017791+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "received",
+      "outcome": "retryable",
+      "artifacts": []
+    },
+    {
+      "noteId": "f1a2fa702a6e417b9d64ac8e2fdd673f",
+      "messageId": "1549047733220941928",
+      "technique": "enhanced_market",
+      "revision": 1,
+      "kind": "create",
+      "contentHash": "1614f172ddad5d014bd8745500a00dfcb5337b372f0d242b4f26ab1cdf23b185",
+      "mediaUrl": null,
+      "transcriptHash": null,
+      "extractionHash": null,
+      "publishedAt": "2026-09-14T13:22:39.515000+00:00",
+      "receivedAt": "2026-09-14T13:23:21.620450+00:00",
+      "authorId": null,
+      "authorName": "EnhancedMarket\u2122",
+      "channelId": "1126364741779062974",
+      "channelName": "watchlists",
+      "stage": "received",
+      "outcome": "retryable",
+      "artifacts": []
+    }
+  ],
+  "alreadyRevisioned": [],
+  "planHash": "f3931513580afb0c"
+}

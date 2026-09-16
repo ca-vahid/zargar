@@ -122,7 +122,20 @@ function Confirm-EntryPause {
   return $true
 }
 if (-not (Acquire-DeployLease)) { Fail "Not safe to restart: another deploy holds the lease (R4)." 7 }
-try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $engineUp = $true } catch { $engineUp = $false }
+# health-500 follow-up (2026-09-14 incident, PLATFORM-RULES): a process that ANSWERS /api/health with an HTTP error is
+# a LIVE, unhealthy engine - not an absent one. Its entry pause, inventory and readiness safeguards still apply (the
+# /api/ops endpoints answered throughout the 17:37 incident while /api/health was 500). Only a refused connection /
+# no response means "no process".
+$engineUp = $false; $engineHealthy = $false; $restoration = "skipped-no-baseline"; $inventoryPath = $null
+try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $engineUp = $true; $engineHealthy = $true }
+catch {
+  $resp = $_.Exception.Response
+  if ($resp -ne $null) {
+    $engineUp = $true
+    $code = ""; try { $code = [int]$resp.StatusCode } catch { }
+    Warn ("engine is REACHABLE but UNHEALTHY (HTTP " + $code + " on /api/health) - treated as a live process: pause, inventory and readiness still apply")
+  } else { $engineUp = $false }
+}
 if ($engineUp) {
   # R1/R4: suspend NEW entries (self-expiring, 5 min) before the inventory is captured - and VERIFY it took
   if (-not (Confirm-EntryPause)) {
@@ -130,6 +143,16 @@ if ($engineUp) {
     Warn "-Force: restarting without a confirmed entry pause (override)"
   }
   try { $stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $stateBefore = $null }
+  # the before-inventory is PERSISTED by id (armed plan ids, open trades, working/resting orders) so a restoration
+  # verdict is never inferred from counts alone; a missing inventory is recorded as such, never as "absent process"
+  $inventoryPath = Join-Path $lockDir ("restart-inventory-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
+  if ($stateBefore -is [System.Management.Automation.PSCustomObject]) {
+    @{ capturedAt = [DateTimeOffset]::UtcNow.ToString('o'); healthy = $engineHealthy; before = $stateBefore } | ConvertTo-Json -Depth 8 | Set-Content -Path $inventoryPath -Encoding ASCII
+    Step ("Before-inventory saved: " + $inventoryPath)
+  } else {
+    Warn "before-inventory UNAVAILABLE (/api/ops/state gave no state): restoration will be reported as skipped-no-baseline"
+    @{ capturedAt = [DateTimeOffset]::UtcNow.ToString('o'); healthy = $engineHealthy; before = $null; note = "ops state unavailable" } | ConvertTo-Json -Depth 3 | Set-Content -Path $inventoryPath -Encoding ASCII
+  }
   # an older engine answers the SPA shell (or nothing): no state, no restoration check
   if (-not ($stateBefore -is [System.Management.Automation.PSCustomObject]) -or -not ($stateBefore.PSObject.Properties.Name -contains "armed")) { $stateBefore = $null }
   try {
@@ -147,6 +170,23 @@ if ($engineUp) {
     if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Release-DeployLease; Fail "Not safe to restart: the engine could not report what is in flight. Wait, or run again with -Force (an override, journaled)." 2 }
     Warn "-Force: restarting without a readiness answer (override)"
   }
+}
+
+# --- -0.5. the TARGET must import the health contract BEFORE the running process is stopped ----------------
+# (2026-09-14: the Ledger merge dropped build_sha; the process restarted on that checkout 10 s before the file was
+# repaired and answered 500 for six minutes - a post-start file rewrite is not a loaded fix)
+$py = Join-Path $Root "backend\.venv\Scripts\python.exe"
+if (Test-Path $py) {
+  Push-Location (Join-Path $Root "backend")
+  $prevEap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+  $probe = & $py -c 'import zargar, zargar.api.app; zargar.build_sha(); print(zargar.__version__)' 2>&1
+  $probeExit = $LASTEXITCODE
+  $ErrorActionPreference = $prevEap
+  Pop-Location
+  if ($probeExit -ne 0) {
+    if (-not $Force) { Release-DeployLease; Fail ("Not safe to restart: the target checkout does not import the health contract - " + (($probe | Out-String).Trim() -replace "`r?`n", " | ")) 8 }
+    Warn "-Force: restarting a target that FAILS the import probe (override)"
+  } else { Step ("Target imports the health contract (backend " + (($probe | Select-Object -Last 1) | Out-String).Trim() + ")") }
 }
 
 # --- 0. hold the watchdog off ---------------------------------------------------
@@ -216,8 +256,10 @@ if ($stateBefore -ne $null) {
     Start-Sleep -Seconds 5
   }
   if ($ok) {
+    $restoration = "ok"
     Step ("Restore check OK: " + (($last.counts.PSObject.Properties | ForEach-Object { $_.Name + " " + $_.Value }) -join ", "))
   } else {
+    $restoration = "mismatch"
     $snap = Join-Path $lockDir ("restore-mismatch-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
     @{ before = $stateBefore; after = $last } | ConvertTo-Json -Depth 8 | Set-Content -Path $snap
     if ($last) { Warn ("RESTORE MISMATCH: " + ($last.missing | ConvertTo-Json -Compress) + " - saved " + $snap) }
@@ -245,7 +287,8 @@ if ($handoff) {
   Write-ZargarReceipt $Root ([pscustomobject]@{ phase='verified'; target=$handoff.target; expectedVersion=$Expect
     artifactManifestSha256=$actualManifest.ManifestSha256; artifactFileCount=$actualManifest.FileCount
     artifactSha256=$actualManifest.Files['index.html']; completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID
-    caller=$env:ZARGAR_DEPLOY_CALLER; runtime=$identity; healthyVersion=$h.version })
+    caller=$env:ZARGAR_DEPLOY_CALLER; runtime=$identity; healthyVersion=$h.version
+    restoration=$restoration; healthBuild=$h.build; beforeInventory=$inventoryPath })
   Remove-Item -LiteralPath $handoffPath
 } else {
   # a plain restart (task / shell) is not a deployment: record the identity it brought up without

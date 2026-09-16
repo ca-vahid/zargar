@@ -210,13 +210,14 @@ Everything below is deterministic and free (no LLM calls). First run:
 | 5 | Capture-rate weekly report | 1 | ~1 day |
 | 6 | Swing lane | platform §2.4 + chaos suite | later |
 
-Where this stands (2026-09-09): phases 1-2 are built and in daily use; the variant harness has
-run T-11 (window extremes), T-12 (flow confirmation, two forms) and T-13 (gap-through
-continuation, two forms) - all NOT adopted on their sweeps, all logged below and in
-TRADING-RULES §3. The fire-time critic was demoted to advisory on at-level triggers (§5) so
-Practice fills can finally accumulate; the next evolution question is the mirror one (advisory
-"no" fills vs "yes" fills) and the LLM plan-review decision at ten sessions. Phases 3-5 wait
-for a variant that survives its sweep.
+Where this stands (2026-09-13): phases 1-2 are built and in daily use. The variant harness has run
+T-11, T-12 (two forms), T-13 (two forms), T-14 (three levels), C4 and C5 - all NOT adopted - and
+C3 (gap-day wait), the first variant to survive its sweep and go live (TRADING-RULES §5 2026-09-12,
+R6.6). The vehicle problem was bigger than any rule: 1 of 37 baseline fires sat on an option-liquid
+name, so EM trades shares in Practice (C1/C2) and the option leg is measured on the 24 liquid names.
+Open measurements: critic advisory-"no" fills vs "yes" fills, the LLM plan review (decision
+~09-19), the gap-day wait out of sample (1.11), the re-plan carry (1.12). Phases 3-5 (shadow
+instances, graduation) still wait for a second surviving variant.
 
 ## Experiment log
 
@@ -232,3 +233,6 @@ for a variant that survives its sweep.
 - 2026-09-08 · T-12 build plan written: `FLOW-CONFIRMATION-PLAN.md` (phases 0-4, decisions D1-D7). Alpaca option trades verified available.
 - 2026-09-09 · T-12 phases 1a/1b and T-6 measured on history: confirm-gate 1/19 fires (a loser); sweeps-as-trigger 847 trades mean -13% premium; our fires on his tempo -14.8%. Both NOT adopted. Live log-mode sweeps (NBBO) are the only open thread; EM's structure gates stay.
 - 2026-09-09 · **Critic veto -> advisory on at-level bounces/rejects** (user decision; §5). **T-13 gap-through continuation** built as a knob and swept (`evo-T13-baseline` / `evo-T13-continuation`, 08-24..09-09); verdict in TRADING-RULES T-13.
+- 2026-09-10 · **T-14 scratch rule** built as shared knobs (`scratch_r`/`scratch_trim`, simulator + live exits) and swept at 0.5/0.75/1.0R vs baseline +3.98R: -0.09 / +1.21 / -4.07R - NOT adopted; the trim caps the runners that carry the book. Next variant: scratch only when TP1 > 3R away.
+- 2026-09-12 · Two-week review -> `METHOD-CHANGE-PLAN-2026-09-12.md` (C1-C6) awaiting the other desks' review; the finding that reframes the week: 8 of 9 fires died on option spreads, 16/135 names are option-tradeable.
+- 2026-09-12 · C1-C5 built and swept the same day (user decision): C3 gap-day wait ADOPTED (+5.1R, 6 fewer fires), C4 targeted scratch and C5 range break NOT adopted; C1 liquidity screen live (24/135 tradeable), C2 shares fallback ON, C3b re-plan keeps evening triggers. Baseline fires on option-liquid names: 1 of 37.

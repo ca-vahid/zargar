@@ -192,7 +192,12 @@ mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally a
   the grade caps at B for this reason. Open question: should TP1 for blue-sky breakouts
   be ATR-derived instead of 2%? Needs fired-breakout outcome data (none yet).
 
-### 1.6 Wide-spread skips vs shares fallback ⏳ new
+### 1.6 Wide-spread skips vs shares fallback → DECIDED 2026-09-12 (C1/C2, §5): shares are EM's Practice vehicle
+**Status:** 8 of 9 fires in the week of 09-08 died on option spreads and only 1 of 37 baseline fires sat on an
+option-liquid name. The nightly liquidity screen routes untradeable names to the shares fallback, the pick retries
+the next strike / next expiry, and `techniques.enhanced_market.entry_fallback=shares`. The open question is now
+the mirror one: over ten sessions of shares fills, does the option leg on the 24 liquid names beat the shares leg
+in R and in $? Shorts still need a tradeable put.
 - **Evidence caveat (2026-09-02):** until 13:42 ET on 2026-09-02 every option quote in the
   app was the CBOE chain, ~15 min DELAYED and re-stamped as fresh (PLATFORM-RULES 2026-09-02,
   invariant 14). T5.4/T5.3 skips before that judged a stale spread/IV; count "wide-spread
@@ -226,7 +231,7 @@ mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally a
   If that pattern holds, the finding may be "R6.3 is right about the tape but the
   critic can substitute for the clock" — n=4, keep counting.
 
-### 1.8 Is the R2 bar (3.0) leaving a 2.0-3.0 band on the table? ⏳ new
+### 1.8 Is the R2 bar (3.0) leaving a 2.0-3.0 band on the table? ⏳ open - R2 stays by user decision (2026-09-09); the weekly gate audit keeps the number
 - **First gate audit (2026-08-26 session, include-invalid sweep `57156a57`):** every
   trigger the validity gates rejected was simulated against the real session.
   Verdict: the gates dropped nothing worth having. Gate-rejected fires: 150 for
@@ -273,6 +278,19 @@ mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally a
 
 ---
 
+### 1.11 Gap-day wait (R6.6) — does it hold out of sample? ⏳ new (2026-09-12)
+- Adopted on sweep `evo-C3-gap0.5` (+5.1R vs baseline over 08-24..09-11, six fewer fires, non-gap days
+  untouched). It is the first rule taken from the author's practice that survived its sweep.
+- **Decision threshold:** after ten sessions with fills, compare gap-day fires held vs the same
+  sessions' counterfactual without the wait (the tracker journals `gap_day` and `break_outside_window`,
+  so the replay can score both). Revert if the held fires would have made > +2R net.
+
+### 1.12 Pre-open re-plan: carry the evening triggers (C3b) ⏳ new (2026-09-12)
+- IBIT r2 (+4.8R, 09-11) was discarded by the 09:25 re-plan. Evening triggers now ride along as
+  `e_<id>` and are journaled `preopen_carried`; the open judges each on its own gap rules.
+- **Decision threshold:** ten sessions; tally carried-trigger fires vs re-plan-trigger fires in R.
+  If the carried set is net negative, the re-plan goes back to replacing.
+
 ### 1.9 An entry that fills AFTER a bar already closed through the stop (NOW 2026-09-02) - new
 
 NOW r1 (reject 141.69, stop 142.40) fired on the 09:30 close; the put's BUY LMT 2.03 did not
@@ -307,6 +325,18 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-14 · External review (reviewer packet `reviews/DEV-TEAM-HANDOFF-2026-09-14.md`), Delivery A
+  landed.** Six correctness defects confirmed and fixed (response: `reviews/DELIVERY-A-RESPONSE-2026-09-14.md`):
+  the shares fallback kept the option's x100 (HPQ -$7.19 booked as -$719.30 and a false loss halt; five
+  records in the dry-run manifest, one real), a two-contract exit waited a bar when TP1 and TP2 printed
+  together, contracts were sized on the pick's stale ask, the 09:25 pre-open called twelve shorts
+  `gapped_past` with the pre-market print still between entry and stop (SPY, IBIT, NKE, UNH, DIA, XLF, XLU,
+  TLT, IWM, CVNA + USO/BSX rejects that gap_void would have voided anyway) and replaced them, the critic's
+  opinion/advisory flag/errors were dropped on restart (INTC, HOOD), and short contracts were scored as longs
+  by the adapters (no historical row affected). Policy decisions recorded there: risk budget is a BOUND
+  (zero contracts allowed), quote confirmation counts distinct observations. The reviewer's larger point
+  stands and is not fixed by these: the morning source supplies tickers, not the author's scenario (Delivery
+  B design: `reviews/DELIVERY-B-DESIGN-2026-09-14.md`).
 - **2026-09-08 · Does the nightly LLM plan review earn its time? First measurement.** Join of the
   replay's VALID fires to the evening batch's verdict, three sessions (09-03, 09-04, 09-08):
   plans the review ACCEPTED: 6 fires, **+3.10R (+0.52R/fire)**; plans it REJECTED: 4 fires,
@@ -321,6 +351,24 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
   subscription returns historical option TRADES: the author's TSLA $360C (08-31) shows 10,000+
   prints and 37,874 contracts in the first 40 minutes. T-12 can be tested on history, not only
   live. Plan: `FLOW-CONFIRMATION-PLAN.md`.
+- **2026-09-11 · Day 12 (Fri, CPI gap-up) and the two-week review.** 3 fires (AVAV, MUU, BSX -
+  the critic timed out on two, said no to one), ALL three blocked by the spread gate (67 / 36 /
+  80% NBBO spreads); MUU and BSX went on to TP1, AVAV stopped. Book unchanged at $9,929.64.
+  Thu+Fri together: 9 fires, 8 spread-gated (4 later TP1, 4 stopped - the gate was net zero), 1
+  fill (HOOD -$66). The author sat Friday out ("everything gapping up, moves exhausted, no
+  risk/reward"). Deterministic replay (plans at the 09-10 close): 5 valid fires **+7.41R** -
+  IBIT r2 +4.83R (TP2), CRWD b2 +2.28R, BSX b1 +1.30R, AAPL k1 +0.01R, INTU r2 -1.02R; the
+  three review-rejected ones net +1.27R. **IBIT was armed and is one of the 16 option-liquid
+  names, and it never fired live: the 09:25 pre-open re-plan on a +0.68% pre-market print
+  "killed every trigger" and re-armed a plan whose only trigger was invalidated at 09:31.** The
+  static plan's reject at the original level paid +4.8R. Pre-open re-plans now have two
+  documented losses (this, and the HOOD/KLAC far-TP1 geometry) against no documented save -
+  they go into the change plan as C3b. The chain snapshots say only 16 of 135 universe names have a median
+  near-money option spread <= 10% and 83 are above 20%: EM plans setups on names it cannot
+  trade in options. The twelve-session review and the proposed changes (tradeable-vehicle
+  universe, shares fallback in Practice, gap-day policy, targeted scratch, consolidation-break
+  trigger) are in `METHOD-CHANGE-PLAN-2026-09-12.md` for the other desks' review before any
+  build.
 - **2026-09-10 · Day 11 (Thu, PPI gap-down; first session with the critic advisory): the first
   EM fill in eleven sessions, and it lost -$66 on a stop that a +2.5R move had already paid for.**
   42 plans from the evening batch + board auto-arms. 6 fires, the critic said no to all 6 (advisory
@@ -676,6 +724,17 @@ exactly why it needs the real simulator, not this arithmetic. Test: `breakeven_a
 `first_trim_r` knobs in `simulate_plan` + the live exit policy, swept over 08-24..09-10 against
 baseline; adopt bar D7. This is T-6's exit-tempo question asked the right way: as management of
 the fire we already took, not as a replacement for the ladder.
+**Verdict 2026-09-10 22:20 ET: NOT adopted - the real simulator says the opposite of the arithmetic.**
+Sweeps over 08-24..09-10 (1,400 sessions, 37 valid fires each; baseline `b48db0763a`): baseline
+**+3.98R**; scratch at 0.5R `de5cf24a45` **-0.09R**; at 0.75R `2e1b5600ac` **+1.21R**; at 1.0R
+`80711f4d88` **-4.07R**. The rule does what it says - bounce win rate 57% -> 79%, reject 42% -> 83% -
+but it pays for it by halving the position on every winner before the ladder, and this method's
+whole edge is the few runners (5 TP3 exits carry the book). Losers avoided are small; winners
+capped are large. The crude MFE arithmetic in the theory counted the trimmed half as if it still
+rode the ladder; it does not. Both knobs stay in the code at 0. What the evidence does say: the
+ladder's first rung is the problem only on RE-PLANNED gap-day levels (HOOD, KLAC, LITE, WDC), not on
+the book's normal geometry - a targeted version (scratch only when TP1 > 3R away) is the next
+variant, cheap to sweep, not built tonight.
 
 ### T-13 · Gap-through continuation (the author's SPY trade of 2026-09-09) - sweeping
 His one posted trade on day 10: SPY puts on "the breakdown of PLOD" - SPY closed 09-08 with a
@@ -758,7 +817,7 @@ tempo is not where our edge is hiding either.
 4. **Grade/analyst calibration** (1.2/1.3) at the 100-fire mark.
 5. **IBKR activation** — execution + second data source; retire the sim-only options fills
    with real paper fills.
-6. **Next-strike/next-expiry contract retry** — pending 1.6 data.
+6. ~~Next-strike/next-expiry contract retry~~ — BUILT 2026-09-12 (C1, `pick_for_setup(retry_wide=)`).
 7. **Blue-sky TP1 from ATR** (1.5) — pending fired-breakout data.
 8. **Full Settings redesign** (task chip exists); slow-DB-writes investigation (chip
    exists); persist critic veto counts across restarts.
@@ -771,6 +830,28 @@ tempo is not where our edge is hiding either.
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
+- 2026-09-12 · **Gap-day wait ON** (`technique.gap_day_pct = 0.5`, `gap_day_wait_minutes = 30`; C3 of
+  METHOD-CHANGE-PLAN-2026-09-12, user decision to implement the plan). On a session the symbol
+  itself opens >= 0.5% from its previous close, no entry fires in the first 30 minutes ("give the
+  open time", the author's own rule on gap days). Sweep 08-24..09-11 (`evo-C-baseline 793512a5b5`
+  vs `evo-C3-gap0.5 e032e96d98`, 1,500 sessions): baseline 39 fires **+6.28R**, gap-wait 33 fires
+  **+11.38R** (+5.1R, +0.18R/fire - below the D7 +0.3R/fire bar in per-fire terms, but it works by
+  REMOVING six losing gap-open fires and touches nothing on non-gap days). Adopted on that basis;
+  the continuation add-on (`gap_day_continuation`) added only +0.3R more and stays off. Review after
+  ten sessions with fills.
+- 2026-09-12 · **Shares fallback ON in EM Practice** (`techniques.enhanced_market.entry_fallback =
+  shares`; C2) and **option-liquidity routing** (C1: nightly screen `technique.universe.option_liquidity`,
+  24 of 135 names tradeable at spread <= 12% / OI >= 500 on the 09-11 snapshot; an untradeable name
+  arms with the shares fallback; the pick retries the next strike / next expiry on a wide spread).
+  Why: 8 of 9 fires in the week of 09-08 died on option spreads, and on the 12-session baseline only
+  **1 of 37 valid fires was on an option-liquid name** (-1.03R) - EM's edge, such as it is, lives on
+  names whose options we cannot trade. Shares are the vehicle in Practice until that changes;
+  shorts (puts only) still skip when the put is untradeable.
+- 2026-09-12 · **Pre-open re-plan keeps the evening triggers** (`technique.arm.preopen_keep_triggers`;
+  C3b). IBIT r2 +4.8R on 09-11 was discarded by the re-plan. Not sweepable; judged live at ten sessions.
+- 2026-09-12 · NOT adopted after their sweeps (knobs stay off): **C4 targeted scratch** (scratch only
+  when TP1 >= 3R away: -2.5R at 1.0R, -2.6R at 0.75R vs baseline), **C5 consolidation break**
+  (`range_break`: 43 fires, -0.8R vs baseline). C3+C5 together +4.8R = C3 alone minus C5's drag.
 - 2026-09-09 · **Critic veto -> advisory on at-level bounces and rejects**
   (`techniques.enhanced_market.critic_mode = momentum_only`; new runner knob
   `execution.critic_mode` = veto | momentum_only | advisory, default veto for every other technique;
@@ -938,3 +1019,147 @@ tempo is not where our edge is hiding either.
     (`TechniquePlanReplanned`, `trigger=preopen_replan`, parent linked). For a re-planned
     run the gap-void rule measures the 09:25→09:30 surprise (`referencePrice` is the
     tracker's prev_close). Evidence for §1.1 still accrues on the valid 08-25 samples.
+
+### 2026-09-14 evening - trading review (five completed Practice positions; +$364.49 net on the day, +$294.13 book)
+
+Evidence and the two research comparisons: `reviews/STRATEGY-PROPOSAL-2026-09-14.md` (reviewers' packet:
+`reviews/2026-09-14-trading-results-and-missed-setups.md` and companions). Findings, dated: (1) the author's MSFT
+long over 498.97 -> 505 was covered by a SHORT plan - a representation mismatch, not a proven missed option trade;
+with our frozen confirmation (completed 1m close) and stop (opening-range low) it is a 1.1R trade that fails the 3R
+gate; a stop at the level is stopped out. (2) AAPL 336.22 and MRNA 149.73 never triggered - correct no-trades.
+(3) HPQ's TP1 was touched intrabar at 09:36 and sold after the bar closed at +$0.99 on the trim: a fresh-observation
+target execution (2a) is the first forward experiment. (4) HOOD Sep 10's giveback is a distant-target problem (TP1 at
+6.5R, full exit at 12R) with no saved intermediate level - a structural exit policy is untestable there; proposal:
+a target-distance gate at arm time, calibrated on sweeps, not on five trades. No rule changed.
+
+### 2026-09-15 - strategy proposal revised for the reviewers' SP-01..03; order-free forward measurement started
+
+`reviews/STRATEGY-PROPOSAL-2026-09-14.md` (revised). Corrections: (SP-01) the Sep 14 MSFT table is a RETROSPECTIVE case
+study - the first-touch row has no as-of stop (the opening range is not complete until 09:35) and claims no R; the
+definition `source-continuation-v1` is frozen for NEW sessions only: earliest eligible observation after the opening
+range, completed-close confirmation with a next-open proxy entry, no-chase at the EXECUTABLE price (level + 0.5%, one
+retest, expiry 11:30 unconfirmed / 15:55 = the baseline flatten clock, not 15:45), the opening-range-low stop, and every
+existing gate (R2 3R, liquidity, budget, final dispatch) still applied - a gated candidate is recorded, never traded;
+"never use the level as a stop" is withdrawn as a generalisation. (SP-02) HPQ's +$3.10 is an arithmetic illustration of
+an ASSUMED resting-share fill, not the proposed mechanism; the fresh-observation result is unmeasured and HOOD/INTC
+hypotheticals are unknown including their sign; the forward comparison is SHADOW ONLY (`shadow-exit-v1`, recorded as
+`TechniqueExitShadow` from the quote watch: fresh observation <= 10 s by source timestamp, one record per trade per
+production rung, same-contract NBBO with sizes, stop precedence on the same observation, covered vs unresolved
+quantity, missing/stale quotes unscorable). (SP-03) policy P redefined as EARLIER-ONLY with one/two/three-plus
+quantity rules and deferred; HOOD Sep 14's entry-minute touch is unscorable; Sep 10's missing saved level is a
+limitation of the saved-level candidate, not evidence against structural exits. Target distance is recorded as a
+diagnostic (`TechniqueTargetDistance` at fire and fill, `target-distance-v1`) - no gate, no N chosen.
+Ledger + evaluator: `tools/em_source_candidates.py` -> `research/source-candidates.json` /
+`source-candidates-<date>.result.json` (Sep 14 rows retrospective: MSFT gated 1.09R with a target path, AAPL and MRNA
+never confirmed). Baseline trading and the Sep 15 review-and-arm ritual unchanged; nothing from this measurement arms.
+
+### 2026-09-15 - measurement code corrected for the reviewers' FM-01..05 (observer stays disabled)
+
+Reviewer cases adopted unchanged (`tests/test_codex_em_measurement_boundaries.py`, `tests/test_codex_source_evaluator_temporal_evidence.py`,
+8 failed -> 8 pass; own 7 still pass). Research capture no longer awaits I/O ahead of protective exits (bounded
+background recorder, visible drops); quantities and the next rung follow `plan_exit` (original filled quantity,
+ladder trims, uncommitted remainder); coverage needs valid provenance/timestamp/uncrossed book/KNOWN size and
+stop precedence includes the premium stop; recording is idempotent per trade instance and retryable; the
+evaluator honours source availability, session identity and bar continuity and reports per-gate evaluation
+(R2 only). Scope narrowed to raw observation capture - no shadow terminal tracker yet, P&L deferred to a reducer.
+`techniques.enhanced_market.shadow_exit_observe` stays False pending activation; target distance remains a
+diagnostic.
+
+### 2026-09-15 - measurement follow-up MF-01..03 closed (observer still disabled)
+
+Last-rung observation quantity now equals `plan_exit` (a 30/40/15 ladder keeps its runner at TP3; the diagnostic
+labels that policy), recording distinguishes pending from acknowledged captures at the writer (no duplicate rung
+records, failures retryable), and the source-candidate evaluator requires contiguous eligible minutes through the
+confirmation/retest and to the 11:30 deadline (a missing interval = unknown, also for never-confirmed claims).
+Sep 14 retrospective rows unchanged. No trading rule changed; `shadow_exit_observe` stays off.
+
+### 2026-09-15 - shares fallback sized to the book's caps (defect, not a rule change)
+
+Session evidence: WDC b1 (89 sh x 416), INTU b1 (100 x 330), AMAT b2 (97 x 420) fired, fell back to shares because
+the option was untradeable, and were sized from risk % alone (2% of a $10.2k book / stop distance, capped only by
+maxQty 100) - $33-41k positions on a $10k Practice book, every one REJECTED_RISK by the position caps (notional
+$25k, 50% of equity, gross 100%). Fix on the EM branch (`_shares_position_cap`, `tests/test_em_shares_position_cap.py`):
+a share entry is sized DOWN to the tightest of the gate's own caps (shadow research books keep only the $ cap, as the
+gate does); below one share it is a journaled `size_zero` skip. The RiskGate stays the authority; no threshold moved.
+Not deployed during the session - rides the next verified combined release.
+
+### 2026-09-15 - profitability cohorts frozen (reviewers' P-01..P-03; order-free, nothing activated)
+
+Packet `reviews/profitability-sweep-2026-09-15/`. Definitions in `research/PROFITABILITY-COHORTS-2026-09-15.md`
+(`profitability-cohorts-v1`): P-01 cohort `long_bounce_next_resistance` reported beside the full baseline with
+removed trades, missed-winner candidates (underlying-only proxy) and strata (confirmation, room at the actual entry,
+quantity, source alignment); P-02 `small-position-exit-v1` (<= 2 contracts, first production sale >= 2R: sell one of
+two / the whole single contract at the first covered executable bid at the plan TP1; forgone profit on winners
+counted; unknown without an observation) with faster-execution-at-unchanged-targets kept as the separate
+shadow-exit-v1 experiment; P-03 friction (concession + fees as a share of premium, 8% = ranking marker, never a
+gate), affordable quantity, delta-based payoff proxy or unknown. Per-session report:
+`python -m zargar.tools.em_profitability report --date <session>` -> `research/profitability/<date>.md`.
+First report (Sep 15, intraday cutoff) reproduces the reviewers' trade-book friction figures exactly (CVNA 10.12%,
+IREN 6.22%, NFLX 4.64%, ORCL 4.08%, CRWV 3.75%); all five fills ARE the cohort (removed = none), four cohort-eligible
+fires were refused (three by the position caps, one stale quote), P-02 is unknown for all four eligible positions.
+Gap-day wait unchanged; no early-profit rule; no entry broadening; `shadow_exit_observe` and the new
+`shadow_p02_candidate` knob both False.
+
+### 2026-09-15 - profitability measurement corrected (PF-01..03), P-02/P-03 provisional, both experiments off
+
+Reducer joins the observer's actual `tp1-candidate` payload bound to the trade instance/contract/lifetime; the
+candidate keeps its first COVERED opportunity (raw touch recorded once); fees are conserved in the pair (actual entry
+and retained fees, modeled exit fee only on the hypothetical sale, reconciliation required); every intent stays in the
+economics table with explicit unknowns, `riskBudgetQty` is a budget bound only, the payoff proxy is signed (puts count);
+planned room is labelled planned and the actual-entry room is unknown. No trading rule changed.
+
+### 2026-09-15 14:10 PT - order-free observation collection ENABLED for EM Practice only (user decision after the reviewers' close verdict)
+
+Journaled settings PATCH: `techniques.enhanced_market.shadow_exit_observe=true` (shadow-exit-v1: first fresh observation
+at the production rungs, unchanged targets) and `techniques.enhanced_market.shadow_p02_candidate=true` (frozen
+small-position-exit-v1 candidate observation at the plan TP1). `execution.*` defaults stay false, so no other desk
+observes; the observer is additionally gated to EM's default (Practice) book. Actual entries, exits, sizing and risk
+gates are UNCHANGED - the observer places no orders and never delays a protective exit (bounded background recorder).
+Purpose: obtain new-session P-02 evidence; without it the comparison stays unknown by construction. The per-session
+report (`tools/em_profitability.py`) consumes the records; conclusions only where covered evidence exists.
+Rollback = PATCH both keys back to false. Sep 16 baseline batch launched 14:05 PT against sheet 7da239dc (110 rows).
+
+### 2026-09-15 - entry quote refresh (entry-quote-refresh-v1), proposed, NOT deployed
+
+Corrected finding: the three Sep 15 refusals (RKLB 10.9 s, SMCI 12.6 s, DVN 14.5 s) failed the RiskGate's
+`risk.stale_quote_seconds` freshness check inside `OrderManager.place`, BEFORE the final dispatch guard, on quotes
+10.9-14.5 s old; the fire-to-intent processing took 18-23 s and nothing re-fetched the quote in between (`reprice()`
+returns the cached quote for an already-served contract). Change: one bounded PROVIDER refresh (`options.refresh_now`, timeout
+`entry_quote_refresh_timeout_s`: execution 0 = off, EM 2.5 s) after the analysis and immediately before final
+pricing/sizing; then the existing chain runs again unchanged on the refreshed price and quantity (re-price, T5.4/T5.3
+re-judgement, sizing, admission, never-chase cap, R2, final guard, RiskGate). A timed-out / failed / delayed /
+still-stale / crossed refresh leaves the contract as it was and those checks refuse exactly as before. Protective
+exits do not pass through it. The intent journal carries `quoteRefresh` (attempted, ok, age before/after, bid/ask
+before/after, elapsed) so admissions and later outcomes can be tracked - the three refused names are NOT three
+recovered winners; the profitability report will show what refreshing changed.
+
+### 2026-09-15 - deterministic live entry is EM's main mode (user decision; `deterministic-entry-v1`)
+
+**Policy change, disclosed:** the live EM entry decision is made by application rules at fire time; the fire-time
+vision critic is removed from the entry's decision authority AND its latency path (Sep 15: 15 critic traces waited
+14.1-22.0 s, mean 17.6 s, all advisory). Under the old `momentum_only` policy the critic could still veto breakouts,
+breakdowns and wedge breaks - **that discretionary momentum-family veto is retired**. No claim of equivalence with the
+model's qualitative judgments is made: higher-timeframe fakeouts, an emerging opposing shelf, momentum divergence and
+live chop are recorded `not_evaluated` (diagnostic) and are NOT encoded; any such filter is a separate versioned rule.
+
+Rule map v1 (`backend/zargar/technique/entry_decision.py`, pure; the tracker's ACTUAL transition is the evidence, never
+the trigger's kind label): plan current + saved geometry; tracker `fired` on the completed bar; stop intact (T4.3d);
+eligible window (R6 / C3 gap-day wait) and gap state (or `gap_unchecked`, kept as today); volume from the branch that
+fired (floor for touches / range break / loose continuation; surge at the break candidate for the normal
+follow-through path); the confirmation branch recorded honestly (`touch` with T4.2 - no reclaim candle required;
+`normal_followthrough`; `range_break` and `loose_continuation` record their bypassed checks); R3.2 false-break cap.
+`allow` = eligible for the UNCHANGED order chain (contract pick, bounded quote refresh, sizing, admission, never-chase,
+R2, final guard, RiskGate); `refuse` / `defer` (unknown required evidence) are their own dispositions - never
+`critic_killed`, never downgraded by an advisory critic setting, never a kill counter, cooldown or pause.
+
+Settings: `techniques.enhanced_market.fire_decision_mode = deterministic` (default) | `legacy` (explicit, journaled
+rollback to the awaited critic with its old veto/momentum_only/advisory semantics); `fire_evidence_mode = off` |
+`after_close` (optional LATER model opinion over the frozen decision snapshot, evidence only, never trades). A stored
+arm's `useCritic` is a legacy compatibility field: the mode is resolved per fire attempt, so the 41 Sep 16 arms and
+every restored arm obey the authoritative setting without a rewrite (migration preview:
+`python -m zargar.tools.em_fire_policy_migration preview`). No exit, sizing, risk, threshold or other-desk change.
+Premarket LLM planning (sheet promotion, analyst review) is unchanged and independent of a missing key at fire time.
+Records: `TechniqueEntryDecision` (every attempt, allowed or refused, with timing boundaries) and optional
+`TechniqueEntryEvidence` (`authority = evidence_only`). Reports group outcomes by policy version; faster entry is a
+latency fact, not a profit claim.
+

@@ -456,6 +456,11 @@ DEFAULTS: dict[str, Any] = {
     "technique.universe.auto_refresh": True,  # add the day's most-active US stocks (Alpaca screener / Yahoo) before the evening sheet
     "technique.universe.auto_top": 40,        # at most this many auto additions
     "technique.universe.min_price": 20.0,     # auto additions need a share price at least this high (thin, low-priced names are not the book's world)
+    "technique.universe.max_spread_pct": 12.0,   # C1 (2026-09-12): a name is option-tradeable when its near-money median spread <= this
+    "technique.universe.min_oi": 500,            # C1: ... and its near-money open interest averages at least this
+    "technique.universe.option_liquidity": {},   # cache: {date, rows: {sym: {spread, oi, tradeable}}} - nightly job em_option_liquidity
+    "technique.universe.untradeable": "shares",  # C1: arming an option-untradeable name: shares (fallback) | skip (refuse) | ignore
+    "technique.arm.preopen_keep_triggers": True, # C3b (2026-09-12): a pre-open re-plan keeps the evening triggers alongside the new ones
     "technique.universe.resolved": {},        # cache: {date, symbols, provenance, counts, dropped} — read via GET /api/technique/universe
 
     "technique.walkforward.workers": 0,        # CPU workers for a sweep: 0 auto (cpu-1, max 8), 1 = thread only
@@ -484,9 +489,34 @@ DEFAULTS: dict[str, Any] = {
     "techniques.enhanced_market.ingest.board_max_symbols": 12,
     "techniques.enhanced_market.ingest.transcribe_max_attempts": 5,
     "techniques.enhanced_market.ingest.live_recheck_seconds": 60,   # a still-live broadcast is re-probed this often (no attempt spent)
+    "techniques.enhanced_market.ingest.worker_lease_seconds": 900,  # Delivery B: a transcription/extraction lease; expired = another worker may take the job (fenced)
     "techniques.enhanced_market.ingest.live_max_wait_minutes": 45,  # then take whatever replay exists (partial) rather than wait forever
                                                # (fires carry window="midday" so outcomes are separable)
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
+    "technique.scratch_r": 0.0,                # T-14: trim at +N R and move the stop to breakeven (0 = off; sweep first)
+    "technique.scratch_trim": 0.5,
+    "technique.scratch_only_far_tp1": False,   # C4 (2026-09-12): scratch only when TP1 >= far_tp1_r R away
+    "technique.far_tp1_r": 3.0,
+    "technique.gap_day_pct": 0.5,              # C3 (2026-09-12): gap-day policy - ON after sweep evo-C3-gap0.5 (+5.1R over baseline, 6 fewer fires)
+    "technique.gap_day_wait_minutes": 30,
+    "technique.gap_day_continuation": False,
+    "technique.range_break": False,            # C5 (2026-09-12): consolidation break fires on the break close
+    "technique.range_break_bars": 6,
+    "technique.range_break_max_range_mult": 1.0,
+    "execution.min_one_contract": False,       # DA-06 (2026-09-14): risk-sized contracts floor at 1 (old behaviour) or 0 (budget is a bound)
+    "techniques.tip.min_one_contract": True,    # Tips keeps its one-contract floor (its premium-budget floor already implied it)
+    "techniques.team2.min_one_contract": True,  # unchanged behaviour for the other desks - their call to flip
+    "techniques.options_cartel.min_one_contract": True,
+    "techniques.enhanced_market.min_one_contract": False,
+    "execution.entry_quote_refresh_timeout_s": 0.0,   # entry-quote-refresh-v1 (2026-09-15): bounded provider NBBO refresh before final pricing/sizing; 0 = off
+    "techniques.enhanced_market.entry_quote_refresh_timeout_s": 2.5,   # EM on: three 09-15 entries were refused on a 10.9-14.5 s quote nobody re-fetched
+    "execution.target_distance_diagnostic": False,   # target-distance-v1 (2026-09-15): an EM diagnostic, absent from other desks' aggregates
+    "techniques.enhanced_market.target_distance_diagnostic": True,   # EM journals TechniqueTargetDistance at fire and fill (never gates)
+    "execution.shadow_p02_candidate": False,   # small-position-exit-v1 candidate observation at TP1 (P-02, 2026-09-15): off everywhere
+    "techniques.enhanced_market.shadow_p02_candidate": False,   # EM opt-in, requires the observer too; activation is a separate decision
+    "execution.shadow_exit_observe": False,     # shadow-exit-v1 (2026-09-15): off for every desk; EM opts in per technique below
+    "techniques.enhanced_market.shadow_exit_observe": False,   # EM Practice opt-in (also gated to the technique's default book); DISABLED pending the reviewers' activation
+    "execution.spread_warn_pct": 20.0,          # DA-01: the generic rejudge_contract hook's T5.4-style spread warning threshold
     "technique.arm.critic_mode": "veto",       # veto | momentum_only (bounce/reject "no" is advisory) | advisory (never blocks)
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
@@ -500,6 +530,11 @@ DEFAULTS: dict[str, Any] = {
 
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
+    "techniques.enhanced_market.entry_fallback": "shares",   # C2 (2026-09-12): an untradeable option buys shares in Practice (longs only)
+    "techniques.enhanced_market.fire_decision_mode": "deterministic",   # deterministic-entry-v1 (2026-09-15, user decision): the app's rules make the live entry decision; `legacy` = explicit rollback to the awaited critic
+    "techniques.enhanced_market.fire_evidence_mode": "off",             # optional LATER model evidence over frozen decision snapshots: off | after_close (never trades)
+    "techniques.enhanced_market.fire_evidence_max_calls": 40,           # after-close evidence command: paid calls per run (bound)
+    "techniques.enhanced_market.fire_evidence_timeout_seconds": 60,     # after-close evidence command: per-call wall-clock bound
     "techniques.enhanced_market.critic_mode": "momentum_only",   # 2026-09-09 user decision: 25 kills net +0.5R, 5 of 9 wrong ones were at-level rejects (TRADING-RULES 1.4b / 5)
     "techniques.enhanced_market.default_portfolio": "",   # EM's own Practice book (2026-09-08); the runner resolves this before execution.*
     "technique.arm.risk_pct": 2.0,             # R1: % of equity risked per entry (practice: 2%; the book's live range is 0.5-1%)
@@ -565,6 +600,37 @@ def _technique_override_canonical(key: str) -> str | None:
         if canon in DEFAULTS:
             return canon
     return None
+
+
+class ReadOnlySettings:
+    """A NON-MUTATING projection of stored settings + DEFAULTS with the same alias / technique-override resolution as
+    `SettingsService.get` (DE-03, 2026-09-15): preview and report commands read through this and can never migrate,
+    commit or journal. Built from rows already fetched inside a read-only transaction."""
+
+    def __init__(self, rows) -> None:
+        merged = copy.deepcopy(DEFAULTS)
+        by_key = {row.key: row for row in rows}
+        for row in rows:
+            if row.key in DEFAULTS or row.key.startswith("system.") or _technique_override_canonical(row.key) is not None:
+                merged[row.key] = (row.value or {}).get("v")
+        for legacy, canon in ALIASES.items():                       # the resolution `load()` would apply, in memory only
+            if legacy in by_key and canon not in by_key:
+                merged[canon] = (by_key[legacy].value or {}).get("v")
+        raw_mode = merged.get("trading.mode")
+        merged["trading.mode"] = MODE_ALIASES.get(raw_mode, raw_mode)
+        self._cache = merged
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._cache.get(ALIASES.get(key, key), default)
+
+    def all(self) -> dict[str, Any]:
+        return dict(self._cache)
+
+
+async def read_only_settings(session) -> "ReadOnlySettings":
+    """Fetch the settings rows through `session` (the caller opens it read-only) and project them without writes."""
+    rows = (await session.execute(select(Setting))).scalars().all()
+    return ReadOnlySettings(rows)
 
 
 class SettingsService:

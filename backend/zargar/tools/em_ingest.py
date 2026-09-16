@@ -30,6 +30,19 @@ class _Deferred(Exception):
     """Control flow: the broadcast is still live - report a deferral, not a failure."""
 
 
+def worker_identity() -> str:
+    """One lease owner per worker INSTANCE (WI-01): two workers never share a fence."""
+    import os, socket
+    return f"em-ingest:{socket.gethostname()}:{os.getpid()}"[:64]
+
+
+def media_cache_name(note_id: str, url: str) -> str:
+    """The download cache key follows the MEDIA identity (WI-02): replacement media for the same note is a
+    different file, never a stale cached download."""
+    import hashlib
+    return f"{note_id}-{hashlib.sha256(url.encode('utf-8')).hexdigest()[:12]}"
+
+
 def download_audio(url: str, out_dir: Path, note_id: str) -> Path:
     """yt-dlp -> mp3 next to the note id. Raises on failure (message is the reason)."""
     import yt_dlp  # type: ignore
@@ -88,7 +101,7 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
     import httpx
     done = 0
     async with httpx.AsyncClient(timeout=60) as http:
-        r = await http.get(f"{api}/api/technique/ingest/pending", headers=headers)
+        r = await http.get(f"{api}/api/technique/ingest/pending", headers=headers, params={"owner": worker_identity()})
         if r.status_code != 200:
             print(f"[em-ingest] pending: HTTP {r.status_code} {r.text[:120]}")
             return 0
@@ -104,7 +117,7 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
             nid, url = str(n.get("id")), str(n.get("mediaUrl") or "")
             force = bool(n.get("forcePartial"))
             print(f"[{time.strftime('%H:%M:%S')}] note {nid[:8]}: {url}{' (taking the partial replay)' if force else ''}")
-            body: dict = {"noteId": nid}
+            body: dict = {"noteId": nid, "jobId": n.get("jobId"), "fenceToken": n.get("fenceToken")}   # the fenced lease (Delivery B)
             try:
                 t0 = time.time()
                 if not force:
@@ -113,7 +126,7 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
                         body.update({"deferred": True, "error": f"broadcast still live: {title[:80]}"})
                         print(f"    -> still live ({title[:60]!r}); will check again")
                         raise _Deferred()
-                audio = await asyncio.to_thread(download_audio, url, media_dir, nid)
+                audio = await asyncio.to_thread(download_audio, url, media_dir, media_cache_name(nid, url))
                 text, dur = await asyncio.to_thread(transcribe, audio, model_name)
                 body.update({"transcript": text, "durationSeconds": round(dur, 1), "model": model_name,
                              "seconds": round(time.time() - t0, 1), "partial": force})
@@ -125,7 +138,8 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
                 print(f"    -> failed: {body['error']}")
             try:
                 pr = await http.post(f"{api}/api/technique/ingest/transcript", headers=headers, json=body, timeout=120)
-                st = (pr.json() or {}).get("status") if pr.status_code == 200 else f"HTTP {pr.status_code}"
+                st = (pr.json() or {}).get("status") if pr.status_code == 200 else (
+                    f"HTTP 409 stale lease - another worker took the job; nothing written" if pr.status_code == 409 else f"HTTP {pr.status_code}")
                 print(f"    -> app: {st}")
             except Exception as exc:  # noqa: BLE001
                 print(f"    -> could not report to the app: {exc}")

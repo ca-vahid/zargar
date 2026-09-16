@@ -699,14 +699,14 @@ class TipRunner(PlanRunner):
             self._handoff_tasks[key].add_done_callback(
                 lambda t, k=key: self._handoff_tasks.pop(k, None))
 
-    async def _place_with_retry(self, ap, trade, intent, *, stage: str):
+    async def _place_with_retry(self, ap, trade, intent, *, stage: str, before_submit=None):
         """KB-06 final admission for the ARMED path (I93-01): immediately
         before EVERY entry submission — the first attempt AND every transport
         retry — refuse while an execution-integrity incident pauses this
         book/path (an incident opened during the retry sleep counts). Exits
         never arrive here as stage 'entry'; they keep the base behaviour."""
         if stage != "entry":
-            return await super()._place_with_retry(ap, trade, intent, stage=stage)
+            return await super()._place_with_retry(ap, trade, intent, stage=stage, before_submit=before_submit)
         from . import integrity as _ig
         from ...execution.planrunner import TRANSIENT_ERRORS
         from ... import events as _ev
@@ -730,7 +730,7 @@ class TipRunner(PlanRunner):
                     await self._persist(ap)
                 return None
             try:
-                return await self.engine.orders.place(intent)
+                return await self.engine.orders.place(intent, before_submit=before_submit)   # FA-01: the final guard rides every attempt
             except Exception as exc:
                 msg = f"{type(exc).__name__}: {exc}"
                 transient = any(k in msg.lower() for k in TRANSIENT_ERRORS)

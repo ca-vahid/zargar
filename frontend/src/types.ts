@@ -34,7 +34,11 @@ export interface Portfolio {
   isDefault?: boolean;
   baseCurrency?: string;
   venue?: string; // "ibkr" | "snaptrade" for live/paper portfolios
-  todayPct?: number | null; // % equity change vs today's first quote-backed observation
+  todayPct?: number | null; // % equity change vs this ET day's opening equity
+  /** This ET day's opening equity (the previous session's close), from the server.
+      Every "today" figure measures from this — never from a chart array, which is
+      thinned and collapsed and gave the headline the wrong colour (2026-09-14). */
+  dayStart?: number | null;
 }
 
 export interface BrokeragePosition {
@@ -334,6 +338,10 @@ export interface Ledger {
   total: number; startingCash: number | null; startedAt: string | null;
   /** practice: startingCash + banked + riding == total (unexplained ≈ 0); live: null */
   sinceStart: number | null; banked: number; riding: number; unexplained: number | null;
+  /** today, mark to market against the previous session's close — the Dashboard's
+      number (invariant 21). The day rows book a trip's WHOLE gain on its close day,
+      which is a different question; optional so an older server still renders. */
+  dayStart?: number | null; dayMove?: number | null;
   realized: number; openValue: number;
   days: { date: string; realized: number; trips: LedgerTrip[];
     adjustments: { day: string; at: string; amount: number; reason: string }[] }[];
@@ -678,6 +686,7 @@ export interface ArmConfig {
 }
 export interface ArmPreflight {
   ok: boolean; blocked?: string; note?: string; instrument?: string; trigger?: string;
+  effectiveFireDecisionMode?: string; decisionVersion?: string | null; fireEvidenceMode?: string;
   account?: { name?: string; kind?: string };
   size?: { shares?: number; entry?: number; notional?: number; contracts?: number; estPremium?: number; estNotional?: number };
   checks: { name: string; passed: boolean; detail: string }[];
@@ -706,6 +715,8 @@ export interface ArmOptions {
   haltAllowsExits?: boolean;
   optionsEnabled: boolean; optionsProvider: string;
   tradingMode: string; allowLiveAuto: boolean; enabled: boolean; llmAvailable: boolean; halt: any; emitProposals: boolean;
+  /** deterministic-entry-v1: effective live entry policy (EM); absent on older servers / other desks */
+  fireDecisionMode?: string; decisionVersion?: string | null; fireEvidenceMode?: string; premarketLlmAvailable?: boolean;
 }
 export interface ArmedTrade {
   triggerId: string; kind: string; firedTs: number; window: string; entry: number; stop: number; targets: number[]; status: string;
@@ -716,6 +727,9 @@ export interface ArmedTrade {
   exits: { kind: string; qty: number; orderId: string | null; status: string | null; filledQty: number; price: number | null; error?: string }[];
   realizedPnl: number; unrealizedPnl: number; realizedR: number | null; lastPrice: number | null; errors: string[]; retries: number;
   openedTs: number | null; closedTs: number | null; critic: { kill?: boolean; summary?: string; violations?: string[] } | null;
+  /** deterministic-entry-v1: the app-owned live decision (slim) and its disposition; separate from any later AI evidence */
+  decision?: { decisionId?: string; decisionVersion?: string; verdict?: string; reasonCodes?: string[]; confirmationVariant?: string } | null;
+  decisionDisposition?: "allowed" | "refused" | "deferred" | "legacy" | "policy_error" | string | null;
   direction?: "long" | "short" | string;
   /** Team2 (2026-09-04): an X5 add on the same contract; the contract's live premium %; planned level vs running HOD/LOD */
   isAdd?: boolean; livePct?: number | null; targetKind?: "plan" | "hod" | string;
@@ -728,6 +742,10 @@ export interface ArmedPlan {
   horizonSessions?: number; sessionsUsed?: number; expiresSession?: string; sessionDay?: number;
   riskWarning?: string | null;   // arm-time cap preflight (ARM-GAPS E3)
   reviewerAvailable?: boolean;   // false = this technique has no fire-time critic (ARM-GAPS F1)
+  /** deterministic-entry-v1 (2026-09-15): the EFFECTIVE live entry policy for this plan's next fire attempt */
+  effectiveFireDecisionMode?: "deterministic" | "legacy" | string;
+  decisionVersion?: string | null; fireEvidenceMode?: "off" | "after_close" | string;
+  legacyUseCritic?: boolean; criticEffective?: boolean;
   grade?: string | null;
   stopReason?: string; scorecard?: ArmScorecard | null;
   config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };

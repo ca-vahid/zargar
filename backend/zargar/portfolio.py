@@ -19,7 +19,7 @@ from .domain import now_ms
 from .events import Journal
 from .fx import FxService, currency_for_symbol
 from .marketdata import QuoteCache
-from .models import BrokerageAccount, EquityPoint, Portfolio, Position
+from .models import BrokerageAccount, EquityPoint, Event, Portfolio, Position
 from .options import occ
 
 ET = ZoneInfo("America/New_York")
@@ -27,6 +27,31 @@ ET = ZoneInfo("America/New_York")
 
 def _mult(sec_type: str) -> float:
     return 100.0 if sec_type == "OPT" else 1.0
+
+
+def _decimate(points: list[list], budget: int) -> list[list]:
+    """Thin a series to ~`budget` samples WITHOUT losing its range.
+
+    Keeping every Nth sample drops the highs and lows, so the same window came
+    back with a different high depending on where the buckets happened to fall
+    (a real 11,335 spike on one read, gone on the next — 2026-09-14). Min/max
+    decimation keeps each bucket's extremes in time order instead, so the shape
+    and the range survive at any budget.
+    """
+    if not budget or len(points) <= budget:
+        return points
+    buckets = max(1, budget // 2)
+    step = len(points) / buckets
+    keep: set[int] = {0, len(points) - 1}          # never drop the live point
+    for b in range(buckets):
+        lo_i = int(b * step)
+        hi_i = min(len(points), int((b + 1) * step))
+        if hi_i <= lo_i:
+            continue
+        window = range(lo_i, hi_i)
+        keep.add(min(window, key=lambda i: points[i][1]))
+        keep.add(max(window, key=lambda i: points[i][1]))
+    return [p for i, p in enumerate(points) if i in keep]
 
 
 class PositionKeeper:
@@ -176,18 +201,55 @@ class PositionKeeper:
     def _pos_currency(self, pos: dict) -> str:
         return (pos.get("currency") or currency_for_symbol(pos["symbol"])).upper()
 
+    def _mark(self, pos: dict) -> float:
+        """What one unit of this position is worth right now.
+
+        Options mark at the MID of a two-sided market. A thin contract's last
+        print is not a valuation: on 2026-09-14 one print marked two INTC 0DTE
+        calls bought at $1.00 near $7, which put a +$1,406 spike into the
+        book's equity history permanently and set the dashboard chart's whole
+        vertical range. The same figure feeds `daily_loss_pct`, so a bad print
+        the other way would halt a book that had not lost anything.
+
+        Falls back exactly as before: the last print, then the broker's own
+        mark from the last sync, then avg cost (which reads as flat P&L).
+        """
+        q = self._quotes.get(pos["symbol"])
+        # An option marks on its BOOK, at the mid — including a 0 bid, where
+        # half the ask is the honest read on a contract going worthless. Only
+        # with no ask at all does a print get used: a lone print on a thin
+        # contract is what put +$1,406 into a book for one sample.
+        if pos["secType"] == "OPT" and q is not None and q.ask > 0 and q.ask >= q.bid:
+            return (max(q.bid, 0.0) + q.ask) / 2
+        if q is not None and q.last > 0:
+            return q.last
+        return pos.get("mark") or pos["avgCost"]
+
+    def mark_price(self, symbol: str, sec_type: str = "STK") -> float | None:
+        """The valuation `equity()` uses for one unit of `symbol` — for callers
+        that hold a LOT rather than a position (the ledger's FIFO lots).
+
+        Same rule as `_mark` (PLATFORM-RULES invariant 22). The ledger used to
+        take the last print here while the book marked options at the mid, so
+        the day the mid rule shipped the ledger grew a "+4.00 unexplained" gap
+        that was nothing but (mid − last) × qty across three open lots
+        (2026-09-14). None when there is nothing to mark against.
+        """
+        held = next((p for (_pid, s, st), p in self._positions.items()
+                     if s == symbol and st == sec_type and p.get("mark")), None)
+        probe = {"symbol": symbol, "secType": sec_type, "avgCost": 0.0,
+                 **({"mark": held["mark"]} if held else {})}
+        return self._mark(probe) or None
+
     def _pos_value(self, pos: dict, target_ccy: str) -> float:
         """Position market value converted into target_ccy (signed)."""
-        q = self._quotes.get(pos["symbol"])
-        last = q.last if q and q.last > 0 else (pos.get("mark") or pos["avgCost"])
-        native = pos["qty"] * last * _mult(pos["secType"])
+        native = pos["qty"] * self._mark(pos) * _mult(pos["secType"])
         return self.fx.convert(native, self._pos_currency(pos), target_ccy)
 
     def _enrich(self, pos: dict) -> dict:
-        q = self._quotes.get(pos["symbol"])
-        # no live quote yet → the broker's own mark from the last sync; only
-        # with neither does avg cost remain (which reads as a dead-flat P&L)
-        last = q.last if q and q.last > 0 else (pos.get("mark") or pos["avgCost"])
+        # one definition of the mark, so the displayed P&L and the equity that
+        # the risk halt reads can never disagree
+        last = self._mark(pos)
         mult = _mult(pos["secType"])
         unreal = (last - pos["avgCost"]) * pos["qty"] * mult
         option = None
@@ -243,17 +305,62 @@ class PositionKeeper:
                 return False
         return True
 
-    async def daily_loss_pct(self, pid: str) -> float | None:
-        """Percent change of equity vs the first quote-backed observation of the ET day."""
+    async def day_start_equity(self, pid: str) -> float | None:
+        """This ET day's opening equity — the number every "today" figure measures from.
+
+        Read from the PERSISTED equity points, not from whatever the process
+        happened to see first: the last sample before today's 04:00 ET (i.e.
+        the previous session's close, which is how every broker quotes a day
+        change — see the day-change rule in CLAUDE.md), else the first sample
+        of today for a book with no history, else its starting cash.
+
+        Durability is the point. The old in-memory anchor was seeded with
+        "equity the first time we looked today", so a mid-day restart re-based
+        the day at the restart price: a book down 4% came back reading flat and
+        the daily-loss halt forgot it (found 2026-09-14 while fixing the
+        dashboard's red/green flip).
+        """
         today = dt.datetime.now(tz=ET).date().isoformat()
         key = (pid, today)
-        if key not in self._day_start_equity:
-            if not self._quotes_ready(pid):
-                return None  # don't anchor until real prices exist
-            self._day_start_equity[key] = await self.equity(pid)
-            return 0.0
-        start = self._day_start_equity[key]
-        if start <= 0:
+        if key in self._day_start_equity:
+            return self._day_start_equity[key] or None
+        day0_dt = dt.datetime.now(tz=ET).replace(hour=4, minute=0, second=0, microsecond=0)
+        day0 = int(day0_dt.timestamp() * 1000)
+        async with self._sf() as session:
+            prev = (await session.execute(
+                select(EquityPoint).where(EquityPoint.portfolio_id == pid)
+                .where(EquityPoint.ts < day0)
+                .order_by(EquityPoint.ts.desc()).limit(1))).scalars().first()
+            first = None if prev is not None else (await session.execute(
+                select(EquityPoint).where(EquityPoint.portfolio_id == pid)
+                .where(EquityPoint.ts >= day0)
+                .order_by(EquityPoint.ts).limit(1))).scalars().first()
+            # Broker level-sets since the open (cash in/out, holdings that
+            # appeared or vanished) were journaled as they happened; a process
+            # that starts mid-day replays them, or a $1,600 transfer reads as
+            # a -28% day the moment the engine restarts (2026-09-15).
+            shifts = (await session.execute(
+                select(Event).where(Event.type == ev.DAY_ANCHOR_SHIFTED)
+                .where(Event.portfolio_id == pid)
+                .where(Event.ts >= day0_dt))).scalars().all()
+        row = prev or first
+        if row is not None:
+            shifted = float(row.equity) + sum(
+                float((e.payload or {}).get("delta") or 0.0) for e in shifts)
+            self._day_start_equity[key] = shifted
+            return shifted or None
+        # a book with no samples at all: anchor on live equity once prices are
+        # real, exactly as the old path did — but never on avgCost fallbacks
+        if not self._quotes_ready(pid):
+            return None
+        eq = await self.equity(pid)
+        self._day_start_equity[key] = eq
+        return eq or None
+
+    async def daily_loss_pct(self, pid: str) -> float | None:
+        """Percent change of equity vs this ET day's opening equity."""
+        start = await self.day_start_equity(pid)
+        if not start or start <= 0:
             return None
         eq = await self.equity(pid)
         return (eq - start) / start * 100
@@ -352,7 +459,11 @@ class PositionKeeper:
         pf = self._portfolios.get(pid)
         if pf is None:
             return {}
-        eq_before = await self.equity(pid)
+        # Resolve the day anchor while the book still looks the way it did
+        # BEFORE this level-set. Resolving it afterwards anchors on the new
+        # equity and the shift below then counts the same delta twice — a book
+        # going 0 -> 10,000 read as -50% and tripped the daily-loss halt.
+        await self.day_start_equity(pid)
         incoming = {(p["symbol"].upper(), p.get("secType", "STK")): p for p in positions}
         changes: list[dict] = []
 
@@ -405,11 +516,34 @@ class PositionKeeper:
                 pf_row.cash = pf["cash"]
             await session.commit()
 
-        eq_after = await self.equity(pid)
-        # A broker sync is a level-set, not trading P&L — shift the day anchor.
-        day_key = (pid, dt.datetime.now(tz=ET).date().isoformat())
-        if day_key in self._day_start_equity:
-            self._day_start_equity[day_key] += eq_after - eq_before
+        # A broker sync is a level-set, not trading P&L — shift the day anchor
+        # by what the sync actually LEVEL-SET: cash that moved, and holdings
+        # that appeared or vanished, valued at the book's own mark. Never by
+        # "equity after minus equity before": that difference also carries a
+        # currency correction, a broker mark replacing a fallback, or a tick
+        # that landed between the two reads, and 95 syncs of it manufactured
+        # +1,560 of anchor on a C$4,000 book (2026-09-15, WS Personal).
+        base = str(pf.get("baseCurrency") or "USD").upper()
+        holdings_delta = 0.0
+        for change in changes:
+            dq = float(change["qtyAfter"]) - float(change["qtyBefore"])
+            pos = self._positions.get((pid, change["symbol"], change["secType"]))
+            if abs(dq) < 1e-9 or pos is None:
+                continue
+            holdings_delta += self.fx.convert(
+                dq * self._mark(pos) * _mult(change["secType"]), self._pos_currency(pos), base)
+        cash_delta = pf["cash"] - cash_before
+        shift = cash_delta + holdings_delta
+        today = dt.datetime.now(tz=ET).date().isoformat()
+        day_key = (pid, today)
+        if abs(shift) >= 0.005:
+            if day_key in self._day_start_equity:
+                self._day_start_equity[day_key] += shift
+            await self._journal.append(
+                ev.DAY_ANCHOR_SHIFTED,
+                {"day": today, "delta": round(shift, 2), "cashDelta": round(cash_delta, 2),
+                 "holdingsDelta": round(holdings_delta, 2), "source": source},
+                aggregate_type="portfolio", aggregate_id=pid, portfolio_id=pid)
 
         diff = {
             "source": source,
@@ -444,8 +578,10 @@ class PositionKeeper:
                 cash = self._portfolios[pid]["cash"]
                 session.add(EquityPoint(portfolio_id=pid, ts=now_ms(), equity=eq, cash=cash))
                 today = await self.daily_loss_pct(pid)
+                start = await self.day_start_equity(pid)
                 point = {"portfolioId": pid, "equity": round(eq, 2),
                          "cash": round(cash, 2), "ts": now_ms(),
+                         "dayStart": round(start, 2) if start is not None else None,
                          "todayPct": round(today, 2) if today is not None else None}
                 out.append(point)
                 self._bus.publish(topics.PORTFOLIO, point)
@@ -465,9 +601,4 @@ class PositionKeeper:
             rows = (await session.execute(
                 q.order_by(EquityPoint.ts.desc()).limit(limit))).scalars().all()
         out = [[r.ts, round(r.equity, 2)] for r in reversed(rows)]
-        if points and len(out) > points:
-            step = len(out) / points
-            keep = {min(len(out) - 1, int((i + 1) * step) - 1) for i in range(points)}
-            keep.add(len(out) - 1)                      # never drop the live point
-            out = [p for i, p in enumerate(out) if i in keep]
-        return out
+        return _decimate(out, points)

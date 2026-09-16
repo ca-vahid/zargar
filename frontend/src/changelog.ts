@@ -27,6 +27,12 @@ export const CHANGELOG: Release[] = [
       { tag: "new", text: "Tips research: an experiment register (TMR-05) gives every study one identity - hypothesis, variants, unit of observation, costs, regime, evaluation window - and every research report now carries it; a time/volatility scenario prototype (TMR-03, research only, wired to nothing) shows how elapsed time and an IV change would move a long option's value, with a worked example on frozen evidence." },
       { tag: "new", text: "Tips: execution-cost diagnostic (TMR-02). Beside feasibility and payoff, the analyst tools, the risk plan and the card show the instantaneous round trip on the qualified quote - spread once plus both sides' fees at the venue basis, quoted size, cost as a share of the purchase - and each realised fill is journaled against the quote the decision saw. Unknown on stale, crossed or missing quotes; changes no quantity, contract, limit or gate." },
   ]},
+  {version:"0.7.95",date:"2026-09-15",title:"EM entries are decided by the app's own rules, not a model",items:[
+    {tag:"major",text:"EM live entry authority is deterministic (techniques.enhanced_market.fire_decision_mode=deterministic): when a trigger fires, the app's encoded rules judge the saved geometry, the tracker's own window, volume and the confirmation branch that actually fired - in milliseconds, with no model call, no chart render and no timeout on the entry path. Every attempt is journaled as a TechniqueEntryDecision with its frozen snapshot, policy and the last 240 bars up to the signal close; refusals are recorded as no-setup with reason codes. The pre-market LLM plan builder is unchanged; legacy critic mode remains selectable."},
+    {tag:"new",text:"Optional after-close LLM evidence (fire_evidence_mode=after_close, OFF): one bounded, evidence-only pass over the frozen decisions of a closed session - it verifies the record's declared identity (input hash, frozen-bar hash and count, cutoff) against the captured material before rendering or buying an opinion, and can never touch an order, an arm or a setting."},
+    {tag:"improved",text:"EM profitability report attributes fills and refusals to the attempt that produced them (policy version, decision id), builds the attempt census from every run's immutable fire events and counts refusals once per attempt."},
+    {tag:"improved",text:"Armed cards and the arm dialog show the effective live-entry policy (deterministic / legacy critic / policy error); Settings gains an EM live entry authority group."},
+  ]},
   {version:"0.7.94",date:"2026-09-15",title:"Experiment books are validated, frozen and transition-safe",items:[
     {tag:"fixed",text:"Team2 experiments (still OFF): the map is validated as a whole - a control book, one role per experiment book (sizing -> size_full, c1 -> no_trade_zone), required labels, distinct unarchived Practice books, no combination of C1 and the sizing cap; an invalid map applies nothing and reports why. A plan's override is frozen on the plan at mint time, so disabling or editing the map can no longer turn an armed sizing book back into full size, and a restart restores the same book and rules. Switching the default book inventories plans on other books (retired without exposure, paused with it), a forced re-plan never removes the manager of an open trade, and an experiment plan can only be armed on the Practice book it was minted for. A transition step that fails or cannot be confirmed blocks the experiment minting and leaves the old plan managing its book. Every plan now carries the release and build that minted it, the readiness receipt checks that provenance and plan cardinality per book and symbol, and its settings load is fully read-only."},
   ]},
@@ -36,6 +42,19 @@ export const CHANGELOG: Release[] = [
   {version:"0.7.92",date:"2026-09-15",title:"Cartel: tomorrow's plans wait for tomorrow",items:[
     {tag:"fixed",text:"Plans armed for a future session no longer show 390 overdue minutes from the preparation day. Their status names the upcoming session, while genuine gaps during an active session still trigger attention and repair."},
   ]},
+
+  {
+    version: "0.7.91",
+    date: "2026-09-15",
+    title: "The Dashboard's colour, its picker, and real money in one currency",
+    items: [
+      { tag: "fixed", text: "The equity chart is coloured by the same number its header prints. It used to colour itself against the first sample in the window (04:00 ET pre-market), while the header measures from the previous close - so a green '+US$220 today' sat over a red line whenever the window opened above the close." },
+      { tag: "improved", text: "Picking a book drives the whole board: the headline shows that book's total and its move, its account chip lights up, and the curve follows. Chips are the picker - click one for that book, again for all." },
+      { tag: "fixed", text: "LIVE reads in one currency. The real accounts are a CAD book holding US listings and a USD book; the day move, the headline's live marking and the summed curve added those together raw, and the board said -24% on a day the money moved -2%. Every book is now converted at today's USD/CAD before it is summed, the footer says so, and an account that cannot be priced is named instead of silently skipped." },
+      { tag: "fixed", text: "The day anchor for a real account no longer drifts. A broker sync shifted it by 'equity after minus equity before', which also carried a currency correction or a mark replacing a fallback - 95 syncs manufactured +1,560 of anchor on a C$4,000 Wealthsimple book and read as -28% today. It shifts only for cash that moved and holdings that appeared or vanished, at the book's own mark, and every shift is journaled (DayAnchorShifted) so a restart replays it instead of forgetting a transfer." },
+      { tag: "improved", text: "Empty accounts fold into one '+N empty' chip instead of four C$0.00 tiles." },
+    ],
+  },
   {version:"0.7.90",date:"2026-09-15",title:"A book can be paused until someone releases it",items:[
     {tag:"new",text:"Per-book pause (POST /api/portfolios/{id}/pause with a reason and label, /unpause to release): every new entry and add on that book is refused - by the runners and by the risk gate - while protective exits keep working and every other book trades on. Unlike the daily-loss halt it has no day: it survives restarts and the day roll and ends only when released. Releasing it never clears the kill switch or a daily-loss halt, and those never clear it. The record snapshots the book's sizing settings; the pause changes no setting. Built as the loss-stop action of the Team2 sizing experiment; nothing is paused by this release."},
   ]},
@@ -147,6 +166,15 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"Team2 R3: a decision watermark per plan - a fire, add, trim or exit whose close is at or before the last decision was surfaced by a corrected or late minute and is recorded (backdated_signal_skip, with the time it was judged and the time it surfaced), never sent as a backdated order; a setup the current close creates still acts. Corrections and recovered minutes are now journaled durably (bar_revised / bar_recovered)."},
     {tag:"improved",text:"Team2 R5: the close funnel builds its attempts from the durable contract verdicts and joins the trade projection to them, so a verdict journaled before the projection was saved is reported as journal-only evidence with its own row instead of vanishing; opportunities and retries are counted separately (verdicts / journalOnly)."},
   ]},
+  {
+    version: "0.7.75",
+    date: "2026-09-14",
+    title: "The Ledger and the Dashboard agree on today",
+    items: [
+      { tag: "fixed", text: "The Ledger's TODAY tile is now the same number as the Dashboard: how the book moved today against the previous session's close. What CLOSED today is its sub-line, with the remainder labelled 'open & carried' - the Ledger's day rows book a trade's whole gain on the day it closes, so a position that lost $210 over four days and closed today reads -210 there and only today's slice on the Dashboard. The two screens read +429.97 and +145.07 for the same day; both were right, and neither said which question it was answering." },
+      { tag: "fixed", text: "The Ledger values an open position exactly as the book does. It marked at the last print while the book (since 0.7.70) marks an option at the mid of its market, and the gap - (mid minus last) times the contracts, across three open lots - surfaced as a '+4.00 unexplained' pill. Same mark, no gap." },
+    ],
+  },
   {version:"0.7.74",date:"2026-09-14",title:"Recover preparation and reconcile daily results",items:[
     {tag:"fixed",text:"Partial Cartel preparation retries unresolved history with bounded recovery, preserving successful analyses, existing arms and immutable plan revisions."},
     {tag:"fixed",text:"Simulated fills require fresh eligible quotes and retain exact source evidence. Protective orders keep waiting for usable quotes rather than claiming stale fills."},
@@ -160,10 +188,30 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"Restart scripts R4: a deploy takes an exclusive lease (logs/deploy.lock, owner-named, stale after ten minutes), the entry pause must be acknowledged by the engine AND read back from its state before anything is stopped, and the watchdog will not start a second engine while a deploy holds the lease. A pause that is not confirmed refuses the ordinary restart; -Force / -Override remain the journaled exceptions."},
     {tag:"improved",text:"Team2 R5: the close scorecard keeps every attempt, filled or not, with its decisive contract verdict (policy refusal, transient deferral, order rejected) and the live price examined, and adds a durable funnel (attempts / filled / refused / deferred / book losses) rebuilt from the journal after a restart. Today's refused IWM 290 call read 'not taken - see skips' with no reason."},
   ]},
+  {version:"0.7.72",date:"2026-09-14",title:"Team2 close record",items:[
+    {tag:"fixed",text:"Team2: the end-of-day scorecard now names its session (planFor), so the close no longer logs an event-contract warning per plan and scored rows can be joined to their day without the plan row."},
+  ]},
   {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
+    {tag:"fixed",text:"EM review second follow-up (FA-01..05): a synchronous final guard runs right before the broker submit on every entry attempt, so a daily-loss budget that moves while the order is being persisted refuses the order; the FIX-01 repair writes state and receipts in one transaction, grounds values in the execution ledger and refuses ownership mismatches; a promotion reuses a prior read only under the same saved definition; /api/health.build is bound at launch."},
+    {tag:"fixed",text:"EM review follow-up (DA-01..08): option entries pass one final admission on the price and quantity actually sent (fresh spread, premium caps, remaining daily loss budget); a pending or cancelled exit can no longer consume a target; quote-stop confirmation is forward-only; the FIX-01 repair tool journals its receipt before it commits and applies a plan's corrections as one transition; per-desk sizing-floor setting registered; /api/health reports the build SHA."},
+    {tag:"fixed",text:"EM review Delivery A: a shares fallback no longer keeps the option's x100 (HPQ booked -$719 on a -$7 trade and false-halted; repair tool with a dry-run manifest); a two-contract exit takes TP2 in the bar it prints with TP1; contracts are sized on the live ask, and a contract that does not fit the risk budget sizes to zero instead of one; the 09:25 pre-open judges shorts with the same direction-aware rule as the open (twelve shorts were wrongly replaced on 09-14); the critic's opinion, advisory flag and errors survive a restart and every fire journals its final disposition; short setups score as shorts; a cached option quote cannot confirm a premium stop twice."},
     {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
     {tag:"fixed",text:"Setup messages show entry descriptions and prices instead of bare IDs. Fixed the visible Unicode escape and replaced the pulsing red attention banner with a quieter, accessible control."},
+    {tag:"improved",text:"Team2: a pre-market break setup pointing against the day's bias now says so on the Armed page (\"inert while the bias is puts: needs a bias flip\") instead of reading like a live entry candidate."},
   ]},
+  {
+    version: "0.7.70",
+    date: "2026-09-14",
+    title: "The board tells the truth about today, and keeps telling it",
+    items: [
+      { tag: "fixed", text: "Today's move on the Dashboard is read from the day's real opening equity - the previous session's close, the same basis every broker quotes a day change on - instead of being derived from the chart's own points, which are session-filtered, thinned and flat-collapsed. The baseline was whichever sample survived thinning, so it changed on every reload: a board opened during a dip read RED all morning on a green day and went green on a refresh. The headline and the chart now read the same two numbers." },
+      { tag: "improved", text: "The Dashboard follows the live equity push instead of freezing at page load. Equity is sent for every book every 30 seconds; nothing was keeping those samples, so the balance updated over the websocket while the move and the curve beside it stayed pinned to whatever was fetched on mount - which is why the numbers only changed when you reloaded. The curve now extends itself, and says 'live' when it is doing so." },
+      { tag: "improved", text: "The equity chart carries its numbers on its face: six labelled gridlines instead of two, the previous close drawn as a reference line, the current value labelled on the line itself, and a PREV CLOSE / HIGH / LOW / NOW strip underneath. The readings are there without hovering." },
+      { tag: "fixed", text: "Downsampling a long equity window no longer throws away its highs and lows. Keeping every Nth sample meant the same 1D window reported a 40,120 high on one load and 38,898 on the next, depending on where the buckets fell; buckets now keep their extremes, so the shape and the range survive at any budget." },
+      { tag: "fixed", text: "An option position is valued at the middle of its two-sided market rather than a lone print. Two INTC 0DTE calls bought at $1.00 were marked near $7 by a single print this morning: equity jumped $1,406 (+14%) for one sample, that spike was written into the book's history permanently, and it set the whole vertical range of the day's chart. The same figure feeds the daily-loss halt, where a bad print the other way would halt a book that had not lost anything." },
+      { tag: "fixed", text: "The day's opening equity survives a restart. It was held only in memory and seeded with 'equity the first time we looked today', so an engine restarted mid-session re-based the day at the restart price - a book already down 4% came back reading flat and the daily-loss halt forgot how far down it was." },
+    ],
+  },
   {
     version: "0.7.69",
     date: "2026-09-14",
@@ -309,11 +357,16 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-12",
     title: "Captions count as evidence, and truncated answers get room to finish",
     items: [
+    {tag:"new",text:"EM method change plan C1-C5 (2026-09-12): a nightly option-liquidity screen decides which names EM may trade in options (the rest fall back to shares in Practice - C2 makes shares the EM Practice default); a wide spread on the just-OTM strike now tries the next strike and the next expiry; a pre-open re-plan keeps the evening triggers alongside the new ones (IBIT +4.8R was lost to a re-plan on 09-11); gap-day policy, targeted scratch and consolidation-break entries ship as knobs, off until their sweeps pass."},
       { tag: "fixed", text: "A tip whose message has both a caption and a screenshot no longer loses the caption from the evidence: grounding now checks quotes against BOTH, clearly sectioned, with an honest note when only the first of several images was read. Meet Kevin's first tips died on exactly this." },
       { tag: "fixed", text: "When the analyst's answer is cut off at the output-token limit, the retry now gets double the room instead of being cut off at the same place - and a still-truncated failure says 'truncated', not just 'no JSON'. The RKLB no-verdict case was this." },
       { tag: "improved", text: "Ingest records how many attachments a message carried so partially-read messages are visible instead of silently incomplete." },
     ],
   },
+  {version:"0.7.49",date:"2026-09-11",title:"The morning's target change is on the record",items:[
+    {tag:"fixed",text:"Team2: when the morning re-derives a plan target the gap has already run through, and when the day type is finalized on the real 09:30 open, both are now written to the plan's append-only audit. Until now they existed only in the plan's in-memory event list, so a mid-session restart erased the evidence that the target had moved before any entry was judged."},
+    {tag:"fixed",text:"Team2: plan-level audit rows (chain listing, warm-up identity, open finalize, target re-derive) now state that they belong to no single trigger instead of omitting the field, which was logging a contract warning on every one."},
+  ]},
   {version:"0.7.48",date:"2026-09-10",title:"A hole in the audit record is itself recorded",items:[
     {tag:"fixed",text:"Team2: when an audit-trail write fails, the plan now logs a trail gap, raises one warning per plan and shows the gaps on its snapshot, so an incomplete record can never pass for a quiet session. The trade itself is not blocked by the record. The contract picker's early exits (options service missing, no expiry listed, an unexpected error) now write a deferred verdict instead of returning silently."},
   ]},
@@ -362,6 +415,7 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"F107: the EM outcome scorer scores EM's own runs only; it had been adopting every Team2 and Tip plan run into EM's scorecard."},
   ]},
   {version:"0.7.42",date:"2026-09-10",title:"Safer Cartel preparation and executable reserves",items:[
+    {tag:"new",text:"EM scratch rule (T-14, off until its sweep passes): once a trade is scratch_r R in favour, half is sold and the stop moves to breakeven, in the simulator and in the live exits alike (technique.scratch_r / scratch_trim). HOOD today: +2.5R in four minutes, then stopped for a full loss."},
     {tag:"fixed",text:"Refreshing preparation preserves existing arms and positions, including when research fails. Pending contracts no longer consume the final armed shortlist; additional ranked candidates are checked within a bounded reserve."},
     {tag:"fixed",text:"Stale benchmark history is retried once and reports its actual completed session. Fresh preparation is required when benchmark data remains stale; trading checks are unchanged."},
   ]},

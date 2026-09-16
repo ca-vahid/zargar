@@ -6,6 +6,7 @@ video brief primary with follow-ups listed, never replaced; the gateway surfaces
 embed / attachment URLs so link detection sees them. EM-only."""
 import asyncio
 
+from .conftest import wait_for
 from .test_technique_walkforward import rig  # noqa: F401 - the technique rig fixture
 from zargar.tools.discord_gateway import Gateway
 
@@ -53,7 +54,7 @@ async def test_only_setup_material_gets_a_board_check_and_today_view_keeps_the_b
                 "symbols": ["TEST"], "board": ["TEST | long | trigger: hold | target: next | note: -"],
                 "claims": [], "vetoes": []}
 
-    async def fake_check(note_id):
+    async def fake_check(note_id, **kw):    # revision_id= arrived with WI-03
         calls.append(note_id)
         return {"id": note_id}
 
@@ -61,9 +62,13 @@ async def test_only_setup_material_gets_a_board_check_and_today_view_keeps_the_b
     monkeypatch.setattr(ing, "board_check", fake_check)
     video = await ing.store_message(dict(VIDEO))
     await ing.store_transcript(video["id"], transcript="[0:01] TEST holds the level, looks good")
-    await asyncio.sleep(0.3)                          # the spawned extract task
+    await wait_for(lambda: bool(calls))                 # the spawned extract task reached the board
     recap = await ing.store_message({**VIDEO, "id": "m-recap", "text": "recap of yesterday's trades: " + "x" * 80})
-    await asyncio.sleep(0.3)
+
+    async def recap_extracted():
+        n = await ing.get_note(recap["id"])
+        return bool((n or {}).get("extraction", {}).get("material"))
+    await wait_for(recap_extracted)
     assert calls == [video["id"]]                     # the recap was extracted but never plan-checked
     view = await ing.today_board()
     assert view["today"] is True and view["note"]["id"] == video["id"]      # the brief stays primary

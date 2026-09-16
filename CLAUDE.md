@@ -264,6 +264,18 @@ gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tool
 parallel with it.
 **Bug-missed trades (2026-09-02):** replay them AFTER the fix into the counterfactual ledger (`execution/counterfactual.py`, `technique_review counterfactual <run> --trigger r1 --reason ...`, Armed > History "Missed by a bug") - NEVER book a synthetic fill into a portfolio (PLATFORM-RULES invariant).
 **EM flow confirmation (T-12): MEASURED AND REJECTED on history 2026-09-09** - `docs/techniques/enhanced-market/FLOW-CONFIRMATION-PLAN.md` (verdicts in TRADING-RULES T-12). The sweep detector is research tooling only: `research/optiontrades.py` (Alpaca option trades -> sweeps; history uses the tick test, live would use the NBBO), `flow_sweeps` table, `tools/optiontrades_backfill.py` / `flow_variant.py` / `flow_sweep_universe.py`. Neither the confirm gate nor sweeps-as-trigger had an edge (847 sweep trades mean -13% premium); no `flow_confirm` runtime knob exists and none is planned unless 10 sessions of live NBBO-classified sweeps say otherwise.
+**EM external review (2026-09-14):** packet `docs/techniques/enhanced-market/reviews/DEV-TEAM-HANDOFF-2026-09-14.md`; Delivery A done (`reviews/DELIVERY-A-RESPONSE-2026-09-14.md`, reviewer cases adopted as `tests/test_em_review_*.py` - never weaken them), closure review `reviews/2026-09-14-fa-closure-review.md` (FC-01: the final entry guard judges the CURRENT quote via the pure hook `judge_entry_quote`), Delivery B designed (`reviews/DELIVERY-B-DESIGN-2026-09-14.md`) and its FIRST PR built (source revisions/artifacts/jobs ledger `technique/source_revisions.py`, backfill tool `tools/em_source_backfill.py`, order-free boundary `execution/origins.py` - a `scenario:*` run never arms; the 19-note backfill was applied 2026-09-14; next PR built the same evening: gateway deletions as tombstone revisions, transcription/extraction through fenced artifacts + checkpoints - `tests/test_em_source_wiring.py`; WI-01..05 ownership/revision fixes - `tests/test_codex_worker_revision_ownership.py`, `tests/test_em_worker_ownership.py`; WF-01..03 - `tests/test_codex_worker_followup_boundaries.py`, `tests/test_em_worker_followup.py`; the runner's optional `authorize` arm boundary), cleared and DEPLOYED as v0.7.75 build 0014640 (release verdict `reviews/2026-09-14-3f1d665-release-verdict.md`), C/D open. `/api/health.build` is the launch-bound SHA: a process started before a file edit does not contain the edit. FIX-01 repair: `tools/em_reconcile_fallback.py` (dry run; `--apply` is a human step). **Strategy research (2026-09-14/15, order-free):** `reviews/STRATEGY-PROPOSAL-2026-09-14.md` - source candidates `tools/em_source_candidates.py` (ledger in `research/`), shadow exit observations `TechniqueExitShadow`, target-distance diagnostic `TechniqueTargetDistance`; nothing from them arms or trades. **Deterministic live entry (2026-09-15, user decision, `deterministic-entry-v1`):** EM's live entry decision is made by
+application rules (`technique/entry_decision.py`, pure, over the actual tracker transition) through the runner hook
+`fire_review_policy` / `fire_decision`; the fire-time critic is off the entry path (setting
+`techniques.enhanced_market.fire_decision_mode` deterministic | legacy rollback; `fire_evidence_mode` off | after_close =
+optional evidence-only review via `tools/em_entry_evidence.py`); other desks keep the legacy hook default; plan + rule map in
+`reviews/deterministic-entry-2026-09-15/`; migration preview `tools/em_fire_policy_migration.py`.
+**Profitability cohorts (2026-09-15, reviewers' P-01..P-03):** frozen definitions
+`research/PROFITABILITY-COHORTS-2026-09-15.md`, per-session order-free report `tools/em_profitability.py` ->
+`research/profitability/<date>.md` (baseline beside the `long_bounce_next_resistance` cohort, `small-position-exit-v1`
+unknown until the observer + `shadow_p02_candidate` are activated, contract friction with an 8% ranking marker that is
+never a gate).
+**EM method change plan (2026-09-12, IMPLEMENTED the same day on the user's decision; C3 on, C4/C5 off after sweeps):** `docs/techniques/enhanced-market/METHOD-CHANGE-PLAN-2026-09-12.md` (C1 tradeable-vehicle universe, C2 shares fallback in Practice, C3 gap-day policy, C4 targeted scratch, C5 consolidation-break trigger, C6 keep/measure). Verdicts in TRADING-RULES §5 2026-09-12.
 **One Practice book per technique (2026-09-08):** `techniques.<id>.default_portfolio` routes each technique's fills (EM also `technique.arm.default_portfolio`); the old shared book is archived, never a fallback (PLATFORM-RULES invariant 15).
 **New technique? Start at `docs/BUILDING-A-TECHNIQUE.md`** — the engine's capabilities (marketstructure,
 PlanRunner hooks, settings resolver `techniques.<id>.<key>` → `execution.<key>`, scheduler, calendar,
@@ -402,7 +414,10 @@ frontend production build runs this check automatically.
   in `zargar/execution/` (`SessionListener` loops + order index, pure `exits`
   decision/intent, `ManagedTrade`); `PlanArmer` subclasses `SessionListener`. New
   techniques reuse that layer instead of re-implementing order management.
-- Armed plans default to the **options** instrument (just-OTM call via
+- Armed plans default to the **options** instrument, and since 2026-09-12 EM Practice arms fall back to SHARES when
+  the option is untradeable (`techniques.enhanced_market.entry_fallback=shares`; the nightly `em_option_liquidity`
+  screen marks 24/135 names option-tradeable; the pick retries the next strike / next expiry on a wide spread) -
+  a test that expects the no-contract FAILURE path must set the fallback off. Default pick: (just-OTM call via
   `technique.option_pick`, BUY LMT at ask, SELL at bid, P&L × 100, <3 contracts
   exit in full at TP2); tests that only need share fills must arm with
   `"instrument": "shares"`. Option quotes reach the risk gate only through
@@ -484,6 +499,27 @@ frontend production build runs this check automatically.
   candidates on the NBBO before any refusal — never re-introduce a delayed-ask veto or a synthetic strike grid on the live path.
   **Restarts go through `scripts/start.ps1`'s readiness check** (`/api/ops/restart-check`); assistants use the scheduler's
   `ZargarRestart` task, never `start.ps1` from their own shell (PLATFORM-RULES invariants 17–18).
+- **"Today" has ONE anchor and it is the server's** (2026-09-14, PLATFORM-RULES 21):
+  `PositionKeeper.day_start_equity(pid)` = the last PERSISTED equity point before 04:00 ET
+  (the previous session's close — same basis as the day-change rule for prices above), and it
+  ships as `dayStart` beside `equity` on `/api/portfolios`, the snapshot and the 30 s portfolio
+  push. Never derive a day move from a chart array: those are session-filtered, thinned and
+  flat-collapsed, so the baseline moves on every reload — the Dashboard read RED on a green
+  morning for exactly that reason. A broker sync shifts the anchor (it is a level-set, not P&L).
+- **An option is valued on its book, not on a print** (2026-09-14, PLATFORM-RULES 22):
+  `PositionKeeper._mark` takes the mid whenever there is an ask (`ask > 0 and ask >= bid`,
+  a 0 bid included); a lone `last` is used only when there is no ask at all. Shares are
+  unchanged. `frontend/src/lib/liveEquity.ts` mirrors this rule — change one, change both.
+  One stale print on a thin 0DTE contract put +$1,406 into a book's persisted equity history.
+- **Downsampling keeps the extremes** (2026-09-14, PLATFORM-RULES 23): `portfolio._decimate`
+  (and the client thinning in `DashboardPage`) keep each bucket's min and max, never every Nth
+  sample — the same 1D window otherwise reported a different high depending on where the
+  buckets fell.
+- **The board follows the tape.** The engine pushes equity per book every 30 s on the
+  `portfolio` topic; the store keeps those in `equityTicks` and charts extend themselves from
+  it (`useAsync` is fetch-on-mount — anything that must stay current needs more than a fetch).
+  Between pushes, running totals mark live off the quote stream (`useLiveEquity`), so the top
+  bar, the Dashboard headline and the curve's NOW all show the same number at the same instant.
 - Patching files from scripts on Windows: open with `encoding="utf-8"`
   (the default cp1252 silently corrupts em dashes / arrows).
 

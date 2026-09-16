@@ -281,7 +281,8 @@ def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: s
 
 async def pick_for_setup(client, symbol: str, spot: float, direction: str,
                          *, today: dt.date | None = None, max_strike: float | None = None,
-                         min_strike: float | None = None, avoid_0dte: bool = False) -> dict:
+                         min_strike: float | None = None, avoid_0dte: bool = False,
+                         retry_wide: bool = True, max_spread_pct: float = 10.0) -> dict:
     """End-to-end: expirations → expiry choice → chain → contract. `client` is
     any provider exposing expirations()/chain() with normalized rows. Never
     raises for 'no contract'; returns a dict with `error` for hard failures."""
@@ -302,6 +303,40 @@ async def pick_for_setup(client, symbol: str, spot: float, direction: str,
         d["available"] = True
         d["chainSize"] = len(chain)
         d["provider"] = getattr(client, "name", "?")
+        # C1 (2026-09-12): a wide spread on the just-OTM strike is not the end - 8 of 9 fires died
+        # there in the week of 09-08. Try the next strike further out and the next expiry, keep the
+        # tightest spread, and say which one was taken.
+        sp = d.get("spreadPct")
+        if retry_wide and sp is not None and float(sp) > max_spread_pct:
+            cands = [("just_otm", d)]
+            try:
+                k = float(d.get("strike") or 0)
+                alt = select_contract(chain, spot, direction, expiry=expiry, today=today, is_0dte=is_0dte,
+                                      max_strike=max_strike, min_strike=(k + 0.01) if direction == "long" else min_strike) \
+                    if direction == "long" else \
+                    select_contract(chain, spot, direction, expiry=expiry, today=today, is_0dte=is_0dte,
+                                    max_strike=(k - 0.01), min_strike=min_strike)
+                if alt is not None and float(alt.strike) != k:
+                    cands.append(("next_strike", alt.to_dict()))
+            except Exception:
+                pass
+            try:
+                later = [e for e in sorted(exps) if e > expiry]
+                if later:
+                    chain2 = await client.chain(symbol, later[0])
+                    p2 = select_contract(chain2, spot, direction, expiry=later[0], today=today, is_0dte=False,
+                                         max_strike=max_strike, min_strike=min_strike)
+                    if p2 is not None:
+                        cands.append(("next_expiry", p2.to_dict()))
+            except Exception:
+                pass
+            best_name, best = min(cands, key=lambda c: float(c[1].get("spreadPct") if c[1].get("spreadPct") is not None else 1e9))
+            if best is not d:
+                best["available"] = True
+                best["chainSize"] = len(chain)
+                best["provider"] = getattr(client, "name", "?")
+                best["pickRetry"] = {"from": d.get("display") or d.get("symbol"), "fromSpreadPct": sp, "took": best_name}
+                return best
         return d
     except OptionsError as exc:
         return {"error": str(exc), "available": False, "provider": getattr(client, "name", "?")}

@@ -221,18 +221,41 @@ def build_technique_routes(app, eng, auth, config) -> None:
         guild: str | None = None
         author: str = ""
         authorId: str | None = None
-        text: str = ""
-        images: list[str] = []
+        text: str | None = None                # None = not in this payload (partial delivery) - Delivery B (B-02)
+        images: list[str] | None = None        # None = not in this payload (partial delivery) - Delivery B
         postedAt: str | None = None
+        editedAt: str | None = None
+        kind: str = "create"                    # create | update | delete
+        gatewaySeq: int | None = None
 
     @app.post("/api/technique/ingest/message", dependencies=[auth])
     async def ingest_message(body: IngestMessageBody):
-        return await _ingest(eng).store_message(body.model_dump())
+        ing = _ingest(eng)
+        payload = body.model_dump()
+        if str(payload.get("kind") or "create") in ("update", "delete", "deleted"):
+            out = await ing.store_revision(payload)     # omitted/null = unchanged; explicit "" = cleared
+        else:
+            payload["text"] = payload.get("text") or ""   # create defaults are normalised HERE, never for updates
+            payload["images"] = payload.get("images") or []
+            out = await ing.store_message(payload)
+        await ing.sweep_expired()                    # expired leases become claimable; the API owns no work
+        return out
+
+    @app.get("/api/technique/ingest/revisions/{note_id}", dependencies=[auth])
+    async def ingest_revisions(note_id: str):
+        """Delivery B: the immutable revision history of one note (+ artifacts per revision)."""
+        from ..technique import source_revisions as srcrev
+        async with eng.sf() as session:
+            revs = await srcrev.revisions_for(session, note_id)
+            for r in revs:
+                r["artifacts"] = await srcrev.artifacts_for(session, r["id"])
+        return {"noteId": note_id, "revisions": revs}
 
     @app.get("/api/technique/ingest/pending", dependencies=[auth])
-    async def ingest_pending():
-        """The em_ingest worker polls this: video notes waiting for a transcript."""
-        return {"notes": await _ingest(eng).pending()}
+    async def ingest_pending(owner: str = "em-ingest"):
+        """The em_ingest worker polls this: video notes waiting for a transcript, each leased to `owner`
+        (a worker INSTANCE identity, e.g. em-ingest:host:pid - WI-01)."""
+        return {"notes": await _ingest(eng).pending(owner=owner)}
 
     class IngestTranscriptBody(BaseModel):
         noteId: str
@@ -243,16 +266,22 @@ def build_technique_routes(app, eng, auth, config) -> None:
         durationSeconds: float | None = None
         model: str | None = None
         seconds: float | None = None
+        jobId: str | None = None          # Delivery B: the lease handed out by /ingest/pending
+        fenceToken: int | None = None
 
     @app.post("/api/technique/ingest/transcript", dependencies=[auth])
     async def ingest_transcript(body: IngestTranscriptBody):
+        from ..technique.ingest import StaleWorker
         try:
             return await _ingest(eng).store_transcript(
                 body.noteId, transcript=body.transcript, error=body.error, deferred=body.deferred,
                 meta={"durationSeconds": body.durationSeconds, "model": body.model, "seconds": body.seconds,
-                      "partial": True if body.partial else None})
+                      "partial": True if body.partial else None},
+                job_id=body.jobId, fence_token=body.fenceToken)
         except KeyError:
             raise HTTPException(status_code=404, detail="note not found")
+        except StaleWorker as exc:
+            raise HTTPException(status_code=409, detail=f"stale worker: {exc}")
 
     @app.get("/api/technique/ingest/notes", dependencies=[auth])
     async def ingest_notes(limit: int = 20):
@@ -282,15 +311,26 @@ def build_technique_routes(app, eng, auth, config) -> None:
 
     @app.post("/api/technique/ingest/notes/{note_id}/board-check", dependencies=[auth])
     async def ingest_board_check(note_id: str):
+        from ..technique.ingest import StaleWorker
         try:
             return await _ingest(eng).board_check(note_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="note not found")
+        except StaleWorker as exc:
+            raise HTTPException(status_code=409, detail=f"board refused: {exc}")
 
     # --- session plans / walk-forward / arming --------------------------------------------
     @app.get("/api/technique/universe", dependencies=[auth])
     async def technique_universe():
         return _svc(eng).universe_cached()
+
+    @app.get("/api/technique/universe/liquidity", dependencies=[auth])
+    async def technique_option_liquidity():
+        return eng.settings.get("technique.universe.option_liquidity", {}) or {}
+
+    @app.post("/api/technique/universe/liquidity/refresh", dependencies=[auth])
+    async def technique_option_liquidity_refresh():
+        return await _svc(eng).refresh_option_liquidity()
 
     @app.post("/api/technique/universe/refresh", dependencies=[auth])
     async def technique_universe_refresh():
