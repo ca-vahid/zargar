@@ -2134,3 +2134,11 @@ changes no setting. Tests: `tests/test_book_pause.py`. Nothing is paused by this
   into one "+N empty" chip and stay out of the picker; same-named accounts get their currency.
 - **Known simplification.** History is converted at TODAY's rate (no FX series per day); the
   footer says so. The USD/CAD move within a day is ~0.3%, below what the board resolves.
+### Team2 parallel Practice experiments — 2026-09-15 (technique-scoped; v0.7.93)
+
+Team2 can now run several Practice books at once with ONE rule difference each (`techniques.team2.experiments`; the
+whitelist is `size_full` / `no_trade_zone`, anything else is refused). What changed in shared terms: the Team2 runner's
+desk-wide loss cap and concurrency cap are per BOOK (`losses_across_plans(portfolio_id=)`,
+`open_positions_across_plans(portfolio_id=)`), each plan carries its book's rules (`rules_for(ap)`, stamped on the run)
+and label, `nightly_plans` mints one plan per (symbol, book) and refuses a non-Practice book for an experiment. No engine
+change; the per-book pause (v0.7.90) is the experiments' breach action. Nothing is enabled by this release.

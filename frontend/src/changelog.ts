@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.92";
+export const APP_VERSION = "0.7.93";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.93",date:"2026-09-15",title:"Team2 can run parallel Practice experiments, one book each",items:[
+    {tag:"new",text:"Team2 experiments (techniques.team2.experiments, OFF by default): each listed Practice book gets its own plan per symbol, minted and run under the shared baseline plus that book's overrides - and only size_full or no_trade_zone may differ; anything else is refused. Loss counters and the concurrency cap are now per book, plans carry their book's rules and label, and an experiment book must be a Practice (sim) book - never real money. The shared Team2 settings stay the baseline every other book runs on. Built for the review team's parallel sizing-cap and C1 experiments; nothing is enabled or activated by this release."},
+  ]},
   {version:"0.7.92",date:"2026-09-15",title:"Cartel: tomorrow's plans wait for tomorrow",items:[
     {tag:"fixed",text:"Plans armed for a future session no longer show 390 overdue minutes from the preparation day. Their status names the upcoming session, while genuine gaps during an active session still trigger attention and repair."},
   ]},
