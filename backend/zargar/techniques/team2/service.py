@@ -29,12 +29,25 @@ from ...marketstructure.market_calendar import is_trading_day, next_trading_day,
 from ...marketstructure.sessions import ET, session_date
 from ...models import TechniqueArmed, TechniqueRun
 from .plan import build_skeleton, complete_plan
-from .rules import experiment_books, rules_for_book, Team2Rules, rules_from_settings
+from .rules import apply_overrides, rules_for_book, validate_experiments, Team2Rules, rules_from_settings
 from .session import simulate_session
 
 log = logging.getLogger("zargar.techniques.team2.service")
 
 CODE_VERSION = "team2-0.1"
+
+
+def _app_version() -> str:
+    from ... import __version__
+    return str(__version__)
+
+
+def _build_sha() -> str | None:
+    try:
+        from ... import build_sha
+        return str(build_sha())
+    except Exception:  # noqa: BLE001 - the launch-bound helper lives on another desk's branch until it merges
+        return None
 
 #: once-per-session state notes (`session.py` mints each at most once) — the day said what it was
 #: doing, it did not refuse a setup. Kept out of the refusal tally the History tab shows (F68).
@@ -166,13 +179,17 @@ class Team2Service:
         prev_rth = [b for b in fifteen if session_date(b.ts) == sk["prevSession"]]
         last_close = float(prev_rth[-1].close) if prev_rth else None
         plan = {**sk, "planFor": date, "triggers": [], "referencePrice": last_close, "lastClose": last_close,
-                "triggerTf": "2m", **self._event_flags(date)}
+                "triggerTf": "2m", **self._event_flags(date),
+                **({"experiment": dict(experiment)} if experiment else {})}      # FROZEN on the plan: the runner reads this, never the live map
         run = TechniqueRun(id=new_id(), technique="team2", tags=[], symbol=symbol.upper(), as_of=None,
                            primary_tf="2m", mode="plan", trigger="scan", status="done", verdict="plan",
                            setup_type="team2", confidence=None, grounded=True, facts={},
                            result={"plan": plan, "trace": [{"step": "skeleton", "reason": plan["sheet"]}]},
                            images={}, usage={}, llm={},
                            config={"thresholds": rules.to_dict(), "codeVersion": CODE_VERSION, "technique": "team2",
+                                   # provenance the readiness receipt checks (PR #168 review): the APP release and build that
+                                   # minted this plan — `codeVersion` above is the strategy/model schema id, not a release
+                                   "appVersion": _app_version(), "build": _build_sha(),
                                    **({"experiment": dict(experiment)} if experiment else {})})
         async with self.engine.sf() as session:
             session.add(run)
@@ -199,12 +216,22 @@ class Team2Service:
         # baseline; every enabled experiment book gets its own plan minted under ITS rules (`rules_for_book`) and
         # labelled on the run. Experiment books must be Practice (sim) books — never real money.
         default_pid = str(s.get("techniques.team2.default_portfolio", "") or s.get("trading.default_portfolio", "") or "")
-        books = [{"portfolioId": default_pid, "label": "", "overrides": {}}]
-        for b in experiment_books(s):
-            if b["portfolioId"] == default_pid or any(x["portfolioId"] == b["portfolioId"] for x in books):
-                continue
-            books.append(b)
-        out["books"] = [{"portfolioId": b["portfolioId"], "label": b["label"], "overrides": b["overrides"]} for b in books]
+        books = [{"portfolioId": default_pid, "label": "", "role": "control", "overrides": {}}]
+        # the map is validated AS A WHOLE against the live portfolios: invalid = no experiment plan is minted, the
+        # errors are reported, the default book still gets its baseline plan
+        v = validate_experiments(s, portfolio_lookup=self.engine.positions.portfolio)
+        if v["enabled"] and v["errors"]:
+            out["invalidExperiments"] = list(v["errors"])
+            out["failed"].append("experiments: invalid configuration — no experiment plan minted: " + "; ".join(v["errors"]))
+        elif v["enabled"]:
+            if v["control"] and v["control"] != default_pid:
+                out["failed"].append(f"experiments: the designated control {v['control']} is not the default book {default_pid} — "
+                                     "set techniques.team2.default_portfolio to the control before activation; no experiment plan minted")
+            else:
+                for b in v["books"]:
+                    if b["portfolioId"] != default_pid and not any(x["portfolioId"] == b["portfolioId"] for x in books):
+                        books.append(b)
+        out["books"] = [{"portfolioId": b["portfolioId"], "label": b["label"], "role": b.get("role"), "overrides": b["overrides"]} for b in books]
         # F41: one armed plan per symbol per session. The job is weekday-gated, not
         # trading-day-gated, so a weekday HOLIDAY runs it again for the same next session
         # (Fri 17:00 and Labor Day 17:00 both plan the Tuesday) — and each run minted AND
@@ -222,16 +249,68 @@ class Team2Service:
             already |= {(r.symbol, r.portfolio_id) for r in rows}
         except Exception:  # noqa: BLE001
             log.exception("team2 nightly: could not read the day's armed rows")
+            rows = []
+        # Transition safety (review of 41ec565): plans for this session armed on books OUTSIDE the current set (the
+        # previous default book after the default moved to the Control) would trade as an unreported fourth book.
+        # Inventory them; without `force` nothing new is minted for the experiments; with `force` a plan WITHOUT
+        # exposure is retired (its rows and history stay) and a book WITH exposure is PAUSED (entries and adds off,
+        # its positions still managed by their plan) — never flattened, never erased.
+        in_set = {b["portfolioId"] for b in books}
+        outside: list[dict] = []
+        for ap in list(getattr(self.runner, "_armed", {}).values()) if self.runner is not None else []:
+            if ap.plan_for == for_date and ap.config.portfolio_id not in in_set:
+                exposure = any(t.status in ("fired", "submitting", "working", "open") or t.pending_exit_qty > 1e-9 for t in ap.trades.values())
+                outside.append({"runId": ap.run_id, "symbol": ap.symbol, "portfolioId": ap.config.portfolio_id, "exposure": exposure})
+        if outside:
+            out["outsideBooks"] = outside
+            if len(books) > 1 and not force:
+                out["failed"].append(f"experiments: {len(outside)} armed plan(s) for {for_date} on other books ({sorted({o['portfolioId'] for o in outside})}); "
+                                     "not minting experiment plans — run again with force to retire (no exposure) or pause (exposure) them")
+                books = books[:1]
+            elif force:
+                # PR #168 review: every step is VERIFIED; an exception, a false result or an unconfirmed state is a
+                # transition failure — reported, exposure left under its plan, and the dependent experiment minting
+                # does not happen (the old book must never trade beside the new ones while the receipt says otherwise)
+                transition_failed: list[str] = []
+                for o in outside:
+                    if o["exposure"]:
+                        eng = self.engine
+                        try:
+                            if not hasattr(eng, "pause_book"):
+                                raise RuntimeError("engine has no book pause")
+                            paused_before = eng.halt.book_paused(o["portfolioId"]) if hasattr(eng, "halt") else None
+                            if not paused_before:
+                                rec = await eng.pause_book(o["portfolioId"], f"experiment transition: plan {o['runId']} ({o['symbol']}) has exposure on a book outside "
+                                                           "the experiment set — no new entries or adds; positions stay managed", source="team2", label="team2-transition")
+                                if not rec:
+                                    raise RuntimeError("pause_book returned no record")
+                            if hasattr(eng, "halt") and not eng.halt.book_paused(o["portfolioId"]):
+                                raise RuntimeError("the book does not read as paused after the pause")
+                            out.setdefault("pausedOutside", []).append(o)
+                        except Exception as exc:  # noqa: BLE001
+                            transition_failed.append(f"pause of book {o['portfolioId']} (plan {o['runId']}, exposure kept under its plan) failed: {exc}")
+                    else:
+                        try:
+                            ok = await self.runner.disarm(o["runId"], reason="retired: its book left the experiment set (no exposure)", flatten=False)
+                            if not ok:
+                                raise RuntimeError("disarm returned false")
+                            if o["runId"] in getattr(self.runner, "_armed", {}):
+                                raise RuntimeError("plan still armed after disarm")
+                            out.setdefault("retiredOutside", []).append(o)
+                        except Exception as exc:  # noqa: BLE001
+                            transition_failed.append(f"retirement of plan {o['runId']} on book {o['portfolioId']} failed: {exc}")
+                if transition_failed:
+                    out["transitionFailed"] = transition_failed
+                    out["failed"].append("experiments: transition NOT confirmed — no experiment plan minted: " + "; ".join(transition_failed))
+                    books = books[:1]
         for sym in symbols:
           for book in books:
             pid = book["portfolioId"]; tag = f"{sym}" + (f" [{book['label']}]" if book["label"] else "")
-            if book["label"]:
+            if book.get("role") != "control":
+                # belt and braces on top of the schema: an experiment book is a Practice (sim) book, label or not
                 pf = self.engine.positions.portfolio(pid) if pid else None
-                if pf is None or str(pf.get("kind")) != "sim":
-                    out["failed"].append(f"{tag}: experiment book {pid} is not a Practice (sim) book — never real money; not minted")
-                    continue
-                if book.get("refused"):
-                    out["failed"].append(f"{tag}: override keys refused {book['refused']} (only size_full / no_trade_zone may differ); not minted")
+                if pf is None or str(pf.get("kind")) != "sim" or bool(pf.get("archived")):
+                    out["failed"].append(f"{tag}: experiment book {pid} is not an unarchived Practice (sim) book — never real money; not minted")
                     continue
             key = (sym, pid)
             if key in already and not force:
@@ -239,17 +318,30 @@ class Team2Service:
                 continue
             if key in already and force and self.runner is not None:
                 # a forced re-plan REPLACES the symbol's plan for that session on that book — never a second armed
-                # plan that would trade the day twice (post-close 2026-09-04: force added three duplicates)
+                # plan that would trade the day twice (post-close 2026-09-04: force added three duplicates) — and
+                # never a plan that still manages exposure (review of 41ec565): that plan stays, the replan is refused
+                blocked = False
                 for ap in [a for a in list(self.runner._armed.values())
                            if a.symbol == sym and a.plan_for == for_date and a.config.portfolio_id == pid]:
-                    with contextlib.suppress(Exception):
-                        await self.runner.disarm(ap.run_id, reason="replaced by a forced re-plan", flatten=False)
-                    out.setdefault("replaced", []).append(ap.run_id)
-            rules = rules_for_book(s, pid)
+                    if any(t.status in ("fired", "submitting", "working", "open") or t.pending_exit_qty > 1e-9 for t in ap.trades.values()):
+                        out["failed"].append(f"{tag}: plan {ap.run_id} has unresolved exposure — not replaced (its positions stay managed)")
+                        blocked = True
+                        continue
+                    try:
+                        ok = await self.runner.disarm(ap.run_id, reason="replaced by a forced re-plan", flatten=False)
+                        if not ok or ap.run_id in getattr(self.runner, "_armed", {}):
+                            raise RuntimeError("disarm not confirmed")
+                        out.setdefault("replaced", []).append(ap.run_id)
+                    except Exception as exc:  # noqa: BLE001 - PR #168 review: an unconfirmed replacement is a failure, never a second plan
+                        out["failed"].append(f"{tag}: replacement of plan {ap.run_id} failed ({exc}) — not re-planned")
+                        blocked = True
+                if blocked:
+                    continue
+            rules = apply_overrides(rules_from_settings(s), book["overrides"]) if book.get("role") != "control" else rules_from_settings(s)
             try:
                 r = await self.mint_plan_run(sym, for_date, rules=rules,
-                                             experiment=({"label": book["label"], "portfolioId": pid, "overrides": book["overrides"]}
-                                                         if book["label"] else None))
+                                             experiment=({"label": book["label"], "role": book["role"], "portfolioId": pid,
+                                                          "overrides": book["overrides"]} if book.get("role") != "control" else None))
             except Exception as exc:  # noqa: BLE001
                 log.exception("team2 nightly plan failed for %s", tag)
                 out["failed"].append(f"{tag}: {exc}")
@@ -367,7 +459,7 @@ class Team2Service:
                 result["plan"] = dict(ap.plan)
                 run.result = result
                 cfg = dict(run.config or {})
-                cfg["thresholds"] = rules_for_book(self.engine.settings, ap.config.portfolio_id).to_dict()   # the BOOK's rules (2026-09-15)
+                cfg["thresholds"] = (self.runner.rules_for(ap) if self.runner is not None else rules_for_book(self.engine.settings, ap.config.portfolio_id)).to_dict()   # the plan's FROZEN rules (2026-09-15)
                 run.config = cfg
                 await session.commit()
         except Exception:  # noqa: BLE001
