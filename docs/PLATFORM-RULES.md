@@ -635,6 +635,14 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- **2026-09-16 · Reviewed source and process identity remain separate.** Integrating
+  a desk's previously deployed branch into main preserves the launch-bound build
+  helper. A tolerant health response with build `unknown` prevents a missing-helper
+  500 but is not verified deployment identity. Preserve unrelated dirty research
+  files for their owner; do not commit or discard them to satisfy a clean-source
+  guard. Cartel's current handoff documents full-artifact and restoration checks.
+
+
 - **2026-09-15 · Cartel profitability research has no trading authority.** The
   Practice collection switch and bounded pool controls live under
   `techniques.options_cartel.profitability_research`. Source/policy-frozen research

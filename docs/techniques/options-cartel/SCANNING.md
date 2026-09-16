@@ -19,3 +19,5 @@ Research scanning is non-executing. Recovery for existing Cartel managed positio
 Schedule dispatch success, a completed research run, a saved plan and a filled order are separate evidence. Persisted job outcomes can contain partial failures. Restart behavior for automatic preparation is documented in DAILY-PREPARATION.md; do not apply its lease/auto-resume rules indiscriminately to selected-symbol research jobs.
 
 Implementation: `scans.py`, `scan_tasks.py`, `jobs.py`, `preparation.py`, `position_adapter.py`, `catchup.py`. Verification examples live in the scan/recovery/API and position tests. Historical UI and preview observations are not current runtime health checks.
+
+Validation also contains the [prospective profitability panel](PROFITABILITY-RESEARCH.md). It reads a pool frozen by daily preparation; it is not a selected-symbol scan or an executable arming route.
