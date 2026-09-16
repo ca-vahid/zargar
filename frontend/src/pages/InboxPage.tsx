@@ -746,6 +746,30 @@ function ProposalCard({ p }: { p: Proposal }) {
             ? ` (analyst: ${fmtMoney(plan?.originalStop ?? rp?.originalStop)})` : ""}</b>
           <span>quote</span>
           <b>{(plan?.quoteSource ?? rp?.quote?.source) ?? "none"}{(plan?.quoteAgeS ?? rp?.quote?.ageS) != null ? ` · ${Math.round(plan?.quoteAgeS ?? rp?.quote?.ageS)}s old` : ""}{(plan?.quoteDelayed ?? rp?.quote?.delayed) ? " · delayed" : ""}</b>
+          {(() => {
+            const ec = plan?.execCost ?? rp?.execCost;
+            if (!ec) return null;
+            const known = ec.status === "known";
+            return (<>
+              <span>round trip now</span>
+              <b className={known ? "" : "muted"} title={known
+                ? `buy at the ask, sell at the bid immediately, plus both sides' fees: spread $${fmtMoney(ec.spread, 2)} (${ec.spreadPerUnit} per unit) + entry fees $${fmtMoney(ec.entryFees, 2)} + exit fees $${fmtMoney(ec.exitFees, 2)} on ${ec.qty} × ${ec.multiplier}; ${ec.feeBasis}. Not expected profit; the spread is charged once here.`
+                : `unknown: ${(ec.reasons ?? []).join("; ")}`}>
+                {known
+                  ? `$${fmtMoney(ec.roundTrip, 2)} (${(ec.costShareOfPurchase * 100).toFixed(1)}% of $${fmtMoney(ec.purchaseValue, 0)}) · bid ${ec.bid} / ask ${ec.ask}${ec.bidSize != null && ec.askSize != null ? ` · size ${ec.bidSize}×${ec.askSize}` : " · size unknown"}${ec.quoteAgeS != null ? ` · ${Math.round(ec.quoteAgeS)}s` : ""}`
+                  : `unknown (${ec.quoteStatus ?? "no quote"})`}
+              </b>
+            </>);
+          })()}
+          {(plan?.eventContext ?? p.context?.eventContext) && (() => {
+            const ev = plan?.eventContext ?? p.context?.eventContext;
+            return (<>
+              <span>event</span>
+              <b className={ev.status === "event-day" ? "" : "muted"} title="Verified macro-event label (official calendar, verification time). Awareness only - not a gate, not a direction.">
+                {ev.label}
+              </b>
+            </>);
+          })()}
           {(plan?.payoff ?? rp?.payoff)?.scenarios && (() => {
             const po = plan?.payoff ?? rp?.payoff;
             const sc = po.scenarios;

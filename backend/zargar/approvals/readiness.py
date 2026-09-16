@@ -175,6 +175,8 @@ def plan_summary(pdict: dict, rp: dict | None, *, limit: float | None, qty: floa
         "adjustments": list(rp.get("decisions") or []),
         "estimatorVersion": rp.get("estimatorVersion"),
         "payoff": rp.get("payoff") or None,
+        "execCost": rp.get("execCost") or None,           # TMR-02 diagnostic (never in the fingerprint)
+        "eventContext": ctx.get("eventContext") or None,  # TMR-01 label (never in the fingerprint)
         "multiplier": mult,
     }
 

@@ -160,6 +160,16 @@ server-side and the result rides on `extraction.analyst.expression` / `.payoff`;
 `payoff`, shown on the card. Tools: `zargar.tools.tip_feasibility replay`,
 `zargar.tools.tip_payoff_report`. Code: `techniques/tip/feasibility.py`, `payoff.py`.
 
+## Event context + execution costs (TMR-01/02, 2026-09-16, advisory only)
+
+`techniques/tip/events.py` labels every decision with the VERIFIED macro-event context (Tips-scoped
+`techniques.tip.verified_events` with official URL + verification time; unknown coverage is never
+"no event"; a replay sees only facts verified before its instant) - analyst header, record, cards,
+cohort and hold-study rows. `techniques/tip/execcost.py` prices the instantaneous round trip on the
+qualified quote (spread once + both sides' fees, quoted size, cost share of purchase; unknown on
+stale/crossed/missing evidence) on the tools, the risk plan and the card, and journals one
+`TipFillVsQuote` per realised fill. Neither gates, sizes or times anything.
+
 ## Research studies (PROF-03/05, 2026-09-15, observation only)
 
 `tip_hold_snapshots` (jobs `tip_hold_snapshot` 15:50 ET / `tip_hold_next_open` 09:36 ET; knob
