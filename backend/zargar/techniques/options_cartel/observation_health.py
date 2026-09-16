@@ -40,6 +40,14 @@ def recovery_record(state, *, now, reason, added):
         'previousObservedMinute': state.get('lastMinute')}][-100:]
 
 
+def plan_coverage(plan, state, now):
+    """A future plan owes no minutes from the day it happened to be armed."""
+    first, last = plan.first_session.isoformat(), plan.last_session.isoformat()
+    day = session_date(now) if state.get('phase') == 'waiting' else state.get('day') or session_date(now)
+    day = min(last, max(first, day))
+    return coverage(state, now, day=day)
+
+
 async def repair_gaps(runtime, *, load=load_session_context):
     """One owned task, at most five plans per pass, at most once/5min per plan."""
     now = runtime.clock()
@@ -51,7 +59,10 @@ async def repair_gaps(runtime, *, load=load_session_context):
             break
         if cached['status'] != 'armed' or cached['state']['phase'] != 'waiting':
             continue
-        health = coverage(cached['state'], now, day=session_date(now))
+        plan = runtime.plans[rid]
+        if not plan.first_session.isoformat() <= session_date(now) <= plan.last_session.isoformat():
+            continue
+        health = plan_coverage(plan, cached['state'], now)
         if not (health['overdueMissingMinutes'] or (runtime.plans[rid].entry.require_exchange_bars and health['untrustedMinutes'])) or now-cached['state'].get('lastGapRepairAt', 0) < 300_000:
             continue
         attempted += 1
