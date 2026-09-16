@@ -576,3 +576,9 @@ Runs on the final commit: `tests/test_pr147_observation_review.py` + `test_prof1
 Flow desk, not touched here); `test_tip_activation.py` (attaches the runner with the calendar-relative
 registration) 4 passed. Merged, not deployed (live 5b7542d); the affected samples are not to be used
 for any holding or model-context decision until the corrections are live and verified.
+
+**R147 deployment record (2026-09-15 17:53 ET):** the Options Cartel desk's 0.7.89 deploy (build
+`a53c645`, restart-check safe, 51 plans / 3 managed positions restored) carries PR #150 `bf8b070`
+(and PR #147 `f41c0a3`, PR #145 `d5034a2` - merge-base verified). The hold study's next capture
+runs under the corrected protocol: pre-close at close - 10 min, next-open from 09:30 on the
+actual sample time. The affected 2026-09-15 samples stay excluded from any decision.
