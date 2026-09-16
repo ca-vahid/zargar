@@ -26,7 +26,9 @@ from ..execution.planrunner import (  # noqa: F401 — re-exported for existing 
 from ..marketstructure.tracker import TriggerTracker
 from ..models import TechniqueSetup
 from .analysis import facts_for_prompt
-from .entry_decision import DECISION_VERSION, evaluate_entry, policy_from_thresholds, snapshot_from_tracker
+from dataclasses import asdict as _asdict
+
+from .entry_decision import DECISION_VERSION, evaluate_entry, normalize_fire_mode, policy_from_thresholds, snapshot_from_tracker
 from .plans import analysis_from_trigger
 from .rulebook import ET, session_bounds, session_date, session_window
 
@@ -101,11 +103,7 @@ class PlanArmer(PlanRunner):
     # field that cannot resurrect the awaited critic under `deterministic`. `legacy` is an explicit, journaled
     # rollback to the old reviewer branch (veto / momentum_only / advisory semantics unchanged there).
     def fire_review_policy(self, ap) -> str:
-        raw = self.engine.settings.get("techniques.enhanced_market.fire_decision_mode", "deterministic")
-        mode = str(raw or "deterministic").strip().lower()
-        if mode in ("legacy_blocking", "critic"):
-            mode = "legacy"
-        return mode if mode in ("deterministic", "legacy") else f"invalid:{raw}"
+        return normalize_fire_mode(self.engine.settings.get("techniques.enhanced_market.fire_decision_mode", "deterministic"))
 
     def fire_evidence_mode(self, ap) -> str:
         raw = str(self.engine.settings.get("techniques.enhanced_market.fire_evidence_mode", "off") or "off").strip().lower()
@@ -116,9 +114,32 @@ class PlanArmer(PlanRunner):
         no chart, no clock inside the decision. Returns the versioned decision dict the runner journals."""
         snapshot = snapshot_from_tracker(attempt_id=attempt_id, run_id=ap.run_id, plan=ap.plan or {}, plan_status=ap.status,
                                          trigger_id=tid, tracker=tr, signal_bar=trade.signal_bar,
-                                         received_ts=(trade.timing or {}).get("receivedTs"), decided_ts=None)
-        policy = policy_from_thresholds(self.technique.thresholds(), enforce_windows=self.entry_windows_enforced())
-        return evaluate_entry(snapshot, policy).to_dict()
+                                         received_ts=(getattr(trade, "timing", None) or {}).get("receivedTs"), decided_ts=None)
+        # DE-01 / DR-03: judge the transition under the RULES THAT FIRED IT - the tracker's own threshold object and
+        # window-enforcement flag, never a fresh settings read (an armed tracker keeps the rule set it was built with)
+        policy = policy_from_thresholds(tr.thresholds, enforce_windows=bool(getattr(tr, "enforce_windows", True)))
+        decision = evaluate_entry(snapshot, policy).to_dict()
+        # DE-05: the decision travels WITH its frozen inputs (serialised once; the evidence command may only use these)
+        decision["snapshot"] = _asdict(snapshot)
+        decision["policy"] = {"mode": policy.mode, "ruleVersion": policy.rule_version, "thresholds": dict(policy.thresholds),
+                              "enforceWindows": policy.enforce_windows}
+        return decision
+
+    def fire_evidence_capture(self, ap, tid: str, tr: TriggerTracker, trade: Trade) -> list[dict] | None:
+        """DE-05: raw source bars for the optional later evidence, frozen at decision time from the engine's in-memory
+        bar cache (no I/O, no rendering, no model): the last 240 completed 1m bars whose close is at or before the
+        signal bar's close. None when no bar cache is available (the evidence stays `unavailable`, never fabricated)."""
+        bars_api = getattr(getattr(self.engine, "bars", None), "bars", None)
+        if bars_api is None or not trade.signal_bar:
+            return None
+        close_ts = int(trade.signal_bar["ts"]) + int((trade.timing or {}).get("barCloseTs", trade.signal_bar["ts"] + 60_000) - trade.signal_bar["ts"])
+        try:
+            bars = bars_api(ap.symbol, "1m", limit=600, include_forming=False)
+        except TypeError:
+            bars = bars_api(ap.symbol, "1m", limit=600)
+        out = [{"ts": int(b.ts), "open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": int(b.volume or 0),
+                "source": getattr(b, "source", None)} for b in bars if int(b.ts) + 60_000 <= close_ts]
+        return out[-240:] if out else None
 
     async def review_fire(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, trade: Trade,
                           judgement: FireJudgement) -> tuple[str, float, dict | None]:
@@ -209,6 +230,18 @@ class PlanArmer(PlanRunner):
                           judgement: FireJudgement) -> None:
         """The setup row (always, so the run shows what fired)."""
         a = judgement.extra
+        # DE-02: the EXECUTED decision owns the persisted setup. A deterministic refusal/deferral is written as such
+        # (verdict no_setup, the reason codes on the record); the pre-gate analysis is not persisted as "setup".
+        d = getattr(trade, "decision", None)
+        if d and d.get("verdict") in ("refuse", "defer"):
+            a.verdict = "no_setup"
+            a.confidence = 0.0
+            codes = ", ".join(d.get("reasonCodes") or [])
+            a.rationale = f"deterministic {d['verdict']} ({d.get('decisionVersion')}): {codes} | " + (a.rationale or "")
+            try:
+                a.no_trade_reasons = list(a.no_trade_reasons or []) + [f"deterministic-entry: {c}" for c in (d.get("reasonCodes") or [])]
+            except Exception:
+                pass
         judgement.contract = a.to_contract()          # after the reviewer: the verdict is final here
         await self.technique._persist_setup(ap.run_id, ap.symbol, a, judgement.contract, None, grounded=True)
         setups = (await self.technique.get_run(ap.run_id) or {}).get("setups") or []

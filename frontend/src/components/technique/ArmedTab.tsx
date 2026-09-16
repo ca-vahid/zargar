@@ -217,10 +217,12 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           <button className="link-btn" onClick={() => openRun(a.runId)}>open plan</button>
           <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "hide log" : "log"}</button>
           {a.effectiveFireDecisionMode && <span className="muted small" title={a.decisionVersion || ""}>
-            {a.effectiveFireDecisionMode === "deterministic" ? "deterministic entry" : (a.criticEffective ? "critic on (legacy)" : "legacy, no critic")}
+            {a.effectiveFireDecisionMode === "deterministic" ? "deterministic entry"
+              : a.effectiveFireDecisionMode === "legacy" ? (a.criticEffective ? "critic on (legacy)" : "legacy, no critic")
+              : `policy error: ${a.effectiveFireDecisionMode}`}
             {a.fireEvidenceMode === "after_close" ? " · AI review after close" : ""}
           </span>}
-          <span className="muted small tq-head-right">risk {a.config.riskPct}% · {a.config.instrument === "options" && (a.config as any).premiumBudget ? `budget $${Number((a.config as any).premiumBudget).toLocaleString()}` : `max ${a.config.maxQty} sh`} · critic {(a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off"} · {a.config.management === "durable" ? "managed swing exits" : `flatten ${a.config.flattenMinutesBeforeClose}m before close`}</span>
+          <span className="muted small tq-head-right">risk {a.config.riskPct}% · {a.config.instrument === "options" && (a.config as any).premiumBudget ? `budget $${Number((a.config as any).premiumBudget).toLocaleString()}` : `max ${a.config.maxQty} sh`} · critic {a.effectiveFireDecisionMode ? (a.effectiveFireDecisionMode === "deterministic" ? "n/a (deterministic entry)" : (a.criticEffective ? "on" : "off")) : ((a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off")} · {a.config.management === "durable" ? "managed swing exits" : `flatten ${a.config.flattenMinutesBeforeClose}m before close`}</span>
         </div>
         {open && (
           <div className="tq-armed-log">

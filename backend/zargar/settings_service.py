@@ -598,6 +598,37 @@ def _technique_override_canonical(key: str) -> str | None:
     return None
 
 
+class ReadOnlySettings:
+    """A NON-MUTATING projection of stored settings + DEFAULTS with the same alias / technique-override resolution as
+    `SettingsService.get` (DE-03, 2026-09-15): preview and report commands read through this and can never migrate,
+    commit or journal. Built from rows already fetched inside a read-only transaction."""
+
+    def __init__(self, rows) -> None:
+        merged = copy.deepcopy(DEFAULTS)
+        by_key = {row.key: row for row in rows}
+        for row in rows:
+            if row.key in DEFAULTS or row.key.startswith("system.") or _technique_override_canonical(row.key) is not None:
+                merged[row.key] = (row.value or {}).get("v")
+        for legacy, canon in ALIASES.items():                       # the resolution `load()` would apply, in memory only
+            if legacy in by_key and canon not in by_key:
+                merged[canon] = (by_key[legacy].value or {}).get("v")
+        raw_mode = merged.get("trading.mode")
+        merged["trading.mode"] = MODE_ALIASES.get(raw_mode, raw_mode)
+        self._cache = merged
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._cache.get(ALIASES.get(key, key), default)
+
+    def all(self) -> dict[str, Any]:
+        return dict(self._cache)
+
+
+async def read_only_settings(session) -> "ReadOnlySettings":
+    """Fetch the settings rows through `session` (the caller opens it read-only) and project them without writes."""
+    rows = (await session.execute(select(Setting))).scalars().all()
+    return ReadOnlySettings(rows)
+
+
 class SettingsService:
     def __init__(self, session_factory: async_sessionmaker, bus: Bus, journal: Journal) -> None:
         self._sf = session_factory

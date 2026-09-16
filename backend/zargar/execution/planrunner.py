@@ -25,6 +25,8 @@ order path exists: every order goes through `OrderManager.place()` →
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import contextlib
 import datetime as dt
 import logging
@@ -2558,6 +2560,19 @@ class PlanRunner(SessionListener):
         self._publish(ap, "rolled")
 
     # ---------------------------------------------------------------- fire -> execute
+    @staticmethod
+    def _trigger_tf_ms(ap: "ArmedPlan") -> int:
+        """The plan's trigger timeframe in ms (DE-05: the signal bar's close comes from its real timeframe)."""
+        tf = str((ap.plan or {}).get("triggerTf") or "1m").strip().lower()
+        try:
+            if tf.endswith("m"):
+                return max(1, int(tf[:-1])) * 60_000
+            if tf.endswith("h"):
+                return max(1, int(tf[:-1])) * 3_600_000
+        except ValueError:
+            pass
+        return 60_000
+
     def _mint_trade(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int) -> Trade:
         window = session_window(bar.ts)
         cfg = ap.config
@@ -2568,7 +2583,7 @@ class PlanRunner(SessionListener):
                       multiplier=100.0 if cfg.instrument == "options" else 1.0)
         trade.signal_bar = {"ts": int(bar.ts), "open": bar.open, "high": bar.high, "low": bar.low, "close": bar.close,
                             "volume": bar.volume, "source": getattr(bar, "source", None)}
-        trade.timing = {"barTs": int(bar.ts), "barCloseTs": int(bar.ts) + 60_000, "receivedTs": now_ms()}
+        trade.timing = {"barTs": int(bar.ts), "barCloseTs": int(bar.ts) + self._trigger_tf_ms(ap), "receivedTs": now_ms()}
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid} {tr.kind} fired at {trade.entry:.2f} ({window})", trigger=tid, window=window)
         return trade
@@ -2682,12 +2697,21 @@ class PlanRunner(SessionListener):
             trade.critic_disposition = "deterministic"
             j.critic = None; j.verdict = "setup" if decision["verdict"] == "allow" else "refused"
             if journal:
+                frozen_bars = None
+                try:
+                    frozen_bars = self.fire_evidence_capture(ap, tid, tr, trade)      # raw bars only; never renders, never a model
+                except Exception:
+                    frozen_bars = None
+                bars_hash = (hashlib.sha256(json.dumps(frozen_bars, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+                             if frozen_bars else None)
                 with contextlib.suppress(Exception):
                     await self.engine.journal.append(ev.TECHNIQUE_ENTRY_DECISION, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "kind": tr.kind, "direction": tr.direction,
                         "window": window, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "fireDecisionMode": policy,
                         "fireEvidenceMode": str(self.fire_evidence_mode(ap) or "off"), "decisionMs": decide_ms,
                         "timing": dict(trade.timing), "legacyUseCritic": bool(cfg.use_critic),
+                        "signalBarClose": trade.timing.get("barCloseTs"), "frozenBars": frozen_bars, "frozenBarsHash": bars_hash,
+                        "frozenBarsCount": (len(frozen_bars) if frozen_bars else 0),
                         **decision}, aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
             if decision["verdict"] != "allow":
                 # a deterministic refusal/deferral is ITS OWN disposition: never `critic_killed`, never downgraded by an
@@ -3785,6 +3809,10 @@ class PlanRunner(SessionListener):
         """The technique's app-owned decision for a deterministic fire attempt: a versioned dict with at least
         `verdict` (allow | refuse | defer), `decisionId`, `decisionVersion`, `reasonCodes`, `inputHash`. Pure inside
         (no I/O, no model, no clock). None = the technique has no deterministic contract (the runner refuses)."""
+        return None
+
+    def fire_evidence_capture(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade") -> list[dict] | None:
+        """Hook (DE-05): raw source bars frozen at decision time for the optional later evidence. Default: none."""
         return None
 
     def fire_policy_view(self, ap: "ArmedPlan") -> dict:

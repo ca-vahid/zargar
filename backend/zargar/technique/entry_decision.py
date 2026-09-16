@@ -60,19 +60,21 @@ class EntrySnapshot:
     trigger_id: str
     family: str                               # tracker kind
     direction: str                            # long | short
-    entry: float | None
+    entry: float | None                       # the SAVED planned entry (geometry is validated against this)
     stop: float | None
     targets: tuple[float, ...]
-    tracker_status: str                       # the tracker's own status at the attempt
-    fired_ts: int | None                      # the completed bar the tracker fired on
-    fired_window: str | None
-    signal_bar: dict | None                   # the firing bar {ts, open, high, low, close, volume}
-    fired_event: dict | None                  # the tracker's `fired` note (rel, rangeBreak, loose, confirmedAfter)
-    tracker_events: tuple[dict, ...]          # the tracker's notes (bounded)
-    gap_unchecked: bool
-    gap_day: bool
-    failed_breaks: int
-    continuation: bool                        # the trigger was re-aimed by the gap-continuation rule
+    observed_entry: float | None = None       # the tracker's fill proxy (break close / touch level) - separate from the saved entry
+    candidate_window: str | None = None       # break families: the window the tracker accepted the candidate in
+    tracker_status: str = "waiting"           # the tracker's own status at the attempt
+    fired_ts: int | None = None               # the completed bar the tracker fired on
+    fired_window: str | None = None
+    signal_bar: dict | None = None            # the firing bar {ts, open, high, low, close, volume}
+    fired_event: dict | None = None           # the tracker's `fired` note (rel, rangeBreak, loose, confirmedAfter)
+    tracker_events: tuple[dict, ...] = ()     # the tracker's notes (bounded)
+    gap_unchecked: bool = False
+    gap_day: bool = False
+    failed_breaks: int = 0
+    continuation: bool = False                # the trigger was re-aimed by the gap-continuation rule
     received_ts: int | None = None            # when the app received the bar (ms)
     decided_ts: int | None = None             # when the caller froze the snapshot (ms) - NOT read here
     level_provenance: dict | None = None      # saved level facts (touches, sources, builtFromSession)
@@ -175,8 +177,11 @@ def evaluate_entry(snapshot: EntrySnapshot, policy: EntryPolicy) -> EntryDecisio
     if e is None or s is None or not tg:
         req("geometry", None, "geometry_unknown_required", entry=snapshot.entry, stop=snapshot.stop, targets=list(snapshot.targets))
     else:
+        # DE-01: the SAVED plan geometry (saved entry / stop / targets) - the observed trigger price is recorded
+        # beside it and judged by the existing downstream checks (never-chase, quantity-dependent R2, quotes)
         side_ok = (s < e and all(x > e for x in tg)) if long else (s > e and all(x < e for x in tg))
-        req("geometry", side_ok, "geometry_invalid", entry=e, stop=s, targets=tg, direction=snapshot.direction)
+        req("geometry", side_ok, "geometry_invalid", entry=e, stop=s, targets=tg, direction=snapshot.direction,
+            observedEntry=snapshot.observed_entry)
     # ---- the tracker's own transition (never a kind label)
     fired = snapshot.tracker_status == "fired" and snapshot.fired_ts is not None and snapshot.fired_event is not None
     req("tracker_fired", fired, "trigger_not_fired", trackerStatus=snapshot.tracker_status, firedTs=snapshot.fired_ts,
@@ -190,12 +195,14 @@ def evaluate_entry(snapshot: EntrySnapshot, policy: EntryPolicy) -> EntryDecisio
         intact = (close >= s) if long else (close <= s)
         req("stop_intact", intact, "stop_invalidated", close=close, stop=s)
     # ---- window (the tracker already refused out-of-window touches; record the fired window)
-    if snapshot.fired_window is None:
+    # DE-01: the shared tracker already gated eligibility where the rule says (the touch bar for bounces /
+    # rejections, the CANDIDATE bar for break families - the confirmation bar may complete later). The decision
+    # records that evidence and adds NO second window gate; an unfired tracker is refused above.
+    if snapshot.fired_window is None and fired:
         req("window", None, "window_unknown_required")
     else:
-        windows = tuple(t.get("windows") or ()) if isinstance(t.get("windows"), (list, tuple)) else ()
-        w_ok = (not policy.enforce_windows) or (not windows) or (snapshot.fired_window in windows) or snapshot.fired_window in ("prime_open", "prime_close")
-        req("window", w_ok, "window_ineligible", firedWindow=snapshot.fired_window, enforced=policy.enforce_windows)
+        req("window", bool(fired), "window_ineligible", firedWindow=snapshot.fired_window, candidateWindow=snapshot.candidate_window,
+            enforced=policy.enforce_windows, gatedBy=("tracker_candidate" if snapshot.family in ("breakout", "breakdown", "wedge_break") else "tracker_touch"))
     # ---- gap rules: judged on the open or explicitly unchecked (kept as today, recorded)
     checks.append(EntryCheck("gap", "not_applicable" if snapshot.gap_unchecked else "pass", DIAGNOSTIC,
                              {"gapUnchecked": snapshot.gap_unchecked, "gapDay": snapshot.gap_day, "continuation": snapshot.continuation}))
@@ -301,7 +308,8 @@ def snapshot_from_tracker(*, attempt_id: str, run_id: str, plan: dict, plan_stat
         attempt_id=attempt_id, run_id=run_id, plan_id=run_id,
         plan_version=str((plan or {}).get("builtFromMs") or (plan or {}).get("builtFromSession") or "") + ":" + str((plan or {}).get("parentRunId") or ""),
         session=str((plan or {}).get("planFor") or ""), plan_status=plan_status, trigger_id=trigger_id, family=tracker.kind,
-        direction=tracker.direction, entry=_num(tracker.fill_price if tracker.fill_price is not None else tracker.entry), stop=_num(tracker.stop),
+        direction=tracker.direction, entry=_num(tracker.entry), stop=_num(tracker.stop), observed_entry=_num(tracker.fill_price),
+        candidate_window=next((ev.get("window") for ev in reversed(tracker.events) if ev.get("event") == "break_candidate"), None),
         targets=tuple(x for x in (_num(t.get("price")) for t in (trig.get("targets") or [])) if x is not None),
         tracker_status=tracker.status, fired_ts=tracker.fired_ts, fired_window=tracker.fired_window, signal_bar=signal_bar,
         fired_event=fired_event, tracker_events=tuple(tracker.events[-12:]), gap_unchecked=bool(tracker.gap_unchecked),
@@ -311,11 +319,24 @@ def snapshot_from_tracker(*, attempt_id: str, run_id: str, plan: dict, plan_stat
                           "basis": [t.get("basis") for t in (trig.get("targets") or [])]})
 
 
+FIRE_MODE_ALIASES = {"legacy_blocking": "legacy", "critic": "legacy", "llm": "legacy"}
+
+
+def normalize_fire_mode(raw) -> str:
+    """The ONE normaliser for `fire_decision_mode` (runner, preview, UI): strip/lower, legacy aliases -> legacy;
+    anything else is `invalid:<raw>` (the runner refuses on it, never a silent fallback)."""
+    mode = str(raw if raw is not None else "deterministic").strip().lower() or "deterministic"
+    mode = FIRE_MODE_ALIASES.get(mode, mode)
+    return mode if mode in ("deterministic", "legacy") else f"invalid:{raw}"
+
+
 def policy_from_thresholds(thresholds, *, enforce_windows: bool = True, mode: str = DECISION_MODE) -> EntryPolicy:
     """The effective EM thresholds as a plain dict (only the keys the v1 rules read, so the hash is stable)."""
     keys = ("volume_floor_mult", "volume_spike_mult", "followthrough_bars", "followthrough_required", "max_false_breaks",
             "level_tolerance_pct", "gap_void_r", "gap_day_pct", "gap_day_wait_minutes", "range_break", "gap_continuation_confirm",
-            "gap_through_continuation", "gap_day_continuation", "windows")
+            "gap_through_continuation", "gap_day_continuation", "windows",
+            # DE-01 / DR-03: the confirmation inputs that create the evidence (decisive candle, range break)
+            "decisive_body_ratio", "decisive_size_mult", "max_breakout_wick_ratio", "range_break_bars", "range_break_max_range_mult")
     snap = {}
     for k in keys:
         v = getattr(thresholds, k, None) if not isinstance(thresholds, dict) else thresholds.get(k)

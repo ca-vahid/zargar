@@ -279,7 +279,7 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                                  EM_BOOK, day0 - 3600_000, cutoff_ms)
         opt_fees = sorted(float(r["commission"] or 0) / float(r["qty"] or 1) for r in fee_rows if len(r["symbol"]) > 6 and r["qty"])
         fee_side = opt_fees[len(opt_fees) // 2] if opt_fees else 1.04
-        trades, refused = [], []
+        trades, refused, attempts = [], [], []       # attempts = the fire-attempt census from immutable events (DE-02)
         for a in armed:
             plan = a["plan"] if isinstance(a["plan"], dict) else json.loads(a["plan"] or "{}")
             state = a["state"] if isinstance(a["state"], dict) else json.loads(a["state"] or "{}")
@@ -299,10 +299,33 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                 level = ((t.get("level") or {}).get("price")) if isinstance(t.get("level"), dict) else t.get("levelPrice")
                 fire_bar = next((b for b in bars if int(b["ts"]) == int(fired_ts)), None) or next((b for b in bars if int(b["ts"]) == int(fired_ts) - 60000), None)
                 tp1 = (tr.get("targets") or [None])[0]
-                intent = next((p for _, ty, p in evs if ty == "TechniquePlanOrderIntent" and p.get("trigger") == tid), None)
-                fired_ev = next((p for _, ty, p in evs if ty == "TechniquePlanTriggerFired" and p.get("trigger") == tid), None) or {}
-                decision = fired_ev.get("decision") or {}
+                # DE-02: bind THIS attempt's events by decision identity (deterministic) or by the attempt's own time window
+                # (legacy: the fire event at/after this trade's firing bar) - never the first same-trigger event of the day
+                tdec = tr.get("decision") or {}
+                fired_evs = [(ts, p) for ts, ty, p in evs if ty == "TechniquePlanTriggerFired" and p.get("trigger") == tid]
+                intent_evs = [(ts, p) for ts, ty, p in evs if ty == "TechniquePlanOrderIntent" and p.get("trigger") == tid]
+
+                def _same_attempt(p):
+                    d = p.get("decision") or {}
+                    if tdec.get("decisionId"):
+                        return d.get("decisionId") == tdec.get("decisionId")
+                    return not d.get("decisionId")           # a legacy trade never claims a deterministic attempt's event
+
+                def _at_or_after_fire(ts):
+                    try:
+                        return int(ts.timestamp() * 1000) >= int(fired_ts) - 1
+                    except Exception:
+                        return True
+                cand = [p for ts, p in fired_evs if _same_attempt(p) and _at_or_after_fire(ts)]
+                fired_ev = cand[0] if cand else {}
+                icand = [p for ts, p in intent_evs if _same_attempt(p) and _at_or_after_fire(ts)]
+                intent = icand[0] if icand else None
+                decision = (fired_ev.get("decision") or tdec) or {}
                 policy_version = (decision.get("decisionVersion") or ("legacy-critic:" + str(fired_ev.get("criticMode") or "?") if fired_ev else "unknown"))
+                attempts.extend({"runId": a["run_id"], "symbol": a["symbol"], "trigger": tid, "policyVersion": ((p.get("decision") or {}).get("decisionVersion")
+                                                                                                    or "legacy-critic:" + str(p.get("criticMode") or "?")),
+                                 "decisionId": (p.get("decision") or {}).get("decisionId"), "disposition": p.get("decisionDisposition") or p.get("criticDisposition"),
+                                 "ts": ts} for ts, p in fired_evs if not any(x.get("trigger") == tid and x.get("ts") == ts for x in attempts))
                 td = next((p for _, ty, p in evs if ty == "TechniqueTargetDistance" and p.get("trigger") == tid and p.get("stage") == "fill"), None)
                 eid = tr.get("entryOrderId")
                 shadow = [p for _, ty, p in evs if ty == "TechniqueExitShadow" and p.get("trigger") == tid
@@ -375,7 +398,7 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                                 "underlyingProxy": underlying_proxy(bars, int(fired_ts), float(tr.get("entry") or 0), float(tr.get("stop") or 0), float(tp1), direction, cutoff_ms) if tp1 and tr.get("stop") else "unknown"})
                     refused.append(row)
         return {"version": VERSION, "date": date, "cutoff": cutoff, "feePerContractSide": fee_side, "trades": trades, "refused": refused,
-                "sourceLedgerRows": len(ledger)}
+                "attempts": [{k: v for k, v in x.items() if k != "ts"} for x in attempts], "sourceLedgerRows": len(ledger)}
     finally:
         await c.close()
 
@@ -420,8 +443,14 @@ def summarize(data: dict) -> dict:
     p03.sort(key=lambda e: (e["hurdlePct"] is None, -(e["hurdlePct"] or 0)))
     # execution-policy cohorts (deterministic-entry-v1 vs legacy critic): actual fills, refusals and net by policy version
     by_policy = defaultdict(lambda: {"attempts": 0, "fills": 0, "refused": 0, "net": 0.0, "open": 0, "refreshOk": 0, "refreshAttempted": 0})
+    census = data.get("attempts") or []
+    for x in census:
+        by_policy[x.get("policyVersion") or "unknown"]["attempts"] += 1
+    counted = {(x.get("trigger"), x.get("decisionId")) for x in census}
     for r in trades + refused:
-        b = by_policy[r.get("policyVersion") or "unknown"]; b["attempts"] += 1
+        b = by_policy[r.get("policyVersion") or "unknown"]
+        if not census or (r.get("trigger"), r.get("decisionId")) not in counted:
+            b["attempts"] += 1                        # a row without a census event (older records) still counts once
         if "filledQty" in r:
             b["fills"] += 1
             if r.get("closed"): b["net"] += r.get("netRealized") or 0
