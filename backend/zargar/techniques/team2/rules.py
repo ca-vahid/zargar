@@ -198,42 +198,142 @@ def rules_from_settings(settings) -> Team2Rules:
 __all__ = ["Team2Rules", "rules_from_settings", "SETTINGS_MAP", "SETTINGS_PREFIX"]
 
 
-# --- parallel Practice experiments (2026-09-15, review team's GO) -----------------------------------------------
-# `techniques.team2.experiments` = {"enabled": bool, "books": [{"portfolioId", "label", "overrides": {...}}]}.
-# ONLY these two rule fields may differ between books — the two isolated experiments (sizing cap, C1 conjunction).
-# Anything else in an override is refused (never applied, reported), so an experiment can never change C2, the
-# room rules, exits, adds or premium selection, and the shared `techniques.team2.*` settings remain the baseline
-# every book without an entry runs on.
-EXPERIMENT_OVERRIDE_KEYS = ("size_full", "no_trade_zone")
+# --- parallel Practice experiments (2026-09-15, review team's GO; schema per the review of 41ec565) ----------------
+# `techniques.team2.experiments` = {"enabled": bool, "control": <portfolioId>,
+#                                   "books": [{"portfolioId", "label", "role": "sizing" | "c1", "overrides": {...}}]}
+# One rule field per ROLE and nothing else: sizing -> size_full, c1 -> no_trade_zone. A book never carries both.
+# The shared `techniques.team2.*` settings remain the baseline the Control and every unlisted book run on. An invalid
+# configuration is invalid AS A WHOLE: nothing is applied, nothing is minted for an experiment, and the errors are
+# reported (`validate_experiments`) — never silently filtered into a different experiment.
+EXPERIMENT_ROLES = {"sizing": "size_full", "c1": "no_trade_zone"}
+EXPERIMENT_OVERRIDE_KEYS = tuple(EXPERIMENT_ROLES.values())
+_BOOK_KEYS = {"portfolioId", "label", "role", "overrides"}
+
+
+def _valid_value(role: str, value) -> str | None:
+    if role == "sizing":
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return "size_full must be a number"
+        return None if 0.0 < v < 1.0 else "size_full must be a cap strictly between 0 and 1 (the sizing experiment is 0.5)"
+    if role == "c1":
+        return None if value == "conjunction" else "no_trade_zone must be 'conjunction' for the C1 experiment"
+    return "unknown role"
+
+
+def validate_experiments(settings, *, portfolio_lookup=None) -> dict:
+    """Validate the map. Returns {"enabled", "control", "books": [valid books], "errors": [...]}. When enabled, any
+    error means the configuration is INVALID as a whole (callers apply nothing and report). `portfolio_lookup(pid)`
+    (a dict with `kind`/`archived`, or None) enables the Practice-only / existence / archived checks."""
+    exp = settings.get(SETTINGS_PREFIX + "experiments", None)
+    out = {"enabled": False, "control": "", "books": [], "errors": []}
+    if exp is None:
+        return out
+    if not isinstance(exp, dict):
+        out["errors"].append("experiments must be an object"); return out
+    out["enabled"] = bool(exp.get("enabled", False))
+    out["control"] = str(exp.get("control") or "")
+    if not out["enabled"]:
+        return out
+    errors = out["errors"]
+    unknown_top = sorted(k for k in exp if k not in ("enabled", "control", "books"))
+    if unknown_top:
+        errors.append(f"unknown keys {unknown_top}")
+    if not out["control"]:
+        errors.append("control portfolioId is required while experiments are enabled")
+    books = exp.get("books")
+    if not isinstance(books, list) or not books:
+        errors.append("books must be a non-empty list"); books = []
+    seen_pid, seen_role, seen_label = set(), set(), set()
+    valid: list[dict] = []
+    for i, b in enumerate(books):
+        tag = f"books[{i}]"
+        if not isinstance(b, dict):
+            errors.append(f"{tag}: must be an object"); continue
+        unknown = sorted(k for k in b if k not in _BOOK_KEYS)
+        if unknown:
+            errors.append(f"{tag}: unknown keys {unknown}")
+        pid = str(b.get("portfolioId") or ""); label = str(b.get("label") or ""); role = str(b.get("role") or "")
+        ov = b.get("overrides")
+        if not pid:
+            errors.append(f"{tag}: portfolioId is required")
+        if not label:
+            errors.append(f"{tag}: label is required")
+        if role not in EXPERIMENT_ROLES:
+            errors.append(f"{tag}: role must be one of {sorted(EXPERIMENT_ROLES)}")
+        if not isinstance(ov, dict) or not ov:
+            errors.append(f"{tag}: overrides must be a non-empty object")
+        else:
+            keys = sorted(ov)
+            if role in EXPERIMENT_ROLES and keys != [EXPERIMENT_ROLES[role]]:
+                errors.append(f"{tag}: role {role} may override exactly {{{EXPERIMENT_ROLES[role]}}}, got {keys}")
+            elif role in EXPERIMENT_ROLES:
+                why = _valid_value(role, ov[EXPERIMENT_ROLES[role]])
+                if why:
+                    errors.append(f"{tag}: {why}")
+            if set(keys) >= set(EXPERIMENT_OVERRIDE_KEYS):
+                errors.append(f"{tag}: C1 and the sizing cap are never combined in one book")
+        if pid and pid == out["control"]:
+            errors.append(f"{tag}: the control book cannot also be an experiment")
+        if pid in seen_pid:
+            errors.append(f"{tag}: duplicate portfolioId {pid}")
+        if role in seen_role:
+            errors.append(f"{tag}: duplicate role {role}")
+        if label in seen_label:
+            errors.append(f"{tag}: duplicate label {label}")
+        seen_pid.add(pid); seen_role.add(role); seen_label.add(label)
+        if portfolio_lookup is not None and pid:
+            pf = portfolio_lookup(pid)
+            if pf is None:
+                errors.append(f"{tag}: portfolio {pid} does not exist")
+            else:
+                if str(pf.get("kind")) != "sim":
+                    errors.append(f"{tag}: portfolio {pid} is not a Practice (sim) book — never real money")
+                if bool(pf.get("archived")):
+                    errors.append(f"{tag}: portfolio {pid} is archived")
+        valid.append({"portfolioId": pid, "label": label, "role": role,
+                      "overrides": ({EXPERIMENT_ROLES[role]: ov[EXPERIMENT_ROLES[role]]} if role in EXPERIMENT_ROLES and isinstance(ov, dict)
+                                    and EXPERIMENT_ROLES[role] in ov else {})})
+    if portfolio_lookup is not None and out["control"]:
+        pf = portfolio_lookup(out["control"])
+        if pf is None:
+            errors.append("control portfolio does not exist")
+        elif str(pf.get("kind")) != "sim" or bool(pf.get("archived")):
+            errors.append("control portfolio must be an unarchived Practice (sim) book")
+    out["books"] = valid if not errors else []
+    return out
 
 
 def experiment_books(settings) -> list[dict]:
-    """The enabled experiment books with their APPLIED overrides (whitelisted) and the keys refused."""
-    exp = settings.get(SETTINGS_PREFIX + "experiments", None)
-    if not isinstance(exp, dict) or not bool(exp.get("enabled", False)):
-        return []
-    out: list[dict] = []
-    for b in exp.get("books") or []:
-        if not isinstance(b, dict) or not b.get("portfolioId"):
-            continue
-        ov = b.get("overrides") or {}
-        out.append({"portfolioId": str(b["portfolioId"]), "label": str(b.get("label") or ""),
-                    "overrides": {k: v for k, v in ov.items() if k in EXPERIMENT_OVERRIDE_KEYS},
-                    "refused": sorted(str(k) for k in ov if k not in EXPERIMENT_OVERRIDE_KEYS)})
-    return out
+    """The enabled, VALID experiment books (role, label, the one override). Raises ValueError when the enabled map is
+    invalid — an invalid configuration applies nothing anywhere."""
+    v = validate_experiments(settings)
+    if v["enabled"] and v["errors"]:
+        raise ValueError("invalid techniques.team2.experiments: " + "; ".join(v["errors"]))
+    return v["books"]
 
 
 def experiment_for(settings, portfolio_id: str | None) -> dict | None:
     if not portfolio_id:
         return None
-    return next((b for b in experiment_books(settings) if b["portfolioId"] == str(portfolio_id)), None)
+    try:
+        return next((b for b in experiment_books(settings) if b["portfolioId"] == str(portfolio_id)), None)
+    except ValueError:
+        return None
+
+
+def apply_overrides(base: Team2Rules, overrides: dict | None) -> Team2Rules:
+    """The baseline plus WHITELISTED overrides (the frozen per-plan snapshot uses this — never the live map)."""
+    ov = {k: v for k, v in (overrides or {}).items() if k in EXPERIMENT_OVERRIDE_KEYS}
+    if not ov or set(ov) >= set(EXPERIMENT_OVERRIDE_KEYS):
+        return base
+    return Team2Rules.from_dict({**base.to_dict(), **ov})
 
 
 def rules_for_book(settings, portfolio_id: str | None) -> Team2Rules:
-    """The rules a plan on this book runs under: the shared baseline, plus that book's whitelisted overrides.
-    A book without an experiment entry (the Control, the historical Practice book) runs the baseline exactly."""
+    """The rules a NEW plan on this book is minted under: the shared baseline plus the book's validated override.
+    A book without a (valid) experiment entry runs the baseline exactly."""
     base = rules_from_settings(settings)
     b = experiment_for(settings, portfolio_id)
-    if not b or not b["overrides"]:
-        return base
-    return Team2Rules.from_dict({**base.to_dict(), **b["overrides"]})
+    return apply_overrides(base, b["overrides"]) if b else base

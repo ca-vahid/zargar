@@ -3122,6 +3122,32 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 review of PR #168 (other team: schema/override corrections ACCEPTED; transition + receipt integration; still
+  HELD)** — (1) a forced transition step (retire an old-book plan without exposure / pause a book with it) or a forced
+  replacement is VERIFIED: an exception, a false result or an unconfirmed state (`disarm` false / plan still armed,
+  `pause_book` no record / book not reading as paused) is a transition failure — reported (`transitionFailed`), the
+  old plan keeps managing its exposure, and NO experiment plan is minted; (2) `mint_plan_run` stamps `appVersion` and
+  `build` (the release/build that minted the plan) beside `codeVersion` (the strategy schema id `team2-0.1`); the
+  receipt checks the schema id equals the service's, `appVersion` ≥ 0.7.94 (the reviewed corrections) and the deployed
+  version ≥ 0.7.94, a missing stamp being a blocker; (3) the receipt validates cardinality before grouping — exactly
+  one plan per (session, symbol, book), duplicates and unexpected symbols are blockers and stay visible; (4) a read-only
+  settings load also skips the `trading.mode` migration write/journal (normalized in memory). Their five cases verbatim
+  (`tests/test_codex_team2_parallel_r2_receipt.py`); the 42 earlier cases preserved; own additions for unconfirmed
+  transitions, failed replacement, provenance and duplicates.
+- **2026-09-15 review of 41ec565 (other team: design ACCEPTED; three boundaries; hold merge/deploy; v0.7.94 prepared)** —
+  note: v0.7.93 had already been merged and deployed (inert: experiments OFF) when the hold arrived; the corrections
+  are on the branch as v0.7.94 for their review before any merge. (1) Validated schema `validate_experiments`:
+  `{enabled, control, books:[{portfolioId, label, role: sizing|c1, overrides}]}`; one override per role, required
+  labels, distinct roles/labels/books, unarchived Practice books only, control not an experiment, no C1+sizing in one
+  book; an invalid map is invalid as a whole (nothing applied, errors reported before minting). (2) Receipt: read-only
+  settings load, every missing piece of evidence is a blocker, PREPARED (disabled) vs READY (enabled + three fresh
+  books + every plan armed under its stamped role and the feature version + healthy code + no extra Team2 plans on other
+  books + no pause/halt + thresholds owned + a reviewed C6 evidence RECORD, never prose). (3) Transitions: the override is
+  FROZEN on the plan at mint (`plan.experiment`; the runner never reads the live map); old-book plans for the session are
+  inventoried — without force nothing experimental is minted, with force a plan without exposure is retired and a book
+  with exposure is PAUSED (positions still managed, history kept); a forced re-plan refuses a plan with unresolved
+  exposure; an experiment plan arms only on its own Practice book (manual, nightly, restore). Their probes
+  `tests/test_codex_team2_parallel_boundaries.py` verbatim; own coverage `tests/test_team2_experiments2.py`.
 - **2026-09-15 parallel experiments PREPARED (other team's GO; v0.7.93; NOT activated)** — three Practice books
   (Control = baseline, Sizing = `size_full` 0.5 only, C1 = `no_trade_zone` conjunction only; newly eligible C1 setups
   are small by construction), equal $10,000 starts, same data/timing/execution. Built: `techniques.team2.experiments`

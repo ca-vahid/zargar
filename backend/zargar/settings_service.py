@@ -619,6 +619,8 @@ class SettingsService:
                 v = by_key[legacy].value.get("v")
                 merged[canon] = v
                 migrated.append((legacy, canon, v))
+        if migrated and getattr(self, "readonly", False):
+            migrated = []                                   # a READ-ONLY load (the Team2 receipt) never migrates or journals
         if migrated:
             async with self._sf() as session:
                 for _legacy, canon, v in migrated:
@@ -631,7 +633,9 @@ class SettingsService:
         # one-time migration of pre-v0.3 mode values
         raw_mode = merged.get("trading.mode")
         canon = MODE_ALIASES.get(raw_mode, raw_mode)
-        if canon != raw_mode:
+        if canon != raw_mode and getattr(self, "readonly", False):
+            merged["trading.mode"] = canon                       # normalized in memory only: a READ-ONLY load never writes or journals
+        elif canon != raw_mode:
             merged["trading.mode"] = canon
             async with self._sf() as session:
                 row = await session.get(Setting, "trading.mode")

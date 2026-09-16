@@ -19,9 +19,9 @@ from .test_team2_runner import _bank, rig as engine_rig  # noqa: F401
 from .test_team2_session import DAY, prev_day_bars, trend_day
 
 CONTROL, SIZING, C1 = "book-control", "book-sizing", "book-c1"
-EXP = {"enabled": True, "books": [
-    {"portfolioId": SIZING, "label": "team2-sizing-cap-2026-09", "overrides": {"size_full": 0.5}},
-    {"portfolioId": C1, "label": "team2-c1-conjunction-2026-09", "overrides": {"no_trade_zone": "conjunction"}},
+EXP = {"enabled": True, "control": CONTROL, "books": [
+    {"portfolioId": SIZING, "label": "team2-sizing-cap-2026-09", "role": "sizing", "overrides": {"size_full": 0.5}},
+    {"portfolioId": C1, "label": "team2-c1-conjunction-2026-09", "role": "c1", "overrides": {"no_trade_zone": "conjunction"}},
 ]}
 
 
@@ -51,9 +51,9 @@ def test_the_shared_settings_stay_the_baseline_and_an_experiment_cannot_reach_an
     s = _settings()
     assert rules_from_settings(s).size_full == 1.0 and rules_from_settings(s).no_trade_zone == "pm_range"
     # change the sizing experiment's override: only the sizing book moves
-    s["techniques.team2.experiments"] = {"enabled": True, "books": [
-        {"portfolioId": SIZING, "label": "sizing", "overrides": {"size_full": 0.25}},
-        {"portfolioId": C1, "label": "c1", "overrides": {"no_trade_zone": "conjunction"}}]}
+    s["techniques.team2.experiments"] = {"enabled": True, "control": CONTROL, "books": [
+        {"portfolioId": SIZING, "label": "sizing", "role": "sizing", "overrides": {"size_full": 0.25}},
+        {"portfolioId": C1, "label": "c1", "role": "c1", "overrides": {"no_trade_zone": "conjunction"}}]}
     assert rules_for_book(s, SIZING).size_full == 0.25
     assert rules_for_book(s, C1).size_full == 1.0 and rules_for_book(s, CONTROL).size_full == 1.0 and rules_from_settings(s).size_full == 1.0
     # disabled: every book runs the baseline, whatever the map says
@@ -62,14 +62,21 @@ def test_the_shared_settings_stay_the_baseline_and_an_experiment_cannot_reach_an
     assert experiment_books(s) == []
 
 
-def test_only_size_full_and_no_trade_zone_may_differ_the_rest_is_refused():
-    s = _settings({"enabled": True, "books": [
-        {"portfolioId": C1, "label": "c1", "overrides": {"no_trade_zone": "conjunction", "key_levels": "D1", "pm_room_atr": 2.0, "size_full": 0.5}}]})
-    b = experiment_books(s)[0]
+def test_only_the_roles_override_and_a_combined_or_foreign_key_invalidates_the_whole_map():
+    """Review of 41ec565: C1 and the sizing cap are never combined in one book, and a foreign key is never silently
+    filtered — the map is invalid as a whole, nothing applies, the errors are reported."""
+    import pytest as _pt
     assert set(EXPERIMENT_OVERRIDE_KEYS) == {"size_full", "no_trade_zone"}
-    assert b["overrides"] == {"no_trade_zone": "conjunction", "size_full": 0.5} and b["refused"] == ["key_levels", "pm_room_atr"]
-    r = rules_for_book(s, C1)
-    assert r.key_levels == "off" and r.pm_room_atr == 0.0, "refused keys are never applied"
+    combined = _settings({"enabled": True, "control": CONTROL, "books": [
+        {"portfolioId": C1, "label": "c1", "role": "c1", "overrides": {"no_trade_zone": "conjunction", "size_full": 0.5}}]})
+    with _pt.raises(ValueError, match="never combined"):
+        experiment_books(combined)
+    assert rules_for_book(combined, C1) == rules_from_settings(combined)
+    foreign = _settings({"enabled": True, "control": CONTROL, "books": [
+        {"portfolioId": C1, "label": "c1", "role": "c1", "overrides": {"no_trade_zone": "conjunction", "key_levels": "D1"}}]})
+    with _pt.raises(ValueError, match="may override exactly"):
+        experiment_books(foreign)
+    assert rules_for_book(foreign, C1).key_levels == "off" and rules_for_book(foreign, C1).no_trade_zone == "pm_range"
 
 
 # ---------------------------------------------------------------- counters per book
@@ -126,15 +133,23 @@ async def test_nightly_plans_mint_one_labelled_plan_per_book_under_that_books_ru
         session.add_all([sizing, c1, live]); await session.commit()
     for p in (sizing, c1, live):
         eng.positions.register_portfolio(p)
-    await eng.settings.set("techniques.team2.experiments", {"enabled": True, "books": [
-        {"portfolioId": sizing.id, "label": "team2-sizing-cap-2026-09", "overrides": {"size_full": 0.5}},
-        {"portfolioId": c1.id, "label": "team2-c1-conjunction-2026-09", "overrides": {"no_trade_zone": "conjunction"}},
-        {"portfolioId": live.id, "label": "never-real-money", "overrides": {"size_full": 0.5}}]}, journal=False)
+    await eng.settings.set("techniques.team2.default_portfolio", sim["id"], journal=False)
+    # a live-kind book anywhere in the map makes the WHOLE map invalid: nothing experimental is minted, the errors are reported
+    await eng.settings.set("techniques.team2.experiments", {"enabled": True, "control": sim["id"], "books": [
+        {"portfolioId": sizing.id, "label": "team2-sizing-cap-2026-09", "role": "sizing", "overrides": {"size_full": 0.5}},
+        {"portfolioId": c1.id, "label": "team2-c1-conjunction-2026-09", "role": "c1", "overrides": {"no_trade_zone": "conjunction"}},
+        {"portfolioId": live.id, "label": "never-real-money", "role": "sizing", "overrides": {"size_full": 0.5}}]}, journal=False)
     prev = prev_day_bars(); today, _ = trend_day(prev)
     await _bank(eng, prev)
+    bad = await eng.team2.nightly_plans(DAY.isoformat(), arm=False)
+    assert [r["portfolioId"] for r in bad["runs"]] == [sim["id"]] and any("never real money" in f for f in bad["failed"]), bad
+    # the valid three-book map
+    await eng.settings.set("techniques.team2.experiments", {"enabled": True, "control": sim["id"], "books": [
+        {"portfolioId": sizing.id, "label": "team2-sizing-cap-2026-09", "role": "sizing", "overrides": {"size_full": 0.5}},
+        {"portfolioId": c1.id, "label": "team2-c1-conjunction-2026-09", "role": "c1", "overrides": {"no_trade_zone": "conjunction"}}]}, journal=False)
     out = await eng.team2.nightly_plans(DAY.isoformat(), arm=True)
     assert len(out["runs"]) == 3 and len(out["armed"]) == 3, out
-    assert any("never real money" in f for f in out["failed"]), out["failed"]
+    assert not out["failed"], out["failed"]
     by_book = {r["portfolioId"]: r for r in out["runs"]}
     assert set(by_book) == {sim["id"], sizing.id, c1.id}
     assert by_book[sim["id"]]["label"] == "" and by_book[sizing.id]["label"] == "team2-sizing-cap-2026-09"
