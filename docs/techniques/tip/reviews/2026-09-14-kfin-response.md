@@ -634,3 +634,12 @@ another shell survives it). Stopped the older chain (this desk's, pids 39720/139
 listener remains (pid 146812), status file follows it, liveness `live`. Second platform note for the
 start-path owner: a restart should stop EVERY discord_gateway listener, whoever started it - or the
 gateway itself should refuse to start when the status file shows a live pid.
+
+**21:25 ET re-check - `trading.mode` is LIVE (observed, not touched).** Journal: `SettingChanged
+trading.mode practice -> live` at 21:16:51 ET (no actor in the payload; settings row updated the
+same second). Every auto-on-live gate stays OFF (`techniques.tip.allow_live_auto`,
+`technique.arm.allow_live_auto`, team2, cartel all False; `mobile.exit_only` True) and no live-portfolio
+order exists since the change, so no automated path can trade real money without a further explicit
+gate; human approvals on live cards would now be real. This desk never touches live gates: reported
+to the user and asked the EM desk whether their user set it deliberately. Live 0.7.90 `c909d19`;
+intake live with ONE listener (the deploy's); 51 armed; no incidents.
