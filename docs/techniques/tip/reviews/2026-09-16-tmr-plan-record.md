@@ -491,3 +491,17 @@ is realized P&L.
 
 **Deployment:** merged, not deployed; recap routing stays OFF; paid pairs stay held. After the coordinated deploy:
 verify the live build and the MRNA venue stop (SELL 7 STP 134.37 GTC).
+
+## CAP187-01 (Codex, research follow-up after HOLD-SCOPE clearance) - the close transition is capture-safe
+
+**Confirmed, fixed:** `PositionManager._mark_closed` popped the position from memory and only then persisted the
+closed row; a capture between the two saw the close nowhere (the hold-study integration test failed twice on
+that race). The write now happens first and the pop follows in a `finally`, so a reader finds the closed
+position in memory until the durable row carries it. One ordering change on the shared close path - no order,
+stop or journal behaviour changes (PLATFORM-RULES entry "A durable position is persisted BEFORE it leaves
+memory"). **Deterministic test** `test_close_transition_is_capture_safe_at_the_persistence_boundary`: the hold-study
+snapshot is invoked from inside the manager's own persist call for the closed transition - it asserts the
+boundary was real (still in memory, durable row not yet closed) AND that the capture recorded the
+`intraday_exit` observation; a later capture adds nothing (one observation per key). The existing
+integration assertion (`n2 >= 1` after `wait_for(gone)`) is preserved, not weakened. Today's three missed
+intraday exits stay MISSING - nothing is repaired or backdated. MRNA's carry observation is unaffected.

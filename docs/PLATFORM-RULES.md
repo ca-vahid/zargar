@@ -2216,3 +2216,13 @@ During the 15:29 ET feed blip the sim executor logged "sim fill handling failed 
 book for source eva — status ACCEPTED, filled 0, zero `executions` rows. Before treating such a line as an
 unreconciled fill or an unprotected position, check `executions` (fee column is `commission`) and the order's
 status; a resting limit that could not be judged simply waits for the next admissible quote.
+
+### A durable position is persisted BEFORE it leaves memory — 2026-09-16 (CAP187-01; PR after #187)
+
+`PositionManager._mark_closed` used to pop the position from `_pos` and then write the closed row. In that
+interval the close existed nowhere a reader could see it: not in `positions()` (popped) and not in
+`managed_positions` (not yet written). The Tips hold study's intraday-exit capture hit exactly that gap
+(its integration test failed twice). Rule: any transition that removes a durable object from memory writes
+the durable state first and drops the memory entry after (in a `finally`), so an observer always finds the
+object in one of the two places. Evidence: `tests/test_tip_hold_study.py::test_close_transition_is_capture_safe_at_the_persistence_boundary`
+invokes a capture from inside the manager's own persist call for the closed transition and records the exit.
