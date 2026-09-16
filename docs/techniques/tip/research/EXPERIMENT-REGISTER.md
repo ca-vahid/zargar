@@ -36,8 +36,11 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Eligible setup:** open Tips positions at the pre-close window + positions that exited intraday that
   session. **Unit:** one position-session observation. **Episode identity:**
   `tip_hold_snapshots.observation_key` = study version | session | position | leg | arm.
-- **Primary metric:** paired net $ and R (risk rebased to the sampled size); `managedCarry` apart from
-  `carryToNextOpen`; eligible / fresh / missing / late / ineligible counted.
+- **Primary metric:** paired net $ and R (risk rebased to the sampled size) PER BOOK KIND x setup (Practice = sim,
+  shadow, live, unknown - never pooled as performance; HOLD-SCOPE-01); `managedCarry` apart from
+  `carryToNextOpen`; eligible / fresh / missing / late / ineligible counted. Inventory on a quarantined book, a
+  position in `attention` or an unknown scope is diagnostic only, never an adequate pair (HOLD-SCOPE-02; the book
+  status is captured on every observation from 2026-09-16, older rows resolve from the durable book or stay unknown).
 - **Costs:** allocated entry fee + exit cost (options per contract per side + regulatory; shares per order per side).
 - **Regime:** `techniques/tip/holdstudy.py` `holdstudy-v2`; jobs calendar-relative (close - 10 min; 09:30 with
   in-window retries); knobs `hold_study_enabled`, `hold_snapshot_before_close_minutes`,
