@@ -1210,3 +1210,28 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
   missing 10:40-10:44. Fix on the EM branch: `/api/health` answers `build=unknown` instead of a 500 when the helper is
   absent, and PR #174 puts the EM branch (helper included) on `main`. The probe policy belongs to the start-path owner
   (PLATFORM-RULES 2026-09-16). New backlog item 10 (over-budget option, affordable shares) opened from today's refusals.
+
+### 2026-09-16 close - first deterministic session, final read (FOMC day; report `research/profitability/2026-09-16.md`)
+
+- **Funnel:** 11 fires, 11 `allow` decisions (median 0.4 ms, max 0.92 ms; 240 frozen bars and a snapshot on every
+  record), 6 orders, 4 fills, 7 refusals (5 budget bounds before any order, 1 unfilled-and-cancelled at T4.1, 1 failed
+  on a CBOE 429), 0 order errors, 0 live model calls (75 technique runs today = premarket plan builds + Cartel).
+- **Timing (ms, per attempt):** bar close -> received median 221 / p90 1373 / max 3281; received -> decided median 0.4;
+  decided -> quote ready median 585 (the bounded provider refresh, 2 of 2 ok); bar close -> order submit median 1598 /
+  max 2242 (legacy path on Sep 15: 18-23 s). Faster entry is a latency fact, not a profit claim.
+- **Fills (all `long_bounce_next_resistance`):** CRCL b1 option -$94.11 (quote-breach stop 3.5 min after fill), CVNA b1
+  75 shares -$29.49 (quote-breach stop 5 min), CRWV b2 option -$51.11 (quote-breach stop 20 min), SNDK b2 3 shares
+  +$27.16 (30% at TP1 15:35, flattened 15:56 before the close). **Net -$147.55, 1 winner / 3 losers, fees $4.16.**
+  Three of four fills ended on the 0.25R intra-minute quote breach within minutes - the same shape as Sep 14/15; the
+  exit-tempo question (§3 T-6 lineage, P-02 candidate) is where the money is, not the entry latency.
+- **Refusals:** DELL r2 / BE r1 (F33 daily-loss bound), NBIS r2 / r3 / b1 (FIX-03: one contract at 5.70-5.90 risks more
+  than the 2% trade budget; three attempts on the same name), NOW b1 (T4.1 not chased), BAC d1 (CBOE 429 on the option
+  pick, fix on the EM branch: retry, honest alert). Backlog item 10 (over-budget option, affordable shares) stands.
+- **Skips:** 114 - `gap_void` 51, `invalidated` 28 on the gap-up FOMC open; 17 plans disarmed by the 09:25 re-plan.
+- **Source ledger:** AMZN long 250 -> 255 `never_confirmed` (no completed close beyond the level by 11:30 ET).
+- **Ops:** three unplanned watchdog restarts 10:40-10:53 ET (see the morning entry; PLATFORM-RULES 2026-09-16); a
+  network blip at 15:29:33 ET (Alpaca keepalive drop, one DB connect failure, OPRA miss) journaled 30 "stale bars"
+  errors and recovered in seconds - SNDK's TP1 scale-out and flatten ran normally afterwards.
+- **Release state at the close:** live 0.7.96 build 4c84697; PR #174 merged to main (build helper + tolerant health on
+  main); combined candidate 0.7.99 `53721b7` (main 0.7.98 + runtime 7a008d1 + CBOE 429 retry) ready, deploy awaits
+  the user's go. Sep 17: auto sheet `fc9efd65418e` (111 setups) exists; the evening batch is the user's call.

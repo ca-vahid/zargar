@@ -53,7 +53,8 @@ whenever a release, an activation or a review changes what is true. Last full re
   (`shadow_exit_observe`, `shadow_p02_candidate`): they record `TechniqueExitShadow` candidates and never trade.
 - **Rules live:** R6 windows, C3 gap-day wait (R6.6), gap-void, shares fallback, quote refresh. Not adopted after
   sweeps: T-11, T-12, T-13, T-14, C4, C5 (verdicts in `TRADING-RULES.md` §3/§5).
-- **First deterministic session, interim at 09:40 PT 2026-09-16 (FOMC day):** 7 fires, 7 `allow` decisions in
+- **First deterministic session, FINAL (2026-09-16, FOMC day; full entry in `TRADING-RULES.md` §5 "2026-09-16 close"):** 11 fires / 11 allow (median 0.4 ms), 4 fills, net -$147.55 (1 winner, 3 quote-breach stops within minutes), 7 refusals (5 budget bounds, 1 not chased, 1 CBOE 429), 0 live model calls; bar close -> order submit median 1.6 s.
+- *Interim at 09:40 PT the same day:* 7 fires, 7 `allow` decisions in
   0.25 to 0.92 ms with 240 frozen bars each, bar close to received 44 ms to 3.3 s, bar close to order submit 1.6 to
   2.2 s (legacy was 18 to 23 s); 3 orders, 2 fills (both stopped on the quote breach within minutes), 1 unfilled and
   cancelled (T4.1 not chased), 4 refused by budget bounds before any order; zero EM model calls since the open. The
