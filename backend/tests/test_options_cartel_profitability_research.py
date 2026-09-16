@@ -252,3 +252,60 @@ async def test_new_quote_gap_blocks_reuse_of_an_older_favorable_quote(research):
     await capture_quotes(runtime)
     async with research.sf() as session:
         assert await session.scalar(select(func.count()).select_from(TechniqueRun).where(TechniqueRun.mode=='profit_quote'))==2
+
+
+async def test_baseline_queue_first_attempts_precede_retries_across_reload(research, monkeypatch):
+    rows = [candidate(i) for i in range(7)]
+    now = [OPEN-60000]
+    for i, row in enumerate(rows):
+        row.update(baselineStatus='pending', baselineAttempts=0, nextBaselineAt=0)
+    rows[0].update(baselineStatus='data_unavailable', baselineAttempts=19)
+    rows[1].update(baselineStatus='data_unavailable', baselineAttempts=18)
+    rows[2].update(baselineStatus='ready')
+    rows[6].update(nextBaselineAt=now[0]+3600000)
+    context = await seed_context(research, rows)
+    runtime = SimpleNamespace(engine=research.engine, clock=lambda: now[0], stopping=False)
+    calls = []
+
+    async def baseline(self, symbol, at, client):
+        calls.append(symbol)
+        raise OSError('persistent provider gap')
+
+    async def provider(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(PreparationHistory, 'baseline', baseline)
+    await _warm_baselines(runtime, context, research.policy, fetch=provider)
+    assert calls == ['TEST3', 'TEST4']  # fixed per-pass budget, not the first ranked failures
+    async with research.sf() as session:
+        context = await session.get(TechniqueRun, context.id)
+    context = await _warm_baselines(runtime, context, research.policy, fetch=provider)
+    assert calls == ['TEST3', 'TEST4', 'TEST5', 'TEST1']
+    now[0] += 300001
+    context = await _warm_baselines(runtime, context, research.policy, fetch=provider)
+    assert calls[-2:] == ['TEST3', 'TEST4']  # least-attempted due retries get their turn
+    assert [c['id'] for c in context.result['candidates']] == [r['id'] for r in rows]
+    assert context.result['candidates'][0]['baselineAttempts'] == 19
+    assert 'TEST2' not in calls and 'TEST6' not in calls  # ready and cooldown stay untouched
+
+
+async def test_baseline_retry_ties_use_oldest_due_time(research, monkeypatch):
+    rows = [candidate(i) for i in range(3)]
+    now = OPEN-60000
+    for i, row in enumerate(rows):
+        row.update(baselineStatus='data_unavailable', baselineAttempts=2,
+                   nextBaselineAt=now-(i+1)*60000)
+    context = await seed_context(research, rows)
+    runtime = SimpleNamespace(engine=research.engine, clock=lambda: now, stopping=False)
+    calls = []
+
+    async def baseline(self, symbol, at, client):
+        calls.append(symbol)
+        raise OSError('provider gap')
+
+    async def provider(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(PreparationHistory, 'baseline', baseline)
+    await _warm_baselines(runtime, context, research.policy, fetch=provider)
+    assert calls == ['TEST2', 'TEST1']

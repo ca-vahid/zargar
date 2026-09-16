@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.96";
+export const APP_VERSION = "0.7.97";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.97",date:"2026-09-16",title:"Cartel research gives every candidate a turn",items:[
+    {tag:"fixed",text:"Research now loads never-attempted volume baselines before retrying failed names. Retries rotate by persisted attempt count and oldest due time, so early failures cannot starve the rest of the pool after a restart. Trading rules and candidate rankings are unchanged."},
+  ]},
   {version:"0.7.96",date:"2026-09-16",title:"Tips see the day's event and the real cost of a trade",items:[
       { tag: "new", text: "Tips: verified event context (TMR-01). The analyst header, every card, the cohort and hold-study records and adopted positions now carry the day's verified macro-event label - FOMC statement 2026-09-16 14:00 ET and press conference 14:30 ET from the official Federal Reserve calendar, with the verification time and time-to-event; a date the calendar has not been checked for reads UNKNOWN, never 'no event'. Awareness only: no automatic no-trade rule, no order placed or blocked." },
       { tag: "improved", text: "Tips analyst reasoning (INTRA-01/02): the payoff preview now prints the EXPIRATION break-even beside the before-expiry scenarios with the declared holding horizon, and a one-contract plan is judged on the single exit it can execute (first target or a premium exit) instead of being called unmanageable for not copying a source's partial scale-outs; the prompt carries both rules and keeps every independent reason to skip." },
