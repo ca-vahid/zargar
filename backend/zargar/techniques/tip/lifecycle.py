@@ -795,6 +795,19 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": f"bad fill qty={qty} px={fill}"})
         return None
 
+    # TMR-02: the realised fill against the quote the decision saw (the risk plan's
+    # execCost record) - the desk's own slippage evidence, journaled per fill
+    fvq = None
+    with contextlib.suppress(Exception):
+        from . import execcost as _ec
+        _rp = (ctx.get("riskPlan") or {})
+        _dq = (_rp.get("execCost") or {})
+        fvq = _ec.fill_vs_quote(fill_price=fill, fill_qty=qty, limit=proposal.get("limitPrice"),
+                                decision_quote={"bid": _dq.get("bid"), "ask": _dq.get("ask"), "sourceTs": _dq.get("sourceTs"),
+                                                "sampledAt": _dq.get("sampledAt"), "quoteStatus": _dq.get("quoteStatus")},
+                                sec_type=("OPT" if is_opt else "STK"), multiplier=(100.0 if is_opt else 1.0), side="BUY")
+        await note(ev.TIP_FILL_VS_QUOTE, {"symbol": proposal.get("symbol"), **fvq})
+
     plan = ctx.get("exitPlan") or {}
     await eng.ensure_symbol(underlying)
     q = eng.quotes.get(underlying)
@@ -896,7 +909,9 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         "policy": policy,
         "guardAccepted": (policy.get("stop") or {}).get("kind") == "none",
         "extras": {**({"riskPlan": pre} if pre else {}),
-                   **({"geometryException": exception} if exception else {})},
+                   **({"geometryException": exception} if exception else {}),
+                   **({"fillVsQuote": fvq} if fvq else {}),
+                   **({"eventContext": ctx.get("eventContext")} if ctx.get("eventContext") else {})},
     }
     try:
         pos = await mgr.adopt(spec)

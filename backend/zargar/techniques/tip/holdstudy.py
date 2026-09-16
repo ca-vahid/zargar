@@ -101,6 +101,16 @@ def next_open_job_time() -> str:
     return f"{RTH_OPEN_MIN // 60:02d}:{RTH_OPEN_MIN % 60:02d}"
 
 
+def _event_label(eng, now, sess) -> dict | None:
+    """TMR-01: the verified event label on the observation (event-day sessions stay distinguishable)."""
+    try:
+        from . import events as _evc
+        c = _evc.context_for(eng, now=now, session=sess)
+        return {k: c.get(k) for k in ("status", "coverage", "label")}
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
 def _knob(eng, key: str, default):
     try:
         v = eng.settings.get(key, default)
@@ -495,6 +505,7 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
                 observed_at=observed_at,
                 window={**(window or {"kind": "preclose", "sessionDate": sess, "start": None, "end": None}),
                         "verdict": (judge_window(observed_at, window) if window else verdict),
+                        "event": _event_label(eng, now, sess),
                         "jobStartedAt": _iso(now), "observedAt": _iso(observed_at),
                         "sampledAt": (quote or {}).get("sampledAt"),
                         "sourceTs": (quote or {}).get("sourceTs"), "toleranceS": tol},

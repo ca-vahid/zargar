@@ -55,6 +55,7 @@ TIP_NOTE_ADDED = "TipNoteAdded"           # shared tips knowledge: analyst or us
 TIP_EXPERIMENT_BATCH = "TipExperimentBatch"  # out-of-band historical batch: manifest (started/finished)
 PORTFOLIO_REMOVED = "PortfolioRemoved"    # a shadow research book was deleted (demo/test cleanup)
 TIP_NOTE_EDITED = "TipNoteEdited"         # the user refined a knowledge note in place
+TIP_FILL_VS_QUOTE = "TipFillVsQuote"                 # TMR-02: one realised fill vs the quote the decision saw (diagnostic)
 TIP_POSITION_ADOPTED = "TipPositionAdopted"        # filled tip proposal → managed position (analyst exit plan)
 TIP_POSITION_NOT_ADOPTED = "TipPositionNotAdopted" # ...or why it wasn't (unfilled, invalid plan, no manager)
 TIP_EXIT_PLAN_UPDATED = "TipExitPlanUpdated"       # analyst rewrote an open position's exit campaign (exit-only)
