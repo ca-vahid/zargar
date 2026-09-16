@@ -150,8 +150,13 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     # --- health / state -----------------------------------------------------
     @app.get("/api/health")
     async def health(request: Request):
-        from .. import __version__, build_sha
-        out = {"ok": True, "started": eng.started, "version": __version__, "build": build_sha()}
+        from .. import __version__
+        try:
+            from .. import build_sha                        # the launch-bound build helper (EM desk, 2026-09-14)
+            build = build_sha()
+        except Exception:                                   # a checkout without the helper must still answer health -
+            build = "unknown"                               # a 500 here made the watchdog restart-loop (2026-09-16 10:40 ET)
+        out = {"ok": True, "started": eng.started, "version": __version__, "build": build}
         # the restart guard (scripts/start.ps1) runs on this machine and must see whether
         # paid analyst reads / armed plans are in flight even though the API is closed.
         # Loopback AND no proxy headers = a local caller (Tailscale serve/funnel proxies
