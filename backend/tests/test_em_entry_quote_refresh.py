@@ -1,7 +1,7 @@
 """entry-quote-refresh-v1 (2026-09-15): one BOUNDED provider refresh of the contract NBBO after the analysis and
-immediately before final pricing/sizing. Corrected finding: the three 09-15 refusals ("quote age 10.9-14.5 s") came
-from the RiskGate's freshness check on a quote nobody re-fetched after the 18-23 s analysis; `reprice()` returns the
-cached quote for an already-served contract. The refresh never relaxes a check: timed-out, failed, delayed or
+immediately before final pricing/sizing. Corrected finding: the three 09-15 refusals were the RiskGate's freshness
+check on quotes 10.9-14.5 s old (the fire-to-intent processing took 18-23 s and nothing re-fetched the quote in
+between; `reprice()` returns the cached quote for an already-served contract). The refresh never relaxes a check: timed-out, failed, delayed or
 still-stale refreshes leave the contract as it was and the existing checks refuse. No DB, no engine, no orders."""
 import asyncio
 import time

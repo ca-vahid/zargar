@@ -1122,9 +1122,9 @@ Rollback = PATCH both keys back to false. Sep 16 baseline batch launched 14:05 P
 ### 2026-09-15 - entry quote refresh (entry-quote-refresh-v1), proposed, NOT deployed
 
 Corrected finding: the three Sep 15 refusals (RKLB 10.9 s, SMCI 12.6 s, DVN 14.5 s) failed the RiskGate's
-`risk.stale_quote_seconds` freshness check inside `OrderManager.place`, BEFORE the final dispatch guard; the pick's
-contract quote was 18-23 s old by then because `reprice()` returns the cached quote for an already-served contract and
-nothing re-fetched it after the analysis. Change: one bounded PROVIDER refresh (`options.refresh_now`, timeout
+`risk.stale_quote_seconds` freshness check inside `OrderManager.place`, BEFORE the final dispatch guard, on quotes
+10.9-14.5 s old; the fire-to-intent processing took 18-23 s and nothing re-fetched the quote in between (`reprice()`
+returns the cached quote for an already-served contract). Change: one bounded PROVIDER refresh (`options.refresh_now`, timeout
 `entry_quote_refresh_timeout_s`: execution 0 = off, EM 2.5 s) after the analysis and immediately before final
 pricing/sizing; then the existing chain runs again unchanged on the refreshed price and quantity (re-price, T5.4/T5.3
 re-judgement, sizing, admission, never-chase cap, R2, final guard, RiskGate). A timed-out / failed / delayed /

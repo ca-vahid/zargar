@@ -3016,9 +3016,9 @@ class PlanRunner(SessionListener):
             # order will pay, never on the pick's stale ask (a doubled ask used to double the risk).
             refresh = None
             if getattr(self.engine, "options", None) is not None:
-                # 2026-09-15: `reprice()` returns the CACHED quote for an already-served contract, and the
-                # analysis between the fire and this point runs 18-23 s - three EM entries were refused by the
-                # RiskGate's freshness check (10.9-14.5 s) on a quote nobody had re-fetched. One bounded PROVIDER
+                # 2026-09-15: `reprice()` returns the CACHED quote for an already-served contract. Three EM entries
+                # were refused by the RiskGate's freshness check on quotes 10.9-14.5 s old (the fire-to-intent
+                # processing took 18-23 s and nobody re-fetched the quote in between). One bounded PROVIDER
                 # refresh here, then every existing check runs again on the refreshed price and quantity.
                 refresh = await self._refresh_entry_quote(ap, trade, contract)
                 with contextlib.suppress(Exception):
