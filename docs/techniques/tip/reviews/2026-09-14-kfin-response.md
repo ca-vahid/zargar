@@ -648,3 +648,12 @@ intake live with ONE listener (the deploy's); 51 armed; no incidents.
 `practice -> live` 21:16:51 ET, `live -> practice` 21:41:01 ET, no live/paper order in between, every
 `allow_live_auto` gate untouched; settings row reads `practice` again. Treated as explained, not
 unexplained. Neither desk touched the gate at any point.
+
+**23:15 ET final check:** live 0.7.91 build `a4d241b` (EM desk's combined deploy 23:08-23:10 ET through
+the unelevated `ZargarRestart` task - the earlier "Access is denied" stops were engines started
+from an ELEVATED shell; explained). PR #150 `bf8b070` and PR #145 `d5034a2` are in it (the Flow
+test-only fix `db91dcb` is not, irrelevant at runtime). 56 armed incl. the 7 Tips plans, 3 managed
+open (MRNA venue stop registered; T and SLV calls app-managed), no incidents, `trading.mode`
+practice, all live-auto gates off. Both helper windows were relaunched by `restart.ps1`: ONE
+Discord listener (pid 81296), liveness `live`, gap recovery re-queued 1 message. Hold study:
+tomorrow's 15:50 ET capture runs on `holdstudy-v2` under the corrected protocol.
