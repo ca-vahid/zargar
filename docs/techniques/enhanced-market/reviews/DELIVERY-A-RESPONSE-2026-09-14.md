@@ -577,3 +577,42 @@ desk 17:32 PT) had died with the stop - platform gap noted for the start path's 
 EM `shadow_exit_observe` / `shadow_p02_candidate` true, execution defaults false. The session-local morning review
 (cron 64ad08c1, 06:20 PT then :20/:50 through 13:20 PT) is owned by the EM desk session and runs only while it is open.
 
+---
+
+# Release: entry quote refresh deployed 2026-09-15 20:10 PT as the combined build a4d241b (0.7.91)
+
+Quote-refresh review accepted (timing text corrected: rejected quote ages 10.9-14.5 s; 18-23 s is the fire-to-intent
+processing time). Combined target **a4d241bdbb5dd6db6d7716ee1ce5cd6c113ec04e** = the runtime checkout 57180b9
+(origin/main 04085dc, version 0.7.91, incl. the later shared-runner changes F127 0DTE cap clamp and the Cartel
+research) merged with the EM branch head 3662b22 (entry-quote-refresh-v1 + timing correction). Clean merge; both
+desks' runner changes present (`_refresh_entry_quote`, `_contract_is_0dte`, `_shares_position_cap`,
+`_target_distance_enabled`); ancestry verified for origin/main 04085dc, the previous live 11deae2, the EM head and the
+EM combined 5b7542d. Thresholds unchanged (`risk.stale_quote_seconds` 10, spread/budget/final guard as before; new knob
+`entry_quote_refresh_timeout_s` execution 0 / EM 2.5 s).
+
+Verification on that tree: check-release green (0.7.91); entry-quote-refresh + final dispatch + FC-01 + entry quality +
+sizing cap + measurement + profitability + exits **58 passed**; F127 expiry + Team2 sizing/pick + EM wiring + EM review
+execution **29 passed**; arming solo 28 passed + the pre-existing `test_auto_options_one_contract_lifecycle` + the
+load-sensitive `test_restore_reattaches_an_open_trade` (failed in an 11-minute run under 2 GB free memory, passes
+alone twice on the same tree).
+
+Deployment: `scripts/deploy.ps1` (lease, reviewed source, readiness safe, before-inventory
+`restart-inventory-20260915-200728.json`, artifact manifest `0720602579F3...` 21 files, handoff) - its guarded start
+was REFUSED with exit 8 because this desk's tool shell is ELEVATED (new guard: an engine started elevated cannot be
+stopped by the ZargarRestart task or the watchdog - the root cause of today's "access denied" episodes on the desk's
+earlier engines). The handoff was completed the documented way: `Start-ScheduledTask ZargarRestart` (unelevated,
+principal vispe, RunLevel Limited) ran `restart.ps1`, which consumed `deployment-pending.json` and wrote the receipt:
+phase **verified**, target a4d241b..., expected 0.7.91, healthy 0.7.91, `healthBuild` a4d241b..., completed
+2026-09-16T03:10:03Z, caller restart.ps1, restoration `skipped-no-baseline` (the task had no before-state) -
+restoration therefore verified BY HAND against the deploy's before-inventory: armed 56/56 (41 EM, 7 tip, 3 team2,
+5 cartel; no id missing), openTrades 0/0, pendingExits 0/0, restingOrders 22/22 (no id missing), managedOpen 3/3;
+boot journal 51 TechniquePlanRestored + 1 SimBookRestored; one engine pair owns :8420 (started by the task 20:08:36);
+both helper windows relaunched by restart.ps1 at 20:10:11. Live settings: EM `shadow_exit_observe` / `shadow_p02_candidate`
+true, `entry_quote_refresh_timeout_s` EM 2.5 / execution 0, `trading.mode` practice. The engine was dark for ~90 s
+between the refused elevated start and the task's start (after hours, no positions).
+
+Lesson recorded for this desk: deploy = `deploy.ps1` for lease/handoff, then `Start-ScheduledTask ZargarRestart` for the
+restart itself; never start the engine from this (elevated) shell. The earlier v0.7.91 receipt of phase `restarted`
+(11deae2, another desk's restart.ps1) is superseded by this verified receipt; its release owner should still complete
+its own record.
+
