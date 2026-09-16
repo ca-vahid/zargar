@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.98";
+export const APP_VERSION = "0.7.99";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.99",date:"2026-09-16",title:"An EM entry survives a rate-limited chain, and health always answers",items:[
+    {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up, and it never serves expired chain data for a live pick. BAC d1 on FOMC day was allowed by the deterministic decision and killed by one unretried 429; the alert now names the cause and says a short has no shares fallback by rule."},
+    {tag:"fixed",text:"/api/health answers build=unknown instead of a 500 when the launch-bound build helper is missing from the checkout - the 2026-09-16 10:40 ET watchdog restart loop cannot recur from that cause."},
+  ]},
   {version:"0.7.98",date:"2026-09-16",title:"Current Cartel guidance and integrated release identity",items:[
     {tag:"improved",text:"Cartel's Method documentation now explains research readiness, fair baseline retries, short-pool counts, data warnings and actual versus modeled results. Stale operational snapshots are replaced with dated references."},
     {tag:"fixed",text:"The shared build-identity helper is retained on main, and health remains available if build identification fails. Deployment still requires verified source, artifact and restored state."},
