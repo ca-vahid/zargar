@@ -158,6 +158,25 @@ journaled (`gateway_status.json`, idle watchdog, `GET /api/tip/intake/liveness`,
 a model-written `rule` under propose-only is a PROPOSAL (born `needs_human`, rendered PENDING REVIEW);
 Practice OPTION fills need an eligible session (`sim_option_sessions`; tests off); incidents count
 only typed `reviewClass=evidence` failures; research books can be quarantined.
+**Tips 2026-09-15/16 (0.7.83 → 0.7.97; details `docs/techniques/tip/README.md` + `reviews/2026-09-14-kfin-response.md`,
+`reviews/2026-09-16-tmr-plan-record.md`):** approval cards = OPINION + EXECUTION READINESS (`approvals/readiness.py`;
+revalidate is zero orders; Approve is bound by a fingerprint incl. incident identity; overrides labeled + journaled;
+the claimed plan is frozen as `context.approvedPlan`). **ONE exit authority**: adoption cancels the entry order's
+bracket children (`PositionManager._release_bracket_children`) and the venue GTC stop follows the held quantity +
+survives restarts (`venueStopQty`). Analyst: risk budget FIRST (`check_feasibility` before a take), `preview_payoff`
+(integer ladder, `oneLot`/`singleLot`, EXPIRATION break-even apart from before-expiry exits, horizon with the hold
+cap apart from the expiry), execution cost (`techniques/tip/execcost.py`, `TipFillVsQuote`), verified event context
+(`techniques/tip/events.py`; the shared `research.macro_events` is empty and no desk enforces event days) -
+all advisory; `analyst_feasibility_gate=annotate`. Research (observation only, register in
+`research/EXPERIMENT-REGISTER.md`): entry-timing cohort ON, frozen capture ON (variants incl. `recap_candidate`),
+hold study `holdstudy-v2` (calendar-relative jobs, actual sample time, one observation per
+position/session/leg/arm), MK own-book `observe`, `scenarios.py` prototype wired to nothing;
+`techniques.tip.recap_route=off`. Ops lessons: a watchdog/engine-only restart does not restore the Discord
+gateway or EM ingestion helper windows and a second start can leave two listeners; the watchdog launches the
+running checkout AS IT STANDS, so every merge into `C:/Cursor/zargar` must be followed by
+`python -c "import zargar.api.app"` + `check-release` (a dropped runtime-only helper caused a health-500 restart
+loop on 2026-09-16); `backend/zargar/__init__.py` conflicts on every release bump - keep the runtime side's
+`build_sha` helper and take main's version string.
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries

@@ -32,7 +32,7 @@ Runs on the technique platform (`docs/TECHNIQUE-PLATFORM-PLAN.md`); read
 - **`ANALYST.md`** — the analyst charter. **`reviews/`** — every external review round,
   response and deploy record (dated; the newest is the current truth).
 
-## Status (as of 2026-08-29 — the CURRENT state of play is `README.md`)
+## Status (as of 2026-08-29 — HISTORICAL; the current state of play is `README.md`, refreshed 2026-09-16)
 
 **Built and on main:** extraction v2 (option-aware flat schema, Discord-shorthand
 grounding, screenshot→transcript intake, **source auto-detection**; + entry zones,

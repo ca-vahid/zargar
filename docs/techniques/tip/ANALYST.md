@@ -242,3 +242,51 @@ built per KNOWLEDGE-BUILD-PLAN.md):
   refresh note TTLs, never touch books/orders/proposals/dedupe/scorecards
   (PLATFORM-RULES invariants 12–13), and get graded by a rubric batch-review
   run.
+
+## 10. Rules and tools added 2026-09-15/16 (current charter addenda)
+
+The charter above is as written 2026-08-30. These addenda are in force; where they read differently,
+they win. Every one is advisory to the analyst and enforced, where enforced at all, by the platform.
+
+**Rules handed to every run (in `SYSTEM`):**
+
+- **THE RISK BUDGET COMES FIRST (2026-09-15).** The header states the approved planned-risk budget B
+  (1 % of the Practice book's equity unless `risk_budget_per_tip` is set). A "take" must fit at least ONE
+  unit of the named expression inside B at the declared stop (`check_feasibility` before answering
+  take); if it cannot, answer "watch" or name an expression that fits (labelled alternatives at equal
+  risk). Never raise the budget; never pretend a fraction of a contract exists. The per-tip budget in the
+  header is the PURCHASE allocation limit, not the risk budget.
+- **ONE-LOT EXITS (2026-09-15).** Fractional `exit_fractions` cannot sell fractions of a contract: with
+  1-2 contracts declare a plan a single lot can execute (one target, or a premium-based exit);
+  `preview_payoff` shows the integer-unit ladder, the first-target-then-stop net and the fee drag.
+- **BREAK-EVEN IS AN EXPIRATION NUMBER (2026-09-16, INTRA-01).** Strike + premium is where a call pays if
+  HELD TO EXPIRY. A sale before expiry pays whenever the executable bid exceeds entry + costs - delta,
+  time and IV decide it, whatever the underlying is versus that level. Never say an interim profit needs
+  the expiration break-even unless holding to expiry IS the exit assumption; `preview_payoff` prints the
+  expiration break-even beside the before-expiry scenarios, and the horizon keeps the maximum hold cap,
+  the expiry date and the exit assumption apart. Independent reasons to skip stand on their own.
+- **ONE LOT IS AN EXIT-PLAN QUESTION, NOT A REJECTION (2026-09-16, INTRA-02).** One contract cannot copy
+  a source's several partial scale-outs - a fact, not a verdict. Judge the executable single-lot plan on
+  its own net payoff (`singleLot` / `oneLot` / `tp1ThenStop`); skip only when the thesis DEPENDS on
+  scaling or one unit does not fit the budget, and say which.
+- **EVENT CONTEXT (2026-09-16, TMR-01).** The header carries a verified macro-event line (event, time in
+  ET, before/after, time-to-event, official source, verification time) or says the calendar coverage is
+  UNKNOWN. Awareness only: it is never a no-trade rule and never a direction.
+
+**Tools added:** `check_feasibility` (units that fit at the declared stop, alternatives, `execCost`),
+`preview_payoff` (integer ladder, scenarios in $ and R, `oneLot`, `singleLot`, `breakEven`, `horizon`,
+`execCost`; optional `hold_sessions`, `exit_at_expiry`). Every TAKE is re-assessed server-side and the
+result rides on the record (`expression`, `payoff`, `execCost`, `eventContext`, `thesisVerdict`);
+`techniques.tip.analyst_feasibility_gate` = annotate (in force) | downgrade (not enabled).
+
+**Context route (INTRA-03, I175-04; OFF):** a deterministic read of a multi-signal message's shape
+(`techniques/tip/recap.py`) runs before the paid appraisal and is journaled; with
+`techniques.tip.recap_route=compact` a confirmed map/recap would receive the compact context defined
+once in `recap.CANDIDATE` (core rules, ticker/source/core notes, the newest 12 mirrored records within
+24 h, a 2-tool budget, one header prefix). A fresh priced entry, entry cues or a management instruction
+always keep the full route. The route is evaluated on frozen bundles through the `recap_candidate`
+replay variant (request-assembly parity proven unpaid) before any change.
+
+**Knobs added since the charter:** `techniques.tip.analyst_feasibility_gate`, `verified_events`,
+`recap_route`, `recap_max_tools`, `entry_cohort_*`, `frozen_capture_context`, `frozen_variants`,
+`hold_study_enabled` + windows, `mk_ownbook_mode` / `mk_ownbook_sources` (README "State of play").

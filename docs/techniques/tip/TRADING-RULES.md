@@ -381,3 +381,55 @@ criteria (`techniques/tip/ownbook.py`, `tests/fixtures/mk_ownbook_cases.json`,
 evidence processing.
 **Built 2026-09-14:** geometry validated BEFORE entry with bounded journaled
 post-fill exceptions (user decision 2026-09-11); rule-book consolidation.
+
+## Change log 2026-09-15 → 09-16 (first FOMC day under enforce + integrity; the profitability build)
+
+- 2026-09-15 — **The budget is the product's bottleneck, measured.** 32 `TipGeometryRepaired` records on
+  the day: 15 review-gated "no quantity satisfies the ~$89 budget" (one-lot option risk above 1 % of
+  equity), 6 stop re-placements at submission/revalidation, 2 wrong-side target drops. Two analyst takes
+  expired unapproved. The feasibility annotation (PROF-01) now tells the analyst BEFORE the verdict; no
+  automatic budget change - `risk_pct` / `risk_budget_per_tip` remain a user decision.
+- 2026-09-15 — **Two over-sell classes, both platform, both fixed** (`PLATFORM-RULES`): the venue GTC stop
+  kept its pre-trim size (RKT sold 148 vs 89 held → −59, reconciled on the user's go); the proposal's
+  bracket children coexisted with the manager's venue stop (MRNA 14 resting against 7 held; released by
+  hand 15:22 ET). Method consequence: the "one exit authority" the ARM-PLAN promised is now enforced at
+  adoption. The shadow armed books carry phantom shorts from these classes (README gap 1) - their
+  scorecards are not trust evidence for those names.
+- 2026-09-15 — **Hold study protocol (holdstudy-v2, research only).** Observations count only inside
+  exchange-calendar windows on the quote's own sample time; the three v1 rows (captured 16:42 ET by an
+  after-close catch-up) are insufficient. The question stays open: is carrying overnight worse than a
+  predeclared pre-close liquidation, by setup? No pair exists yet (first valid capture 2026-09-16 15:50 ET).
+- 2026-09-16 (FOMC day: statement 14:00 ET, presser 14:30 ET) — **A quiet, selective morning is not four
+  correct skips.** Tips Practice: 0 executions through 12:15 ET; four completed appraisals, all skip (eva
+  SPX-led 12-branch map = a map, not an open; tt META lotto = counter-trend tape + reach; ab APLD holdings
+  digest = old averages, not a buy; ab GOOGL Sep-18 350C = ceiling/reach + source lotto record). The review
+  team's read: the tape / source / attainable-gain reasons stand on their own; two REASONING defects rode
+  along and are corrected in the prompt and the tools (below). No counterfactual executable path was run
+  to grade the skips - "flat" is the honest description.
+- 2026-09-16 — **Reasoning correction 1: the expiration break-even is not a profit condition** (INTRA-01,
+  I175-03). The GOOGL rationale said breakeven 352.19 above the 350 ceiling meant the trade only pays on a
+  break. Wrong frame: a sale before expiry pays when the executable bid exceeds entry + costs. Synthetic
+  acceptance: 2.19 → 2.50 bid with the underlying at 349 nets +$28.92 after $2.08 fees. A maximum hold
+  cap is not an expiry exit; only a declared held-to-expiry scenario uses intrinsic value.
+- 2026-09-16 — **Reasoning correction 2: one lot is an exit-plan question** (INTRA-02, I175-02). META and
+  GOOGL called one contract "an unmanageable binary". The executable single-lot plan (first-target exit
+  or a premium exit) is judged on its own net payoff; the label "can copy partials" is derived from the
+  executed unit sequence (3 × 80/10/10 executes 2/1/0 - it cannot). Skip only when the thesis depends on
+  scaling or one unit does not fit the budget.
+- 2026-09-16 — **Appraisal cost baseline** (INTRA-03): the four appraisals used 482,420 input tokens over
+  12 calls (37k–45k per call, cache reads 0) - the per-call header × the call count. A cheap message-shape
+  read is journaled before every multi-signal appraisal; routing confirmed recaps to a compact context is
+  built but OFF until evaluated on frozen bundles with a captured classifier read (parity proven unpaid).
+- 2026-09-16 — **Event days have no rule.** The desk labels decisions with the verified event and the
+  time to it (TMR-01); the shared calendar is empty and no desk enforces event days. Whether the label
+  should ever become a sizing or timing input is an open question for the register, not a rule.
+
+### Rules under observation (added 2026-09-16)
+
+- **Recap route (OFF):** does the compact context reach the same verdict on confirmed maps/recaps at lower
+  cost? Evidence set: compact-route captures replayed under `recap_candidate` vs `current`; negative
+  controls (fresh entry, management, mixed) must stay on the full route by construction. Decision: reviewer.
+- **Break-even framing:** do post-correction rationales still cite the expiration break-even as a
+  profit condition? Read the next ten option skips.
+- **One-lot plans:** how many one-lot takes/skips cite `singleLot`; how many one-lot fills reach their
+  first-target exit vs the stop (payoff report + hold study managed outcome).
