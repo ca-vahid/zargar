@@ -3122,6 +3122,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 scoped Practice pause ACCEPTED (other team)** — "Persistence across restart/day rollover, entry/add
+  blocking, protective exits and independence from other halts are covered. No further pause changes requested. C6 and
+  final activation approval remain outstanding. Keep research settings unchanged. Once C6 is satisfied, submit the
+  final activation snapshot for GO." State: sizing-cap experiment sheet rev. 2 accepted in full; v0.7.88 (F127) and
+  v0.7.90 (pause) live; the ONLY remaining activation gate is C6 (one tape, platform owners) followed by a final
+  activation snapshot (effective settings, execution version, starting Practice equity, the pause route, the watch
+  cadence) for their GO. Research settings unchanged; nothing paused. Known test debt: `test_nightly_plan_arm_and_alert_mode_fire`
+  fails after 20:00 ET on an unpatched main (a time-of-day dependency in the fixture, not a regression) — to fix.
 - **2026-09-15 scoped Practice pause built (other team's request; v0.7.90)** — the sheet's breach action is now an
   executable control: a per-book PAUSE (`engine.pause_book` / `release_book_pause`, `POST /api/portfolios/{id}/pause`
   and `/unpause`, journaled `BookPaused` / `BookPauseReleased`, shown as `pausedBooks` in `/api/ops/state`). Verified by
