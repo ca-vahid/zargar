@@ -561,3 +561,19 @@ stop), SNDK / ZS-short never confirmed, MSFT unknown (no target). Defects fixed 
 fallback sizing (4 refusals today); open finding for review: nothing refreshes the contract NBBO between the pick and the
 final guard (3 refusals today).
 
+## Post-start verification - two out-of-band restarts after the 13:36 PT release (record `logs/post-start-verification-20260915-1704.json`)
+
+The Cartel desk's 14:52-14:56 PT deploy of a53c645 (0.7.89) was refused by Windows (elevated engine PID) and left its
+receipt at phase **deferred** - preserved untouched. At ~17:03 PT the EM desk's engine was stopped out of band (no
+shutdown entry in its log); at 17:04 PT the **watchdog** started the engine on the checkout as it stood (a53c645,
+0.7.89; dist rebuilt 17:04, check-release agree; artifact manifest `05D32ACA...` recomputed and equal; 51 plans, 4
+managed positions restored, no bracket releases). At 17:10:49 PT a direct `scripts/restart.ps1` run (not the EM desk)
+moved live to **cd51bb34d8b7f757d47b8ec7f33aeb1aa65f1fe2** (0.7.89, same artifact manifest; before-inventory
+`restart-inventory-20260915-171049.json`). Verified at 17:30 PT: health ok on cd51bb3, restart-check safe, inventory
+51 armed (41 EM / 7 tip / 3 team2), 0 open, 0 pending exits, 22 resting, 3 managed open = before-inventory; the EM
+combined build 5b7542d is an ancestor of cd51bb3. Neither start wrote a receipt; no restart was made to tidy this.
+Helpers: the Discord gateway (relaunched by the Tips desk 17:28 PT) and the EM ingestion worker (relaunched by the EM
+desk 17:32 PT) had died with the stop - platform gap noted for the start path's owner. Live settings re-checked:
+EM `shadow_exit_observe` / `shadow_p02_candidate` true, execution defaults false. The session-local morning review
+(cron 64ad08c1, 06:20 PT then :20/:50 through 13:20 PT) is owned by the EM desk session and runs only while it is open.
+

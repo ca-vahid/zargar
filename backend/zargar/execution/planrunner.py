@@ -186,6 +186,7 @@ class Trade:
     # F (2026-09-14): the venue's answer to the entry never arrived — the order may be live. The exposure stays
     # reserved (status `submitting`) until order/execution evidence reconciles it; never treated as a zero fill.
     submit_uncertain: bool = False
+    quote_refresh: dict | None = None        # entry-quote-refresh-v1 diagnostic for the intent journal (2026-09-15)
     # F (2026-09-14): the venue's answer to the entry never arrived — the order may be live. The exposure stays
     # reserved (status `submitting`) until order/execution evidence reconciles it; never treated as a zero fill.
     submit_uncertain: bool = False
@@ -2895,6 +2896,57 @@ class PlanRunner(SessionListener):
             self._log(ap, "sized", f"position cap not computed ({e}) - the risk gate decides")
             return None, ""
 
+    async def _refresh_entry_quote(self, ap: ArmedPlan, trade: Trade, contract: dict) -> dict:
+        """One BOUNDED provider refresh of the contract's NBBO (2026-09-15), after the analysis and immediately
+        before final pricing/sizing. Knob `entry_quote_refresh_timeout_s` (per technique via rt(); 0 = off; EM 2.5 s).
+        It never relaxes anything: a timed-out, failed, delayed or still-stale refresh leaves the contract as it was
+        and the existing checks (never-chase cap, admission, R2 re-judgement, the final entry guard and the
+        RiskGate's `risk.stale_quote_seconds`) refuse exactly as before. Protective exits do not pass here.
+        Returns a diagnostic carried on the order intent (`quoteRefresh`) so admissions and outcomes can be tracked."""
+        timeout = float(self.rt("entry_quote_refresh_timeout_s", 0.0) or 0.0)
+        sym = str((contract or {}).get("symbol") or "")
+        out = {"version": "entry-quote-refresh-v1", "attempted": False, "ok": False, "timeoutS": timeout,
+               "bidBefore": (contract or {}).get("bid"), "askBefore": (contract or {}).get("ask")}
+        if timeout <= 0 or not sym:
+            out["why"] = "off" if timeout <= 0 else "no contract symbol"
+            return out
+        quotes = self.engine.quotes
+        age = getattr(quotes, "source_age_seconds", None)
+        out["attempted"] = True
+        out["ageBeforeS"] = (round(age(sym), 2) if age else None)
+        if out["ageBeforeS"] is not None and out["ageBeforeS"] == float("inf"):
+            out["ageBeforeS"] = None
+        t0 = time.monotonic()
+        try:
+            q = await asyncio.wait_for(self.engine.options.refresh_now(sym), timeout=timeout)
+        except asyncio.TimeoutError:
+            out["why"] = f"provider refresh timed out after {timeout:g}s - the stale quote stays and the checks decide"
+            out["elapsedMs"] = int((time.monotonic() - t0) * 1000)
+            self._log(ap, "quote_refresh", f"{trade.trigger_id}: {out['why']}", trigger=trade.trigger_id)
+            return out
+        except Exception as exc:
+            out["why"] = f"provider refresh failed ({type(exc).__name__}) - the stale quote stays and the checks decide"
+            out["elapsedMs"] = int((time.monotonic() - t0) * 1000)
+            self._log(ap, "quote_refresh", f"{trade.trigger_id}: {out['why']}", trigger=trade.trigger_id)
+            return out
+        out["elapsedMs"] = int((time.monotonic() - t0) * 1000)
+        after = age(sym) if age else None
+        out["ageAfterS"] = (round(after, 2) if after is not None and after != float("inf") else None)
+        out["bidAfter"] = getattr(q, "bid", None); out["askAfter"] = getattr(q, "ask", None)
+        max_age = float(self.engine.settings.get("risk.stale_quote_seconds", 10) or 10)
+        if q is None or out["ageAfterS"] is None or float(after) > max_age:
+            out["why"] = "quote still stale or unavailable after the refresh - the checks decide"
+        elif (bool(getattr(q, "delayed", False)) or str(getattr(q, "source", "") or "") == "chain") and self._live_option_quotes_expected():
+            out["why"] = "refresh served a delayed row while a real-time source is expected - the checks decide"
+        elif not (float(q.bid or 0) > 0 and float(q.ask or 0) > 0 and float(q.ask) >= float(q.bid)):
+            out["why"] = "refreshed book is not two-sided/uncrossed - the checks decide"
+        else:
+            out["ok"] = True
+        self._log(ap, "quote_refresh", f"{trade.trigger_id}: refreshed {sym} in {out['elapsedMs']} ms, age {out['ageBeforeS']} -> {out['ageAfterS']} s, "
+                  f"bid/ask {out['bidBefore']}/{out['askBefore']} -> {out['bidAfter']}/{out['askAfter']}{'' if out['ok'] else ' - ' + str(out.get('why'))}",
+                  trigger=trade.trigger_id)
+        return out
+
     async def _entry_blocked(self, ap: ArmedPlan, trade: Trade, contract: dict | None, blocked: str | None) -> str | None:
         """What happens when the option entry is refused: the shares fallback (returns "shares"), a failed
         fire (no contract at all) or a journaled skip. Returns None when nothing may be sent."""
@@ -2962,11 +3014,18 @@ class PlanRunner(SessionListener):
             # guards the other direction (an ask that ran away).
             # FIX-03 (2026-09-14): re-price BEFORE sizing - the quantity is computed on the price the
             # order will pay, never on the pick's stale ask (a doubled ask used to double the risk).
+            refresh = None
             if getattr(self.engine, "options", None) is not None:
+                # 2026-09-15: `reprice()` returns the CACHED quote for an already-served contract, and the
+                # analysis between the fire and this point runs 18-23 s - three EM entries were refused by the
+                # RiskGate's freshness check (10.9-14.5 s) on a quote nobody had re-fetched. One bounded PROVIDER
+                # refresh here, then every existing check runs again on the refreshed price and quantity.
+                refresh = await self._refresh_entry_quote(ap, trade, contract)
                 with contextlib.suppress(Exception):
                     await self.engine.options.reprice(contract)
                 with contextlib.suppress(Exception):
                     await self._hook("rejudge_contract", self.rejudge_contract(ap, trade, contract))
+            trade.quote_refresh = refresh
             qty = float(await self._size_contracts(ap, trade, contract))
             if frac < 1.0:
                 qty = float(max(1, int(qty * frac))) if qty >= 1 else qty
@@ -3062,7 +3121,7 @@ class PlanRunner(SessionListener):
             "runId": ap.run_id, "symbol": ap.symbol, "orderSymbol": order_symbol, "secType": sec_type,
             "trigger": trade.trigger_id, "side": "BUY", "qty": qty, "limitPrice": limit, "entry": trade.entry,
             "stop": trade.stop, "targets": trade.targets, "portfolioId": cfg.portfolio_id, "riskPct": cfg.risk_pct,
-            "contract": trade.contract},
+            "contract": trade.contract, "quoteRefresh": getattr(trade, "quote_refresh", None)},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         self._log(ap, "entry_submit", f"{trade.trigger_id}: BUY {qty:g} {'contract(s) ' + (trade.contract or {}).get('display', order_symbol) if sec_type == 'OPT' else 'sh'} LMT {limit:.2f}",
                   trigger=trade.trigger_id)

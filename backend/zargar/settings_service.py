@@ -491,6 +491,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.min_one_contract": True,  # unchanged behaviour for the other desks - their call to flip
     "techniques.options_cartel.min_one_contract": True,
     "techniques.enhanced_market.min_one_contract": False,
+    "execution.entry_quote_refresh_timeout_s": 0.0,   # entry-quote-refresh-v1 (2026-09-15): bounded provider NBBO refresh before final pricing/sizing; 0 = off
+    "techniques.enhanced_market.entry_quote_refresh_timeout_s": 2.5,   # EM on: three 09-15 entries were refused on a 10.9-14.5 s quote nobody re-fetched
     "execution.target_distance_diagnostic": False,   # target-distance-v1 (2026-09-15): an EM diagnostic, absent from other desks' aggregates
     "techniques.enhanced_market.target_distance_diagnostic": True,   # EM journals TechniqueTargetDistance at fire and fill (never gates)
     "execution.shadow_p02_candidate": False,   # small-position-exit-v1 candidate observation at TP1 (P-02, 2026-09-15): off everywhere
