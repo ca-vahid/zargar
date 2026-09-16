@@ -1,7 +1,7 @@
 # EM deterministic entry - response to the final review at 758ccfb (DE-01..DE-05)
 
-Corrected integrated delivery: **`__FINAL_SHA__`** on `claude/technique-review-trade-plan-fbb9ba` (the DE fixes on top of
-758ccfb / fc6a295, merged with `origin/main` at `__MAIN_SHA__`). The four reviewer files were adopted UNCHANGED
+Corrected integrated delivery: **`8e641e9e7fd86f5b29beef339ad25401cd4c1a86`** on `claude/technique-review-trade-plan-fbb9ba` (the DE fixes on top of
+758ccfb / fc6a295, merged with `origin/main` at `cd4c1c6`). The four reviewer files were adopted UNCHANGED
 (`tests/test_codex_deterministic_rule_parity.py`, `tests/test_codex_deterministic_record_owner.py`,
 `tests/test_em_evidence_boundary_regressions.py`, `tests/test_policy_migration_reporting.py`; packet copied to this
 folder). The 20 prior cases and the `fc6a295` arming cases are preserved. Nothing is deployed; the current runtime
@@ -27,11 +27,11 @@ folder). The 20 prior cases and the `fc6a295` arming cases are preserved. Nothin
   `test_em_evidence_boundary_regressions`, `test_policy_migration_reporting`, `test_em_deterministic_entry`,
   `test_em_deterministic_entry_integration`, `test_em_fire_evidence`): **31 passed**.
 - Pure EM / measurement / profitability / entry quality / exits / platform contracts (private DB) / EM review execution /
-  sizing / F127 / Team2 sizing: __PURE_RESULT__
-- DB-backed dispatch / FC-01 / wiring / API / pre-open / evidence / separation / Team2 pick / Tip runner: __DB_RESULT__
-- Arming solo (incl. the explicit-legacy cases and the real-rig deterministic case from fc6a295): __ARMING_RESULT__
-- Frontend: __FRONTEND_RESULT__
-- Migration preview (read-only, runtime database, after the DE-03 fix): __PREVIEW_RESULT__
+  sizing / F127 / Team2 sizing: **118 passed** (together with the 31 reviewer/prior cases in one run; private database `zargar_test_em2`).
+- DB-backed dispatch / FC-01 / wiring / API / pre-open / evidence / separation / Team2 pick / Tip runner: **103 passed in 4:49** (private database `zargar_test_em`, sequential).
+- Arming solo (incl. the explicit-legacy cases and the real-rig deterministic case from fc6a295): **30 passed + 1 failed** = only the known baseline `test_auto_options_one_contract_lifecycle`; the load-sensitive restore case passed in this full-file solo run.
+- Frontend: `npm run build` green, check-release "Release 0.7.93 ... agree".
+- Migration preview (read-only, runtime database, after the DE-03 fix): effective mode `deterministic` (`deterministic-entry-v1`), evidence `off`; effective settings `techniques.enhanced_market.fire_decision_mode=deterministic`, `fire_evidence_mode=off`, `critic_mode=momentum_only`; 41 active EM arms for 2026-09-16, all `useCritic=true` -> new effective `deterministic`, 0 with critic-only state, 0 critic-only paused; no setting written, no arm rewritten (the projection never commits).
 - Known baseline failures on main, unchanged: `test_auto_options_one_contract_lifecycle` (sim option fills need the OPRA
   identity); `test_restore_reattaches_an_open_trade` is load-sensitive and passes alone.
 
