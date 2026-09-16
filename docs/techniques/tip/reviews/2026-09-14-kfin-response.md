@@ -616,3 +616,11 @@ recovery enqueued the 3 messages posted during the outage from its cursors - not
 Finding for the platform: a watchdog/engine restart is not an app restart - the helper processes
 (Discord gateway, EM ingestion) need the same restoration, or at least a liveness check after
 boot. Raised with the EM desk (their watchdog); no code change from this desk tonight.
+
+**Live build correction (2026-09-15 20:35 ET):** per the EM desk, live moved again at 20:10:49 ET by a
+direct `scripts/restart.ps1` run (not this desk's) to `cd51bb3` (0.7.89; engine up 20:11:23 ET,
+inventory equal before/after: 51 armed incl. the 7 Tips plans, 22 resting, 3 managed open). Verified
+from `/api/health`: build `cd51bb3`, and `git merge-base` confirms PR #150 `bf8b070` and PR #145
+`d5034a2` are in it - the R147 closure holds on the running build. The EM ingestion worker was in
+the same dead state as the Discord gateway after the 20:03 ET stop and was relaunched by the EM
+desk at 20:32 ET. Intake liveness re-verified `live` (frame age 1 s) at 20:35 ET.
