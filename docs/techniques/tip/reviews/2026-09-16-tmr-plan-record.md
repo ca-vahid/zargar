@@ -304,3 +304,30 @@ checks retained, two of them updated for I175-03's separated horizon). Standing:
 `analyst_feasibility_gate` annotate, no card suppression, no risk-limit change, no forced TAKE. Status:
 built, merged - not deployed (the live 0.7.96 process predates PR #175 and this fix; ships on the next
 coordinated deployment after the close).
+
+## I175-04 follow-through (review of PR #177, 2026-09-16 afternoon) - replay parity on the ACTUAL request
+
+The reviewer's two checks adopted verbatim (`tests/test_pr177_capture_parity_review.py`; both failed on
+`c6fb097`). (1) **History by RECORDS:** production supplies 12 mirrored records (a multi-line message is
+one record; `- [<label>] author: ...` starts a record); the candidate and the frozen rebuild now count
+records (`recap.trim_history_records`, `historyRecords`), so a 12-record history with two lines each is
+kept whole. (2) **Classifier metadata through capture:** the run's opinion carries `recapRead`,
+`headerMode`, `headerChars`, `recapCandidate`; `build_bundle` copies them onto `bundle.run`, and the
+captured manifest records `headerMode`, `recapRead`, `classifierVersion`, `maxTools` (effective budget)
+and `recapCandidate`; the `recap_candidate` variant reads the confidence FROM the capture (0.87 stays
+0.87) and is `available: False` / coverage-limited when no read was captured - it never substitutes
+zero. A compact-route capture's header already carries the prefix: the rebuild keeps it exactly once.
+The variant reports `parity` = {headerMode, capturedCandidate, capturedMaxTools, classifierVersion,
+promptIdentity (system sha), status production-request | treatment-only, gaps} - a full-route capture
+replayed under the candidate is declared "treatment-only", a version mismatch "non-parity".
+**Request-assembly parity (unpaid, real capture):** a compact-route run on the engine with a scripted
+client is captured verbatim; the replay rebuilds from that bundle the EXACT production request text
+(prefix once, same rules/notes/history), the same effective tool budget (2), classifier version and
+prompt identity (`test_actual_compact_request_is_reproduced_by_the_replay_from_the_capture`); the
+full-route baseline stays the captured text. Results: reviewer 2 + parity 5 + PR175 3 + intra reasoning
+6 + frozen compact + KFIN-09 + activation = **29 passed**. Standing: `recap_route` off; no risk-limit,
+permission or card-suppression change. Status: built, merged - not deployed (rides the next coordinated
+deployment; the accepted reasoning/payoff fixes ship with the route off). The two paid pairs run only on
+bundles that carry a captured classifier read; today's SPX-map and APLD bundles predate that capture and
+are declared non-parity / coverage-limited - the evidence set is compact-route captures once the route
+is allowed.
