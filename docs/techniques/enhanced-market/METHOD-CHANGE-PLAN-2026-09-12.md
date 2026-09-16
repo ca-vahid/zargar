@@ -117,8 +117,9 @@ Each item names the knob, the test that decides it, and the adopt bar. D7 applie
 - Owner: EM, marketstructure (new kind is shared code - PLATFORM-RULES entry).
 
 ### C6 · Keep, and keep measuring
-- Critic stays advisory on at-level triggers (§5 2026-09-09); re-tally advisory-"no" fills vs
-  "yes" fills at 10 sessions of fills.
+- ~~Critic stays advisory on at-level triggers (§5 2026-09-09); re-tally advisory-"no" fills vs
+  "yes" fills at 10 sessions of fills.~~ *Superseded 2026-09-15: the critic left the entry path
+  (`deterministic-entry-v1`); the comparison is now by policy version in the profitability report.*
 - LLM plan review: decision at ten sessions (~09-19); four sessions in, accepted -0.09R/fire
   vs rejected -0.48R/fire.
 - R2 stays (user decision); the gate audit keeps reporting the sub-R2 number weekly.

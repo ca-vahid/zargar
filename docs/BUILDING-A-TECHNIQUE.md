@@ -39,6 +39,13 @@ class MyTechnique(PlanRunner):
     async def review_fire(...) -> (verdict, confidence, critic)   # whether a 'no' blocks is the runner's `critic_mode` knob (veto | momentum_only | advisory)
                                                   # you own prompt + verdict; the RUNNER owns timeout,
                                                   # fail-open budget, veto cooldown, kill cap, re-arming
+    def fire_review_policy(ap) -> "legacy"|"deterministic"   # base = legacy (the awaited reviewer above). deterministic =
+    async def fire_decision(ap, tid, tr, trade, *, attempt_id) # ...YOUR pure rules decide (allow|refuse|defer + reasonCodes,
+                                                  # inputHash, checks, snapshot, policy); the runner journals
+                                                  # TechniqueEntryDecision and runs the unchanged order chain (2026-09-15)
+    def fire_evidence_mode(ap) -> "off"|"after_close"          # optional LATER model opinion over the frozen decision
+    def fire_evidence_capture(ap, tid, tr, trade) -> bars|None  # raw bars to freeze on the record (never renders, never a model)
+    def judge_entry_quote(...) / rejudge_contract(...)          # final guard on the CURRENT quote; one option admission after reprice/resize
     async def record_fire(...); emit_proposal(...); after_fire(...)
     async def pick_contract(...)                  # expression policy (which option, which DTE window)
     async def plan_horizon(run, plan)             # (sessions, last-session-date) — >1 session makes the
