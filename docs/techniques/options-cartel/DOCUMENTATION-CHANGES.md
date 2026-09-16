@@ -1,5 +1,14 @@
 # Cartel documentation changes
 
+## 2026-09-15 — profitability research protocol
+
+- Added the prospective pool, selection, bearish, campaign-target, exit and conditional
+  expression study definitions, including cash/option evidence and holdout requirements.
+- Added operating instructions and a bundled Method chapter; linked preparation, rules
+  and the September 15 findings without rewriting that historical review.
+- Retained execution permission, sizing and whole-unit boundaries. Research comparisons
+  do not claim improved profitability or automatically promote a strategy.
+
 ## 2026-09-13 — final review corrections
 
 - Added the final review and current correctness/Practice protocol, including source-versus-engineering boundaries.

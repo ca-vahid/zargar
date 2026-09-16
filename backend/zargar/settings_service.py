@@ -32,6 +32,10 @@ DEFAULTS: dict[str, Any] = {
     "techniques.options_cartel.scan_direction": "long",
     "techniques.options_cartel.recovery_enabled": False,
     "techniques.options_cartel.record_option_quotes": False,
+    "techniques.options_cartel.intraday_research": True,  # non-executing Practice observations only
+    "techniques.options_cartel.profitability_research": True,  # prospective Practice studies, never orders
+    "techniques.options_cartel.profitability_research.candidate_cap": 50,
+    "techniques.options_cartel.profitability_research.bearish_enabled": True,
     "techniques.options_cartel.preparation": {},
     "techniques.options_cartel.preparation_live": {},
     "techniques.options_cartel.allow_live_auto": False,
@@ -223,6 +227,15 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_cohort_enabled": False,     # record EVERY eligible open/add idea (skips, declines, blocked cards, shadows, parks, failures) with its decision-time quote
     "techniques.tip.entry_cohort_delay_minutes": 3.0, # the configured LATER sample (labeled delayed - never alert-time evidence)
     "techniques.tip.entry_cohort_premium_cap": 1.05,  # the cap variant: fill only when the ask <= cap x the source-stated premium
+    "techniques.tip.hold_study_enabled": True,          # PROF-03: pre-close + next-open research snapshots of Tips positions (observation only)
+    "techniques.tip.hold_snapshot_at": "",               # ET; empty = calendar-relative (close - hold_snapshot_before_close_minutes)
+    "techniques.tip.hold_snapshot_before_close_minutes": 10,   # R147-01: pre-close job runs N min before the EXCHANGE close (12:50 on an early close)
+    "techniques.tip.hold_next_open_at": "",              # ET; empty = the opening window's start (09:30) - first qualified quote from there
+    "techniques.tip.hold_preclose_window_minutes": 15,   # HOLD142-01: pre-close observation must fall in the last N min before the close
+    "techniques.tip.hold_next_open_window_minutes": 15,  # HOLD142-01: first qualified quote inside 09:30 + N min of the EXPECTED next session
+    "techniques.tip.hold_next_open_attempts": 40,        # in-window retries (20 s apart, from 09:30) for that first qualified quote
+    "techniques.tip.analyst_feasibility_gate": "annotate",  # PROF-01: annotate (record the expression check beside the verdict) | downgrade (an unfittable TAKE becomes WATCH; thesis verdict kept) - a reviewed method decision flips it
+    "techniques.tip.entry_cohort_delay_tolerance_seconds": 60.0,  # KF83-03: a delayed sample observed later than due + tolerance is LATE (diagnostic, never the delay variant's evidence)
     "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
     "techniques.tip.analyst_max_rules": 50,             # rulebook budget per run: CORE (pinned) rules always, then newest (KB-04)
     "techniques.tip.knowledge_maintenance_at": "17:25", # ET, EVERY day incl. weekends; runs the audit on rule_audit_day or as catch-up (KB-01)

@@ -21,7 +21,11 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## State of play (2026-09-14)
 
-- **Version:** v0.7.77 (deployed 21:35 ET 2026-09-14: EOD review fixes EOD-01..09, `reviews/2026-09-14-eod-response.md`; on top of the day's rollout PR #95, exit guard PR #98, counter fix PR #100). Practice only: `trading.mode=practice`,
+- **Version:** v0.7.85 (2026-09-15: approval-card readiness + KF83-01..04, record in
+  `reviews/2026-09-14-kfin-response.md` "Approval-card readiness + KF83"). Before it v0.7.83 (deployed 00:21 ET 2026-09-15: review follow-ups PR #127 — the dispute
+  release commits with its batch progress, pending delayed samples are recovered by the
+  `tip-cohort-recovery` task, the Tips card shows attachment coverage; record in
+  `reviews/2026-09-14-kfin-response.md` "Review follow-ups"). Before it v0.7.77 (deployed 21:35 ET 2026-09-14: EOD review fixes EOD-01..09, `reviews/2026-09-14-eod-response.md`; on top of the day's rollout PR #95, exit guard PR #98, counter fix PR #100). Practice only: `trading.mode=practice`,
   `techniques.tip.allow_live_auto=false`. The Tips Practice book (`techniques.tip.default_portfolio`)
   is the only book that trades tips; shadow books (immediate / armed) are research.
 - **Entry controls, both ACTIVE by journaled settings (2026-09-14 05:15Z):**
@@ -48,9 +52,10 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 - **Monitoring:** the desk's Claude session runs a pre-open tick (08:23 ET), 30-minute session
   ticks (:03/:33, 09:03–15:33 ET) and a 16:06 ET wrap-up. These are session-only crons — a
   session restart drops them and they must be re-armed.
-- **Meet Kevin own-book workflow (KFIN-08, built, NOT enrolled):** `techniques.tip.mk_ownbook_mode`
-  is `off` and `mk_ownbook_sources` is empty, so nothing changed at runtime. When enrolled
-  (`observe` first, then `shadow`), MK's "I bought / added / sold half" text is classified
+- **Meet Kevin own-book workflow (KFIN-08, ENROLLED in `observe` since 2026-09-15 00:26 ET):**
+  `techniques.tip.mk_ownbook_mode=observe`, `mk_ownbook_sources=["MK-alpha-trades"]` (journaled
+  PATCH) — classification + grading only, no ownbook book yet, no order path. Code defaults stay
+  `off` / empty. In `observe` (then `shadow` by a separate reviewed verdict), MK's "I bought / added / sold half" text is classified
   (`techniques/tip/ownbook.py`) and booked ONLY in a dedicated `book=ownbook` shadow book —
   never the Practice book, a proposal or an armed plan; ungrounded/stale disclosures stay
   `ownbook_unresolved`; recaps, hypotheticals and other people's screenshots are
@@ -144,7 +149,61 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
 
-## Experiments (KFIN-09, built 2026-09-14 - inert by default)
+## Feasibility before the verdict and the whole exit path (PROF-01/02, 2026-09-15)
+
+The analyst is told the approved planned-risk budget (not just the purchase allocation), must
+`check_feasibility` before a take (units that fit at the declared stop; labelled research
+alternatives at equal risk), and can `preview_payoff` (integer-unit ladder, every-target /
+first-target-then-stop / stop-only arithmetic, fees, one-lot policy). Every TAKE is assessed
+server-side and the result rides on `extraction.analyst.expression` / `.payoff`;
+`techniques.tip.analyst_feasibility_gate` annotate (default) | downgrade. The risk plan carries
+`payoff`, shown on the card. Tools: `zargar.tools.tip_feasibility replay`,
+`zargar.tools.tip_payoff_report`. Code: `techniques/tip/feasibility.py`, `payoff.py`.
+
+## Research studies (PROF-03/05, 2026-09-15, observation only)
+
+`tip_hold_snapshots` (jobs `tip_hold_snapshot` 15:50 ET / `tip_hold_next_open` 09:36 ET; knob
+`techniques.tip.hold_study_enabled`) pair overnight quote drift (and the managed outcome where the
+position's own exit closed it first) against a predeclared intraday close on qualified quotes inside
+declared exchange-calendar windows, one durable observation per position/session/leg/arm, nets
+including entry and exit costs (`holdstudy-v2`, HOLD142-01..03) - `zargar.tools.tip_hold_study report`. The frozen replay has a
+`compact` variant (core rules + relevant notes + newest history lines) with cache-aware usage -
+`zargar.tools.tip_frozen replay --variants current,compact`. Neither changes method behaviour.
+
+## Approval cards (readiness-v1, 2026-09-15)
+
+A Tips card shows the analyst's OPINION and the EXECUTION READINESS as two independent statuses.
+`context.readiness` (persisted by every refresh / automated refusal / manual approval attempt)
+lists the actual blocking reasons by code - source not qualified for automatic trading (auto-only,
+informational), planned risk over the approved budget, missing / stale / delayed quote, contract
+metadata missing, risk evidence unavailable, exit plan review, an open execution-integrity
+incident, an unsupported instrument, expiry - the final plan (purchase allocation limit vs the
+approved planned-risk budget, risk per unit and its basis, final qty x risk, final stop, quote
+provenance, adjustments) and a fingerprint (final stop + admissible size + blocker set).
+"Refresh & revalidate" (`POST /api/proposals/{id}/revalidate`) re-fetches quotes, recomputes
+geometry and sizing, re-checks incidents and gates, saves the result - zero orders, the limit only
+ever lowered, a resolved incident's label cleared. Approve submits exactly the displayed plan
+(revalidated at that instant; refused when blocked, when the fingerprint changed, or when an
+incident opened meanwhile); a labeled override names every failed check it accepts (only
+overridable ones: budget, plan review, incident, unsupported instrument - never a missing / stale
+quote, missing evidence or expiry), needs a reason and is journaled `ProposalOverridden` with the
+exposure. The platform protections (risk gate, kill switch, loss halts) still apply to the order.
+Code: `backend/zargar/approvals/readiness.py`, `proposals.py::assess/revalidate`,
+`frontend/src/pages/InboxPage.tsx::ProposalCard`; tests `tests/test_proposal_readiness.py`.
+
+## Experiments (KFIN-09, built 2026-09-14; collection switched ON 2026-09-15 00:26 ET)
+
+`techniques.tip.entry_cohort_enabled` and `techniques.tip.frozen_capture_context` are ON by journaled
+PATCH since 2026-09-15 (code defaults stay off): the cohort records and samples, the analyst run
+stamps its context manifest. Neither touches an order path; a pending delayed sample survives a
+restart through the `tip-cohort-recovery` task (0.7.83). Baseline at enablement: 0 eligible ideas;
+the first verbatim frozen bundle needs a run captured AFTER the flag (a pre-flag capture is
+labeled RECONSTRUCTED and its `core_only` variant is unavailable). KF83-03/04 (0.7.85): a delayed
+sample is the delay variant's evidence only inside `techniques.tip.entry_cohort_delay_tolerance_seconds`
+(60) - later observations are `late` diagnostics; a quote is executable comparison evidence only with
+venue provenance (`opra`/`ibkr` for options), no delayed flag, a genuine source time, a valid
+uncrossed bid/ask and an open option session (`cohort.qualify_quote`; stored records are re-judged).
+MK `observe` is classification + grading instrumentation, not a funded shadow cohort.
 
 Two evidence tools, both isolated by construction (`tests/test_tip_kfin09_experiments.py`
 proves write isolation, denominator correctness, missing-data handling and reproducibility):

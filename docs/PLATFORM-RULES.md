@@ -630,6 +630,15 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- **2026-09-15 · Cartel profitability research has no trading authority.** The
+  Practice collection switch and bounded pool controls live under
+  `techniques.options_cartel.profitability_research`. Source/policy-frozen research
+  contexts and observations use separate non-plan run modes; they never become
+  executable arms, approvals or orders. The authenticated research read endpoint
+  is account-scoped and empty in Live. Candidate rankings, bearish cohorts and
+  exit comparisons do not modify the production market gate or existing saved
+  campaigns. See [the protocol](techniques/options-cartel/PROFITABILITY-RESEARCH.md).
+
 - 2026-09-10 · **A verification `npm run build` is also a UI deploy — the version chip can report a release the
   engine is not running** (Team2 watch run 51, finding F94; nothing changed, this is a policy question for
   whoever owns `scripts/start.ps1`). Facts: the running engine is the 01:29 ET boot on **v0.7.36** (F89 — it is
@@ -2010,3 +2019,101 @@ frozen snapshot and is produced by an after-close command that opens no trading 
 `decision`, `decisionDisposition` and `timing` (bar / received / decided / quoteReady / admission / submit) so the
 boundaries can be measured separately from provider and venue latency.
 
+
+- **2026-09-15 (Tips desk) — sim option fills need venue identity; tests must publish it.** Since
+  `12491f2` (2026-09-14) `SimExecutor.quote_rejection` fills an OPT order only on a quote whose
+  `source` is `opra`/`ibkr` with a fresh `source_ts`; a `chain`/delayed quote is "resting, not
+  filled" (`SimFillWaiting`). The chain overlay installed by `OptionsService._apply` re-stamps every
+  incoming contract quote `chain` unless an `opra` overlay replaced it (what the OPRA research feed
+  does). A test that expects a sim option fill must therefore publish through
+  `quotes.set_overlay(sym, ..., source="opra", source_ts=now)` + `on_quote` (see
+  `tests/test_tip_runner.py::_opt_quote`); a bare `Quote(...)` for a tracked contract never fills.
+  Four Tips runner tests had been failing since that commit for this reason (not time-of-day);
+  Practice fills in the runtime were never affected (37 option fills 2026-09-13/14).
+
+- **2026-09-15 (Tips desk, shared code) — `ProposalService.approve()` flips status under a row lock.**
+  The pending -> approved transition is now `SELECT ... FOR UPDATE` with the pending/expiry check
+  repeated inside the same transaction: a duplicate click, a Telegram tap racing the app, or a
+  click racing the TTL gets "proposal is approved/expired, not pending" instead of a second order.
+  Every desk's proposals get this; nothing else in the non-Tips path changed
+  (`tests/test_proposal_readiness.py::test_non_tip_proposals_keep_the_old_approval_path`). Tips
+  cards additionally carry `context.readiness` (typed blockers, final plan, fingerprint) and a
+  human approval revalidates first — see `docs/techniques/tip/README.md` "Approval cards".
+
+- **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
+  `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
+  returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and
+  `calendarRelative`). Fixed "HH:MM" jobs are unchanged. First user: the Tips hold study's pre-close
+  capture, which must run before an EARLY close (12:50 on a 13:00 day) - a fixed 15:50 silently
+  missed those sessions (R147-01). Once-per-day, journal hydration and the running-task guard apply
+  to calendar-relative jobs exactly as before.
+- **2026-09-15 (Tips desk, shared db) - `create_all` also creates declared indexes an existing table lacks.**
+  `db._ensure_columns_sync` added missing COLUMNS to live tables but never their declared indexes,
+  so a UNIQUE index on a column added after the table's first creation (the hold study's
+  observation identity, HOLD142-02) would only ever exist on fresh databases. It now creates any
+  index in `table.indexes` whose name the live table lacks and whose columns exist (or were just
+  added) - additive only, never dropped or altered here; logged with the added columns.
+- **2026-09-15 (Tips desk, shared execution) - ONE exit authority: adoption releases the entry's bracket.**
+  A share tip proposal carries a bracket (the finalized stop + first target, geometry rev 2) so the
+  fill is protected until the manager adopts it; the OrderManager spawns the two GTC children on the
+  full fill. Adoption then added the manager's own venue stop and ladder WITHOUT cancelling the
+  children: Tips Practice held 7 MRNA with a bracket stop (7 @ 134.3674), a venue stop (7 @ 134.37)
+  and a bracket target (7 @ 149.70) all resting beside a 35/35/30 ladder - the stop would have sold
+  14 against 7 held (the RKT short, one bug class over), the target 7 + the trim. Fix
+  (`PositionManager._release_bracket_children`): `adopt`, `append_leg` and `restore` cancel every
+  working `source=bracket` order whose parent is one of the position's entry orders BEFORE the venue
+  stop is placed (journal `ManagedPositionBracketReleased` phase adopt/scale_in/restore; a failed
+  cancel is an attention alert, never silent); the OrderManager asks `bracket_guard`
+  (`owns_entry_order`) before spawning children, so the completing fill of a partially adopted entry
+  journals `OrderBracketSkipped` instead. Adapter positions (Options Cartel) run their own venue
+  orders and are untouched. Tests: `tests/test_position_bracket_release.py`. The MRNA children were
+  cancelled by hand at 15:22 ET (orders a2089582, 564dd417) before the fix shipped.
+- **2026-09-15 (Tips desk, shared execution) - the venue GTC stop must follow the held quantity.**
+  `PositionManager._ensure_venue_stop` re-placed the resting stop only when its PRICE changed; a
+  trim reduced the leg but the venue kept the pre-trim size (RKT: 148 resting on 89 held; the
+  stop filled 148 at 11:17 ET and left the Tips Practice book short 59). Two restarts earlier
+  that morning had also dropped the stop's order id from the exit index (restore re-registered
+  only `state.exits`), so the fill never reached the position and it stayed open at 89. Fix:
+  `venueStopQty` is persisted, a price OR quantity mismatch cancels/replaces, every partial exit
+  fill re-runs `_ensure_venue_stop`, and restore re-registers `venueStopOrderId`. The exit path's
+  venue clamp (a leg is marked flat when the venue holds nothing on that side) is what kept the
+  phantom from selling again. Reconciled by hand the same day: reduce-only BUY 59 in Practice
+  (order `4bfd05bd`, -$9.16 on the excess short) and the managed position closed through the
+  clamped path with no order. Test: `tests/test_position_venue_stop_resize.py`.
+
+### The door, made usable by every desk — 2026-09-15 (Team2 desk; scripts only, no engine change)
+
+What happened: the user stopped an ELEVATED engine (started 13:36 PT by a desk's `deploy.ps1` from an elevated
+assistant shell — the 2026-09-10 failure mode again; two door runs at 14:52 and 14:53 had died on `Stop-Process`
+"Access is denied") with the elevated `stop.ps1`, then fired `ZargarRestart` — and "nothing happened": the task
+exited 1 with NO transcript because the watchdog's 3-minute tick had already found the engine down and held the
+deploy lease while it built and started the engine itself (which came up healthy on the checkout's HEAD, v0.7.89).
+`restart.ps1` took the lease BEFORE starting its transcript and the lease refused instantly (`WaitOne(0)`).
+
+Changes (all ASCII, CRLF): (1) `restart.ps1` starts its transcript before anything can refuse, so a run that does not
+restart always leaves `logs/restart-<ts>.log` saying why (exit 7 for a held lease); (2) `Enter-ZargarDeployment`
+gained `-WaitSeconds` — the restart door waits up to 5 minutes for another door (the watchdog mid-start, another
+desk's deploy) and a refusal names the owner (`host:pid`, alive/gone); (3) a restart that finds the engine healthy on
+HEAD (`/api/health.build` == `git rev-parse HEAD`) reports "already running this checkout" and exits 0 instead of
+bouncing it again; (4) `start.ps1` enforces the 2026-09-05 decision — the server runs UNELEVATED: an elevated shell is
+refused with exit 8 before anything is stopped (assistant shells ARE elevated on this machine; `-AllowElevated` is the
+deliberate override), and a `Stop-Process` denial now says what it is and what to do (exit 3). The scheduled tasks stay
+`RunLevel Limited` on purpose — a `Highest` task would deploy today and re-close the door tomorrow (09-10 record);
+the tasks were flipped to `Highest` for four minutes during this work and flipped back before any engine started.
+
+How to restart, any desk: `Start-ScheduledTask -TaskName ZargarRestart` after `/api/ops/restart-check` is `safe`;
+if the engine was started elevated (a desk's shell), the user runs `scripts\stop.ps1` from an elevated terminal, the
+watchdog or the task brings it back unelevated within three minutes, and from then on the task can always replace
+it. Never `start.ps1` / `deploy.ps1` from an assistant shell — it is elevated here and the guard now refuses it.
+
+### Per-book pause — 2026-09-15 (Team2 desk, for the sizing experiment's loss stop; v0.7.90)
+
+A third kill-switch scope beside the global switch and the per-book daily-loss halt: `HaltState.pauses`
+(`engine.pause_book(pid, reason, label)` / `release_book_pause`, `POST /api/portfolios/{id}/pause` and `/unpause`,
+journaled `BookPaused` / `BookPauseReleased`, `pausedBooks` in `/api/ops/state`). Semantics: every NEW entry and add on
+that book is refused — runners through `engine.trading_halted(pid)` (which now reports the pause with its label) and
+the RiskGate through the `book_pause` check — while reduce-only exits pass under `risk.halt_allows_exits`, every other
+book keeps trading, and unlike a book halt it has NO day: `HaltState.restore` brings it back after a restart regardless
+of the date and the session roll never releases it. Releasing it touches nothing else, and releasing the global
+switch or the book halt never releases it. The record snapshots the Team2 sizing settings at pause time; the pause
+changes no setting. Tests: `tests/test_book_pause.py`. Nothing is paused by this release.

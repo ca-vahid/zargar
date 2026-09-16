@@ -1,5 +1,10 @@
 # Automatic daily preparation
 
+Armed plans prepared ahead of their first session show **Armed for YYYY-MM-DD —
+waiting for market open**. They owe no observation minutes from the preparation
+day. Once their session starts, missing-minute warnings refer to that active
+session; genuine gaps and the normal delivery grace period remain visible.
+
 Current behavior, reviewed 2026-09-13. This is the operating guide; dated release notes are historical evidence.
 
 The [September 13 corrections](READINESS-2026-09-13.md) preserve contract limits through final submission, recheck pending invalidation after selection and retain nearer confirmed targets. Older unused automatic Practice arms need the explicit **Review entry contract limits** action before entry. It preserves their selected contract, chart targets and exit policy.
@@ -105,3 +110,20 @@ archived book). It separates confirmed fills/closed campaigns, gross and net rea
 allocated entry/exit fees, remaining holdings, preparation exclusions and option-recording
 coverage. The native currency must match the account for combined monetary totals; missing
 historical FX or marks are unavailable, not substituted from today's prices.
+
+## Intraday research while the market gate is blocked
+
+The Practice-only monitor observes the saved blocked shortlist against frozen completed-daily
+EMA levels after closed 15-minute index candles. Two consecutive aligned observations can
+produce research-only stock confirmations, subject to existing source, volume and entry
+checks. It cannot unlock or arm these records. The daily market gate and execution policies
+remain unchanged. Settings → Intraday market research controls collection only.
+
+Protocol, source distinction and future promotion requirements are preserved in
+[the September 14 decision](INTRADAY-RESEARCH-DECISION-2026-09-14.md).
+
+For the broader prospective study, leave profitability research enabled in Settings
+and run fresh preparation before the session. Validation's **Profitability research**
+compares the bounded full candidate pool, ranking alternatives and separate bearish
+and exit experiments. It does not increase executable shortlist capacity or grant
+entry permission. See [the collection and review protocol](PROFITABILITY-RESEARCH.md).

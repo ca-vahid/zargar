@@ -45,6 +45,10 @@ DISCLAIMER = ("Entry-variant simulation on the eligible idea cohort under identi
               "or equivalence claim is made or implied. Rows marked insufficient lack the "
               "evidence the variant needs and are never filled in.")
 _missed_grace_factor = 4.0     # a delayed sample later than due + factor x delay is MISSED
+_default_tolerance_s = 60.0    # KF83-03: a delayed sample observed later than due + tolerance is LATE (diagnostic, never delay-variant evidence)
+_recovery_batch = 200          # KF83-03: bounded catch-up per pass
+_clock_skew_s = 5.0            # a source time this far in the future is not a genuine source time
+EXECUTABLE_OPTION_SOURCES = ("opra", "ibkr")   # the same venue identities the sim fill-evidence rule accepts
 
 
 def _utcnow() -> dt.datetime:
@@ -113,23 +117,115 @@ def classify_decision(row, *, status: str, proposal: dict | None, armed: dict | 
     return str(status or "unknown"), None
 
 
-def _snap_quote(eng, sym: str, *, max_age_s: float, kind: str) -> tuple[dict | None, str]:
+def qualify_quote(rec: dict, *, is_option: bool, max_age_s: float, now_ms: int | None = None,
+                  check_session: bool = True) -> tuple[str, list[str]]:
+    """KF83-04: whether an observation is EXECUTABLE comparison evidence -
+    provenance, delayed status, a genuine source time, a valid two-sided quote
+    and (options) the venue session - never timestamp age alone. Returns
+    (status, reasons): `fresh` | `stale` | `ineligible`. Diagnostics are kept
+    on the record either way; only `fresh` may feed a variant."""
+    reasons: list[str] = []
+    src_ts = int(rec.get("sourceTs") or 0)
+    now_ms = now_ms if now_ms is not None else int(_utcnow().timestamp() * 1000)
+    if src_ts <= 0:
+        if is_option or not rec.get("receivedTs"):
+            reasons.append("no genuine source time (receipt time is not source freshness)")
+        else:
+            src_ts = int(rec.get("receivedTs") or 0)      # shares: labeled receipt-time basis
+            rec["sourceTimeBasis"] = "receipt"
+    elif src_ts > now_ms + _clock_skew_s * 1000:
+        reasons.append("source time is in the future")
+    if rec.get("delayed"):
+        reasons.append("delayed quote")
+    src = str(rec.get("source") or "")
+    if src == "chain":
+        reasons.append("chain snapshot is not executable evidence")
+    if is_option and src not in EXECUTABLE_OPTION_SOURCES:
+        reasons.append(f"option quote source {src or 'unknown'!r} is not a venue identity ({'/'.join(EXECUTABLE_OPTION_SOURCES)})")
+    bid, ask = float(rec.get("bid") or 0), float(rec.get("ask") or 0)
+    if bid <= 0 or ask <= 0 or ask < bid:
+        reasons.append("invalid or crossed quote")
+    if is_option and check_session:
+        try:
+            from ...brokers.sim import option_session_open
+            if not option_session_open(now_ms):
+                reasons.append("outside the option venue session")
+        except Exception:                         # noqa: BLE001 - calendar unavailable = not proven open
+            reasons.append("option session could not be verified")
+    if reasons:
+        return "ineligible", reasons
+    age_s = rec.get("ageSeconds")
+    if age_s is None:
+        return "stale", ["age unknown"]
+    return ("fresh" if float(age_s) <= max_age_s else "stale"), ([] if float(age_s) <= max_age_s else [f"age {age_s}s > {max_age_s:g}s"])
+
+
+def _snap_quote(eng, sym: str, *, max_age_s: float, kind: str, is_option: bool | None = None) -> tuple[dict | None, str]:
     """(quote record, status) for a symbol from the engine's quote store -
-    never fetched anew here; freshness judged on the SOURCE print's age."""
+    never fetched anew here. Freshness is judged on the SOURCE print's age and
+    eligibility on provenance (KF83-04): a delayed chain snapshot, a quote
+    without a genuine source time, a crossed quote or an option outside its
+    session is recorded as `ineligible`, never `fresh`."""
     q = eng.quotes.get(sym)
     if q is None:
         return None, "missing"
     now_ms = int(_utcnow().timestamp() * 1000)
-    src_ts = int(getattr(q, "source_ts", 0) or 0) or int(getattr(q, "ts", 0) or 0)
-    age_s = max(0.0, (now_ms - src_ts) / 1000.0) if src_ts else None
+    src_ts = int(getattr(q, "source_ts", 0) or 0)
+    recv_ts = int(getattr(q, "ts", 0) or 0)
+    if is_option is None:
+        is_option = len(sym) > 8 and sym[-9] in ("C", "P") and sym[-8:].isdigit()
+    basis_ts = src_ts if (src_ts > 0 or is_option) else recv_ts
+    age_s = max(0.0, (now_ms - basis_ts) / 1000.0) if basis_ts > 0 else None
+    # the venue-session test mirrors the Practice venue's own policy (EOD-05):
+    # a config that lets the sim fill options at any hour judges no session here
+    cfg = getattr(eng, "config", None)
+    check_session = bool(getattr(cfg, "sim_option_sessions", True)) if cfg is not None else True
     rec = {"symbol": sym, "bid": q.bid, "ask": q.ask, "last": q.last,
-           "source": getattr(q, "source", "") or "feed", "sourceTs": src_ts,
+           "source": getattr(q, "source", "") or "feed", "sourceTs": src_ts, "receivedTs": recv_ts,
            "ageSeconds": round(age_s, 1) if age_s is not None else None,
            "delayed": bool(getattr(q, "delayed", False)),
-           "sampledAt": _iso(_utcnow()), "sampleKind": kind}
-    if age_s is None:
-        return rec, "stale"
-    return rec, ("fresh" if age_s <= max_age_s else "stale")
+           "sampledAt": _iso(_utcnow()), "sampleKind": kind, "isOption": bool(is_option)}
+    status, reasons = qualify_quote(rec, is_option=bool(is_option), max_age_s=max_age_s, now_ms=now_ms,
+                                    check_session=check_session)
+    rec["quoteStatus"] = status
+    rec["eligibility"] = reasons
+    return rec, status
+
+
+def evidence_ok(rec: dict | None, *, is_option: bool) -> tuple[bool, str | None]:
+    """Re-qualify a STORED observation from its own fields (KF83-04): rows
+    captured before provenance qualification existed are re-judged, never
+    trusted on their stored label alone. The session is not re-checked (it was
+    judged at capture); age is the age at capture."""
+    if rec is None:
+        return False, "no quote"
+    if rec.get("ageSeconds") is None:
+        return False, "no age recorded at capture"
+    if "eligibility" in rec:
+        # captured under the provenance policy: its capture-time verdict stands,
+        # re-checked on its own provenance fields
+        status, reasons = qualify_quote(dict(rec), is_option=is_option, max_age_s=float("inf"),
+                                        now_ms=int(rec.get("sourceTs") or 0) + 1, check_session=False)
+        if status == "ineligible":
+            return False, "; ".join(reasons)
+        if rec.get("quoteStatus") != "fresh":
+            return False, f"quote {rec.get('quoteStatus')} (age {rec.get('ageSeconds')}s)"
+        return True, None
+    # a LEGACY record (no eligibility evaluated at capture): re-judge it at its
+    # own trustworthy capture time - provenance fields plus the option session
+    # at `sampledAt` - never assume it passed checks that did not exist
+    try:
+        cap = dt.datetime.fromisoformat(str(rec.get("sampledAt")))
+        cap_ms = int(cap.timestamp() * 1000)
+    except Exception:                                    # noqa: BLE001
+        return False, "legacy record: capture time unknown"
+    status, reasons = qualify_quote(dict(rec), is_option=is_option, max_age_s=float("inf"),
+                                    now_ms=cap_ms, check_session=is_option)
+    if status == "ineligible":
+        return False, "legacy record re-judged: " + "; ".join(reasons)
+    if rec.get("quoteStatus") != "fresh":
+        return False, f"quote {rec.get('quoteStatus')} (age {rec.get('ageSeconds')}s)"
+    return True, None
 
 
 async def _posted_at(eng, content) -> dt.datetime | None:
@@ -219,17 +315,19 @@ async def record_idea(eng, *, row, content, status: str, proposal: dict | None =
     max_age = float(s.get("techniques.tip.entry_cohort_quote_max_age_seconds", 300.0) or 300.0)
     quote, qstatus = (None, "missing")
     if sym:
-        quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="decision")
+        quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="decision", is_option=(sym != row.ticker))
         if quote is None and sym != row.ticker:
             with contextlib.suppress(Exception):     # best-effort ONE observation
                 await asyncio.wait_for(eng.options.refresh_now(sym), timeout=5.0)
-            quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="decision")
+            quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="decision", is_option=True)
     else:
         gaps.append("no priceable instrument at decision")
     if quote is None:
         gaps.append("no quote at decision")
     elif qstatus == "stale":
         gaps.append(f"decision quote stale ({quote.get('ageSeconds')}s > {max_age:g}s)")
+    elif qstatus == "ineligible":
+        gaps.append("decision quote not executable evidence: " + "; ".join(quote.get("eligibility") or []))
     delay_min = float(s.get("techniques.tip.entry_cohort_delay_minutes", 3.0) or 3.0)
     now = _utcnow()
     delayed_status = "pending" if sym else "unknown"
@@ -279,43 +377,92 @@ async def sample_one(eng, cohort_id: str, *, now: dt.datetime | None = None) -> 
     """Take the configured LATER sample for one pending row (idempotent: a
     row that is no longer pending is left alone). Labeled `delayed`; a
     sample far past its due time is MISSED, never back-labeled."""
+    now_injected = now is not None
     now = now or _utcnow()
     s = eng.settings
     max_age = float(s.get("techniques.tip.entry_cohort_quote_max_age_seconds", 300.0) or 300.0)
     delay_min = float(s.get("techniques.tip.entry_cohort_delay_minutes", 3.0) or 3.0)
+    tolerance_s = float(s.get("techniques.tip.entry_cohort_delay_tolerance_seconds", _default_tolerance_s) or _default_tolerance_s)
     async with eng.sf() as session:
         r = await session.get(TipEntryCohortRow, cohort_id)
         if r is None or r.delayed_status != "pending" or not r.quote_symbol:
             return _row_dict(r) if r else None
         if r.delayed_due_at and now < r.delayed_due_at:
             return _row_dict(r)
-        gaps = list(r.gaps or [])
-        if r.delayed_due_at and (now - r.delayed_due_at).total_seconds() > _missed_grace_factor * delay_min * 60:
+        sym = r.quote_symbol
+        due = r.delayed_due_at
+    # the observation is timed at the moment THIS call takes it (each call
+    # reads its own clock; a catch-up batch never shares one `now`) - KF83-03
+    observed_at = now
+    late_s = (observed_at - due).total_seconds() if due else 0.0
+    if due and late_s > _missed_grace_factor * delay_min * 60:
+        async with eng.sf() as session:
+            r = await session.get(TipEntryCohortRow, cohort_id, with_for_update=True)
+            if r is None or r.delayed_status != "pending":
+                return _row_dict(r) if r else None
+            gaps = list(r.gaps or [])
             r.delayed_status = "missed"
-            gaps.append("delayed sample missed (process was not running at the due time)")
+            gaps.append(f"delayed sample missed ({late_s:.0f}s past due: process was not running at the due time)")
             r.gaps = gaps
             await session.commit()
             return _row_dict(r)
-        sym = r.quote_symbol
-    quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="delayed")
-    if quote is None and sym != (r.ticker if r else sym):
+    # pre-fetch claim (in-process): the timer and the recovery worker never both
+    # fetch for the same row; the row lock below still guards the write
+    claims = getattr(eng, "_tip_cohort_sampling", None)
+    if claims is None:
+        claims = set()
         with contextlib.suppress(Exception):
-            await asyncio.wait_for(eng.options.refresh_now(sym), timeout=5.0)
+            eng._tip_cohort_sampling = claims
+    if cohort_id in claims:
+        async with eng.sf() as session:
+            r = await session.get(TipEntryCohortRow, cohort_id)
+            return _row_dict(r) if r else None
+    claims.add(cohort_id)
+    try:
         quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="delayed")
+        if quote is None and sym != (r.ticker if r else sym):
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(eng.options.refresh_now(sym), timeout=5.0)
+            quote, qstatus = _snap_quote(eng, sym, max_age_s=max_age, kind="delayed")
+        return await _finalize_sample(eng, cohort_id, quote, qstatus, now=now, now_injected=now_injected,
+                                      due=due, tolerance_s=tolerance_s)
+    finally:
+        claims.discard(cohort_id)              # held through finalization (and on cancellation)
+
+
+async def _finalize_sample(eng, cohort_id: str, quote, qstatus, *, now, now_injected, due, tolerance_s):
+    observed_at = now
+    # timing eligibility is judged at the ACTUAL sample time (after any awaited
+    # refresh), on the same clock the row was gated with
+    if quote is not None and not now_injected:
+        with contextlib.suppress(Exception):
+            observed_at = dt.datetime.fromisoformat(str(quote.get("sampledAt")))
+    late_s = (observed_at - due).total_seconds() if due else 0.0
+    eligible = bool(due is None or late_s <= tolerance_s)
     async with eng.sf() as session:
-        r = await session.get(TipEntryCohortRow, cohort_id)
+        # row-locked claim: the in-process timer and the recovery worker cannot both finalize
+        r = await session.get(TipEntryCohortRow, cohort_id, with_for_update=True)
         if r is None or r.delayed_status != "pending":
             return _row_dict(r) if r else None
         gaps = list(r.gaps or [])
+        timing = {"dueAt": _iso(due), "observedAt": _iso(observed_at), "latenessSeconds": round(late_s, 1),
+                  "toleranceSeconds": tolerance_s, "eligible": eligible}
         if quote is None:
             r.delayed_status = "missed"
             gaps.append("delayed sample: no quote")
+            r.delayed_sample = {**timing, "sampleKind": "delayed"}
         else:
-            r.delayed_sample = {**quote, "quoteStatus": qstatus,
+            r.delayed_sample = {**quote, "quoteStatus": qstatus, **timing,
                                 "measuredFrom": "decision", "note": "a LATER observation, never alert-time evidence"}
-            r.delayed_status = "sampled"
+            # KF83-03: only an observation inside the declared tolerance is the
+            # named delay experiment's evidence; a later one is kept as a LATE diagnostic
+            r.delayed_status = "sampled" if eligible else "late"
+            if not eligible:
+                gaps.append(f"delayed sample late ({late_s:.0f}s past due > {tolerance_s:g}s tolerance) - diagnostic only")
             if qstatus == "stale":
                 gaps.append(f"delayed sample stale ({quote.get('ageSeconds')}s)")
+            elif qstatus == "ineligible":
+                gaps.append("delayed sample ineligible: " + "; ".join(quote.get("eligibility") or []))
         r.gaps = gaps
         await session.commit()
         return _row_dict(r)
@@ -328,11 +475,12 @@ async def sample_due(eng, *, now: dt.datetime | None = None) -> int:
     async with eng.sf() as session:
         ids = (await session.execute(
             select(TipEntryCohortRow.id).where(TipEntryCohortRow.delayed_status == "pending",
-                                               TipEntryCohortRow.delayed_due_at <= now))).scalars().all()
+                                               TipEntryCohortRow.delayed_due_at <= now)
+            .order_by(TipEntryCohortRow.delayed_due_at).limit(_recovery_batch))).scalars().all()
     n = 0
     for cid in ids:
         with contextlib.suppress(Exception):
-            await sample_one(eng, cid, now=now)
+            await sample_one(eng, cid)              # each observation on its own clock (KF83-03)
             n += 1
     return n
 
@@ -387,13 +535,15 @@ def simulate_variants(row: dict, a: dict, *, variants=VARIANTS) -> list[dict]:
                "adequate": False, "reason": None, "sampleKind": None, "fill": None,
                "assumptions": {k: a[k] for k in ("optionBudget", "sharesBudget", "maxContracts",
                                                  "feePerContract", "stockCommission", "fill")}}
+        q_ok, q_why = evidence_ok({**(q or {}), "quoteStatus": row.get("quoteStatus", (q or {}).get("quoteStatus"))} if q else None,
+                                  is_option=is_option)
         if not row.get("quoteSymbol"):
             res["reason"] = "no priceable instrument"
         elif v == "immediate":
             if q is None:
                 res["reason"] = "no quote at decision"
-            elif row.get("quoteStatus") != "fresh":
-                res["reason"] = f"decision quote {row.get('quoteStatus')} (age {q.get('ageSeconds')}s)"
+            elif not q_ok:
+                res["reason"] = f"decision quote not executable evidence: {q_why}"
             else:
                 res.update(adequate=True, sampleKind="decision", fill=_fill(q, is_option=is_option, a=a))
         elif v == "delay":
@@ -401,12 +551,19 @@ def simulate_variants(row: dict, a: dict, *, variants=VARIANTS) -> list[dict]:
             st = row.get("delayedStatus")
             if st == "pending":
                 res["reason"] = "delayed sample pending"
+            elif st == "late":
+                res["reason"] = (f"delayed sample late ({(d or {}).get('latenessSeconds')}s past due) - "
+                                 f"a diagnostic, not {a['delayMinutes']:g}-minute evidence")
             elif st != "sampled" or d is None:
                 res["reason"] = f"delayed sample {st}"
-            elif d.get("quoteStatus") != "fresh":
-                res["reason"] = f"delayed sample {d.get('quoteStatus')} (age {d.get('ageSeconds')}s)"
+            elif d.get("eligible") is False:
+                res["reason"] = f"delayed sample outside the {a['delayMinutes']:g}-minute tolerance"
             else:
-                res.update(adequate=True, sampleKind="delayed", fill=_fill(d, is_option=is_option, a=a))
+                d_ok, d_why = evidence_ok(d, is_option=is_option)
+                if not d_ok:
+                    res["reason"] = f"delayed sample not executable evidence: {d_why}"
+                else:
+                    res.update(adequate=True, sampleKind="delayed", fill=_fill(d, is_option=is_option, a=a))
         elif v == "cap":
             res["assumptions"]["premiumCap"] = a["premiumCap"]
             prem = row.get("sourcePremium")
@@ -416,8 +573,8 @@ def simulate_variants(row: dict, a: dict, *, variants=VARIANTS) -> list[dict]:
                 res["reason"] = "no source-stated premium"
             elif q is None:
                 res["reason"] = "no quote at decision"
-            elif row.get("quoteStatus") != "fresh":
-                res["reason"] = f"decision quote {row.get('quoteStatus')} (age {q.get('ageSeconds')}s)"
+            elif not q_ok:
+                res["reason"] = f"decision quote not executable evidence: {q_why}"
             else:
                 ask = float(q.get("ask") or 0)
                 limit = round(float(prem) * a["premiumCap"], 4)

@@ -118,7 +118,14 @@ async def test_review_gated_card_never_auto_approves_but_a_person_may(rig):
     assert out["proposal"]["status"] == "pending" and "geometry review" in out["proposal"]["context"]["autoGate"]
     paused = await _events(eng, "TipAutoPaused")
     assert any(p.get("proposalId") == pdict["id"] for p in paused)
-    human = await eng.proposals.approve(pdict["id"], via="app")          # the click IS the review
+    # readiness-v1 (2026-09-15): a plain click no longer bypasses an undisclosed
+    # failure - the person names the check and gives a reason (journaled)
+    plain = await eng.proposals.approve(pdict["id"], via="app")
+    assert plain["order"] is None and plain.get("refused")
+    fp = (await eng.proposals.revalidate(pdict["id"]))["readiness"]["fingerprint"]
+    human = await eng.proposals.approve(pdict["id"], via="app", expected=fp,
+                                        override={"checks": ["risk_budget_exceeded"],
+                                                  "reason": "test: the desk accepts the full stop risk"})
     assert human["order"] is not None and human["proposal"]["status"] in ("executed", "failed")
 
 

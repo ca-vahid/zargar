@@ -2744,3 +2744,13 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 /* per-technique books (2026-09-07): which desk holds this, and which book is charted */
 .dash-curve-book { font-size: var(--fs-1); padding: 3px 8px; max-width: 190px; }
 .dash-hold-book { display: block; font-size: var(--fs-0); color: var(--text-3); }
+
+/* proposal readiness (readiness-v1, 2026-09-15): blockers + the final plan grid */
+.blocker-list { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.blocker { font-size: var(--fs-0); padding: 3px 8px; border-radius: 4px; }
+.blocker.fail { background: color-mix(in srgb, var(--down) 12%, transparent); color: var(--text-1); border-left: 3px solid var(--down); }
+.blocker.info { background: var(--surface-2); color: var(--text-2); border-left: 3px solid var(--border); }
+.risk-grid { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: var(--fs-0); margin: 6px 0; padding: 6px 8px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.risk-grid > span { color: var(--text-2); }
+.risk-grid > b { font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
+.risk-grid .note { font-size: var(--fs-0); margin-top: 4px; }

@@ -46,6 +46,12 @@ def evidence_marker(source_id: str, source_revision: int, text_hash: str) -> str
     return f"cites rule {source_id} rev {int(source_revision)} sha {text_hash[:12]}"
 
 
+def release_marker(manifest_hash: str) -> str:
+    """The revision reason a release by THIS manifest writes (<= 40 chars): the
+    durable ownership proof a retry may recover from (KF83-02)."""
+    return f"resolve:c:{str(manifest_hash)[:16]}"
+
+
 def _batch_ids(b: dict) -> list[str]:
     return list((b.get("merge") or {}).get("supersedes") or (b.get("expire") or {}).get("ids") or [])
 
@@ -174,6 +180,15 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
     problems: list[str] = []
     already_released: dict[str, tuple[int, int]] = {}
     release_ids = {(r if isinstance(r, str) else str(r.get("id"))) for r in resolve}
+    marker = release_marker(computed)
+    # KF83-01: a release whose note is ALSO mutated by a batch of this payload is
+    # DEFERRED into that batch's transaction (the row stays disputed = non-operative
+    # until the expiry/merge is durable); the batch receipt is its ownership proof
+    deferred: dict[str, str] = {}
+    for b in batches:
+        for nid in _batch_ids(b):
+            if nid in release_ids:
+                deferred[nid] = b.get("_key") or str(b.get("batchId"))
     async with eng.sf() as session:
         for r in resolve:
             rid = r if isinstance(r, str) else str(r.get("id"))
@@ -184,18 +199,33 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
             if row is None:
                 problems.append(f"resolve {rid[:8]}: note does not exist"); continue
             have = int(row.revision_no or 1)
+            if rid in deferred:
+                # recovered ONLY from this payload's own batch receipt (durable,
+                # carries the manifest identity and the release it performed)
+                bdef = next((b for b in batches if (b.get("_key") or str(b.get("batchId"))) == deferred[rid]), None)
+                bid_ = str((bdef or {}).get("batchId") or "")
+                brow = await session.get(TipKnowledgeBatch, bid_) if bid_ else None
+                rel = [x for x in (((brow.applied or {}) if brow is not None else {}).get("released") or []) if x.get("id") == rid]
+                if brow is not None and brow.status == "applied" and rel and rel[0].get("marker") == marker:
+                    already_released[rid] = (int(rel[0]["revisionFrom"]), int(rel[0]["revisionTo"]))
+                    continue
+                if not row.needs_human:
+                    problems.append(f"resolve {rid[:8]}: not disputed (nothing to release)")
+                elif exp is not None and have != int(exp):
+                    problems.append(f"resolve {rid[:8]}: revision {row.revision_no} differs from the reviewed {exp}")
+                continue
             if not row.needs_human:
-                # retry safety: the release itself may have committed on an earlier
-                # attempt whose progress write / notification failed — accept it
-                # when the row sits exactly one 'resolve' transition past the
-                # reviewed revision, otherwise it is somebody else's change
+                # retry safety (KF83-02): only a transition THIS manifest wrote —
+                # exactly one revision past the reviewed one whose snapshot reason
+                # is this manifest's marker — is recovered; any other resolution is
+                # somebody else's change and the stale review is refused
                 released_by_us = False
                 if exp is not None and have == int(exp) + 1:
                     from ...models import TipNoteRevision
                     last = (await session.execute(
                         select(TipNoteRevision.reason).where(TipNoteRevision.note_id == rid)
                         .order_by(TipNoteRevision.known_until.desc()).limit(1))).scalar()
-                    released_by_us = (last == "resolve")
+                    released_by_us = (last == marker)
                 if released_by_us:
                     already_released[rid] = (int(exp), have)
                 else:
@@ -265,14 +295,19 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
     shift: dict[str, tuple[int, int]] = {t["id"]: (t["revisionFrom"], t["revisionTo"]) for t in progress.get("resolved") or []}
     for r in resolve:
         rid = r if isinstance(r, str) else str(r.get("id"))
+        exp = None if isinstance(r, str) else r.get("revision")
         if rid in done_resolve:
             continue
         if rid in already_released:
             before, after = already_released[rid]
             shift[rid] = (before, after)
-            progress["resolved"].append({"id": rid, "revisionFrom": before, "revisionTo": after, "recovered": True})
+            progress["resolved"].append({"id": rid, "revisionFrom": before, "revisionTo": after, "recovered": True,
+                                         **({"viaBatch": deferred[rid]} if rid in deferred else {})})
+            done_resolve.add(rid)
             await _save("proposed")
             continue
+        if rid in deferred:
+            continue                                # released inside that batch's transaction (below)
         # ONE transaction: the dispute release (revision snapshot + flag) and the
         # wrapper's progress commit together, so a failure anywhere after this
         # point can never leave a released rule with no record of who released
@@ -282,7 +317,12 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
             if row is None or not row.needs_human:
                 continue
             before = int(row.revision_no or 1)
-            svc._snapshot(session, row, now, "resolve")
+            if exp is not None and before != int(exp):
+                # KF83-02: the reviewed revision is re-checked UNDER the lock — a
+                # change between preflight and here releases nothing
+                raise ValueError(f"resolve {rid[:8]}: revision {before} differs from the reviewed {exp} "
+                                 f"(changed after validation) — nothing released")
+            svc._snapshot(session, row, now, marker)
             row.needs_human = False
             after = int(row.revision_no or 1)
             progress["resolved"].append({"id": rid, "revisionFrom": before, "revisionTo": after})
@@ -315,6 +355,7 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
             if nid in exp_rev and exp_rev[nid] == b0:
                 exp_rev[nid] = b1                   # the release THIS payload performed, carried forward explicitly
         ids = _batch_ids(b)
+        rel_here = {nid: marker for nid in ids if nid in deferred and deferred[nid] == key and nid not in done_resolve}
         async with eng.sf() as session:
             revs_at = {nid: int(await session.scalar(select(TipNote.revision_no).where(TipNote.id == nid)) or 1) for nid in ids}
         if b.get("merge"):
@@ -323,7 +364,7 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
                 merges=[{"supersedes": list(ids), "new_rule": b["merge"]["new_rule"]}],
                 expires=[], contradictions=[], author=b.get("author") or "consolidation",
                 run_id=f"{WRAPPER_SCOPE}:{computed[:12]}", live_ids=set(ids), batch_id=bid,
-                expected_revisions=exp_rev, mode="apply")
+                expected_revisions=exp_rev, mode="apply", releases=rel_here or None)
             new_ids = list(applied.get("newRules") or [])
             progress["batches"][key] = {"batchId": bid, "kind": "merge", "merged": applied.get("merged"),
                                         "newRuleId": (new_ids[0] if new_ids else None), "newRules": new_ids,
@@ -335,10 +376,25 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
                 scope=b.get("scope") or "rule", merges=[],
                 expires=[{"id": nid, "reason": reason} for nid in ids], contradictions=[],
                 author=b.get("author") or "consolidation", run_id=f"{WRAPPER_SCOPE}:{computed[:12]}",
-                live_ids=set(ids), batch_id=bid, expected_revisions=exp_rev, mode="apply")
+                live_ids=set(ids), batch_id=bid, expected_revisions=exp_rev, mode="apply", releases=rel_here or None)
             progress["batches"][key] = {"batchId": bid, "kind": "expire", "reason": reason,
                                         "expired": [{"id": nid, "revision": revs_at[nid]} for nid in ids],
                                         "rejected": applied.get("rejected")}
+        # a release performed INSIDE this batch's transaction is now durable: record it
+        for x in (applied.get("released") or []):
+            rid_ = str(x.get("id"))
+            shift[rid_] = (int(x["revisionFrom"]), int(x["revisionTo"]))
+            progress["resolved"].append({"id": rid_, "revisionFrom": int(x["revisionFrom"]),
+                                         "revisionTo": int(x["revisionTo"]), "viaBatch": key})
+            done_resolve.add(rid_)
+            try:
+                await eng.journal.append(ev.TIP_RULE_AUDITED,
+                                         {"resolved": rid_, "by": actor, "via": "consolidation", "manifestHash": computed,
+                                          "revisionFrom": int(x["revisionFrom"]), "revisionTo": int(x["revisionTo"]),
+                                          "withBatch": bid},
+                                         aggregate_type="signal", aggregate_id=rid_)
+            except Exception:                   # noqa: BLE001 - the transition is already durable
+                log.exception("consolidation: release notification failed for %s (transition committed)", rid_)
         # the batch receipt row records the wrapper identity so a later DIFFERENT payload is refused
         async with eng.sf() as session:
             brow = await session.get(TipKnowledgeBatch, bid)

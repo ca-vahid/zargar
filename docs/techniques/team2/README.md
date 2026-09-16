@@ -44,7 +44,11 @@ Code: `backend/zargar/techniques/team2/` (see ARCHITECTURE.md); shared primitive
 the `test_codex_*` files are reviewers' regressions adopted verbatim); sweep with `python -m zargar.tools.team2_sweep`
 (`--set key=value` overlays = the only way a variant is measured).
 
-## Status (2026-09-13)
+## Status (2026-09-14)
+
+**2026-09-14 EOD corrective batch: CLOSED** (other team's acceptance, v0.7.82 live). Execution correctness fixes R1–R5
+→ A–G are in (see TRADING-RULES' change log); Practice observation continues under cohort v2 with research settings
+unchanged. Cohort v2 sessions from 2026-09-15 are on execution version v0.7.82+.
 
 **Where the desk stands.** Team2 trades its own Practice book (`Team2 Practice`, $10,000, sim fills on live NBBO) in
 `auto` mode since 2026-09-08 (auto on the shared Practice book from 2026-09-04). Plans for SPY/QQQ/IWM are minted at

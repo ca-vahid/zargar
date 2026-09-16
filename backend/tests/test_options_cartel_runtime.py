@@ -52,6 +52,24 @@ async def publish_tape(repo, runner):
     await wait_for(signalled)
 
 
+async def test_future_auto_plan_summary_waits_for_its_own_session(repo, monkeypatch):
+    import datetime as dt
+    from zargar.marketstructure.sessions import session_bounds
+    runner, spec = await runtime(repo, monkeypatch)
+    await runner.arm('r1', {'mode': 'auto', 'portfolioId': 'pf', 'execution': spec.model_dump()})
+    previous = (runner.plans['r1'].first_session-dt.timedelta(days=1)).isoformat()
+    runner.rows['r1']['state']['day'] = previous
+    runner.clock = lambda: session_bounds(previous)[1]+3600000
+    view = runner.detail('r1')
+    assert view['observationHealth']['overdueMissingMinutes'] == 0
+    assert not view['needsAttention']
+    assert view['summary'] == f"Armed for {runner.plans['r1'].first_session.isoformat()} — waiting for market open."
+    runner.clock = lambda: OPEN+10*60_000
+    view = runner.detail('r1')
+    assert view['observationHealth']['overdueMissingMinutes'] == 8
+    assert view['needsAttention'] and '8 overdue minute gaps' in view['summary']
+
+
 @pytest.fixture(autouse=True)
 async def stop_services(repo):
     yield

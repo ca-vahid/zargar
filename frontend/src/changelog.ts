@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.83";
+export const APP_VERSION = "0.7.92";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,67 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.92",date:"2026-09-15",title:"Cartel: tomorrow's plans wait for tomorrow",items:[
+    {tag:"fixed",text:"Plans armed for a future session no longer show 390 overdue minutes from the preparation day. Their status names the upcoming session, while genuine gaps during an active session still trigger attention and repair."},
+  ]},
+  {version:"0.7.90",date:"2026-09-15",title:"A book can be paused until someone releases it",items:[
+    {tag:"new",text:"Per-book pause (POST /api/portfolios/{id}/pause with a reason and label, /unpause to release): every new entry and add on that book is refused - by the runners and by the risk gate - while protective exits keep working and every other book trades on. Unlike the daily-loss halt it has no day: it survives restarts and the day roll and ends only when released. Releasing it never clears the kill switch or a daily-loss halt, and those never clear it. The record snapshots the book's sizing settings; the pause changes no setting. Built as the loss-stop action of the Team2 sizing experiment; nothing is paused by this release."},
+  ]},
+  {version:"0.7.89",date:"2026-09-15",title:"Cartel: compare opportunities before changing the strategy",items:[
+    {tag:"new",text:"Practice profitability research follows a wider candidate pool, compares selection rankings and adds a separate bearish study. Find dated observations in Options Cartel > Validation."},
+    {tag:"new",text:"Compare campaign targets and predefined failed-break, time and early-trim exits. Whole units, source gaps and missing option costs stay visible; research cannot place orders or change your trading permissions."},
+    {tag:"improved",text:"The Method library now explains how to collect and review the experiments. Actual fills and account profit remain in Daily review."},
+  ]},
+  {version:"0.7.88",date:"2026-09-15",title:"A cheap 0DTE contract is sized to the cap, not refused",items:[
+    {tag:"fixed",text:"Team2 F127: the contract sizer now clamps to the technique's 0DTE policy cap (40 contracts) for a contract that expires today, instead of asking for 50 and being refused by the risk gate - IWM's 284 put at $0.33 was refused that way at 11:14 ET on 09-15. Scoped to the selected contract's actual expiry: a longer-dated contract keeps its existing cap. The risk gate itself is unchanged."},
+  ]},
+  {
+    version: "0.7.87",
+    date: "2026-09-15",
+    title: "Tips: an override acknowledges the whole incident state; the claimed plan is immutable",
+    items: [
+      { tag: "fixed", text: "A86-01: a card shows EVERY applicable open incident (id, revision, evidence); an override must acknowledge exactly that set - appended evidence, another incident or a changed revision refuses with zero orders; an unavailable integrity store always blocks." },
+      { tag: "fixed", text: "A86-02: the approval claim recomputes the card's full plan (exit policy, bracket, vehicle, risk plan) under the row lock instead of trusting the cached fingerprint; the claimed plan is frozen on the card and both the order and the later position adoption use it - a concurrent edit of the exit policy cannot be claimed." },
+      { tag: "improved", text: "Entry-variant study: the sampling claim is held through finalization (timer and recovery never double-fetch); research fixtures carry capture-time verdict fields." },
+      { tag: "fixed", text: "A failed structured read of the incident store is 'integrity state unavailable' (never overridable) rather than a partial identity from prose; position adoption uses the claimed vehicle and risk plan as well as the claimed exit plan." },
+      { tag: "fixed", text: "Tips intake liveness no longer flaps Stalled/Recovered during a busy session: envelopes briefly in flight are a warning; only envelopes pending through three consecutive checks (about six minutes) are a stall." },
+      { tag: "new", text: "Tips analyst considers the risk budget before recommending (PROF-01): the header states the approved planned-risk budget, a check_feasibility tool answers how many units of a named expression fit at the declared stop (with labelled research alternatives at equal risk - shares, or another strike of the same expiry - never a substitution), and every TAKE is assessed server-side: the expression check rides beside the opinion (thesis verdict kept apart); techniques.tip.analyst_feasibility_gate = annotate (default) or downgrade (an unfittable take becomes watch). Replay tool: python -m zargar.tools.tip_feasibility replay." },
+      { tag: "new", text: "Whole-exit-path payoff preview (PROF-02): the risk plan and the card carry the ladder in INTEGER units (is it executable at this size?), the net result if every target fills, if the first target is followed by the stop, and the stop alone (in $ and R, fees included) and the coherent one-lot policy; the analyst gets a preview_payoff tool and a one-lot rule. Report tool: python -m zargar.tools.tip_payoff_report (RKT long-only round trip reconciles to -$30.15). Estimates, never a forecast." },
+      { tag: "improved", text: "Overnight-hold study protocol v2 (research only): every observation carries its sampling window and identity - a pre-close sample must fall in the last 15 minutes before the exchange close (early closes included; an after-close boot records a miss, never back-labeled), the next-open sample is the first qualified quote inside 09:30-09:45 ET of the exchange calendar's next trading session (a later day never stands in), every sample is admitted on its ACTUAL sample time (a quote taken after the window is late, never qualified), the jobs run relative to the exchange close (12:50 on an early close) and from the opening bell, repeated capture is one observation, nets include the allocated entry fee and the exit cost, R follows the sampled size, and the carry arm is reported as overnight quote drift beside the strategy's own outcome when its exit closed the position first. Frozen comparisons flag coverage-limited pairs." },
+      { tag: "new", text: "Overnight-hold study (PROF-03, research only): a 15:50 ET snapshot of every open Tips position (and every one that exited intraday) with the leg's qualified pre-close quote, horizon, exits and costs, plus the next session's first qualified quote at 09:36 ET; python -m zargar.tools.tip_hold_study report pairs carry-to-next-open against a predeclared intraday close by setup, counts unqualified samples as insufficient, never uses a hindsight peak and derives no rule. Knob techniques.tip.hold_study_enabled (observation only)." },
+      { tag: "new", text: "Frozen analyst comparison (PROF-05): a compact context variant (core rules, notes relevant to the tip's ticker/source, the newest history lines) replays the same frozen evidence as the full context; reports now carry cache usage, effective input tokens, header size, contract, stop and quantity differences beside decision, latency and tokens. Research only - method behaviour unchanged." },
+      { tag: "fixed", text: "Positions: ONE exit authority. When the manager adopts a filled share proposal it now cancels the entry order's resting bracket children (the proposal's GTC take-profit and stop-loss) - left beside the manager's own stop and ladder they doubled every exit (Tips Practice held 7 MRNA with 14 resting to sell at the stop on 2026-09-15; released by hand at 15:22 ET). Restore releases records adopted before the rule, and a bracket never spawns under an entry the manager already owns (partial fills)." },
+      { tag: "fixed", text: "Positions: the resting venue GTC stop is resized after every trim (it used to keep the original size - RKT sold 148 shares against 89 held on 2026-09-15, a 59-share unintended short, reconciled the same day) and is re-registered after a restart so its fill reaches the position instead of leaving a phantom open lot." },
+    ],
+  },
+  {
+    version: "0.7.86",
+    date: "2026-09-15",
+    title: "Tips: an approval is bound to the whole plan you saw",
+    items: [
+      { tag: "fixed", text: "AP85-01: an incident override acknowledges one specific incident; a different incident or an unavailable integrity store at the final check always blocks, for single orders and spreads alike." },
+      { tag: "fixed", text: "AP85-02: the confirmation now binds the complete displayed plan (stop, size, risk per unit, planned risk, budget, approved maximum limit, book/instrument, exit plan, bracket, each blocker's identity); every manual approval must carry it (Telegram first shows the revalidated plan, then confirms); the claim re-checks the row's plan atomically and the order is built from the confirmed snapshot - a concurrent refresh or edit refuses with zero orders." },
+      { tag: "fixed", text: "AP85-03: half size = half of the displayed quantity (never below one), validated as that explicit action; the exposure recorded matches." },
+      { tag: "improved", text: "Entry-variant study: a delayed sample is timed at the actual sample moment, one fetch per row even when the timer and the recovery pass coincide, and legacy records are re-judged at their capture time (after-hours or age-less observations never count)." },
+    ],
+  },
+  {
+    version: "0.7.85",
+    date: "2026-09-15",
+    title: "Tips: approval cards say whether a trade is ready, not just whether the analyst likes it",
+    items: [
+      { tag: "new", text: "Approval cards show two independent statuses - the analyst's opinion (take / watch / skip) and execution readiness (ready / blocked / needs refresh / unverified) - and list the ACTUAL blocking reasons by name: source not qualified for automatic trading, planned risk over the approved budget, missing / stale / delayed quote, an open execution-integrity incident, an unsupported instrument. 'AUTO: NOT YET EARNED' is gone." },
+      { tag: "new", text: "The final risk calculation is on the card: purchase allocation limit, approved planned-risk budget, estimated risk per share/contract, final quantity x risk, final stop (and the analyst's original), quote source and age, every adjustment made after the analyst's answer. Planned stop risk is labelled an estimate, not a guaranteed maximum loss; the analyst's sizing narrative stays separate." },
+      { tag: "new", text: "'Refresh & revalidate' re-fetches the quotes the plan needs, recomputes geometry and sizing, re-checks incidents and gates and saves the result - zero orders, the entry limit never raised. A resolved incident no longer leaves a permanent stale label." },
+      { tag: "improved", text: "Approve submits exactly the displayed, freshly validated plan: a blocked card is refused with the reason, a plan that changed since it was displayed (stop, size, a new failed check, a new incident) asks you to look again, a limit is never above what you saw, expired cards and duplicate clicks cannot create orders. An override is a separate action that names each check it accepts, shows the resulting exposure, needs a reason and is journaled; the platform protections (risk gate, kill switch, loss halts) still apply." },
+      { tag: "fixed", text: "Knowledge consolidation (KF83-01/02): a reviewed rejection now releases the dispute and expires the rule in ONE transaction - a failed expiry leaves the rule disputed and non-operative - and a retry recovers only a release this manifest wrote (the revision snapshot carries the manifest's marker; the batch receipt is the proof); another person's resolution refuses the stale review." },
+      { tag: "fixed", text: "Entry-variant study (KF83-03/04): a delayed sample counts as three-minute evidence only inside a declared tolerance (default 60 s) - later observations are kept as late diagnostics; a quote is executable comparison evidence only with venue provenance, no delayed flag, a genuine source time, a valid two-sided quote and an open option session - a freshly stamped chain snapshot never qualifies; stored records are re-judged." },
+    ],
+  },
+  {version:"0.7.84",date:"2026-09-15",title:"Intraday market research without automatic unlocking",items:[
+    {tag:"new",text:"Cartel Practice can observe blocked-market shortlists during the session, comparing completed 15-minute index candles with saved daily EMA levels and recording hypothetical stock confirmations. It cannot arm plans or place orders."},
+    {tag:"improved",text:"The accepted research-only decision and its distinction from Sean's guidance are documented. Missing evidence stays unavailable, and existing execution permissions and risk settings remain unchanged."},
+  ]},
   {
     version: "0.7.83",
     date: "2026-09-15",

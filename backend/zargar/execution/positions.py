@@ -56,7 +56,7 @@ from sqlalchemy import select
 from .. import bus as topics
 from ..domain import Bar, new_id
 from ..marketstructure.sessions import ET, session_date, session_window
-from ..models import ManagedPositionRow
+from ..models import ManagedPositionRow, Order
 from ..options import occ as occ_mod
 from .exits import reduce_only_exit_intent
 from .serialization import serialized_adapter
@@ -86,6 +86,10 @@ POSITION_RECONCILED = "ManagedPositionReconciled"
 POSITION_ATTENTION = "ManagedPositionAttention"
 POSITION_SCALED = "ManagedPositionScaledIn"
 POSITION_ROLLED = "ManagedPositionRolledUp"
+POSITION_BRACKET_RELEASED = "ManagedPositionBracketReleased"
+# an order the venue may still work (the OrderManager's OPEN_STATUSES plus NEW, which
+# has been written ahead but not yet handed over)
+_WORKING_ORDER = ("NEW", "SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED", "WORKING")
 
 TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "1d": 390}
 
@@ -149,6 +153,7 @@ class Managed:
     last_tf_bar_ts: int | None = None
     venue_stop_order_id: str | None = None
     venue_stop_at: float | None = None
+    venue_stop_qty: float | None = None   # the quantity resting at the venue (RKT 2026-09-15: a trim left a 148-share stop on 89 held)
     attention: list[str] = field(default_factory=list)
     halt_entries: bool = False           # set by reconciliation on unexplained drift
     extras: dict = field(default_factory=dict)   # technique-owned facts (tips: riskPlan, geometry exception state); never read by the evaluator
@@ -206,6 +211,7 @@ class Managed:
             "closeReason": self.close_reason,
             "lastTfBarTs": self.last_tf_bar_ts,
             "venueStopOrderId": self.venue_stop_order_id, "venueStopAt": self.venue_stop_at,
+            "venueStopQty": self.venue_stop_qty,
             "attention": self.attention, "haltEntries": self.halt_entries,
             "extras": dict(self.extras or {}),
         }
@@ -359,6 +365,11 @@ class PositionManager:
 
     # ---------------------------------------------------------------- lifecycle
     def start(self) -> None:
+        om = getattr(self.engine, "orders", None)
+        if om is not None and getattr(om, "bracket_guard", None) is None:
+            # a bracket that would spawn AFTER adoption (the entry filled the rest of
+            # a partial) is refused - the manager is already the exit authority
+            om.bracket_guard = self.owns_entry_order
         if self._bar_task is None:
             self._bar_task = asyncio.create_task(self._bar_loop(), name="positions-bars")
         if self._watch_task is None:
@@ -404,6 +415,17 @@ class PositionManager:
                 for x in p.exits:
                     if x.get("orderId") and x.get("status") in (None, "SUBMITTED", "WORKING", "PARTIALLY_FILLED"):
                         self._register_exit_order(p, x["orderId"])
+                # the resting venue GTC stop is an exit order too: its fill after a
+                # restart must reach this position (RKT 2026-09-15: the stop filled 148
+                # at 11:17 ET and the manager, which had forgotten the id, kept 89 open)
+                if p.status == "open" and p.venue_stop_order_id:
+                    self._register_exit_order(p, p.venue_stop_order_id)
+                # a record adopted before the one-exit-authority rule (2026-09-15) may
+                # still have its entry's bracket children resting beside the manager's
+                # stop: release them now, before the first bar is judged
+                if p.status in ("open", "attention"):
+                    with contextlib.suppress(Exception):
+                        await self._release_bracket_children(p, phase="restore")
                 # the feeds must follow the position across a restart: the stop
                 # is judged on the UNDERLYING's bars/quotes and the premium stop
                 # on each leg's — RKLB's underlying went unwatched after an
@@ -437,6 +459,7 @@ class PositionManager:
             close_reason=st.get("closeReason"),
             last_tf_bar_ts=st.get("lastTfBarTs"),
             venue_stop_order_id=st.get("venueStopOrderId"), venue_stop_at=st.get("venueStopAt"),
+            venue_stop_qty=st.get("venueStopQty"),
             attention=list(st.get("attention") or []), halt_entries=bool(st.get("haltEntries")),
             extras=dict(cfg.get("extras") or {}),
         )
@@ -455,6 +478,7 @@ class PositionManager:
                       "openedMs": p.opened_ms, "closedMs": p.closed_ms, "lastTfBarTs": p.last_tf_bar_ts,
                       "closeReason": p.close_reason,
                       "venueStopOrderId": p.venue_stop_order_id, "venueStopAt": p.venue_stop_at,
+                      "venueStopQty": p.venue_stop_qty,
                       "attention": p.attention, "haltEntries": p.halt_entries}
                 if row is None:
                     row = ManagedPositionRow(id=p.id, technique=p.technique, symbol=p.symbol,
@@ -652,9 +676,64 @@ class PositionManager:
                 if iv:
                     p.entry_iv = float(iv)
                     await self._persist(p)
+        # the entry's bracket children go BEFORE the venue stop rests: never two
+        # stops on one lot, not even for a beat
+        await self._release_bracket_children(p, phase="adopt")
         await self._ensure_venue_stop(p)
         self.start()
         return p.to_dict()
+
+    def owns_entry_order(self, order_id: str | None) -> bool:
+        """True when a live managed position (not an adapter's) was built on this
+        entry order - its exits are the manager's, so no bracket may spawn on it."""
+        if not order_id:
+            return False
+        for p in self._pos.values():
+            if p.status in ("open", "attention", "closing") and not p.policy.get("adapter") \
+                    and any(l.entry_order_id == order_id for l in p.legs):
+                return True
+        return False
+
+    async def _release_bracket_children(self, p: Managed, *, phase: str) -> int:
+        """ONE exit authority (MRNA 2026-09-15). The entry order's bracket children
+        (the proposal's take-profit + stop-loss, GTC, spawned by the OrderManager on
+        the fill) protect the fill until the manager adopts it; left resting they
+        DOUBLE every exit - at the target the bracket sells the whole lot and the
+        ladder trims on top, at the stop both stops fire (Tips Practice held 7 MRNA
+        with 14 resting to sell at 134.37 - the RKT short, one bug class over).
+        Cancel them at adoption, scale-in and restore (records adopted before this
+        rule). Adapter positions run their own venue orders - untouched."""
+        if p.policy.get("adapter"):
+            return 0
+        parents = sorted({l.entry_order_id for l in p.legs if l.entry_order_id})
+        if not parents:
+            return 0
+        try:
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(Order).where(
+                    Order.parent_id.in_(parents), Order.source == "bracket",
+                    Order.status.in_(_WORKING_ORDER)))).scalars().all()
+        except Exception as exc:
+            await self._alert(p, f"could not read the entry's bracket orders: {exc}", level="warning",
+                              stage="bracket_release")
+            return 0
+        released: list[dict] = []
+        for o in rows:
+            try:
+                await self.engine.orders.cancel(o.id)
+                released.append({"orderId": o.id, "type": o.order_type, "qty": float(o.qty),
+                                 "price": o.limit_price if o.order_type == "LMT" else o.stop_price,
+                                 "parentId": o.parent_id})
+            except Exception as exc:
+                await self._alert(p, f"could not release the entry's resting bracket order {o.id[:8]} "
+                                     f"({o.order_type} {o.qty:g}) - two exit authorities rest on this lot: {exc}",
+                                  stage="bracket_release")
+        if released:
+            self._log(p, "bracket_released",
+                      f"{len(released)} resting bracket order(s) from the entry cancelled ({phase}) - "
+                      f"the manager's stop and exits are the only exit authority", orders=released)
+            await self._journal(POSITION_BRACKET_RELEASED, p, {"phase": phase, "orders": released})
+        return len(released)
 
     async def append_leg(self, pid: str, leg: dict, *,
                          entry_ref: float | None = None) -> dict | None:
@@ -680,6 +759,7 @@ class PositionManager:
                                                  "entry": round(p.entry, 4)})
         self._log(p, "scaled_in",
                   f"+{abs(new.qty):g} {new.symbol} — entry re-averaged to {p.entry:.4f}")
+        await self._release_bracket_children(p, phase="scale_in")
         await self._ensure_venue_stop(p)
         return p.to_dict()
 
@@ -708,13 +788,18 @@ class PositionManager:
         stop = stop_price(p.policy, p.state)
         if stop is None:
             return
-        if p.venue_stop_order_id and p.venue_stop_at is not None and abs(p.venue_stop_at - stop) < 1e-9:
+        leg = stk[0]
+        want_qty = float(abs(leg.qty))
+        # unchanged price AND quantity: the resting stop is right. A trim that
+        # reduced the leg must resize it - the old stop kept the ORIGINAL size and
+        # sold 148 RKT against 89 held (2026-09-15, a 59-share unintended short)
+        if (p.venue_stop_order_id and p.venue_stop_at is not None and abs(p.venue_stop_at - stop) < 1e-9
+                and p.venue_stop_qty is not None and abs(float(p.venue_stop_qty) - want_qty) < 1e-9):
             return
         from ..orders import OrderIntent
         if p.venue_stop_order_id:
             with contextlib.suppress(Exception):
                 await self.engine.orders.cancel(p.venue_stop_order_id)
-        leg = stk[0]
         intent = OrderIntent(portfolio_id=p.portfolio_id, symbol=leg.symbol, sec_type="STK", side="SELL",
                              qty=abs(leg.qty), order_type="STP", stop_price=round(float(stop), 2), tif="GTC",
                              source="technique", technique_id=p.technique, tags=list(p.tags), reduce_only=True)
@@ -722,6 +807,7 @@ class PositionManager:
             res = await self.engine.orders.place(intent)
             p.venue_stop_order_id = res.get("id")
             p.venue_stop_at = float(stop)
+            p.venue_stop_qty = want_qty
             self._register_exit_order(p, p.venue_stop_order_id)
             self._log(p, "venue_stop", f"resting GTC stop {stop:.2f} at the venue (order {str(res.get('id'))[:8]})")
         except Exception as exc:
@@ -1184,6 +1270,10 @@ class PositionManager:
                             await self._alert(p, message, stage="policy_adapter")
                 if not p.open_legs and p.status != "closed":
                     await self._mark_closed(p, reason=rec.get("reason") or rec["kind"])
+                elif rec.get("kind") != "venue_stop" and o["id"] != p.venue_stop_order_id:
+                    # a partial exit (trim) changed the held quantity: the resting venue
+                    # stop must cover exactly what remains, never the pre-trim size
+                    await self._ensure_venue_stop(p)
                 await self._persist(p)
         elif status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
             rec["status"] = status

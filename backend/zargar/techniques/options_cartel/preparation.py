@@ -481,6 +481,15 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
             # Check a bounded reserve beyond the final arm count, in quality order.
             result['candidateCheckLimit'] = policy.focus_count * 5
             result['leaderContext'] = summarize_leaders(result['rows'], universe, at)
+            # Research owns a separate capped denominator; it never changes the
+            # executable shortlist, arming decisions or account risk policy.
+            from .profitability_research import freeze_preparation
+            try:
+                result['profitabilityResearch'] = await freeze_preparation(engine, run_id, policy, result,
+                    clock=clock, report=report)
+            except Exception as exc:  # noqa: BLE001 - optional research cannot alter execution eligibility
+                result['profitabilityResearch'] = {'status': 'unavailable', 'placesOrders': False,
+                    'reason': f'{type(exc).__name__}: profitability research preparation unavailable'}
             result['candidatesChecked'] = 0
             for saved_id, review in pool:
                 if not market_blocked and result['candidatesChecked'] >= result['candidateCheckLimit']:

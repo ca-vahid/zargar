@@ -3122,6 +3122,66 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 scoped Practice pause ACCEPTED (other team)** — "Persistence across restart/day rollover, entry/add
+  blocking, protective exits and independence from other halts are covered. No further pause changes requested. C6 and
+  final activation approval remain outstanding. Keep research settings unchanged. Once C6 is satisfied, submit the
+  final activation snapshot for GO." State: sizing-cap experiment sheet rev. 2 accepted in full; v0.7.88 (F127) and
+  v0.7.90 (pause) live; the ONLY remaining activation gate is C6 (one tape, platform owners) followed by a final
+  activation snapshot (effective settings, execution version, starting Practice equity, the pause route, the watch
+  cadence) for their GO. Research settings unchanged; nothing paused. Known test debt: `test_nightly_plan_arm_and_alert_mode_fire`
+  fails after 20:00 ET on an unpatched main (a time-of-day dependency in the fixture, not a regression) — to fix.
+- **2026-09-15 scoped Practice pause built (other team's request; v0.7.90)** — the sheet's breach action is now an
+  executable control: a per-book PAUSE (`engine.pause_book` / `release_book_pause`, `POST /api/portfolios/{id}/pause`
+  and `/unpause`, journaled `BookPaused` / `BookPauseReleased`, shown as `pausedBooks` in `/api/ops/state`). Verified by
+  tests (`tests/test_book_pause.py`): entries AND adds refused on the paused book (runner `halt_skip` / `add_skip` carry
+  the pause's label and reason; RiskGate `book_pause`), protective exits pass, another book unaffected, the pause
+  survives restart AND the ET day roll (`HaltState.restore`: book halts are day-scoped, pauses are not), and releasing
+  it never clears the kill switch or the daily-loss halt (nor do they clear it); the record snapshots `size_full`
+  (0.5 stays while paused; the pause changes no setting). Nothing is paused. Sampled threshold + calibration
+  disclosures accepted by the other team; C6 remains a prerequisite; activation still needs approval.
+- **2026-09-15 review of PR #143/#144 (other team: F127 conditional GO; sheet rev. 2; activation NOT yet approved)** —
+  F127 merged as v0.7.88: the clamp is scoped to the SELECTED contract's expiry (OCC identity, the RiskGate's date
+  basis); a next-day contract keeps its cap (their regression `tests/test_codex_team2_f127_expiry.py`); RiskGate unchanged.
+  Wording corrected: the refusal depends on premium AND requested size (at $0.33 a 0.5 multiplier asks 36 and clears).
+  Sheet rev. 2: the −$800 stop is a SAMPLED review threshold (30-min tick + close), not an enforced limit — the enforced
+  limits remain F33, the day-loss halt, the 10 % pause and the 15 % breaker; breach → the Team2 Practice BOOK halt
+  (entries + adds refused, exits active), experiment stays paused at 0.5, no automatic return to 1.0; calibration
+  labelled approximate with the simulated/non-simulated list; cross-check by bucket identity now identical
+  (+$2,231 / −$635). Prerequisites: v0.7.88 deployed, C6 gate retained, a manual per-book halt route (one endpoint).
+- **2026-09-15 review of PR #140 (other team: comparisons ACCEPTED; sizing cap FIRST, C1 the follow-on; GO to finalize
+  the plan, no activation)** — `notes/research/2026-09-15-sizing-cap-experiment-sheet.md`. Sizing basis recomputed with
+  the intended Practice sizing (loss risk, not premium invested; `calibrate_practice.py`): at today's settings a trade
+  invests ~$1,250 of premium (median; the $2,000 budget and the 40-contract cap bind, not the 6 %), stop risk ~$312.
+  Practice-scale, cap 40: baseline +$1,374 / DD −$993 (10 %); sizing cap 0.5 +$2,231 / DD −$635 (6.4 %); C1 +$6,415 /
+  DD −$2,619 (26 %) — C1's $700 budget was unjustified and C1 needs its sizing addressed first. Frozen rules: the one
+  change `size_full` 1.0 → 0.5; loss stop −$800 marked-to-market incl. open positions and fees, checked every 30 min
+  and at the close, breach → knob back, no new entries, exits kept; ten completed sessions, twenty filled
+  opportunities = interim review only; actual fills reported separately from the labelled baseline replay. Corrections
+  applied: exploratory labels, sizing attribution (19 model / 10 selected trades: 7 at 1.0→0.5 + 3 P7-reduced at
+  0.5→0.25), classifier both sides of displacement (`displacedFrom`, `netVsBase`), script side effects stated.
+  **Live defect found while calibrating (F127): 09-15 11:14 ET IWM 284P (ask $0.33) sized to 50 contracts and REFUSED
+  by the RiskGate's 0DTE cap (40) — the sizer caps at `risk.max_option_contracts` (50) and the 0DTE cap is a rejection,
+  not a clamp, so every contract under ≈$0.50 is refused. Fix on its own branch (sizer clamps to the technique's 0DTE
+  `max_contracts`), held for GO because it changes live sizing (refusal → 40 contracts).**
+- **2026-09-15 profitability: C1 and the sizing map, controlled comparisons (GO from the other team; no activation)** —
+  `notes/research/2026-09-15-c1-and-sizing-controlled-comparisons.md` (+ `profitability-20260915-canonical/`). Their sweep
+  reproduced EXACTLY on the banked tape (dataset `27516b61…`, 48 paired cells, none dropped): baseline 36 book trades
+  +$471 / DD $320; C1 conjunction 50 / +$1,514 / DD $565 (PF 1.36 → 1.96; 34 new small-size entries, 7 lost, 0 changed
+  exits; +$654 without its best incremental date; two-tick fills: −$121 vs +$820 but DD $772). Sizing cap `size_full` 0.5,
+  measured SEPARATELY: +$763 / DD $187 / worst day −$141 with 54 identical trades (the 7 full-unit losers halved + P7
+  re-sizing); +$132 without its best incremental date; two-tick fills +$293 vs −$121. Recommendation: C1 as the next
+  labelled Practice experiment (§5 of the note: knob only, newly eligible entries small by construction, $700 drawdown
+  budget, 10 sessions / 20 new entries, paired live-vs-replay measurement); the sizing cap as the follow-on, judged on
+  its own sessions or by paired replay. Deprioritized as they asked: no-adds, $0.80 premium, single entry styles,
+  10:00 start, no target exits. Research knobs UNCHANGED; C2 validation sealed. All $ at the $600/unit research scale.
+- **2026-09-14 EOD corrective batch CLOSED (other team, v0.7.82 live)** — "F accepted. The cumulative-fill update now
+  handles already-open positions correctly, and the live, restart, duplicate, lower-total and zero-fill controls pass.
+  Close the E/F/G corrective batch and return to Practice observation. Keep research settings unchanged and retain
+  these regressions." The batch (R1–R5 → A–D → E/F/G → F's three reconciliation rounds; v0.7.73, .76, .78, .80, .81,
+  .82) is closed; every reviewer packet stays in the suite verbatim (`tests/test_codex_team2_*_eod.py`,
+  `_pr106_followup`, `_v076_boundaries`, `_v078_reconciliation`, `_v080_terminal_fill`, `_v081_cumulative`). Practice
+  observation resumes under cohort v2; research knobs unchanged (C1/C2/room rules OFF, near-ITM unchanged, validation
+  window sealed). Cohort v2 sessions from 2026-09-15 run on execution version v0.7.82+ in the review.
 - **2026-09-14 v0.7.81 acceptance (other team: same cumulative-fill requirement, one F item; v0.7.82)** — the
   cumulative-fill booking was still gated on `submitting`/`working`, so a cancel reporting two contracts after an
   earlier partial had opened the trade with one was ignored. The terminal branch now books the report's cumulative

@@ -1,8 +1,17 @@
 # Cartel release and operational handoff
 
-Current documentation: 2026-09-13. Cartel correctness release **v0.7.64 is deployed**; see [verified deployment and Monday preparation](DEPLOYMENT-2026-09-13.md). Other techniques can advance the app-wide version independently.
+Current documentation: 2026-09-15. The profitability research release adds prospective
+candidate/ranking, bearish and exit studies; see [its protocol](PROFITABILITY-RESEARCH.md).
+Source delivery does not itself prove deployment: verify `/api/health`, the served
+frontend version and the guarded deployment receipt. Other techniques advance the
+app-wide version independently.
 
-The corrections are described in [September 13 readiness](READINESS-2026-09-13.md), with the [final audit](FINAL-REVIEW-2026-09-13.md) preserved as historical evidence. The September 13 deployment supersedes the older operational snapshot below.
+Scope, checks and operating limits: [September 15 release evidence](PROFITABILITY-RELEASE-2026-09-15.md).
+
+The earlier Cartel correctness release **v0.7.64 was deployed**; see
+[verified deployment and Monday preparation](DEPLOYMENT-2026-09-13.md).
+
+Those corrections are described in [September 13 readiness](READINESS-2026-09-13.md), with the [final audit](FINAL-REVIEW-2026-09-13.md) preserved as historical evidence. These are dated operational snapshots, not today's deployment state.
 
 - [Current capabilities and limits](DELIVERY-STATUS.md)
 - [Preparation/settings/recovery](DAILY-PREPARATION.md)

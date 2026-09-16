@@ -619,12 +619,25 @@ def build_signal_routes(app, eng, auth, config) -> None:
 
     class DecisionBody(BaseModel):
         half: bool = False
+        expected: str | None = None          # readiness fingerprint the person saw (readiness-v1)
+        override: dict | None = None         # {"checks": [codes], "reason": str} - a labeled override
 
     @app.post("/api/proposals/{pid}/approve", dependencies=[auth])
     async def approve(pid: str, body: DecisionBody | None = None):
         try:
             return await eng.proposals.approve(pid, via="app",
-                                               half=bool(body and body.half))
+                                               half=bool(body and body.half),
+                                               expected=(body.expected if body else None),
+                                               override=(body.override if body else None))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/proposals/{pid}/revalidate", dependencies=[auth])
+    async def revalidate(pid: str):
+        """Refresh and revalidate a pending card - quotes, geometry, sizing,
+        incidents, qualification - persisted and journaled; never an order."""
+        try:
+            return await eng.proposals.revalidate(pid, via="app")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 

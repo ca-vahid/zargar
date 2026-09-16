@@ -1,6 +1,6 @@
 # Options Cartel — current guide
 
-Updated 2026-09-13 against integrated main. Technique id: `options_cartel`.
+Updated 2026-09-15. Technique id: `options_cartel`. Deployment evidence is separate from source status.
 Sean Trades (`@SRxTrades`) is the source author; the app's numerical interpretations and Practice experiments are identified separately.
 
 The desk is implemented. The [September 13 correctness release](READINESS-2026-09-13.md) adds final-entry contract checks, target integrity, pending invalidation protection, explicit legacy-arm review and quantity-correct Practice research. Other desks can advance the app-wide version independently. Use the release handoff and live health for deployment state.
@@ -32,3 +32,12 @@ The in-app Method library bundles selected Markdown chapters. A frontend rebuild
 Follow root [AGENTS.md](../../../AGENTS.md) and [COLLABORATION.md](../../COLLABORATION.md). Preserve Claude worktrees and the shared runtime. Codex tests use only `zargar_test_codex`, sequentially. Never start a second engine against a runtime or test database. Keep other techniques' knowledge/rules separate.
 
 No full public-feed coverage, exact author replication, broker-verified author return or profitable strategy has been established. Test success verifies the tested mechanics; source examples and replay R are not realized option P&L. Active plans, balances, versions and provider availability must be checked live when needed.
+
+- [Intraday market research: accepted decision and limits](INTRADAY-RESEARCH-DECISION-2026-09-14.md)
+  records the user-approved observation-only experiment. It does not change trading permission.
+
+- [September 15 profitability review](PROFITABILITY-REVIEW-2026-09-15.md): cash-day accounting, 63 research cases, candidate/target selection and a prioritized prospective experiment queue. No execution settings changed.
+
+- [Profitability research](PROFITABILITY-RESEARCH.md): prospective candidate/ranking,
+  bearish, campaign-target and exit comparisons in Practice; operating instructions
+  and promotion criteria. Actual trades remain in Daily review.

@@ -95,6 +95,8 @@ CONTRACTS: dict[str, dict] = {
     "ManagedPositionReconciled": {"version": 1, "required": ("positions",)},
     "ManagedPositionAttention": {"version": 1, "required": ("positionId", "symbol", "error")},
     "ManagedPositionScaledIn": {"version": 1, "required": ("positionId", "symbol")},
+    "ManagedPositionBracketReleased": {"version": 1, "required": ("positionId", "symbol", "portfolioId", "phase", "orders")},
+    "OrderBracketSkipped": {"version": 1, "required": ("reason",)},
     "ManagedPositionRolledUp": {"version": 1, "required": ("positionId", "symbol", "from", "to", "qty", "creditPerContract")},
     "TipGeometryRepaired": {"version": 2, "required": ("proposalId", "underlying", "entryRef", "repairs"),
                             "nullable": ("proposalId",)},   # v2 2026-09-08: armed-lane repairs carry runId/trigger, no proposal

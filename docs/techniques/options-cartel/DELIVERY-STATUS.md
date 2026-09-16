@@ -1,6 +1,6 @@
 # Current Cartel capabilities and limits
 
-Updated 2026-09-14 for the v0.7.74 correctness release; deployment is recorded separately. Functional milestones v0.7.51–0.7.52 are deployed; the app-wide version can be newer. Use live health, Armed and account reports for current state. [September 12 deployment](DEPLOYMENT-2026-09-12.md) is a dated verification record.
+Updated 2026-09-15 for the profitability research release; deployment is recorded separately. The app-wide version can advance with other desks. Use live health, Armed and account reports for current state. Earlier deployment notes below are dated verification records.
 
 The [September 13 corrections](READINESS-2026-09-13.md) add final-dispatch contract checks, target causality, pending invalidation protection, provider-compatible cache reuse, explicit legacy-arm review, a versioned Practice small-lot policy, quantity-correct replay, deduplicated quote/gap evidence and advisory leadership cohorts. See the release handoff for deployment and test evidence. Existing campaigns keep their snapshots; no profitability or Live acceptance claim follows from these corrections.
 
@@ -16,7 +16,7 @@ The [September 13 corrections](READINESS-2026-09-13.md) add final-dispatch contr
 | Execution | Closed-bar controller, account/quote/risk gates, write-ahead attempts, partial-fill adoption, protective management and restore | Live availability depends on actual broker/configuration; no general Live acceptance claim |
 | Readiness/capacity | Baseline gates, guarded capacity, preserved existing campaigns, terminal pending invalidation | Explicit strategy changes still require new plans; no arbitrary declared-window editor |
 | Exits/risk | Whole-unit allocations, fill-driven transitions, daily loss reporting, distinct premium/underlying risk | Small positions cannot reproduce every percentage trim; no earned-risk-escalation model |
-| Research | Underlying campaign replay, paired sweeps, recorded option-quote valuation, session decision report | No unbiased universe walk-forward or demonstrated profitable option expectancy |
+| Research | Underlying campaign replay, paired sweeps, recorded option-quote valuation, session decision report, prospective bounded candidate/ranking and exit studies | No unbiased universe walk-forward or demonstrated profitable option expectancy |
 
 ## Verification evidence
 
@@ -48,3 +48,27 @@ provider-gap investigation: Yahoo omits November 12, 2025 while Alpaca raw provi
 history contains it. Different volume/adjustment datasets are not spliced automatically.
 Risk settings and saved campaigns were not migrated. Prospective cohort collection is still
 required before changing strategy thresholds or claiming improved expectancy.
+
+## Intraday research boundary
+
+Implemented non-executing Practice observations of blocked-market shortlists. Frozen prior
+completed daily EMAs are compared with completed 15-minute index candles. Hypothetical stock
+confirmations have no contract, fill or profit claim and cannot be armed. See
+[the accepted decision](INTRADAY-RESEARCH-DECISION-2026-09-14.md). Automatic reopening remains
+unimplemented and unapproved; observations must be evaluated prospectively before proposing it.
+
+## Profitability research release
+
+Fresh Practice preparation freezes a separate bounded observation pool and both
+structural-R and leader-first rankings. A separately identified structural-short
+research cohort observes bearish conditions; it is not an exact reconstruction
+of the author's March scanner. Selected contract observations and estimated
+whole-unit affordability support target/campaign comparisons. Predefined
+failed-break, time-cap and weak-environment exits use the same entry and initial
+risk; the conditional shares comparison retains equal cash limits.
+
+Validation has a dated research panel; Settings controls collection. The Method
+library includes [the protocol](PROFITABILITY-RESEARCH.md). Old preparations are
+not relabeled as prospectively observed. Stock paths remain proxies, and missing
+quote/cost evidence cannot become option returns. No execution rule or automatic
+Live permission is changed by these studies.

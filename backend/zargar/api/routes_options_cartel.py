@@ -49,6 +49,55 @@ def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
 
+    @app.get('/api/options-cartel/profitability-research', dependencies=[auth])
+    async def profitability_research_status(workspace: Workspace | None = None, day: str | None = None):
+        import datetime as dt
+        from ..marketstructure.sessions import ET
+        from ..techniques.options_cartel import profitability_research
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        if (workspace or active_workspace(eng)) != 'practice':
+            return {'enabled': False, 'phase': 'practice_only', 'rows': [], 'contexts': [],
+                    'placesOrders': False, 'automaticPermissionChanged': False}
+        selected_day = day or dt.datetime.now(ET).date().isoformat()
+        try:
+            parsed = dt.date.fromisoformat(selected_day)
+            if parsed.isoformat() != selected_day:
+                raise ValueError('Use YYYY-MM-DD')
+        except ValueError as exc:
+            raise HTTPException(400, 'Invalid research session; use YYYY-MM-DD') from exc
+        policy = read_policy(eng, 'practice')
+        return await profitability_research.status(eng, selected_day, policy.portfolio_id)
+
+    @app.get('/api/options-cartel/intraday-research', dependencies=[auth])
+    async def intraday_research_status(workspace: Workspace | None = None, day: str | None = None):
+        import datetime as dt
+        from ..marketstructure.sessions import ET
+        from ..models import TechniqueRun
+        from ..techniques.options_cartel.intraday_research import SETTING, VERSION
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        if (workspace or active_workspace(eng)) != 'practice':
+            return {'enabled':False,'phase':'practice_only','rows':[], 'placesOrders':False}
+        selected_day=day or dt.datetime.now(ET).date().isoformat()
+        try:
+            dt.date.fromisoformat(selected_day)
+        except ValueError as exc:
+            raise HTTPException(400,'Invalid research session') from exc
+        policy=read_policy(eng,'practice')
+        async with eng.sf() as session:
+            records=(await session.scalars(select(TechniqueRun).where(TechniqueRun.technique=='options_cartel',
+                TechniqueRun.mode=='intraday_watch',TechniqueRun.config['portfolioId'].as_string()==policy.portfolio_id,
+                TechniqueRun.config['session'].as_string()==selected_day).order_by(TechniqueRun.as_of.desc()).limit(26))).all()
+        rows=[]
+        for record in records:
+            market=record.result['market']
+            rows.append({'id':record.id,'at':record.as_of,'boundary':record.result['boundary'],
+                'market':{**market,'indices':{s:{k:v for k,v in r.items() if k!='sourceBars'} for s,r in market['indices'].items()}},
+                'candidates':[{k:v for k,v in c.items() if k not in ('sourceBars','entryRead')} | {'signal':c.get('entryRead',{}).get('signal')} for c in record.result['candidates']]})
+        state=getattr(getattr(eng,'cartel_observer',None),'_intraday_research_status',{})
+        return {'enabled':bool(eng.settings.get(SETTING,True)),'version':VERSION,'session':selected_day,
+            'phase':state.get('phase','waiting_session'),'reason':state.get('reason'), 'rows':rows,
+            'placesOrders':False,'automaticPermissionChanged':False}
+
     async def review_account(workspace, portfolio_id=None):
         from ..techniques.options_cartel.preparation_scope import read_policy
         policy = read_policy(eng, workspace)
