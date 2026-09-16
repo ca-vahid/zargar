@@ -41,7 +41,7 @@ from ...marketstructure.aggregate import bar_session, bucket_start_ms, minute_of
 from ...marketstructure.sessions import ET, session_bounds, session_date
 from ...models import TechniqueRun
 from ...options.pick import MAX_OVER_TARGET
-from .rules import experiment_for, Team2Rules, rules_from_settings
+from .rules import apply_overrides, Team2Rules, rules_from_settings
 from .scenario import target_is_ahead
 from .session import simulate_session
 
@@ -112,15 +112,36 @@ class Team2Runner(PlanRunner):
         return rules_from_settings(self.engine.settings)
 
     def rules_for(self, ap) -> Team2Rules:
-        """The rules THIS plan runs under: the baseline plus its book's whitelisted experiment overrides (2026-09-15,
-        the parallel Practice experiments; `experiment_for` — only size_full / no_trade_zone may differ). A plan on a
-        book without an experiment entry, or a bare test rig, runs the baseline exactly."""
+        """The rules THIS plan runs under: the baseline plus the experiment override FROZEN ON THE PLAN at mint time
+        (`plan.experiment.overrides`, stamped by `mint_plan_run`; review of 41ec565). The live experiment map is never
+        consulted here: disabling or editing it cannot turn an armed sizing book back into a full-size baseline mid-
+        session, and a restart restores the same book/rule identity from the run. A plan without a stamp, or a bare
+        test rig, runs the baseline exactly."""
         base = self.rules()
-        pid = self._book(ap)
-        b = experiment_for(getattr(self.engine, "settings", {}) or {}, pid) if pid else None
-        if not b or not b.get("overrides"):
+        plan = getattr(ap, "plan", None)
+        exp = plan.get("experiment") if isinstance(plan, dict) else None
+        if not isinstance(exp, dict) or not exp.get("overrides"):
             return base
-        return Team2Rules.from_dict({**base.to_dict(), **b["overrides"]})
+        return apply_overrides(base, exp.get("overrides"))
+
+    async def arm(self, run_id: str, config=None, *, restored: bool = False, paused: bool = False, prior_state: dict | None = None) -> dict:
+        """The sim-only boundary at EVERY arm — manual, nightly and restore: a plan stamped as an experiment may only be
+        armed on the Practice (sim) book it was minted for (review of 41ec565, section 3)."""
+        run = await self.load_plan(run_id)
+        exp = ((run or {}).get("result") or {}).get("plan", {}).get("experiment") if run else None
+        if isinstance(exp, dict) and exp.get("label"):
+            cfg = config.to_dict() if hasattr(config, "to_dict") else dict(config or {})
+            pid = str(cfg.get("portfolioId") or cfg.get("portfolio_id") or "")
+            if not pid:
+                pid = str(exp.get("portfolioId") or "")
+            pf = self.engine.positions.portfolio(pid) if pid else None
+            if pf is None or str(pf.get("kind")) != "sim" or bool(pf.get("archived")):
+                raise ValueError(f"experiment plan {run_id} ({exp.get('label')}) may only be armed on an unarchived Practice (sim) book — never real money")
+            if str(exp.get("portfolioId") or "") and pid != str(exp.get("portfolioId")):
+                raise ValueError(f"experiment plan {run_id} ({exp.get('label')}) was minted for book {exp.get('portfolioId')}, not {pid}")
+            cfg["portfolioId"] = pid
+            config = cfg
+        return await super().arm(run_id, config, restored=restored, paused=paused, prior_state=prior_state)
 
     async def load_plan(self, run_id: str) -> dict | None:
         async with self.engine.sf() as session:

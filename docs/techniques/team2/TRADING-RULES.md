@@ -3122,6 +3122,20 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 review of 41ec565 (other team: design ACCEPTED; three boundaries; hold merge/deploy; v0.7.94 prepared)** —
+  note: v0.7.93 had already been merged and deployed (inert: experiments OFF) when the hold arrived; the corrections
+  are on the branch as v0.7.94 for their review before any merge. (1) Validated schema `validate_experiments`:
+  `{enabled, control, books:[{portfolioId, label, role: sizing|c1, overrides}]}`; one override per role, required
+  labels, distinct roles/labels/books, unarchived Practice books only, control not an experiment, no C1+sizing in one
+  book; an invalid map is invalid as a whole (nothing applied, errors reported before minting). (2) Receipt: read-only
+  settings load, every missing piece of evidence is a blocker, PREPARED (disabled) vs READY (enabled + three fresh
+  books + every plan armed under its stamped role and the feature version + healthy code + no extra Team2 plans on other
+  books + no pause/halt + thresholds owned + a reviewed C6 evidence RECORD, never prose). (3) Transitions: the override is
+  FROZEN on the plan at mint (`plan.experiment`; the runner never reads the live map); old-book plans for the session are
+  inventoried — without force nothing experimental is minted, with force a plan without exposure is retired and a book
+  with exposure is PAUSED (positions still managed, history kept); a forced re-plan refuses a plan with unresolved
+  exposure; an experiment plan arms only on its own Practice book (manual, nightly, restore). Their probes
+  `tests/test_codex_team2_parallel_boundaries.py` verbatim; own coverage `tests/test_team2_experiments2.py`.
 - **2026-09-15 parallel experiments PREPARED (other team's GO; v0.7.93; NOT activated)** — three Practice books
   (Control = baseline, Sizing = `size_full` 0.5 only, C1 = `no_trade_zone` conjunction only; newly eligible C1 setups
   are small by construction), equal $10,000 starts, same data/timing/execution. Built: `techniques.team2.experiments`

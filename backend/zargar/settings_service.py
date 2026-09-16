@@ -588,6 +588,8 @@ class SettingsService:
                 v = by_key[legacy].value.get("v")
                 merged[canon] = v
                 migrated.append((legacy, canon, v))
+        if migrated and getattr(self, "readonly", False):
+            migrated = []                                   # a READ-ONLY load (the Team2 receipt) never migrates or journals
         if migrated:
             async with self._sf() as session:
                 for _legacy, canon, v in migrated:
