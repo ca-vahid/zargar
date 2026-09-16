@@ -16,6 +16,7 @@ Normalized row shape (every provider):
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 
@@ -52,6 +53,7 @@ class CboeClient:
     name = "cboe"
     delayed = True
     CACHE_TTL = 60.0
+    RATE_LIMIT_RETRIES = (0.6, 1.2)      # bounded back-off on HTTP 429 (2026-09-16: one 429 killed a live entry with no retry)
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._http = client or httpx.AsyncClient(timeout=30, headers={"User-Agent": UA},
@@ -75,8 +77,23 @@ class CboeClient:
         if hit and now - hit[0] < self.CACHE_TTL:
             return hit[1]
         r = await self._http.get(CBOE_URL.format(symbol=sym))
+        for i, pause in enumerate(self.RATE_LIMIT_RETRIES):
+            if r.status_code != 429:
+                break
+            # CBOE's free endpoint rate-limits bursts (several desks share it). A live entry has a latency budget
+            # of a few seconds, so retry briefly and give up honestly - never serve stale chain data for a pick.
+            ra = r.headers.get("Retry-After")
+            try:
+                pause = min(float(ra), 2.0) if ra else pause
+            except ValueError:
+                pass
+            log.info("CBOE 429 for %s - retry %d/%d after %.1fs", sym, i + 1, len(self.RATE_LIMIT_RETRIES), pause)
+            await asyncio.sleep(pause)
+            r = await self._http.get(CBOE_URL.format(symbol=sym))
         if r.status_code == 404:
             raise OptionsError(f"no US-listed options for {sym} (CBOE 404)")
+        if r.status_code == 429:
+            raise OptionsError(f"CBOE HTTP 429 (rate limited; {len(self.RATE_LIMIT_RETRIES)} retries)")
         if r.status_code >= 400:
             raise OptionsError(f"CBOE HTTP {r.status_code}")
         data = (r.json() or {}).get("data") or {}

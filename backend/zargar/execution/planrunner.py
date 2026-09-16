@@ -3125,8 +3125,10 @@ class PlanRunner(SessionListener):
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
                 "error": trade.errors[-1] if trade.errors else "no contract"},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-            await self._alert(ap, f"{trade.trigger_id}: the trigger fired but no option contract was available "
-                              f"and the shares fallback is off - nothing was sent", stage="entry")
+            fb = ("the shares fallback never applies to a short (puts only)" if trade.direction == "short"
+                  else "the shares fallback is off")
+            await self._alert(ap, f"{trade.trigger_id}: the trigger fired but no option contract was available ({why}) "
+                              f"and {fb} - nothing was sent", stage="entry")
             return None
         trade.status = "skipped"
         trade.reason = f"contract skipped ({blocked})"
