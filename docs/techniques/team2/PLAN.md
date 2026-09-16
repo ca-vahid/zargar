@@ -337,6 +337,9 @@ and are now part of the plan; each carries the phase it belongs to.
   (12 sessions) is preserved as read evidence. The 30-minute watch job tallies per plan: listing, warm-up identity,
   model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,
   and trail gaps (a plan with `trailGaps` is an incompletely observed session).
+- **Profitability track — status 2026-09-15 evening:** sheet rev. 2 ACCEPTED (sampled threshold, calibration disclosures,
+  scoped pause). Live: v0.7.90 (F127 clamp + per-book pause). Remaining before activation: **C6** (one tape; platform
+  owners) → final activation snapshot → their GO. Research settings unchanged; nothing paused.
 - **Profitability track (2026-09-15):** comparisons accepted by the other team (exploratory tape, pre-C6). Sequence:
   **sizing cap first** (`size_full` 0.5; Practice-scale +$2,231 / DD −$635 vs baseline +$1,374 / DD −$993; loss stop
   −$800 marked-to-market; ten completed sessions), C1 the follow-on (Practice-scale DD 26 % — sizing first). Sheet
