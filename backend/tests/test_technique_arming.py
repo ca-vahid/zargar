@@ -898,6 +898,8 @@ async def test_critic_mode_momentum_only_lets_an_at_level_bounce_proceed(rig, mo
     """2026-09-09 user decision (TRADING-RULES 1.4b / 5): under `critic_mode=momentum_only` a
     critic "no" on a bounce/reject is advisory - recorded on the trade, the entry proceeds."""
     await _critic_says_no(rig, monkeypatch)
+    # deterministic-entry-v1 (2026-09-15): the awaited critic is the LEGACY branch - select it explicitly
+    await rig.eng.settings.set("techniques.enhanced_market.fire_decision_mode", "legacy", journal=False)
     await rig.eng.settings.set("techniques.enhanced_market.critic_mode", "momentum_only", journal=False)
     run, tr = await _arm_alert_and_fire(rig)
     assert tr["status"] == "alert", (tr["status"], tr["reason"])
@@ -909,6 +911,21 @@ async def test_critic_mode_momentum_only_lets_an_at_level_bounce_proceed(rig, mo
 
 async def test_critic_mode_veto_still_kills(rig, monkeypatch):
     await _critic_says_no(rig, monkeypatch)
+    await rig.eng.settings.set("techniques.enhanced_market.fire_decision_mode", "legacy", journal=False)   # explicit legacy rollback
     await rig.eng.settings.set("techniques.enhanced_market.critic_mode", "veto", journal=False)
     run, tr = await _arm_alert_and_fire(rig)
     assert tr["status"] == "critic_killed" and tr["criticAdvisory"] is False
+
+
+async def test_deterministic_default_never_consults_the_critic_on_the_real_rig(rig, monkeypatch):
+    """deterministic-entry-v1 (2026-09-15): under the default mode a critic that says NO is never asked - the trade
+    carries the app's decision, no critic opinion, and the audit shows the decision record."""
+    await _critic_says_no(rig, monkeypatch)
+    await rig.eng.settings.set("techniques.enhanced_market.critic_mode", "veto", journal=False)     # would kill under legacy
+    run, tr = await _arm_alert_and_fire(rig)
+    assert tr["status"] == "alert" and tr["critic"] is None and tr["criticDisposition"] == "deterministic", (tr["status"], tr["reason"])
+    assert tr["decision"]["verdict"] == "allow" and tr["decision"]["decisionVersion"] == "deterministic-entry-v1" and tr["decisionDisposition"] == "allowed"
+    audit = (await rig.client.get(f"/api/technique/armed/{run['id']}/audit")).json()
+    assert [e for e in audit if e["type"] == "TechniqueEntryDecision"], "the deterministic decision is journaled"
+    fired = [e for e in audit if e["type"] == "TechniquePlanTriggerFired"]
+    assert fired and fired[-1]["payload"]["fireDecisionMode"] == "deterministic" and fired[-1]["payload"]["critic"] is None

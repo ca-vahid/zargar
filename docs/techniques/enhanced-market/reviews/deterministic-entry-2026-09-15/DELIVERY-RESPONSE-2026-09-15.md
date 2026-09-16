@@ -79,8 +79,8 @@ batch-created arms obey the same policy. Legacy rollback = `PATCH /api/settings 
 - Pure EM / measurement / contract / sizing / F127 group: **106 passed**, plus `test_platform_phase3.py` **13 passed**
   when run on a private database (its `test_daily_bars_snapshot_persists_1d_rows` failed once on the shared
   `zargar_test` database while another session used it - a collision, not a regression).
-- DB-backed dispatch / FC-01 / wiring / API / pre-open / separation / Team2 pick / Tip runner group: PENDING - running at the time of this handoff (exclusive private database, sequential); result appended in the next commit.
-- Arming solo: PENDING - runs solo after the DB group; result appended in the next commit.
+- DB-backed dispatch / FC-01 / wiring / API / pre-open / separation / Team2 pick / Tip runner group: **103 passed in 11:42** (`test_codex_em_final_dispatch_quote`, `_budget`, `test_codex_fc01_source_loss`, `test_em_source_wiring`, `test_technique_api`, `test_em_review_preopen`, `test_em_review_evidence`, `test_platform_separation`, `test_team2_gate_pick`, `test_tip_runner`; private database `zargar_test_em`, sequential).
+- Arming solo: 26 passed + 4 failed on the first solo run: the two known main failures, plus `test_critic_mode_momentum_only_lets_an_at_level_bounce_proceed` and `test_critic_mode_veto_still_kills`, which exercise the awaited critic and now run under the explicit `legacy` mode (test change: the settings line `fire_decision_mode = legacy` added, assertions unchanged); a new real-rig case `test_deterministic_default_never_consults_the_critic_on_the_real_rig` proves a critic that says NO is never asked under the default and the decision is journaled. Re-run: the two adapted cases + the new case **3 passed**; `test_restore_reattaches_an_open_trade` **passes alone** (12.9 s).
 - Known unrelated failures on main (unchanged): `test_auto_options_one_contract_lifecycle` (sim option fills need the
   OPRA identity), `test_restore_reattaches_an_open_trade` (load-sensitive; passes alone).
 
