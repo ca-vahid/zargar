@@ -2126,3 +2126,9 @@ desk-wide loss cap and concurrency cap are per BOOK (`losses_across_plans(portfo
 `open_positions_across_plans(portfolio_id=)`), each plan carries its book's rules (`rules_for(ap)`, stamped on the run)
 and label, `nightly_plans` mints one plan per (symbol, book) and refuses a non-Practice book for an experiment. No engine
 change; the per-book pause (v0.7.90) is the experiments' breach action. Nothing is enabled by this release.
+
+### Settings: a read-only load — 2026-09-15 (Team2 receipt; v0.7.94)
+
+`SettingsService.load()` migrates legacy keys (writes + journal) on first sight. A tool that must not write sets the
+`readonly` attribute on SettingsService before `load()`; the migration is skipped in memory (values still resolve).
+Used by `zargar.tools.team2_receipt` (review of 41ec565: the receipt claimed READ-ONLY while calling `load`).

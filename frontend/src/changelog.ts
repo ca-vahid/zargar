@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.93";
+export const APP_VERSION = "0.7.95";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.95",date:"2026-09-15",title:"EM entries are decided by the app's own rules, not a model",items:[
+    {tag:"major",text:"EM live entry authority is deterministic (techniques.enhanced_market.fire_decision_mode=deterministic): when a trigger fires, the app's encoded rules judge the saved geometry, the tracker's own window, volume and the confirmation branch that actually fired - in milliseconds, with no model call, no chart render and no timeout on the entry path. Every attempt is journaled as a TechniqueEntryDecision with its frozen snapshot, policy and the last 240 bars up to the signal close; refusals are recorded as no-setup with reason codes. The pre-market LLM plan builder is unchanged; legacy critic mode remains selectable."},
+    {tag:"new",text:"Optional after-close LLM evidence (fire_evidence_mode=after_close, OFF): one bounded, evidence-only pass over the frozen decisions of a closed session - it verifies the record's declared identity (input hash, frozen-bar hash and count, cutoff) against the captured material before rendering or buying an opinion, and can never touch an order, an arm or a setting."},
+    {tag:"improved",text:"EM profitability report attributes fills and refusals to the attempt that produced them (policy version, decision id), builds the attempt census from every run's immutable fire events and counts refusals once per attempt."},
+    {tag:"improved",text:"Armed cards and the arm dialog show the effective live-entry policy (deterministic / legacy critic / policy error); Settings gains an EM live entry authority group."},
+  ]},
+  {version:"0.7.94",date:"2026-09-15",title:"Experiment books are validated, frozen and transition-safe",items:[
+    {tag:"fixed",text:"Team2 experiments (still OFF): the map is validated as a whole - a control book, one role per experiment book (sizing -> size_full, c1 -> no_trade_zone), required labels, distinct unarchived Practice books, no combination of C1 and the sizing cap; an invalid map applies nothing and reports why. A plan's override is frozen on the plan at mint time, so disabling or editing the map can no longer turn an armed sizing book back into full size, and a restart restores the same book and rules. Switching the default book inventories plans on other books (retired without exposure, paused with it), a forced re-plan never removes the manager of an open trade, and an experiment plan can only be armed on the Practice book it was minted for. A transition step that fails or cannot be confirmed blocks the experiment minting and leaves the old plan managing its book. Every plan now carries the release and build that minted it, the readiness receipt checks that provenance and plan cardinality per book and symbol, and its settings load is fully read-only."},
+  ]},
   {version:"0.7.93",date:"2026-09-15",title:"Team2 can run parallel Practice experiments, one book each",items:[
     {tag:"new",text:"Team2 experiments (techniques.team2.experiments, OFF by default): each listed Practice book gets its own plan per symbol, minted and run under the shared baseline plus that book's overrides - and only size_full or no_trade_zone may differ; anything else is refused. Loss counters and the concurrency cap are now per book, plans carry their book's rules and label, and an experiment book must be a Practice (sim) book - never real money. The shared Team2 settings stay the baseline every other book runs on. Built for the review team's parallel sizing-cap and C1 experiments; nothing is enabled or activated by this release."},
   ]},
