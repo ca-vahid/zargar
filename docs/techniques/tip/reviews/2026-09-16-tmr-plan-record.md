@@ -244,3 +244,63 @@ profitability preview = 16 passed; intake pipeline slice (`test_signals_tip`, `t
 `test_tip_kfin09_experiments`) 37 passed. Status: built, merged - not deployed (the live 0.7.96 process
 predates it; ships on the next coordinated deployment after the close); INTRA-03 routing collecting
 classifications once deployed, evaluated after the frozen pairs.
+
+## I175-01..04 (review of PR #175, 2026-09-16) - built the same afternoon; recap routing stays OFF
+
+Source: `C:/Cursor/zargar-codex/docs/techniques/tip/reviews/2026-09-16-pr175-verdict.md`; the reviewer's
+three regressions adopted verbatim as `tests/test_pr175_review.py` (all three failed on `412dd1c`).
+
+**I175-01 mixed messages stay full.** `recap.classify` (`recap-read-v2`) now applies two FULL-route
+conditions BEFORE any recap scoring: a fresh priced actionable open/add anywhere in the message, or entry
+cues on actionable content -> category `mixed`, route `full` (the reviewer's case - an AAPL call/put map,
+MSFT and TSLA shares and one actionable NVDA call at 1.00 with "BTO NVDA calls at 1.00" - now reads
+`mixed / full`, `freshPricedEntries: 1`). A recap's OLD averages (priced but non-actionable opens, e.g. the
+APLD "unrealized only" digest) count as a recap feature (`oldAverages`), not as entries, so the holdings
+digest still reads `recap / compact-eligible`. Management (trim/close/update_stop) stays full; a clean level
+map stays compact-eligible. No card is suppressed and no verdict is changed by the read.
+
+**I175-02 partial-copy labels from the executed units.** `payoff_preview.singleLot` derives
+`canCopyPartials` from the integer sequence execution actually runs (`executedUnits`): every positive rung
+must receive >= 1 unit; `reproducesWeights` says whether the integer split equals the declared fractions;
+`uncoveredRungs` names the rungs that get nothing. The reviewer's case: 3 contracts x 80/10/10 executes
+`[2, 1, 0]` -> `canCopyPartials: False`, `uncoveredRungs: [3]`, note "rung(s) [3] receive no unit at this
+size - the ladder is not copied". 3 x 40/30/30 -> `[1, 1, 1]` covers every rung but does not reproduce
+the weights; 10 x 50/30/20 reproduces them. One contract's first-target behaviour is unchanged
+(`oneLot` = first-target exit net).
+
+**I175-03 hold cap, expiry date and exit assumption are three things.** `payoff.horizon_block`: the
+MAXIMUM hold (`maxHoldSessions`) is converted to a calendar date on the exchange calendar
+(`holdCapEndsOn`; Fri 09-18 + 2 sessions = Tue 09-22), the `expiryDate` is kept apart, and
+`exitAssumption` is "before expiry (target / stop / premium exit) - a hold cap is a maximum, not an exit
+time" unless the caller DECLARES `exit_at_expiry`, which alone produces "declared: held to expiry" and an
+`expiryScenario` valued at intrinsic value minus premium and both sides' fees (349 -> 0 intrinsic, net
+-$221.08; 355 -> 5.00, net +$278.92 on the 2.19 call). `holdCapReachesExpiry` is informational. Unknown
+inputs stay unknown. The verified early-sale example (+$28.92 net, $2.08 fees) is untouched. The analyst's
+`preview_payoff` tool passes the contract's expiry date and an optional `exit_at_expiry` flag.
+
+**I175-04 replay parity before any paid pair.** ONE versioned configuration `recap.CANDIDATE`
+(`recap-candidate-v1`: core rules via `compact_rules`, core + ticker + source notes via `compact_notes`,
+24 h / 12-record history, 2-tool budget, the exact header prefix template, the prompt-rule names) is the
+source for BOTH the production compact route (`analyze_tip` header prefix, history query, tool budget,
+`recapCandidate` version on the run) and the new frozen variant `recap_candidate`
+(`frozen.variant_knowledge`, assembled by the same `recap.build_candidate_context` on the bundle's captured
+rules / notes / history; `_rebuild_header` prepends the prefix; `replay` takes the variant's `maxTools`).
+Declared, never filled: the 24-hour history bound is not verifiable on captured lines (the newest 12
+captured records are used - a gap on the report), and the replay keeps the bundle's CAPTURED system prompt
+for baseline parity (an INTRA-rule-free prompt is a declared difference, not corrected from today).
+Unpaid parity check `test_replay_recap_candidate_matches_the_production_route_unpaid`: identical rule ids,
+note ids, rules/notes text, history lines (newest 12), prefix (incl. the confidence) and tool budget between
+`build_candidate_context` and the frozen variant on the same inputs; the rebuilt header keeps the same
+evidence time; the `current` variant is untouched; an empty captured history stays empty. The generic
+`compact` variant (PROF-05) is left as is and is NOT the candidate. Next: after the close, the two paid
+pairs on today's SPX-map and APLD-digest bundles under `current` vs `recap_candidate` (plus fresh-entry,
+management and mixed negative controls for the classifier from today's journal), reported with
+coverage / missing-evidence / cost / latency - the reviewer decides `recap_route`.
+
+**Verification on the final commit:** `tests/test_pr175_review.py` (3, reviewer) + `tests/test_tip_i175_parity.py`
+(4 incl. the parity check) + `tests/test_tip_intra_reasoning.py` + payoff/feasibility + expression gate +
+profitability preview + frozen compact + KFIN-09 experiments + tip activation = **36 passed** (the 16 prior
+checks retained, two of them updated for I175-03's separated horizon). Standing: `recap_route` off,
+`analyst_feasibility_gate` annotate, no card suppression, no risk-limit change, no forced TAKE. Status:
+built, merged - not deployed (the live 0.7.96 process predates PR #175 and this fix; ships on the next
+coordinated deployment after the close).
