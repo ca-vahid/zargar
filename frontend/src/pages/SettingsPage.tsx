@@ -470,7 +470,16 @@ export function SettingsPage() {
             </Cells>
             <ToggleRow k="technique.arm.skip_wide_spread" label="Skip options with a wide spread" hint="avoids contracts that lose money the moment you enter (T5.4) — the entry fallback above can buy shares instead" />
             <ToggleRow k="technique.arm.skip_elevated_iv" label="Skip options with high volatility" hint="avoids IV-crush (T5.3); off by default" />
-            <ToggleRow k="technique.arm.use_critic" label="AI double-check before auto-buying" hint="an AI reads the live chart and can veto a weak setup (needs an API key)" />
+            <Group>EM live entry authority</Group>
+            <Cells>
+              <SelCell k="techniques.enhanced_market.fire_decision_mode" label="EM live entry decision"
+                hint="deterministic (default since 2026-09-15): the app's rules decide at fire time, no AI wait; legacy = explicit rollback to the awaited AI critic. Premarket planning AI is separate."
+                options={[{ value: "deterministic", label: "deterministic (app rules)" }, { value: "legacy", label: "legacy (awaited AI critic)" }]} />
+              <SelCell k="techniques.enhanced_market.fire_evidence_mode" label="Later AI review of entries"
+                hint="evidence only, never a trading decision: off, or an after-close command that records an AI opinion on each frozen decision"
+                options={[{ value: "off", label: "off" }, { value: "after_close", label: "after close (evidence only)" }]} />
+            </Cells>
+            <ToggleRow k="technique.arm.use_critic" label="AI double-check before auto-buying (legacy mode / other desks)" hint="only applies when a technique's live entry decision is the legacy awaited critic; EM in deterministic mode ignores it" />
             <ToggleRow k="risk.halt_allows_exits" label="Kill switch still lets you sell" hint="ON (recommended): the halt stops new buys but stops/flatten can still close a position so you're never trapped" />
             <ToggleRow k="technique.arm.allow_live_auto" label="Allow auto-trade on REAL accounts" hint="off by default; auto on real money also needs LIVE mode and a per-plan tick" />
             <Cells>

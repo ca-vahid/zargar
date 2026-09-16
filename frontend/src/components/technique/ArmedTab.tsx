@@ -23,6 +23,7 @@ const TRADE_LABEL: Record<string, string> = {
   fired: "fired", critic_killed: "killed by critic", alert: "alert only", proposal: "proposal waiting", submitting: "submitting",
   working: "entry working", open: "IN TRADE", closed: "closed", cancelled: "cancelled", failed: "FAILED", skipped: "skipped",
   critic_unavailable: "critic down — not sent",
+  refused: "refused by the app's rules",
 };
 
 function TradeRow({ t }: { t: ArmedTrade }) {
@@ -59,6 +60,7 @@ function TradeRow({ t }: { t: ArmedTrade }) {
       )}
       {!!t.errors?.length && <div className="neg small">{t.errors.slice(-2).join(" · ")}{t.retries ? ` · retries ${t.retries}` : ""}</div>}
       {t.critic && <div className="muted small">critic: {t.critic.kill ? "KILLED" : "survived"} — {t.critic.summary}</div>}
+      {t.decision && <div className="muted small">live decision: {t.decision.verdict} ({t.decision.decisionVersion}{t.decision.confirmationVariant ? `, ${t.decision.confirmationVariant}` : ""}){t.decision.reasonCodes?.length ? ` — ${t.decision.reasonCodes.join(", ")}` : ""}</div>}
     </div>
   );
 }
@@ -214,6 +216,10 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           )}
           <button className="link-btn" onClick={() => openRun(a.runId)}>open plan</button>
           <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "hide log" : "log"}</button>
+          {a.effectiveFireDecisionMode && <span className="muted small" title={a.decisionVersion || ""}>
+            {a.effectiveFireDecisionMode === "deterministic" ? "deterministic entry" : (a.criticEffective ? "critic on (legacy)" : "legacy, no critic")}
+            {a.fireEvidenceMode === "after_close" ? " · AI review after close" : ""}
+          </span>}
           <span className="muted small tq-head-right">risk {a.config.riskPct}% · {a.config.instrument === "options" && (a.config as any).premiumBudget ? `budget $${Number((a.config as any).premiumBudget).toLocaleString()}` : `max ${a.config.maxQty} sh`} · critic {(a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off"} · {a.config.management === "durable" ? "managed swing exits" : `flatten ${a.config.flattenMinutesBeforeClose}m before close`}</span>
         </div>
         {open && (

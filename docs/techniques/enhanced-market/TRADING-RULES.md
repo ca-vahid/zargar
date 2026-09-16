@@ -1133,3 +1133,33 @@ exits do not pass through it. The intent journal carries `quoteRefresh` (attempt
 before/after, elapsed) so admissions and later outcomes can be tracked - the three refused names are NOT three
 recovered winners; the profitability report will show what refreshing changed.
 
+### 2026-09-15 - deterministic live entry is EM's main mode (user decision; `deterministic-entry-v1`)
+
+**Policy change, disclosed:** the live EM entry decision is made by application rules at fire time; the fire-time
+vision critic is removed from the entry's decision authority AND its latency path (Sep 15: 15 critic traces waited
+14.1-22.0 s, mean 17.6 s, all advisory). Under the old `momentum_only` policy the critic could still veto breakouts,
+breakdowns and wedge breaks - **that discretionary momentum-family veto is retired**. No claim of equivalence with the
+model's qualitative judgments is made: higher-timeframe fakeouts, an emerging opposing shelf, momentum divergence and
+live chop are recorded `not_evaluated` (diagnostic) and are NOT encoded; any such filter is a separate versioned rule.
+
+Rule map v1 (`backend/zargar/technique/entry_decision.py`, pure; the tracker's ACTUAL transition is the evidence, never
+the trigger's kind label): plan current + saved geometry; tracker `fired` on the completed bar; stop intact (T4.3d);
+eligible window (R6 / C3 gap-day wait) and gap state (or `gap_unchecked`, kept as today); volume from the branch that
+fired (floor for touches / range break / loose continuation; surge at the break candidate for the normal
+follow-through path); the confirmation branch recorded honestly (`touch` with T4.2 - no reclaim candle required;
+`normal_followthrough`; `range_break` and `loose_continuation` record their bypassed checks); R3.2 false-break cap.
+`allow` = eligible for the UNCHANGED order chain (contract pick, bounded quote refresh, sizing, admission, never-chase,
+R2, final guard, RiskGate); `refuse` / `defer` (unknown required evidence) are their own dispositions - never
+`critic_killed`, never downgraded by an advisory critic setting, never a kill counter, cooldown or pause.
+
+Settings: `techniques.enhanced_market.fire_decision_mode = deterministic` (default) | `legacy` (explicit, journaled
+rollback to the awaited critic with its old veto/momentum_only/advisory semantics); `fire_evidence_mode = off` |
+`after_close` (optional LATER model opinion over the frozen decision snapshot, evidence only, never trades). A stored
+arm's `useCritic` is a legacy compatibility field: the mode is resolved per fire attempt, so the 41 Sep 16 arms and
+every restored arm obey the authoritative setting without a rewrite (migration preview:
+`python -m zargar.tools.em_fire_policy_migration preview`). No exit, sizing, risk, threshold or other-desk change.
+Premarket LLM planning (sheet promotion, analyst review) is unchanged and independent of a missing key at fire time.
+Records: `TechniqueEntryDecision` (every attempt, allowed or refused, with timing boundaries) and optional
+`TechniqueEntryEvidence` (`authority = evidence_only`). Reports group outcomes by policy version; faster entry is a
+latency fact, not a profit claim.
+

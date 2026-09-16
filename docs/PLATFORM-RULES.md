@@ -1995,3 +1995,18 @@ The v0.7.81 booking ran only for entries still `submitting`/`working`; an entry 
 ignored a cancel that reported more contracts. `on_order_update` now books the terminal report's cumulative fill for
 ANY entry trade (`_apply_entry_fill`: never regresses, opens once, nets against booked exits) and classifies only the
 entries that were still submitting/working. Shared behaviour; no threshold changed.
+
+### 2026-09-15 - execution-review policy is a runner hook (deterministic-entry-v1)
+
+`PlanRunner.fire_review_policy(ap)` -> `legacy` (the awaited reviewer branch, unchanged for Tips / Team2 / Cartel) or
+`deterministic` (the technique's `fire_decision(ap, tid, tr, trade, attempt_id=)` hook returns a versioned decision
+dict; the runner journals `TechniqueEntryDecision`, refuses on `refuse`/`defer` with its own disposition, and continues
+into the UNCHANGED `_enter` chain on `allow`). Any other value refuses the entry with a policy error - never a silent
+model fallback. Generic defaults keep every other desk exactly as before; only EM overrides the hook from its own
+`techniques.enhanced_market.fire_decision_mode`. There is deliberately NO `execution.fire_decision_mode` default.
+Invariant: no model output may mutate an executed decision, sizing input, setup validity, proposal, stop, cooldown or
+plan state after the fact; optional evidence (`TechniqueEntryEvidence`, `authority=evidence_only`) is append-only over a
+frozen snapshot and is produced by an after-close command that opens no trading service. Trade records carry
+`decision`, `decisionDisposition` and `timing` (bar / received / decided / quoteReady / admission / submit) so the
+boundaries can be measured separately from provider and venue latency.
+

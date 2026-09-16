@@ -1866,7 +1866,10 @@ class TechniqueService:
         return await self.armer.arm_today(symbol, config, with_vision=with_vision)
 
     async def arm_preflight(self, run_id: str, config: dict | None = None) -> dict:
-        return await self.armer.preflight(run_id, config)
+        res = await self.armer.preflight(run_id, config)
+        if isinstance(res, dict):                       # deterministic-entry-v1: the effective live policy rides every preflight
+            res.update(self.armer._preflight_policy())
+        return res
 
     def armed_plans(self, *, slim: bool = False) -> list[dict]:
         return [d for r in self._runners() for d in r.armed(slim=slim)]
@@ -1985,6 +1988,12 @@ class TechniqueService:
             "llmAvailable": self.llm_config().available,
             "halt": getattr(self.engine.halt, "to_dict", lambda: {})(),
             "emitProposals": bool(s.get("technique.emit_proposals", False)),
+            # deterministic-entry-v1 (2026-09-15): the EFFECTIVE live entry policy for new AND restored arms; the
+            # dialog shows it instead of an "AI double-check" control, and `useCritic` is a legacy compatibility field
+            "fireDecisionMode": str(self.armer.fire_review_policy(None) or "legacy"),
+            "decisionVersion": ("deterministic-entry-v1" if str(self.armer.fire_review_policy(None)) == "deterministic" else None),
+            "fireEvidenceMode": str(self.armer.fire_evidence_mode(None) or "off"),
+            "premarketLlmAvailable": self.llm_config().available,
         }
 
     async def score_pending(self, *, limit: int = 25) -> dict:

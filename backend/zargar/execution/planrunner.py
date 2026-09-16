@@ -29,6 +29,7 @@ import contextlib
 import datetime as dt
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -187,6 +188,10 @@ class Trade:
     # reserved (status `submitting`) until order/execution evidence reconciles it; never treated as a zero fill.
     submit_uncertain: bool = False
     quote_refresh: dict | None = None        # entry-quote-refresh-v1 diagnostic for the intent journal (2026-09-15)
+    decision: dict | None = None             # deterministic-entry-v1 (2026-09-15): the app-owned live decision (slim record)
+    decision_disposition: str | None = None  # allowed | refused | deferred | legacy | policy_error
+    timing: dict = field(default_factory=dict)   # boundary timestamps (ms): bar, received, decided, quoteReady, admission, submit
+    signal_bar: dict | None = None           # the completed bar the tracker fired on (frozen for the decision snapshot)
     # F (2026-09-14): the venue's answer to the entry never arrived — the order may be live. The exposure stays
     # reserved (status `submitting`) until order/execution evidence reconciles it; never treated as a zero fill.
     submit_uncertain: bool = False
@@ -240,7 +245,8 @@ class Trade:
                 "lastPrice": self.last_price, "errors": list(self.errors),
                 "retries": self.retries, "openedTs": self.opened_ts, "closedTs": self.closed_ts,
                 "critic": self.critic, "criticAdvisory": self.critic_advisory, "scratched": self.scratched,
-                "criticDisposition": self.critic_disposition}
+                "criticDisposition": self.critic_disposition,
+                "decision": self.decision, "decisionDisposition": self.decision_disposition, "timing": dict(self.timing)}
 
 
 @dataclass
@@ -1134,6 +1140,9 @@ class PlanRunner(SessionListener):
         # so the card can stop claiming "critic on" for a technique with no
         # reviewer (ARM-GAPS F1) — useCritic is then inert by construction
         d["reviewerAvailable"] = bool(self.reviewer_available())
+        # deterministic-entry-v1 (2026-09-15): the EFFECTIVE live decision policy, resolved from the technique's
+        # authoritative setting - a stored legacy `useCritic=true` never means "critic on" under deterministic mode
+        d.update(self.fire_policy_view(ap))
         return d
 
     # ---------------------------------------------------------------- config validation
@@ -1603,6 +1612,15 @@ class PlanRunner(SessionListener):
                                                    "armed": self._snapshot(ap)})
         return True
 
+    def _preflight_policy(self) -> dict:
+        """deterministic-entry-v1: the effective live decision policy the Arm dialog shows before arming."""
+        try:
+            mode = str(self.fire_review_policy(None) or "legacy")
+            return {"effectiveFireDecisionMode": mode, "decisionVersion": ("deterministic-entry-v1" if mode == "deterministic" else None),
+                    "fireEvidenceMode": str(self.fire_evidence_mode(None) or "off")}
+        except Exception:
+            return {"effectiveFireDecisionMode": "legacy", "decisionVersion": None, "fireEvidenceMode": "off"}
+
     async def preflight(self, run_id: str, config: ArmConfig | dict | None = None) -> dict:
         """Dry-run the best trigger's entry so the Arm dialog can say — before you
         arm — whether the order would actually pass the risk gate on this account,
@@ -1623,12 +1641,12 @@ class PlanRunner(SessionListener):
             portfolio = self.validate_config(
                 cfg, explicit_portfolio=bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
         except ValueError as exc:
-            return {"ok": False, "blocked": str(exc), "checks": [], "size": None}
+            return {"ok": False, "blocked": str(exc), "checks": [], "size": None, **self._preflight_policy()}
         symbol = run["symbol"]
         valids = [t for t in (plan.get("triggers") or []) if t.get("valid")]
         best = min(valids, key=lambda t: -(t.get("confidence") or 0)) if valids else None
         if best is None:
-            return {"ok": True, "note": "no tradeable trigger in this plan — nothing would fire", "checks": [], "size": None}
+            return {"ok": True, "note": "no tradeable trigger in this plan — nothing would fire", "checks": [], "size": None, **self._preflight_policy()}
         entry = float(best["entry"]["price"])
         stop = float(best["stop"]["price"])
         equity = await self.engine.positions.equity(cfg.portfolio_id)
@@ -1780,6 +1798,9 @@ class PlanRunner(SessionListener):
             tr.single_exit = ap.config.single_contract_exit
             tr.scratched = bool(td.get("scratched", False))
             tr.critic_disposition = td.get("criticDisposition")
+            tr.decision = td.get("decision")
+            tr.decision_disposition = td.get("decisionDisposition")
+            tr.timing = dict(td.get("timing") or {})
             tr.submit_uncertain = bool(td.get("submitUncertain", False))
             if td.get("entryKind"):
                 tr._entry_kind = str(td["entryKind"])
@@ -2545,6 +2566,9 @@ class PlanRunner(SessionListener):
                       stop=tr.stop, targets=[float(t["price"]) for t in tr.trigger.get("targets") or []][:3],
                       fire_bar_index=idx, last_price=bar.close, instrument=cfg.instrument,
                       multiplier=100.0 if cfg.instrument == "options" else 1.0)
+        trade.signal_bar = {"ts": int(bar.ts), "open": bar.open, "high": bar.high, "low": bar.low, "close": bar.close,
+                            "volume": bar.volume, "source": getattr(bar, "source", None)}
+        trade.timing = {"barTs": int(bar.ts), "barCloseTs": int(bar.ts) + 60_000, "receivedTs": now_ms()}
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid} {tr.kind} fired at {trade.entry:.2f} ({window})", trigger=tid, window=window)
         return trade
@@ -2620,7 +2644,76 @@ class PlanRunner(SessionListener):
         j = await self._hook("analyze_fire", self.analyze_fire(ap, tid, tr, trade))
         critic_ran = False
         critic_failure: str | None = None       # FIX-05: 'timeout' | 'error' when the reviewer did not answer
-        if journal and cfg.use_critic and self.reviewer_available():
+        # deterministic-entry-v1 (2026-09-15): ONE execution decision owner. The technique resolves its authoritative
+        # policy per fire attempt (never per stored arm): `deterministic` = the app's rules decide, no model, no chart,
+        # no model semaphore, no timeout wait on this path; `legacy` = the reviewer branch below, unchanged. Anything
+        # else refuses the entry with an explicit policy error - never a silent fallback to a model.
+        policy = str(self.fire_review_policy(ap) or "legacy")
+        trade.timing["policy"] = policy
+        if policy not in ("deterministic", "legacy"):
+            trade.status, trade.decision_disposition = "refused", "policy_error"
+            trade.reason = f"fire decision policy '{policy}' is not deterministic|legacy - entry refused (no model fallback)"
+            self._log(ap, "policy_error", f"{tid}: {trade.reason}", trigger=tid)
+            if journal:
+                with contextlib.suppress(Exception):
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "stage": "policy", "error": trade.reason,
+                        "fireDecisionMode": policy}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                await self._persist(ap)
+            self._publish(ap, "refused")
+            return
+        if policy == "deterministic":
+            attempt_id = uuid.uuid4().hex
+            t0 = time.perf_counter()
+            decision = await self._hook("fire_decision", self.fire_decision(ap, tid, tr, trade, attempt_id=attempt_id))
+            decide_ms = round((time.perf_counter() - t0) * 1000.0, 3)
+            trade.timing["decidedTs"] = now_ms(); trade.timing["decisionMs"] = decide_ms
+            if not isinstance(decision, dict) or decision.get("verdict") not in ("allow", "refuse", "defer"):
+                trade.status, trade.decision_disposition = "refused", "policy_error"
+                trade.reason = "deterministic decision unavailable for this technique - entry refused (no model fallback)"
+                self._log(ap, "policy_error", f"{tid}: {trade.reason}", trigger=tid)
+                if journal:
+                    await self._persist(ap)
+                self._publish(ap, "refused")
+                return
+            trade.decision = {k: decision.get(k) for k in ("decisionId", "fireAttemptId", "decisionMode", "decisionVersion", "ruleVersion",
+                                                             "thresholdsHash", "verdict", "reasonCodes", "confirmationVariant", "inputHash")}
+            trade.critic = None                               # no model opinion exists on this path
+            trade.critic_disposition = "deterministic"
+            j.critic = None; j.verdict = "setup" if decision["verdict"] == "allow" else "refused"
+            if journal:
+                with contextlib.suppress(Exception):
+                    await self.engine.journal.append(ev.TECHNIQUE_ENTRY_DECISION, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "kind": tr.kind, "direction": tr.direction,
+                        "window": window, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "fireDecisionMode": policy,
+                        "fireEvidenceMode": str(self.fire_evidence_mode(ap) or "off"), "decisionMs": decide_ms,
+                        "timing": dict(trade.timing), "legacyUseCritic": bool(cfg.use_critic),
+                        **decision}, aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
+            if decision["verdict"] != "allow":
+                # a deterministic refusal/deferral is ITS OWN disposition: never `critic_killed`, never downgraded by an
+                # advisory critic policy, never a kill counter, cooldown or re-arm, never a pause
+                trade.status = "refused"
+                trade.decision_disposition = "refused" if decision["verdict"] == "refuse" else "deferred"
+                trade.reason = (f"deterministic {decision['verdict']}: " + ", ".join(decision.get("reasonCodes") or []))[:300]
+                self._log(ap, "deterministic_refused", f"{tid}: {trade.reason}", trigger=tid)
+                if journal:
+                    try:
+                        await self._hook("record_fire", self.record_fire(ap, tid, tr, trade, j))
+                    except Exception:
+                        log.exception("recording refused fire failed")
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_FIRED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "kind": tr.kind, "window": window,
+                        "middayExperiment": window == "midday", "fill": tr.fill_price, "entry": tr.entry, "stop": tr.stop,
+                        "targets": trade.targets, "verdictAfterCritic": "refused", "confidence": 0.0, "critic": None,
+                        "criticMode": "n/a", "criticDisposition": "deterministic", "criticFailure": None, "decision": trade.decision,
+                        "decisionDisposition": trade.decision_disposition, "fireDecisionMode": policy, "timing": dict(trade.timing),
+                        "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace,
+                        "targetDistance": None}, aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
+                    await self._persist(ap)
+                self._publish(ap, "refused")
+                return
+            trade.decision_disposition = "allowed"
+        elif journal and cfg.use_critic and self.reviewer_available():
             critic_ran = True
             timeout = float(self.rt("critic_timeout_seconds", 25) or 0)
             try:
@@ -2647,13 +2740,16 @@ class PlanRunner(SessionListener):
                     self._publish(ap, "critic_unavailable")
                     return
         critic = j.critic
-        trade.critic = critic and {k: critic.get(k) for k in ("kill", "summary", "violations")}
+        if policy == "legacy":
+            trade.critic = critic and {k: critic.get(k) for k in ("kill", "summary", "violations")}
         # FIX-05: the model's OPINION, the effective policy and the FINAL DISPOSITION are three different
         # facts; journal all three so a negative opinion that was allowed through is never counted as a veto
-        critic_mode = str(self.rt("critic_mode", "veto") or "veto").lower()
-        advisory = j.verdict != "setup" and (
+        critic_mode = str(self.rt("critic_mode", "veto") or "veto").lower() if policy == "legacy" else "n/a"
+        advisory = policy == "legacy" and j.verdict != "setup" and (
             critic_mode == "advisory" or (critic_mode == "momentum_only" and tr.kind in ("bounce", "reject")))
-        if critic_failure:
+        if policy == "deterministic":
+            pass                                              # disposition set above: "deterministic"
+        elif critic_failure:
             trade.critic_disposition = f"{critic_failure}-allowed"
         elif not critic_ran:
             trade.critic_disposition = "not-run"
@@ -2676,6 +2772,8 @@ class PlanRunner(SessionListener):
                 "fill": tr.fill_price, "entry": tr.entry, "stop": tr.stop, "targets": trade.targets,
                 "verdictAfterCritic": j.verdict, "confidence": round(float(j.confidence), 3), "critic": trade.critic,
                 "criticMode": critic_mode, "criticDisposition": trade.critic_disposition, "criticFailure": critic_failure,
+                "decision": trade.decision, "decisionDisposition": trade.decision_disposition, "fireDecisionMode": policy,
+                "timing": dict(trade.timing),
                 "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace,
                 "targetDistance": (self._target_distance(ap, trade, stage="fire", qty=None)
                                    if self._target_distance_enabled() else None)},
@@ -2690,7 +2788,7 @@ class PlanRunner(SessionListener):
             self._log(ap, "critic_advisory",
                       f"{tid}: critic said no - advisory for a {tr.kind} under critic_mode={critic_mode}, "
                       f"proceeding: {(critic or {}).get('summary') or 'no summary'}", trigger=tid)
-        elif j.verdict != "setup":
+        elif j.verdict != "setup" and policy == "legacy":
             trade.status = "critic_killed"
             trade.reason = (critic or {}).get("summary") or "critic killed"
             self._log(ap, "critic_killed", f"{tid}: {trade.reason}", trigger=tid)
@@ -3026,6 +3124,7 @@ class PlanRunner(SessionListener):
                 with contextlib.suppress(Exception):
                     await self._hook("rejudge_contract", self.rejudge_contract(ap, trade, contract))
             trade.quote_refresh = refresh
+            trade.timing["quoteReadyTs"] = now_ms()
             qty = float(await self._size_contracts(ap, trade, contract))
             if frac < 1.0:
                 qty = float(max(1, int(qty * frac))) if qty >= 1 else qty
@@ -3109,6 +3208,7 @@ class PlanRunner(SessionListener):
             trade.instrument, trade.multiplier = "shares", 1.0
         trade.qty = qty
         trade.limit_price = limit
+        trade.timing["admissionTs"] = now_ms()
         # R2: re-judged after sizing/pricing, immediately before the intent is written
         gate = await self._entry_gated(ap, trade, "order")
         if gate:
@@ -3121,8 +3221,11 @@ class PlanRunner(SessionListener):
             "runId": ap.run_id, "symbol": ap.symbol, "orderSymbol": order_symbol, "secType": sec_type,
             "trigger": trade.trigger_id, "side": "BUY", "qty": qty, "limitPrice": limit, "entry": trade.entry,
             "stop": trade.stop, "targets": trade.targets, "portfolioId": cfg.portfolio_id, "riskPct": cfg.risk_pct,
-            "contract": trade.contract, "quoteRefresh": getattr(trade, "quote_refresh", None)},
+            "contract": trade.contract, "quoteRefresh": getattr(trade, "quote_refresh", None),
+            "decision": trade.decision, "fireDecisionMode": trade.timing.get("policy"),
+            "timing": {**dict(trade.timing), "submitTs": now_ms()}},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
+        trade.timing["submitTs"] = now_ms()
         self._log(ap, "entry_submit", f"{trade.trigger_id}: BUY {qty:g} {'contract(s) ' + (trade.contract or {}).get('display', order_symbol) if sec_type == 'OPT' else 'sh'} LMT {limit:.2f}",
                   trigger=trade.trigger_id)
         guard = self._entry_guard(ap, trade, trade.contract if sec_type == "OPT" else None, qty, limit)
@@ -3625,6 +3728,33 @@ class PlanRunner(SessionListener):
     def reviewer_available(self) -> bool:
         """Does this technique have a fire-time reviewer (EM: the vision critic) right now?"""
         return False
+
+    # ---- deterministic-entry-v1 (2026-09-15): the execution-review policy is a hook. Generic default = the
+    # existing legacy reviewer path (Tips / Team2 / Cartel unchanged); a technique overrides it from its OWN setting.
+    def fire_review_policy(self, ap: "ArmedPlan") -> str:
+        """`deterministic` (the technique's `fire_decision` hook decides, no model on the entry path) or `legacy`
+        (the awaited reviewer branch). Resolved once per fire attempt - never per stored arm, so restored arms obey
+        the current authoritative policy. Any other value refuses the entry with a policy error."""
+        return "legacy"
+
+    def fire_evidence_mode(self, ap: "ArmedPlan") -> str:
+        """Optional LATER model evidence over frozen decision snapshots: `off` | `after_close`. Evidence only."""
+        return "off"
+
+    async def fire_decision(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade", *, attempt_id: str) -> dict | None:
+        """The technique's app-owned decision for a deterministic fire attempt: a versioned dict with at least
+        `verdict` (allow | refuse | defer), `decisionId`, `decisionVersion`, `reasonCodes`, `inputHash`. Pure inside
+        (no I/O, no model, no clock). None = the technique has no deterministic contract (the runner refuses)."""
+        return None
+
+    def fire_policy_view(self, ap: "ArmedPlan") -> dict:
+        """What the API/UI show: the EFFECTIVE policy for this plan's next fire attempt."""
+        mode = str(self.fire_review_policy(ap) or "legacy")
+        return {"effectiveFireDecisionMode": mode,
+                "decisionVersion": ("deterministic-entry-v1" if mode == "deterministic" else None),
+                "fireEvidenceMode": str(self.fire_evidence_mode(ap) or "off"),
+                "legacyUseCritic": bool(ap.config.use_critic),
+                "criticEffective": bool(mode == "legacy" and ap.config.use_critic and self.reviewer_available())}
 
     def judge_entry_quote(self, ap: "ArmedPlan", trade: "Trade", contract: dict, quote) -> str | None:
         """FC-01: the SYNCHRONOUS final quality verdict on the CURRENT cached quote for the order symbol,

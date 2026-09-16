@@ -26,6 +26,7 @@ from ..execution.planrunner import (  # noqa: F401 — re-exported for existing 
 from ..marketstructure.tracker import TriggerTracker
 from ..models import TechniqueSetup
 from .analysis import facts_for_prompt
+from .entry_decision import DECISION_VERSION, evaluate_entry, policy_from_thresholds, snapshot_from_tracker
 from .plans import analysis_from_trigger
 from .rulebook import ET, session_bounds, session_date, session_window
 
@@ -94,6 +95,30 @@ class PlanArmer(PlanRunner):
 
     def reviewer_available(self) -> bool:
         return bool(self.technique.llm_config().available)
+
+    # ---- deterministic-entry-v1 (2026-09-15, user decision): EM's live entry decision is made by application rules.
+    # The authoritative EM setting decides per fire attempt; a stored arm's `useCritic` is a legacy compatibility
+    # field that cannot resurrect the awaited critic under `deterministic`. `legacy` is an explicit, journaled
+    # rollback to the old reviewer branch (veto / momentum_only / advisory semantics unchanged there).
+    def fire_review_policy(self, ap) -> str:
+        raw = self.engine.settings.get("techniques.enhanced_market.fire_decision_mode", "deterministic")
+        mode = str(raw or "deterministic").strip().lower()
+        if mode in ("legacy_blocking", "critic"):
+            mode = "legacy"
+        return mode if mode in ("deterministic", "legacy") else f"invalid:{raw}"
+
+    def fire_evidence_mode(self, ap) -> str:
+        raw = str(self.engine.settings.get("techniques.enhanced_market.fire_evidence_mode", "off") or "off").strip().lower()
+        return raw if raw in ("off", "after_close") else "off"
+
+    async def fire_decision(self, ap, tid: str, tr: TriggerTracker, trade: Trade, *, attempt_id: str) -> dict | None:
+        """Freeze the ACTUAL tracker transition and judge it with the pure `evaluate_entry` - no I/O, no model,
+        no chart, no clock inside the decision. Returns the versioned decision dict the runner journals."""
+        snapshot = snapshot_from_tracker(attempt_id=attempt_id, run_id=ap.run_id, plan=ap.plan or {}, plan_status=ap.status,
+                                         trigger_id=tid, tracker=tr, signal_bar=trade.signal_bar,
+                                         received_ts=(trade.timing or {}).get("receivedTs"), decided_ts=None)
+        policy = policy_from_thresholds(self.technique.thresholds(), enforce_windows=self.entry_windows_enforced())
+        return evaluate_entry(snapshot, policy).to_dict()
 
     async def review_fire(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, trade: Trade,
                           judgement: FireJudgement) -> tuple[str, float, dict | None]:
@@ -215,7 +240,10 @@ class PlanArmer(PlanRunner):
                             f"({window}) — {tr.kind} at {trade.entry:.2f}, stop {tr.stop:.2f}; mode {cfg.mode}: {trade.status}"
                             + (f" — {trade.reason}" if trade.reason else "")
                             + (f"; critic: {'KILLED' if a.verdict != 'setup' else 'survived'} — {critic.get('summary')}"
-                               if critic else ""))}],
+                               if critic else "")
+                            + (f"; live decision: deterministic {trade.decision.get('verdict')} ({trade.decision.get('decisionVersion')})"
+                               + (" — " + ", ".join(trade.decision.get("reasonCodes") or []) if trade.decision.get("reasonCodes") else "")
+                               if trade.decision else ""))}],
                         {"kind": "plan_trigger", "runId": ap.run_id, "trigger": tid}, run_id=ap.run_id)
 
 

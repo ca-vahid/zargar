@@ -300,6 +300,9 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                 fire_bar = next((b for b in bars if int(b["ts"]) == int(fired_ts)), None) or next((b for b in bars if int(b["ts"]) == int(fired_ts) - 60000), None)
                 tp1 = (tr.get("targets") or [None])[0]
                 intent = next((p for _, ty, p in evs if ty == "TechniquePlanOrderIntent" and p.get("trigger") == tid), None)
+                fired_ev = next((p for _, ty, p in evs if ty == "TechniquePlanTriggerFired" and p.get("trigger") == tid), None) or {}
+                decision = fired_ev.get("decision") or {}
+                policy_version = (decision.get("decisionVersion") or ("legacy-critic:" + str(fired_ev.get("criticMode") or "?") if fired_ev else "unknown"))
                 td = next((p for _, ty, p in evs if ty == "TechniqueTargetDistance" and p.get("trigger") == tid and p.get("stage") == "fill"), None)
                 eid = tr.get("entryOrderId")
                 shadow = [p for _, ty, p in evs if ty == "TechniqueExitShadow" and p.get("trigger") == tid
@@ -312,6 +315,9 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                        "confirmation": confirmation_class(fire_bar["close"] if fire_bar else None, level, direction),
                        "sourceSymbolDirectionMatch": (a["symbol"], direction) in matched, "status": tr.get("status"), "instrument": tr.get("instrument"),
                        "intendedEntry": tr.get("entry"), "stop": tr.get("stop"), "targets": tr.get("targets"),
+                       "policyVersion": policy_version, "decisionId": decision.get("decisionId"), "decisionVerdict": decision.get("verdict"),
+                       "fireDecisionMode": fired_ev.get("fireDecisionMode") or ("legacy" if fired_ev else None), "timing": fired_ev.get("timing"),
+                       "quoteRefresh": (intent or {}).get("quoteRefresh"),
                        "roomPlannedR": planned_room, "roomAtActualEntryR": None,      # no underlying observation at dispatch is recorded
                        "roomBin": room_bin(planned_room),
                        "contract": {k: contract.get(k) for k in ("symbol", "bid", "ask", "mid", "spreadPct", "delta", "dte")} if contract else None}
@@ -412,7 +418,20 @@ def summarize(data: dict) -> dict:
                 "riskBudgetQty": r.get("riskBudgetQty"), "riskBudgetBasis": r.get("riskBudgetBasis"), "refusal": r.get("refusal")}
     p03 = [econ(r) for r in trades + refused]
     p03.sort(key=lambda e: (e["hurdlePct"] is None, -(e["hurdlePct"] or 0)))
-    return {"baseline": base, "cohort": block(coh),
+    # execution-policy cohorts (deterministic-entry-v1 vs legacy critic): actual fills, refusals and net by policy version
+    by_policy = defaultdict(lambda: {"attempts": 0, "fills": 0, "refused": 0, "net": 0.0, "open": 0, "refreshOk": 0, "refreshAttempted": 0})
+    for r in trades + refused:
+        b = by_policy[r.get("policyVersion") or "unknown"]; b["attempts"] += 1
+        if "filledQty" in r:
+            b["fills"] += 1
+            if r.get("closed"): b["net"] += r.get("netRealized") or 0
+            else: b["open"] += 1
+        else:
+            b["refused"] += 1
+        qr = r.get("quoteRefresh") or {}
+        if qr.get("attempted"): b["refreshAttempted"] += 1
+        if qr.get("ok"): b["refreshOk"] += 1
+    return {"byPolicy": {k: {**v, "net": round(v["net"], 2)} for k, v in sorted(by_policy.items())}, "baseline": base, "cohort": block(coh),
             "removed": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "kind": r.get("kind"), "direction": r.get("direction"),
                          "basis": r.get("firstTargetBasis"), "net": r.get("netRealized"), "closed": r.get("closed")} for r in removed],
             "missedWinnersCandidates": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "refusal": (r.get("refusal") or "")[:90],
@@ -438,6 +457,9 @@ def render(data: dict, s: dict) -> str:
          "| Block | Fills | Closed | Net realized | Winners | Losers | Open | Open exposure (premium+entry fees) | Largest winner | Fees |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for name, b in (("Baseline (all EM fills)", s["baseline"]), (f"P-01 `{COHORT_P01}`", s["cohort"])):
         L.append(f"| {name} | {b['fills']} | {b['closed']} | {b['netRealized']:+.2f} | {b['winners']} | {b['losers']} | {b['open']} | {b['openExposure']:.2f} | {b['largestWinner']:+.2f} | {b['feesPaid']:.2f} |")
+    L += ["", "**Execution-policy cohorts (actual fills/refusals by decision version; no equivalence claim between policies):**",
+          "| Policy | Attempts | Fills | Refused | Open | Net (closed) | Quote refresh attempted / ok |", "|---|---:|---:|---:|---:|---:|---:|"]
+    L += [f"| {k} | {v['attempts']} | {v['fills']} | {v['refused']} | {v['open']} | {v['net']:+.2f} | {v['refreshAttempted']} / {v['refreshOk']} |" for k, v in s.get("byPolicy", {}).items()] or ["| (none) | | | | | | |"]
     L += ["", "**Removed by the candidate (baseline fills outside the cohort):** " + (", ".join(f"{r['symbol']} {r['trigger']} {r['kind']}/{r['direction']}/{r['basis']} net {('%+.2f' % r['net']) if r['net'] is not None else 'open'}" for r in s["removed"]) or "none"), ""]
     L += ["**Cohort-eligible fires that produced no position (missed-winner candidates; underlying-only proxy, not dollars):**"]
     L += [f"- {r['symbol']} {r['trigger']}: {r['refusal']} -> underlying {r['underlyingProxy']}, planned room {r['roomPlanned']}" for r in s["missedWinnersCandidates"]] or ["- none"]
