@@ -624,3 +624,13 @@ from `/api/health`: build `cd51bb3`, and `git merge-base` confirms PR #150 `bf8b
 `d5034a2` are in it - the R147 closure holds on the running build. The EM ingestion worker was in
 the same dead state as the Discord gateway after the 20:03 ET stop and was relaunched by the EM
 desk at 20:32 ET. Intake liveness re-verified `live` (frame age 1 s) at 20:35 ET.
+
+**21:05 ET re-check:** live moved again to 0.7.90 build `c909d19` (another desk's restart at 20:44 ET;
+PR #150 `bf8b070` still in it). Its start path launched a NEW Discord intake at 20:47 ET without
+stopping the listener this desk had relaunched at 20:28 ET - two connected listeners for ~20 min
+(the ledger's revision-keyed claim dedupes frames, but two listeners is not a healthy state; the
+start script's `Stop-DiscordIntake` matches "own processes only", so a listener started from
+another shell survives it). Stopped the older chain (this desk's, pids 39720/139984/84508); one
+listener remains (pid 146812), status file follows it, liveness `live`. Second platform note for the
+start-path owner: a restart should stop EVERY discord_gateway listener, whoever started it - or the
+gateway itself should refuse to start when the status file shows a live pid.
