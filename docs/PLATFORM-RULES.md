@@ -640,6 +640,14 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- **2026-09-16 · Reviewed source and process identity remain separate.** Integrating
+  a desk's previously deployed branch into main preserves the launch-bound build
+  helper. A tolerant health response with build `unknown` prevents a missing-helper
+  500 but is not verified deployment identity. Preserve unrelated dirty research
+  files for their owner; do not commit or discard them to satisfy a clean-source
+  guard. Cartel's current handoff documents full-artifact and restoration checks.
+
+
 - **2026-09-15 · Cartel profitability research has no trading authority.** The
   Practice collection switch and bounded pool controls live under
   `techniques.options_cartel.profitability_research`. Source/policy-frozen research
@@ -2064,6 +2072,12 @@ boundaries can be measured separately from provider and venue latency.
   depends on belongs on main, or the route tolerates its absence (start-path owner's call); (4) "merged,
   not deployed" is a fiction while the watchdog can launch the checkout - treat every convergence as a
   possible deploy.
+  *EM desk follow-up, same day:* the engine the watchdog judged DOWN at 07:40:09 PT was logging normally until
+  07:39:59 and showed no shutdown or traceback - a single 4 s probe timed out under load and a LIVE engine was
+  killed; a second identical timeout was observed at 08:56 PT with health answering in 20 ms before and after.
+  `/api/health` now answers `build=unknown` instead of a 500 when `zargar.build_sha` is absent (EM branch, PR #174,
+  which also puts the helper on `main`). The probe policy (confirm DOWN with a second probe before any kill) is the
+  start-path owner's decision; until it changes, every load stall longer than 4 s is a restart risk in RTH.
 - **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
   `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
   returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and

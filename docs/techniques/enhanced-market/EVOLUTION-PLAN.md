@@ -219,6 +219,19 @@ Open measurements: critic advisory-"no" fills vs "yes" fills, the LLM plan revie
 ~09-19), the gap-day wait out of sample (1.11), the re-plan carry (1.12). Phases 3-5 (shadow
 instances, graduation) still wait for a second surviving variant.
 
+Where this stands (2026-09-16): the biggest change since the loop was designed is not a variant
+but the decision owner - live entries are decided by the app's encoded rules
+(`deterministic-entry-v1`, v0.7.95, TRADING-RULES §5 2026-09-15); the fire-time critic is off the
+entry path, so the "advisory-no vs yes fills" measurement closed unfinished and its successor is
+outcomes BY POLICY VERSION in the profitability report (`legacy-critic:*` vs
+`deterministic-entry-v1`). Phase 3 (LLM tool belt) now applies to the premarket analyst/critic
+only; the live path has no model to hand tools to. The optional after-close evidence pass
+(`fire_evidence_mode=after_close`, OFF) is the place where a model opinion over the frozen decision
+can be collected as evidence for a future rule - the honest route for any qualitative filter the
+critic used to apply (fakeouts, opposing shelves, divergence, chop): propose it as a versioned rule,
+sweep it, then decide. Still open: the LLM plan review decision (~09-19), 1.11, 1.12, and the new
+backlog item 10 (over-budget option, affordable shares).
+
 ## Experiment log
 
 - 2026-09-04 · **T-11 window-extremes level seed** (`seed_window_extremes`, TRADING-RULES §3):
@@ -235,4 +248,6 @@ instances, graduation) still wait for a second surviving variant.
 - 2026-09-09 · **Critic veto -> advisory on at-level bounces/rejects** (user decision; §5). **T-13 gap-through continuation** built as a knob and swept (`evo-T13-baseline` / `evo-T13-continuation`, 08-24..09-09); verdict in TRADING-RULES T-13.
 - 2026-09-10 · **T-14 scratch rule** built as shared knobs (`scratch_r`/`scratch_trim`, simulator + live exits) and swept at 0.5/0.75/1.0R vs baseline +3.98R: -0.09 / +1.21 / -4.07R - NOT adopted; the trim caps the runners that carry the book. Next variant: scratch only when TP1 > 3R away.
 - 2026-09-12 · Two-week review -> `METHOD-CHANGE-PLAN-2026-09-12.md` (C1-C6) awaiting the other desks' review; the finding that reframes the week: 8 of 9 fires died on option spreads, 16/135 names are option-tradeable.
+- 2026-09-15 · **Deterministic live entry** (user decision, not a variant): `deterministic-entry-v1` replaces the fire-time critic as the entry authority; two review rounds (DE-01..05, CR-01/02) closed; deployed v0.7.95 22:04 PT. Order-free observation collection (`shadow_exit_observe`, `shadow_p02_candidate`) ON for EM Practice since 14:06 PT; frozen profitability cohorts (P-01..P-03) and the per-session report (`tools/em_profitability.py`) are the measurement surface; entry quote refresh (`entry-quote-refresh-v1`) live in v0.7.91.
+- 2026-09-16 · First deterministic session (FOMC day): 7 fires / 7 allow in <1 ms, 2 fills (both quote-breach stops), 4 budget refusals before any order, 0 live model calls. Unplanned watchdog restarts 10:40-10:53 ET (start-path incident, PLATFORM-RULES). After-close read: profitability by policy version.
 - 2026-09-12 · C1-C5 built and swept the same day (user decision): C3 gap-day wait ADOPTED (+5.1R, 6 fewer fires), C4 targeted scratch and C5 range break NOT adopted; C1 liquidity screen live (24/135 tradeable), C2 shares fallback ON, C3b re-plan keeps evening triggers. Baseline fires on option-liquid names: 1 of 37.

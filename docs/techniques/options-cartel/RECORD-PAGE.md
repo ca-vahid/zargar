@@ -1,10 +1,6 @@
-# Dedicated Cartel records — current behavior (reviewed 2026-09-13)
+# Dedicated Cartel records — current behavior (reviewed 2026-09-16)
 
-Historical v0.7.6 defect: eight opens produced fifteen
-chart sections. The detail fragment used the same run ID as the React key for
-several sibling components. Each component now has a distinct key, and chart
-cleanup owns only its dedicated host element. Repeated refreshes and range
-changes retain one chart.
+Each record owns one chart host; repeated refreshes and range changes retain one chart.
 
 Records open at `/techniques/options-cartel/run/<runId>` as a dedicated view,
 with a Back button and direct-load/refresh support. Standard links permit
@@ -36,4 +32,4 @@ changes. Existing desk/progress audits and the mobile device matrix also cover
 the new navigation and expanded controls. Browser checks may use a synthetic static server; any backend tests use only zargar_test_codex. No running app is needed for documentation checks.
 
 
-Current details include source-quality counts, persisted entry decisions and a whole-contract exit preview. The preview uses cumulative-floor allocation; a zero-sized first trim cannot move the stop to entry. Only actual fills advance live exits. Source counts/tape hashes do not constitute a complete historical provider-revision ledger. The preparation decision remains a snapshot; current arm state is authoritative for whether monitoring is active.
+Current details include source-quality counts, persisted entry decisions and a whole-contract exit preview. The preview follows the saved allocation policy: legacy uses cumulative-floor rounding; the Practice whole-contracts-v2 policy explicitly allocates two units to target1/EMA50 and three to target1/EMA8/EMA50. A zero-sized first trim cannot move the stop to entry. Only actual fills advance live exits. Source counts/tape hashes do not constitute a complete historical provider-revision ledger. The preparation decision remains a snapshot; current arm state is authoritative for whether monitoring is active.

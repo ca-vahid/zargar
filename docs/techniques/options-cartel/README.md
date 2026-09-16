@@ -1,9 +1,9 @@
 # Options Cartel — current guide
 
-Updated 2026-09-15. Technique id: `options_cartel`. Deployment evidence is separate from source status.
+Updated 2026-09-16. Technique id: `options_cartel`. Deployment evidence is separate from source status.
 Sean Trades (`@SRxTrades`) is the source author; the app's numerical interpretations and Practice experiments are identified separately.
 
-The desk is implemented. The [September 13 correctness release](READINESS-2026-09-13.md) adds final-entry contract checks, target integrity, pending invalidation protection, explicit legacy-arm review and quantity-correct Practice research. Other desks can advance the app-wide version independently. Use the release handoff and live health for deployment state.
+The desk supports daily preparation, automatic Practice execution, separately permissioned Live execution, durable position management, actual daily accounting and non-executing research. The current guides describe code behavior; app-wide versions and dated deployment notes do not by themselves prove what process is running. No profitable strategy or exact author replication has been established.
 
 ## Start here
 
@@ -13,6 +13,13 @@ The desk is implemented. The [September 13 correctness release](READINESS-2026-0
 4. Open Plans for preparation, Armed for actual monitored campaigns, History/Validation for research and Method for source documentation. Records have dedicated `/techniques/options-cartel/run/<runId>` URLs.
 
 Practice uses the configured Options Cartel Practice book. Live has separate settings and permissions. Preparation builds plans and may arm them; entry orders still require the engine's closed-bar, data, quote, cash/risk and execution checks. An armed plan is not a filled position. Held positions retain their protective management when preparation is stopped or a new plan expires.
+
+## Reading status correctly
+
+- **Armed** means waiting for a valid entry, not purchased. Before its first session, a plan names that future date and owes no prior-day observation minutes.
+- **Waiting for benchmark** means the provider has not supplied the required completed SPY/QQQ session. It is not a bearish or bullish judgment.
+- **Daily review** reports actual orders, executions and fees. **Validation → Profitability research** reports hypothetical comparisons and missing evidence.
+- A **short** setup expresses downside through the reviewed option contract, normally a put; it is not permission to short shares. The separately tagged bearish research proxy never arms itself.
 
 ## Documentation map
 

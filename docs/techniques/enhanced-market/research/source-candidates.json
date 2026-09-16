@@ -128,5 +128,18 @@
   "retrospective": false,
   "version": "source-continuation-v1",
   "addedAt": "2026-09-15T13:27:21.655959+00:00"
+ },
+ {
+  "date": "2026-09-16",
+  "symbol": "AMZN",
+  "direction": "long",
+  "level": 250.0,
+  "target": 255.0,
+  "note": "83c5dd3fd0d94c8fb60a8a04cbf17dcc",
+  "availableAt": "2026-09-16T09:23:28-04:00",
+  "horizon": "intraday",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "addedAt": "2026-09-16T13:26:50.093497+00:00"
  }
 ]
