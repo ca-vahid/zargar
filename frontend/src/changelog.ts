@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.94";
+export const APP_VERSION = "0.7.96";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.96",date:"2026-09-16",title:"Tips see the day's event and the real cost of a trade",items:[
+      { tag: "new", text: "Tips: verified event context (TMR-01). The analyst header, every card, the cohort and hold-study records and adopted positions now carry the day's verified macro-event label - FOMC statement 2026-09-16 14:00 ET and press conference 14:30 ET from the official Federal Reserve calendar, with the verification time and time-to-event; a date the calendar has not been checked for reads UNKNOWN, never 'no event'. Awareness only: no automatic no-trade rule, no order placed or blocked." },
+      { tag: "new", text: "Tips: execution-cost diagnostic (TMR-02). Beside feasibility and payoff, the analyst tools, the risk plan and the card show the instantaneous round trip on the qualified quote - spread once plus both sides' fees at the venue basis, quoted size, cost as a share of the purchase - and each realised fill is journaled against the quote the decision saw. Unknown on stale, crossed or missing quotes; changes no quantity, contract, limit or gate." },
+  ]},
   {version:"0.7.94",date:"2026-09-15",title:"Experiment books are validated, frozen and transition-safe",items:[
     {tag:"fixed",text:"Team2 experiments (still OFF): the map is validated as a whole - a control book, one role per experiment book (sizing -> size_full, c1 -> no_trade_zone), required labels, distinct unarchived Practice books, no combination of C1 and the sizing cap; an invalid map applies nothing and reports why. A plan's override is frozen on the plan at mint time, so disabling or editing the map can no longer turn an armed sizing book back into full size, and a restart restores the same book and rules. Switching the default book inventories plans on other books (retired without exposure, paused with it), a forced re-plan never removes the manager of an open trade, and an experiment plan can only be armed on the Practice book it was minted for. A transition step that fails or cannot be confirmed blocks the experiment minting and leaves the old plan managing its book. Every plan now carries the release and build that minted it, the readiness receipt checks that provenance and plan cardinality per book and symbol, and its settings load is fully read-only."},
   ]},
@@ -42,8 +46,6 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-15",
     title: "Tips: an override acknowledges the whole incident state; the claimed plan is immutable",
     items: [
-      { tag: "new", text: "Tips: verified event context (TMR-01). The analyst header, every card, the cohort and hold-study records and adopted positions now carry the day's verified macro-event label - FOMC statement 2026-09-16 14:00 ET and press conference 14:30 ET from the official Federal Reserve calendar, with the verification time and time-to-event; a date the calendar has not been checked for reads UNKNOWN, never 'no event'. Awareness only: no automatic no-trade rule, no order placed or blocked." },
-      { tag: "new", text: "Tips: execution-cost diagnostic (TMR-02). Beside feasibility and payoff, the analyst tools, the risk plan and the card show the instantaneous round trip on the qualified quote - spread once plus both sides' fees at the venue basis, quoted size, cost as a share of the purchase - and each realised fill is journaled against the quote the decision saw. Unknown on stale, crossed or missing quotes; changes no quantity, contract, limit or gate." },
       { tag: "fixed", text: "A86-01: a card shows EVERY applicable open incident (id, revision, evidence); an override must acknowledge exactly that set - appended evidence, another incident or a changed revision refuses with zero orders; an unavailable integrity store always blocks." },
       { tag: "fixed", text: "A86-02: the approval claim recomputes the card's full plan (exit policy, bracket, vehicle, risk plan) under the row lock instead of trusting the cached fingerprint; the claimed plan is frozen on the card and both the order and the later position adoption use it - a concurrent edit of the exit policy cannot be claimed." },
       { tag: "improved", text: "Entry-variant study: the sampling claim is held through finalization (timer and recovery never double-fetch); research fixtures carry capture-time verdict fields." },
