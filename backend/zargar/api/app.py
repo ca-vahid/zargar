@@ -545,6 +545,25 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="unknown portfolio")
         return await eng.release_book_halt(pid, source="app")
 
+    class PauseBody(BaseModel):
+        reason: str = "manual pause"
+        label: str = ""
+
+    @app.post("/api/portfolios/{pid}/pause", dependencies=[auth])
+    async def pause_book(pid: str, body: PauseBody):
+        """Pause ONE book explicitly (2026-09-15, the experiment breach action): entries and adds refused, exits
+        kept, other books untouched; survives restarts and the day roll; released only by /unpause."""
+        if eng.positions.portfolio(pid) is None:
+            raise HTTPException(status_code=404, detail="unknown portfolio")
+        return await eng.pause_book(pid, body.reason, source="app", label=body.label)
+
+    @app.post("/api/portfolios/{pid}/unpause", dependencies=[auth])
+    async def unpause_book(pid: str):
+        """Release ONE book's explicit pause; the global switch and the daily-loss halt are separate."""
+        if eng.positions.portfolio(pid) is None:
+            raise HTTPException(status_code=404, detail="unknown portfolio")
+        return await eng.release_book_pause(pid, source="app")
+
     @app.get("/api/events", dependencies=[auth])
     async def events(
         type: str | None = None,

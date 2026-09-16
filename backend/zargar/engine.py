@@ -89,16 +89,15 @@ class Engine:
         await self._seed()
         await self.positions.load()
 
-        # restore kill switch state across restarts
+        # restore kill switch state across restarts: the global switch as saved, per-book halts only within their own
+        # ET session, per-book PAUSES regardless of the day (2026-09-15: an experiment pause outlives the day roll)
         halt_state = self.settings.get("system.halt")
-        if isinstance(halt_state, dict) and halt_state.get("engaged"):
-            self.halt.engage(halt_state.get("reason", "restored after restart"),
-                             source=halt_state.get("source", "app"))
-        # per-book halts survive a restart only within their own ET session
         today = dt.datetime.now(tz=ET).date().isoformat()
-        for pid, b in ((halt_state or {}).get("books") or {}).items() if isinstance(halt_state, dict) else ():
-            if isinstance(b, dict) and b.get("day") == today:
-                self.halt.books[pid] = dict(b)
+        restored = HaltState.restore(halt_state if isinstance(halt_state, dict) else None, today=today)
+        if restored.engaged:
+            self.halt.engage(restored.reason, source=restored.source)
+        self.halt.books.update(restored.books)
+        self.halt.pauses.update(restored.pauses)
 
         self.sim_executor = SimExecutor(settings=self.settings, synthetic_quotes=self.config.quote_source == "sim",
                                         option_sessions=bool(getattr(self.config, "sim_option_sessions", True)))
@@ -491,13 +490,45 @@ class Engine:
                                                       "engaged": False, "reason": ""}})
         return self.halt.to_dict()
 
+    # --- per-book PAUSES (explicit; the experiment breach action, 2026-09-15) ------------------
+    async def pause_book(self, pid: str, reason: str, *, source: str = "app", label: str = "") -> dict:
+        """Pause ONE book until it is released by hand: entries AND adds on it are refused (runners via
+        `trading_halted`, the RiskGate via `book_pause`), protective exits pass (`risk.halt_allows_exits`), every
+        other book keeps trading. No day: it survives restarts and the ET day roll. The settings snapshot is kept on
+        the record so a review can see what the book was running when it was paused; the pause changes no setting."""
+        snapshot = {k: self.settings.get(k) for k in ("techniques.team2.size_full", "techniques.team2.size_small",
+                                                       "techniques.team2.no_trade_zone", "techniques.team2.key_levels")}
+        p = self.halt.pause_book(pid, reason, source=source, label=label, snapshot=snapshot)
+        await self.settings.set("system.halt", self.halt.to_dict(), journal=False)
+        await self.journal.append(ev.BOOK_PAUSED, {"portfolioId": pid, "name": self._portfolio_name(pid), "reason": reason,
+                                                   "source": source, "label": label, "snapshot": snapshot}, portfolio_id=pid)
+        self.bus.publish(topics.SYSTEM, {"kind": "halt", **self.halt.to_dict(),
+                                         "pause": {"portfolioId": pid, "name": self._portfolio_name(pid), "engaged": True,
+                                                   "reason": reason, "label": label}})
+        return p
+
+    async def release_book_pause(self, pid: str, *, source: str = "app") -> dict:
+        """Release ONE book's explicit pause. Never touches the global switch or the book's daily-loss halt."""
+        p = self.halt.release_book_pause(pid)
+        if p is not None:
+            await self.settings.set("system.halt", self.halt.to_dict(), journal=False)
+            await self.journal.append(ev.BOOK_PAUSE_RELEASED, {"portfolioId": pid, "name": self._portfolio_name(pid),
+                                                               "source": source, "label": p.get("label")}, portfolio_id=pid)
+            self.bus.publish(topics.SYSTEM, {"kind": "halt", **self.halt.to_dict(),
+                                             "pause": {"portfolioId": pid, "name": self._portfolio_name(pid), "engaged": False,
+                                                       "reason": "", "label": p.get("label")}})
+        return self.halt.to_dict()
+
     def trading_halted(self, pid: str | None) -> str | None:
-        """The reason no NEW entry may be placed on this book right now: the global switch, or
-        the book's own daily-loss halt. None = trade away. Runners ask this, not `halt.engaged`."""
+        """The reason no NEW entry may be placed on this book right now: the global switch, the book's own
+        daily-loss halt, or the book's explicit pause. None = trade away. Runners ask this, not `halt.engaged`."""
         if self.halt.engaged:
             return self.halt.reason or "kill switch engaged"
         b = self.halt.book_halted(pid)
-        return str(b.get("reason") or "book halted") if b else None
+        if b:
+            return str(b.get("reason") or "book halted")
+        p = self.halt.book_paused(pid)
+        return (f"book paused ({p.get('label') or 'no label'}): {p.get('reason') or 'paused'}") if p else None
 
     # ------------------------------------------------------------- tasks
     async def _event_loop_monitor(self) -> None:

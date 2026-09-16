@@ -3122,6 +3122,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 scoped Practice pause built (other team's request; v0.7.90)** — the sheet's breach action is now an
+  executable control: a per-book PAUSE (`engine.pause_book` / `release_book_pause`, `POST /api/portfolios/{id}/pause`
+  and `/unpause`, journaled `BookPaused` / `BookPauseReleased`, shown as `pausedBooks` in `/api/ops/state`). Verified by
+  tests (`tests/test_book_pause.py`): entries AND adds refused on the paused book (runner `halt_skip` / `add_skip` carry
+  the pause's label and reason; RiskGate `book_pause`), protective exits pass, another book unaffected, the pause
+  survives restart AND the ET day roll (`HaltState.restore`: book halts are day-scoped, pauses are not), and releasing
+  it never clears the kill switch or the daily-loss halt (nor do they clear it); the record snapshots `size_full`
+  (0.5 stays while paused; the pause changes no setting). Nothing is paused. Sampled threshold + calibration
+  disclosures accepted by the other team; C6 remains a prerequisite; activation still needs approval.
 - **2026-09-15 review of PR #143/#144 (other team: F127 conditional GO; sheet rev. 2; activation NOT yet approved)** —
   F127 merged as v0.7.88: the clamp is scoped to the SELECTED contract's expiry (OCC identity, the RiskGate's date
   basis); a next-day contract keeps its cap (their regression `tests/test_codex_team2_f127_expiry.py`); RiskGate unchanged.
