@@ -3,7 +3,7 @@
 # (deploy.ps1, restart.ps1, start.ps1, watchdog.ps1 - the ZargarRestart task calls
 # restart.ps1) dot-sources this file: ONE lease, ONE reviewed-artifact check, ONE
 # runtime identity and ONE receipt format (KFIN-04, 2026-09-14).
-function Enter-ZargarDeployment([string]$Root, [switch]$Restart, [switch]$Nested) {
+function Enter-ZargarDeployment([string]$Root, [switch]$Restart, [switch]$Nested, [int]$WaitSeconds = 0) {
   $Root = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar)
   $marker = Join-Path $Root 'logs/deploy.lock'
   $inherited = $env:ZARGAR_DEPLOY_LEASE
@@ -27,9 +27,28 @@ function Enter-ZargarDeployment([string]$Root, [switch]$Restart, [switch]$Nested
   finally { $sha.Dispose() }
   $mutex = New-Object Threading.Mutex($false, ('Global\ZargarDeploy-' + $hash.Substring(0,24)))
   $acquired = $false
-  try { $acquired = $mutex.WaitOne(0) }
-  catch [Threading.AbandonedMutexException] { $acquired = $true }
-  if (-not $acquired) { $mutex.Dispose(); throw 'Another deployment owns this runtime. Wait for its receipt.' }
+  # -WaitSeconds (2026-09-15): a door fired while another door is mid-flight (the watchdog starting the engine after
+  # a manual stop, another desk's restart) WAITS for the lease instead of failing on the spot; the refusal names the
+  # owner so a "nothing happened" is never silent.
+  $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(0, $WaitSeconds))
+  while ($true) {
+    try { $acquired = $mutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $acquired = $true }
+    if ($acquired -or [DateTime]::UtcNow -ge $deadline) { break }
+    Start-Sleep -Seconds 2
+  }
+  if (-not $acquired) {
+    $mutex.Dispose()
+    $ownerText = 'unknown owner'
+    if (Test-Path -LiteralPath $marker) {
+      $o = (Get-Content -LiteralPath $marker -Raw).Trim().Split(':'); $oPid = 0
+      if ($o.Length -ge 2 -and [int]::TryParse($o[1], [ref]$oPid)) {
+        $alive = [bool](Get-Process -Id $oPid -ErrorAction SilentlyContinue)
+        $ownerText = 'owner ' + $o[0] + ':' + $oPid + ' (' + $(if ($alive) { 'alive' } else { 'gone' }) + ')'
+      }
+    }
+    throw ('Another deployment owns this runtime (' + $ownerText + '; waited ' + [int]$WaitSeconds + 's). Wait for its receipt.')
+  }
   try {
     $pendingPath = Join-Path $Root 'logs/deployment-pending.json'
     if (-not $Restart -and (Test-Path -LiteralPath $pendingPath)) {

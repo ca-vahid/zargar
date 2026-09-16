@@ -28,7 +28,20 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot 'deployment-lock.ps1')
-$restartMutex = Enter-ZargarDeployment $Root -Restart
+# the scheduler runs this in a console nobody sees: the transcript starts BEFORE anything can refuse, so a run that
+# exits without restarting always leaves logs/restart-<ts>.log saying why (2026-09-15: the ZargarRestart task fired
+# while the watchdog was mid-start exited 1 with no transcript - "nothing happened")
+$logDirEarly = Join-Path $Root "logs"
+if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
+try { Start-Transcript -Path (Join-Path $logDirEarly ("restart-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")) -Append | Out-Null } catch { }
+# one door at a time: wait up to 5 minutes for another door (the watchdog's start after a manual stop, another
+# desk's deploy) instead of failing on the spot
+try { $restartMutex = Enter-ZargarDeployment $Root -Restart -WaitSeconds 300 }
+catch {
+  Write-Host ("x Not restarting: " + $_.Exception.Message) -ForegroundColor Red
+  try { Stop-Transcript | Out-Null } catch { }
+  exit 7
+}
 # who is driving this door: deploy.ps1 sets it, the ZargarRestart task / a shell leaves it empty
 $callerSetHere = $false
 if (-not $env:ZARGAR_DEPLOY_CALLER) { $env:ZARGAR_DEPLOY_CALLER = 'restart.ps1'; $callerSetHere = $true }
@@ -45,6 +58,17 @@ if (Test-Path -LiteralPath $handoffPath) {
   catch { $null = Set-ZargarReceiptPhase $Root 'failed' $_.Exception.Message $env:ZARGAR_DEPLOY_CALLER; $script:restartFinished = $true; throw }
   $Expect = $handoff.expectedVersion
 }
+# already running HEAD (the watchdog or another door just brought this commit up): nothing to bounce
+if (-not $handoff -and -not $Force) {
+  try { $liveHealth = Invoke-RestMethod http://127.0.0.1:8420/api/health -TimeoutSec 4 } catch { $liveHealth = $null }
+  $headSha = (git -C $Root rev-parse HEAD).Trim()
+  if ($liveHealth.ok -and $liveHealth.build -and ($liveHealth.build -eq $headSha) -and (-not $Expect -or $Expect -eq $liveHealth.version)) {
+    Write-Host ("> Already running this checkout (build " + $headSha.Substring(0,12) + ", v" + $liveHealth.version + ") and healthy; nothing to restart.")
+    Exit-ZargarDeployment $restartMutex
+    try { Stop-Transcript | Out-Null } catch { }
+    exit 0
+  }
+}
 $receiptPath = Join-Path $Root 'logs/deployment-receipt.json'
 if (-not $handoff -and -not $Force -and (Test-Path -LiteralPath $receiptPath)) {
   $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
@@ -57,10 +81,6 @@ if (-not $handoff -and -not $Force -and (Test-Path -LiteralPath $receiptPath)) {
     }
   }
 }
-# the scheduler runs this in a console nobody sees: keep a transcript per run in logs/restart-<ts>.log
-$logDirEarly = Join-Path $Root "logs"
-if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
-try { Start-Transcript -Path (Join-Path $logDirEarly ("restart-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")) -Append | Out-Null } catch { }
 
 function Step($m) { Write-Host "> $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
