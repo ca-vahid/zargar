@@ -75,7 +75,23 @@ Two things this recalculation shows:
 | Not in this experiment | C1, C2, room rules, exits, premium target, adds, C6 |
 | Review | after ten sessions: the same paired method (matched trades — identical by construction here — dollar P&L, drawdown, worst day, remove-best-day, two-tick sensitivity via replay); a review, never a promotion |
 
-## 3. C1 as the follow-on
+## 2b. Parallel design (review team's GO, 2026-09-15) — three books, one change each
+
+| Book | Rules | Threshold (sampled review; breach → pause, no auto reset) |
+|---|---|---|
+| Team2 Control | shared baseline | the existing protections only |
+| Team2 Sizing 0.5 | baseline + `size_full` 0.5 | −$800 of marked-to-market peak-to-trough since activation (§2) |
+| Team2 C1 Conjunction | baseline + `no_trade_zone` conjunction (newly eligible setups small by construction) | **−$1,000** = 10 % of the $10,000 start — a policy figure equal to the desk's technique day-loss pause level applied cumulatively; not derived from the backtest (the approximate modeled Practice-scale C1 drawdown is $2,619, so the review fires at ≈ 0.4× of it) and not the rejected $700 justification |
+
+Equal $10,000 starts, the same market data, session timing and execution assumptions; each book keeps its own cash,
+positions, loss counters, concurrency cap and pause state (`tests/test_team2_experiments.py`); C1 and the sizing cap
+are never combined in one book; C2, room rules, exits, adds and premium selection unchanged everywhere. Measurement
+per book: ten completed sessions observed concurrently, twenty distinct fills = interim review only, actual after-fee
+P&L, marked-to-market drawdown, exposure, fills and refusals, by date and symbol; modeled replay kept separate; the
+sealed C2 validation preserved. Activation stays conditional on **C6** and verified isolation; the readiness receipt
+(`zargar.tools.team2_receipt`) is sent before the open.
+
+## 3. C1 as the follow-on (superseded by §2b: parallel, not sequential)
 
 After the sizing review, C1 conjunction is the next **independent** comparison on its own frozen prospective period
 (baseline vs C1, both complete paths), with its budget set from the Practice-scale recalculation — which at today's

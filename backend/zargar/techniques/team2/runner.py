@@ -41,7 +41,7 @@ from ...marketstructure.aggregate import bar_session, bucket_start_ms, minute_of
 from ...marketstructure.sessions import ET, session_bounds, session_date
 from ...models import TechniqueRun
 from ...options.pick import MAX_OVER_TARGET
-from .rules import Team2Rules, rules_from_settings
+from .rules import experiment_for, Team2Rules, rules_from_settings
 from .scenario import target_is_ahead
 from .session import simulate_session
 
@@ -93,7 +93,7 @@ class Team2Runner(PlanRunner):
         self._decision_wm: dict[str, int] = {}
         self._small_noted: set[tuple[str, str]] = set()
         self._flatten_noted: set[str] = set()          # F106: the flatten's once-per-run note
-        self._loss_tally: dict[str, dict[str, tuple[int, str]]] = {}   # day -> run_id -> (losers, basis) (F37/F38)
+        self._loss_tally: dict[str, dict[str, tuple]] = {}   # day -> run_id -> (losers, basis, portfolio_id) (F37/F38)
 
     async def stop(self) -> None:
         for name in ("team2_plan_nightly", "team2_preopen"):
@@ -102,8 +102,25 @@ class Team2Runner(PlanRunner):
         await super().stop()
 
     # ------------------------------------------------------------- hooks
+    @staticmethod
+    def _book(ap) -> str | None:
+        """The plan's book (portfolio id); None for a bare test rig without a config."""
+        return getattr(getattr(ap, "config", None), "portfolio_id", None)
+
     def rules(self) -> Team2Rules:
+        """The shared baseline (`techniques.team2.*`). Test rigs patch this; `rules_for(ap)` layers a book's overrides on it."""
         return rules_from_settings(self.engine.settings)
+
+    def rules_for(self, ap) -> Team2Rules:
+        """The rules THIS plan runs under: the baseline plus its book's whitelisted experiment overrides (2026-09-15,
+        the parallel Practice experiments; `experiment_for` — only size_full / no_trade_zone may differ). A plan on a
+        book without an experiment entry, or a bare test rig, runs the baseline exactly."""
+        base = self.rules()
+        pid = self._book(ap)
+        b = experiment_for(getattr(self.engine, "settings", {}) or {}, pid) if pid else None
+        if not b or not b.get("overrides"):
+            return base
+        return Team2Rules.from_dict({**base.to_dict(), **b["overrides"]})
 
     async def load_plan(self, run_id: str) -> dict | None:
         async with self.engine.sf() as session:
@@ -156,7 +173,7 @@ class Team2Runner(PlanRunner):
         bind — a $0.55 pick from the delayed chain was buyable at $1.20 on OPRA. The cap is
         min(ask + tick, target_premium x chase_cap_mult); PlanRunner rests the entry at the cap and
         cancels it unfilled (`entry_capped`), which is the method's "if it ran, it ran" (V1/F5)."""
-        rules = self.rules()
+        rules = self.rules_for(ap)
         band = round(float(rules.target_premium) * float(rules.chase_cap_mult), 2)
         ask = float(contract.get("ask") or 0.0)
         if ask <= 0:
@@ -239,7 +256,7 @@ class Team2Runner(PlanRunner):
         the origin (`_stale_signal`): the chain itself may legitimately take a minute."""
         if ap.config.mode == "alert":
             return None
-        rules = self.rules()
+        rules = self.rules_for(ap)
         now = int(time.time() * 1000)
         now_et = dt.datetime.fromtimestamp(now / 1000, ET)
         if now_et.strftime("%Y-%m-%d") != ap.plan_for:
@@ -315,7 +332,7 @@ class Team2Runner(PlanRunner):
         opts = getattr(self.engine, "options", None)
         if opts is None:
             return
-        rules = self.rules()
+        rules = self.rules_for(ap)
         try:
             provider = opts.provider()
             today = dt.datetime.now(ET).date()
@@ -362,7 +379,7 @@ class Team2Runner(PlanRunner):
                               trigger=trade.trigger_id, verdict="deferred", stage="service", examined=[], direction=trade.direction)
             self._record_unfilled(ap, trade.trigger_id)
             return None
-        rules = self.rules()
+        rules = self.rules_for(ap)
         try:
             from ...options.pick import select_by_premium
             provider = opts.provider()
@@ -607,7 +624,7 @@ class Team2Runner(PlanRunner):
         if ap.run_id in self._warm_loaded:
             return
         self._warm_loaded.add(ap.run_id)
-        rules = self.rules()
+        rules = self.rules_for(ap)
         try:
             from ...marketdata import load_bars
             rows = await load_bars(self.engine.sf, ap.symbol, "1m", limit=max(20000, int(rules.warmup_sessions) * 1200))
@@ -767,7 +784,7 @@ class Team2Runner(PlanRunner):
         if bar_session(bar.ts) == "rth" and (ap.plan or {}).get("zones") and (ap.plan or {}).get("openSource") != "rth_open":
             await self._finalize_open(ap, bars)
         _, close_ms = session_bounds(ap.plan_for)
-        rules = self.rules()
+        rules = self.rules_for(ap)
         step = rules.entry_tf_min * 60_000
         end_ts = bar.ts + 60_000
         # C3/D-1 hard clock: whatever the model thinks, the BOOK is flat by flatten_min. The model's
@@ -927,26 +944,28 @@ class Team2Runner(PlanRunner):
             return
         # F29: the author trades ONE book — max_losses_per_day counts the whole desk (model losses across
         # every plan, plus real closed losers in money modes), not one budget per symbol
-        rules_now = self.rules()
+        rules_now = self.rules_for(ap)
+        book = self._book(ap)
         if (ap.config.mode != "alert" and getattr(rules_now, "losses_desk_wide", True)
-                and self.losses_across_plans() >= int(rules_now.max_losses_per_day)):
+                and self.losses_across_plans(portfolio_id=book) >= int(rules_now.max_losses_per_day)):
             self._log(ap, "skip_loss_cap_desk",
-                      f"{tid}: {self.losses_across_plans()} losing trades across the desk today (max {rules_now.max_losses_per_day}, "
-                      f"counted from the {self.losses_basis()}) — done for the day (F29, desk-wide)", trigger=tid)
+                      f"{tid}: {self.losses_across_plans(portfolio_id=book)} losing trades across this book's plans today (max "
+                      f"{rules_now.max_losses_per_day}, counted from the {self.losses_basis(portfolio_id=book)}) — done for the day (F29, per book)",
+                      trigger=tid)
             if journal:
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_loss_cap_desk",
-                    "losses": self.losses_across_plans(), "max": int(rules_now.max_losses_per_day), "ts": e.get("ts")},
-                    aggregate_type="technique_run", aggregate_id=ap.run_id)
+                    "losses": self.losses_across_plans(portfolio_id=book), "max": int(rules_now.max_losses_per_day), "ts": e.get("ts"),
+                    "portfolioId": book}, aggregate_type="technique_run", aggregate_id=ap.run_id)
             return
         # A12: SPY/QQQ/IWM fire together on index moves — one Team2 position across ALL its plans
         # (money modes only; alert/proposal keep recording every read)
         if ap.config.mode == "auto":
-            cap = max(1, int(self.rules().max_concurrent_positions))
-            across = self.open_positions_across_plans()
+            cap = max(1, int(self.rules_for(ap).max_concurrent_positions))
+            across = self.open_positions_across_plans(self._book(ap))
             if across >= cap:
                 self._log(ap, "max_concurrent_skip",
-                          f"{tid}: fired but Team2 already holds {across} position(s) across its plans (cap {cap}, A12)",
+                          f"{tid}: fired but this book already holds {across} Team2 position(s) across its plans (cap {cap}, A12, per book)",
                           trigger=tid)
                 if journal:
                     await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
@@ -1066,7 +1085,7 @@ class Team2Runner(PlanRunner):
                               f"trim was already taken on the contract's live premium", trigger=trade.trigger_id)
                     continue
                 live = self._live_pct(trade)
-                need = self.rules().trim_1_pct if level == 1 else self.rules().trim_2_pct
+                need = self.rules_for(ap).trim_1_pct if level == 1 else self.rules_for(ap).trim_2_pct
                 if live is not None and live < need:
                     # the model's flat-IV premium is a forecast; the bid is the fact (F8: the model runs
                     # 12-45% optimistic) — the live watch takes the trim when the contract gets there
@@ -1104,7 +1123,7 @@ class Team2Runner(PlanRunner):
         """Nothing of a 0DTE book survives the close: flatten on the way out, then the shared close."""
         if journal and ap.status in ("armed", "paused"):
             with contextlib.suppress(Exception):
-                await self._clock_flatten(ap, self.rules())
+                await self._clock_flatten(ap, self.rules_for(ap))
         await super()._end_session(ap, journal=journal, reason=reason)
 
     async def _clock_flatten(self, ap: ArmedPlan, rules: Team2Rules) -> None:
@@ -1223,7 +1242,7 @@ class Team2Runner(PlanRunner):
     def _trim_qty(self, ap: ArmedPlan, tr: Trade, level: int) -> float:
         """Contracts for the first/second trim. Fewer than 3 contracts cannot be trimmed in thirds:
         the first trim is skipped and the second closes everything (EM's own small-position rule)."""
-        rules = self.rules()
+        rules = self.rules_for(ap)
         if tr.filled_qty < 3:
             if level == 1:
                 key = (ap.run_id, tr.trigger_id + "~small")
@@ -1291,7 +1310,7 @@ class Team2Runner(PlanRunner):
         # R2 (2026-09-14): an add increases exposure — it obeys the same session / cutoff / freshness rule as a fire
         # at its origin, and the shared entry gate again at the order boundary (it rides a cached contract, so the
         # picker's re-check never sees it)
-        stale = self._stale_signal(ap, e, self.rules())
+        stale = self._stale_signal(ap, e, self.rules_for(ap))
         if stale is not None:
             self._log(ap, "stale_signal_skip", f"{tid}: add {stale['why']}", trigger=tid, **{k: v for k, v in stale.items() if k != "why"})
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
@@ -1344,22 +1363,23 @@ class Team2Runner(PlanRunner):
             return losers, "book"
         return sum(1 for t in ((sim or {}).get("trades") or []) if not t.get("win")), "model"
 
-    def losses_across_plans(self, day: str | None = None) -> int:
-        """F29/F37/F38: losing trades today across the whole desk. Armed plans are counted live; a plan
-        that disarmed (its own loss halt) keeps its losses in the day's tally — the cap must not loosen
-        after the worst outcome a plan can have. The tally is seeded from the persisted rows at boot."""
+    def losses_across_plans(self, day: str | None = None, portfolio_id: str | None = None) -> int:
+        """F29/F37/F38: losing trades today across the desk — since 2026-09-15 PER BOOK when a book is given (the
+        parallel Practice experiments keep their loss counters independent; the author's "one book" is one
+        Practice book). Armed plans are counted live; a plan that disarmed (its own loss halt) keeps its losses in
+        the day's tally — the cap must not loosen after the worst outcome a plan can have. Seeded at boot."""
         day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
         tally = self._loss_tally.setdefault(day, {})
         for ap in self._armed.values():
             n, basis = self._plan_losses(ap.config.mode, list(ap.trades.values()), self._last_sim.get(ap.run_id))
-            tally[ap.run_id] = (n, basis)
+            tally[ap.run_id] = (n, basis, self._book(ap))
         for d in [k for k in self._loss_tally if k != day]:
             self._loss_tally.pop(d, None)
-        return sum(n for n, _ in tally.values())
+        return sum(n for n, _, pid in tally.values() if portfolio_id is None or pid == portfolio_id)
 
-    def losses_basis(self, day: str | None = None) -> str:
+    def losses_basis(self, day: str | None = None, portfolio_id: str | None = None) -> str:
         day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
-        bases = {b for _, b in self._loss_tally.get(day, {}).values()}
+        bases = {b for _, b, pid in self._loss_tally.get(day, {}).values() if portfolio_id is None or pid == portfolio_id}
         return "/".join(sorted(bases)) or "model"
 
     async def seed_loss_tally(self, day: str | None = None) -> int:
@@ -1395,7 +1415,7 @@ class Team2Runner(PlanRunner):
                     if pnl < 0:
                         n += 1
             if n:
-                tally[row.run_id] = (n, "book")
+                tally[row.run_id] = (n, "book", row.portfolio_id)
                 seeded += n
             # R3: the retired plan's net P&L keeps counting toward the technique day-loss halt
             net = 0.0
@@ -1411,10 +1431,11 @@ class Team2Runner(PlanRunner):
                 self._retired_pnl[rk] = self._retired_pnl.get(rk, 0.0) + net
         return seeded
 
-    def open_positions_across_plans(self) -> int:
-        """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap)."""
+    def open_positions_across_plans(self, portfolio_id: str | None = None) -> int:
+        """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap) — per BOOK when given."""
         return sum(1 for ap in self._armed.values() for t in ap.trades.values()
-                   if t.status in ("fired", "submitting", "working", "open") and not getattr(t, "is_add", False))
+                   if (portfolio_id is None or self._book(ap) == portfolio_id)
+                   and t.status in ("fired", "submitting", "working", "open") and not getattr(t, "is_add", False))
 
     # ------------------------------------------------------------- the day's scorecard (F43)
     def _score_execution(self, ap: ArmedPlan) -> dict | None:
@@ -1547,7 +1568,7 @@ class Team2Runner(PlanRunner):
         Armed page already renders (id/label/kind/status/entry/targets/direction/distancePct),
         so no UI special-casing (user 2026-09-04: 'tell me how it works' inside the Armed section)."""
         d = super()._snapshot(ap)
-        rules_now = self.rules()
+        rules_now = self.rules_for(ap)
         d["trailGaps"] = self.trail_gaps(ap.run_id)      # cohort v2: failed audit writes are shown, never hidden
         plan = ap.plan or {}
         read = self._last_sim.get(ap.run_id) or {}

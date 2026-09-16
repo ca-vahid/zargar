@@ -1887,3 +1887,12 @@ book keeps trading, and unlike a book halt it has NO day: `HaltState.restore` br
 of the date and the session roll never releases it. Releasing it touches nothing else, and releasing the global
 switch or the book halt never releases it. The record snapshots the Team2 sizing settings at pause time; the pause
 changes no setting. Tests: `tests/test_book_pause.py`. Nothing is paused by this release.
+
+### Team2 parallel Practice experiments — 2026-09-15 (technique-scoped; v0.7.93)
+
+Team2 can now run several Practice books at once with ONE rule difference each (`techniques.team2.experiments`; the
+whitelist is `size_full` / `no_trade_zone`, anything else is refused). What changed in shared terms: the Team2 runner's
+desk-wide loss cap and concurrency cap are per BOOK (`losses_across_plans(portfolio_id=)`,
+`open_positions_across_plans(portfolio_id=)`), each plan carries its book's rules (`rules_for(ap)`, stamped on the run)
+and label, `nightly_plans` mints one plan per (symbol, book) and refuses a non-Practice book for an experiment. No engine
+change; the per-book pause (v0.7.90) is the experiments' breach action. Nothing is enabled by this release.
