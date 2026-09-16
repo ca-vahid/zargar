@@ -643,3 +643,8 @@ order exists since the change, so no automated path can trade real money without
 gate; human approvals on live cards would now be real. This desk never touches live gates: reported
 to the user and asked the EM desk whether their user set it deliberately. Live 0.7.90 `c909d19`;
 intake live with ONE listener (the deploy's); 51 armed; no incidents.
+
+**Resolved 21:50 ET:** the `trading.mode` change was the user's own test from the app - journal
+`practice -> live` 21:16:51 ET, `live -> practice` 21:41:01 ET, no live/paper order in between, every
+`allow_live_auto` gate untouched; settings row reads `practice` again. Treated as explained, not
+unexplained. Neither desk touched the gate at any point.
