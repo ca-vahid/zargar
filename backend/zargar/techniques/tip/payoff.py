@@ -74,9 +74,51 @@ def unit_gains(*, vehicle: str, entry_ref: float, targets: list[float], directio
     return out
 
 
+def break_even(*, option_type: str, strike: float | None, premium: float | None) -> dict:
+    """INTRA-01 (2026-09-16): strike +/- premium is the EXPIRATION break-even - where the
+    contract pays if HELD TO EXPIRY. It says nothing about an exit before expiry, which
+    pays whenever the executable premium exceeds entry + costs (delta, time and IV decide
+    that), whatever the underlying is versus this level."""
+    if strike is None or premium is None:
+        return {"expiration": None, "unknown": ["strike" if strike is None else "premium"],
+                "note": "expiration break-even needs the strike and the premium"}
+    is_call = str(option_type or "call").lower().startswith("c")
+    be = float(strike) + float(premium) if is_call else float(strike) - float(premium)
+    return {"expiration": round(be, 4), "basis": "strike + premium (call) / strike - premium (put) - HELD TO EXPIRY only",
+            "note": "an exit BEFORE expiry pays when the executable bid exceeds entry + costs; the underlying need not "
+                    "reach this level for that - the target scenarios above value exits before expiry (delta-linear)"}
+
+
+def expiry_value(*, option_type: str, strike: float, underlying: float) -> float:
+    """Intrinsic value per unit at expiry."""
+    is_call = str(option_type or "call").lower().startswith("c")
+    return max(0.0, (float(underlying) - float(strike)) if is_call else (float(strike) - float(underlying)))
+
+
+def premium_exit(*, entry_premium: float | None, exit_premium: float | None, qty: float, fee_per_unit: float = 0.0,
+                 multiplier: float = 100.0, evidence: str = "unknown") -> dict:
+    """INTRA-01: the P&L of selling `qty` contracts at `exit_premium` (an EXECUTABLE bid,
+    or a labelled synthetic one) after buying at `entry_premium` - independent of where
+    the underlying sits versus the expiration break-even. Unknown without both premiums."""
+    if entry_premium is None or exit_premium is None or not qty:
+        return {"status": "unknown", "unknown": [k for k, v in (("entryPremium", entry_premium), ("exitPremium", exit_premium),
+                                                                 ("qty", qty)) if not v],
+                "evidence": evidence, "gross": None, "fees": None, "net": None}
+    q = float(qty)
+    gross = (float(exit_premium) - float(entry_premium)) * float(multiplier) * q
+    fees = float(fee_per_unit) * q * 2.0
+    net = gross - fees
+    return {"status": "known", "evidence": evidence, "entryPremium": float(entry_premium), "exitPremium": float(exit_premium),
+            "qty": q, "multiplier": float(multiplier), "gross": round(gross, 2), "fees": round(fees, 2), "net": round(net, 2),
+            "perUnitNet": round(net / q, 4),
+            "note": "profit on an EARLIER SALE depends on the premium then, not on the expiration break-even"}
+
+
 def payoff_preview(*, qty: int, fractions: list[float], gains: list[float | None],
                    unit_loss: float | None, fee_per_unit: float = 0.0,
-                   runner_gain: float | None = None, vehicle: str = "option") -> dict:
+                   runner_gain: float | None = None, vehicle: str = "option",
+                   strike: float | None = None, premium: float | None = None, option_type: str | None = None,
+                   dte: int | None = None, hold_sessions: int | None = None) -> dict:
     """The declared scenarios in $ and in R (R = the PLANNED stop loss for the
     whole size, an estimate, never a guaranteed maximum loss). Fees are paid
     per unit on entry and on every exit unit."""
@@ -91,6 +133,28 @@ def payoff_preview(*, qty: int, fractions: list[float], gains: list[float | None
            "feePerUnit": fee_per_unit, "gainsPerUnit": gains,
            "basis": "delta-linear estimate for options, price distance for shares; fees per unit in and out",
            "claim": "arithmetic on the declared plan - no statement that any target is reached"}
+    if vehicle == "option":
+        # INTRA-01: the expiration break-even printed BESIDE the before-expiry scenarios,
+        # with the declared horizon, so the two are never confused
+        out["breakEven"] = break_even(option_type=option_type or "call", strike=strike, premium=premium)
+        exit_assumption = ("at expiry" if (dte is not None and hold_sessions is not None and hold_sessions >= dte)
+                           else ("before expiry" if (dte is not None and hold_sessions is not None) else "unknown"))
+        out["horizon"] = {"dte": dte, "holdSessions": hold_sessions, "exitAssumption": exit_assumption,
+                          "note": ("the scenarios value exits BEFORE expiry (delta-linear at the target); only a hold to expiry "
+                                   "is judged against the expiration break-even")}
+    # INTRA-02: one lot is an EXIT-PLAN question - what a single contract can execute
+    # versus the rungs the plan declares - never a rejection by itself
+    if vehicle == "option" and q >= 1:
+        declared = len([f for f in (fractions or []) if f and f > 0])
+        out["singleLot"] = {"declaredRungs": declared, "executableRungs": len([u for u in lad["units"] if u > 0]),
+                            "collapsed": bool(lad.get("collapsed")) or q == 1,
+                            "canCopyPartials": (q >= declared and declared > 1),
+                            "note": ("one contract executes ONE exit (the first target, or a premium-based exit); it cannot "
+                                     "copy several partial scale-outs - judge that single-exit plan on its own net payoff "
+                                     "(oneLot / tp1ThenStop), and skip only when the thesis DEPENDS on scaling or one unit "
+                                     "does not fit the budget" if q == 1 else
+                                     "the ladder is executable at this size" if q >= declared else
+                                     f"{q} contract(s) cannot execute {declared} declared rungs - see the executed sequence")}
     if not have_gains or unit_loss is None:
         out["scenarios"] = None
         out["reason"] = "no unit loss estimate" if unit_loss is None else "no gain estimate for every rung (missing delta or targets)"

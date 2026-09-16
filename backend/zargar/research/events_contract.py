@@ -97,6 +97,7 @@ CONTRACTS: dict[str, dict] = {
     "ManagedPositionScaledIn": {"version": 1, "required": ("positionId", "symbol")},
     "ManagedPositionBracketReleased": {"version": 1, "required": ("positionId", "symbol", "portfolioId", "phase", "orders")},
     "TipFillVsQuote": {"version": 1, "required": ("proposalId", "orderId", "fillPrice", "fillQty")},
+    "TipRecapClassified": {"version": 1, "required": ("category", "confidence", "recommendedRoute", "route", "knob")},
     "OrderBracketSkipped": {"version": 1, "required": ("reason",)},
     "ManagedPositionRolledUp": {"version": 1, "required": ("positionId", "symbol", "from", "to", "qty", "creditPerContract")},
     "TipGeometryRepaired": {"version": 2, "required": ("proposalId", "underlying", "entryRef", "repairs"),
