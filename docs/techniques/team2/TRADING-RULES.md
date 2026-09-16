@@ -3122,6 +3122,22 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 parallel experiments PREPARED (other team's GO; v0.7.93; NOT activated)** — three Practice books
+  (Control = baseline, Sizing = `size_full` 0.5 only, C1 = `no_trade_zone` conjunction only; newly eligible C1 setups
+  are small by construction), equal $10,000 starts, same data/timing/execution. Built: `techniques.team2.experiments`
+  (`enabled`, `books: [{portfolioId, label, overrides}]`), `rules_for_book` / `Team2Runner.rules_for(ap)` with the
+  whitelist `EXPERIMENT_OVERRIDE_KEYS = (size_full, no_trade_zone)` (anything else refused and reported), per-BOOK loss
+  counters and concurrency (`losses_across_plans(portfolio_id=)`, `open_positions_across_plans(portfolio_id=)`), one
+  plan per (symbol, book) minted under that book's rules with the label on the run (`config.experiment`), an
+  experiment book must be a Practice (sim) book, `stamp_run` stamps the book's rules. Isolation verified in
+  `tests/test_team2_experiments.py`: an override reaches only its book, the shared settings stay the baseline, refused
+  keys never apply, one book's loss cap / open position never blocks another book's fire, a live book is refused.
+  Thresholds (sampled review, pause action, no auto reset): Sizing −$800 (sheet rev. 2); **C1 −$1,000 = 10 % of the
+  start, a POLICY figure equal to the desk's technique day-loss pause level applied cumulatively (the approximate
+  modeled Practice-scale C1 DD is $2,619, so the review fires at ~0.4× of it; not the rejected $700 justification)**.
+  Readiness receipt: `python -m zargar.tools.team2_receipt --date <session>` (read-only). **C6 is NOT satisfied — the
+  experiments stay OFF until C6 and the review team's GO**; measurement per book (ten completed sessions, twenty fills
+  = interim review, fills separate from replay, C2 validation sealed).
 - **2026-09-15 scoped Practice pause ACCEPTED (other team)** — "Persistence across restart/day rollover, entry/add
   blocking, protective exits and independence from other halts are covered. No further pause changes requested. C6 and
   final activation approval remain outstanding. Keep research settings unchanged. Once C6 is satisfied, submit the
