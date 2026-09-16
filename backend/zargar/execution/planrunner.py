@@ -2663,7 +2663,8 @@ class PlanRunner(SessionListener):
         # policy per fire attempt (never per stored arm): `deterministic` = the app's rules decide, no model, no chart,
         # no model semaphore, no timeout wait on this path; `legacy` = the reviewer branch below, unchanged. Anything
         # else refuses the entry with an explicit policy error - never a silent fallback to a model.
-        policy = str(self.fire_review_policy(ap) or "legacy")
+        _policy_hook = getattr(self, "fire_review_policy", None)          # a runner without the hook (reviewer rigs) is legacy, as the base hook says
+        policy = str((_policy_hook(ap) if _policy_hook else None) or "legacy")
         trade.timing["policy"] = policy
         if policy not in ("deterministic", "legacy"):
             trade.status, trade.decision_disposition = "refused", "policy_error"
@@ -2702,8 +2703,8 @@ class PlanRunner(SessionListener):
                     frozen_bars = self.fire_evidence_capture(ap, tid, tr, trade)      # raw bars only; never renders, never a model
                 except Exception:
                     frozen_bars = None
-                bars_hash = (hashlib.sha256(json.dumps(frozen_bars, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-                             if frozen_bars else None)
+                from ..technique.entry_decision import frozen_bars_hash as _fbh
+                bars_hash = _fbh(frozen_bars)
                 with contextlib.suppress(Exception):
                     await self.engine.journal.append(ev.TECHNIQUE_ENTRY_DECISION, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "kind": tr.kind, "direction": tr.direction,

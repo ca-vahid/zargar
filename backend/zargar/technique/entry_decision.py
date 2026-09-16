@@ -136,6 +136,25 @@ def snapshot_hash(snapshot: EntrySnapshot, policy: EntryPolicy) -> str:
     return hashlib.sha256(_canonical(d).encode("utf-8")).hexdigest()
 
 
+def frozen_bars_hash(bars) -> str | None:
+    """Content hash of the frozen bars (CR-01): the ONE canonical representation the producer writes and the evidence
+    command recomputes before rendering or buying an opinion."""
+    if not bars:
+        return None
+    return hashlib.sha256(_canonical(bars).encode("utf-8")).hexdigest()
+
+
+def recompute_input_hash(snapshot: dict, policy: dict) -> str | None:
+    """Recompute a persisted decision's `inputHash` from its serialised snapshot + policy (CR-01). None = not reconstructible."""
+    try:
+        snap = EntrySnapshot(**{k: (tuple(v) if k in ("targets", "tracker_events") and isinstance(v, list) else v) for k, v in (snapshot or {}).items()})
+        pol = EntryPolicy(mode=str(policy.get("mode", DECISION_MODE)), rule_version=str(policy.get("ruleVersion") or policy.get("rule_version") or DECISION_VERSION),
+                          thresholds=dict(policy.get("thresholds") or {}), enforce_windows=bool(policy.get("enforceWindows", policy.get("enforce_windows", True))))
+        return snapshot_hash(snap, pol)
+    except Exception:
+        return None
+
+
 def thresholds_hash(thresholds: dict) -> str:
     return hashlib.sha256(_canonical(thresholds or {}).encode("utf-8")).hexdigest()[:16]
 

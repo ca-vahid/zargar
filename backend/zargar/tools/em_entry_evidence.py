@@ -93,8 +93,8 @@ async def _trigger_for(sf, run_id: str, trigger_id: str) -> dict:
     return next((t for t in (plan.get("triggers") or []) if t.get("id") == trigger_id), {})
 
 
-def _render_frozen(frozen_bars: list[dict] | None, symbol: str, cutoff: int | None) -> tuple[dict, str]:
-    """Chart + facts from the decision's OWN frozen bars (never a bar-table query)."""
+def _render_frozen(frozen_bars: list[dict] | None, symbol: str, cutoff: int | None, thresholds=None) -> tuple[dict, str]:
+    """Chart + facts from the decision's OWN frozen bars (never a bar-table query), under the FROZEN rule values."""
     if not frozen_bars:
         return {}, "FROZEN EVIDENCE: no frozen bars were captured at decision time - no chart, no facts."
     try:
@@ -102,11 +102,12 @@ def _render_frozen(frozen_bars: list[dict] | None, symbol: str, cutoff: int | No
         from ..technique.analysis import AnalysisRequest, compute_facts, facts_for_prompt
         from ..technique.render import render_chart
         from ..technique.rulebook import Thresholds
+        thresholds = thresholds or Thresholds()
         bars = [Bar(symbol=symbol, tf="1m", ts=int(b["ts"]), open=b["open"], high=b["high"], low=b["low"], close=b["close"], volume=int(b.get("volume") or 0))
                 for b in frozen_bars if cutoff is None or int(b["ts"]) + 60_000 <= cutoff]
         if not bars:
             return {}, "FROZEN EVIDENCE: frozen bars all after the signal close - no chart, no facts."
-        req = AnalysisRequest(symbol=symbol, primary_tf="1m", context_tfs=(), thresholds=Thresholds())
+        req = AnalysisRequest(symbol=symbol, primary_tf="1m", context_tfs=(), thresholds=thresholds)
         facts = compute_facts(req, {"1m": bars}, [])
         txt = facts_for_prompt(facts) + f"\n\nFROZEN EVIDENCE: {len(bars)} bars frozen at decision time, ending at the signal bar close {cutoff}; no later price, fill or outcome is available."
         png = render_chart(bars[-240:], title=f"{symbol} 1m (frozen)", tf="1m")
@@ -116,9 +117,9 @@ def _render_frozen(frozen_bars: list[dict] | None, symbol: str, cutoff: int | No
 
 
 async def run(date: str, *, max_calls: int, timeout_s: float, dry_run: bool, force: bool) -> dict:
-    from ..technique.entry_evidence import EVIDENCE_VERSION, EvidenceResult, evidence_key, frozen_input, prompt_identity, run_evidence, validate_frozen
+    from ..technique.entry_evidence import (EVIDENCE_VERSION, EvidenceResult, evidence_key, frozen_input, frozen_thresholds, prompt_identity,
+                                            run_evidence, validate_frozen, verify_identity)
     from ..technique.llm import config_from_settings, make_client
-    from ..technique.rulebook import Thresholds
     if not session_closed(date):
         return {"skipped": True, "reason": f"session {date} has not closed (16:00 ET) - after-close evidence only, --force does not override this"}
     cfg, eng, sf, settings, journal = await _open()
@@ -143,13 +144,17 @@ async def run(date: str, *, max_calls: int, timeout_s: float, dry_run: bool, for
         for p in decisions:
             enq = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
             started = enq
+            analysis_policy = None
             try:
                 frozen = frozen_input(p)                                       # DE-05: the decision's own snapshot only
                 key = evidence_key(frozen, prompt_hash=prompt_hash, model=model)
                 if key in p.get("_have", set()):
                     report["skipped"] += 1; continue
+                mismatch = verify_identity(p) if frozen.get("frozenSource") == "decision_snapshot" else None
                 if frozen.get("frozenSource") != "decision_snapshot":
                     res = EvidenceResult("unavailable", error="no frozen decision snapshot - not rebuilt from current rows")
+                elif mismatch:
+                    res = EvidenceResult("invalid", error=f"declared identity does not match the captured material: {mismatch}")   # CR-01: no render, no call
                 elif validate_frozen(frozen):
                     res = EvidenceResult("invalid", error=validate_frozen(frozen))
                 elif calls >= budget:
@@ -160,9 +165,10 @@ async def run(date: str, *, max_calls: int, timeout_s: float, dry_run: bool, for
                     res = EvidenceResult("unavailable", error="no frozen bars captured at decision time - no chart-based opinion is bought")
                 else:
                     calls += 1                                                 # one provider attempt per row, no retries
-                    images, facts_txt = _render_frozen(p.get("frozenBars"), str(frozen.get("symbol")), frozen.get("frozenAt"))
+                    thresholds, analysis_policy = frozen_thresholds(p.get("policy"))
+                    images, facts_txt = _render_frozen(p.get("frozenBars"), str(frozen.get("symbol")), frozen.get("frozenAt"), thresholds)
                     started = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
-                    res = await run_evidence(frozen, client=client, llm=llm, thresholds=Thresholds(), images=images, facts_txt=facts_txt, timeout_s=per_timeout)
+                    res = await run_evidence(frozen, client=client, llm=llm, thresholds=thresholds, images=images, facts_txt=facts_txt, timeout_s=per_timeout)
             except Exception as exc:  # noqa: BLE001 - a row-local failure is an evidence outcome; the batch continues
                 frozen = {"runId": p.get("runId"), "symbol": p.get("symbol"), "trigger": p.get("trigger"), "decisionId": p.get("decisionId"),
                           "inputHash": p.get("inputHash"), "decisionVersion": p.get("decisionVersion"), "verdict": p.get("verdict"), "frozenSource": "missing"}
@@ -170,6 +176,8 @@ async def run(date: str, *, max_calls: int, timeout_s: float, dry_run: bool, for
             now = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
             rec = res.to_record(frozen, prompt_hash=prompt_hash, model=model, enqueued_at=enq, started_at=started, completed_at=now)
             rec["barCutoff"] = frozen.get("frozenAt")
+            rec["evidenceAnalysisPolicy"] = analysis_policy
+            rec["identityVerified"] = (res.review_outcome == "completed")
             if not dry_run:
                 await journal.append("TechniqueEntryEvidence", rec, aggregate_type="technique_run", aggregate_id=str(frozen.get("runId")))
             report["evaluated"] += 1

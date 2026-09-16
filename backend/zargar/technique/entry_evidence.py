@@ -61,6 +61,48 @@ def frozen_input(decision_payload: dict, trigger: dict | None = None) -> dict:
     return copy.deepcopy(d)
 
 
+def verify_identity(decision_payload: dict) -> str | None:
+    """CR-01: recompute the declared identities from the captured canonical material BEFORE any rendering or model
+    call - the snapshot/policy must reproduce `inputHash`, the frozen bars must reproduce `frozenBarsHash` and
+    `frozenBarsCount`, and every frozen bar must close at or before the signal bar close. Returns the mismatch reason."""
+    from .entry_decision import frozen_bars_hash, recompute_input_hash
+    p = decision_payload or {}
+    snap, pol = p.get("snapshot"), p.get("policy")
+    if not isinstance(snap, dict) or not isinstance(pol, dict):
+        return "no frozen snapshot/policy"
+    want = p.get("inputHash")
+    got = recompute_input_hash(snap, pol)
+    if got is None or want != got:
+        return "inputHash does not match the captured snapshot/policy"
+    bars = p.get("frozenBars")
+    if bars:
+        if frozen_bars_hash(bars) != p.get("frozenBarsHash"):
+            return "frozenBarsHash does not match the captured bars"
+        if p.get("frozenBarsCount") not in (None, len(bars)):
+            return "frozenBarsCount does not match the captured bars"
+        cutoff = p.get("signalBarClose")
+        if cutoff is not None and any(int(b.get("ts", 0)) + 60_000 > int(cutoff) for b in bars):
+            return "a frozen bar closes after the signal bar close"
+    elif p.get("frozenBarsHash"):
+        return "frozenBarsHash declared but no bars captured"
+    return None
+
+
+def frozen_thresholds(policy: dict | None):
+    """The effective rule configuration for DERIVED facts (CR-01): the captured policy's threshold values applied over
+    the current defaults for keys the policy did not record. Disclosed on the record as `evidenceAnalysisPolicy`."""
+    from dataclasses import fields, replace
+    from .rulebook import Thresholds
+    base = Thresholds()
+    vals = dict((policy or {}).get("thresholds") or {})
+    known = {f.name for f in fields(Thresholds)}
+    upd = {k: (tuple(v) if isinstance(v, list) else v) for k, v in vals.items() if k in known}
+    try:
+        return replace(base, **upd), ("frozen_policy_subset_over_defaults" if upd else "defaults_only(no_frozen_policy)")
+    except Exception:
+        return base, "defaults_only(frozen_policy_unusable)"
+
+
 def validate_frozen(frozen: dict) -> str | None:
     """The reason a frozen input cannot be reviewed (None = usable). Never fabricates a setup from missing data."""
     t = (frozen or {}).get("plannedTrigger") or {}

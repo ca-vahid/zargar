@@ -289,6 +289,18 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
             evs = [(e["ts"], e["type"], (e["payload"] if isinstance(e["payload"], dict) else json.loads(e["payload"] or "{}"))) for e in ev]
             bars = [dict(b) for b in await c.fetch("""select ts, open, high, low, close from bars where symbol=$1 and tf='1m' and ts >= $2 and ts < $3 order by ts""",
                                                     a["symbol"], day0, cutoff_ms)]
+            # CR-02: the attempt census comes from THIS run's immutable fire events - every attempt, whether or not a trade
+            # row survived (a refused attempt has no row) - keyed once per (run, trigger, decision / bar)
+            for ts, ty, p in evs:
+                if ty != "TechniquePlanTriggerFired":
+                    continue
+                did = (p.get("decision") or {}).get("decisionId")
+                if any(x.get("runId") == a["run_id"] and x.get("trigger") == p.get("trigger") and ((did and x.get("decisionId") == did) or (not did and x.get("ts") == ts))
+                       for x in attempts):
+                    continue
+                attempts.append({"runId": a["run_id"], "symbol": a["symbol"], "trigger": p.get("trigger"),
+                                 "policyVersion": ((p.get("decision") or {}).get("decisionVersion") or "legacy-critic:" + str(p.get("criticMode") or "?")),
+                                 "decisionId": did, "disposition": p.get("decisionDisposition") or p.get("criticDisposition"), "ts": ts})
             for tr in (state.get("trades") or []):
                 tid = tr.get("triggerId"); t = trig.get(tid, {})
                 fired_ts = tr.get("firedTs")
@@ -322,10 +334,6 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                 intent = icand[0] if icand else None
                 decision = (fired_ev.get("decision") or tdec) or {}
                 policy_version = (decision.get("decisionVersion") or ("legacy-critic:" + str(fired_ev.get("criticMode") or "?") if fired_ev else "unknown"))
-                attempts.extend({"runId": a["run_id"], "symbol": a["symbol"], "trigger": tid, "policyVersion": ((p.get("decision") or {}).get("decisionVersion")
-                                                                                                    or "legacy-critic:" + str(p.get("criticMode") or "?")),
-                                 "decisionId": (p.get("decision") or {}).get("decisionId"), "disposition": p.get("decisionDisposition") or p.get("criticDisposition"),
-                                 "ts": ts} for ts, p in fired_evs if not any(x.get("trigger") == tid and x.get("ts") == ts for x in attempts))
                 td = next((p for _, ty, p in evs if ty == "TechniqueTargetDistance" and p.get("trigger") == tid and p.get("stage") == "fill"), None)
                 eid = tr.get("entryOrderId")
                 shadow = [p for _, ty, p in evs if ty == "TechniqueExitShadow" and p.get("trigger") == tid
@@ -444,19 +452,27 @@ def summarize(data: dict) -> dict:
     # execution-policy cohorts (deterministic-entry-v1 vs legacy critic): actual fills, refusals and net by policy version
     by_policy = defaultdict(lambda: {"attempts": 0, "fills": 0, "refused": 0, "net": 0.0, "open": 0, "refreshOk": 0, "refreshAttempted": 0})
     census = data.get("attempts") or []
-    for x in census:
-        by_policy[x.get("policyVersion") or "unknown"]["attempts"] += 1
-    counted = {(x.get("trigger"), x.get("decisionId")) for x in census}
+    REFUSED_DISPOSITIONS = ("vetoed", "refused", "deferred", "policy_error", "critic_unavailable", "failure-budget-paused")
+    counted, refused_keys = set(), set()
+    for x in census:                                  # CR-02: one attempt per (run, trigger, decision) from the immutable events
+        key = (x.get("runId"), x.get("trigger"), x.get("decisionId"))
+        if key in counted and x.get("decisionId"):
+            continue
+        counted.add(key)
+        b = by_policy[x.get("policyVersion") or "unknown"]; b["attempts"] += 1
+        if str(x.get("disposition") or "") in REFUSED_DISPOSITIONS:
+            b["refused"] += 1; refused_keys.add(key)  # an unknown / allowed disposition stays unclassified here
     for r in trades + refused:
         b = by_policy[r.get("policyVersion") or "unknown"]
-        if not census or (r.get("trigger"), r.get("decisionId")) not in counted:
+        key = (r.get("runId"), r.get("trigger"), r.get("decisionId"))
+        if not census or key not in counted:
             b["attempts"] += 1                        # a row without a census event (older records) still counts once
         if "filledQty" in r:
             b["fills"] += 1
             if r.get("closed"): b["net"] += r.get("netRealized") or 0
             else: b["open"] += 1
-        else:
-            b["refused"] += 1
+        elif key not in refused_keys:
+            b["refused"] += 1                         # a downstream refusal (quote / risk / contract) of an allowed attempt
         qr = r.get("quoteRefresh") or {}
         if qr.get("attempted"): b["refreshAttempted"] += 1
         if qr.get("ok"): b["refreshOk"] += 1
