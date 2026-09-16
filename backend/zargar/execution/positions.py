@@ -1298,8 +1298,14 @@ class PositionManager:
         await self._journal(POSITION_CLOSED, p, {"realizedPnl": round(p.realized_pnl, 2), "reason": reason,
                                                  "sessionsHeld": p.sessions_held()})
         self._log(p, "closed", f"{reason} — realized {p.realized_pnl:+.2f}")
-        self._pos.pop(p.id, None)
-        await self._persist(p)
+        # CAP187-01 (2026-09-16): persist the closed state BEFORE the position leaves memory.
+        # Between the pop and the write nothing could observe the close (neither the in-memory
+        # book nor the durable record held it) - a capture in that interval missed the exit.
+        # Now a reader sees the closed position in memory until the durable row carries it.
+        try:
+            await self._persist(p)
+        finally:
+            self._pos.pop(p.id, None)
 
     # ---------------------------------------------------------------- bar loop
     async def _orders_loop(self) -> None:
