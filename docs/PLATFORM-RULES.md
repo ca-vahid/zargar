@@ -2196,3 +2196,23 @@ change; the per-book pause (v0.7.90) is the experiments' breach action. Nothing 
 `SettingsService.load()` migrates legacy keys (writes + journal) on first sight. A tool that must not write sets the
 `readonly` attribute on SettingsService before `load()`; the migration is skipped in memory (values still resolve).
 Used by `zargar.tools.team2_receipt` (review of 41ec565: the receipt claimed READ-ONLY while calling `load`).
+
+### A closed durable position leaves manager memory — 2026-09-16 (Tips hold study; PR #184)
+
+`PositionManager.positions()` is the OPEN book: a position popped from memory the moment it closes. Anything that
+must observe same-session closes (the Tips hold study's `intraday_exit` arm, any end-of-day report) reads the
+durable `managed_positions` record (`status=closed`, `state.closedMs` on the session date) and adapts it through
+the manager's own row reader — never the in-memory map. Evidence: the first `holdstudy-v2` pre-close capture
+(15:50 ET) recorded 2 carry rows and 0 intraday exits while Tips Practice had closed T (13:15), SLV (15:00) and
+GOOGL Oct-16 360C (15:30) that session; the three are counted MISSING in the study, not hand-sampled. Every
+observation now also carries `portfolio_id` + `book_kind` so Practice (sim) and shadow observations are reported
+apart. Reporting note: the desk ledger's per-day trips are that day's closed lots; `state.realizedPnl` on the
+position is lifetime (T showed +$131.96 lifetime against +$3.64 on the day).
+
+### "sim fill handling failed" during a feed blip is a resting order waiting, not a lost fill — 2026-09-16
+
+During the 15:29 ET feed blip the sim executor logged "sim fill handling failed for INTC"; the journal shows
+`SimFillWaiting` (uncrossed / stale-receipt quote) on bracket SELL 19 INTC LMT 106 resting on the Tips shadow
+book for source eva — status ACCEPTED, filled 0, zero `executions` rows. Before treating such a line as an
+unreconciled fill or an unprotected position, check `executions` (fee column is `commission`) and the order's
+status; a resting limit that could not be judged simply waits for the next admissible quote.
