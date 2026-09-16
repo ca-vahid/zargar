@@ -2095,6 +2095,27 @@ class SignalService:
                         + (f" @ {s.premium:g}" if s.premium else "")
                         for s in result.signals]
         shared_opinion: dict | None = None
+        # INTRA-03 (2026-09-16): a cheap deterministic read of the message shape BEFORE the
+        # paid appraisal - journaled always; it routes to the compact context only when
+        # techniques.tip.recap_route == "compact" and the read is confident with no
+        # management instruction. Never a verdict, never a card decision.
+        recap_read: dict | None = None
+        recap_route = "full"
+        try:
+            from ..techniques.tip import recap as _recap
+            recap_read = _recap.classify(result.signals, (content.body_text or ""), fan_in_min=int(
+                eng.settings.get("techniques.tip.fan_in_min", 3)))
+            knob = str(eng.settings.get("techniques.tip.recap_route", "off") or "off")
+            recap_route = "compact" if (knob == "compact" and recap_read.get("route") == "compact") else "full"
+            with contextlib.suppress(Exception):
+                await eng.journal.append(ev.TIP_RECAP_CLASSIFIED, {
+                    "contentId": getattr(content, "id", None), "source": result.source_name if hasattr(result, "source_name") else None,
+                    "category": recap_read.get("category"), "confidence": recap_read.get("confidence"),
+                    "recommendedRoute": recap_read.get("route"), "route": recap_route, "knob": knob,
+                    "reasons": recap_read.get("reasons"), "features": recap_read.get("features")},
+                    aggregate_type="content", aggregate_id=str(getattr(content, "id", "") or ""))
+        except Exception:                                   # noqa: BLE001 - the read never blocks intake
+            log.debug("recap read failed", exc_info=True)
         # grounding is judged for the whole message first: with a sectioned
         # corpus each quote is attributed to its block, and two readings of
         # one trade from DIFFERENT documents that disagree are both flagged
@@ -2444,7 +2465,8 @@ class SignalService:
                                                     parent_run_id=(intake.id if intake else None),
                                                     experiment=experiment,
                                                     historical_note=historical_note,
-                                                    siblings=(branch_lines if fan_in else None))
+                                                    siblings=(branch_lines if fan_in else None),
+                                                    header_mode=recap_route, recap_read=recap_read)
                     except Exception:                  # never block the pipeline
                         log.exception("tip analyst crashed for %s", row.id)
                         opinion = None
