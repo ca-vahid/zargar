@@ -681,6 +681,7 @@ async def cohort_report(eng_or_sf, settings, *, since: dt.datetime | None = None
         "rows": rows,
         "results": [{**x.result, "id": x.id} for x in res_rows],
         "disclaimer": DISCLAIMER,
+        "experiment": __import__("zargar.techniques.tip.experiments_register", fromlist=["identity"]).identity("entry-timing-cohort"),
     }
 
 
