@@ -601,3 +601,18 @@ with `coverageLimited` / `coverage` explicit on every pair.
 unmodified main ("repair did not rebuild the degraded day", `read.read["flags"] == []`); the test was
 last touched by KFIN-06 `b48c73d` (2026-09-14). Not a Tips change; handed to the EM/other-techniques
 desk with that pointer.
+
+## Out-of-band engine stop took the Discord intake down (2026-09-15 20:03-20:28 ET)
+
+The EM desk reported the engine stopped from outside the deploy path at ~20:03 ET (no shutdown
+entry) and the watchdog restarting it (0.7.89 `a53c645`, restoration complete by inventory). The
+watchdog restores the ENGINE only: the Discord gateway helper (`scripts/discord-intake.ps1`, its own
+window) died with the stop and was not relaunched, so the Tips intake read `stalled` at the 20:20 ET
+check ("gateway status file 1009 s old; connected but no frame for 1012 s") - exactly the condition
+the liveness rule (`GET /api/tip/intake/liveness`, EOD-review 2026-09-14) exists to catch. Relaunched
+the intake from this desk at 20:28 ET via the same `Start-Process pwsh -File discord-intake.ps1`
+the start script uses; one listener (pid 39720) connected, liveness `live`, and the ledger's gap
+recovery enqueued the 3 messages posted during the outage from its cursors - nothing lost.
+Finding for the platform: a watchdog/engine restart is not an app restart - the helper processes
+(Discord gateway, EM ingestion) need the same restoration, or at least a liveness check after
+boot. Raised with the EM desk (their watchdog); no code change from this desk tonight.
