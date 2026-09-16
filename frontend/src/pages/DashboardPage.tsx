@@ -557,10 +557,13 @@ function EquityCurvePanel() {
             <option value="all">All {books.length} books</option>
             {/* funded books only, like the chips; two accounts can share a name
                 (Wealthsimple CAD and USD) so the currency disambiguates */}
-            {books.filter((b) => (bookLive[b.id] ?? b.equity ?? b.cash) !== 0 || b.id === bookId).map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}{books.some((o) => o.id !== b.id && o.name === b.name) ? ` (${b.baseCurrency || "USD"})` : ""}
-              </option>))}
+            {(() => {
+              const listed = books.filter((b) => (bookLive[b.id] ?? b.equity ?? b.cash) !== 0 || b.id === bookId);
+              return listed.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}{listed.some((o) => o.id !== b.id && o.name === b.name) ? ` (${b.baseCurrency || "USD"})` : ""}
+                </option>));
+            })()}
           </select>
         )}
         {stats && (
