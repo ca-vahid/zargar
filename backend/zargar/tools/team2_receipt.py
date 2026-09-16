@@ -19,7 +19,7 @@ import sys
 from types import SimpleNamespace
 
 API = "http://127.0.0.1:8420"
-FEATURE_VERSION = (0, 7, 93)             # the release that carries the per-book experiments
+FEATURE_VERSION = (0, 7, 94)             # the release that carries the per-book experiments WITH the reviewed corrections (PR #168)
 THRESHOLDS = {"sizing": {"sampledDrawdownReview$": -800, "basis": "8 % of the $10,000 start; ≈ 1.25 × the approximate modeled Practice-scale DD of $635 (sheet rev. 2)"},
               "c1": {"sampledDrawdownReview$": -1000, "basis": "policy: 10 % of the $10,000 start = the desk's technique day-loss pause level applied cumulatively; a stated Practice policy choice, not a guaranteed maximum loss nor backtest-derived (the approximate modeled Practice-scale C1 DD is $2,619)"}}
 PAUSE_ACTION = ("breach → POST /api/portfolios/{id}/pause (reason 'experiment loss stop: <drawdown>', the book's label): entries AND adds refused, "
@@ -55,6 +55,7 @@ async def main(args) -> int:
     from ..models import Portfolio, TechniqueArmed, TechniqueRun
     from ..settings_service import SettingsService
     from ..techniques.team2.rules import EXPERIMENT_ROLES, rules_from_settings, validate_experiments
+    from ..techniques.team2.service import CODE_VERSION
     cfg = get_config(); eng = make_engine(cfg.database_url); sf = make_session_factory(eng); bus = Bus()
     settings = SettingsService(sf, bus, Journal(sf, bus))
     settings.readonly = True                                   # never migrate or journal from the receipt
@@ -113,18 +114,31 @@ async def main(args) -> int:
             runs = (await session.execute(select(TechniqueRun).where(TechniqueRun.id.in_([a.run_id for a in armed_ok] or ["-"])))).scalars().all()
         for r in runs:
             stamps[r.id] = {"experiment": ((r.result or {}).get("plan") or {}).get("experiment") or (r.config or {}).get("experiment") or {},
-                            "codeVersion": (r.config or {}).get("codeVersion"), "thresholds": (r.config or {}).get("thresholds") or {}}
+                            "codeVersion": (r.config or {}).get("codeVersion"), "appVersion": (r.config or {}).get("appVersion"),
+                            "build": (r.config or {}).get("build"), "thresholds": (r.config or {}).get("thresholds") or {}}
     except Exception as exc:  # noqa: BLE001
         blockers.append(f"evidence: could not read the armed plans' stamped rules ({type(exc).__name__})")
     for b in all_books:
         pid = b["portfolioId"]; p = pf.get(pid)
         plans = [a for a in armed_ok if a.portfolio_id == pid]
+        # cardinality BEFORE grouping (PR #168 review): exactly one plan per (session, symbol, book); every unexpected
+        # row stays visible — nothing is deduplicated into a passing receipt
+        counts: dict[str, int] = {}
+        for a in plans:
+            counts[a.symbol] = counts.get(a.symbol, 0) + 1
+        dupes = {sym: n for sym, n in counts.items() if n > 1}
+        unexpected = sorted(sym for sym in counts if sym not in symbols)
+        if v["enabled"] and dupes:
+            blockers.append(f"{b['role']}: duplicate armed plans on {date}: " + ", ".join(f"{sym} x{n}" for sym, n in sorted(dupes.items())))
+        if v["enabled"] and unexpected:
+            blockers.append(f"{b['role']}: armed plans for unexpected symbols {unexpected}")
         by_sym = {a.symbol: a for a in plans}
         ov = b["overrides"]
         row = {"portfolioId": pid, "name": getattr(p, "name", None), "kind": getattr(p, "kind", None), "archived": bool(getattr(p, "archived", False)) if p else None,
                "cash": getattr(p, "cash", None), "startingCash": getattr(p, "starting_cash", None), "role": b["role"], "label": b["label"],
                "overrides": ov, "effectiveDiffVsBaseline": {k: v_ for k, v_ in ov.items() if base.to_dict().get(k) != v_},
-               "armedPlans": sorted(by_sym), "threshold": THRESHOLDS.get(b["role"]), "stampOk": None}
+               "armedPlans": sorted(a.symbol for a in plans), "armedRunIds": sorted(a.run_id for a in plans),
+               "duplicates": dupes, "threshold": THRESHOLDS.get(b["role"]), "stampOk": None}
         if b["role"] == "baseline-today":
             books.append(row); continue                         # informational only
         if p is None:
@@ -150,8 +164,14 @@ async def main(args) -> int:
                 for k, val in ov.items():
                     if st["thresholds"].get(k) != val:
                         ok_stamps = False; blockers.append(f"{b['role']}: {sym} plan {a.run_id[:8]} thresholds carry {k}={st['thresholds'].get(k)}, expected {val}")
-                if health.get("version") and st["codeVersion"] and _version_tuple(st["codeVersion"]) < FEATURE_VERSION:
-                    ok_stamps = False; blockers.append(f"{b['role']}: {sym} plan {a.run_id[:8]} was minted by code {st['codeVersion']} (feature needs {'.'.join(map(str, FEATURE_VERSION))}+)")
+                # provenance: the strategy schema id must be the service's, and the APP release that minted the plan must
+                # carry the reviewed corrections; a missing stamp is missing evidence (a blocker), never a pass
+                if st["codeVersion"] != CODE_VERSION:
+                    ok_stamps = False; blockers.append(f"{b['role']}: {sym} plan {a.run_id[:8]} carries strategy schema {st['codeVersion']!r}, the service is {CODE_VERSION!r}")
+                if not st["appVersion"]:
+                    ok_stamps = False; blockers.append(f"{b['role']}: {sym} plan {a.run_id[:8]} has no appVersion stamp (minted before the reviewed corrections)")
+                elif _version_tuple(st["appVersion"]) < FEATURE_VERSION:
+                    ok_stamps = False; blockers.append(f"{b['role']}: {sym} plan {a.run_id[:8]} was minted by release {st['appVersion']} (needs {'.'.join(map(str, FEATURE_VERSION))}+)")
             row["stampOk"] = ok_stamps
         books.append(row)
     starts = {b["startingCash"] for b in books if b["startingCash"] is not None and b["role"] != "baseline-today"}
@@ -167,7 +187,7 @@ async def main(args) -> int:
     if not health.get("ok"):
         blockers.append("deployed engine is not healthy")
     if _version_tuple(health.get("version")) < FEATURE_VERSION:
-        blockers.append(f"deployed version {health.get('version')} predates the feature ({'.'.join(map(str, FEATURE_VERSION))})")
+        blockers.append(f"deployed version {health.get('version')} predates the reviewed corrections ({'.'.join(map(str, FEATURE_VERSION))})")
     # pauses / halts
     paused = ops.get("pausedBooks") if isinstance(ops, dict) else None
     halt = s.get("system.halt") or {}

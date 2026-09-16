@@ -3122,6 +3122,18 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-15 review of PR #168 (other team: schema/override corrections ACCEPTED; transition + receipt integration; still
+  HELD)** — (1) a forced transition step (retire an old-book plan without exposure / pause a book with it) or a forced
+  replacement is VERIFIED: an exception, a false result or an unconfirmed state (`disarm` false / plan still armed,
+  `pause_book` no record / book not reading as paused) is a transition failure — reported (`transitionFailed`), the
+  old plan keeps managing its exposure, and NO experiment plan is minted; (2) `mint_plan_run` stamps `appVersion` and
+  `build` (the release/build that minted the plan) beside `codeVersion` (the strategy schema id `team2-0.1`); the
+  receipt checks the schema id equals the service's, `appVersion` ≥ 0.7.94 (the reviewed corrections) and the deployed
+  version ≥ 0.7.94, a missing stamp being a blocker; (3) the receipt validates cardinality before grouping — exactly
+  one plan per (session, symbol, book), duplicates and unexpected symbols are blockers and stay visible; (4) a read-only
+  settings load also skips the `trading.mode` migration write/journal (normalized in memory). Their five cases verbatim
+  (`tests/test_codex_team2_parallel_r2_receipt.py`); the 42 earlier cases preserved; own additions for unconfirmed
+  transitions, failed replacement, provenance and duplicates.
 - **2026-09-15 review of 41ec565 (other team: design ACCEPTED; three boundaries; hold merge/deploy; v0.7.94 prepared)** —
   note: v0.7.93 had already been merged and deployed (inert: experiments OFF) when the hold arrived; the corrections
   are on the branch as v0.7.94 for their review before any merge. (1) Validated schema `validate_experiments`:

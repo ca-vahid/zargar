@@ -36,6 +36,19 @@ log = logging.getLogger("zargar.techniques.team2.service")
 
 CODE_VERSION = "team2-0.1"
 
+
+def _app_version() -> str:
+    from ... import __version__
+    return str(__version__)
+
+
+def _build_sha() -> str | None:
+    try:
+        from ... import build_sha
+        return str(build_sha())
+    except Exception:  # noqa: BLE001 - the launch-bound helper lives on another desk's branch until it merges
+        return None
+
 #: once-per-session state notes (`session.py` mints each at most once) — the day said what it was
 #: doing, it did not refuse a setup. Kept out of the refusal tally the History tab shows (F68).
 DAY_NOTES = ("skip_last_entry", "skip_event_day", "skip_loss_cap")
@@ -174,6 +187,9 @@ class Team2Service:
                            result={"plan": plan, "trace": [{"step": "skeleton", "reason": plan["sheet"]}]},
                            images={}, usage={}, llm={},
                            config={"thresholds": rules.to_dict(), "codeVersion": CODE_VERSION, "technique": "team2",
+                                   # provenance the readiness receipt checks (PR #168 review): the APP release and build that
+                                   # minted this plan — `codeVersion` above is the strategy/model schema id, not a release
+                                   "appVersion": _app_version(), "build": _build_sha(),
                                    **({"experiment": dict(experiment)} if experiment else {})})
         async with self.engine.sf() as session:
             session.add(run)
@@ -252,18 +268,41 @@ class Team2Service:
                                      "not minting experiment plans — run again with force to retire (no exposure) or pause (exposure) them")
                 books = books[:1]
             elif force:
+                # PR #168 review: every step is VERIFIED; an exception, a false result or an unconfirmed state is a
+                # transition failure — reported, exposure left under its plan, and the dependent experiment minting
+                # does not happen (the old book must never trade beside the new ones while the receipt says otherwise)
+                transition_failed: list[str] = []
                 for o in outside:
                     if o["exposure"]:
                         eng = self.engine
-                        if hasattr(eng, "pause_book") and not (hasattr(eng, "halt") and eng.halt.book_paused(o["portfolioId"])):
-                            with contextlib.suppress(Exception):
-                                await eng.pause_book(o["portfolioId"], f"experiment transition: plan {o['runId']} ({o['symbol']}) has exposure on a book outside "
-                                                     "the experiment set — no new entries or adds; positions stay managed", source="team2", label="team2-transition")
-                        out.setdefault("pausedOutside", []).append(o)
+                        try:
+                            if not hasattr(eng, "pause_book"):
+                                raise RuntimeError("engine has no book pause")
+                            paused_before = eng.halt.book_paused(o["portfolioId"]) if hasattr(eng, "halt") else None
+                            if not paused_before:
+                                rec = await eng.pause_book(o["portfolioId"], f"experiment transition: plan {o['runId']} ({o['symbol']}) has exposure on a book outside "
+                                                           "the experiment set — no new entries or adds; positions stay managed", source="team2", label="team2-transition")
+                                if not rec:
+                                    raise RuntimeError("pause_book returned no record")
+                            if hasattr(eng, "halt") and not eng.halt.book_paused(o["portfolioId"]):
+                                raise RuntimeError("the book does not read as paused after the pause")
+                            out.setdefault("pausedOutside", []).append(o)
+                        except Exception as exc:  # noqa: BLE001
+                            transition_failed.append(f"pause of book {o['portfolioId']} (plan {o['runId']}, exposure kept under its plan) failed: {exc}")
                     else:
-                        with contextlib.suppress(Exception):
-                            await self.runner.disarm(o["runId"], reason="retired: its book left the experiment set (no exposure)", flatten=False)
-                        out.setdefault("retiredOutside", []).append(o)
+                        try:
+                            ok = await self.runner.disarm(o["runId"], reason="retired: its book left the experiment set (no exposure)", flatten=False)
+                            if not ok:
+                                raise RuntimeError("disarm returned false")
+                            if o["runId"] in getattr(self.runner, "_armed", {}):
+                                raise RuntimeError("plan still armed after disarm")
+                            out.setdefault("retiredOutside", []).append(o)
+                        except Exception as exc:  # noqa: BLE001
+                            transition_failed.append(f"retirement of plan {o['runId']} on book {o['portfolioId']} failed: {exc}")
+                if transition_failed:
+                    out["transitionFailed"] = transition_failed
+                    out["failed"].append("experiments: transition NOT confirmed — no experiment plan minted: " + "; ".join(transition_failed))
+                    books = books[:1]
         for sym in symbols:
           for book in books:
             pid = book["portfolioId"]; tag = f"{sym}" + (f" [{book['label']}]" if book["label"] else "")
@@ -288,9 +327,14 @@ class Team2Service:
                         out["failed"].append(f"{tag}: plan {ap.run_id} has unresolved exposure — not replaced (its positions stay managed)")
                         blocked = True
                         continue
-                    with contextlib.suppress(Exception):
-                        await self.runner.disarm(ap.run_id, reason="replaced by a forced re-plan", flatten=False)
-                    out.setdefault("replaced", []).append(ap.run_id)
+                    try:
+                        ok = await self.runner.disarm(ap.run_id, reason="replaced by a forced re-plan", flatten=False)
+                        if not ok or ap.run_id in getattr(self.runner, "_armed", {}):
+                            raise RuntimeError("disarm not confirmed")
+                        out.setdefault("replaced", []).append(ap.run_id)
+                    except Exception as exc:  # noqa: BLE001 - PR #168 review: an unconfirmed replacement is a failure, never a second plan
+                        out["failed"].append(f"{tag}: replacement of plan {ap.run_id} failed ({exc}) — not re-planned")
+                        blocked = True
                 if blocked:
                     continue
             rules = apply_overrides(rules_from_settings(s), book["overrides"]) if book.get("role") != "control" else rules_from_settings(s)

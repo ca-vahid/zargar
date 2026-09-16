@@ -113,10 +113,12 @@ def _svc(settings, armed, portfolios=SIM):
     class Ctx:
         async def __aenter__(self): return session
         async def __aexit__(self, *a): return False
-    halt = SimpleNamespace(book_paused=lambda pid: None)
-    engine = SimpleNamespace(settings=settings, sf=Ctx, positions=SimpleNamespace(portfolio=lambda pid: portfolios.get(pid)),
-                             pause_book=AsyncMock(), halt=halt)
-    runner = SimpleNamespace(_armed=armed, disarm=AsyncMock(return_value=True), arm=AsyncMock(return_value={}))
+    paused: dict = {}
+    halt = SimpleNamespace(book_paused=lambda pid: paused.get(pid))
+    engine = SimpleNamespace(settings=settings, sf=Ctx, positions=SimpleNamespace(portfolio=lambda pid: portfolios.get(pid)), halt=halt)
+    engine.pause_book = AsyncMock(side_effect=lambda pid, reason, **kw: paused.__setitem__(pid, {"reason": reason, **kw}) or paused[pid])
+    runner = SimpleNamespace(_armed=armed, arm=AsyncMock(return_value={}))
+    runner.disarm = AsyncMock(side_effect=lambda run_id, **kw: armed.pop(run_id, None) is not None)
     svc = Team2Service(engine, runner)
     svc.mint_plan_run = AsyncMock(side_effect=lambda sym, date, **kw: {"runId": f"new-{sym}-{(kw.get('experiment') or {}).get('role', 'control')}", "symbol": sym, "plan": {}})
     return svc, engine, runner
@@ -162,6 +164,31 @@ async def test_a_forced_replan_never_removes_the_manager_of_an_open_trade():
     out = await svc.nightly_plans("2026-09-16", arm=False, force=True)
     runner.disarm.assert_not_awaited()
     assert out["runs"] == [] and any("unresolved exposure" in f for f in out["failed"])
+
+
+@pytest.mark.parametrize("has_exposure", [False, True])
+async def test_an_unconfirmed_transition_blocks_experiment_minting_and_keeps_exposure_managed(has_exposure):
+    settings = {"techniques.team2.symbols": ["SPY"], "techniques.team2.default_portfolio": "ctl", **_s(GOOD)}
+    old = _old_plan("old-1", "practice-old", exposure=has_exposure)
+    svc, engine, runner = _svc(settings, {"old-1": old}, {**SIM, "practice-old": {"kind": "sim"}})
+    if has_exposure:
+        engine.pause_book = AsyncMock(return_value=None)                    # returned no record: unconfirmed
+    else:
+        runner.disarm = AsyncMock(return_value=False)                       # false result: unconfirmed
+    out = await svc.nightly_plans("2026-09-16", arm=False, force=True)
+    assert [r["portfolioId"] for r in out["runs"]] == ["ctl"] and out["transitionFailed"]
+    assert any("transition NOT confirmed" in f for f in out["failed"])
+    assert "old-1" in runner._armed, "the old plan keeps managing its book"
+    assert "pausedOutside" not in out and "retiredOutside" not in out
+
+
+async def test_a_failed_forced_replacement_never_leaves_two_plans():
+    settings = {"techniques.team2.symbols": ["SPY"], "techniques.team2.default_portfolio": "ctl", **_s({**GOOD, "enabled": False})}
+    flat = _old_plan("ctl-flat", "ctl")
+    svc, engine, runner = _svc(settings, {"ctl-flat": flat})
+    runner.disarm = AsyncMock(side_effect=RuntimeError("disarm failed"))
+    out = await svc.nightly_plans("2026-09-16", arm=False, force=True)
+    assert out["runs"] == [] and any("replacement of plan ctl-flat failed" in f for f in out["failed"]) and "replaced" not in out
 
 
 async def test_the_control_must_be_the_default_book_before_experiment_plans_are_minted():
@@ -236,10 +263,14 @@ def _armed(run_id, sym, pid):
     return SimpleNamespace(run_id=run_id, symbol=sym, portfolio_id=pid, status="armed")
 
 
-def _run(run_id, role, overrides, version="0.7.93"):
+def _run(run_id, role, overrides, version="0.7.94", code_version=None):
+    """A run the way `mint_plan_run` stamps it: `codeVersion` = the strategy schema id, `appVersion` = the release."""
+    from zargar.techniques.team2.service import CODE_VERSION
     exp = {"role": role, "overrides": overrides, "label": f"team2-{role}"} if role else None
     th = {**Team2Rules().to_dict(), **overrides}
-    return SimpleNamespace(id=run_id, result={"plan": ({"experiment": exp} if exp else {})}, config={"codeVersion": version, "thresholds": th, **({"experiment": exp} if exp else {})})
+    return SimpleNamespace(id=run_id, result={"plan": ({"experiment": exp} if exp else {})},
+                           config={"codeVersion": code_version or CODE_VERSION, "appVersion": version, "build": "fixture", "thresholds": th,
+                                   **({"experiment": exp} if exp else {})})
 
 
 FULL = {"techniques.team2.symbols": ["SPY"], "techniques.team2.default_portfolio": "ctl", "system.halt": {},
@@ -251,7 +282,7 @@ RUNS = [_run("r-ctl", None, {}), _run("r-siz", "sizing", {"size_full": 0.5}), _r
 
 async def test_the_receipt_is_ready_only_with_complete_evidence_and_c6(monkeypatch, tmp_path):
     from zargar.tools import team2_receipt
-    target = _receipt_rig(monkeypatch, tmp_path, FULL, PFS, ARMED, RUNS, {"ok": True, "version": "0.7.93", "build": "abc"}, {"pausedBooks": []})
+    target = _receipt_rig(monkeypatch, tmp_path, FULL, PFS, ARMED, RUNS, {"ok": True, "version": "0.7.94", "build": "abc"}, {"pausedBooks": []})
     monkeypatch.setattr(team2_receipt, "c6_status", lambda: {"satisfied": True, "evidence": {"reviewedBy": "review team", "date": "2026-09-16", "datasetVersion": "x", "reference": "note"}})
     await team2_receipt.main(SimpleNamespace(date="2026-09-16", out=str(target)))
     r = json.loads(target.read_text(encoding="utf-8"))
@@ -261,18 +292,21 @@ async def test_the_receipt_is_ready_only_with_complete_evidence_and_c6(monkeypat
 
 @pytest.mark.parametrize("mutate, needle", [
     (lambda k: k.update(health={"ok": False}), "not healthy"),
-    (lambda k: k.update(health={"ok": True, "version": "0.7.90"}), "predates the feature"),
+    (lambda k: k.update(health={"ok": True, "version": "0.7.90"}), "predates the reviewed"),
     (lambda k: k.update(armed=ARMED[:2]), "no armed plan"),
     (lambda k: k.update(armed=ARMED + [_armed("r-old", "SPY", "practice-old")], portfolios=PFS + [_pf("practice-old", "Team2 Practice")]), "fourth book"),
     (lambda k: k.update(portfolios=[_pf("ctl", "Team2 Control", cash=9934.16)] + PFS[1:]), "fresh starting balance"),
     (lambda k: k.update(ops={"pausedBooks": ["siz"]}), "is paused"),
     (lambda k: k.update(runs=[RUNS[0], _run("r-siz", "sizing", {"size_full": 1.0}), RUNS[2]]), "is stamped"),
+    (lambda k: k.update(runs=[RUNS[0], _run("r-siz", "sizing", {"size_full": 0.5}, version="0.7.93"), RUNS[2]]), "minted by release"),
+    (lambda k: k.update(runs=[RUNS[0], _run("r-siz", "sizing", {"size_full": 0.5}, code_version="team2-0.0"), RUNS[2]]), "strategy schema"),
+    (lambda k: k.update(armed=ARMED + [_armed("r-siz-dup", "SPY", "siz")], runs=RUNS + [_run("r-siz-dup", "sizing", {"size_full": 0.5})]), "duplicate armed plans"),
     (lambda k: k.update(values={**FULL, "techniques.team2.default_portfolio": "practice-old"}), "is not the default book"),
     (lambda k: k.update(values={**FULL, "techniques.team2.experiments": {"enabled": True, "control": "ctl", "books": GOOD["books"][:1]}}), "both experiment roles"),
 ])
 async def test_missing_evidence_is_a_blocker_never_a_pass(monkeypatch, tmp_path, mutate, needle):
     from zargar.tools import team2_receipt
-    kw = dict(values=FULL, portfolios=PFS, armed=ARMED, runs=RUNS, health={"ok": True, "version": "0.7.93", "build": "abc"}, ops={"pausedBooks": []})
+    kw = dict(values=FULL, portfolios=PFS, armed=ARMED, runs=RUNS, health={"ok": True, "version": "0.7.94", "build": "abc"}, ops={"pausedBooks": []})
     mutate(kw)
     target = _receipt_rig(monkeypatch, tmp_path, **kw)
     monkeypatch.setattr(team2_receipt, "c6_status", lambda: {"satisfied": True, "evidence": {"reviewedBy": "r", "date": "d", "datasetVersion": "x", "reference": "n"}})
@@ -281,10 +315,28 @@ async def test_missing_evidence_is_a_blocker_never_a_pass(monkeypatch, tmp_path,
     assert r["activation"].startswith("NOT READY") and any(needle in b for b in r["blockers"]), r["blockers"]
 
 
+async def test_readonly_settings_load_never_writes_or_journals_any_migration():
+    from zargar.bus import Bus
+    from zargar.settings_service import SettingsService
+    rows = [SimpleNamespace(key="trading.mode", value={"v": "sim"}), SimpleNamespace(key="technique.arm.mode", value={"v": "auto"})]
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: rows))),
+                              get=AsyncMock(return_value=rows[0]), add=lambda *a: None, commit=AsyncMock())
+
+    class Ctx:
+        async def __aenter__(self): return session
+        async def __aexit__(self, *a): return False
+    journal = SimpleNamespace(append=AsyncMock())
+    st = SettingsService(Ctx, Bus(), journal); st.readonly = True
+    await st.load()
+    assert st.get("trading.mode") == "practice"
+    session.commit.assert_not_awaited(); journal.append.assert_not_awaited()
+    assert rows[0].value == {"v": "sim"}
+
+
 async def test_a_disabled_map_is_prepared_never_ready_and_c6_needs_a_record(monkeypatch, tmp_path):
     from zargar.tools import team2_receipt
     values = {**FULL, "techniques.team2.experiments": {**FULL["techniques.team2.experiments"], "enabled": False}}
-    target = _receipt_rig(monkeypatch, tmp_path, values, PFS, [], [], {"ok": True, "version": "0.7.93", "build": "abc"}, {"pausedBooks": []})
+    target = _receipt_rig(monkeypatch, tmp_path, values, PFS, [], [], {"ok": True, "version": "0.7.94", "build": "abc"}, {"pausedBooks": []})
     monkeypatch.setattr(team2_receipt, "C6_EVIDENCE", tmp_path / "missing.json")
     await team2_receipt.main(SimpleNamespace(date="2026-09-16", out=str(target)))
     r = json.loads(target.read_text(encoding="utf-8"))
