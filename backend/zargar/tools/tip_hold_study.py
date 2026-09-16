@@ -67,7 +67,8 @@ def main() -> None:
         print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for name, b in sorted(agg["setups"].items()):
             print(f"| {name} | {b['n']} | {b['distinctPositions']} | {b['insufficient']} | {b['carryNet']} | {b['intradayNet']} | {b['meanCarryR']} | "
-                  f"{b['meanIntradayR']} | {b['pairedDiffR']} | {b['managedKnown']} | {b['managedNet']} | {b['sacrificedWinners']} |")
+                  f"{b['meanIntradayR']} | {b['pairedDiffR']} | {b['managedKnown']} | {b['managedNet']} | {b['sacrificedWinners']} |"
+                  f"  books={b.get('books')}")
         print(f"\n{len(rows)} observation(s) ({agg['unit']}); {sum(1 for x in results if x['adequate'])} adequate pair(s). {agg['disclaimer']}")
         if a.json:
             with open(a.json, "w", encoding="utf-8") as fh:

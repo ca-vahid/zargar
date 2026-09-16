@@ -161,6 +161,24 @@ async def test_preclose_snapshot_and_next_open_sample_touch_no_position(rig, mon
     cmp_ = hs.compare_row(hs.row_dict(r))
     assert cmp_["adequate"] is True and cmp_["managedCarry"]["known"] is False
     assert len(await _orders(eng)) == before_orders and eng.position_manager.get(pos["id"]).state.stop == stop_before
+    assert rows[0].book_kind == "sim" and rows[0].portfolio_id == pos["portfolioId"]
+    # a position that EXITED intraday is observed from the durable record (it has left manager memory)
+    q2 = await _quote(eng, "HOLDB")
+    pos2 = await _adopt_shares(eng, "HOLDB", qty=10, stop=round(q2.last * 0.95, 2))
+    await eng.position_manager.close(pos2["id"], reason="test intraday exit")
+
+    async def gone():
+        return eng.position_manager.get(pos2["id"]) is None
+    await wait_for(gone, timeout=10)
+    # the exit happened at REAL time: observe on that date's pre-close window (a weekend
+    # yields a recorded outside_window miss - still one observation, never repaired)
+    close_day = dt.datetime.now(dt.timezone.utc).astimezone(et).date()
+    n2 = await hs.snapshot_preclose(eng, now=dt.datetime.combine(close_day, dt.time(15, 50), tzinfo=et))
+    assert n2 >= 1
+    async with eng.sf() as session:
+        ex = (await session.execute(select(TipHoldSnapshotRow).where(TipHoldSnapshotRow.position_id == pos2["id"]))).scalars().all()
+    assert len(ex) == 1 and ex[0].arm == "intraday_exit" and ex[0].exit_price and ex[0].exit_price > 0 and ex[0].book_kind == "sim"
+    assert ex[0].qty == 10.0 and ex[0].preclose_status in ("fresh", "stale", "ineligible", "missing", "outside_window", "late")
 
 
 async def _orders(eng):
@@ -205,3 +223,5 @@ async def test_slow_multi_row_capture_qualifies_only_rows_sampled_inside_the_win
 
 
 from .test_kfin_followup_boundaries_review import review_engine  # noqa: E402,F401
+
+from .conftest import wait_for  # noqa: E402

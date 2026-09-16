@@ -247,7 +247,7 @@ def compare_row(row: dict, *, fee_per_contract: float = 0.0, stock_commission: f
     fee = costs["total"]
     risk, risk_basis = _risk_for_sample(row)
     out = {"version": STUDY_VERSION, "id": row.get("id"), "positionId": row.get("positionId"),
-           "symbol": row.get("symbol"), "legSymbol": row.get("legSymbol"), "arm": row.get("arm"), "setup": setup_of(row), "qty": qty, "entryPrice": entry,
+           "bookKind": row.get("bookKind"), "symbol": row.get("symbol"), "legSymbol": row.get("legSymbol"), "arm": row.get("arm"), "setup": setup_of(row), "qty": qty, "entryPrice": entry,
            "plannedRisk": row.get("plannedRisk"), "riskForSample": risk, "riskBasis": risk_basis, "costs": costs,
            "adequate": False, "reason": None,
            "meaning": {"carryToNextOpen": "overnight quote drift (next-open bid), not the strategy's realized result",
@@ -305,6 +305,8 @@ def aggregate(results: list[dict]) -> dict:
                                        "managedKnown": 0, "managedNet": 0.0,
                                        "positions": set(), "arms": {"carry": 0, "intraday_exit": 0}})
         b["arms"][r.get("arm") or "carry"] = b["arms"].get(r.get("arm") or "carry", 0) + 1
+        bk = r.get("bookKind") or "unknown"
+        b.setdefault("books", {})[bk] = b.get("books", {}).get(bk, 0) + 1
         if r.get("positionId"):
             b["positions"].add(r["positionId"])
         if not r.get("adequate"):
@@ -424,6 +426,26 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
     if mgr is None:
         return 0
     rows = [p for p in mgr.positions() if (p.get("technique") == "tip")]
+    # 2026-09-16 (first v2 capture): a CLOSED position leaves manager memory, so the
+    # intraday_exit arm must read today's closes from the durable record - otherwise
+    # the arm never observes anything (T, SLV, GOOGL exits were missed on 09-16)
+    seen = {str(p.get("id")) for p in rows}
+    try:
+        from sqlalchemy import select
+        from ...models import ManagedPositionRow
+        day_start_ms = int(dt.datetime.combine(today, dt.time(0, 0), tzinfo=ET).timestamp() * 1000)
+        async with eng.sf() as session:
+            closed = (await session.execute(select(ManagedPositionRow).where(
+                ManagedPositionRow.technique == "tip", ManagedPositionRow.status == "closed",
+                ManagedPositionRow.created_at >= now - dt.timedelta(days=45)))).scalars().all()
+        for r in closed:
+            cm = (r.state or {}).get("closedMs")
+            if str(r.id) in seen or not cm or int(cm) < day_start_ms:
+                continue
+            with contextlib.suppress(Exception):
+                rows.append(mgr._from_row(r).to_dict())
+    except Exception:                                   # noqa: BLE001 - the carry arm still records
+        log.debug("hold study: closed-position read failed", exc_info=True)
     n = 0
     tol = float(_knob(eng, "techniques.tip.entry_cohort_quote_max_age_seconds", 300.0) or 300.0)
     fees = {"perContract": float(_knob(eng, "options.fee_per_contract", 0.0) or 0.0),
@@ -490,9 +512,13 @@ async def snapshot_preclose(eng, *, now: dt.datetime | None = None) -> int:
             planned, planned_qty = _planned_risk(p, leg)
             remaining = abs(float(leg.get("qty") or 0))
             entry_qty = remaining + _exited_qty(p, leg)
+            book = {}
+            with contextlib.suppress(Exception):
+                book = eng.positions.portfolio(str(p.get("portfolioId"))) or {}
             row = TipHoldSnapshotRow(
                 id=new_id(), observation_key=key, study_version=STUDY_VERSION,
                 position_id=str(p["id"]), session_date=sess, arm=arm,
+                portfolio_id=str(p.get("portfolioId") or "") or None, book_kind=str(book.get("kind") or "") or None,
                 symbol=str(p.get("symbol")), leg_symbol=sym, sec_type=str(leg.get("secType")),
                 qty=(exit_qty if arm == "intraday_exit" and exit_qty else remaining),
                 entry_qty=(entry_qty or None),
@@ -695,6 +721,7 @@ async def requalify_legacy(eng_or_sf, *, now: dt.datetime | None = None) -> int:
 def row_dict(r) -> dict:
     return {"id": r.id, "observationKey": r.observation_key, "studyVersion": r.study_version,
             "positionId": r.position_id, "sessionDate": r.session_date, "arm": r.arm,
+            "portfolioId": r.portfolio_id, "bookKind": r.book_kind,
             "symbol": r.symbol, "legSymbol": r.leg_symbol, "secType": r.sec_type, "qty": r.qty, "entryQty": r.entry_qty,
             "entryPrice": r.entry_price, "direction": r.direction, "source": r.source, "horizon": r.horizon,
             "dteAtSnapshot": (r.horizon or {}).get("dte"), "exitsPolicy": r.exits_policy,

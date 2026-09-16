@@ -376,3 +376,24 @@ or from isolated frozen inputs assembled through the harness. Live recap routing
 **Register:** the `frozen-context` entry now distinguishes the captured `current` request (a control only
 on a full-route capture) from a genuine full control, lists `recap_candidate` as the production candidate,
 requires a captured classifier read for the recap question, and records the held SPX/APLD pairs.
+
+## 15:53 ET capture verification (TMR-04) - first holdstudy-v2 pre-close capture, one arm missing
+
+`tip_hold_snapshot` ran at 15:50:10 ET (calendar-relative, result 2). Two `carry` observations, both
+`fresh`, both inside the window (`verdict inside`; observedAt = the quote's sampledAt 15:50:10 ET, jobStartedAt
+15:50:10 ET, sourceTs 0 = the shares feed's receipt basis), `observation_key` holdstudy-v2, expected next
+session 2026-09-17, event label `event-day`: **MRNA** 7 shares on Tips Practice (plannedRisk $52.52 for 7) and
+**AFRM** 27 shares on the ab ARMED SHADOW book. Counts: carry eligible 2 / fresh 2 / ineligible 0 / missing 0 /
+late 0. The 2026-09-15 rows stay `outside_window` (their next-open sample at 09:30 ET is irrelevant: the pair
+is insufficient by the pre-close status; they are excluded).
+
+**Gap found and fixed (merged, not deployed):** the `intraday_exit` arm observed NOTHING - a closed position
+leaves manager memory, and `snapshot_preclose` read `mgr.positions()` only, so today's three Tips Practice
+exits (T 13:15 ET, SLV 15:00 ET, GOOGL Oct-16 360C 15:17 -> 15:30 ET) were not recorded: intraday_exit eligible 3
+/ observed 0 / missing 3 (counted, not repaired - no hand sampling). Fix: today's closes are read from the
+durable `managed_positions` record (closedMs on the session date) and adapted through the manager's own
+row reader; every observation now carries `portfolio_id` + `book_kind` (sim / shadow) so the paired report
+separates the Practice book from the shadow books (`books` per setup). Test: the engine case adopts a
+second position, closes it, and the snapshot records one `intraday_exit` observation with the exit price and
+the book kind (`late` when observed outside a pinned window - the R147 admission at work). Hold-study slices:
+16 passed. First protocol-correct PAIR candidates for 2026-09-17: MRNA (Practice) and AFRM (shadow).
