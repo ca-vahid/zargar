@@ -893,6 +893,9 @@ class TipHoldSnapshotRow(Base):
     carry_outcome: Mapped[dict | None] = mapped_column(JSONVariant)
     portfolio_id: Mapped[str | None] = mapped_column(String(64))     # 2026-09-16: the book the observation belongs to
     book_kind: Mapped[str | None] = mapped_column(String(12))        # sim (Practice) | shadow | live - reported apart
+    # HOLD-SCOPE-02 (2026-09-16): the book's status AT CAPTURE - quarantined / archived / the
+    # position's status - so a quarantined or unreconciled book is graded diagnostic, never adequate
+    book_status: Mapped[dict | None] = mapped_column(JSONVariant)
     preclose_quote: Mapped[dict | None] = mapped_column(JSONVariant)
     preclose_status: Mapped[str] = mapped_column(String(16), default="missing")
     exit_price: Mapped[float | None] = mapped_column(Float)
