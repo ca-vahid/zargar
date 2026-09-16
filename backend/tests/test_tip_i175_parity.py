@@ -170,3 +170,41 @@ async def test_actual_compact_request_is_reproduced_by_the_replay_from_the_captu
 
 
 from .test_tip_kfin09_experiments import rig  # noqa: E402,F401
+
+
+async def test_assemble_treatments_harness_offline(rig, monkeypatch):
+    """PAR178: the two treatments are assembled offline from the same frozen inputs. A
+    FULL-route capture yields both (full = the captured request by hash; candidate differs);
+    a COMPACT-route capture yields the candidate by exact hash and declares the full control
+    unavailable - `current` on it is flagged as the compact treatment."""
+    from .test_tip_kfin09_experiments import _run, _Scripted, _text, _opinion, canned
+    eng = rig
+    await eng.settings.set("techniques.tip.frozen_capture_context", True, journal=False)
+    read = {"version": recap.CLASSIFIER_VERSION, "category": "recap", "route": "compact", "confidence": 0.91,
+            "reasons": [], "features": {}}
+    monkeypatch.setattr(recap, "classify", lambda *a, **kw: read)
+    # full-route capture (route off): both treatments assemble
+    await eng.settings.set("techniques.tip.recap_route", "off", journal=False)
+    eng.signals_service._analyst_client = _Scripted([_text(_opinion("skip"))])
+    out = await _run(eng, canned(ticker="HARN"), source="HarnessSrc")
+    b_full = await frozen.capture_bundle(eng.sf, signal_id=out[0]["signal"]["id"], settings=eng.settings)
+    asm = frozen.assemble_treatments(b_full)
+    assert asm["captured"]["route"] == "full" and asm["treatments"]["full"]["available"] and asm["treatments"]["full"]["exactParity"] is True
+    assert asm["treatments"]["candidate"]["available"] and asm["treatments"]["candidate"]["differsFromFull"] is True
+    assert asm["treatments"]["candidate"]["maxTools"] == 2 and asm["treatments"]["candidate"]["parity"]["status"] == "treatment-only"
+    assert frozen.variant_knowledge(b_full, "current")["isFullControl"] is True
+    # compact-route capture with a ONE-tool budget: candidate = captured request by hash, budget = captured (1)
+    await eng.settings.set("techniques.tip.recap_route", "compact", journal=False)
+    await eng.settings.set("techniques.tip.recap_max_tools", 1, journal=False)
+    eng.signals_service._analyst_client = _Scripted([_text(_opinion("skip"))])
+    out2 = await _run(eng, canned(ticker="HARO"), source="HarnessSrc2")
+    b_c = await frozen.capture_bundle(eng.sf, signal_id=out2[0]["signal"]["id"], settings=eng.settings)
+    asm2 = frozen.assemble_treatments(b_c)
+    assert asm2["captured"]["route"] == "compact" and asm2["captured"]["maxTools"] == 1
+    assert asm2["treatments"]["full"]["available"] is False and "separately" in asm2["treatments"]["full"]["reason"]
+    c = asm2["treatments"]["candidate"]
+    assert c["available"] and c["exactParity"] is True and c["requestHash"] == b_c["manifest"]["headerSha"] and c["maxTools"] == 1
+    assert any("separate treatment" in g for g in c["parity"]["gaps"]) and c["parity"]["budgetSource"] == "captured"
+    cur = frozen.variant_knowledge(b_c, "current")
+    assert cur["isFullControl"] is False and cur["treatment"].startswith("compact") and cur["maxTools"] == 1
+    assert b_c["manifest"]["componentOrder"] == ["compactPrefix", "base"]

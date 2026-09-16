@@ -1707,7 +1707,9 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                      verification=verification, tip=tip, policy=policy,
                      siblings=siblings, historical_note=historical_note,
                      header_mode=("compact" if compact else "full"), recap_read=recap_read, max_tools=max_tools,
-                     candidate=(__import__("zargar.techniques.tip.recap", fromlist=["CANDIDATE"]).CANDIDATE["version"] if compact else None)))
+                     candidate=(__import__("zargar.techniques.tip.recap", fromlist=["CANDIDATE"]).CANDIDATE["version"] if compact else None),
+                     compact_prefix=(__import__("zargar.techniques.tip.recap", fromlist=["candidate_prefix"]).candidate_prefix(
+                         (recap_read or {}).get("confidence")) if compact else None)))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
