@@ -2297,3 +2297,16 @@ authenticate a locally changed price. Tests: `tests/test_sep17_quote_provenance_
 `tests/test_quote_provenance_e17.py`. Pre-existing on main, unrelated: `test_options_service.py::test_option_order_practice_roundtrip`
 times out waiting for a Practice option fill off the delayed chain quote (refused since the OPRA-identity rule of
 2026-09-14) - owner of that test to re-express it on an OPRA quote.
+
+### Exchange corrections reach the private tape but not the bank — 2026-09-17 (Team2 desk observation; for the platform owners)
+
+Team2's 09:25 plan completion reads the runner's private 1m tape. On 2026-09-17 that tape accepted exchange CORRECTIONS of
+pre-market minutes (via `Engine._ingest_exchange_bars` → `BarAggregator.ingest_exchange_bar` → publish → `Team2Runner._merge_revision`,
+journaled `bar_revised`) while the `bars` table kept the FIRST observation of each minute: SPY 07:46 corrected at 08:02:09 ET to
+760.12/760.2369/**660.65**/760.2285 (same volume 615; the low is a dropped digit), IWM 04:00 corrected twice to a 283.92 low, QQQ
+08:34 high 716.78 → 716.76. Later corrections carry float32-shaped values (716.760009765625). Consequences: two tapes for one
+session (C6), and a corrupt correction becomes a decision input (SPY's frozen PML 660.65 vs the bank's 757.53). Questions for the
+owners of `marketdata`: which caller delivers these corrections, why the persist path does not keep them (or keeps only some), and
+whether a correction that moves a bar's low 100 points on unchanged volume should be quarantined at intake. Read-only evidence:
+`python -m zargar.tools.team2_pm_audit --date 2026-09-17`; note `docs/techniques/team2/notes/research/2026-09-17-premarket-input-reconciliation.md`.
+No plan or bar was rewritten.

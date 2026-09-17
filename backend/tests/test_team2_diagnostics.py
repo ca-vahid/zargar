@@ -313,7 +313,8 @@ async def test_candidates_are_followed_at_horizons_and_the_exit_with_missing_quo
     sel_s = next(c for c in s["candidates"] if c["selected"])
     assert sel_s["outcomes"]["2m"]["askToBidNet"] == 1.92 and sel_s["outcomes"]["5m"] is None and sel_s["outcomes"]["exit"]["askToBidPct"] == 4.17
     assert s["coverage"]["missing"] >= 4 and d["contractChoice"]["2m"]["compared"] == 1
-    assert s["actual"] == {"filledQty": 10.0, "avgFill": 0.46, "netPnl": 40.0, "exitPrice": 0.5, "status": "closed"}
+    assert s["actual"] == {"filledQty": 10.0, "avgFill": 0.46, "netPnl": 40.0, "grossPnl": 40.0, "fees": 0.0, "grossBreakevenNetLoss": False,
+                           "exitPrice": 0.5, "status": "closed"}
     # the persisted state carries the schedule and comes back (an in-flight observation is re-queued)
     state = runner.state_extras(ap)
     json.dumps(state)

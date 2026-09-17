@@ -3122,6 +3122,35 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-17 EOD review (other team: −$33.28, all commissions — one QQQ 717C round trip of 16.8 s at $0.69/$0.69; GO to develop four
+  items; deployment and activation NOT approved) → v0.8.12 (PR open, unmerged until their review)** — **(1) Target role/identity
+  guard.** The pre-open F81 re-derivation had set QQQ's above-target to the PM high 716.76; the later `pm_break_up@12:15` anchored on
+  that same 716.76 and inherited it as its target; the EMA entry line 716.7557 sat 0.0043 under it, so `target_is_ahead` passed and the
+  book traded toward the level it had just broken, while the level entry (716.76 == entry) had been re-planned to 716.80 by F81b —
+  two entry kinds, two destinations, one setup. New rule (`scenario.destination_check`, in the read AND in `resolve_fire_target`): the
+  destination must be DISTINCT from the setup's source level (within one tick = the same level), beyond it in the trade's direction,
+  and ahead of both the entry line and the current actionable price (the signal candle's close). Identity is judged FIRST, for every
+  entry kind, before F81b can substitute a farther level; a collision is refused with `skip_target_collision` (durable, exempts the
+  read's proxy), never re-planned or silently dropped. No ATR-room threshold. Before/after on the day's numbers: EMA entry → entered
+  toward 716.76 / now refused; level entry → re-planned to 716.80 / now refused with the same reason
+  (`tests/test_team2_target_collision.py`); their four routing probes verbatim (`tests/test_codex_team2_target_role_0917.py`, 2 failed
+  before). The accepted F72/F81b behaviour for a target behind the ENTRY is unchanged (`test_team2_target_guard.py` all green).
+  Switch `techniques.team2.target_identity_guard` (default on; off restores the pre-09-17 behaviour) so the review team can act
+  without a deploy. **(2) Pre-market inputs reconciled** — see `notes/research/2026-09-17-premarket-input-reconciliation.md`: all
+  three plans froze values the bank never held because the private tape accepts exchange CORRECTIONS (SPY 07:46 corrected at 08:02:09
+  to a 660.65 low = a dropped digit; IWM 04:00 corrected twice to 283.92; QQQ 08:34 high 716.78 → 716.76 — the very anchor/target of
+  item 1) while the bank kept the originals. Plans now record `pmExtrema` (source bar + input hash, journaled at 09:25 and 09:30);
+  `zargar.tools.team2_pm_audit --date` reconciles read-only. Nothing historical rewritten. C6 gains step 1e. **(3) Chain listings**:
+  cached per (provider, symbol, expiry) for `chain_cache_seconds` (900), concurrent requests coalesce, a 429/transient failure is
+  retried twice (0.8 s, 1.6 s) and may serve a labelled stale listing within `chain_cache_max_age_seconds` (4 h); expiries cached
+  per day; prices never come from the cache (every candidate re-priced live), the stale-signal and entry-time gates are untouched, the
+  listing's source/age is written on the verdict. **(4) Diagnostics (shadow)**: target/stop room from the actual underlying at the
+  order boundary, `targetIsSourceLevel`, Greeks with provenance (source/asOf/provider — the 09-17 nulls came from a served-live
+  snapshot hiding the chain row's Greeks), a labelled payoff estimate (delta-gamma × room, spread held, exit at bid, commissions
+  both ways; `insufficient evidence` when an input is missing), coverage split into attempts / Greeks / follow-ups, gross and net
+  outcomes apart with `grossBreakevenNetLoss` (today: gross $0, net −$33.28, `bookLosses` 0 — the counter's gross basis is
+  UNCHANGED pending their accounting decision). HOLD honoured: no wider stop, longer hold, cheaper-contract preference, delta floor or
+  loss allowance; Control/Sizing/C1 and the sealed C2 validation untouched.
 - **2026-09-16 review r3 of the shadow diagnostics (other team: source-time correction PASSES; entry quote BINDING open; D1/D3
   accepted) → v0.8.05** — `_diag_candidates` still paired the picker's earlier bid/ask with the source/receipt timestamps of a
   LATER cache lookup (an old $0.50/$0.51 wearing a new $0.80/$0.81's timestamp), and could attach `source=chain` to a row already

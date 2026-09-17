@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.11";
+export const APP_VERSION = "0.8.12";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.12",date:"2026-09-17",title:"Team2: a breakout never targets the level it broke",items:[
+    {tag:"fixed",text:"Team2 target resolution (September 17 QQQ finding): a setup's destination must be distinct from, and beyond, the structural level it broke or held, and ahead of the current actionable price - judged the same way for the EMA entry and the level entry of one setup. A target that is the setup's own source level is refused with a clear reason (skip_target_collision) instead of being re-planned to a farther level or silently dropped; no distance threshold is used. Switch: techniques.team2.target_identity_guard (default on; off = the earlier behaviour)."},
+    {tag:"new",text:"Team2 pre-market inputs carry provenance: every frozen PMH/PML names the bar it came from and the hash of all pre-market bars (journaled at 09:25 and at the 09:30 finalization), and python -m zargar.tools.team2_pm_audit --date reconciles a plan's frozen extremes against the bank and the plan's own bar-revision history without rewriting the decision."},
+    {tag:"improved",text:"Team2 chain listings (which contracts exist for an expiry) are cached per provider, symbol and expiry, concurrent requests share one fetch, a rate-limited or transient failure is retried twice with short back-offs and may serve a labelled stale listing within a bound; every candidate is still re-priced on the live NBBO and the timing gates are unchanged."},
+    {tag:"improved",text:"Team2 shadow diagnostics: target and stop room from the actual underlying quote at the order boundary, whether the target is the setup's own level, Greeks with their provenance, a labelled payoff estimate after commissions and spread (insufficient evidence when an input is missing), coverage reported separately for attempts, Greeks and follow-up quotes, and gross versus net outcomes side by side (the risk counter's basis is unchanged)."},
+  ]},
   {version:"0.8.11",date:"2026-09-17",title:"A quote that was changed locally can no longer pass as a venue quote",items:[
     {tag:"fixed",text:"Options: a real-time OPRA bid/ask is never bent toward a slower feed's last print any more (a 15-minute-old 0.70 print had turned a fresh 1.90/2.00 MRNA 165C band into 0.65/0.75 still labelled OPRA, and Practice 'bought' at 0.75). A delayed-chain estimate that IS recentred is now labelled derived, keeps the raw venue prices beside it, and can never price a simulated fill; fill receipts show the raw values and the transform."},
     {tag:"improved",text:"Tips payoff preview uses the same fee basis as the execution-cost diagnostic (commission plus the regulatory fee per contract per side)."},

@@ -26,7 +26,7 @@ from .rules import Team2Rules
 from .levels import active_key_levels, advance_flip, ladder_with_key_levels, next_structural_level
 from .scenario import (
     pm_room,
-    SCENARIO_LABEL, TREND_SCENARIOS, ScenarioTracker, body_closed_beyond, sizing_bucket, target_is_ahead,
+    SCENARIO_LABEL, TREND_SCENARIOS, ScenarioTracker, body_closed_beyond, destination_check, sizing_bucket, target_is_ahead,
 )
 
 TRACE_VERSION = 1
@@ -691,6 +691,17 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         # own exits (target, premium stop, candle stop, trims, flatten), which are judged above.
         # Like the other structural refusals (F18) this is about the PLAN, not the quality of the pullback,
         # so it does not spend the D9 allowance — `s.touches` is still only incremented for a priced fire.
+        # 2026-09-17 (QQQ 13:10, other team's EOD review): the destination is judged on the SETUP's identity first — a
+        # target that is the broken source level itself (or behind it) is refused for EVERY entry kind of the setup,
+        # before any re-plan could substitute a farther level just to permit the trade. Judged here and again in the
+        # runner (`resolve_fire_target`) so a restored or replayed fire meets the same rule.
+        if rules.target_identity_guard and target is not None and abs(float(target) - float(s.anchor)) <= max(float(rules.tick), 0.0):
+            _, why_ = destination_check(target, s.anchor, None, None, s.direction, rules.tick)
+            note_once(s, end_ts, "skip_target_collision", f"{s.id}: {why_} — no distinct valid destination, refusing the "
+                      f"entry rather than re-planning to a farther level or dropping the target", setup=s.id, touch=idx,
+                      spot=round(entry_spot, 4), target=round(float(target), 4), anchor=round(float(s.anchor), 4),
+                      entryKind=entry_kind)
+            continue
         if not target_is_ahead(target, entry_spot, s.direction):
             # F72 VARIANT `target_replan="entry"` (default off — the baseline is the refusal below).
             # Re-derive the target from the next structural level beyond THIS entry's price, using the
@@ -748,6 +759,18 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                       f"through it, so there is no room left on this setup and the exit would trigger on the "
                       f"next bar (F72)", setup=s.id, touch=idx, spot=round(entry_spot, 4),
                       target=round(float(target), 4), targetKind=target_kind)
+            continue
+        # 2026-09-17: whatever resolution produced this target (plan, HOD, F81b), it must be DISTINCT from and beyond the
+        # setup's source level and ahead of the current actionable price — the same test for every entry kind
+        kind_, why_ = destination_check(target, s.anchor if rules.target_identity_guard else None, entry_spot, b2.close, s.direction, rules.tick)
+        if kind_ == "collision":
+            note_once(s, end_ts, "skip_target_collision", f"{s.id}: {why_} — no distinct valid destination, refusing the entry",
+                      setup=s.id, touch=idx, spot=round(entry_spot, 4), close=round(b2.close, 4), target=round(float(target), 4),
+                      anchor=round(float(s.anchor), 4), entryKind=entry_kind, targetKind=target_kind)
+            continue
+        if kind_ == "behind":
+            note_once(s, end_ts, "skip_target_behind", f"{s.id}: {why_}", setup=s.id, touch=idx, spot=round(entry_spot, 4),
+                      close=round(b2.close, 4), target=round(float(target), 4), targetKind=target_kind)
             continue
         pick = model.pick_strike(entry_spot, end_ts, s.direction, target_premium=rules.target_premium,
                                  premium_floor=rules.premium_floor, step=rules.strike_step, mode=rules.premium_pick,

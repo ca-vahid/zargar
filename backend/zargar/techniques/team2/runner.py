@@ -42,7 +42,7 @@ from ...marketstructure.sessions import ET, session_bounds, session_date
 from ...models import TechniqueRun
 from ...options.pick import MAX_OVER_TARGET
 from .rules import apply_overrides, Team2Rules, rules_from_settings
-from .scenario import target_is_ahead
+from .scenario import destination_check, target_is_ahead
 from .session import simulate_session
 from . import diagnostics as diag
 
@@ -341,8 +341,91 @@ class Team2Runner(PlanRunner):
         """The journal writes that FAILED for this plan run (empty = every trail step is on the record)."""
         return list(self._trail_gaps.get(run_id, []))
 
+    # ------------------------------------------------------------- chain listings (2026-09-17 item 3): bounded cache, coalescing, retry
+    # The QQQ 13:06 candidate was deferred by a CBOE HTTP 429 before any contract was examined. A LISTING (which contracts
+    # exist for an expiry) barely changes intraday, so it is cached per (provider, symbol, expiry) for `chain_cache_seconds`,
+    # concurrent callers share one in-flight request, a rate-limited / transient failure is retried twice with short
+    # back-offs, and a failure after that serves a listing no older than `chain_cache_max_age_seconds` (labelled). PRICES
+    # never come from here: every candidate is still re-priced on the live NBBO (`_quote_examined`), the expiry rule, the
+    # stale-signal gate and the entry-time gates are untouched, and the listing's source/age is written on the verdict.
+    _CHAIN_RETRY_SLEEPS = (0.8, 1.6)
+
+    @staticmethod
+    def _chain_key(provider, symbol: str, expiry: str | None) -> tuple:
+        return (str(getattr(provider, "name", None) or type(provider).__name__), str(symbol).upper(), str(expiry or "*"))
+
+    @staticmethod
+    def _transient_chain_error(exc: BaseException) -> bool:
+        msg = str(exc)
+        return any(t in msg for t in ("429", "HTTP 5", "timed out", "timeout", "Timeout", "Too Many", "temporarily"))
+
+    async def _cached_chain_call(self, key: tuple, fn, *, ttl_s: float, max_age_s: float) -> tuple[list, dict]:
+        cache = self.__dict__.setdefault("_chain_cache", {})
+        inflight = self.__dict__.setdefault("_chain_inflight", {})
+        now = int(time.time() * 1000)
+        hit = cache.get(key)
+        if hit and now - int(hit["ts"]) <= ttl_s * 1000:
+            return list(hit["rows"]), {"listingSource": "cache", "listingAgeMs": now - int(hit["ts"]), "listingFetchedAt": int(hit["ts"])}
+        fut = inflight.get(key)
+        owner = fut is None
+        if owner:
+            fut = asyncio.get_running_loop().create_future()
+            inflight[key] = fut
+            attempts = 0
+            try:
+                last: BaseException | None = None
+                for i, sleep_s in enumerate((0.0,) + self._CHAIN_RETRY_SLEEPS):
+                    if sleep_s:
+                        await asyncio.sleep(sleep_s)
+                    attempts = i + 1
+                    try:
+                        rows = await fn()
+                        cache[key] = {"ts": int(time.time() * 1000), "rows": list(rows or [])}
+                        last = None
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        last = exc
+                        if not self._transient_chain_error(exc):
+                            break
+                if last is not None:
+                    fut.set_exception(last)
+                else:
+                    fut.set_result(attempts)
+            finally:
+                inflight.pop(key, None)
+        try:
+            attempts = await fut if not owner else fut.result()
+        except Exception as exc:  # noqa: BLE001
+            if hit and now - int(hit["ts"]) <= max_age_s * 1000:
+                return list(hit["rows"]), {"listingSource": "stale-cache", "listingAgeMs": now - int(hit["ts"]),
+                                           "listingFetchedAt": int(hit["ts"]), "listingError": str(exc)[:160]}
+            raise
+        h = cache.get(key) or {"ts": now, "rows": []}
+        src = ("fetch" if attempts == 1 else "retry") if owner else "coalesced"
+        return list(h["rows"]), {"listingSource": src, "listingAgeMs": int(time.time() * 1000) - int(h["ts"]),
+                                 "listingFetchedAt": int(h["ts"]), "listingAttempts": attempts}
+
+    def _chain_knob(self, key: str, default: float) -> float:
+        try:
+            return float(self.rt(key, default) or 0)
+        except Exception:  # noqa: BLE001 - a rig without settings runs on the defaults
+            return float(default)
+
+    async def _listing(self, provider, symbol: str, expiry: str) -> tuple[list[dict], dict]:
+        """The provider's listed contracts for one expiry (identity + the delayed chain row), through the bounded cache."""
+        ttl = self._chain_knob("chain_cache_seconds", 900)
+        max_age = self._chain_knob("chain_cache_max_age_seconds", 14400)
+        return await self._cached_chain_call(self._chain_key(provider, symbol, expiry), lambda: provider.chain(symbol, expiry),
+                                             ttl_s=ttl, max_age_s=max_age)
+
+    async def _expiries(self, provider, symbol: str) -> tuple[list[str], dict]:
+        ttl = self._chain_knob("chain_cache_seconds", 900)
+        max_age = self._chain_knob("chain_cache_max_age_seconds", 14400)
+        key = self._chain_key(provider, symbol, "expiries:" + dt.datetime.now(ET).date().isoformat())
+        return await self._cached_chain_call(key, lambda: provider.expirations(symbol), ttl_s=ttl, max_age_s=max_age)
+
     async def _expiry_for(self, provider, symbol: str, rules: Team2Rules, today: dt.date) -> tuple[str | None, str | None]:
-        exps = await provider.expirations(symbol)
+        exps, _meta = await self._expiries(provider, symbol)
         exps_d = sorted(e for e in (exps or []) if e)
         if rules.dte_policy == "0dte":
             expiry = next((e for e in exps_d if e == today.isoformat()), None)
@@ -372,19 +455,19 @@ class Team2Runner(PlanRunner):
             expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
             if expiry is None:
                 raise RuntimeError(why or "no expiry")
-            chain = await provider.chain(ap.symbol, expiry)
+            chain, lmeta = await self._listing(provider, ap.symbol, expiry)
             strikes = sorted({float(c.get("strike")) for c in (chain or []) if c.get("strike") is not None})
             if not strikes:
                 raise RuntimeError("chain returned no strikes")
             plan["listedStrikes"] = {"expiry": expiry, "strikes": strikes, "count": len(strikes),
-                                     "source": "chain", "provider": type(provider).__name__,
+                                     "source": "chain", "provider": type(provider).__name__, "listing": lmeta,
                                      "capturedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
             lo, hi = strikes[0], strikes[-1]
             self._log(ap, "listing", f"{len(strikes)} listed strikes for {expiry} ({lo:g}..{hi:g}) from the chain — the "
                       f"premium gate walks these, not the ${rules.strike_step:g} grid (F104)",
                       expiry=expiry, count=len(strikes), low=lo, high=hi)
             await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "listing", f"{len(strikes)} listed strikes for {expiry} ({lo:g}..{hi:g})",
-                              expiry=expiry, count=len(strikes), low=lo, high=hi, provider=plan["listedStrikes"]["provider"])
+                              expiry=expiry, count=len(strikes), low=lo, high=hi, provider=plan["listedStrikes"]["provider"], listing=lmeta)
             with contextlib.suppress(Exception):
                 await self._persist(ap)
         except Exception as exc:  # noqa: BLE001 - the read keeps working on the grid and says so
@@ -424,7 +507,7 @@ class Team2Runner(PlanRunner):
                                   trigger=trade.trigger_id, verdict="deferred", stage="expiry", examined=[], direction=trade.direction)
                 self._record_unfilled(ap, trade.trigger_id)
                 return None
-            chain = await provider.chain(ap.symbol, expiry)
+            chain, listing_meta = await self._listing(provider, ap.symbol, expiry)
             spot = float(trade.entry)
             q = self.engine.quotes.get(ap.symbol)
             if q is not None and q.last and q.last > 0:
@@ -476,7 +559,7 @@ class Team2Runner(PlanRunner):
                           spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced, expiry=expiry)
                 await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, f"contract_{verdict}", why, trigger=trade.trigger_id, verdict=verdict,
                                   examined=examined, spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced,
-                                  expiry=expiry, direction=trade.direction)
+                                  expiry=expiry, direction=trade.direction, listing=listing_meta)
                 self._record_unfilled(ap, trade.trigger_id)
                 return None
             c = next(x for x in eligible if x.get("symbol") == pick.symbol)
@@ -493,7 +576,7 @@ class Team2Runner(PlanRunner):
                               f"{c.get('symbol')} ask {c.get('ask')} bid {c.get('bid')} ({priced})", trigger=trade.trigger_id,
                               verdict="picked", contract=c.get("symbol"), strike=c.get("strike"), ask=c.get("ask"), bid=c.get("bid"),
                               priced=priced, examined=examined, spot=round(spot, 4), listed=len(otm), expiry=expiry,
-                              direction=trade.direction)
+                              direction=trade.direction, listing=listing_meta)
             return c
         except Exception as exc:  # noqa: BLE001 - reported on the trade, never raised into the bar loop
             trade.errors.append(f"contract pick failed: {exc}")
@@ -657,6 +740,15 @@ class Team2Runner(PlanRunner):
             q = self.engine.quotes.get(ap.symbol)
             last = float(q.last) if q is not None and q.last and q.last > 0 else None
             disp = diag.submission_displacement(rec["entryLocation"], last, int(time.time() * 1000), getattr(q, "ts", None))
+            # 2026-09-17 item 4: target / stop room from the ACTUAL underlying quote at the order boundary, the
+            # source-level identity of the target, and a labelled payoff estimate for the selected contract
+            room = diag.target_room(rec["entryLocation"], last, trade.targets[0] if trade.targets else None, trade.stop,
+                                    getattr(trade, "_anchor", rec["entryLocation"].get("setupLevel")))
+            disp.update(room)
+            sel = next((c for c in rec.get("candidates") or [] if c.get("selected")), None) or {}
+            fee = float(getattr(self.rules_for(ap), "fee_per_contract", 0) or 0)
+            disp["payoffEstimate"] = diag.payoff_estimate(sel.get("ask"), sel.get("bid"), sel.get("delta"), sel.get("gamma"),
+                                                          room.get("targetRoomPoints"), fee, greeks_source=sel.get("greeksSource"))
             rec["entryLocation"].update(disp)
             self._diag_emit(ap, "entry_submission", {"trigger": trade.trigger_id, **disp})
         except Exception:  # noqa: BLE001
@@ -671,11 +763,30 @@ class Team2Runner(PlanRunner):
         try:
             now = int(time.time() * 1000)
             rows_by_sym: dict[str, dict] = {}
+            provider_name = None
+            try:
+                provider_name = str(getattr(opts.provider(), "name", None) or "") if opts is not None and hasattr(opts, "provider") else None
+            except Exception:  # noqa: BLE001
+                provider_name = None
             for r in (chain or []):
                 sym = str(r.get("symbol") or "")
-                if sym:
-                    snap = opts.snapshot_cached(sym) if opts is not None and hasattr(opts, "snapshot_cached") else None
-                    rows_by_sym[sym] = dict(snap) if snap else dict(r)
+                if not sym:
+                    continue
+                snap = opts.snapshot_cached(sym) if opts is not None and hasattr(opts, "snapshot_cached") else None
+                # item 4 (2026-09-17): the Greeks come with their PROVENANCE — a served-live snapshot never hides the chain
+                # row's Greeks (all three of the 09-17 candidates read null while the pick itself carried delta 0.461)
+                row = dict(r)
+                if snap:
+                    row.update({k: v for k, v in snap.items() if v is not None and k != "greeks"})
+                    sg = {k: v for k, v in (snap.get("greeks") or {}).items() if v is not None}
+                    row["greeks"] = {**(r.get("greeks") or {}), **sg}
+                    row["greeksSource"] = "live" if snap.get("greeksLive") and sg else ("chain" if (r.get("greeks") or {}).get("delta") is not None else "none")
+                    row["greeksAsOf"] = (snap.get("greeksFieldAsOf") or {}).get("delta") if snap.get("greeksLive") else (snap.get("asOf") or None)
+                else:
+                    row["greeksSource"] = "chain" if (r.get("greeks") or {}).get("delta") is not None else "none"
+                    row["greeksAsOf"] = None
+                row["greeksProvider"] = provider_name
+                rows_by_sym[sym] = row
             # D2 binding (review r3): every examined row already carries its own price, provenance and timestamps, captured
             # together in `_quote_examined`. Nothing is looked up again here — a later cache state is another observation.
             cands = diag.candidate_rows(qres.get("examined") or [], rows_by_sym, pick_symbol, floor=float(rules.premium_floor),
@@ -713,7 +824,7 @@ class Team2Runner(PlanRunner):
                 expiry, _why = await self._expiry_for(provider, ap.symbol, rules, today)
                 if expiry is None:
                     return
-                chain = await provider.chain(ap.symbol, expiry)
+                chain, _lmeta = await self._listing(provider, ap.symbol, expiry)
                 spot = float(e.get("spot") or 0)
                 q = self.engine.quotes.get(ap.symbol)
                 if q is not None and q.last and q.last > 0:
@@ -751,8 +862,14 @@ class Team2Runner(PlanRunner):
         priced = [(q, float(p)) for q, p in filled if p is not None]
         pq = sum(q for q, _ in priced)
         px = (sum(q * p for q, p in priced) / pq) if pq > 0 else None
+        filled = float(t.filled_qty or 0) > 0
+        gross = round(float(t.realized_pnl or 0), 2) if filled else None
+        net = round(float(t.realized_pnl or 0) - float(fees or 0), 2) if filled else None
         return {"status": t.status, "filledQty": float(t.filled_qty or 0), "avgFill": t.avg_fill, "contract": t.order_symbol,
-                "netPnl": (round(float(t.realized_pnl or 0) - float(fees or 0), 2) if float(t.filled_qty or 0) > 0 else None),
+                "grossPnl": gross, "fees": (round(float(fees or 0), 2) if filled else None), "netPnl": net,
+                # item 4 (2026-09-17): a gross-breakeven trade that costs commissions is a NET loss — said explicitly; the risk
+                # counter's basis (gross) is unchanged pending the review team's accounting decision
+                "grossBreakevenNetLoss": bool(filled and gross is not None and net is not None and gross >= 0 and net < 0),
                 "exitFilledQty": qty, "exitPricedQty": pq,
                 "exitPrice": (round(px, 4) if px is not None else None),
                 "exitPriceUnknown": bool(qty > 0 and pq < qty), "openedTs": t.opened_ts, "closedTs": t.closed_ts,
@@ -858,8 +975,22 @@ class Team2Runner(PlanRunner):
         gap = ((ref - prev_close) / prev_close * 100.0) if ref and prev_close else 0.0
         self._log(ap, "preopen", f"{ap.plan.get('sheet')}", pmh=ap.plan.get("pmh"), pml=ap.plan.get("pml"),
                   dayType=ap.plan.get("dayType"), sizing=ap.plan.get("sizingAtOpen"))
+        await self._trail_extrema(ap, "pre-open")
         await self._log_rederived(ap, "pre-open")
         return {"rows": [], "reference": ref, "gapPct": round(gap, 3), "replan": False}
+
+    async def _trail_extrema(self, ap: ArmedPlan, when: str) -> None:
+        """2026-09-17: the pre-market extremes the plan just froze, with the bar each came from and the input hash — the
+        durable record that lets a frozen PML be reconciled against the bank and against replay (C6 evidence)."""
+        ext = (ap.plan or {}).get("pmExtrema") if isinstance(ap.plan, dict) else None
+        if not isinstance(ext, dict):
+            return
+        hi, lo = ext.get("pmh") or {}, ext.get("pml") or {}
+        text = (f"{when}: PMH {hi.get('value')} from the {dt.datetime.fromtimestamp((hi.get('bar') or {}).get('ts', 0) / 1000, ET).strftime('%H:%M') if hi.get('bar') else '?'} bar, "
+                f"PML {lo.get('value')} from the {dt.datetime.fromtimestamp((lo.get('bar') or {}).get('ts', 0) / 1000, ET).strftime('%H:%M') if lo.get('bar') else '?'} bar; "
+                f"{(ext.get('inputs') or {}).get('bars')} pre-market bars, input hash {(ext.get('inputs') or {}).get('hash')}")
+        await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "premarket_extrema", text, when=when, pmExtrema=ext,
+                          warmup=(ap.plan or {}).get("warmup"))
 
     async def _log_rederived(self, ap: ArmedPlan, when: str) -> None:
         """F110 (2026-09-11): the F81 re-derive moves the plan's target before a single entry is judged, so it
@@ -891,6 +1022,7 @@ class Team2Runner(PlanRunner):
         ap.plan["preopenSnapshot"] = before
         ap.plan.update(done)
         ap.plan["openFinalizedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        await self._trail_extrema(ap, "09:30 open")
         await self._log_rederived(ap, "09:30 open")
         why = (f"day type finalized on the 09:30 open {done.get('openPrice')}: "
                f"{before.get('dayType')} (09:25 estimate) -> {done.get('dayType')}, "
@@ -1224,7 +1356,7 @@ class Team2Runner(PlanRunner):
                 if journal and what in ("scenario", "pm_break", "late_touch", "pm_retest", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
                                         "skip_reentries", "skip_last_entry", "skip_loss_cap",
-                                        "skip_target_behind", "model_out_of_band", "target_replanned",
+                                        "skip_target_behind", "skip_target_collision", "model_out_of_band", "target_replanned",
                                         "skip_pm_room", "skip_target_near", "key_level_break", "key_level_setup",
                                         "key_level_flip", "key_level_rejected", "key_level_retired", "key_level_overruled",
                                         "key_level_pending", "key_level_retest", "fire_unfilled_live"):
@@ -1361,15 +1493,21 @@ class Team2Runner(PlanRunner):
             stop = spot - atr if direction == "long" else spot + atr
         else:
             stop = guard_f - atr if direction == "long" else guard_f + atr
-        target, target_refusal = self.resolve_fire_target(e, setup, spot, direction)
+        target, target_refusal = self.resolve_fire_target(e, setup, spot, direction, actionable=float(bar.close),
+                                                          anchor=(setup.get("anchor") if getattr(rules_now, "target_identity_guard", True) else None),
+                                                          tick=float(getattr(rules_now, "tick", 0.01) or 0.01))
         if target_refusal is not None:
-            # F72: REFUSE, never enter targetless. See `resolve_fire_target`.
-            self._log(ap, "skip_target_behind", f"{tid}: {target_refusal}", trigger=tid, spot=spot, sourceTs=e.get("ts"))
+            # F72: REFUSE, never enter targetless. See `resolve_fire_target`. 2026-09-17: a source-target collision is its
+            # own decision kind — the setup's destination is the level it just broke, for every entry kind of the setup.
+            kind_ = "skip_target_collision" if "source-target collision" in target_refusal else "skip_target_behind"
+            self._log(ap, kind_, f"{tid}: {target_refusal}", trigger=tid, spot=spot, close=float(bar.close), anchor=setup.get("anchor"),
+                      sourceTs=e.get("ts"))
             if journal:
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
-                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_target_behind",
-                    "spot": spot, "why": target_refusal, "ts": e.get("ts")},
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": kind_,
+                    "spot": spot, "close": float(bar.close), "anchor": setup.get("anchor"), "why": target_refusal, "ts": e.get("ts")},
                     aggregate_type="technique_run", aggregate_id=ap.run_id)
+                self._record_unfilled(ap, tid)
             return
         trade = Trade(trigger_id=tid, kind=str(setup.get("kind") or "team2"), direction=direction, fired_ts=e["ts"],
                       window="team2", entry=spot, stop=stop, targets=[float(target)] if target else [],
@@ -1378,6 +1516,7 @@ class Team2Runner(PlanRunner):
         trade._size_mult = float(e.get("sizeMult") or 1.0)        # read by size_multiplier via the contract
         trade._bucket = str(e.get("bucket") or "?")
         trade._entry_kind = str(e.get("entryKind") or "ema")      # G: the line the S1 one-candle stop is judged against
+        trade._anchor = setup.get("anchor")                        # 2026-09-17: the setup's source level (diagnostics)
         trade.setup_id = str(e.get("setup"))
         trade.target_kind = str(e.get("targetKind") or "plan")
         ap.trades[tid] = trade
@@ -1515,7 +1654,8 @@ class Team2Runner(PlanRunner):
 
     # ------------------------------------------------------------- the fire's target (F72)
     def resolve_fire_target(self, e: dict, setup: dict, spot: float,
-                            direction: str) -> tuple[float | None, str | None]:
+                            direction: str, *, actionable: float | None = None, anchor: float | None = None,
+                            tick: float = 0.01) -> tuple[float | None, str | None]:
         """The target a live trade will carry, or the reason to REFUSE the fire. Never both.
 
         `e["target"]` is the read's own resolved-and-validated target. The fallback to
@@ -1554,11 +1694,21 @@ class Team2Runner(PlanRunner):
             t = float(target)
         except (TypeError, ValueError):
             return None, f"target {target!r} carried by the {src} is not a number — refusing the entry (F72)"
+        # 2026-09-17 (QQQ 13:10): the destination must be distinct from the setup's source level — judged FIRST so the EMA
+        # entry (target a hair above its line) and the level entry (target == its line) of one setup are refused alike.
+        if anchor is not None and abs(t - float(anchor)) <= max(float(tick or 0.0), 0.0):
+            _, why_ = destination_check(t, anchor, None, None, direction, tick)
+            return None, f"{why_} (target from the {src})"
         if not target_is_ahead(t, spot, direction):
             side = "above" if direction == "short" else "below"
             return None, (f"target {t:.2f} (from the {src}) is {side} the {spot:.2f} entry — no room left, so the "
                           f"trade would exit on its first bar or its first live print; refusing the entry "
                           f"rather than entering with no target at all (F72)")
+        # …and beyond that level and ahead of the current actionable price. No distance threshold: identity and order
+        # only. A collision is refused, never re-planned or silently dropped.
+        kind_, why_ = destination_check(t, anchor, None, actionable, direction, tick)
+        if kind_ is not None:
+            return None, f"{why_} (target from the {src})"
         return t, None
 
     # ------------------------------------------------------------- live premium (money modes)
