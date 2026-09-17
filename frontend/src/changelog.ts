@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.07";
+export const APP_VERSION = "0.8.08";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.08",date:"2026-09-16",title:"The EM check panel finishes when the server has finished",items:[
+    {tag:"fixed",text:"EM > Validation: the analyst-check panel no longer sits at \"73/114 · 0 working · 0 queued · ~2.1 h left\" for hours on a batch the server had finished. Its run list was crowded out of the window by another technique's research runs, so every 3 s it fetched up to 40 full runs and restarted itself before recording any of them - a real load on the engine while the page stayed open. Now the list is filtered to the batch, a finished run is never fetched again, a run the server cannot return is counted as not loaded after a few looks, one poll runs at a time, and the batch closes when nothing is open."},
+    {tag:"improved",text:"The check panel lives on the Validation tab (phones keep it on every tab), the time-left estimate shows only while something is actually running, and a dismissed batch stays dismissed instead of coming back on the next reload."},
+  ]},
   {version:"0.8.07",date:"2026-09-16",title:"Knowledge tab: the true total, the loaded count and honest category counts",items:[
     {tag:"fixed",text:"Tips > Knowledge: the category buttons (Rules, Tickers, Sources, General, Needs you) now filter on the server BEFORE paging, so an older rule or a flagged note beyond the first 200 rows is reachable through its button instead of vanishing; their counts are the whole store's, not the loaded page's."},
     {tag:"improved",text:"The coverage line shows two separate numbers - how many notes MATCH the current view/search and how many are LOADED - with a load-more that names how many come next; it lives on its own wrapping row so it stays visible at phone widths and browser zoom instead of being pushed out of the panel header."},
