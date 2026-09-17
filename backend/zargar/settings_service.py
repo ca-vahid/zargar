@@ -226,6 +226,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_study_enabled": True,   # journal-only NBBO sampling at alert and +delay for every option proposal (entry-quality study, P3 2026-09-10)
     "techniques.tip.entry_study_delay_seconds": 180.0,
     "techniques.tip.analyst_max_output_tokens": 3000,
+    "techniques.tip.analyst_final_reserve_s": 20.0,   # E17-02: seconds of the 120 s run kept for the final answer / one repair
     # KFIN-09 (2026-09-14) experiments - ALL inert by default
     "techniques.tip.frozen_capture_context": False,   # stamp the exact context manifest (header components) on each analyst run's start step so a frozen bundle can be captured verbatim
     "techniques.tip.frozen_variants": "current,core_only",   # knowledge variants a frozen replay runs (current | core_only | no_knowledge)
