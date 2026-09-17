@@ -1,0 +1,65 @@
+{
+ "version": "source-continuation-v1",
+ "date": "2026-09-17",
+ "evaluatedAt": "2026-09-17T20:26:30.929108+00:00",
+ "rows": [
+  {
+   "version": "source-continuation-v1",
+   "symbol": "SPX",
+   "date": "2026-09-17",
+   "direction": "long",
+   "level": 7665.0,
+   "target": 7677.0,
+   "availableAt": "2026-09-17T13:23:03+00:00",
+   "observations": [],
+   "outcome": "unknown",
+   "why": "no RTH bars stored",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 0,
+    "provenance": "bars table, tf=1m",
+    "sources": [],
+    "datasetVersion": null
+   },
+   "noteId": "ab54325d07164f898fe30227164e92d8",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "SPX",
+   "date": "2026-09-17",
+   "direction": "short",
+   "level": 7620.0,
+   "target": 7600.0,
+   "availableAt": "2026-09-17T13:23:03+00:00",
+   "observations": [],
+   "outcome": "unknown",
+   "why": "no RTH bars stored",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 0,
+    "provenance": "bars table, tf=1m",
+    "sources": [],
+    "datasetVersion": null
+   },
+   "noteId": "ab54325d07164f898fe30227164e92d8",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  }
+ ]
+}
