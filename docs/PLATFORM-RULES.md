@@ -2111,6 +2111,18 @@ boundaries can be measured separately from provider and venue latency.
   Freshness checks (`risk.stale_quote_seconds`, delayed-row refusal) and every risk limit are untouched. Tests:
   `test_em_loop_stall_watch.py`, `test_em_render_offloop.py`, `test_em_cboe_priority_cooldown.py`,
   `test_em_cboe_rate_limit_retry.py`.
+  *PFU-01 (review 2026-09-17) - the first watchdog proposal was HELD: two failed probes still let a live-but-unhealthy
+  engine reach `start.ps1` without readiness / quiescence / before-inventory.* Reworked at `47275c3f8ff02c857b46b431e71b3300ec0eea67` as a PURE module
+  `scripts/watchdog-classify.ps1` (`Get-EngineClassification`: healthy | live-unhealthy | absent over probe results,
+  the engine process bound to THIS runtime - the pid the engine stamps in `logs/engine.pid`, venv path only as fallback,
+  identity logged - the engine log's freshness and a TIME-based stall marker: persisted only when >= 180 s and <= 600 s
+  old, older = unrelated and reset, ANY successful probe clears it, `-ReadOnly` never writes). Policy in
+  `scripts/watchdog.ps1`: probes are 2-of-3 with 12 s timeouts; `live-unhealthy` REFUSES ordinary recovery (exit 2),
+  escalates ONCE per stall marker (Telegram from `backend/.env` + a log line naming the human next step:
+  `ZargarRestartOverride`), and only the explicit override replaces a live engine; `absent` (no bound process or stale
+  log) takes the existing DOWN path; `-ProbeOnly` classifies without touching state. Acceptance
+  `scripts/tests/watchdog-classify.tests.ps1` 8/8 (mocked classification, no restart). Start-path owner (Tips desk)
+  agrees with the direction; integration into the shared protocol WAITS for the user's decision. Not deployed.
 - **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
   `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
   returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and

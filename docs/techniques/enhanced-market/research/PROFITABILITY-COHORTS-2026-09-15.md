@@ -70,28 +70,41 @@ sessions in `research/profitability/`.
   target+stop = unknown. It is a chart diagnostic and is labelled so.
 
 
-## Addendum 2026-09-16 (`p04-p05-2026-09-16`): two frozen comparisons, order-free, nothing activated
+## Addendum 2026-09-17 (`p04-p05-2026-09-17`, supersedes the 2026-09-16 draft after the PFU-02/03 review)
 
-Prepared on the user's instruction after the first deterministic session. Both are REPORT cohorts over the rows the
-per-session report already carries; they change no entry or exit rule, no risk limit, no chase limit, and the 8%
-friction marker stays a ranking marker. Every EM attempt is counted - fills, rejected opportunities (refused rows:
-budget bounds, not chased, contract failures) and sacrificed winners (refused rows whose underlying-only proxy reached
-TP1 first) - so the comparison never hides what the gates removed.
+Order-free report cohorts. They change no entry or exit rule, no risk limit, no chase limit, and the 8% friction marker
+stays a ranking marker. Every EM attempt is counted: fills, rejected opportunities (refused rows: budget bounds, not
+chased, contract failures) and `underlyingTp1FirstRefused` (refused rows whose underlying-only proxy reached TP1 before
+a stop close - an underlying fact, NOT a net winner and NOT a "sacrificed" trade; only a paired policy comparison can
+attribute a sacrifice, and option outcomes without a quote stay unknown).
 
-**P-04 - touch versus confirmed reaction.** Over the P-01 cohort (`long_bounce_next_resistance`), split by the
-`confirmation` stratum already frozen in v1: `anticipated` = the firing bar closed on the wrong side of the level (a
-touch entry), `observed_reclaim` = the firing bar CLOSED on the trade's side (a confirmed reaction), `unknown` = no
-firing bar. Reported per side: fills, winners, losers, open, net (closed), rejected, sacrificed winners, proxy unknown.
-Question it answers: does waiting for the confirmed close cost more in sacrificed winners than it saves in stops?
-Decision threshold: >= 30 fills per side across sessions; until then the table is descriptive.
+**P-04a - entry strata (DESCRIPTIVE).** P-01 attempts split by the FIRING bar's close: `anticipated` = touch entry (the
+bar closed on the wrong side of the level), `observed_reclaim` = the firing bar closed on the trade's side, `unknown` =
+no firing bar. The 2026-09-16 draft claimed this answers whether waiting for confirmation saves stops at the cost of
+winners; it does not - it never constructs the delayed entry. That claim is WITHDRAWN. The strata stay as a description.
 
-**P-05 - afternoon / event-day cohort.** Over EVERY EM attempt (all families), keyed by the fire window
-(`prime_open` = morning; `prime_close` or `midday` = afternoon; missing = `unknown_window`) and by event day. Event days
-are a frozen, hand-kept list in the tool (`EVENT_DAYS`: 2026-09-16 FOMC) because the app's macro calendar is empty;
-add a day only with a dated note. Reported per key: the same nine columns as P-04. Question it answers: is the
-afternoon window on an event day a different population (fills, refusals, sacrificed winners) than an ordinary
-morning? Decision threshold: >= 5 sessions of each kind before any window rule is even proposed; a proposal would be a
-separate versioned rule with its own sweep.
+**P-04b - PAIRED confirmation comparison (frozen 2026-09-17).** On the SAME eligible setups (every P-01 attempt, fills
+and refusals), baseline = the actual touch attempt; variant = wait for the first COMPLETED 1m close beyond the level
+within 10 bars after the touch bar, enter at the OPEN of the following bar (no same-close hindsight fill), re-run the
+unchanged geometry gates from the new entry (stop side, room to TP1, R2 >= 3.0 measured at the exit rung TP2 - a frozen
+copy of the bar, never read live), then follow the underlying: TP1 touch vs stop close, first come. Distinct outcomes:
+`no_confirmation` (within the window), `refused_stop_side`, `refused_no_room`, `refused_r2`, `unknown (...)` (bar gap,
+no executable bar, same-bar target and stop), `tp1_first` (+room/risk R, full-size underlying proxy), `stop_first`
+(-1R), `unresolved`. A budget refusal of the baseline and a missed confirmation of the variant are different outcomes
+and are reported as such. Dollars at the delayed entry are UNKNOWN for options (no quote captured at that time); for
+shares the underlying R applies. Both baseline winners and losers stay in the paired sample. Descriptive until >= 30
+paired rows; nothing is activated by it. First results (2026-09-15/16, 13 attempts): 12 variants refused by the frozen
+R2 bar or never confirmed within 10 bars, 1 entered and was stopped (-1R) - waiting for the close costs room faster than
+it saves stops on these small-room setups; that is a description of two sessions, not a verdict.
 
-Both live in `tools/em_profitability.py` (`summarize()["p04"]`, `["p05"]`) and print as two tables in the daily
-report. Tests: `tests/test_em_profitability_p04_p05.py`.
+**P-05 - session-window / event-phase cohort (frozen 2026-09-17).** Every EM attempt keyed by (window, event phase):
+the window comes from the shared clock `marketstructure.sessions.session_window` on the timezone-aware fire time
+(`sessions-v1`: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET; 10:45 ET is midday, never
+"afternoon"); the runner's own window label at fire is kept beside it as a diagnostic. Event phase comes from a
+hand-kept calendar in the tool (`EVENT_CALENDAR`: date -> label, ET clock time, source, retrospective flag; the app's
+macro calendar is empty) and is `pre_event:<label>` / `post_event:<label>` around that time, or `unknown_calendar` when
+the date has no entry - never silently "ordinary". Entries added after a session are marked retrospective; prospective
+definitions are frozen before new sessions are collected. These labels never activate a trading-window change.
+
+Tests: `tests/test_em_profitability_p04_p05.py` (strata rename, paired comparison semantics, refusals distinct, no
+same-close fill, baseline block intact, 10:45 = midday, pre/post split, unknown calendar).

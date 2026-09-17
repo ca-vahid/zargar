@@ -25,6 +25,7 @@ whenever a release, an activation or a review changes what is true. Last full re
 
 ## State of play (2026-09-16 evening)
 
+- **PFU-01..04 closed on the branch at `47275c3f8ff02c857b46b431e71b3300ec0eea67` (0.8.02, not deployed):** watchdog classification module (owner: Tips desk, waits for the user), P-04 paired confirmation comparison + P-05 clock/event labels (descriptive), CBOE cooldown setting wired. Closure: `reviews/2026-09-17-PFU-CLOSURE.md`.
 - **Sep 17 inventory:** 58 EM arms in EM Practice (86 triggers: 34 long / 52 short), all effective `deterministic`,
   evidence off, from sheet `fc9efd65418e` (111 reviewed, 58 setup, 53 no-setup, 0 arming failures). Live runtime
   v0.7.100 build `172ce1f` (Team2's deploy 18:50 PT); EM follow-ups on the branch at `c74df44`, NOT deployed.

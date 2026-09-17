@@ -1274,3 +1274,37 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
   carried; what remains undeployed from EM is the CBOE 429 retry (`739e750`), the follow-ups above and the health
   tolerance (already on main via PR #174). A new combined candidate needs the runtime checkout `172ce1f` as an
   ancestor and the user's go.
+
+### 2026-09-17 (night of 09-16) - PFU-01..04 closed on the EM branch (`47275c3f8ff02c857b46b431e71b3300ec0eea67`), NOT deployed; runtime is 0.8.01 build 3f5675d
+
+- **PFU-01 watchdog:** held proposal reworked as a pure classification module with a refuse-and-escalate policy for a
+  live-but-unhealthy engine (PLATFORM-RULES 2026-09-16 evening, PFU-01 paragraph). Owner coordination: the Tips desk
+  agrees with the direction and puts it in the pre-open note; integration waits for the user. Evidence: seven watchdog
+  kills of a live engine on 09-16 (07:40, 17:17, 17:55, 18:31, 18:34, 19:43) plus the listener death at 18:29.
+- **PFU-02 P-04:** the "waiting for confirmation" claim is withdrawn from the strata (now `underlyingTp1FirstRefused`,
+  descriptive); a PAIRED order-free comparison is built instead (research addendum 2026-09-17). First read, 13
+  attempts over 09-15/16: 12 variants refused by the frozen R2 bar or never confirmed within 10 bars, 1 entered and
+  stopped (-1R). Descriptive until >= 30 paired rows.
+- **PFU-03 P-05:** labels now come from the shared session clock on tz-aware fire times (10:45 ET = midday) with
+  pre/post event phase from a hand-kept, dated calendar and `unknown_calendar` for dates without an entry. 09-16 read:
+  prime_open pre-FOMC 2 fills -$123.60 / 4 rejected; prime_close post-FOMC 2 fills -$23.95 / 1 rejected; midday 2
+  rejected (one each side of 14:00). 09-15: unknown_calendar throughout (no entry) - by design.
+- **PFU-04:** `options.cboe_cooldown_seconds` is wired (live-editable; non-default case tested); wording corrected to
+  "background cooldown with bounded retry" - it reserves no provider capacity and preempts nothing; freshness / risk
+  refusals decide when retries yield no usable evidence.
+- **Earlier exits (the user's priority):** the frozen P-02 `small-position-exit-v1` comparison has ONE comparable row so
+  far - CRWV b2 on 09-16: production -$51.11 vs alternative +$9.92 (+$61.03, forgone-on-winner $0.00); five other
+  eligible fills are `unknown` because the observer had no covered executable-bid observation at the TP1 touch
+  (09-15 predates the observer being ON; 09-16 CRCL b1 had none). The observation collection stays ON; the comparison
+  stays provisional until the covered sample exists. No exit rule change.
+- **Entry selection after costs:** P-03 friction on filled options 6.2-10.1% of premium (CVNA 09-15 10.1%, CRCL 09-16
+  9.0%, CRWV 8.2%), all above the 8% marker except IREN; the marker stays a marker. The paired P-04b result above is the
+  first entry-selection measurement and says "not this way" for two sessions.
+- **Verification before the open (against runtime 0.8.01 build 3f5675d, 19:5x PT):** 58 EM arms armed for 2026-09-17,
+  book EM Practice, all `deterministic`, evidence off; `fire_decision_mode=deterministic`, `fire_evidence_mode=off`,
+  `shadow_exit_observe=True`, `shadow_p02_candidate=True`, `preopen_at=09:25`, `trading.mode=practice`; one engine pair,
+  Discord gateway and EM ingest worker alive, intake liveness live. The 06:20 PT attending owner is this session's
+  session-local cron (job 64ad08c1); it dies with the session - the user must keep the session open or assign another.
+- **Runtime note:** the running checkout is dirty only with EM research artifacts that are committed on the EM branch
+  (they match after a fast-forward); its build string reads `-dirty` for that reason. The EM integrated candidate
+  `47275c3f8ff02c857b46b431e71b3300ec0eea67` (0.8.02) contains runtime 3f5675d and origin/main as ancestors; no restart is requested for research labels.
