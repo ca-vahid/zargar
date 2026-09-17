@@ -505,3 +505,83 @@ boundary was real (still in memory, durable row not yet closed) AND that the cap
 `intraday_exit` observation; a later capture adds nothing (one observation per key). The existing
 integration assertion (`n2 >= 1` after `wait_for(gone)`) is preserved, not weakened. Today's three missed
 intraday exits stay MISSING - nothing is repaired or backdated. MRNA's carry observation is unaffected.
+
+## End of session 2026-09-17 (16:06 ET) - observation-and-validation day
+
+Live build all day: 0.8.09 `dd525de` (EM desk's release; every Tips merge through PR #188 is an ancestor). Merged, NOT
+deployed: PR #196/#197 (Knowledge pagination, live already via 0.8.08), PR #199 (sim share-session + spread guards, 0.8.10;
+runtime checkout `70f6b90`, rides the EM desk's coordinated deploy after the close). No restart during the session.
+
+**Tips Practice - fills, exits, P&L (cash fees and allocated fees stated apart):**
+
+| Position | Entry | Exit(s) | Cash fees | Realized | Label |
+|---|---|---|---:|---:|---|
+| MRNA 7 sh (campaign opened 2026-09-15) | 141.96 | 09:39 2 @152.97 (source follow-up), 09:45 2 @154.37 (TP1), 09:55 1 @156.45, 10:00 1 @159.59 (follow-ups), 11:04 1 @157.11 (venue GTC stop) | $0.00 | **+$94.10** whole campaign (five tranches today) | overnight-hold pair's managed result: known (+$94.10 vs quote-drift +$69.02 at 09:30) |
+| MRNA Sep-18 165C x1 | 10:04:54 @0.75 | 10:04:58 @1.90 (premium TP1 +100%, quote watch) | $2.08 | **+$112.92** | **SUSPECT FLASH FILL (F-FILL-02)**: decision quote 1.90/2.01, fill on a 3-second OPRA quote 0.65/0.75 sizes 7x1, TipFillVsQuote vsMid -1.205 (-$120.50 "improvement") |
+| ORCL Sep-25 160C x1 | 10:24 @1.64 (ask; 1.63/1.64) | 11:04 @1.44 (12% premium stop, second distinct observation) | $2.08 | **-$22.11** | clean fill (vsMid +0.005) |
+| SMCI Sep-25 41C x1 | 10:45 @1.59 (ask; 1.55/1.59) | open | $1.04 | marked -$26.00 | clean fill (vsMid +0.02); premium stop guard, target 41.3 |
+| ACHR Jan-27 7C x3 | 11:38 @0.48 (ask; 0.47/0.48) | open | $3.12 | marked $0.00 | clean fill (vsMid +0.005); fixed stop 4.75, ladder 5.95/6.6/7.4 |
+| SBLK 62 sh | 14:48 @31.91 (ask; 31.89/31.91) | open | $0.00 | marked -$6.82 | clean fill (vsMid +0.01); venue GTC stop 30.58 for 62 (geometry moved 30.95 -> 30.58 inside structure); overnight `venue_stop`, hold cap 15 sessions |
+
+Cash fees charged today: $8.32 (12 executions; shares $0, options $1.04 per contract per side). Realized today on Tips Practice:
+**+$184.91** (ledger trips), of which $112.92 is the suspect flash fill; excluding it, +$71.99. Equity baselines (Tips Practice,
+`equity_points`): day boundary 03:59:56 ET $8,822.87; pre-open 09:29:49 ET $8,858.64; close 16:01:30 ET **$8,925.42**
+(change on the day-boundary basis +$102.55; RTH marked change +$66.78). Desk-wide realized today +$374.30 (EM ORCL b1
++$250.92, CRCL puts +$53.76, SCHW/TXN/COHR/BMNR mixed; Team2 QQQ 0DTE -$33.28) - not reconciled here beyond the Tips rows.
+
+**Decision funnel (every tip counted):** 56 signals today across 8 sources. Verification failed 33 (no proposal: ab 2,
+common-stock 3, eva 4, jon-and-kian 1, MK-alpha-trades 4, muggzone-options 15, neal 2, tt 2); parked 2 (eva) + 1 later
+(SignalParked x3); shadow-only 1 (eva). Lane decisions 13, all `proposal`. Cards 15: **executed 5** (MRNA 165C, ORCL 160C,
+SMCI 41C, ACHR 7C, SBLK - analyst `take` on each), **rejected 9** (analyst `skip`: 6 on the $89-90 planned-risk budget -
+MRNA 165C 09-25 map, MU 980C, GOOGL 355C, MU 1035C, ORCL 170C second leg, HOOD 110C; 1 contract-identity fail - AMD 170C
+deep ITM; 1 undisclosed average-down - MU 980C 15:56; 1 wish/no-stop - AMZN 265C), **expired 1** (AMZN Nov-20 300C x2,
+review-gated on budget, unanswered 10:28 -> 12:28). Entry-timing cohort: 18 rows (proposed 5 fresh; blocked 6 fresh + 3
+ineligible; parked 2 missing + 1 fresh; declined 1 ineligible). Shadow books (research, never performance): immediate
+books bought on every tip (ab 2, eva 2, muggzone 5, tt 2 buys, no sells); armed books: ab AFRM (QUARANTINED book, pre-market
+stop fill at 03:59 then re-entry 09:35), muggzone MSFT (+$3.02 TP1). By setup: shares 2 Practice entries (MRNA campaign
+close, SBLK), options 4 Practice entries.
+
+**Cards / geometry:** 27 `TipGeometryRepaired` events, 9 of them review-gated (all "no quantity satisfies the budget" -
+declined by the analyst except the AMZN 300C card, which expired). Repairs with substance: MSFT adoption stop re-placed
+(armed shadow), SBLK stop 30.95 -> 30.58 (pre-entry, submit, post-fill kept), AMD/MU wrong-side targets dropped on cards
+that were then skipped. **Incidents:** none opened, none released; no fast-stop diagnostic, no auto-pause, no retry, no halt;
+2 `TipIntakeStalled` during the in-flight backlog (5 -> 12 envelopes, drained to 0 by 11:30) - not a stall.
+
+**Execution-cost diagnostics (TMR-02 on 0.8.09):** `riskPlan.execCost` present on every card (known where the quote
+qualified; honest `unknown` with reason where it did not); `TipFillVsQuote` on all 5 genuine entries - 4 at the ask
+within a cent of mid, 1 flash fill. **F-FILL-02 (finding, no change made; user/reviewer decision):** the sim executor
+applies no spread or flash sanity to options by design; a one-lot OPRA quote 60% below the surrounding market lived ~3 s and
+priced a Practice fill that banked +$115 in 4 s; a shadow book showed the same at 09:30 (GOOGL 355C on a 3.60/6.35 1x1
+quote). Candidate rule: refuse/flag an option fill when the top of book is 1x1 with spread > ~40% of mid, or when the
+price deviates > ~35% from the last qualified mid within 10 s. Labeled suspect in every number above.
+
+**Carried overnight (Tips Practice):** SBLK 62 sh with the venue GTC stop 30.58 (single exit authority verified: entry
+bracket children cancelled, `venueStopQty` 62); SMCI Sep-25 41C x1 and ACHR Jan-27 7C x3, both long options, app-managed
+(premium-stop guard / fixed stop + ladder), `overnight` acknowledged by the analyst policy. NOTE: the live executor is still
+pre-0.8.10, so SBLK's stop could trigger pre-market on a placeholder quote (F-HOLD-01) until tonight's deploy.
+
+**Hold study, 15:50 ET capture (first on the fixed code, `book_status` stamped):** 9 observations. Tips Practice (sim):
+carry SBLK, SMCI 41C, ACHR 7C (all fresh, inside window); intraday_exit MRNA 165C (exit 1.90), MRNA shares (avg exit 155.40),
+ORCL 160C (1.44). Shadow: AFRM carry + AFRM intraday_exit (44.991 - the 03:59 fill; book QUARANTINED -> diagnostic only),
+MSFT intraday_exit (armed shadow). Yesterday's three missing exits stay missing. Next-open sample 09:30 ET 2026-09-18 for
+the three Practice carries; the MRNA pair from 09-16 is now complete on the managed side (+$94.10 campaign vs +$69.02 drift).
+
+**Armed multi-day tip plans rolling at the close:** 12 (AAL, AAOI, AMZN, DAL, GOOGL, MSTR, MU, PLTR, RKT, SBLK, T, TSLA).
+**Tonight's jobs:** `tip_retro` judges the three Practice closes (MRNA shares +94.10, MRNA 165C +115.00, ORCL 160C -20.03)
+and the two shadow closes (AFRM -730.05 quarantined, MSFT +3.02); `tip_knowledge_maintenance` stays propose-only (batches:
+23 proposed, 4 applied historically, 14 failed scopes set aside); digests per knob.
+
+**Research coverage:** cohort 18 rows; analyst runs 105 (13 appraise all with the exact context manifest AND a captured
+classifier read - `TipRecapClassified` is live on 0.8.09, 92 rows today); `TipEntryStudy` 28. **Frozen pair readiness:**
+bundle `fb-e0221ed3d071cc60` captured from today's SBLK take run (manifest exact, 6 tool outputs, 48 rules, 12 notes,
+classifier `recap-read-v2`) and `tip_frozen assemble` produced both treatments offline with `gaps: []` - `current` = the
+full-route CONTROL (`headerMode full`), `recap_candidate` = treatment-only (correct label on a full-route capture; the
+candidate's 24-hour history bound is not verifiable on captured lines - stated). This is the first COMPLETE offline
+full/candidate pair; the paid replay is the user's/reviewer's call - none run. Recap routing OFF.
+
+**Platform notes today:** 32 event-loop stalls - EM desk diagnosis: host paging (commit 57.7 GB vs 32 GB physical; 79 s at
+11:25, ~27 s at 13:29/13:31 in WSARecvInto = process not running) plus one real cluster 08:26-08:33 PT from the Cartel
+profitability collector; mitigation = fewer resident processes (user). Verified events set 09:26 ET from official sources
+(DOL claims 08:30, Philly Fed 08:30, Treasury auctions 11:30/13:00; 09-18: Fed G.17 09:15, Bowman 09:30, BLS state
+employment 10:00). Open items owned elsewhere: Telegram paging credentials empty; ab shadow book quarantined; TSLA on eva
+armed shadow in `attention` since 09-14.
