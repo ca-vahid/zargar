@@ -16,63 +16,38 @@
 param([switch]$Force, [switch]$Override, [switch]$ProbeOnly)
 $root = Split-Path -Parent $PSScriptRoot
 $logDir = Join-Path $root "logs"
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 $log = Join-Path $logDir "watchdog.log"
-function Log($m) { Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
-$up = $false
-try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $up = [bool]$h.ok } catch { $up = $false }
-# 2026-09-16/17 (EM desk, PLATFORM-RULES; PFU-01): ONE 4 s probe timeout is not a dead engine. Classification is a
-# pure function in watchdog-classify.ps1 (healthy | live-unhealthy | absent) over: a second probe 15 s later, THIS
-# runtime's engine process (executable under backend\.venv), the engine log's freshness, and a time-based stall
-# marker. A live engine that does not answer health is never permission to skip readiness / quiescence / the
-# before-inventory: ordinary recovery is REFUSED (exit 2) and only the explicit override (-Override /
-# ZargarRestartOverride) may replace it. Only `absent` (no bound process, or a stale log) takes the DOWN path below.
+# -ProbeOnly is a diagnostic: it creates no directory, writes no log line and touches no recovery state (stdout only).
+if (-not $ProbeOnly -and -not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+function Log($m) { if ($ProbeOnly) { Write-Output $m; return }; Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
+# 2026-09-17 (EM desk, PFU-01 re-review): classification AND the caller decision live in watchdog-classify.ps1 as pure
+# functions; this file only supplies the real actions. healthy | live-unhealthy | uncertain | absent - a live process
+# with a quiet log is LIVE; a discovery failure is UNCERTAIN; both refuse ordinary recovery (with or without -Force)
+# because readiness is unavailable, and only -Override replaces a living engine. Only `absent` takes the DOWN path.
 . (Join-Path $PSScriptRoot 'watchdog-classify.ps1')
 $stallMarker = Join-Path $logDir "watchdog-stall.txt"
-$classification = $null
-if (-not $up -and -not $Force) {
-  # probe tolerance (owner ask): 2 of 3 probes with 12 s timeouts before anything is called unhealthy
-  Start-Sleep -Seconds 15
-  $up2 = $false
-  try { $h2 = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 12; $up2 = [bool]$h2.ok } catch { $up2 = $false }
-  if (-not $up2) {
-    Start-Sleep -Seconds 10
-    try { $h3 = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 12; $up2 = [bool]$h3.ok } catch { $up2 = $false }
-  }
-  $logPath = Join-Path $root "backend\zargar-8420.log"
-  $logAge = 999999
-  if (Test-Path $logPath) { $logAge = [int]((Get-Date) - (Get-Item $logPath).LastWriteTime).TotalSeconds }
-  $markerAt = $null
-  if (Test-Path $stallMarker) { $markerAt = (Get-Item $stallMarker).LastWriteTime }
-  $bound = Get-BoundEngineProcessCount -Root $root
-  $classification = Get-EngineClassification -Probe1 $up -Probe2 $up2 -BoundProcesses $bound -LogAgeS $logAge -MarkerAt $markerAt -Now (Get-Date) -ReadOnly:$ProbeOnly
-  if ($ProbeOnly) { Log ("probe-only: class=" + $classification.class + " persisted=" + $classification.persisted + " - " + $classification.reason); exit 0 }
-  switch ($classification.markerAction) {
-    'set'   { Set-Content -Path $stallMarker -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss") }
-    'clear' { if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }; if (Test-Path ($stallMarker + ".alerted")) { Remove-Item ($stallMarker + ".alerted") -Force } }
-  }
-  if ($classification.class -eq 'healthy') { Log ("health answered late (" + $classification.reason + ") - no action"); exit 0 }
-  if ($classification.class -eq 'live-unhealthy') {
-    if ($Override) { Log ("OVERRIDE: live engine not answering health (" + $classification.reason + "; identity " + $script:WatchdogIdentity + ") - replacing it on explicit override") }
-    else {
-      $msg = ("REFUSED restart: engine alive but not answering health (" + $classification.reason + "; identity " + $script:WatchdogIdentity + "). Readiness is unavailable so ordinary recovery is refused. " +
-              "HUMAN NEXT STEP: check the engine (scripts\logs.ps1, /api/health); if positions are held and it stays stalled, run the scheduled task ZargarRestartOverride (or watchdog.ps1 -Force -Override) - that override is the only path that replaces a live engine.")
-      Log $msg
-      $sent = Send-WatchdogAlert -Root $root -Text ("Zargar watchdog: " + $msg) -OnceFile ($stallMarker + ".alerted")
-      Log ("escalation " + $(if ($sent) { "sent (Telegram, once per stall marker)" } else { "not sent (no Telegram config, already alerted for this marker, or send failed)" }))
-      exit 2
-    }
-  } else {
-    Log ("DOWN confirmed: " + $classification.reason)
-  }
+$engineLog = Join-Path $root "backend\zargar-8420.log"
+$actions = @{
+  Probe       = { param($t) try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec $t; return [bool]$h.ok } catch { return $false } }
+  Sleep       = { param($s) Start-Sleep -Seconds $s }
+  Liveness    = { $age = 999999; if (Test-Path $engineLog) { $age = [int]((Get-Date) - (Get-Item $engineLog).LastWriteTime).TotalSeconds }
+                  $b = Get-BoundEngineProcessCount -Root $root; return @{ bound = $b; logAgeS = $age; identity = $script:WatchdogIdentity } }
+  ReadMarker  = { if (Test-Path $stallMarker) { return (Get-Item $stallMarker).LastWriteTime } else { return $null } }
+  SetMarker   = { Set-Content -Path $stallMarker -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss") }
+  ClearMarker = { if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }; if (Test-Path ($stallMarker + ".alerted")) { Remove-Item ($stallMarker + ".alerted") -Force } }
+  Log         = { param($m) Log $m }
+  Alert       = { param($t) return (Send-WatchdogAlert -Root $root -Text $t -OnceFile ($stallMarker + ".alerted")) }
+  Now         = { Get-Date }
 }
-if ($ProbeOnly) { Log ("probe-only: class=healthy (first probe ok)"); exit 0 }
-if ($up -and -not $Force) {
-  # PFU-01 acceptance: a first-probe recovery clears an old stall marker (and its alert companion) so two unrelated
-  # stalls never chain - this is the normal healthy tick, so it must do the clearing too, not only the classifier path.
-  if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force; Log "engine healthy on the first probe - stall marker cleared" }
-  if (Test-Path ($stallMarker + ".alerted")) { Remove-Item ($stallMarker + ".alerted") -Force }
-  exit 0
+$decision = Invoke-WatchdogDecision -Force ([bool]$Force) -Override ([bool]$Override) -ProbeOnly ([bool]$ProbeOnly) -Actions $actions
+if ($ProbeOnly) { Write-Output ("probe-only: class=" + $decision.class + " - " + $decision.reason + $(if ($decision.identity) { " (identity " + $decision.identity + ")" } else { "" })); exit 0 }
+switch ($decision.action) {
+  'exit-healthy'     { exit 0 }
+  'refuse'           { exit 2 }
+  'proceed-force'    { $up = $true }        # health answers: readiness / quiesce / before-inventory run below
+  'proceed-override' { $up = $false }       # explicit override over a live or uncertain engine (logged as OVERRIDE above)
+  'proceed-down'     { $up = $false }       # no bound engine process: the DOWN path, nothing to quiesce
+  default            { Log ("unexpected decision " + $decision.action + " - refusing"); exit 2 }
 }
 # one start at a time: a start takes ~30-60 s (start.ps1 stops the old process, rebuilds dist if stale, launches)
 # and the 3-minute tick must not pile a second engine onto a restart in progress. The lock is age-based

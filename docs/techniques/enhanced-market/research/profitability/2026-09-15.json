@@ -95,9 +95,16 @@
     }
    },
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "refused_r2",
     "resultR": null,
     "confirmTs": 1789483740000,
@@ -199,9 +206,16 @@
     }
    },
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "refused_r2",
     "resultR": null,
     "confirmTs": 1789481460000,
@@ -303,9 +317,16 @@
     }
    },
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "stop_first",
     "resultR": -1.0,
     "confirmTs": 1789481220000,
@@ -407,9 +428,16 @@
     }
    },
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "refused_r2",
     "resultR": null,
     "confirmTs": 1789479900000,
@@ -495,9 +523,16 @@
    },
    "p02Eligible": false,
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "refused_r2",
     "resultR": null,
     "confirmTs": 1789479420000,
@@ -558,9 +593,16 @@
    "friction": null,
    "underlyingProxy": "tp1_first",
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "refused_r2",
     "resultR": null,
     "confirmTs": 1789482420000,
@@ -819,9 +861,16 @@
    },
    "underlyingProxy": "stop_first",
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "refused_r2",
     "resultR": null,
     "confirmTs": 1789483980000,
@@ -880,9 +929,16 @@
    "friction": null,
    "underlyingProxy": "stop_first",
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "stop_first",
     "resultR": -1.0,
     "confirmTs": 1789483020000,
@@ -1127,9 +1183,16 @@
    "friction": null,
    "underlyingProxy": "tp1_first",
    "confirmationPair": {
-    "policy": "confirmed_close_then_next_open",
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
     "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
     "outcome": "refused_r2",
     "resultR": null,
     "confirmTs": 1789479660000,
@@ -1739,9 +1802,16 @@
       "closed": true
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "refused_r2",
       "resultR": null,
       "confirmTs": 1789483740000,
@@ -1763,9 +1833,16 @@
       "closed": true
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "refused_r2",
       "resultR": null,
       "confirmTs": 1789481460000,
@@ -1787,9 +1864,16 @@
       "closed": true
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "stop_first",
       "resultR": -1.0,
       "confirmTs": 1789481220000,
@@ -1811,9 +1895,16 @@
       "closed": true
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "refused_r2",
       "resultR": null,
       "confirmTs": 1789479900000,
@@ -1835,9 +1926,16 @@
       "closed": true
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "refused_r2",
       "resultR": null,
       "confirmTs": 1789479420000,
@@ -1859,9 +1957,16 @@
       "underlyingProxy": "tp1_first"
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "refused_r2",
       "resultR": null,
       "confirmTs": 1789482420000,
@@ -1883,9 +1988,16 @@
       "underlyingProxy": "stop_first"
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "refused_r2",
       "resultR": null,
       "confirmTs": 1789483980000,
@@ -1907,9 +2019,16 @@
       "underlyingProxy": "stop_first"
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "stop_first",
       "resultR": -1.0,
       "confirmTs": 1789483020000,
@@ -1931,9 +2050,16 @@
       "underlyingProxy": "tp1_first"
      },
      "confirmation": {
-      "policy": "confirmed_close_then_next_open",
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
       "windowBars": 10,
       "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
       "outcome": "refused_r2",
       "resultR": null,
       "confirmTs": 1789479660000,
@@ -1956,7 +2082,7 @@
    },
    "baselineWinnersInSample": 1,
    "baselineLosersInSample": 4,
-   "definition": "touch baseline vs first completed close beyond the level within 10 bars, entry at the next bar OPEN, unchanged geometry gates (stop side, room, R2 >= 3.0 at the exit rung), underlying TP1-touch vs stop-close; descriptive until >= 30 paired rows"
+   "definition": "GEOMETRY-ONLY UNDERLYING PROXY: touch baseline vs first completed close beyond the level within 10 bars after the touch bar, entry at the next bar OPEN, geometry gates only (stop side, room, R2 >= 3.0 at the exit rung); quote quality, sizing/exit rung, chase, timing windows and admission budgets NOT evaluated; underlying TP1-touch vs stop-close from the entry bar; incomplete horizons pending; descriptive/exploratory until >= 30 paired rows"
   },
   "p05": {
    "midday|unknown_calendar": {
@@ -2013,5 +2139,5 @@
    "roomAtActualEntry": "unknown for every fill (no underlying observation at dispatch is recorded)"
   }
  },
- "generatedAt": "2026-09-17T02:52:49.187002+00:00"
+ "generatedAt": "2026-09-17T04:15:28.996587+00:00"
 }

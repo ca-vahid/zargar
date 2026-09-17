@@ -261,14 +261,25 @@ def session_labels(fired_ts: int, date: str) -> dict:
 
 def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: float | None, stop: float | None, tp1: float | None, tp2: float | None,
                       cutoff_ms: int, *, window_bars: int = P04_CONFIRM_WINDOW_BARS, min_rr: float = P04_MIN_RR) -> dict:
-    """PFU-02: the PAIRED, order-free confirmation variant of one touch attempt. On the same eligible setup: wait for the
-    first COMPLETED 1m close beyond the level within `window_bars`, enter at the OPEN of the following bar (no same-close
-    hindsight fill), re-run the unchanged geometry gates (stop side, room to TP1, R2 at the exit rung against the frozen
-    bar), then follow the underlying: TP1 touch vs stop close, first come. Underlying-only R; option premium at the
-    delayed time is UNKNOWN unless a quote exists (it never does here). Distinct outcomes: no_confirmation,
-    refused_stop_side, refused_no_room, refused_r2, unknown(...), tp1_first, stop_first, unresolved."""
-    out = {"policy": "confirmed_close_then_next_open", "windowBars": window_bars, "minRr": min_rr, "outcome": None, "resultR": None,
-           "confirmTs": None, "entryTs": None, "entry": None, "riskPerUnit": None, "rr": None, "barsWaited": None}
+    """PFU-02 (corrected after the 2026-09-17 re-review): the PAIRED, order-free confirmation variant of one touch
+    attempt - a GEOMETRY-ONLY UNDERLYING PROXY, not an admitted entry. Frozen rules:
+    - the firing (touch) bar itself never qualifies as the confirming close; the scan starts at the first bar AFTER it
+      (a firing bar that closed beyond the level is the `observed_reclaim` stratum of P-04a, and the paired variant
+      still waits for the NEXT completed close);
+    - confirmation = first COMPLETED 1m close beyond the level within `window_bars`; entry = the OPEN of the following bar
+      (no same-close hindsight fill);
+    - re-run the geometry gates only: stop side, room to TP1, R2 >= `min_rr` at the exit rung (TP2 when present) - a frozen
+      copy of the bar. NOT evaluated (unknown, never assumed passed): quote quality / freshness, premium sizing and the
+      quantity-dependent exit rung, the never-chase cap, timing windows, admission and daily-loss budgets;
+    - follow the underlying FROM THE ENTRY BAR (inclusive): TP1 touch vs stop close, first come; both on one bar = unknown;
+    - an incomplete horizon (fewer than `window_bars` bars observed and the session not over) is `pending`, not
+      `no_confirmation`; the session's last bar before the cutoff closes the horizon.
+    Underlying-only R (full-size proxy at TP1, -1R at the stop); option premium at the delayed time is UNKNOWN.
+    Outcomes: no_confirmation, pending (...), refused_stop_side, refused_no_room, refused_r2, unknown (...), tp1_first,
+    stop_first, unresolved."""
+    out = {"policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open", "windowBars": window_bars, "minRr": min_rr,
+           "gatesNotEvaluated": ["quote quality/freshness", "premium sizing / quantity-dependent exit rung", "never-chase cap", "timing window", "admission and daily-loss budgets"],
+           "outcome": None, "resultR": None, "confirmTs": None, "entryTs": None, "entry": None, "riskPerUnit": None, "rr": None, "barsWaited": None}
     if level is None or stop is None or tp1 is None:
         out["outcome"] = "unknown (level, stop or target missing)"; return out
     long = direction == "long"
@@ -281,7 +292,11 @@ def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: fl
         if (b["close"] > level) if long else (b["close"] < level):
             confirm_i = i; break
     if confirm_i is None:
-        out["outcome"] = "no_confirmation"; out["barsWaited"] = min(len(path), window_bars); return out
+        observed = min(len(path), window_bars); out["barsWaited"] = observed
+        session_over = bool(path) and int(path[-1]["ts"]) + 2 * 60000 > cutoff_ms      # the last observed bar is the session's last bar
+        if observed < window_bars and not session_over:
+            out["outcome"] = f"pending (horizon incomplete: {observed} of {window_bars} bars observed)"; return out
+        out["outcome"] = "no_confirmation"; return out
     if confirm_i + 1 >= len(path) or int(path[confirm_i + 1]["ts"]) - int(path[confirm_i]["ts"]) != 60000:
         out["outcome"] = "unknown (no executable bar after the confirming close)"; return out
     eb = path[confirm_i + 1]
@@ -299,8 +314,8 @@ def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: fl
     out["rr"] = round(rr, 2)
     if rr < min_rr:
         out["outcome"] = "refused_r2"; return out
-    prev = int(eb["ts"])
-    for b in path[confirm_i + 2:]:
+    prev = int(eb["ts"]) - 60000
+    for b in path[confirm_i + 1:]:                       # FROM the entry bar: the fill minute itself can reach TP1 or the stop
         if int(b["ts"]) - prev != 60000:
             out["outcome"] = "unknown (bar gap after entry)"; return out
         prev = int(b["ts"])
@@ -571,7 +586,7 @@ def summarize(data: dict) -> dict:
     p04_paired = {"rows": paired, "outcomes": dict(sorted(agg.items())), "resolvedR": {"n": r_n, "sumR": round(r_sum, 2)},
                   "baselineWinnersInSample": sum(1 for r in coh if (r.get("netRealized") or 0) > 0 and r.get("confirmationPair")),
                   "baselineLosersInSample": sum(1 for r in coh if (r.get("netRealized") or 0) < 0 and r.get("confirmationPair")),
-                  "definition": f"touch baseline vs first completed close beyond the level within {P04_CONFIRM_WINDOW_BARS} bars, entry at the next bar OPEN, unchanged geometry gates (stop side, room, R2 >= {P04_MIN_RR} at the exit rung), underlying TP1-touch vs stop-close; descriptive until >= 30 paired rows"}
+                  "definition": f"GEOMETRY-ONLY UNDERLYING PROXY: touch baseline vs first completed close beyond the level within {P04_CONFIRM_WINDOW_BARS} bars after the touch bar, entry at the next bar OPEN, geometry gates only (stop side, room, R2 >= {P04_MIN_RR} at the exit rung); quote quality, sizing/exit rung, chase, timing windows and admission budgets NOT evaluated; underlying TP1-touch vs stop-close from the entry bar; incomplete horizons pending; descriptive/exploratory until >= 30 paired rows"}
     # P-05 (frozen 2026-09-16): afternoon (prime_close / midday) vs morning (prime_open) and event-day vs ordinary day,
     # over every EM attempt (not only the P-01 cohort) - rejected opportunities and sacrificed winners included.
     def _session_key(r):
@@ -657,7 +672,7 @@ def render(data: dict, s: dict) -> str:
           "| Firing-bar class | Fills | Winners | Losers | Open | Net (closed) | Rejected | Underlying TP1-first refused | Proxy unknown |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     L += [f"| {k} | {v['fills']} | {v['winners']} | {v['losers']} | {v['open']} | {v['net']:+.2f} | {v['rejected']} | {v['underlyingTp1FirstRefused']} | {v['unknownProxy']} |" for k, v in s.get("p04", {}).items()] or ["| (no cohort attempts) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"]
     pp = s.get("p04Paired") or {}
-    L += ["", f"**P-04 PAIRED confirmation comparison - order-free, {pp.get('definition', '')}:**",
+    L += ["", f"**P-04 PAIRED confirmation comparison - order-free, {pp.get('definition', '')}. Not an admitted entry: the gates listed as not evaluated are unknown for every variant row:**",
           f"outcomes {json.dumps(pp.get('outcomes', {}))}; resolved underlying R: n={pp.get('resolvedR', {}).get('n', 0)} sum={pp.get('resolvedR', {}).get('sumR', 0):+.2f}; baseline winners/losers kept in the paired sample: {pp.get('baselineWinnersInSample', 0)}/{pp.get('baselineLosersInSample', 0)}",
           "| Attempt | Baseline | Confirmation variant | Dollars at the delayed entry |", "|---|---|---|---|"]
     for r in pp.get("rows", []):
