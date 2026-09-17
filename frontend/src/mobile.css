@@ -877,3 +877,10 @@ button.bl-card:active { background: var(--surface-2); }
 
 /* proposal readiness grid stacks on phones (readiness-v1) */
 @media (max-width: 640px) { .risk-grid { grid-template-columns: 1fr; } .risk-grid > span { margin-top: 4px; } }
+
+/* Knowledge tab on phones: the view buttons wrap into two rows, the search box takes the
+   full width and the coverage line (total / loaded / load more) stays a visible row */
+@media (max-width: 639px) {
+  .kb-bar .seg.sm { display: flex; flex-wrap: wrap; }
+  .kb-search { flex-basis: 100%; max-width: none; }
+}

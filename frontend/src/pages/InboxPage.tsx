@@ -2207,36 +2207,54 @@ function NoteCard({ n, onChanged, index }: {
 
 type KbView = "all" | "rule" | "ticker" | "source" | "general" | "flagged";
 
+const KB_EMPTY_COUNTS: Record<import("../types").TipNoteCategory, number> = {
+  all: 0, rule: 0, ticker: 0, source: 0, general: 0, flagged: 0, daily: 0, experiment: 0, other: 0,
+};
+
 function KnowledgeTab() {
   const [notes, setNotes] = useState<import("../types").TipNote[] | null>(null);
   const [total, setTotal] = useState(0);
+  // GLOBAL per-category counts from the server (over the history/search filter) —
+  // never derived from the loaded page, so "⚠ Needs you · 24" is true even when
+  // 12 of those notes sit beyond the first 200
+  const [counts, setCounts] = useState<Record<import("../types").TipNoteCategory, number>>(KB_EMPTY_COUNTS);
   const [q, setQ] = useState("");
   const [view, setView] = useState<KbView>("all");
   const [withHistory, setWithHistory] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   // KB-02: propose-only receipts — the audit's judgement waiting for a human
   const [batches, setBatches] = useState<import("../types").KnowledgeBatch[]>([]);
   const PAGE = 200;
   // KB-04: server-side search with a TOTAL — the tab used to filter a silent
-  // newest-300 slice while 550 active notes stayed unfetched
+  // newest-300 slice while 550 active notes stayed unfetched. 2026-09-16: the
+  // CATEGORY filters on the server BEFORE pagination (an older rule or a flagged
+  // note beyond the first 200 is reachable through its button), `total` is the
+  // filtered total and the loaded count is shown apart from it.
   const load = (append = false) => {
     const offset = append ? (notes?.length ?? 0) : 0;
-    return api.searchTipNotes(q.trim(), offset, PAGE, withHistory)
-      .then((r) => { setTotal(r.total); setNotes((prev) => (append && prev ? [...prev, ...r.items] : r.items)); })
-      .catch(() => undefined);
+    if (append) setLoadingMore(true);
+    return api.searchTipNotes(q.trim(), offset, PAGE, withHistory, view)
+      .then((r) => {
+        setTotal(r.total); setCounts(r.counts ?? KB_EMPTY_COUNTS);
+        setNotes((prev) => (append && prev ? [...prev, ...r.items] : r.items));
+      })
+      .catch(() => undefined)
+      .finally(() => setLoadingMore(false));
   };
   useEffect(() => {
     const t = setTimeout(() => { load(false); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [withHistory, q]);
+  }, [withHistory, q, view]);
   useEffect(() => { api.knowledgeBatches("proposed").then(setBatches).catch(() => undefined); }, [notes]);
   const needle = q.trim().toUpperCase();
   const all = (notes ?? []).filter((n) =>
     // experiment artifacts are never injected into live runs — they only count
-    // and show when the history toggle is on (or when searched for explicitly)
+    // and show when the history toggle is on (or when searched for explicitly);
+    // the server applies the same rule to `total`, so the two never disagree
     (withHistory || !!needle || !n.scope.startsWith("experiment:")));
   const fetched = notes?.length ?? 0;
-  const coverage = total > fetched ? `showing ${fetched} of ${total}` : `${total} note${total === 1 ? "" : "s"}`;
+  const partial = total > fetched;
   const rules = all.filter((n) => n.scope === "rule");
   const general = all.filter((n) => n.scope === "general");
   const daily = all.filter((n) => n.scope.startsWith("daily:"))
@@ -2253,12 +2271,6 @@ function KnowledgeTab() {
     && !n.scope.startsWith("ticker:") && !n.scope.startsWith("source:")
     && !n.scope.startsWith("daily:") && !n.scope.startsWith("experiment:"));
   const experiments = all.filter((n) => n.scope.startsWith("experiment:"));
-  const counts: Record<KbView, number> = {
-    all: all.length, rule: rules.length,
-    ticker: Object.values(byTicker).reduce((a, v) => a + v.length, 0),
-    source: Object.values(bySource).reduce((a, v) => a + v.length, 0),
-    general: general.length, flagged: flagged.length,
-  };
   const VIEWS: [KbView, string][] = [
     ["all", "All"], ["rule", "⚖ Rules"], ["ticker", "Tickers"],
     ["source", "Sources"], ["general", "General"], ["flagged", "⚠ Needs you"],
@@ -2266,39 +2278,49 @@ function KnowledgeTab() {
   const sec = (key: string, title: ReactNode, hint: string, items: typeof all, numbered = false) =>
     items.length === 0 ? null : (
       <div className="kb-sec" key={key}>
-        <div className="kb-sec-t">{title} <span className="muted">· {items.length} — {hint}</span></div>
+        <div className="kb-sec-t">{title} <span className="muted">· {items.length}{partial ? " loaded" : ""} — {hint}</span></div>
         {items.map((n, i) => (
           <NoteCard key={n.id} n={n} onChanged={load} index={numbered ? i + 1 : undefined} />
         ))}
       </div>
     );
+  const viewLabel = VIEWS.find(([k]) => k === view)?.[1] ?? "All";
   return (
     <div className="panel mb">
-      <div className="panel-head">Knowledge base
+      <div className="panel-head kb-head">Knowledge base
         <span className="sub">what the desk knows — matching notes reach the analyst before every run; ⚖ rules ride on EVERY run and retros refine them</span>
-        <input className="armed-filter" placeholder="search notes…" value={q}
-          onChange={(e) => setQ(e.target.value)} spellCheck={false}
-          aria-label="Search knowledge" style={{ marginLeft: "auto", maxWidth: 220 }} />
-        <span className="muted" style={{ marginLeft: 8 }}>{coverage}</span>
-        {total > fetched && (
-          <button className="link-btn" style={{ marginLeft: 8 }} onClick={() => load(true)}>load more</button>
-        )}
       </div>
       <div className="panel-body">
         <KnowledgeComposer onSaved={load} />
         <div className="kb-bar">
           <div className="seg sm" role="group" aria-label="Knowledge view">
             {VIEWS.map(([k, label]) => (
-              <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>
+              <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}
+                title={`${counts[k]} matching note${counts[k] === 1 ? "" : "s"} in the whole store`}>
                 {label}{counts[k] ? ` · ${counts[k]}` : ""}
               </button>
             ))}
           </div>
+          <input className="armed-filter kb-search" placeholder="search notes…" value={q}
+            onChange={(e) => setQ(e.target.value)} spellCheck={false} aria-label="Search knowledge" />
           <label className="muted kb-hist" title="superseded and TTL-expired notes are kept as history — no run reads them">
             <input type="checkbox" className="tip-sel" checked={withHistory}
               onChange={(e) => setWithHistory(e.target.checked)} /> show history (superseded + expired)
           </label>
         </div>
+        {notes != null && (
+          <div className="kb-coverage" role="status" aria-live="polite"
+            title="the total counts every note matching the current view, history toggle and search — the server filters before paging; loaded = how many of them are on this page">
+            <span className="kb-cov-total"><b>{total}</b> {total === 1 ? "note" : "notes"} match {view === "all" ? "" : `“${viewLabel.replace(/^[^A-Za-z]+\s/, "")}”`}{needle ? ` for “${q.trim()}”` : ""}{withHistory ? " incl. history" : ""}</span>
+            <span className="kb-cov-loaded">· <b>{fetched}</b> loaded</span>
+            {partial && (
+              <button className="link-btn kb-more" onClick={() => load(true)} disabled={loadingMore}>
+                {loadingMore ? "loading…" : `load ${Math.min(PAGE, total - fetched)} more`}
+              </button>
+            )}
+            {!partial && total > 0 && <span className="muted kb-cov-all">· all loaded</span>}
+          </div>
+        )}
         {batches.length > 0 && (
           <div className="kb-sec">
             <div className="kb-sec-t">🗂 Audit proposals <span className="muted">· {batches.length} — knowledge
@@ -2326,15 +2348,16 @@ function KnowledgeTab() {
             ))}
           </div>
         )}
-        {flagged.length > 0 && view !== "flagged" && (
+        {counts.flagged > 0 && view !== "flagged" && (
           <button type="button" className="approvals-note mb" onClick={() => setView("flagged")}>
-            ⚠ {flagged.length} note{flagged.length === 1 ? "" : "s"} need your call — the weekly rule
-            audit found rules pulling against each other
+            ⚠ {counts.flagged} note{counts.flagged === 1 ? "" : "s"} need your call — the weekly rule
+            audit found rules pulling against each other{counts.flagged > flagged.length ? ` (${counts.flagged - flagged.length} beyond the loaded page — open the view)` : ""}
           </button>
         )}
         {notes == null ? <Spinner /> : all.length === 0 ? (
           <div className="empty">
-            {needle ? `Nothing matches “${q.trim()}”.`
+            {needle ? `Nothing matches “${q.trim()}”${view === "all" ? "" : ` in ${viewLabel}`}.`
+              : view !== "all" ? `No ${viewLabel.replace(/^[^A-Za-z]+\s/, "").toLowerCase()} notes${withHistory ? "" : " (history hidden)"}.`
               : "Empty so far — the analyst saves durable context here after runs and retros; teach it something above."}
           </div>
         ) : (

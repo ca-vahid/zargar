@@ -385,6 +385,15 @@ export interface TipNote {
   deletedAt?: string | null;   // tombstone (history keeps the replacement link)
 }
 
+/** Knowledge search page: `total` is the FILTERED total (category + history + search),
+    `items` one page of it; `counts` are GLOBAL per-category counts over the same
+    history/search filter - never the loaded page. */
+export type TipNoteCategory = "all" | "rule" | "ticker" | "source" | "general" | "flagged" | "daily" | "experiment" | "other";
+export interface TipNoteSearch {
+  items: TipNote[]; total: number; offset: number; limit: number;
+  category: TipNoteCategory; counts: Record<TipNoteCategory, number>; countsScope?: string;
+}
+
 // KB-02 receipt: what a knowledge audit proposed (propose-only mode) or applied
 export interface KnowledgeBatch {
   id: string; runId: string; scope: string; status: "proposed" | "applied" | "rejected";

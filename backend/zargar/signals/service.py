@@ -314,17 +314,80 @@ class SignalService:
                                     "candidates": len(cand), "returned": len(out)}
         return out[max(0, int(offset)):max(0, int(offset)) + limit]
 
+    # Knowledge-tab categories (2026-09-16): the SAME predicate the tab renders by,
+    # applied on the server BEFORE pagination so an older rule or a flagged note
+    # beyond the first page is reachable through its category, and the counts on
+    # the category buttons are GLOBAL (over every matching note, not the loaded page).
+    NOTE_CATEGORIES = ("all", "rule", "ticker", "source", "general", "flagged", "daily", "experiment", "other")
+
+    @staticmethod
+    def note_category(scope: str, needs_human: bool = False) -> str:
+        """The structural category of one note (flagged is an OVERLAY, judged apart)."""
+        sc = str(scope or "")
+        if sc == "rule":
+            return "rule"
+        if sc == "general":
+            return "general"
+        if sc.startswith("ticker:"):
+            return "ticker"
+        if sc.startswith("source:"):
+            return "source"
+        if sc.startswith("daily:"):
+            return "daily"
+        if sc.startswith("experiment:"):
+            return "experiment"
+        return "other"
+
+    @staticmethod
+    def _category_clause(category: str, *, show_experiments: bool):
+        """SQL predicate for one category; None = no restriction. `all` hides
+        experiment artifacts unless history is shown or a search names them -
+        exactly what the tab shows, so its total is the tab's total."""
+        from sqlalchemy import not_, or_
+        from ..models import TipNote
+        structural = or_(TipNote.scope == "rule", TipNote.scope == "general",
+                         TipNote.scope.like("ticker:%"), TipNote.scope.like("source:%"),
+                         TipNote.scope.like("daily:%"), TipNote.scope.like("experiment:%"))
+        if category == "rule":
+            return TipNote.scope == "rule"
+        if category == "general":
+            return TipNote.scope == "general"
+        if category == "ticker":
+            return TipNote.scope.like("ticker:%")
+        if category == "source":
+            return TipNote.scope.like("source:%")
+        if category == "daily":
+            return TipNote.scope.like("daily:%")
+        if category == "experiment":
+            return TipNote.scope.like("experiment:%")
+        if category == "flagged":
+            return TipNote.needs_human.is_(True)
+        if category == "other":
+            return not_(structural)
+        if category in ("", "all", None):
+            return None if show_experiments else not_(TipNote.scope.like("experiment:%"))
+        raise ValueError(f"unknown note category {category!r}")
+
     async def search_tip_notes(self, q: str = "", scopes: list[str] | None = None, *,
                                offset: int = 0, limit: int = 100,
-                               include_history: bool = False) -> dict:
+                               include_history: bool = False, category: str = "all") -> dict:
         """KB-04: server-side paginated search with a TOTAL — the Knowledge tab
-        used to filter a silent newest-300 slice (550 active notes unfetched)."""
+        used to filter a silent newest-300 slice (550 active notes unfetched).
+        2026-09-16: `category` filters BEFORE pagination (an older rule or a
+        flagged note beyond page 1 is reachable through its category), `total`
+        is the FILTERED total, and `counts` are the global per-category counts
+        over the same base filter (history + search) - never the loaded page."""
         from sqlalchemy import func, or_
         from ..models import TipNote
         limit = max(1, min(int(limit), 500))
+        category = (category or "all").strip().lower()
+        if category not in self.NOTE_CATEGORIES:
+            raise ValueError(f"unknown note category {category!r}")
+        needle = (q or "").strip()
         async with self.engine.sf() as session:
             base = select(TipNote)
             cnt = select(func.count()).select_from(TipNote)
+            grouped = select(TipNote.scope, TipNote.needs_human, func.count()).group_by(TipNote.scope, TipNote.needs_human)
             conds = []
             if scopes:
                 conds.append(TipNote.scope.in_(scopes))
@@ -332,7 +395,6 @@ class SignalService:
                 now = dt.datetime.now(dt.timezone.utc)
                 conds.append((TipNote.valid_until.is_(None)) | (TipNote.valid_until > now))
                 conds.append(TipNote.superseded_by.is_(None))
-            needle = (q or "").strip()
             if needle:
                 like = f"%{needle}%"
                 conds.append(or_(TipNote.text.ilike(like), TipNote.scope.ilike(like),
@@ -340,12 +402,27 @@ class SignalService:
             for c in conds:
                 base = base.where(c)
                 cnt = cnt.where(c)
+                grouped = grouped.where(c)
+            show_exp = bool(include_history or needle)
+            cat = self._category_clause(category, show_experiments=show_exp)
+            if cat is not None:
+                base = base.where(cat)
+                cnt = cnt.where(cat)
             total = (await session.execute(cnt)).scalar() or 0
             rows = (await session.execute(
                 base.order_by(TipNote.created_at.desc(), TipNote.id.desc())
                 .offset(max(0, int(offset))).limit(limit))).scalars().all()
+            counts = {k: 0 for k in self.NOTE_CATEGORIES}
+            for sc, nh, n in (await session.execute(grouped)).all():
+                k = self.note_category(sc)
+                counts[k] += int(n)
+                if k != "experiment" or show_exp:
+                    counts["all"] += int(n)
+                if nh:
+                    counts["flagged"] += int(n)
         return {"items": [self.note_dict(r) for r in rows], "total": int(total),
-                "offset": max(0, int(offset)), "limit": limit}
+                "offset": max(0, int(offset)), "limit": limit, "category": category,
+                "counts": counts, "countsScope": "global over the history/search filter - not the loaded page"}
 
     async def note_scope_counts(self, *, prefixes: tuple[str, ...] = ("ticker:", "source:"),
                                 include_general: bool = True) -> dict[str, int]:
