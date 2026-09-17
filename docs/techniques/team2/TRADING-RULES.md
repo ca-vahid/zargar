@@ -3122,6 +3122,29 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-16 review of the shadow diagnostics v0.8.01 (other team: ledger regressions PASS; measurements NOT yet accepted for
+  profitability conclusions; three boundaries D1–D3; no trading-rule change) → v0.8.02** — **D1** an alternative unpriced at the
+  entry but quoted at a follow-up made `summarize_day` compare None with a float (`TypeError`) — and `_score_execution` is called by
+  the shared `_end_session`, so a shadow fault could have stopped a plan's close. Fix: an unknown entry price yields NO hypothetical
+  return (`entryPriceKnown=False`, reason kept) and enters no denominator or comparison; the shadow summary runs inside its own guard
+  and a fault becomes `diagnostics: {status: error}` while P&L, the funnel and the disarm complete (their `_end_session` probe).
+  **D2** `reprice` can return the already-served CACHED quote and the observation checked only that the job ran on time, so a
+  two-minute-old entry quote read as the two-minute observation ("the contract lost only its commission"). Fix: every quote is
+  evidence only when live, sane (positive ask, positive bid, not crossed) and carrying its OWN source timestamp within 30 s of
+  collection (`quote_check`); candidates keep source + collection timestamps and `priceKnown`; follow-ups go through the service's
+  forced refresh (`refresh_now`), bounded to the selected + in-band + nearest contracts (at most 6, `followed`); an outage, a missing
+  timestamp, a crossed quote or a late task is UNKNOWN with its reason and reported as missing coverage. **D3** the weighted exit
+  price read only `status=FILLED` exit records while the 09-16 QQQ exits kept `SUBMITTED` beside their confirmed `filledQty` and
+  price. Fix: confirmed positive `filledQty` with a price decides, weighted, duplicates by order id counted once, requested `qty`
+  never a fill, a filled exit without a price = `exitPriceUnknown`. Labels now separate **actual book fills** (realized, after
+  commissions) from **HYPOTHETICAL quoted ask-to-bid returns** everywhere. Their packet verbatim:
+  `tests/test_codex_team2_diag_observations.py` (4 cases); own additions for the acceptance lists. **C6 plan amended**: complete RTH
+  coverage and `source=exchange` do NOT identify the provider — the boot seed stamps whatever `fetch_window` returns as `exchange`
+  (`engine.py`), Alpaca's stream stamps `exchange`, and the precedence upsert treats two `exchange` rows as peers — so C6 needs
+  provider provenance, the precedence/merge policy and proof that live and replay consume the same decision-time inputs incl. the
+  warm-up; the coverage manifest is published per date/symbol (21 dates 08-18 → 09-16 at 390/390; the earlier "63 symbol-days"
+  counted from 08-18 — the review's 19 dates from 08-20 are 57 cells; the development window 08-20 → 09-11 is 16 dates = 48 cells).
+  Activation gate closed; nothing armed on the experiment books.
 - **2026-09-16 EOD review (other team: −$479.69 net, two QQQ stop-outs at 10:00 and 10:08 — legitimate filled Practice orders with
   completed protective exits; P2 close-report defects reproduced; P1 decision-time evidence; GO for shadow diagnostics, HOLD on any
   new filter) → v0.8.01** — (1) **Close report repaired**: the refusal/skip funnel is UNIQUE decisions from a durable ledger keyed

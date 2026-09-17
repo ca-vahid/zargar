@@ -28,6 +28,8 @@ import json
 HORIZONS = ("2m", "5m", "10m")                  # fixed follow-up horizons after the signal's quote
 HORIZON_MS = {"2m": 120_000, "5m": 300_000, "10m": 600_000}
 MAX_LATE_MS = 90_000                             # an observation taken later than this after its due time is unknown
+MAX_QUOTE_AGE_MS = 30_000                        # a quote whose SOURCE time is older than this at collection is not an observation
+MAX_FOLLOWED = 6                                 # shadow collection follows at most this many contracts per attempt (bounded)
 MOVED_AWAY_ATR = 0.25                            # LABEL: the underlying moved on from the pullback close by this many ATR
 FEE_SIDES = 2                                    # a round trip pays the per-contract commission twice
 CONFIRM_TF_MS = 15 * 60_000
@@ -293,10 +295,41 @@ def attempt_context(setup_id: str, tid: str, fired_ts: int, trades, fees_fn, bar
 
 
 # ---------------------------------------------------------------- 4. contract economics
+def quote_check(q: dict | None, collected_ts: int, *, max_age_ms: int = MAX_QUOTE_AGE_MS, need_bid: bool = True) -> tuple[dict | None, str | None]:
+    """One quote as EVIDENCE: live-served, a positive ask (and bid when `need_bid`), not crossed, and carrying a SOURCE
+    timestamp within `max_age_ms` of the moment it was collected. Anything else is unknown, with the reason — a fresh
+    timestamp stamped by the collector is not a fresh market observation."""
+    if not q:
+        return None, "no quote"
+    if q.get("priced") not in (None, "opra") and q.get("priced") != "opra":
+        return None, f"not live ({q.get('priced')})"
+    bid, ask = _f(q.get("bid")), _f(q.get("ask"))
+    if ask is None or ask <= 0:
+        return None, "no ask"
+    if need_bid and (bid is None or bid <= 0):
+        return None, "no bid"
+    if bid is not None and bid > ask:
+        return None, "crossed quote"
+    ts = q.get("quoteTs")
+    if ts is None:
+        return None, "no source timestamp"
+    age = int(collected_ts) - int(ts)
+    if age > int(max_age_ms):
+        return None, f"stale quote ({age // 1000}s old at collection)"
+    if age < -5_000:
+        return None, "quote timestamp ahead of the clock"
+    return {"bid": bid, "ask": ask, "mid": (round((bid + ask) / 2, 4) if bid is not None else None), "quoteTs": int(ts),
+            "ageMs": max(0, age)}, None
+
+
 def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | None, *, floor: float, band_hi: float,
-                   spot: float | None, quote_ts: int) -> list[dict]:
+                   spot: float | None, quote_ts: int, source_ts: dict | None = None,
+                   max_age_ms: int = MAX_QUOTE_AGE_MS, max_followed: int = MAX_FOLLOWED) -> list[dict]:
     """The selected contract and every alternative the picker examined, with the quotes it saw and the Greeks the
-    chain carried at that moment (delayed chain Greeks unless `greeksLive`)."""
+    chain carried at that moment (delayed chain Greeks unless `greeksLive`). `quote_ts` is the COLLECTION time;
+    `source_ts[symbol]` the quote's own timestamp. `priceKnown` says whether the entry quote is usable as the denominator
+    of a hypothetical return; `followed` bounds the follow-up collection to the selected contract, the in-band
+    alternatives and then the nearest others, at most `max_followed`."""
     out = []
     for x in examined or []:
         sym = str(x.get("symbol") or "")
@@ -305,6 +338,9 @@ def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | No
         ask, bid = _f(x.get("ask")), _f(x.get("bid"))
         eligible = bool(x.get("eligible"))
         strike = _f(x.get("strike"))
+        sts = (source_ts or {}).get(sym)
+        clean, why = quote_check({"bid": bid, "ask": ask, "priced": x.get("priced"), "quoteTs": sts}, quote_ts,
+                                 max_age_ms=max_age_ms, need_bid=False) if eligible else (None, "not priced live")
         out.append({"symbol": sym, "strike": strike, "bid": bid, "ask": ask,
                     "mid": (round((bid + ask) / 2, 4) if bid is not None and ask is not None and ask > 0 else None),
                     "priced": x.get("priced"), "eligible": eligible,
@@ -313,7 +349,12 @@ def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | No
                     "delta": _f(g.get("delta")), "gamma": _f(g.get("gamma")), "theta": _f(g.get("theta")), "iv": _f(g.get("mid_iv")),
                     "greeksLive": bool(row.get("greeksLive")), "greeksAsOf": row.get("asOf") or row.get("ts"),
                     "spot": spot, "distancePct": (round((strike - spot) / spot * 100, 3) if strike is not None and spot else None),
-                    "quoteTs": quote_ts})
+                    "quoteTs": sts, "collectedTs": quote_ts, "quoteAgeMs": (clean or {}).get("ageMs"),
+                    "priceKnown": clean is not None, "priceUnknownReason": why, "followed": False})
+    order = sorted(range(len(out)), key=lambda i: (not out[i]["selected"], not out[i]["inBand"],
+                                                  abs(float(out[i]["distancePct"] or 0.0))))
+    for i in order[:max(0, int(max_followed))]:
+        out[i]["followed"] = True
     return out
 
 
@@ -340,22 +381,32 @@ def schedule(attempt: str, quote_ts: int, *, with_exit: bool) -> list[dict]:
     return rows
 
 
-def observation(horizon: str, due_ts: int | None, taken_ts: int, quotes: dict, *, max_late_ms: int = MAX_LATE_MS) -> dict:
+def observation(horizon: str, due_ts: int | None, taken_ts: int, quotes: dict, *, max_late_ms: int = MAX_LATE_MS,
+                max_quote_age_ms: int = MAX_QUOTE_AGE_MS, unknown: dict | None = None) -> dict:
     """One follow-up observation: `quotes[symbol]` = {bid, ask, priced, quoteTs} or None (no quote). Taken too late
-    after its due time, the whole observation is UNKNOWN (kept with its reason), never back-dated."""
+    after its due time, the whole observation is UNKNOWN (kept with its reason), never back-dated. Each quote must be
+    live, sane and carry a SOURCE timestamp within `max_quote_age_ms` of collection — a cached quote from the entry
+    re-served two minutes later is not the two-minute observation. `unknown[symbol]` names why a quote is missing
+    (outage, not followed) when the caller knows."""
     late = (int(taken_ts) - int(due_ts)) if due_ts is not None else 0
     if due_ts is not None and late > int(max_late_ms):
         return {"horizon": horizon, "dueTs": due_ts, "takenTs": int(taken_ts), "status": "unknown",
-                "reason": f"taken {late // 1000}s after due (> {max_late_ms // 1000}s)", "quotes": {}}
+                "reason": f"taken {late // 1000}s after due (> {max_late_ms // 1000}s)", "quotes": {}, "unknown": {}}
     qs: dict[str, dict | None] = {}
+    why: dict[str, str] = {}
     for sym, q in (quotes or {}).items():
-        if not q or q.get("priced") != "opra" or not _f(q.get("bid")) or not _f(q.get("ask")):
+        clean, reason = quote_check(q, taken_ts, max_age_ms=max_quote_age_ms)
+        qs[sym] = clean
+        if clean is None:
+            why[sym] = (unknown or {}).get(sym) or reason or "no quote"
+    for sym, reason in (unknown or {}).items():
+        if sym not in qs:
             qs[sym] = None
-            continue
-        bid, ask = float(q["bid"]), float(q["ask"])
-        qs[sym] = {"bid": bid, "ask": ask, "mid": round((bid + ask) / 2, 4), "quoteTs": q.get("quoteTs")}
-    return {"horizon": horizon, "dueTs": due_ts, "takenTs": int(taken_ts), "status": "observed",
-            "lateMs": max(0, late), "quotes": qs}
+            why[sym] = reason
+    observed = any(v is not None for v in qs.values())
+    return {"horizon": horizon, "dueTs": due_ts, "takenTs": int(taken_ts), "status": "observed" if observed else "unknown",
+            "reason": (None if observed else "no fresh valid quote for any followed contract"),
+            "lateMs": max(0, late), "quotes": qs, "unknown": why}
 
 
 def summarize_attempt(rec: dict, fee: float) -> dict:
@@ -365,16 +416,36 @@ def summarize_attempt(rec: dict, fee: float) -> dict:
     cands = []
     observed = missing = 0
     for c in rec.get("candidates") or []:
+        entry_ask = _f(c.get("ask"))
+        entry_ok = c.get("priceKnown", True) and entry_ask is not None and entry_ask > 0
         row = {"symbol": c.get("symbol"), "strike": c.get("strike"), "selected": c.get("selected"), "inBand": c.get("inBand"),
-               "delta": c.get("delta"), "entryAsk": c.get("ask"), "entryMid": c.get("mid"), "outcomes": {}}
+               "delta": c.get("delta"), "entryAsk": entry_ask, "entryMid": c.get("mid"), "followed": c.get("followed", True),
+               "entryPriceKnown": bool(entry_ok), "outcomes": {}, "unknown": {}}
         for h in horizons:
             o = obs.get(h)
-            q = (o or {}).get("quotes", {}).get(c.get("symbol")) if o and o.get("status") == "observed" else None
-            if q is None:
+            if not entry_ok:
                 row["outcomes"][h] = None
+                row["unknown"][h] = "entry price unknown" + (f" ({c.get('priceUnknownReason')})" if c.get("priceUnknownReason") else "")
                 missing += 1
                 continue
-            row["outcomes"][h] = after_cost(c.get("ask"), c.get("mid"), q.get("bid"), q.get("mid"), fee)
+            if not o:
+                row["outcomes"][h] = None
+                row["unknown"][h] = "not observed"
+                missing += 1
+                continue
+            q = (o.get("quotes") or {}).get(c.get("symbol")) if o.get("status") == "observed" else None
+            if q is None:
+                row["outcomes"][h] = None
+                row["unknown"][h] = (o.get("unknown") or {}).get(c.get("symbol")) or o.get("reason") or "no quote"
+                missing += 1
+                continue
+            res = after_cost(entry_ask, c.get("mid"), q.get("bid"), q.get("mid"), fee)
+            if res.get("askToBidPct") is None:
+                row["outcomes"][h] = None
+                row["unknown"][h] = "no executable return (bid or entry ask missing)"
+                missing += 1
+                continue
+            row["outcomes"][h] = res
             observed += 1
         cands.append(row)
     routing = rec.get("routing") or {}
@@ -413,7 +484,7 @@ def summarize_day(attempts: list[dict], fee: float) -> dict:
             for c in s["candidates"]:
                 if c.get("selected"):
                     for h, o in c["outcomes"].items():
-                        b["selected"].setdefault(h, []).append(o["askToBidPct"] if o else None)
+                        b["selected"].setdefault(h, []).append(o["askToBidPct"] if (o and o.get("askToBidPct") is not None) else None)
         out = []
         for b in buckets.values():
             out.append({"situation": b["situation"], "value": b["value"], "attempts": b["attempts"], "filled": b["filled"],
@@ -435,18 +506,20 @@ def summarize_day(attempts: list[dict], fee: float) -> dict:
         sel = next((c for c in s["candidates"] if c.get("selected")), None)
         for h in choice:
             so = (sel or {}).get("outcomes", {}).get(h) if sel else None
-            if so:
-                choice[h]["selected"].append(so["askToBidPct"])
+            sp = so.get("askToBidPct") if so else None
+            if sp is not None:
+                choice[h]["selected"].append(sp)
             for c in s["candidates"]:
                 if c.get("selected"):
                     continue
                 o = c["outcomes"].get(h)
-                if o is None:
-                    continue
-                (choice[h]["alternativesInBand"] if c.get("inBand") else choice[h]["alternativesOther"]).append(o["askToBidPct"])
-                if so:
+                op = o.get("askToBidPct") if o else None
+                if op is None:
+                    continue                                   # unknown never enters a denominator or a comparison
+                (choice[h]["alternativesInBand"] if c.get("inBand") else choice[h]["alternativesOther"]).append(op)
+                if sp is not None:
                     choice[h]["compared"] += 1
-                    if o["askToBidPct"] > so["askToBidPct"]:
+                    if op > sp:
                         choice[h]["alternativeBeatSelected"] += 1
     contract = {h: {"selectedMeanPct": _mean(v["selected"]), "selectedN": len(v["selected"]),
                     "inBandAlternativesMeanPct": _mean(v["alternativesInBand"]), "inBandAlternativesN": len(v["alternativesInBand"]),
@@ -459,4 +532,7 @@ def summarize_day(attempts: list[dict], fee: float) -> dict:
                          "missing": sum(s["coverage"]["missing"] for s in summaries)},
             "situations": situations, "contractChoice": contract, "perAttempt": summaries,
             "labels": {"movedAwayAtr": MOVED_AWAY_ATR, "horizons": list(HORIZONS) + ["exit"], "feePerSide": fee,
-                       "note": "shadow measurements; ask-to-bid after two commissions; unknown stays unknown"}}
+                       "maxQuoteAgeMs": MAX_QUOTE_AGE_MS, "maxFollowed": MAX_FOLLOWED,
+                       "actual": "book fills: realized P&L after commissions, from the execution records",
+                       "candidates": "HYPOTHETICAL quoted ask-to-bid returns after two commissions — never fills, never realized",
+                       "note": "shadow measurements; unknown stays unknown and enters no denominator"}}

@@ -353,8 +353,13 @@ and are now part of the plan; each carries the phase it belongs to.
   location + attempt context at every fire, contract candidates followed at 2/5/10 min and the exit with after-cost outcomes,
   allocation-refused candidates quoted in the shadow, `zargar.tools.team2_diag_report`. HOLD: no new entry filter, wider stop,
   loss allowance, near-ITM eligibility or concurrency from one day. Tomorrow's review reads the report's counts and coverage.
+  Review of v0.8.01 → v0.8.02: quotes count only when live, sane and fresh by their own source timestamp; unknown entry
+  prices enter no return; the summary cannot interrupt the close; exit prices weigh confirmed fills. Actual fills and hypothetical
+  quoted returns are labelled apart. The measurements are not accepted for conclusions until the probes pass on a live day.
 - **C6 is the priority dependency:** `notes/research/2026-09-16-c6-completion-plan.md` — banked exchange tape verified complete
-  for RTH 2026-08-20 → 09-16; open: the live-vs-replay ATR difference (F119, user ruling) and the reviewed `c6-evidence.json`;
+  for RTH 08-18 → 09-16 (21 dates; 57 cells for 08-20 → 09-16); open: provider provenance + precedence policy + same warm-up
+  inputs (coverage and `source=exchange` do not identify Alpaca), the live-vs-replay ATR difference (F119, user ruling) and the
+  reviewed `c6-evidence.json`;
   then the receipt READY and the activation snapshot. Never waived.
 - **EOD corrective batch 2026-09-14 (v0.7.73 → v0.7.82): CLOSED 2026-09-14** — A–G accepted by the other team
   (durable refusal overlay, entry gate at every order path incl. transport retries, decision watermark, funnel from
