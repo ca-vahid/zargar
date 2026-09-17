@@ -62,9 +62,43 @@ function Get-EngineClassification {
 }
 
 function Get-BoundEngineProcessCount {
+  # Identity, strongest first: (1) the pid the engine stamped itself in logs\engine.pid (alive AND a zargar.main
+  # command line); (2) fallback: zargar.main processes whose executable lives under THIS runtime's backend\.venv.
+  # A second engine started by hand from the same venv is only counted under the fallback, and the caller logs which
+  # identity was used.
   param([string]$Root)
+  $pidFile = Join-Path $Root 'logs\engine.pid'
+  if (Test-Path $pidFile) {
+    $stamped = 0
+    try { $stamped = [int](Get-Content $pidFile -Raw).Trim() } catch { $stamped = 0 }
+    if ($stamped -gt 0) {
+      $p = Get-CimInstance Win32_Process -Filter "ProcessId=$stamped" -ErrorAction SilentlyContinue
+      if ($p -and $p.CommandLine -match 'zargar\.main') { $script:WatchdogIdentity = "engine.pid $stamped"; return 1 }
+      $script:WatchdogIdentity = "engine.pid $stamped not alive"; return 0
+    }
+  }
   $venv = (Join-Path $Root 'backend\.venv\').ToLowerInvariant()
   $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
       $_.CommandLine -match 'zargar\.main' -and $_.ExecutablePath -and $_.ExecutablePath.ToLowerInvariant().StartsWith($venv) })
+  $script:WatchdogIdentity = "venv-path fallback (" + $procs.Count + " proc)"
   return $procs.Count
+}
+
+function Send-WatchdogAlert {
+  # Once per stall marker: Telegram (token/chat from backend\.env, never logged) + the log line the caller writes.
+  param([string]$Root, [string]$Text, [string]$OnceFile)
+  if ($OnceFile -and (Test-Path $OnceFile)) { return $false }
+  $envPath = Join-Path $Root 'backend\.env'
+  if (-not (Test-Path $envPath)) { return $false }
+  $tok = $null; $chat = $null
+  foreach ($line in Get-Content $envPath) {
+    if ($line -match '^ZARGAR_TELEGRAM_BOT_TOKEN=(.+)$') { $tok = $Matches[1].Trim().Trim('"') }
+    if ($line -match '^ZARGAR_TELEGRAM_CHAT_ID=(.+)$') { $chat = $Matches[1].Trim().Trim('"') }
+  }
+  if (-not $tok -or -not $chat) { return $false }
+  try {
+    Invoke-RestMethod -Uri ("https://api.telegram.org/bot" + $tok + "/sendMessage") -Method Post -TimeoutSec 10 -Body @{ chat_id = $chat; text = $Text } | Out-Null
+    if ($OnceFile) { Set-Content -Path $OnceFile -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss") }
+    return $true
+  } catch { return $false }
 }

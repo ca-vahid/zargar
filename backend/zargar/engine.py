@@ -231,6 +231,15 @@ class Engine:
             asyncio.create_task(self._daily_loss_monitor(), name="daily-loss-monitor"),
             asyncio.create_task(self._event_loop_monitor(), name="event-loop-monitor"),
         ]
+        # 2026-09-17 (PFU-01): the engine stamps its own pid so the watchdog binds liveness to THIS process
+        try:
+            import os as _os
+            _root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+            _logs = _os.path.join(_root, "logs"); _os.makedirs(_logs, exist_ok=True)
+            with open(_os.path.join(_logs, "engine.pid"), "w", encoding="utf-8") as fh:
+                fh.write(str(_os.getpid()))
+        except Exception:  # pragma: no cover - a diagnostic stamp never blocks a start
+            log.debug("engine.pid not written", exc_info=True)
         # 2026-09-16: a stalled loop cannot report itself - a daemon thread captures the blocking call site
         try:
             from .loopwatch import LoopStallWatch

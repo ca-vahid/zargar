@@ -31,9 +31,14 @@ try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec
 $stallMarker = Join-Path $logDir "watchdog-stall.txt"
 $classification = $null
 if (-not $up -and -not $Force) {
+  # probe tolerance (owner ask): 2 of 3 probes with 12 s timeouts before anything is called unhealthy
   Start-Sleep -Seconds 15
   $up2 = $false
-  try { $h2 = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 8; $up2 = [bool]$h2.ok } catch { $up2 = $false }
+  try { $h2 = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 12; $up2 = [bool]$h2.ok } catch { $up2 = $false }
+  if (-not $up2) {
+    Start-Sleep -Seconds 10
+    try { $h3 = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 12; $up2 = [bool]$h3.ok } catch { $up2 = $false }
+  }
   $logPath = Join-Path $root "backend\zargar-8420.log"
   $logAge = 999999
   if (Test-Path $logPath) { $logAge = [int]((Get-Date) - (Get-Item $logPath).LastWriteTime).TotalSeconds }
@@ -44,12 +49,19 @@ if (-not $up -and -not $Force) {
   if ($ProbeOnly) { Log ("probe-only: class=" + $classification.class + " persisted=" + $classification.persisted + " - " + $classification.reason); exit 0 }
   switch ($classification.markerAction) {
     'set'   { Set-Content -Path $stallMarker -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss") }
-    'clear' { if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force } }
+    'clear' { if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }; if (Test-Path ($stallMarker + ".alerted")) { Remove-Item ($stallMarker + ".alerted") -Force } }
   }
   if ($classification.class -eq 'healthy') { Log ("health answered late (" + $classification.reason + ") - no action"); exit 0 }
   if ($classification.class -eq 'live-unhealthy') {
-    if ($Override) { Log ("OVERRIDE: live engine not answering health (" + $classification.reason + ") - replacing it on explicit override") }
-    else { Log ("REFUSED restart: engine alive but not answering health (" + $classification.reason + "); readiness unavailable - ordinary recovery refused, use ZargarRestartOverride / -Override for an emergency"); exit 2 }
+    if ($Override) { Log ("OVERRIDE: live engine not answering health (" + $classification.reason + "; identity " + $script:WatchdogIdentity + ") - replacing it on explicit override") }
+    else {
+      $msg = ("REFUSED restart: engine alive but not answering health (" + $classification.reason + "; identity " + $script:WatchdogIdentity + "). Readiness is unavailable so ordinary recovery is refused. " +
+              "HUMAN NEXT STEP: check the engine (scripts\logs.ps1, /api/health); if positions are held and it stays stalled, run the scheduled task ZargarRestartOverride (or watchdog.ps1 -Force -Override) - that override is the only path that replaces a live engine.")
+      Log $msg
+      $sent = Send-WatchdogAlert -Root $root -Text ("Zargar watchdog: " + $msg) -OnceFile ($stallMarker + ".alerted")
+      Log ("escalation " + $(if ($sent) { "sent (Telegram, once per stall marker)" } else { "not sent (no Telegram config, already alerted for this marker, or send failed)" }))
+      exit 2
+    }
   } else {
     Log ("DOWN confirmed: " + $classification.reason)
   }
