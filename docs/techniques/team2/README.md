@@ -87,7 +87,7 @@ path: reviewed `notes/research/c6-evidence.json` → `techniques.team2.default_p
 `experiments.enabled=true` → forced plan-now → receipt READY → the other team's GO. Until then `Team2 Practice` stays
 the default book, nothing is paused, research settings are unchanged, and no experiment touches a real-money account.
 
-**Profitability diagnostics (2026-09-16 evening, v0.7.100, other team's EOD GO).** After the day's two QQQ stop-outs (−$480) the
+**Profitability diagnostics (2026-09-16 evening, v0.8.01, other team's EOD GO).** After the day's two QQQ stop-outs (−$480) the
 review asked for MEASUREMENTS, not filters: the close report now counts unique decisions from a durable ledger (the display buffer
 had evicted refusals) and carries an immutable decision-time view beside the corrected-history rows; every fire records its entry
 location (confirmation close, pullback candle, level, entry line, the underlying at the order boundary, ATR distances; labels
@@ -161,7 +161,7 @@ time-of-day dependent (fails after 20:00 ET on main).
   Practice-scale figures come from an APPROXIMATE calibration (`calibrate_practice.py`: loss-risk sizing, the $2,000
   budget and the 40-contract cap; research dollars never transfer). The sizing-cap edge is a drawdown story on
   identical trades; C1's edge concentrates in week 37. Both are hypotheses with a frozen sheet, not results.
-- **The shadow diagnostics have never run a live session** (v0.7.100 deployed the evening of 2026-09-16): the follow-up quotes
+- **The shadow diagnostics have never run a live session** (v0.8.01 deployed the evening of 2026-09-16): the follow-up quotes
   ride the ~2 s quote watch and the options service's live re-pricing; the first session will show how many observations come back
   UNKNOWN (no OPRA quote, taken late after a restart). Counts will be tiny; the report ranks, it does not decide.
 - **The experiment infrastructure has never run a live session.** Minting, arming, restart identity and transitions
