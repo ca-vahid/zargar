@@ -20,6 +20,11 @@ import { absoluteUrl } from "../lib/routing";
 import type { TechniqueRun, TechniqueSetup, TechniqueStatus } from "../types";
 import { FULL_FETCH_CONCURRENCY, isUnresolved, openIds as scanOpenIds, pickStragglers, scanFinished } from "../lib/scanProgress";
 
+// This page is the EM desk: every run list it reads is scoped to EM. Without the filter another technique's runs (379
+// Options Cartel research runs on 2026-09-16) become the page's newest run and the result view is handed an analysis
+// shape that is not EM's ("Cannot read properties of undefined (reading 'map')" crashed the Analyse tab).
+const EM_RUNS = { technique: "enhanced_market" } as const;
+
 const TFS = ["1m", "5m", "15m", "30m", "1h"];
 
 function readFileAsDataUrl(f: File): Promise<string> {
@@ -159,7 +164,7 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
         if (open.length) {
           // the list window MUST cover the whole batch — a 72-run batch once sat stuck at "60 done" because this poll
           // only looked at the last 60 runs; filtered to the batch's trigger so other runs cannot crowd it out
-          const all = await api.techniqueRuns(Math.max(100, ids.length + 30), undefined, { trigger: armable ? "promote" : "scan" });
+          const all = await api.techniqueRuns(Math.max(100, ids.length + 30), undefined, { ...EM_RUNS, trigger: armable ? "promote" : "scan" });
           if (stop) return;
           for (const r of all) if (open.includes(r.id)) map[r.id] = r;
           // stragglers the window still misses: a few direct looks per tick, concurrently, then give up on them
@@ -680,7 +685,7 @@ function HistoryTab({ onOpen }: { onOpen: (id: string) => void }) {
   const [filter, setFilter] = useState("");
   const [lens, setLens] = useState<HistoryLens>("all");
   const [scoring, setScoring] = useState(false);
-  useEffect(() => { api.techniqueRuns(200).then(setRuns).catch(() => undefined); }, [setRuns]);
+  useEffect(() => { api.techniqueRuns(200, undefined, EM_RUNS).then(setRuns).catch(() => undefined); }, [setRuns]);
   const visible = useMemo(() => runs.filter((r) => {
     if (filter && !r.symbol.includes(filter.toUpperCase())) return false;
     if (lens === "all") return true;
@@ -697,7 +702,7 @@ function HistoryTab({ onOpen }: { onOpen: (id: string) => void }) {
     try {
       const res = await api.techniqueScorePending();
       toast("info", `Scored ${res.scored?.length ?? 0} run(s)${res.remaining ? `, ${res.remaining} left` : ""}`);
-      api.techniqueRuns(200).then(setRuns).catch(() => undefined);
+      api.techniqueRuns(200, undefined, EM_RUNS).then(setRuns).catch(() => undefined);
     } catch (e: any) { toast("error", e.message); } finally { setScoring(false); }
   };
   return (
@@ -979,7 +984,7 @@ export function TechniquePage() {
   const rail = useRail("tq_rail");
 
   const refreshStatus = useCallback(() => { api.techniqueStatus().then(setStatus).catch(() => undefined); }, []);
-  useEffect(() => { refreshStatus(); api.techniqueRuns(100).then(setRuns).catch(() => undefined); }, [refreshStatus, setRuns]);
+  useEffect(() => { refreshStatus(); api.techniqueRuns(100, undefined, EM_RUNS).then(setRuns).catch(() => undefined); }, [refreshStatus, setRuns]);
   const active = useMemo(() => runs.find((r) => r.id === focusId) ?? runs[0] ?? null, [runs, focusId]);
 
   // A deep link may name a run that is not in the recent list — fetch it.
@@ -1027,7 +1032,7 @@ export function TechniquePage() {
     if (!runningCount && !activeRunningId) return;
     const tick = () => {
       refreshStatus();
-      api.techniqueRuns(100).then(setRuns).catch(() => undefined);
+      api.techniqueRuns(100, undefined, EM_RUNS).then(setRuns).catch(() => undefined);
       if (activeRunningId) {
         api.techniqueRun(activeRunningId)
           .then((r) => { if (r.status !== "running") setRuns([r, ...useStore.getState().techniqueRuns.filter((x) => x.id !== r.id)]); })
@@ -1218,7 +1223,7 @@ export function TechniquePage() {
         if (r.started?.length) { localStorage.removeItem("zargar_tq_scan_dismissed"); setScan({ ids: r.started, done: false }); setTab("validation"); }
       }
       refreshStatus();
-      api.techniqueRuns(100).then(setRuns).catch(() => undefined);
+      api.techniqueRuns(100, undefined, EM_RUNS).then(setRuns).catch(() => undefined);
     } catch (e: any) { toast("error", e.message); }
   };
 

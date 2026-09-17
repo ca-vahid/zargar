@@ -17,7 +17,8 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.8.09",date:"2026-09-17",title:"EM profitability report: an early report is not the close",items:[
+  {version:"0.8.09",date:"2026-09-17",title:"EM Analyse tab stays up beside other techniques' runs",items:[
+    {tag:"fixed",text:"EM > Analyse crashed (\"Cannot read properties of undefined (reading 'map')\") a few seconds after opening: the page read the newest run of ANY technique, and tonight that was an Options Cartel research run whose analysis has no EM levels. The EM page now lists only EM runs, and the result view tolerates an analysis without levels, targets or reasons."},
     {tag:"fixed",text:"EM profitability report (offline research tool): the paired confirmation comparison now tells the report's cutoff apart from the session's actual 16:00 ET close - a 10:02 ET report with one observed bar after the touch stays PENDING instead of reading as no confirmation; only the session's last bar closes an incomplete horizon. Preparation and trading unchanged."},
   ]},
   {version:"0.8.08",date:"2026-09-16",title:"The EM check panel finishes when the server has finished",items:[
