@@ -31,7 +31,6 @@ export const CHANGELOG: Release[] = [
     {tag:"improved",text:"EM profitability report: P-04 entry strata (descriptive) plus a paired, order-free confirmation comparison (confirmed close, then next-bar open, unchanged gates, distinct refusals, option dollars unknown), and P-05 session-window / event-phase cohorts from the shared session clock with unknown calendar coverage stated. Research labels only; no trading rule changes."},
     {tag:"fixed",text:"/api/health answers build=unknown instead of a 500 when the launch-bound build helper is missing from the checkout."},
   ]},
-  ]},
   {version:"0.8.03",date:"2026-09-16",title:"Team2 quote freshness reads the source, not the receipt",items:[
     {tag:"fixed",text:"Team2 shadow diagnostics: a price's freshness is judged on the provider's confirmation time for that bid/ask (the quote's source timestamp), never on when the app last received it - a recently received old price is unknown at the entry and at every follow-up, a price with no source evidence stays unknown, and a freshly confirmed unchanged price still counts. Receipt and collection times are recorded beside the source time."},
   ]},
