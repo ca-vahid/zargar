@@ -138,7 +138,7 @@ class CboeClient:
             raise OptionsError(f"CBOE HTTP 429 (rate limited; {len(self.RATE_LIMIT_RETRIES)} retries)")
         if r.status_code >= 400:
             raise OptionsError(f"CBOE HTTP {r.status_code}")
-        data = (r.json() or {}).get("data") or {}
+        data = ((await asyncio.to_thread(r.json)) or {}).get("data") or {}   # multi-MB chain JSON: never parse it on the loop (stall #3, 2026-09-16)
         if not data.get("options"):
             raise OptionsError(f"CBOE returned no contracts for {sym}")
         self._cache[sym] = (now, data)
@@ -358,12 +358,12 @@ class AlpacaOptionsData:
                 raise OptionsError(f"Alpaca options data refused ({rq.status_code}) — subscription?")
             if rq.status_code >= 400:
                 raise OptionsError(f"Alpaca options quotes HTTP {rq.status_code}")
-            quotes = (rq.json() or {}).get("quotes") or {}
+            quotes = ((await asyncio.to_thread(rq.json)) or {}).get("quotes") or {}
             trades: dict = {}
             try:
                 rt = await self._http.get("/v1beta1/options/trades/latest", params=params)
                 if rt.status_code < 400:
-                    trades = (rt.json() or {}).get("trades") or {}
+                    trades = ((await asyncio.to_thread(rt.json)) or {}).get("trades") or {}
             except httpx.HTTPError:                      # last is optional — the NBBO is the point
                 trades = {}
             for sym, q in quotes.items():
@@ -395,7 +395,7 @@ class AlpacaOptionsData:
                 raise OptionsError(f"Alpaca options snapshots refused ({r.status_code})")
             if r.status_code >= 400:
                 raise OptionsError(f"Alpaca options snapshots HTTP {r.status_code}")
-            for sym, snap in ((r.json() or {}).get("snapshots") or {}).items():
+            for sym, snap in (((await asyncio.to_thread(r.json)) or {}).get("snapshots") or {}).items():
                 g = snap.get("greeks") or {}
                 iv = snap.get("impliedVolatility")
                 if not g and not iv:
