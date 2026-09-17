@@ -436,6 +436,29 @@ def _parse_result_json(raw: str) -> ExtractionResult:
         parsed = ExtractionResult.model_validate(obj)
     except Exception as exc:
         raise ValueError(f"validation: {str(exc)[:600]}") from exc
+    # E17-F2: a SECOND schema-valid object ("Correction: ...") makes the reply ambiguous -
+    # never "first object wins" for trading content; the caller's bounded re-ask says why.
+    # Trailing prose and unrelated JSON that fails the schema stay harmless.
+    dec, pos, extra, scanned = _json.JSONDecoder(), end, 0, 0
+    while scanned < 20:
+        k = s.find("{", pos)
+        if k == -1:
+            break
+        scanned += 1
+        try:
+            obj2, end2 = dec.raw_decode(s, k)
+        except ValueError:
+            pos = k + 1
+            continue
+        pos = end2
+        if isinstance(obj2, dict):
+            try:
+                ExtractionResult.model_validate(obj2)
+                extra += 1
+            except Exception:
+                pass
+    if extra:
+        raise ValueError(f"ambiguity: {extra + 1} schema-valid extraction objects in one reply - reply with exactly ONE JSON object")
     if trailing:
         log.info("extraction: %d trailing character(s) after the JSON object ignored", len(trailing))
     return parsed
