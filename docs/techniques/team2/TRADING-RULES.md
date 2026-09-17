@@ -3124,7 +3124,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
 - **2026-09-16 EOD review (other team: −$479.69 net, two QQQ stop-outs at 10:00 and 10:08 — legitimate filled Practice orders with
   completed protective exits; P2 close-report defects reproduced; P1 decision-time evidence; GO for shadow diagnostics, HOLD on any
-  new filter) → v0.7.100** — (1) **Close report repaired**: the refusal/skip funnel is UNIQUE decisions from a durable ledger keyed
+  new filter) → v0.8.01** — (1) **Close report repaired**: the refusal/skip funnel is UNIQUE decisions from a durable ledger keyed
   (event, setup, SOURCE minute), fed by every `_log` through the shared `note_decision` hook, persisted with the armed state and rebuilt
   from the journal's skip + contract rows (journal names normalized: `max_concurrent_positions` = `max_concurrent_skip`); a re-quoted
   price on the same candidate (SPY 11:18 760.37 → 760.38) is a VERSION of one decision; raw log rows are reported apart (`skipRows`);

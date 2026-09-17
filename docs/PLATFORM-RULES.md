@@ -2235,7 +2235,7 @@ the durable state first and drops the memory entry after (in a `finally`), so an
 object in one of the two places. Evidence: `tests/test_tip_hold_study.py::test_close_transition_is_capture_safe_at_the_persistence_boundary`
 invokes a capture from inside the manager's own persist call for the closed transition and records the exit.
 
-### The display buffer is never the record — a runner's decision funnel comes from its own ledger — 2026-09-16 (Team2 EOD review P2; v0.7.100)
+### The display buffer is never the record — a runner's decision funnel comes from its own ledger — 2026-09-16 (Team2 EOD review P2; v0.8.01)
 
 `PlanRunner._log` keeps the last 400 events for the UI. On 2026-09-16 the journal wrote 1,848 bar revisions for three Team2 plans
 and the close summaries lost IWM's concurrency refusal and SPY's desk-cap refusal to that cap, while a re-quoted price counted

@@ -46,6 +46,6 @@ tomorrow's review packet.
 ## 4. What C6 does NOT change
 
 - No research knob, threshold or experiment setting moves. The sealed C2 validation window stays sealed.
-- The shadow diagnostics (v0.7.100) run on the live tape regardless of C6; their outcomes are after-cost quote observations,
+- The shadow diagnostics (v0.8.01) run on the live tape regardless of C6; their outcomes are after-cost quote observations,
   not research-tape numbers, so they are interpretable before C6 — with tiny counts.
 - The receipt is the only door to activation; a receipt that says PREPARED is not a receipt that says READY.

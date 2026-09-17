@@ -325,6 +325,8 @@ concurrently — ALWAYS re-read main at release time, take the next FREE number,
 a collision renumber YOUR block (never rewrite another desk's released block). Run
 `npm run build` BEFORE committing any changelog merge: a bad union once shipped two
 `APP_VERSION` consts and dropped a desk's release notes.
+**Numbering (user decision 2026-09-16):** the 0.7.x series ENDED at 0.7.99; the next release was 0.8.01 and
+the series moves up from there (0.8.02, 0.8.03, …) — never 0.7.100 and never a fourth component.
 `npm run check-release` verifies these values and the package lockfile; the
 frontend production build runs this check automatically.
 
