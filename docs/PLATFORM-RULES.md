@@ -2235,7 +2235,7 @@ the durable state first and drops the memory entry after (in a `finally`), so an
 object in one of the two places. Evidence: `tests/test_tip_hold_study.py::test_close_transition_is_capture_safe_at_the_persistence_boundary`
 invokes a capture from inside the manager's own persist call for the closed transition and records the exit.
 
-### The display buffer is never the record — a runner's decision funnel comes from its own ledger — 2026-09-16 (Team2 EOD review P2; v0.7.100)
+### The display buffer is never the record — a runner's decision funnel comes from its own ledger — 2026-09-16 (Team2 EOD review P2; v0.8.01)
 
 `PlanRunner._log` keeps the last 400 events for the UI. On 2026-09-16 the journal wrote 1,848 bar revisions for three Team2 plans
 and the close summaries lost IWM's concurrency refusal and SPY's desk-cap refusal to that cap, while a re-quoted price counted
@@ -2251,3 +2251,17 @@ contract candidates with follow-up quotes at fixed horizons and at the exit, dec
 decision input: it is written by fire-and-forget tasks, tolerates a missing options service, keeps a missing quote UNKNOWN, and is
 switched by `techniques.<id>.diagnostics`. Decision-time evidence (what the desk knew, with input identity) is journaled apart
 from corrected-history evidence (the read recomputed on the final tape) — a scorecard labels which is which.
+
+### A live engine whose API socket died is not an absent engine — the watchdog spawned duplicates — 2026-09-16 21:29 ET (Team2 desk observation)
+
+The 17:59 PDT engine's `:8420` accept loop died (`OSError [WinError 64]` on the listening socket, engine log 18:29:49 PDT) while
+the process kept running its loops. The watchdog read "no answer on :8420" as DOWN and ran `start.ps1 -Detach` without stopping
+the first process; its replacement died within a minute (free RAM was 0.8–1.1 GB of 31 GB: WSL 6.5 GB, twelve Claude processes
+3.8 GB, Edge/Chrome 3.5 GB), and it tried again twice — for ~15 minutes two, then three `zargar.main` processes shared the DB,
+all paged out, none answering. The door fixed it: `restart.ps1` (the `ZargarRestart` task) stops EVERY `zargar.main` process
+before starting one; a refused connection makes it skip the readiness section as "no process", so no override was needed.
+Rules: (1) the watchdog must stop every `zargar.main` process before it starts one (today it only checked the port);
+(2) "no answer on :8420" is a reachability fact, not a process fact — enumerate the processes before deciding; (3) an assistant
+does not run heavy test suites while free RAM is under ~2 GB (two of this desk's background pytest runs were killed by the
+memory guard the same evening); (4) a duplicate engine is stopped through the door, never by hand. Evidence:
+`logs/watchdog.log` 18:31–18:46 PDT, `logs/restart-20260916-184851.log` (restore 14/14, resting 26/26, managed 2/2).

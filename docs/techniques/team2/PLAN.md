@@ -348,7 +348,7 @@ and are now part of the plan; each carries the phase it belongs to.
   (`zargar.tools.team2_receipt`, currently PREPARED). Remaining before activation: **C6** (one tape; platform owners,
   recorded in `notes/research/c6-evidence.json`) → activation snapshot with the receipt READY → the other team's GO.
   Research settings unchanged; nothing paused; `Team2 Practice` stays the default book; sim-only forever.
-- **Profitability diagnostics (2026-09-16 evening, v0.7.100; other team's EOD GO, shadow only):** durable decision ledger for the
+- **Profitability diagnostics (2026-09-16 evening, v0.8.01; other team's EOD GO, shadow only):** durable decision ledger for the
   close report (unique decisions, revisions as versions, raw rows apart), decision-time records beside corrected history, entry
   location + attempt context at every fire, contract candidates followed at 2/5/10 min and the exit with after-cost outcomes,
   allocation-refused candidates quoted in the shadow, `zargar.tools.team2_diag_report`. HOLD: no new entry filter, wider stop,
