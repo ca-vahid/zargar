@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.02";
+export const APP_VERSION = "0.8.03";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.03",date:"2026-09-16",title:"Team2 quote freshness reads the source, not the receipt",items:[
+    {tag:"fixed",text:"Team2 shadow diagnostics: a price's freshness is judged on the provider's confirmation time for that bid/ask (the quote's source timestamp), never on when the app last received it - a recently received old price is unknown at the entry and at every follow-up, a price with no source evidence stays unknown, and a freshly confirmed unchanged price still counts. Receipt and collection times are recorded beside the source time."},
+  ]},
   {version:"0.8.02",date:"2026-09-16",title:"Team2 shadow measurements: unknown stays unknown",items:[
     {tag:"fixed",text:"Team2 diagnostics (review of v0.8.01): a follow-up quote counts only when it is live, sane and carries its own source timestamp within 30 s of collection - a cached entry quote re-served two minutes later is unknown, with the reason; every candidate keeps its source and collection timestamps; the shadow follow-up refreshes through the options service's forced path and follows at most six contracts per attempt. A candidate whose entry price is unknown produces no hypothetical return and enters no denominator or comparison. The shadow summary is isolated from the close: a fault in it is recorded as diagnostic-incomplete while P&L, the funnel and the disarm complete. Exit prices are weighted by confirmed filled quantity, whatever the cached order status says; a requested quantity is never a fill."},
     {tag:"improved",text:"The diagnostics report labels the two kinds of number apart: actual book fills (realized, after commissions) versus HYPOTHETICAL quoted ask-to-bid returns after two commissions."},

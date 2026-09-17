@@ -297,8 +297,9 @@ def attempt_context(setup_id: str, tid: str, fired_ts: int, trades, fees_fn, bar
 # ---------------------------------------------------------------- 4. contract economics
 def quote_check(q: dict | None, collected_ts: int, *, max_age_ms: int = MAX_QUOTE_AGE_MS, need_bid: bool = True) -> tuple[dict | None, str | None]:
     """One quote as EVIDENCE: live-served, a positive ask (and bid when `need_bid`), not crossed, and carrying a SOURCE
-    timestamp within `max_age_ms` of the moment it was collected. Anything else is unknown, with the reason — a fresh
-    timestamp stamped by the collector is not a fresh market observation."""
+    confirmation timestamp (`quoteTs` = the provider's time for THIS bid/ask, `Quote.source_ts`) within `max_age_ms` of
+    the moment it was collected. Anything else is unknown, with the reason — neither a receipt time (`Quote.ts`, kept
+    apart as `receivedTs`) nor a timestamp stamped by the collector is a fresh market observation."""
     if not q:
         return None, "no quote"
     if q.get("priced") not in (None, "opra") and q.get("priced") != "opra":
@@ -319,7 +320,7 @@ def quote_check(q: dict | None, collected_ts: int, *, max_age_ms: int = MAX_QUOT
     if age < -5_000:
         return None, "quote timestamp ahead of the clock"
     return {"bid": bid, "ask": ask, "mid": (round((bid + ask) / 2, 4) if bid is not None else None), "quoteTs": int(ts),
-            "ageMs": max(0, age)}, None
+            "receivedTs": q.get("receivedTs"), "source": q.get("priced"), "ageMs": max(0, age)}, None
 
 
 def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | None, *, floor: float, band_hi: float,
