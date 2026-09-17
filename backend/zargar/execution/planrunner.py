@@ -2111,6 +2111,10 @@ class PlanRunner(SessionListener):
         ap.events.append(rec)
         if len(ap.events) > 400:
             del ap.events[:-400]
+        try:
+            self.note_decision(ap, rec)          # hook: the technique's durable decision ledger (Team2 2026-09-16)
+        except Exception:  # noqa: BLE001 - a ledger fault must never break the log
+            log.debug("note_decision failed", exc_info=True)
         return rec
 
     async def audit(self, run_id: str, *, limit: int = 200) -> list[dict]:
@@ -3884,6 +3888,12 @@ class PlanRunner(SessionListener):
     async def emit_proposal(self, ap: "ArmedPlan", trade: "Trade", judgement: "FireJudgement",
                             contract: dict | None, *, contracts: int | None) -> str | None:
         """Proposal mode: create the proposal the user approves; return its id (None = could not)."""
+        return None
+
+    def note_decision(self, ap: "ArmedPlan", rec: dict) -> None:
+        """Hook: every `_log` record, as written (2026-09-16). A technique that reports a decision funnel keeps its
+        OWN durable ledger here (stable candidate identity, revisions as versions) - the 400-row display buffer is
+        never the source of a close report. Default: nothing."""
         return None
 
     def state_extras(self, ap: "ArmedPlan") -> dict:

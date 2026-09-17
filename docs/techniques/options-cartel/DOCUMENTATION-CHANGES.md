@@ -1,5 +1,12 @@
 # Cartel documentation changes
 
+## 2026-09-16 — end-of-day follow-through
+
+- Documented Practice-only spread reselection, unchanged saved limits and full revalidation.
+- Added overnight baseline readiness and explicit stock-only entry challenger definitions.
+- Daily review now exposes dated preflight refusals; source limits and unpriced outcomes remain explicit.
+
+
 ## 2026-09-16 — current operations and research consolidated
 
 - Refreshed operating, capability, work-plan, release, replay and traceability guides against the integrated code.

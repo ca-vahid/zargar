@@ -33,6 +33,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.options_cartel.recovery_enabled": False,
     "techniques.options_cartel.record_option_quotes": False,
     "techniques.options_cartel.intraday_research": True,  # non-executing Practice observations only
+    "techniques.options_cartel.reselect_wide_contract": True,  # bounded spread-only alternative, automatic Practice only
     "techniques.options_cartel.profitability_research": True,  # prospective Practice studies, never orders
     "techniques.options_cartel.profitability_research.candidate_cap": 50,
     "techniques.options_cartel.profitability_research.bearish_enabled": True,
@@ -153,6 +154,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.key_levels": "off",            # C2 (2026-09-13, research): off | D1 | D2 | D3 — sweeps only, gated on C6
     "techniques.team2.max_signal_age_min": 3,        # R2 (2026-09-14): a fire older than this at decision time is stale — recorded, never sent
     "techniques.team2.experiments": {"enabled": False, "books": []},   # parallel Practice experiments (2026-09-15): [{portfolioId, label, overrides: {size_full | no_trade_zone}}]; OFF until the review team's GO
+    "techniques.team2.diagnostics": True,          # 2026-09-16: shadow profitability measurements (entry location, contract alternatives at 2/5/10 min + exit, attempt context); never an order filter
     "techniques.team2.no_trade_zone": "pm_range",    # C1 (2026-09-13, research): pm_range | conjunction — DISABLED pending the other team's approval
     "techniques.team2.pm_room_atr": 0.0,             # C1 obstacle rule, 0 = off (research)
     "techniques.team2.min_target_atr": 0.0,          # C3 minimum target room, 0 = off (research)

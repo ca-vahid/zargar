@@ -52,6 +52,20 @@ async def report(engine, portfolio_id, day):
         waits = (await session.scalars(select(Event).where(Event.type == 'SimFillWaiting',
             Event.portfolio_id == portfolio_id, Event.ts >= begins, Event.ts <= cutoff,
             Event.aggregate_id.in_([o.id for o in orders])).order_by(Event.ts))).all()
+    async with engine.sf() as session:
+        preflights = (await session.scalars(select(Event).where(
+            Event.type == 'TechniqueCartelPreflight', Event.portfolio_id == portfolio_id,
+            Event.ts >= begins, Event.ts <= cutoff).order_by(Event.ts, Event.id))).all()
+    execution_checks = {}
+    for event in preflights:
+        body = event.payload or {}; read = body.get('report') or {}
+        failures = [c for c in read.get('checks', []) if c.get('passed') is False]
+        failures += [dict(c, reason=c.get('detail') or c.get('name'))
+                     for c in (read.get('risk') or {}).get('checks', []) if c.get('passed') is False]
+        execution_checks.setdefault(body.get('runId'), []).append({
+            'at': int(event.ts.timestamp()*1000), 'passed': read.get('passed'),
+            'reasons': [c.get('reason') or c.get('name') for c in failures],
+            'checks': failures, 'expression': read.get('expression'), 'eventId': event.id})
     ownership = {a.state.get('orderId'): a.run_id for a in arms if a.state.get('orderId')}
     for p in managed:
         plan_id = (p.config or {}).get('runId')
@@ -94,10 +108,16 @@ async def report(engine, portfolio_id, day):
             'invalidated' if 'invalidated' in kinds else 'signalled' if 'triggered' in kinds or 0 < (arm.state.get('signal') or {}).get('at', 0) <= cutoff_ms else
             'data_limited' if kinds & {'unsupported_volume_period', 'untrusted_confirmation'} else
             'strategy_rejected' if 'watch_only' in kinds else 'no_trigger')
+        checks = execution_checks.get(arm.run_id, [])
+        latest_check = checks[-1] if checks else None
+        last_signal_at = max((d.get('at', 0) for d in trace if d.get('decision') == 'triggered'), default=0)
+        if not related and latest_check and latest_check['passed'] is False and latest_check['at'] >= last_signal_at:
+            category = 'execution_rejected'
         actual_exit_ids = {f.order_id for f,o in fills if o.side == 'SELL'}
         exit_reasons = [e.get('reason') or e.get('kind') for p in owned_positions
             for e in p.state.get('exits', []) if e.get('orderId') in actual_exit_ids]
         rows.append({'planId': arm.run_id, 'symbol': arm.symbol, 'status': category, 'category': category,
+            'executionChecks': checks, 'latestExecutionCheck': latest_check,
             'decisions': trace, 'assets': related, 'exitReasons': exit_reasons,
             'dataEvidence': evidence({k:v for k,v in arm.state.get('minutes', {}).items() if int(k) < cutoff_ms}),
             'lastObservedMinute': min(arm.state.get('lastMinute') or 0, cutoff_ms),

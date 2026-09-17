@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.99";
+export const APP_VERSION = "0.8.02";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,9 +17,21 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.7.99",date:"2026-09-16",title:"An EM entry survives a rate-limited chain, and health always answers",items:[
-    {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up, and it never serves expired chain data for a live pick. BAC d1 on FOMC day was allowed by the deterministic decision and killed by one unretried 429; the alert now names the cause and says a short has no shares fallback by rule."},
-    {tag:"fixed",text:"/api/health answers build=unknown instead of a 500 when the launch-bound build helper is missing from the checkout - the 2026-09-16 10:40 ET watchdog restart loop cannot recur from that cause."},
+  {version:"0.8.02",date:"2026-09-17",title:"EM entries survive a rate-limited chain; the engine can name a stall",items:[
+    {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up; expired chain data is never served for a live pick; the no-contract alert names the cause and says a short has no shares fallback by rule. Background chain fetches (enrichment, research) stand down for options.cboe_cooldown_seconds after a 429 instead of feeding the burst."},
+    {tag:"improved",text:"Chart rendering for the vision passes runs off the event loop on one worker thread, and an event-loop stall watch (ops.loop_stall_seconds) logs the blocking call site and reports loopStalls / lastStall / eventLoopLagMs on /api/health - the 2026-09-16 restart storm could not say what stalled."},
+    {tag:"improved",text:"EM profitability report: P-04 entry strata (descriptive) plus a paired, order-free confirmation comparison (confirmed close, then next-bar open, unchanged gates, distinct refusals, option dollars unknown), and P-05 session-window / event-phase cohorts from the shared session clock with unknown calendar coverage stated. Research labels only; no trading rule changes."},
+    {tag:"fixed",text:"/api/health answers build=unknown instead of a 500 when the launch-bound build helper is missing from the checkout."},
+  ]},
+  {version:"0.8.01",date:"2026-09-16",title:"Team2 measures its entries and contracts in the shadow",items:[
+    {tag:"fixed",text:"Team2 close report: refusals and skips are counted as UNIQUE decisions from a durable ledger (event, setup, source minute) that rides the persisted state and is rebuilt from the journal - the 400-row display buffer no longer decides the day's funnel, a re-quoted price on the same candidate is a revision, and raw row counts are reported apart. The scorecard now carries an immutable decision-time view of every fire (signal and confirmation times, tape and rules identity, release and build) beside the corrected-history comparison."},
+    {tag:"new",text:"Team2 profitability diagnostics (shadow measurements, techniques.team2.diagnostics, no order decision changes): every entry records its confirmation close, pullback candle, setup level, entry line, the underlying at the order boundary and the distances in ATR (same-close confirmation and moved-away labels); every attempt records first vs subsequent entry into the setup, whether the previous attempt lost and what fresh evidence existed; the picker keeps the selected contract and the alternatives it examined with their live quotes and Greeks, follows them 2, 5 and 10 minutes later and at the actual exit, and compares after-cost outcomes (ask-to-bid after two commissions; missing quotes stay unknown). A candidate refused by an allocation cap is quoted in the shadow too."},
+    {tag:"new",text:"python -m zargar.tools.team2_diag_report --date YYYY-MM-DD: the session's entry situations and contract choices ranked on after-cost outcomes, with observation counts and missing-data coverage."},
+  ]},
+  {version:"0.7.99",date:"2026-09-16",title:"Cartel: better contract choices and preparation evidence",items:[
+    {tag:"new",text:"Automatic Practice plans can make one bounded alternative-contract search when spread is the only failed entry check. Saved limits stay intact and every entry check runs again; control it in Cartel Settings."},
+    {tag:"improved",text:"Research baselines warm for the next session overnight. Validation compares saved entry rules with non-executing gap/retest and 1x-volume diagnostics on the same data."},
+    {tag:"fixed",text:"Daily review now shows the actual execution refusal and its dated quote evidence instead of leaving a rejected entry labeled only as signalled."},
   ]},
   {version:"0.7.98",date:"2026-09-16",title:"Current Cartel guidance and integrated release identity",items:[
     {tag:"improved",text:"Cartel's Method documentation now explains research readiness, fair baseline retries, short-pool counts, data warnings and actual versus modeled results. Stale operational snapshots are replaced with dated references."},

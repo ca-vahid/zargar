@@ -3122,6 +3122,32 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-16 EOD review (other team: −$479.69 net, two QQQ stop-outs at 10:00 and 10:08 — legitimate filled Practice orders with
+  completed protective exits; P2 close-report defects reproduced; P1 decision-time evidence; GO for shadow diagnostics, HOLD on any
+  new filter) → v0.8.01** — (1) **Close report repaired**: the refusal/skip funnel is UNIQUE decisions from a durable ledger keyed
+  (event, setup, SOURCE minute), fed by every `_log` through the shared `note_decision` hook, persisted with the armed state and rebuilt
+  from the journal's skip + contract rows (journal names normalized: `max_concurrent_positions` = `max_concurrent_skip`); a re-quoted
+  price on the same candidate (SPY 11:18 760.37 → 760.38) is a VERSION of one decision; raw log rows are reported apart (`skipRows`);
+  the 400-row display buffer never decides attribution (IWM's 10:02 concurrency refusal and SPY's 11:54 desk-cap refusal had been
+  evicted by 1,848 bar revisions). Their packet verbatim: `tests/test_codex_team2_eod_reporting_0916.py`. (2) **Decision time apart
+  from corrected history**: every fire writes an immutable decision-time record (signal + confirmation times, entry line/level, bucket,
+  stop/targets, model strike, tape hash up to the signal, decision watermark, rules hash, release + build, experiment stamp) —
+  `decisionTime` on the scorecard and journaled `TechniquePlanDiagnostic/decision_time`; the model-vs-book rows stay, labelled
+  `correctedHistory` (today's 10:00 trade: the read as recomputed on the final tape did not fire where the book did — the book was
+  right to its inputs, the record now says which). (3) **Entry-location diagnostic** (shadow): confirmation close, pullback candle
+  open/close + OHLC, setup level, entry line, ATR, the underlying at the order boundary, distances in ATR; labels
+  `sameCloseConfirmation` (the pullback candle closed ON the 15m confirmation close — today's 10:00 QQQ) and `movedAway` (the
+  underlying beyond the pullback close by > 0.25 ATR at the order boundary; a LABEL, not a cutoff). (4) **Contract comparison**
+  (shadow): the selected contract and every alternative the picker examined, with live bid/ask and the chain's Greeks at the signal;
+  follow-up quotes 2/5/10 min after the quote and at the actual exit; after-cost outcome per contract = sell at the bid − buy at the
+  ask − two commissions (mid-to-mid beside it as the optimistic reference); an observation with no live quote, or taken > 90 s late,
+  is UNKNOWN. A candidate refused by the concurrency or desk-loss cap (IWM 10:02) is quoted in the shadow by the same walk — no trade,
+  no verdict, no order. (5) **Second-attempt scorecard**: first vs subsequent entry into the same setup, whether the previous filled
+  attempt lost, minutes since its exit, a new extreme since it, bars since it. (6) `python -m zargar.tools.team2_diag_report --date`
+  ranks entry situations and contract choices on after-cost outcomes with counts and missing coverage; the close scorecard carries
+  the same summary (`diagnostics`). Knob `techniques.team2.diagnostics` (default on; the ledger is not optional). **No delta floor,
+  entry-distance cutoff or re-entry ban** — the review chooses from evidence. Baseline unchanged; Control/Sizing/C1 books unchanged
+  and OFF; C6 remains the priority dependency (`notes/research/2026-09-16-c6-completion-plan.md`).
 - **2026-09-15 review of PR #168 (other team: schema/override corrections ACCEPTED; transition + receipt integration; still
   HELD)** — (1) a forced transition step (retire an old-book plan without exposure / pause a book with it) or a forced
   replacement is VERIFIED: an exception, a false result or an unconfirmed state (`disarm` false / plan still armed,
