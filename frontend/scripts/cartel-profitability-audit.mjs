@@ -23,6 +23,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({headless:true});
 const at = Date.parse('2026-09-15T16:00:00Z');
 const candidates = Array.from({length:50},(_,index) => ({
+  baselineAttempts:2, entryPolicyStudy:index===0?{rows:[{variant:'gap_retest_v1',status:'waiting',prospectiveConfirmation:false},{variant:'volume_1x_v1',status:'waiting',prospectiveConfirmation:false}]}:null,
   id:`candidate-${index}`, symbol:index===0?'BOX':index===24?'GH':`TEST${index}`,
   direction:index<25?'long':'short', cohort:index<25?'primary':'bearish', baselineRank:index%25+1,
   leaderRank:25-index%25, status:index===0?'hypothetical_stock_confirmation':'waiting',
@@ -119,6 +120,8 @@ try {
       await panel.getByRole('button',{name:'Show all observed candidates'}).click();
       assert.equal(await panel.locator('.cartel-research-table > tbody > tr').count(),50);
       await panel.getByText('Study evidence for BOX',{exact:true}).click();
+      await panel.getByText('Controlled entry-policy study',{exact:true}).click();
+      await panel.getByText('gap retest v1',{exact:true}).waitFor();
       await panel.getByText('Estimated whole contracts: 2',{exact:false}).waitFor();
       await panel.getByText('Recorded quote: observed',{exact:false}).waitFor();
       await panel.getByText('Net: Not priced; complete costs required',{exact:true}).first().waitFor();
