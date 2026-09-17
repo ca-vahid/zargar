@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.02";
+export const APP_VERSION = "0.8.03";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,11 +17,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.8.02",date:"2026-09-17",title:"EM entries survive a rate-limited chain; the engine can name a stall",items:[
+  {version:"0.8.03",date:"2026-09-17",title:"EM entries survive a rate-limited chain; the engine can name a stall",items:[
     {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up; expired chain data is never served for a live pick; the no-contract alert names the cause and says a short has no shares fallback by rule. Background chain fetches (enrichment, research) stand down for options.cboe_cooldown_seconds after a 429 instead of feeding the burst."},
     {tag:"improved",text:"Chart rendering for the vision passes runs off the event loop on one worker thread, and an event-loop stall watch (ops.loop_stall_seconds) logs the blocking call site and reports loopStalls / lastStall / eventLoopLagMs on /api/health - the 2026-09-16 restart storm could not say what stalled."},
     {tag:"improved",text:"EM profitability report: P-04 entry strata (descriptive) plus a paired, order-free confirmation comparison (confirmed close, then next-bar open, unchanged gates, distinct refusals, option dollars unknown), and P-05 session-window / event-phase cohorts from the shared session clock with unknown calendar coverage stated. Research labels only; no trading rule changes."},
     {tag:"fixed",text:"/api/health answers build=unknown instead of a 500 when the launch-bound build helper is missing from the checkout."},
+  {version:"0.8.02",date:"2026-09-16",title:"Team2 shadow measurements: unknown stays unknown",items:[
+    {tag:"fixed",text:"Team2 diagnostics (review of v0.8.01): a follow-up quote counts only when it is live, sane and carries its own source timestamp within 30 s of collection - a cached entry quote re-served two minutes later is unknown, with the reason; every candidate keeps its source and collection timestamps; the shadow follow-up refreshes through the options service's forced path and follows at most six contracts per attempt. A candidate whose entry price is unknown produces no hypothetical return and enters no denominator or comparison. The shadow summary is isolated from the close: a fault in it is recorded as diagnostic-incomplete while P&L, the funnel and the disarm complete. Exit prices are weighted by confirmed filled quantity, whatever the cached order status says; a requested quantity is never a fill."},
+    {tag:"improved",text:"The diagnostics report labels the two kinds of number apart: actual book fills (realized, after commissions) versus HYPOTHETICAL quoted ask-to-bid returns after two commissions."},
   ]},
   {version:"0.8.01",date:"2026-09-16",title:"Team2 measures its entries and contracts in the shadow",items:[
     {tag:"fixed",text:"Team2 close report: refusals and skips are counted as UNIQUE decisions from a durable ledger (event, setup, source minute) that rides the persisted state and is rebuilt from the journal - the 400-row display buffer no longer decides the day's funnel, a re-quoted price on the same candidate is a revision, and raw row counts are reported apart. The scorecard now carries an immutable decision-time view of every fire (signal and confirmation times, tape and rules identity, release and build) beside the corrected-history comparison."},

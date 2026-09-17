@@ -662,8 +662,14 @@ class Team2Runner(PlanRunner):
                 if sym:
                     snap = opts.snapshot_cached(sym) if opts is not None and hasattr(opts, "snapshot_cached") else None
                     rows_by_sym[sym] = dict(snap) if snap else dict(r)
+            source_ts: dict[str, int] = {}
+            for x in qres.get("examined") or []:
+                sym = str(x.get("symbol") or "")
+                q = self.engine.quotes.get(sym) if sym else None
+                if q is not None and getattr(q, "ts", None):
+                    source_ts[sym] = int(q.ts)
             cands = diag.candidate_rows(qres.get("examined") or [], rows_by_sym, pick_symbol, floor=float(rules.premium_floor),
-                                        band_hi=float(rules.target_premium) * MAX_OVER_TARGET, spot=spot, quote_ts=now)
+                                        band_hi=float(rules.target_premium) * MAX_OVER_TARGET, spot=spot, quote_ts=now, source_ts=source_ts)
             rec = self._diag_attempt(ap, tid)
             rec.update({"candidates": cands, "quoteTs": now, "shadow": bool(shadow), "refusal": refusal, "selected": pick_symbol,
                         "listed": qres.get("listed"), "unexamined": qres.get("unexamined"), "unpriced": qres.get("unpriced")})
@@ -723,12 +729,23 @@ class Team2Runner(PlanRunner):
 
     @staticmethod
     def _diag_routing(t: Trade, fees: float) -> dict:
-        exits = [x for x in (t.exits or []) if x.get("status") == "FILLED" and x.get("price") is not None]
-        qty = sum(float(x.get("filledQty") or x.get("qty") or 0) for x in exits)
-        px = (sum(float(x["price"]) * float(x.get("filledQty") or x.get("qty") or 0) for x in exits) / qty) if qty > 0 else None
+        """The book's ACTUAL execution facts for an attempt (never a quoted return): the weighted exit price comes from
+        exit records with a CONFIRMED positive `filledQty` and a fill price, whatever the cached order status says (the
+        2026-09-16 QQQ exits kept `SUBMITTED` beside their confirmed fills); a requested `qty` is never a fill; duplicate
+        updates of one order count once (last wins); an exit filled without a price is reported as unknown."""
+        by_order: dict = {}
+        for i, x in enumerate(t.exits or []):
+            by_order[str(x.get("orderId") or f"#{i}")] = x
+        filled = [(float(x.get("filledQty") or 0), x.get("price")) for x in by_order.values() if float(x.get("filledQty") or 0) > 0]
+        qty = sum(q for q, _ in filled)
+        priced = [(q, float(p)) for q, p in filled if p is not None]
+        pq = sum(q for q, _ in priced)
+        px = (sum(q * p for q, p in priced) / pq) if pq > 0 else None
         return {"status": t.status, "filledQty": float(t.filled_qty or 0), "avgFill": t.avg_fill, "contract": t.order_symbol,
                 "netPnl": (round(float(t.realized_pnl or 0) - float(fees or 0), 2) if float(t.filled_qty or 0) > 0 else None),
-                "exitPrice": (round(px, 4) if px is not None else None), "openedTs": t.opened_ts, "closedTs": t.closed_ts,
+                "exitFilledQty": qty, "exitPricedQty": pq,
+                "exitPrice": (round(px, 4) if px is not None else None),
+                "exitPriceUnknown": bool(qty > 0 and pq < qty), "openedTs": t.opened_ts, "closedTs": t.closed_ts,
                 "submitUncertain": bool(getattr(t, "submit_uncertain", False))}
 
     async def _diag_tick(self) -> None:
@@ -763,23 +780,41 @@ class Team2Runner(PlanRunner):
         rec = d["attempts"].get(p["attempt"])
         opts = getattr(self.engine, "options", None)
         quotes: dict[str, dict | None] = {}
+        unknown: dict[str, str] = {}
         try:
             for c in (rec or {}).get("candidates") or []:
                 sym = str(c.get("symbol") or "")
+                if not sym:
+                    continue
+                if not c.get("followed", True):
+                    unknown[sym] = "not followed (collection bounded)"
+                    continue
+                if opts is None:
+                    unknown[sym] = "options service unavailable"
+                    continue
                 q = None
-                if sym and opts is not None:
-                    try:
+                try:
+                    # a NEW observation, never the cached quote the entry was priced on: the service's own forced refresh
+                    refresh = getattr(opts, "refresh_now", None)
+                    if refresh is not None:
+                        qq = await refresh(sym)
+                        live = (opts.served_live(sym) if hasattr(opts, "served_live") else True)
+                        if qq is not None:
+                            q = {"bid": getattr(qq, "bid", None), "ask": getattr(qq, "ask", None), "priced": "opra" if live else "chain",
+                                 "quoteTs": getattr(qq, "ts", None)}
+                    else:
                         r = await opts.reprice({"symbol": sym})
                         qq = self.engine.quotes.get(sym)
                         if r:
                             q = {"bid": r.get("bid"), "ask": r.get("ask"), "priced": r.get("priced"), "quoteTs": getattr(qq, "ts", None)}
-                    except Exception:  # noqa: BLE001
-                        q = None
+                except Exception as exc:  # noqa: BLE001
+                    unknown[sym] = f"quote service error: {str(exc)[:80]}"
+                    q = None
                 quotes[sym] = q
-            obs = diag.observation(p["horizon"], p.get("dueTs"), int(time.time() * 1000), quotes)
+            obs = diag.observation(p["horizon"], p.get("dueTs"), int(time.time() * 1000), quotes, unknown=unknown)
         except Exception as exc:  # noqa: BLE001
             obs = {"horizon": p["horizon"], "dueTs": p.get("dueTs"), "takenTs": int(time.time() * 1000), "status": "unknown",
-                   "reason": str(exc)[:200], "quotes": {}}
+                   "reason": str(exc)[:200], "quotes": {}, "unknown": {}}
         if rec is not None:
             rec.setdefault("observations", {})[p["horizon"]] = obs
         p["status"] = "done"
@@ -1833,13 +1868,22 @@ class Team2Runner(PlanRunner):
         # restored from a release without the ledger falls back to the buffer, de-duplicated by the same rule.
         ledger = self._ledger_of(ap.run_id) or diag.ledger_from_events(ap.events)
         skips = diag.unique_counts(ledger)
-        diag_recs = list((self.__dict__.get("_diag", {}).get(ap.run_id) or {}).get("attempts", {}).values())
-        for rec in diag_recs:                                   # the routing facts as they stand at the close
-            t = ap.trades.get(rec.get("trigger"))
-            if t is not None:
-                rec["routing"] = self._diag_routing(t, self._fees_paid(t))
-        fee = float(getattr(self.rules_for(ap), "fee_per_contract", 0) or 0)
-        diagnostics = diag.summarize_day(diag_recs, fee) if diag_recs else None
+        # D1 (2026-09-16 review): the SHADOW summary is isolated from core scoring and closure — a fault in it is
+        # recorded as a diagnostic-incomplete record, and P&L, funnel and disarm proceed regardless
+        diag_recs: list[dict] = []
+        diagnostics = None
+        try:
+            diag_recs = list((self.__dict__.get("_diag", {}).get(ap.run_id) or {}).get("attempts", {}).values())
+            for rec in diag_recs:                               # the routing facts as they stand at the close
+                t = ap.trades.get(rec.get("trigger"))
+                if t is not None:
+                    rec["routing"] = self._diag_routing(t, self._fees_paid(t))
+            fee = float(getattr(self.rules_for(ap), "fee_per_contract", 0) or 0)
+            diagnostics = diag.summarize_day(diag_recs, fee) if diag_recs else None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("team2 diagnostic summary failed for %s: %s", ap.run_id, exc)
+            diagnostics = {"status": "error", "error": str(exc)[:300], "attempts": len(diag_recs),
+                           "note": "shadow summary incomplete; core P&L, funnel and closure are unaffected"}
         # the durable funnel (from the verdict list, which the journal backs — not the capped event list)
         opportunities = {str(t.trigger_id) for t in attempts} | {str(t.trigger_id) for t in real}
         funnel = {"attempts": len(opportunities), "filled": len(real), "verdicts": len(verdicts), "journalOnly": len(journal_only),
@@ -1854,7 +1898,7 @@ class Team2Runner(PlanRunner):
                 "realizedPnl": net, "realizedPnlGross": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
                 "skips": skips, "skipRows": diag.row_counts(ledger), "decisions": diag.decisions_view(ledger),
                 "rows": rows, "correctedHistory": True,
-                "decisionTime": [dict(r["decisionTime"]) for r in diag_recs if r.get("decisionTime")],
+                "decisionTime": [dict(r["decisionTime"]) for r in diag_recs if isinstance(r, dict) and r.get("decisionTime")],
                 "diagnostics": diagnostics,
                 "views": {"rows": "corrected history: the read as recomputed on the final tape vs the book",
                           "decisionTime": "decision time: what the desk knew at each fire (immutable; inputs identified)",
