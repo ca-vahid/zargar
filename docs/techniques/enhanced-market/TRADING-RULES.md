@@ -1343,3 +1343,19 @@ Fixed: chain normalisation and the enrichment index run on a worker thread (`_no
 per pass, and the pass yields between underlyings. Deployed 21:04 PT through the protocol (readiness safe, receipt verified,
 restoration 72/72 by id, resting 26 -> 26, open 0 -> 0); loop lag 1.6 ms and 0 stalls at start. Tests
 `test_em_chain_normalize_offloop.py` (6,000-row chain normalises while the loop keeps ticking). Live runtime: v0.8.04 build 662a8e6.
+
+### 2026-09-16 21:35 PT - PFU closure RE-REVIEW answered (code `3d458d0`, 0.8.06); the confirmation claim is withdrawn
+
+- **Watchdog (release blocker):** a live process with a quiet log was classified `absent` and `-Force` without `-Override`
+  skipped classification and readiness. Corrected: live-unhealthy / uncertain / absent classes, `-Force` alone refuses,
+  only `-Override` replaces a living engine, a healthy first probe clears marker + alert state, `-ProbeOnly` writes
+  nothing; the caller decision is a pure function with 20 mocked cases (`scripts/tests/watchdog-classify.tests.ps1`).
+  Deployment of this correction is recorded in `reviews/2026-09-17-PFU-CLOSURE.md`.
+- **Paired confirmation (research):** the entry minute was skipped (a TP1 reached in the fill minute read as a later stop);
+  fixed - the scan starts at the entry bar. Incomplete horizons are `pending`. The proxy is labelled geometry-only with
+  the gates it does not evaluate. Reports regenerated 21:15 PT: 14 attempts over 09-15/16 -> `refused_r2` 11,
+  `no_confirmation` 1, `stop_first` 2. **Withdrawn:** "waiting for the close costs room faster than it saves stops" - two
+  retrospective sessions of a geometry-only proxy support no statement about the policy. Descriptive until >= 30 rows.
+- **Record consistency:** the closure document was rewritten around one tested candidate with runtime collection and
+  offline report generation stated separately (command, owner, location, tool version, output timestamps).
+- Scope kept: no repeat batch, no activation, deterministic Practice trading and observation collection unchanged.

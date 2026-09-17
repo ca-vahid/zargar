@@ -1,58 +1,82 @@
-# EM closure - September 17 preparation follow-up review (PFU-01..PFU-04)
+# EM closure - September 17 preparation follow-up review (PFU-01..PFU-04) and its re-review
 
-Review: `C:/Cursor/zargar-codex/docs/techniques/enhanced-market/reviews/2026-09-17-PREPARATION-FOLLOWUP-REVIEW.md`
-(reviewed code c74df44, records cd3aa95). **Code SHA (the PFU changes): `47275c3f8ff02c857b46b431e71b3300ec0eea67`. Integrated SHA based on the CURRENT runtime:
-`e048f5afaf5a0c23b22630e5713f80bea0be074a`** on `claude/technique-review-trade-plan-fbb9ba` - version **0.8.03** (the Team2 desk took 0.8.02 with PR #193
-while this closure was being written and deployed it at 19:57 PT; the EM block was renumbered, nobody's shipped block
-rewritten). Ancestors of `e048f5afaf5a0c23b22630e5713f80bea0be074a`: the running checkout `ed88f25` (= v0.8.02 build ed88f254, live since 19:57 PT) and
-`origin/main` fbe3fd6. Frontend build + check-release "Release 0.8.03 ... agree" on that tree. Nothing was deployed; the runtime is v0.8.01 build 3f5675d and keeps baseline Practice
-trading, the deterministic entry and observation-only collection unchanged.
+Reviews answered: `2026-09-17-PREPARATION-FOLLOWUP-REVIEW.md` (PFU-01..04, reviewed code c74df44) and
+`2026-09-17-PFU-CLOSURE-REREVIEW.md` (re-review of e048f5a / d3091ae), both in the reviewer workspace
+`C:/Cursor/zargar-codex/docs/techniques/enhanced-market/reviews/`.
+
+## The one tested candidate
+
+**Code SHA: `3d458d0d93f5ad54e208c21f3bdef73fd20bd4f0`** on `claude/technique-review-trade-plan-fbb9ba`, version **0.8.06**.
+Ancestors: the running checkout `f331345` (= v0.8.05, the other desks' convergence) and `origin/main` 1a5b2b8. This
+closure record is committed on top of it; the deployment section below names the build that went live. Every result
+in "Results" was run on this tree; earlier trees are listed under "History" and are not claimed for it.
+
+### Results on `3d458d0` (2026-09-16 21:20-21:35 PT, private test databases, foreground, one file at a time)
+
+| Check | Result |
+|---|---|
+| Import smoke (`zargar.api.app`, `zargar.main`, options service, profitability tool) | ok, 0.8.06 |
+| Watchdog: parse-check `scripts/watchdog.ps1` + `scripts/watchdog-classify.ps1` | 0 errors |
+| Watchdog: `scripts/tests/watchdog-classify.tests.ps1` (pure classifier 9 cases + mocked CALLER decision 11 cases) | 20/20 |
+| `-ProbeOnly` run from a checkout WITHOUT a `logs/` directory | stdout only, no directory created, no log or marker written |
+| EM reviewer / deterministic / evidence / profitability / follow-up / separation suites (24 files) | 82 passed, 5 skipped |
+| Arming solo (`test_technique_arming.py`) | 30 passed, 1 failed = the known baseline `test_auto_options_one_contract_lifecycle` |
+| Frontend `npm run build` + check-release | "Release 0.8.06 ... agree", built |
+
+Known, unrelated to these changes: `test_technique_api.py::test_chart_png_endpoint_on_sim_symbol` fails only after
+other tests in its file (the shared Yahoo history httpx client reuses a closed loop); it passes alone.
 
 ## Per finding
 
-| ID | Change | Acceptance (focused) | Status |
+| ID | Change on `3d458d0` | Acceptance | Status |
 |---|---|---|---|
-| PFU-01 watchdog | Pure classification module `scripts/watchdog-classify.ps1`; `scripts/watchdog.ps1` policy: 2-of-3 probes (12 s), `live-unhealthy` refuses ordinary recovery (exit 2) and escalates once per stall marker (Telegram + log with the human next step, `ZargarRestartOverride`), `absent` takes the existing DOWN path, `-ProbeOnly` read-only; identity bound to the pid the engine stamps in `logs/engine.pid` (engine.start), venv path as fallback with the identity logged; marker cleared on ANY successful probe; persistence is time-based (180-600 s), stale markers reset. | `scripts/tests/watchdog-classify.tests.ps1` 8/8: first-probe recovery clears an old marker; unrelated stalls do not chain; rapid invocations do not persist; live process + old log = absent; unbound process (0) = absent even with a fresh log; read-only changes no state. Parse-checked; `-ProbeOnly` run against the live engine (healthy, no marker written). | BUILT on the branch; NOT merged to the shared protocol; owner (Tips desk) agrees with direction, integration waits for the user; not deployed. |
-| PFU-02 P-04 | `sacrificedWinners` -> `underlyingTp1FirstRefused` (descriptive); waiting-policy claim withdrawn; new PAIRED comparison `confirmation_pair`: first completed close beyond the level within 10 bars, entry at the next bar OPEN, unchanged gates (stop side, room, frozen R2 >= 3.0 at the exit rung), underlying TP1 vs stop; outcomes distinct (`no_confirmation`, `refused_*`, `unknown (...)`, `tp1_first`, `stop_first`, `unresolved`); option dollars unknown; baseline winners and losers both kept. | `tests/test_em_profitability_p04_p05.py`: budget-refused TP1 touch is not a sacrificed winner; delayed entry with no room / low R2 refused separately; no same-close fill (no next bar = unknown); bar gaps unknown; paired summary keeps 1 winner + 1 loser and marks option dollars unknown; the summary's baseline block is not clobbered (regression found in the real report and fixed). | BUILT, collecting (order-free, in the daily report); descriptive until >= 30 paired rows. |
-| PFU-03 P-05 | Labels from `marketstructure.sessions.session_window` on tz-aware fire times (`sessions-v1`), runner label kept as a diagnostic; `EVENT_CALENDAR` with label, ET time, source, retrospective flag; `pre_event`/`post_event`/`unknown_calendar`. | 10:45 ET = midday not afternoon; 13:59 pre / 14:00 post around FOMC; a date without an entry = `unknown_calendar`; render says "never a trading-window rule". | BUILT, collecting; descriptive. |
-| PFU-04 cooldown | `CboeClient(cooldown_s=)` + `cooldown_s` used for both cooldown sites; `OptionsService.provider()` reads `options.cboe_cooldown_seconds` on every call (live-editable); wording: background cooldown with bounded retry, no capacity reservation, freshness/risk refusals preserved. | `tests/test_em_cboe_cooldown_setting.py`: non-default 5 s reaches the client and follows a later edit to 7.5 s; a 429 starts a 5 s cooldown, not 20 s. | BUILT; not deployed. |
+| PFU-01 / re-review 1 - watchdog | `scripts/watchdog-classify.ps1`: `Get-EngineClassification` -> healthy / **live-unhealthy** / **uncertain** / absent. A live process with a stale or missing log is LIVE (log inactivity never proves absence); a process-discovery failure (-1) is UNCERTAIN; only "discovery worked, zero bound processes" is absent. `Invoke-WatchdogDecision` is the CALLER decision as a pure function over injected actions (probe, sleep, liveness, marker read/set/clear, log, alert, now): `-Force` alone never bypasses an unavailable readiness (refuse, exit 2); only `-Override` proceeds and is logged as OVERRIDE; a healthy first probe clears the marker AND the alert companion; `-ProbeOnly` returns without any mutation. `scripts/watchdog.ps1` only supplies the real actions and maps the decision to exit codes / `$up`; it creates no `logs/` directory and writes no log line under `-ProbeOnly`. Identity: the pid the engine stamps in `logs/engine.pid` (alive + `zargar.main` command line), venv path only as a logged fallback; CIM errors return -1. | 20/20 mocked cases: live+stale log refuses and alerts once; the refusal names `ZargarRestartOverride`; `-Force` alone refuses; `-Force -Override` proceeds as OVERRIDE; first-probe recovery clears marker+alert; discovery failure refuses (never proceed-down); ProbeOnly mutates nothing in healthy / live-unhealthy / absent branches; absent proceeds down and clears the marker; late probe + `-Force` proceeds with readiness available. No real restart exercised. | BUILT and tested on the branch. Owner (Tips desk / start path) agreed with the direction and defers integration into the shared protocol to the user; the user decided "do it all" - see Deployment. |
+| PFU-02 / re-review 2 - paired confirmation | `em_profitability.confirmation_pair` scans the underlying FROM THE ENTRY BAR (the reviewer's reproduction - entry 101, entry minute high 106, next close 98 - now reads `tp1_first`); an incomplete horizon is `pending (horizon incomplete: n of 10 bars observed)` unless the session's last bar closed it; the firing (touch) bar never qualifies as the confirming close (frozen, stated); the result is labelled `geometry_only_underlying_proxy` with `gatesNotEvaluated` = quote quality/freshness, premium sizing / quantity-dependent exit rung, never-chase cap, timing window, admission and daily-loss budgets; short mirror added. `underlyingTp1FirstRefused` stays descriptive. | `tests/test_em_confirmation_pair_rereview.py` (5) + `test_em_profitability_p04_p05.py` (6): reviewer reproduction; same-bar target+stop on the entry bar = unknown; short mirror incl. `refused_stop_side`; one observed bar with hours left = pending, the same bar as the session's last = `no_confirmation`, a full window = `no_confirmation`; firing bar beyond the level does not confirm; baseline block intact; option dollars unknown. | BUILT; reports regenerated (below). The earlier claim that "waiting for the close costs room faster than it saves stops" is WITHDRAWN; two retrospective sessions are exploratory. |
+| PFU-03 - P-05 labels | Unchanged from the first closure (shared session clock on tz-aware fire times, pre/post/unknown event phase, `unknown_calendar` coverage). Accepted by the re-review at source level. | as before | BUILT |
+| PFU-04 - cooldown | Unchanged from the first closure (`options.cboe_cooldown_seconds` wired, live-editable; wording "background cooldown with bounded retry"). Accepted. | as before | BUILT |
+| re-review 3 - record consistency | This document rewritten around ONE tested candidate; runtime collection and offline report generation separated below; no placeholders. | - | DONE |
 
-## Results on the integrated tree (`47275c3f8ff02c857b46b431e71b3300ec0eea67`)
+## Collection versus report generation (kept separate)
 
-- Import smoke ok (0.8.02). EM reviewer set + follow-ups + API + separation + options freshness: **101 passed, 5 skipped**;
-  profitability/cohort suites after the baseline-block fix: 11 passed; `test_technique_api` + loop watch after the pid
-  stamp: see the status report. Arming solo on the merged tree: reported separately (load-sensitive, foreground).
-- Frontend build + check-release: "Release 0.8.02 ... agree" (EM block renumbered from the superseded 0.7.99 draft;
-  nobody's shipped block rewritten).
-- Reports regenerated with the corrected tables: `research/profitability/2026-09-15.md`, `2026-09-16.md`.
+- **Runtime collection (production, automatic):** the engine journals `TechniqueEntryDecision` per deterministic attempt
+  and `TechniqueExitShadow` observations when `techniques.enhanced_market.shadow_exit_observe=True` /
+  `shadow_p02_candidate=True` (ON for EM Practice since 2026-09-15 14:06 PT, unchanged). Nothing in this closure changes
+  what the runtime collects.
+- **Offline report generation (a person runs it; NOT automatic in production):** `python -m zargar.tools.em_profitability
+  report --date YYYY-MM-DD`, owner = the EM desk session, executed from the EM worktree
+  `C:/Cursor/zargar/.claude/worktrees/technique-review-trade-plan-fbb9ba/backend` against the runtime database
+  (read-only), tool version `profitability-cohorts-v1` + addendum `p04-p05-2026-09-17`, on code `0126164` (the
+  re-review fix commit inside `3d458d0`). Outputs: `research/profitability/2026-09-15.md` / `.json` and
+  `research/profitability/2026-09-16.md` / `.json`, written 2026-09-16 21:15 PT, committed on the branch. The P-04b and
+  P-05 tables exist only in these offline files until a person regenerates them.
+- **Runtime P-02 comparison vs offline P-04/P-05:** P-02 uses the runtime's own observations (collected live); P-04/P-05
+  are computed offline from journal rows and bars. "Nothing deployed" for a report change is therefore compatible with
+  regenerated files; a deploy changes the runtime collection or the code the offline tool runs, never the files.
 
-## Built / merged / deployed / collecting / evaluated
+### Regenerated paired results (exploratory, 2 retrospective sessions; not a verdict)
 
-- BUILT: all four findings, on the EM branch.
-- MERGED: into the EM branch only (main + runtime 3f5675d merged IN; nothing merged OUT to main yet - a PR follows the
-  user's word).
-- DEPLOYED: **v0.8.03 build `d3091ae468a52ba410b93a76772688d86537ecc3` at 20:25 PT 2026-09-16 on the user's "do it all"** (readiness safe,
-  market closed, 0 open trades; `deploy.ps1` under the lease -> `ZargarRestart` task; receipt phase `verified`, expected/healthy 0.8.03;
-  restoration by hand: 72 armed before and after by id - enhanced_market 58, options_cartel 1, team2 3, tip 10 - 0 missing, 0 new;
-  resting orders 26 -> 26; open trades 0 -> 0). On the new build: 58 EM arms effective `deterministic`, evidence off; settings intact;
-  `/api/health.local.delivery` now reports `eventLoopLagMs` 15.4, `loopStalls` 0; `logs/engine.pid` stamped (65008); one engine pair,
-  gateway and ingest alive, intake live. The watchdog classification is LIVE by construction (the scheduled task reads
-  `scripts/watchdog.ps1` from the checkout): acceptance 8/8 and `-ProbeOnly` = healthy from the runtime checkout. The user decided
-  this after the owner coordination; the Tips desk's pre-open note carries the evidence. No restart for research labels; the dirty build string
-  is the runtime checkout's untracked EM research artifacts, which are committed on the EM branch.
-- DEPLOYED (2): v0.8.04 build 66e85f6 at 20:56 PT - the two stall causes the watch named (queued logging, off-loop provider JSON) and the healthy-tick marker clearing; restoration 72/72 by id, DB pool alive, 0 stalls after start. TRADING-RULES 2026-09-16 20:29-20:56.
-- DEPLOYED (3): v0.8.04 build 662a8e6 at 21:04 PT - chain normalisation + enrichment index off the loop (stall #2 on 66e85f6, 4.8 s); restoration 72/72. FINAL live runtime tonight: 662a8e6.
-- COLLECTING: P-02 (observer ON), P-04b paired, P-05 labels - order-free, in the daily report.
-- EVALUATED: P-02 one comparable row (CRWV 09-16 +$61.03 vs production), five unknown for lack of covered observations;
-  P-04b two sessions: 12 of 13 variants refused or unconfirmed, 1 stopped; P-03 friction 6-10% on filled options.
-  None of it is a verdict; thresholds unchanged.
+- 2026-09-15: 8 P-01 attempts -> `refused_r2` 6, `stop_first` 2 (IREN b1, AMAT b2, -1R each on the underlying proxy);
+  baseline winners/losers kept 1/4; option dollars at the delayed entry unknown for 6 of 8.
+- 2026-09-16: 6 P-01 attempts -> `refused_r2` 5, `no_confirmation` 1 (CRCL b1); baseline winners/losers kept 1/3.
+- No `pending` rows: both sessions were complete at generation time.
 
-## Tomorrow (2026-09-17)
+## Deployment record
 
-- 58 EM arms verified against the current runtime (ids, book EM Practice, session 2026-09-17, effective deterministic,
-  evidence off); helpers alive; observation settings on; pre-open re-plan at 09:25 ET. Attending owner for the 06:20 PT
-  review: this session (session-local cron) - it must stay open, or the user assigns another.
-- Overnight affordability/spread/expiry counts are preparation diagnostics only; the pick judges the CURRENT quote with
-  the existing gates; fresh refusal reasons will be reported separately from the overnight estimates.
-- Research load: the Cartel research sweep on the live engine (80-180 runs/min on 09-16) belongs to that desk / the
-  platform owner; off-loop rendering does not solve CPU/RAM contention.
+Earlier tonight (all on the user's "do it all"): v0.8.03 build d3091ae at 20:25 PT; v0.8.04 build 66e85f6 at 20:56 PT
+(queued logging, off-loop provider JSON); v0.8.04 build 662a8e6 at 21:04 PT (off-loop chain normalisation). Each
+through `deploy.ps1` under the lease + the `ZargarRestart` task, receipt verified, restoration 72/72 by id.
+
+**This candidate:** see the "Deployed" line appended below by the deploy step (build SHA, time, receipt phase,
+restoration counts). If that line is absent, `3d458d0` was not deployed.
+
+## History (earlier trees, for the record only)
+
+- `47275c3` / `e048f5a` / `d3091ae`: first PFU closure (reviewed by the re-review); its watchdog classifier treated a
+  live process with a stale log as absent and the caller skipped readiness under `-Force` - both corrected above.
+- `c74df44`: the execution follow-ups (stall watch, off-loop rendering, CBOE priority) reviewed by the first review.
+
+## Scope kept
+
+No repeat preparation batch (58 EM arms for 2026-09-17 unchanged, all effective deterministic, evidence off), no strategy
+activation, no risk / chase / threshold change, the 8% friction marker stays a marker, observation collection unchanged.
+The CRWV earlier-exit result remains a modeled observation.

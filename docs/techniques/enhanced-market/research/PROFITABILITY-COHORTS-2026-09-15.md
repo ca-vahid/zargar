@@ -83,19 +83,26 @@ bar closed on the wrong side of the level), `observed_reclaim` = the firing bar 
 no firing bar. The 2026-09-16 draft claimed this answers whether waiting for confirmation saves stops at the cost of
 winners; it does not - it never constructs the delayed entry. That claim is WITHDRAWN. The strata stay as a description.
 
-**P-04b - PAIRED confirmation comparison (frozen 2026-09-17).** On the SAME eligible setups (every P-01 attempt, fills
-and refusals), baseline = the actual touch attempt; variant = wait for the first COMPLETED 1m close beyond the level
-within 10 bars after the touch bar, enter at the OPEN of the following bar (no same-close hindsight fill), re-run the
-unchanged geometry gates from the new entry (stop side, room to TP1, R2 >= 3.0 measured at the exit rung TP2 - a frozen
-copy of the bar, never read live), then follow the underlying: TP1 touch vs stop close, first come. Distinct outcomes:
-`no_confirmation` (within the window), `refused_stop_side`, `refused_no_room`, `refused_r2`, `unknown (...)` (bar gap,
-no executable bar, same-bar target and stop), `tp1_first` (+room/risk R, full-size underlying proxy), `stop_first`
-(-1R), `unresolved`. A budget refusal of the baseline and a missed confirmation of the variant are different outcomes
+**P-04b - PAIRED confirmation comparison, a GEOMETRY-ONLY UNDERLYING PROXY (frozen 2026-09-17, corrected after the
+re-review).** On the SAME eligible setups (every P-01 attempt, fills and refusals), baseline = the actual touch attempt;
+variant = wait for the first COMPLETED 1m close beyond the level within 10 bars AFTER the touch bar (the touch bar itself
+never qualifies as the confirming close - a firing bar that closed beyond the level is the `observed_reclaim` stratum and
+the variant still waits for the next completed close), enter at the OPEN of the following bar (no same-close hindsight
+fill), re-run the GEOMETRY gates only from the new entry (stop side, room to TP1, R2 >= 3.0 at the exit rung TP2 - a
+frozen copy of the bar, never read live), then follow the underlying FROM THE ENTRY BAR inclusive: TP1 touch vs stop
+close, first come. NOT evaluated, and therefore unknown for every variant row: quote quality / freshness, premium sizing
+and the quantity-dependent exit rung, the never-chase cap, timing windows, admission and daily-loss budgets. A variant
+row is never an admitted entry. Distinct outcomes:
+`no_confirmation` (a full 10-bar window observed, or the session ended), `pending (horizon incomplete: n of 10 bars
+observed)` (fewer bars available and the session not over - never counted as a non-confirmation), `refused_stop_side`,
+`refused_no_room`, `refused_r2`, `unknown (...)` (bar gap, no executable bar, same-bar target and stop - the entry minute
+included), `tp1_first` (+room/risk R, full-size underlying proxy), `stop_first` (-1R), `unresolved`. A budget refusal of the baseline and a missed confirmation of the variant are different outcomes
 and are reported as such. Dollars at the delayed entry are UNKNOWN for options (no quote captured at that time); for
 shares the underlying R applies. Both baseline winners and losers stay in the paired sample. Descriptive until >= 30
-paired rows; nothing is activated by it. First results (2026-09-15/16, 13 attempts): 12 variants refused by the frozen
-R2 bar or never confirmed within 10 bars, 1 entered and was stopped (-1R) - waiting for the close costs room faster than
-it saves stops on these small-room setups; that is a description of two sessions, not a verdict.
+paired rows; nothing is activated by it. First corrected results (2026-09-15/16, 14 attempts): `refused_r2` 11, `no_confirmation` 1, `stop_first` 2 (-1R each on
+the underlying proxy); baseline winners/losers kept 2/7; option dollars at the delayed entry unknown for 10 of 14. The
+earlier sentence "waiting for the close costs room faster than it saves stops" is WITHDRAWN: two retrospective sessions
+of a geometry-only proxy are exploratory and support no statement about the policy.
 
 **P-05 - session-window / event-phase cohort (frozen 2026-09-17).** Every EM attempt keyed by (window, event phase):
 the window comes from the shared clock `marketstructure.sessions.session_window` on the timezone-aware fire time
