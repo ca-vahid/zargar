@@ -97,6 +97,9 @@ def test_paired_summary_keeps_baseline_winners_and_losers_and_marks_option_dolla
     by = {r["symbol"]: r for r in pp["rows"]}
     assert by["L"]["dollarsAtDelayedEntry"].startswith("unknown (no option quote") and by["W"]["dollarsAtDelayedEntry"].startswith("shares")
     assert by["R"]["baseline"]["kind"] == "refused" and by["R"]["confirmation"]["outcome"] == "no_confirmation"
+    assert s["baseline"]["fills"] == 2 and s["cohort"]["fills"] == 2, "the paired rows must not clobber the summary's baseline block"
+    md = render(data, s)
+    assert "| Baseline (all EM fills) | 2 |" in md and "P-04 PAIRED" in md
 
 
 def test_p05_uses_the_shared_clock_and_event_phase_with_unknown_calendar_coverage():

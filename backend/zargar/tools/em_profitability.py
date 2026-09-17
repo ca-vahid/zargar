@@ -561,9 +561,9 @@ def summarize(data: dict) -> dict:
         cp = r.get("confirmationPair")
         if not cp:
             continue
-        base = ({"kind": "fill", "net": r.get("netRealized"), "closed": r.get("closed")} if "filledQty" in r
-                else {"kind": "refused", "refusal": (r.get("refusal") or "")[:80], "underlyingProxy": r.get("underlyingProxy")})
-        paired.append({"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "baseline": base, "confirmation": cp,
+        bl = ({"kind": "fill", "net": r.get("netRealized"), "closed": r.get("closed")} if "filledQty" in r
+              else {"kind": "refused", "refusal": (r.get("refusal") or "")[:80], "underlyingProxy": r.get("underlyingProxy")})
+        paired.append({"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "baseline": bl, "confirmation": cp,
                        "dollarsAtDelayedEntry": ("unknown (no option quote at the delayed time)" if r.get("instrument") == "options" else "shares: underlying R applies")})
         agg[cp["outcome"].split(" (")[0]] += 1
         if cp.get("resultR") is not None:

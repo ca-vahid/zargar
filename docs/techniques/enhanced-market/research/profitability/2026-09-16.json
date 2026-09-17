@@ -24,6 +24,16 @@
     1544.1361,
     1555.8014
    ],
+   "window": "prime_close",
+   "firedAtIso": "2026-09-16T15:14:00-04:00",
+   "sessionWindow": "prime_close",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "post_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789586040000,
+   "level": 1503.3333,
+   "tp2": 1544.1361,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "886a561ba38a78c41f86fe3aba0cfebb",
    "decisionVerdict": "allow",
@@ -67,7 +77,20 @@
     "pctOfPremium": null,
     "known": false
    },
-   "p02Eligible": false
+   "p02Eligible": false,
+   "confirmationPair": {
+    "policy": "confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "outcome": "refused_r2",
+    "resultR": null,
+    "confirmTs": 1789586100000,
+    "entryTs": 1789586160000,
+    "entry": 1516.29,
+    "riskPerUnit": 20.6999,
+    "rr": 1.35,
+    "barsWaited": 1
+   }
   },
   {
    "runId": "cc5267a599994d43997606a8d93d5c1f",
@@ -89,6 +112,16 @@
     83.5254,
     84.0142
    ],
+   "window": "prime_close",
+   "firedAtIso": "2026-09-16T14:58:00-04:00",
+   "sessionWindow": "prime_close",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "post_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789585080000,
+   "level": 82.059,
+   "tp2": 83.5254,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "9475247bc16ca19fdf3058bf5ffee38b",
    "decisionVerdict": "allow",
@@ -169,6 +202,19 @@
     },
     "observedAt": 1789585432647,
     "bid": 2.21
+   },
+   "confirmationPair": {
+    "policy": "confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "outcome": "refused_r2",
+    "resultR": null,
+    "confirmTs": 1789585140000,
+    "entryTs": 1789585200000,
+    "entry": 82.19,
+    "riskPerUnit": 0.5413,
+    "rr": 2.47,
+    "barsWaited": 1
    }
   },
   {
@@ -191,6 +237,16 @@
     89.2955,
     90.794
    ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-16T09:31:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "pre_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789565460000,
+   "level": 84.8,
+   "tp2": 89.2955,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "b7a51f879c15f6e647b25dadab1a197c",
    "decisionVerdict": "allow",
@@ -269,6 +325,19 @@
      "modeledExit": 1.04,
      "retained": "actual"
     }
+   },
+   "confirmationPair": {
+    "policy": "confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "outcome": "no_confirmation",
+    "resultR": null,
+    "confirmTs": null,
+    "entryTs": null,
+    "entry": null,
+    "riskPerUnit": null,
+    "rr": null,
+    "barsWaited": 10
    }
   },
   {
@@ -291,6 +360,16 @@
     67.6964,
     68.0686
    ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-16T09:33:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "pre_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789565580000,
+   "level": 66.58,
+   "tp2": 67.6964,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "4431a5198557e08873679be11abcd697",
    "decisionVerdict": "allow",
@@ -333,7 +412,20 @@
     "pctOfPremium": null,
     "known": false
    },
-   "p02Eligible": false
+   "p02Eligible": false,
+   "confirmationPair": {
+    "policy": "confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "outcome": "refused_r2",
+    "resultR": null,
+    "confirmTs": 1789566120000,
+    "entryTs": 1789566180000,
+    "entry": 66.75,
+    "riskPerUnit": 0.5029,
+    "rr": 1.88,
+    "barsWaited": 9
+   }
   }
  ],
  "refused": [
@@ -357,6 +449,16 @@
     56.5604,
     55.3821
    ],
+   "window": "midday",
+   "firedAtIso": "2026-09-16T14:05:00-04:00",
+   "sessionWindow": "midday",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "post_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789581900000,
+   "level": 59.2117,
+   "tp2": 56.5604,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "245390e869e7e939faf801cdbc8abf2b",
    "decisionVerdict": "allow",
@@ -402,6 +504,16 @@
     211.1344,
     209.326
    ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-16T10:23:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "pre_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789568580000,
+   "level": 216.5595,
+   "tp2": 211.1344,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "5a119491098d3e2f858f3492837a534d",
    "decisionVerdict": "allow",
@@ -461,6 +573,16 @@
     211.8245,
     209.326
    ],
+   "window": "midday",
+   "firedAtIso": "2026-09-16T11:47:00-04:00",
+   "sessionWindow": "midday",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "pre_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789573620000,
+   "level": 219.32,
+   "tp2": 211.8245,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "8af93f2e46251cad2008e24d735317ca",
    "decisionVerdict": "allow",
@@ -520,6 +642,16 @@
     212.459,
     213.5033
    ],
+   "window": "prime_close",
+   "firedAtIso": "2026-09-16T15:20:00-04:00",
+   "sessionWindow": "prime_close",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "post_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789586400000,
+   "level": 209.326,
+   "tp2": 212.459,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "523dd6ac5abead97baf49fd1afa3638c",
    "decisionVerdict": "allow",
@@ -557,7 +689,20 @@
     "pctOfPremium": null,
     "known": false
    },
-   "underlyingProxy": "tp1_first"
+   "underlyingProxy": "tp1_first",
+   "confirmationPair": {
+    "policy": "confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "outcome": "refused_r2",
+    "resultR": null,
+    "confirmTs": 1789586460000,
+    "entryTs": 1789586520000,
+    "entry": 209.855,
+    "riskPerUnit": 1.675,
+    "rr": 1.55,
+    "barsWaited": 1
+   }
   },
   {
    "runId": "9556a66c1bb34905a573f748d7d80968",
@@ -579,6 +724,16 @@
     265.6366,
     264.24
    ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-16T09:37:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "pre_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789565820000,
+   "level": 269.8264,
+   "tp2": 265.6366,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "4e243daca3fa1cd68c5163bd895b4a22",
    "decisionVerdict": "allow",
@@ -638,6 +793,16 @@
     140.67,
     141.2267
    ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-16T09:30:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "pre_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789565400000,
+   "level": 139.0,
+   "tp2": 140.67,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "56e07e9fb3e9d147ccff816638a2fb1e",
    "decisionVerdict": "allow",
@@ -661,7 +826,20 @@
    "intendedQty": 36.0,
    "multiplier": 1.0,
    "friction": null,
-   "underlyingProxy": "tp1_first"
+   "underlyingProxy": "tp1_first",
+   "confirmationPair": {
+    "policy": "confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "outcome": "refused_r2",
+    "resultR": null,
+    "confirmTs": 1789565460000,
+    "entryTs": 1789565520000,
+    "entry": 139.2454,
+    "riskPerUnit": 0.9404,
+    "rr": 1.51,
+    "barsWaited": 1
+   }
   },
   {
    "runId": "e819bf5d93aa4e9281dfa406caba75aa",
@@ -683,6 +861,16 @@
     552.0684,
     546.5346
    ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-16T09:32:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "pre_event:FOMC",
+   "eventProvenance": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)",
+   "eventRetrospective": true,
+   "firedTs": 1789565520000,
+   "level": 568.67,
+   "tp2": 552.0684,
    "policyVersion": "deterministic-entry-v1",
    "decisionId": "610fcc392b0605829e9195b3709499dd",
    "decisionVerdict": "allow",
@@ -813,7 +1001,7 @@
    "disposition": "allowed"
   }
  ],
- "sourceLedgerRows": 1,
+ "sourceLedgerRows": 3,
  "summary": {
   "byPolicy": {
    "deterministic-entry-v1": {
@@ -1140,6 +1328,263 @@
     "refusal": "contract skipped (loss budget: this entry risks ~$708 at its premium stop but only $403 of the $403 daily loss limit is left (F33))"
    }
   ],
+  "p04": {
+   "confirmation=anticipated": {
+    "fills": 1,
+    "net": -29.49,
+    "open": 0,
+    "winners": 0,
+    "losers": 1,
+    "rejected": 0,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   },
+   "confirmation=observed_reclaim": {
+    "fills": 3,
+    "net": -118.06,
+    "open": 0,
+    "winners": 1,
+    "losers": 2,
+    "rejected": 2,
+    "underlyingTp1FirstRefused": 2,
+    "unknownProxy": 0
+   }
+  },
+  "p04Paired": {
+   "rows": [
+    {
+     "symbol": "SNDK",
+     "trigger": "b2",
+     "instrument": "shares",
+     "baseline": {
+      "kind": "fill",
+      "net": 27.16,
+      "closed": true
+     },
+     "confirmation": {
+      "policy": "confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "outcome": "refused_r2",
+      "resultR": null,
+      "confirmTs": 1789586100000,
+      "entryTs": 1789586160000,
+      "entry": 1516.29,
+      "riskPerUnit": 20.6999,
+      "rr": 1.35,
+      "barsWaited": 1
+     },
+     "dollarsAtDelayedEntry": "shares: underlying R applies"
+    },
+    {
+     "symbol": "CRWV",
+     "trigger": "b2",
+     "instrument": "options",
+     "baseline": {
+      "kind": "fill",
+      "net": -51.11,
+      "closed": true
+     },
+     "confirmation": {
+      "policy": "confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "outcome": "refused_r2",
+      "resultR": null,
+      "confirmTs": 1789585140000,
+      "entryTs": 1789585200000,
+      "entry": 82.19,
+      "riskPerUnit": 0.5413,
+      "rr": 2.47,
+      "barsWaited": 1
+     },
+     "dollarsAtDelayedEntry": "unknown (no option quote at the delayed time)"
+    },
+    {
+     "symbol": "CRCL",
+     "trigger": "b1",
+     "instrument": "options",
+     "baseline": {
+      "kind": "fill",
+      "net": -94.11,
+      "closed": true
+     },
+     "confirmation": {
+      "policy": "confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "outcome": "no_confirmation",
+      "resultR": null,
+      "confirmTs": null,
+      "entryTs": null,
+      "entry": null,
+      "riskPerUnit": null,
+      "rr": null,
+      "barsWaited": 10
+     },
+     "dollarsAtDelayedEntry": "unknown (no option quote at the delayed time)"
+    },
+    {
+     "symbol": "CVNA",
+     "trigger": "b1",
+     "instrument": "shares",
+     "baseline": {
+      "kind": "fill",
+      "net": -29.49,
+      "closed": true
+     },
+     "confirmation": {
+      "policy": "confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "outcome": "refused_r2",
+      "resultR": null,
+      "confirmTs": 1789566120000,
+      "entryTs": 1789566180000,
+      "entry": 66.75,
+      "riskPerUnit": 0.5029,
+      "rr": 1.88,
+      "barsWaited": 9
+     },
+     "dollarsAtDelayedEntry": "shares: underlying R applies"
+    },
+    {
+     "symbol": "NBIS",
+     "trigger": "b1",
+     "instrument": "options",
+     "baseline": {
+      "kind": "refused",
+      "refusal": "one contract at 5.70 risks more than the 2% trade budget at its premium stop - n",
+      "underlyingProxy": "tp1_first"
+     },
+     "confirmation": {
+      "policy": "confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "outcome": "refused_r2",
+      "resultR": null,
+      "confirmTs": 1789586460000,
+      "entryTs": 1789586520000,
+      "entry": 209.855,
+      "riskPerUnit": 1.675,
+      "rr": 1.55,
+      "barsWaited": 1
+     },
+     "dollarsAtDelayedEntry": "unknown (no option quote at the delayed time)"
+    },
+    {
+     "symbol": "NOW",
+     "trigger": "b1",
+     "instrument": "shares",
+     "baseline": {
+      "kind": "refused",
+      "refusal": "entry window elapsed without a fill (T4.1: not chased)",
+      "underlyingProxy": "tp1_first"
+     },
+     "confirmation": {
+      "policy": "confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "outcome": "refused_r2",
+      "resultR": null,
+      "confirmTs": 1789565460000,
+      "entryTs": 1789565520000,
+      "entry": 139.2454,
+      "riskPerUnit": 0.9404,
+      "rr": 1.51,
+      "barsWaited": 1
+     },
+     "dollarsAtDelayedEntry": "shares: underlying R applies"
+    }
+   ],
+   "outcomes": {
+    "no_confirmation": 1,
+    "refused_r2": 5
+   },
+   "resolvedR": {
+    "n": 0,
+    "sumR": 0.0
+   },
+   "baselineWinnersInSample": 1,
+   "baselineLosersInSample": 3,
+   "definition": "touch baseline vs first completed close beyond the level within 10 bars, entry at the next bar OPEN, unchanged geometry gates (stop side, room, R2 >= 3.0 at the exit rung), underlying TP1-touch vs stop-close; descriptive until >= 30 paired rows"
+  },
+  "p05": {
+   "midday|post_event:FOMC": {
+    "fills": 0,
+    "net": 0.0,
+    "open": 0,
+    "winners": 0,
+    "losers": 0,
+    "rejected": 1,
+    "underlyingTp1FirstRefused": 1,
+    "unknownProxy": 0
+   },
+   "midday|pre_event:FOMC": {
+    "fills": 0,
+    "net": 0.0,
+    "open": 0,
+    "winners": 0,
+    "losers": 0,
+    "rejected": 1,
+    "underlyingTp1FirstRefused": 1,
+    "unknownProxy": 0
+   },
+   "prime_close|post_event:FOMC": {
+    "fills": 2,
+    "net": -23.95,
+    "open": 0,
+    "winners": 1,
+    "losers": 1,
+    "rejected": 1,
+    "underlyingTp1FirstRefused": 1,
+    "unknownProxy": 0
+   },
+   "prime_open|pre_event:FOMC": {
+    "fills": 2,
+    "net": -123.6,
+    "open": 0,
+    "winners": 0,
+    "losers": 2,
+    "rejected": 4,
+    "underlyingTp1FirstRefused": 2,
+    "unknownProxy": 0
+   }
+  },
+  "p05RunnerLabels": {
+   "runnerWindowLabel=midday": {
+    "fills": 0,
+    "net": 0.0,
+    "open": 0,
+    "winners": 0,
+    "losers": 0,
+    "rejected": 2,
+    "underlyingTp1FirstRefused": 2,
+    "unknownProxy": 0
+   },
+   "runnerWindowLabel=prime_close": {
+    "fills": 2,
+    "net": -23.95,
+    "open": 0,
+    "winners": 1,
+    "losers": 1,
+    "rejected": 1,
+    "underlyingTp1FirstRefused": 1,
+    "unknownProxy": 0
+   },
+   "runnerWindowLabel=prime_open": {
+    "fills": 2,
+    "net": -123.6,
+    "open": 0,
+    "winners": 0,
+    "losers": 2,
+    "rejected": 4,
+    "underlyingTp1FirstRefused": 2,
+    "unknownProxy": 0
+   }
+  },
+  "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+  "cohortsAddendum": "p04-p05-2026-09-17",
   "unknown": {
    "p02WithoutObservation": 1,
    "refusedUnresolvedOrGap": 0,
@@ -1149,5 +1594,5 @@
    "roomAtActualEntry": "unknown for every fill (no underlying observation at dispatch is recorded)"
   }
  },
- "generatedAt": "2026-09-16T20:26:46.576813+00:00"
+ "generatedAt": "2026-09-17T02:52:46.995461+00:00"
 }
