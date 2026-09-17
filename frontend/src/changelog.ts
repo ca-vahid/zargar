@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.03";
+export const APP_VERSION = "0.8.05";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.05",date:"2026-09-16",title:"Team2 candidate quotes are bound at examination",items:[
+    {tag:"fixed",text:"Team2 shadow diagnostics: each contract the picker examines is recorded as ONE observation - its bid/ask, provenance, source-confirmation time, receipt time and capture time are captured together at that moment, and the report validates and shows exactly that record. A later quote-cache state is a separate observation and is never attached to an earlier price; a quote that moves during capture is marked unknown with the reason."},
+  ]},
   {version:"0.8.03",date:"2026-09-16",title:"Team2 quote freshness reads the source, not the receipt",items:[
     {tag:"fixed",text:"Team2 shadow diagnostics: a price's freshness is judged on the provider's confirmation time for that bid/ask (the quote's source timestamp), never on when the app last received it - a recently received old price is unknown at the entry and at every follow-up, a price with no source evidence stays unknown, and a freshly confirmed unchanged price still counts. Receipt and collection times are recorded beside the source time."},
   ]},

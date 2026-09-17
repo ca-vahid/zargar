@@ -324,13 +324,14 @@ def quote_check(q: dict | None, collected_ts: int, *, max_age_ms: int = MAX_QUOT
 
 
 def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | None, *, floor: float, band_hi: float,
-                   spot: float | None, quote_ts: int, source_ts: dict | None = None,
-                   max_age_ms: int = MAX_QUOTE_AGE_MS, max_followed: int = MAX_FOLLOWED) -> list[dict]:
+                   spot: float | None, quote_ts: int, max_age_ms: int = MAX_QUOTE_AGE_MS, max_followed: int = MAX_FOLLOWED) -> list[dict]:
     """The selected contract and every alternative the picker examined, with the quotes it saw and the Greeks the
-    chain carried at that moment (delayed chain Greeks unless `greeksLive`). `quote_ts` is the COLLECTION time;
-    `source_ts[symbol]` the quote's own timestamp. `priceKnown` says whether the entry quote is usable as the denominator
-    of a hypothetical return; `followed` bounds the follow-up collection to the selected contract, the in-band
-    alternatives and then the nearest others, at most `max_followed`."""
+    chain carried at that moment (delayed chain Greeks unless `greeksLive`). Each examined row is ONE observation: its
+    bid/ask, provenance (`source`), the provider's confirmation time (`quoteTs`), the receipt time (`receivedTs`) and the
+    capture time (`collectedTs`) were bound together when the picker examined it; validation and the report use exactly
+    those fields — never a later lookup. `quote_ts` is the attempt's collection time, used only when a row has none.
+    `priceKnown` says whether the entry quote is usable as the denominator of a hypothetical return; `followed` bounds
+    the follow-up collection to the selected contract, the in-band alternatives and then the nearest others."""
     out = []
     for x in examined or []:
         sym = str(x.get("symbol") or "")
@@ -339,9 +340,13 @@ def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | No
         ask, bid = _f(x.get("ask")), _f(x.get("bid"))
         eligible = bool(x.get("eligible"))
         strike = _f(x.get("strike"))
-        sts = (source_ts or {}).get(sym)
-        clean, why = quote_check({"bid": bid, "ask": ask, "priced": x.get("priced"), "quoteTs": sts}, quote_ts,
+        sts = x.get("quoteTs")
+        source = x.get("source") or x.get("priced")
+        collected = int(x.get("collectedTs") or quote_ts)
+        clean, why = quote_check({"bid": bid, "ask": ask, "priced": source, "quoteTs": sts}, collected,
                                  max_age_ms=max_age_ms, need_bid=False) if eligible else (None, "not priced live")
+        if clean is None and x.get("provenanceNote") and why == "no source timestamp":
+            why = x["provenanceNote"]
         out.append({"symbol": sym, "strike": strike, "bid": bid, "ask": ask,
                     "mid": (round((bid + ask) / 2, 4) if bid is not None and ask is not None and ask > 0 else None),
                     "priced": x.get("priced"), "eligible": eligible,
@@ -350,7 +355,8 @@ def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | No
                     "delta": _f(g.get("delta")), "gamma": _f(g.get("gamma")), "theta": _f(g.get("theta")), "iv": _f(g.get("mid_iv")),
                     "greeksLive": bool(row.get("greeksLive")), "greeksAsOf": row.get("asOf") or row.get("ts"),
                     "spot": spot, "distancePct": (round((strike - spot) / spot * 100, 3) if strike is not None and spot else None),
-                    "quoteTs": sts, "collectedTs": quote_ts, "quoteAgeMs": (clean or {}).get("ageMs"),
+                    "quoteTs": sts, "receivedTs": x.get("receivedTs"), "collectedTs": collected, "source": source,
+                    "quoteAgeMs": (clean or {}).get("ageMs"),
                     "priceKnown": clean is not None, "priceUnknownReason": why, "followed": False})
     order = sorted(range(len(out)), key=lambda i: (not out[i]["selected"], not out[i]["inBand"],
                                                   abs(float(out[i]["distancePct"] or 0.0))))
