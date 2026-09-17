@@ -57,12 +57,18 @@ async def test_team2_scorecard_compares_the_read_with_the_book(rig):
     ap.trades["t1"] = Trade(trigger_id="pm_break_down@10:30#1", kind="pm_break_down", fired_ts=1100, window="team2", entry=770.5,
                             stop=771.0, targets=[], status="closed", setup_id="pm_break_down@10:30", filled_qty=10, avg_fill=0.40,
                             realized_pnl=250.0, instrument="options", order_symbol="SPY260904P00768000", multiplier=100.0)
-    ap.events.append({"event": "skip_no_trade_zone"}); ap.events.append({"event": "skip_no_trade_zone"})
+    # 2026-09-16: skips are UNIQUE decisions from the durable ledger (event, setup, source minute) — two distinct minutes
+    # count two; the same minute quoted again at a revised price counts one (its revision is kept as a version)
+    runner._log(ap, "skip_no_trade_zone", "entry 760.37 sits inside the pre-market range", setup="pm_break_down@10:30", touch=1, ts=1000)
+    runner._log(ap, "skip_no_trade_zone", "entry 760.38 sits inside the pre-market range", setup="pm_break_down@10:30", touch=1, ts=1000)
+    runner._log(ap, "skip_no_trade_zone", "entry 760.90 sits inside the pre-market range", setup="pm_break_down@10:30", touch=2, ts=5000)
     sc = runner._score_execution(ap)
     assert sc["theoreticalFires"] == 2 and sc["actualFires"] == 1 and sc["matched"] == 1
     assert sc["rows"][0]["trigger"] == "pm_break_down@10:30#1" and sc["rows"][1]["status"] == "not taken"
     assert sc["realizedPnl"] < sc["realizedPnlGross"] == 250.0                      # fees counted
     assert sc["skips"] == {"skip_no_trade_zone": 2} and sc["bias"] == "bounce PDL"
+    assert sc["skipRows"] == {"skip_no_trade_zone": 3} and len(sc["decisions"]) == 2 and sc["decisions"][0]["revisions"] == ["entry 760.38 sits inside the pre-market range"]
+    assert sc["correctedHistory"] is True and sc["decisionTime"] == [] and sc["views"]["rows"].startswith("corrected history")
     assert sc["planFor"] == ap.plan_for                                            # F126: the event contract requires it
 
 
