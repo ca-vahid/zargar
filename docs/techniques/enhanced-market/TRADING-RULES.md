@@ -1334,3 +1334,12 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
   only log (it did, at 20:25:34). The user must fill them for the Telegram path.
 - **Pre-existing test flake, not from tonight's changes:** `test_technique_api.py::test_chart_png_endpoint_on_sim_symbol` fails only
   after other tests in the file (the shared Yahoo history httpx client reuses a closed loop); passes alone.
+
+### 2026-09-16 21:04 PT - third stall cause fixed and DEPLOYED as v0.8.04 build 662a8e6
+
+The stall watch's second catch on the 66e85f6 build (#2, 4.8 s at 20:58): `OptionsService.refresh_tracked` -> `occ.symbol`
+formatting over thousands of chain rows (`CboeClient._normalize` for every option of every tracked underlying) on the loop.
+Fixed: chain normalisation and the enrichment index run on a worker thread (`_normalize_all`), each tracked OCC is parsed once
+per pass, and the pass yields between underlyings. Deployed 21:04 PT through the protocol (readiness safe, receipt verified,
+restoration 72/72 by id, resting 26 -> 26, open 0 -> 0); loop lag 1.6 ms and 0 stalls at start. Tests
+`test_em_chain_normalize_offloop.py` (6,000-row chain normalises while the loop keeps ticking). Live runtime: v0.8.04 build 662a8e6.
