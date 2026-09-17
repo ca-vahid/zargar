@@ -31,7 +31,7 @@ def _refused(sym, conf, fired_ts, proxy, *, cohort=COHORT_P01, date="2026-09-16"
 
 
 def test_p04_strata_are_descriptive_and_a_budget_refused_tp1_touch_is_not_a_sacrificed_winner():
-    assert VERSION == "profitability-cohorts-v1" and COHORTS_ADDENDUM == "p04-p05-2026-09-17"
+    assert VERSION == "profitability-cohorts-v1" and COHORTS_ADDENDUM.startswith("p04-p05-2026-09-17")   # p06 addendum appended 2026-09-18
     data = {"date": "2026-09-16", "cutoff": "16:00", "attempts": [],
             "trades": [_trade("CRCL", "observed_reclaim", _ms(9, 32), -94.11), _trade("SNDK", "observed_reclaim", _ms(15, 15), 27.16),
                        _trade("CVNA", "anticipated", _ms(9, 34), -29.49)],

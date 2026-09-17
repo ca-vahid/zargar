@@ -48,7 +48,7 @@ async def test_default_off_keeps_the_old_behaviour_the_aberrant_book_fills():
     st["t"] += 7000
     await ex.on_quote(_q(st["t"], 0.76, 1.12))
     fills = col.kinds("fill")
-    assert len(fills) == 1 and abs(float(fills[0].price) - 1.12) < 1e-9, "knob off = 09-17 behaviour, unchanged"
+    assert len(fills) == 1 and abs(float(fills[0].fill_price) - 1.12) < 1e-9, "knob off = 09-17 behaviour, unchanged"
 
 
 async def test_cap_on_the_aberrant_book_rests_the_order_then_a_plausible_book_fills_at_the_limit():
@@ -62,7 +62,7 @@ async def test_cap_on_the_aberrant_book_rests_the_order_then_a_plausible_book_fi
     st["t"] += 1000
     await ex.on_quote(_q(st["t"], 2.20, 2.29))                      # ~4% of mid, at the limit
     fills = col.kinds("fill")
-    assert len(fills) == 1 and abs(float(fills[0].price) - 2.29) < 1e-9
+    assert len(fills) == 1 and abs(float(fills[0].fill_price) - 2.29) < 1e-9
     assert len(col.kinds("fill_waiting")) == 1, "the waiting reason is journaled once per change, not per quote"
 
 

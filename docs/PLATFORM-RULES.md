@@ -2334,3 +2334,15 @@ authenticate a locally changed price. Tests: `tests/test_sep17_quote_provenance_
 `tests/test_quote_provenance_e17.py`. Pre-existing on main, unrelated: `test_options_service.py::test_option_order_practice_roundtrip`
 times out waiting for a Practice option fill off the delayed chain quote (refused since the OPRA-identity rule of
 2026-09-14) - owner of that test to re-express it on an OPRA quote.
+
+### 2026-09-18 (EM desk) - simulator option spread guard (OFF) and lazy charts for deterministic re-plans
+
+- `brokers/sim.py` `max_option_spread_pct` / config `sim_max_option_spread_pct` (default 0.0 = off): when on, an OPTION quote
+  whose spread exceeds the cap (spread / mid) cannot price a simulated resting-order fill; the order rests with a journaled
+  `fill_waiting` reason and fills on the next plausible book. Shares keep F-HOLD-01's own `sim_max_spread_pct`. Evidence:
+  ORCL 148C 2026-09-17, limit 2.29 filled at 1.12 on an OPRA snapshot 0.76/1.12 the contract never traded at. This is a
+  simulator EVIDENCE guard (what counts as a market), not a cancel/reprice policy, and it is never applied to exits by this
+  knob. It complements E17-01 (0.8.11: a recentred quote is `derived:` and refused) - the ORCL book was most likely that
+  transform; an aberrant but untransformed book is what this cap catches. Activation and the cap value are a user decision. Tests: `tests/test_em_sim_option_spread.py`.
+- `technique/service.py`: a plan run with `trigger == "preopen_replan"` and no vision pass renders no charts (no model or
+  person reads them at 09:25 ET; the UI renders on demand). Every other run is unchanged. Test in `test_technique_walkforward.py`.

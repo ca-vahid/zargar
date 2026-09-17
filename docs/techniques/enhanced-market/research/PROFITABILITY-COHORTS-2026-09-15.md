@@ -115,3 +115,30 @@ definitions are frozen before new sessions are collected. These labels never act
 
 Tests: `tests/test_em_profitability_p04_p05.py` (strata rename, paired comparison semantics, refusals distinct, no
 same-close fill, baseline block intact, 10:45 = midday, pre/post split, unknown calendar).
+
+## Addendum 2026-09-18 (`p06-2026-09-18`, the 2026-09-17 EOD review's package B)
+
+**P-06 - `tp1-reclaim-runner-exit-v1`, PROSPECTIVE runner protection (frozen 2026-09-18 before any result was read).**
+On the SAME entry, instrument and quantity: after a COMPLETED production TP1 trim, the runner is retained unless a
+completed 1m bar CLOSES back through the saved TP1 (long: close < TP1; short: close > TP1); the candidate then exits the
+remaining quantity at the NEXT bar's OPEN. Compared with production's final exit on the same remaining quantity, referenced
+to the close of the bar containing the production exit. Shares are compared in dollars; options in underlying-R only
+(the premium at the modeled exit is UNKNOWN without a covered observation - never substituted). The original stop before
+the trim is untouched; one-contract positions that cannot trim are a separate cohort (`not_eligible`), never doubled to
+manufacture a runner. TP1 is the plan's saved first target at arm time - no threshold is chosen from an observed path.
+Outcomes: `compared` (shares), `underlying_proxy_only` (options), `not_triggered`, `not_eligible`, `partial` (runner open at
+the cutoff), `unknown (...)`. Descriptive until >= 30 eligible rows. The offline evaluator is
+`em_profitability.runner_protection`; a runtime observer is NOT built - the bar-close rule needs no quote observation.
+
+**Never-TP1 diagnostic (descriptive).** Every closed position WITHOUT a TP1 trim (single-contract full exits included,
+winners and losers alike): best underlying excursion in R during the completed holding minutes versus the exit. No
+trailing percentage or giveback threshold is derived from it, and the day's marked equity peak is never used as a
+liquidatable high-water mark.
+
+**TP1 edge after friction (P-03 marker).** `edgeAtTp1 = payoffToTp1 - hurdle` per intent: the first-order premium move
+at the plan's TP1 (signed delta x signed move x qty x 100) minus the concession-plus-round-trip-fee hurdle. BMNR 09-17: one
+contract's TP1 sale lost $8.08 with an $11.82 first-order payoff - a thin cushion, not a payoff prediction. A marker,
+never a gate.
+
+First rows (2026-09-17, exploratory): P-06 SCHW (shares) `compared` -$1.17 on 33 shares versus the close flatten;
+BMNR (puts) `underlying_proxy_only` +2.01 R on the underlying versus the later stop, premium unknown. Two rows say nothing.

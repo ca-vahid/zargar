@@ -46,16 +46,23 @@ def test_preopen_mirror_matches_the_live_predicates():
     # pre-market 100.5: the bounce waits above its level (ok), the breakout has not been passed (ok) -> no replan
     v = preopen_judgement(plan, 100.5, t)
     assert {r["trigger"]: r["verdict"] for r in v["rows"]} == {"b1": "ok", "k1": "ok"} and v["replan"] is False
-    # pre-market 98.5: through the bounce's stop; breakout untouched -> one alive, no replan
+    # pre-market 99.2: at/below the bounce's entry (gapped past it) but not through its stop; the breakout is still
+    # 4.8 below its level with a 0.8 gap < gap_void_r x risk -> one alive, no replan
+    v = preopen_judgement(plan, 99.2, t)
+    assert {r["trigger"]: r["verdict"] for r in v["rows"]} == {"b1": "gapped_past", "k1": "ok"} and v["replan"] is False
+    # pre-market 98.5: through the bounce's stop AND a 1.5 gap voids the breakout (gap_void_r 1.0 x risk 1.0) -> replan
     v = preopen_judgement(plan, 98.5, t)
-    assert {r["trigger"]: r["verdict"] for r in v["rows"]} == {"b1": "gapped_through", "k1": "ok"} and v["replan"] is False
+    assert {r["trigger"]: r["verdict"] for r in v["rows"]} == {"b1": "gapped_through", "k1": "gap_void"} and v["replan"] is True
     # pre-market 104.5: past the breakout, and the bounce is void (gap > gap_void_r x risk of 1.0) -> every trigger dead -> replan
     v = preopen_judgement(plan, 104.5, t)
     verdicts = {r["trigger"]: r["verdict"] for r in v["rows"]}
     assert verdicts["k1"] == "gapped_past" and verdicts["b1"] == "gap_void" and v["replan"] is True
-    # short mirror: a reject whose stop is above the level, pre-market above the stop = gapped_through
+    # short mirror (FIX-04 predicates): a reject at 100 with its stop at 101 - a print above the stop is gapped_through, a
+    # print between the level and the stop is gapped_past (price is already beyond the level), a print BELOW the level
+    # that can still rise into it is ok
     short = {"lastClose": 100.0, "triggers": [_trig("r1", "reject", "short", 100.0, 101.0, [99.0, 98.0, 97.0])]}
     assert preopen_judgement(short, 101.5, t)["rows"][0]["verdict"] == "gapped_through"
-    assert preopen_judgement(short, 99.5, t)["rows"][0]["verdict"] == "gapped_past"
+    assert preopen_judgement(short, 100.5, t)["rows"][0]["verdict"] == "gapped_past"
+    assert preopen_judgement(short, 99.5, t)["rows"][0]["verdict"] == "ok"
     # invalid triggers are never judged
     assert preopen_judgement({"lastClose": 100.0, "triggers": [_trig("b1", "bounce", "long", 100.0, 99.0, [101.0], valid=False)]}, 90.0, t)["rows"] == []

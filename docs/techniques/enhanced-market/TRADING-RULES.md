@@ -1373,3 +1373,23 @@ restoration 72/72 by id, resting 26 -> 26, open 0 -> 0); loop lag 1.6 ms and 0 s
   was mid-restart under the 0.8.08 deploy and cleared at 21:46 (correct behaviour, no action).
 - Research load: 379 `options_cartel` manual runs hit the live engine between 18:40 and 21:40 PT (after hours). The
   review tick now reports run volume by technique for the last 30 minutes and flags research-scale volume during RTH.
+
+### 2026-09-17 evening - EOD profitability / LLM review answered (packages A-D; `reviews/2026-09-17-EOD-RESPONSE.md`)
+
+- **The day's largest winner rests on a doubtful simulated fill.** ORCL 148C: limit 2.29 accepted against 2.10/2.29, filled
+  7 s later at 1.12 on an OPRA snapshot 0.76/1.12 (38% of mid) that no print supports (the contract's own 09:32 bar traded
+  2.48-2.88). Sensitivity: about +$134 instead of +$250.92; the day about +$106 instead of +$222.65. The ledger is unchanged
+  and flagged; the likely mechanism is the quote-cache overlay recentring a fresh OPRA band on a stale chart `last` (E17-01, fixed in
+  main 0.8.11 - such quotes are now `derived:` and refused by the simulator). Proposal built OFF as a second, independent evidence guard: `sim_max_option_spread_pct` (simulator evidence guard; activation = user decision).
+- **What the setup model buys (one session, order-free ablation, `research/prep-ablation/2026-09-17.md`):** its 53 vetoes
+  removed 5 replay fills worth -0.77 R in total (A 11 fills +2.87 R vs B 16 fills +2.10 R) for 4.25 M input tokens. 43 of 53
+  vetoes are reproduced by a deterministic feature of the trigger the model named; 36 of 50 named vetoes argue about a
+  trigger the builder had already marked INVALID. A guessed exception set (cohort C) excluded the winners (-4.76 R): the
+  exception features must be learned across sessions, not declared from one. Direction supported, activation not proposed yet.
+- **P-06 runner protection frozen** (`tp1-reclaim-runner-exit-v1`): exit the runner only if a completed 1m bar closes back
+  through the saved TP1, at the next open. First two rows (SCHW -$1.17 on shares, BMNR +2.01 R underlying-proxy) say nothing.
+- **BMNR:** a TP1 trim that lost $8.08 against an $11.82 first-order payoff - `edgeAtTp1` marker added (never a gate).
+- **Sources:** the 09:21 watchlist was EvaPanda's; rows re-attributed, five branches added and evaluated (AMZN/GOOGL never
+  confirmed, MRNA/MU no target, TSLA gated, SPX unknown). The author's livestream content is unavailable.
+- **Runtime:** pre-open re-plan runs render no charts (45 x 4 charts on the render thread at 09:25 ET on 09-17).
+- Kept: rules, thresholds, observation knobs, the preparation flow; no batch rerun; no trading-hours deploy.

@@ -23,7 +23,7 @@ def test_long_shares_reclaim_exits_at_the_next_open_and_is_compared_in_dollars()
     bars = [_bar(_ms(11, 50), 104.5, 104.7, 104.45, 104.66),     # this bar's close at 11:51 triggered the trim
             _bar(_ms(11, 51), 104.66, 104.7, 104.55, 104.60),    # closes back BELOW TP1 -> reclaim
             _bar(_ms(11, 52), 104.60, 104.9, 104.58, 104.85),    # next open 104.60 = the candidate's exit
-            _bar(_ms(11, 53), 104.85, 104.96, 104.7, 104.9)] + [_bar(_ms(12, 0) + i * 60000, 104.7, 104.8, 104.6, 104.72) for i in range(236)]
+            _bar(_ms(11, 53), 104.85, 104.96, 104.7, 104.9)] + [_bar(_ms(12, 0) + i * 60000, 104.7, 104.8, 104.6, 104.72) for i in range(240)]   # covers the 15:56 exit
     exits = [(_ms(11, 51), {"kind": "tp1", "qty": 14}), (_ms(15, 56), {"kind": "flatten", "qty": 33})]
     r = runner_protection("long", tp1, 103.885, 103.3656, exits, bars, cutoff, filled_qty=47, multiplier=1.0, instrument="shares")
     assert r["policy"] == P06_POLICY and r["outcome"] == "compared" and r["remainingQty"] == 33

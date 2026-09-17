@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.11";
+export const APP_VERSION = "0.8.12";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.12",date:"2026-09-18",title:"EM: the pre-open re-plan stops drawing charts nobody reads; profit-protection and prep-ablation research",items:[
+    {tag:"improved",text:"EM pre-open re-plan runs (09:25 ET, deterministic, no model pass) no longer render four charts each on the single render thread - 45 of them did at the open on 09-17. Every run a model or a person reads keeps its charts and annotated map."},
+    {tag:"new",text:"Practice simulator: an OPTION quote implausibly wide for its mid can be barred from pricing a resting-order fill (config sim_max_option_spread_pct, OFF by default - a proposal after the ORCL 148C fill at 1.12 on a 0.76/1.12 snapshot the contract never traded at). Share orders keep their own 5% rule."},
+    {tag:"improved",text:"EM profitability report: a frozen runner-protection candidate (exit the runner only if a completed bar closes back through the saved TP1), a descriptive table of closed positions without a TP1 trim, and the first-order premium edge at TP1 after friction per intent. Offline research; nothing trades from it."},
+    {tag:"new",text:"EM preparation ablation tool (research, zero paid calls): replays every saved read of a prepared sheet through the live pre-open rules and the walk-forward tracker to compare model-selected, deterministic and exception-filtered plan sets; classifies the model's vetoes."},
+  ]},
   {version:"0.8.11",date:"2026-09-17",title:"A quote that was changed locally can no longer pass as a venue quote",items:[
     {tag:"fixed",text:"Options: a real-time OPRA bid/ask is never bent toward a slower feed's last print any more (a 15-minute-old 0.70 print had turned a fresh 1.90/2.00 MRNA 165C band into 0.65/0.75 still labelled OPRA, and Practice 'bought' at 0.75). A delayed-chain estimate that IS recentred is now labelled derived, keeps the raw venue prices beside it, and can never price a simulated fill; fill receipts show the raw values and the transform."},
     {tag:"improved",text:"Tips payoff preview uses the same fee basis as the execution-cost diagnostic (commission plus the regulatory fee per contract per side)."},

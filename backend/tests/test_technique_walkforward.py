@@ -930,6 +930,6 @@ async def test_preopen_replan_runs_render_no_charts_but_ordinary_plan_runs_still
     assert lazy["mode"] == "plan" and lazy["result"]["plan"]["validTriggers"] >= 1, "the plan itself is unchanged"
     assert not lazy["images"].get("1m") and not lazy["images"].get("annotated")
     steps = {(t["stage"], t["step"]): t for t in lazy["result"]["trace"]}
-    assert steps[("data", "charts")].get("skipped") is True
+    assert (steps[("data", "charts")].get("detail") or {}).get("skipped") is True
     eager = await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=False, wait=True)
     assert eager["images"].get("1m") and eager["images"].get("annotated")
