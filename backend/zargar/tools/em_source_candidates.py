@@ -289,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--horizon", default="intraday")
     a.add_argument("--conditions", default=None, help="the author's stated condition for the level (verbatim); omitted = recorded as missing")
     a.add_argument("--retrospective", action="store_true", help="the row was written after the session's outcome was seen")
+    a.add_argument("--author", default="enhancedmarket", help="who posted the level (the EM author by default; other Discord contributors are recorded apart)")
     e = sub.add_parser("evaluate"); e.add_argument("--date", required=True)
     s = sub.add_parser("show"); s.add_argument("--date", required=True)
     args = p.parse_args(argv)
@@ -299,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         rows.append({"date": args.date, "symbol": args.symbol.upper(), "direction": args.direction, "level": float(args.level),
                      "target": (float(args.target) if args.target else None), "note": args.note, "availableAt": args.available_at,
                      "horizon": args.horizon, "conditions": (args.conditions or None), "retrospective": bool(args.retrospective), "version": VERSION,
+                     "author": args.author,
                      "addedAt": dt.datetime.now(dt.timezone.utc).isoformat()})
         save_ledger(rows)
         print(f"added; ledger now {len(rows)} row(s)")

@@ -669,7 +669,15 @@ class TechniqueService:
                               assetId=bars_asset, bytes=len(blob),
                               perTf={k: len(v) for k, v in bars.items()})
                 imgs: dict[str, bytes] = {}
-                for tfx in req.timeframes:
+                # 2026-09-18 (EOD review, C): a pre-open re-plan builds its plan deterministically and nobody reads its
+                # charts during the open - 45 such runs rendered 4 charts each on the single render thread at 09:25 ET
+                # on 09-17. Charts stay eager for every run a model or a person reads; the UI's chart endpoint renders
+                # on demand for the rest.
+                render_charts = not (mode == "plan" and not with_vision and trigger == "preopen_replan")
+                if not render_charts:
+                    await vp.note("data", "charts", "charts not rendered: deterministic pre-open re-plan, no model pass reads them "
+                                  "(the UI renders on demand)", skipped=True)
+                for tfx in (req.timeframes if render_charts else ()):
                     if tfx in bars:
                         png = await render_chart_async(bars[tfx][-WINDOW_FOR_TF.get(tfx, 150):],
                                                        title=f"{symbol} {tfx}", tf=tfx)
@@ -679,7 +687,7 @@ class TechniqueService:
                 if image is not None:
                     images_meta["user"] = await chat.store_asset(image, None, thread_id=thread_id,
                                                                  meta={"kind": "user_image"})
-                await vp.note("data", "charts",
+                if render_charts: await vp.note("data", "charts",
                               f"rendered {len(imgs)} chart(s) for the model: "
                               + ", ".join(f"{k} ({min(len(bars[k]), WINDOW_FOR_TF.get(k, 150))} bars)"
                                           for k in imgs),
@@ -806,7 +814,7 @@ class TechniqueService:
                     lv_overlay = [{"price": lv.price, "kind": lv.kind, "touches": lv.touches,
                                    "strong": lv.touches >= 3} for lv in (a.levels if a else [])][:8]
                     caption = _chart_caption(a, rejected_overlay)
-                if ptf in bars:
+                if ptf in bars and render_charts:
                     png = await render_chart_async(bars[ptf][-WINDOW_FOR_TF.get(ptf, 150):],
                                                    title=f"{symbol} {ptf}" + (f" — plan for {plan_d['planFor']}" if plan_d else ""),
                                                    tf=ptf, levels=lv_overlay, setup=setup_overlay,

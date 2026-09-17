@@ -53,7 +53,8 @@ P02_POLICY = "small-position-exit-v1"
 P02_MAX_QTY = 2
 P02_MIN_FIRST_SALE_R = 2.0
 P03_HURDLE_MARK = 0.08                      # ranking marker (share of paid premium), never a gate
-COHORTS_ADDENDUM = "p04-p05-2026-09-17"     # frozen additions (PFU-02/03 corrected): P-04 descriptive strata + PAIRED confirmation comparison, P-05 clock/event labels
+COHORTS_ADDENDUM = "p04-p05-2026-09-17; p06-2026-09-18"
+P06_POLICY = "tp1-reclaim-runner-exit-v1"     # frozen additions (PFU-02/03 corrected): P-04 descriptive strata + PAIRED confirmation comparison, P-05 clock/event labels
 SESSION_CLOCK = "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET"   # marketstructure.sessions.session_window
 # Event provenance is HAND-KEPT (the app's macro calendar is empty): a date without an entry has UNKNOWN coverage, never
 # "ordinary". Entries added after the session are retrospective and say so. Time is the event's ET clock time.
@@ -132,6 +133,74 @@ def payoff_to_tp1(delta: float | None, entry: float | None, tp1: float | None, q
         return round(d * (float(tp1) - float(entry)) * float(qty) * float(multiplier), 2)
     except (TypeError, ValueError):
         return None
+
+
+def _ev_ms(ts) -> int:
+    return int(ts.timestamp() * 1000) if hasattr(ts, "timestamp") else int(ts)
+
+
+def runner_protection(direction: str, tp1: float | None, entry: float | None, stop: float | None, exits: list, bars: list[dict],
+                      cutoff_ms: int, *, filled_qty: float, multiplier: float, instrument: str | None) -> dict:
+    """P-06 (frozen 2026-09-18, the review's package B): after a COMPLETED production TP1 trim, retain the runner unless a
+    completed 1m bar CLOSES back through the saved TP1 (long: close < TP1; short: close > TP1); then model exiting the
+    remaining quantity at the NEXT bar's OPEN (underlying proxy). Compared with production's actual final exit on the
+    same remaining quantity, referenced to the close of the bar containing the production exit. Shares -> dollars;
+    options -> underlying-R only (the premium at the modeled exit is UNKNOWN without a covered observation). The
+    original stop before the trim is untouched. Not chosen after the fact: TP1 is the plan's saved first target."""
+    out = {"policy": P06_POLICY, "outcome": "unknown", "why": None, "tp1": tp1, "remainingQty": None, "reclaimTs": None,
+           "modeledExitTs": None, "modeledExitPx": None, "productionExitTs": None, "productionExitRef": None,
+           "underlyingDeltaR": None, "dollarDelta": None, "premium": ("unknown" if instrument == "options" else None)}
+    ex = sorted(((_ev_ms(ts), p) for ts, p in exits), key=lambda x: x[0])
+    trim = next(((ts, p) for ts, p in ex if p.get("kind") == "tp1"), None)
+    if trim is None:
+        out["outcome"] = "not_eligible"; out["why"] = "no completed TP1 trim"; return out
+    if tp1 is None or entry is None or stop is None or abs(float(entry) - float(stop)) <= 0:
+        out["why"] = "geometry missing"; return out
+    final = ex[-1]
+    remaining = float(filled_qty) - float(trim[1].get("qty") or 0)
+    out["remainingQty"] = remaining
+    if remaining <= 0:
+        out["outcome"] = "not_eligible"; out["why"] = "the trim closed the whole position - no runner"; return out
+    if final[0] <= trim[0]:
+        out["outcome"] = "partial"; out["why"] = "runner still open at the cutoff"; return out
+    long = direction != "short"; risk = abs(float(entry) - float(stop))
+    path = [b for b in sorted(bars, key=lambda x: x["ts"]) if int(b["ts"]) >= trim[0] and int(b["ts"]) + 60000 <= min(final[0] + 60000, cutoff_ms)]
+    reclaim_i = next((i for i, b in enumerate(path) if ((float(b["close"]) < float(tp1)) if long else (float(b["close"]) > float(tp1)))), None)
+    prod_bar = next((b for b in sorted(bars, key=lambda x: x["ts"]) if int(b["ts"]) <= final[0] < int(b["ts"]) + 60000), None)
+    out["productionExitTs"] = final[0]; out["productionExitRef"] = (float(prod_bar["close"]) if prod_bar else None)
+    if reclaim_i is None:
+        out["outcome"] = "not_triggered"; out["why"] = "no completed close back through TP1 before the production exit"; return out
+    if reclaim_i + 1 >= len(path):
+        out["outcome"] = "unknown"; out["why"] = "the reclaim bar was the last observed bar - no next open to exit at"; return out
+    nb = path[reclaim_i + 1]
+    out.update({"reclaimTs": int(path[reclaim_i]["ts"]), "modeledExitTs": int(nb["ts"]), "modeledExitPx": float(nb["open"])})
+    if out["productionExitRef"] is None:
+        out["why"] = "no bar at the production exit"; return out
+    favour = (float(nb["open"]) - out["productionExitRef"]) if long else (out["productionExitRef"] - float(nb["open"]))
+    out["underlyingDeltaR"] = round(favour / risk, 3)
+    if instrument != "options":
+        out["dollarDelta"] = round(favour * remaining * float(multiplier or 1), 2)
+        out["outcome"] = "compared"
+    else:
+        out["outcome"] = "underlying_proxy_only"; out["why"] = "option premium at the modeled exit unknown (no covered observation)"
+    return out
+
+
+def never_tp1_diag(direction: str, entry: float | None, stop: float | None, opened_ts, closed_ts, exits: list, bars: list[dict]) -> dict | None:
+    """Review B diagnostic for winners that never reached TP1: the best underlying excursion (R) during the completed
+    holding minutes versus the exit. Descriptive only - no threshold is derived from it."""
+    if any((p.get("kind") == "tp1") for _, p in exits) or entry is None or stop is None or not opened_ts or not closed_ts:
+        return None
+    risk = abs(float(entry) - float(stop))
+    if risk <= 0:
+        return None
+    o, c = int(opened_ts), int(closed_ts)
+    held = [b for b in bars if int(b["ts"]) > o and int(b["ts"]) + 60000 <= c]
+    if not held:
+        return {"mfeR": None, "why": "no completed holding minute"}
+    long = direction != "short"
+    mfe = max(((float(b["high"]) - float(entry)) if long else (float(entry) - float(b["low"]))) for b in held)
+    return {"mfeR": round(mfe / risk, 3), "heldBars": len(held)}
 
 
 def affordable_qty(risk_budget: float, premium: float, premium_stop_pct: float, multiplier: float = 100.0) -> int:
@@ -502,6 +571,10 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                                                   "productionPerContract": per_contract or None, "entryFeePerContract": (entry_fee_pc if entry_fee_pc is not None else fee_side),
                                                   "entryOrderId": eid, "contract": {"symbol": contract.get("symbol") or tr.get("orderSymbol")},
                                                   "openedTs": tr.get("openedTs"), "closedTs": tr.get("closedTs")}, shadow, fee_side)
+                    exit_evs = [(ts, p) for ts, ty, p in evs if ty == "TechniquePlanExit" and p.get("trigger") == tid]
+                    row["p06"] = runner_protection(direction, tp1, tr.get("entry"), tr.get("stop"), exit_evs, bars, cutoff_ms,
+                                                   filled_qty=q, multiplier=m, instrument=tr.get("instrument"))
+                    row["neverTp1"] = never_tp1_diag(direction, tr.get("entry"), tr.get("stop"), tr.get("openedTs"), tr.get("closedTs"), exit_evs, bars) if closed else None
                     if row.get("cohort") == COHORT_P01:
                         row["confirmationPair"] = confirmation_pair(bars, int(fired_ts), direction, level, tr.get("stop"), tp1, row.get("tp2"), cutoff_ms)
                     trades.append(row)
@@ -547,6 +620,8 @@ def summarize(data: dict) -> dict:
             if r.get("closed"): s["net"] += r.get("netRealized") or 0
             else: s["open"] += 1
     p02 = [r for r in trades if r.get("p02Eligible")]
+    p06 = [r for r in trades if (r.get("p06") or {}).get("outcome") not in (None, "not_eligible")]
+    never = [r for r in trades if r.get("closed") and r.get("neverTp1") and (r.get("netRealized") or 0) != 0]
 
     def econ(r):
         f = r.get("friction") or {}
@@ -557,6 +632,10 @@ def summarize(data: dict) -> dict:
                 "firstSaleDistanceR": r.get("firstSaleDistanceR"), "flag": (pct is not None and pct >= P03_HURDLE_MARK),
                 "delta": (r.get("contract") or {}).get("delta"),
                 "payoffTp1": payoff_to_tp1((r.get("contract") or {}).get("delta"), r.get("intendedEntry"), (r.get("targets") or [None])[0], qty, r.get("multiplier") or 100.0),
+                # 2026-09-18 (BMNR): the first-order premium edge at TP1 after friction - payoff proxy minus the hurdle. A thin or
+                # negative cushion means an underlying target reached does not imply a premium profit; a marker, never a gate.
+                "edgeAtTp1": (round(payoff_to_tp1((r.get("contract") or {}).get("delta"), r.get("intendedEntry"), (r.get("targets") or [None])[0], qty, r.get("multiplier") or 100.0) - f["total"], 2)
+                              if (f.get("total") is not None and payoff_to_tp1((r.get("contract") or {}).get("delta"), r.get("intendedEntry"), (r.get("targets") or [None])[0], qty, r.get("multiplier") or 100.0) is not None) else None),
                 "riskBudgetQty": r.get("riskBudgetQty"), "riskBudgetBasis": r.get("riskBudgetBasis"), "refusal": r.get("refusal")}
     p03 = [econ(r) for r in trades + refused]
     p03.sort(key=lambda e: (e["hurdlePct"] is None, -(e["hurdlePct"] or 0)))
@@ -637,6 +716,8 @@ def summarize(data: dict) -> dict:
             "missedWinnersCandidates": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "refusal": (r.get("refusal") or "")[:90],
                                          "underlyingProxy": r.get("underlyingProxy"), "roomPlanned": r.get("roomBin")} for r in missed],
             "strata": {k: {"n": v["n"], "net": round(v["net"], 2), "open": v["open"]} for k, v in sorted(strata.items())},
+            "p06": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "qty": r.get("filledQty"), **{k: (r["p06"] or {}).get(k) for k in ("outcome", "why", "remainingQty", "reclaimTs", "modeledExitPx", "productionExitRef", "underlyingDeltaR", "dollarDelta", "premium")}} for r in p06],
+            "neverTp1": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "netRealized": r.get("netRealized"), "exitKinds": r.get("exitKinds"), **(r.get("neverTp1") or {})} for r in never],
             "p02": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "qty": r.get("filledQty"), "firstSaleDistanceR": r.get("firstSaleDistanceR"), **r["p02"]} for r in p02],
             "p03": p03,
             "p04": p04, "p04Paired": p04_paired, "p05": p05, "p05RunnerLabels": p05_diag, "sessionClock": SESSION_CLOCK, "cohortsAddendum": COHORTS_ADDENDUM,
@@ -670,6 +751,12 @@ def render(data: dict, s: dict) -> str:
     L += ["", f"**P-02 `{P02_POLICY}` - PROVISIONAL (identical entry/contract/quantity; actual entry and retained fees, modeled exit fee {data.get('feePerContractSide', 0):.2f}/contract on the hypothetical sale; unknown without a covered TP1 bid observation bound to the trade instance):**",
           "| Position | Qty | First sale (R) | Outcome | Production net | Alternative net | Delta | Forgone on winner | Why |", "|---|---:|---:|---|---:|---:|---:|---:|---|"]
     L += [f"| {r['symbol']} {r['trigger']} | {int(r['qty'] or 0)} | {r['firstSaleDistanceR']} | {r['outcome']} | {r['productionRealized'] if r['productionRealized'] is not None else 'open'} | {_f(r['alternativeRealized'], '{:.2f}')} | {_f(r['delta'])} | {_f(r['forgoneOnWinner'], '{:.2f}')} | {r['why'] or ''} |" for r in s["p02"]] or ["| (no eligible small position) | | | | | | | | |"]
+    L += ["", f"**P-06 `{P06_POLICY}` - PROSPECTIVE, frozen 2026-09-18 (after a completed TP1 trim the runner is kept unless a completed 1m bar CLOSES back through the saved TP1; then exit the remainder at the NEXT bar's open; compared with production's final exit on the same remaining quantity, referenced to the close of the bar containing it; shares in dollars, options underlying-R only - premium unknown):**",
+          "| Position | Instr | Remaining | Outcome | Reclaim (ET) | Modeled exit | Production ref | Underlying delta (R) | Dollar delta | Why |", "|---|---|---:|---|---|---:|---:|---:|---:|---|"]
+    L += [f"| {r['symbol']} {r['trigger']} | {r.get('instrument')} | {r.get('remainingQty')} | {r['outcome']} | {dt.datetime.fromtimestamp(r['reclaimTs'] / 1000, NY).strftime('%H:%M') if r.get('reclaimTs') else '-'} | {_f(r.get('modeledExitPx'), '{:.2f}')} | {_f(r.get('productionExitRef'), '{:.2f}')} | {_f(r.get('underlyingDeltaR'), '{:+.2f}')} | {_f(r.get('dollarDelta'), '{:+.2f}')} | {r.get('why') or ''} |" for r in s["p06"]] or ["| (no position completed a TP1 trim) | | | | | | | | | |"]
+    L += ["", "**Closed positions WITHOUT a TP1 trim (descriptive, winners and losers alike - single-contract full exits included; best underlying excursion during the completed holding minutes vs the exit; no threshold is derived):**",
+          "| Position | Net | MFE (R) | Held bars | Exits |", "|---|---:|---:|---:|---|"]
+    L += [f"| {r['symbol']} {r['trigger']} | {_f(r.get('netRealized'), '{:+.2f}')} | {_f(r.get('mfeR'), '{:.2f}')} | {r.get('heldBars', '-')} | {', '.join(r.get('exitKinds') or [])} |" for r in s["neverTp1"]] or ["| (none) | | | | |"]
     L += ["", f"**P-03 contract economics - PROVISIONAL (every intent, filled or refused; hurdle = concession to the intent bid + round-trip fees as a share of paid premium, `flag` = >= {int(P03_HURDLE_MARK*100)}% ranking marker, never a gate; payoff = signed delta x signed move, a local sensitivity; `riskBudgetQty` = budget bound only, not admission feasibility):**",
           "| Intent | Filled | Dir | Qty | Hurdle $ | Hurdle % | First sale (R) | Flag | Payoff to TP1 (delta proxy) | Hurdle / payoff | Risk-budget qty | Refusal |", "|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|"]
     for r in s["p03"]:

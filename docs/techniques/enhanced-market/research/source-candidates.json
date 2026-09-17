@@ -10,7 +10,8 @@
   "horizon": "intraday",
   "retrospective": true,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T04:50:46.951053+00:00"
+  "addedAt": "2026-09-15T04:50:46.951053+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-14",
@@ -23,7 +24,8 @@
   "horizon": "intraday",
   "retrospective": true,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T04:50:47.198239+00:00"
+  "addedAt": "2026-09-15T04:50:47.198239+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-14",
@@ -36,7 +38,8 @@
   "horizon": "swing",
   "retrospective": true,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T04:50:47.397198+00:00"
+  "addedAt": "2026-09-15T04:50:47.397198+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-15",
@@ -49,7 +52,8 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T13:27:21.595136+00:00"
+  "addedAt": "2026-09-15T13:27:21.595136+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-15",
@@ -62,7 +66,8 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T13:27:21.608565+00:00"
+  "addedAt": "2026-09-15T13:27:21.608565+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-15",
@@ -75,7 +80,8 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T13:27:21.619165+00:00"
+  "addedAt": "2026-09-15T13:27:21.619165+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-15",
@@ -88,7 +94,8 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T13:27:21.628067+00:00"
+  "addedAt": "2026-09-15T13:27:21.628067+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-15",
@@ -101,7 +108,8 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T13:27:21.636478+00:00"
+  "addedAt": "2026-09-15T13:27:21.636478+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-15",
@@ -114,7 +122,8 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T13:27:21.646346+00:00"
+  "addedAt": "2026-09-15T13:27:21.646346+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-15",
@@ -127,7 +136,8 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-15T13:27:21.655959+00:00"
+  "addedAt": "2026-09-15T13:27:21.655959+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-16",
@@ -141,7 +151,8 @@
   "retrospective": false,
   "version": "source-continuation-v1",
   "addedAt": "2026-09-16T13:26:50.093497+00:00",
-  "conditions": "AMZN, above 250 can see 255/257 (author's caption 09:23 ET); direction long; entry condition = above 250, no timeframe stated (missing: confirmation bar, stop, size)"
+  "conditions": "AMZN, above 250 can see 255/257 (author's caption 09:23 ET); direction long; entry condition = above 250, no timeframe stated (missing: confirmation bar, stop, size)",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-16",
@@ -155,7 +166,8 @@
   "conditions": "7677 is the level to watch to test 7750 (index level; no tradeable vehicle in this ledger - evaluation stays unknown by design)",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-17T00:56:54.341085+00:00"
+  "addedAt": "2026-09-17T00:56:54.341085+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-16",
@@ -169,7 +181,8 @@
   "conditions": "7580 is the level to test 7500; 7600 remains the battleground (same playbook as yesterday); author: likely nothing until Powell speaks (index level; evaluation stays unknown by design)",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-17T00:56:56.414487+00:00"
+  "addedAt": "2026-09-17T00:56:56.414487+00:00",
+  "author": "enhancedmarket"
  },
  {
   "date": "2026-09-17",
@@ -183,7 +196,9 @@
   "conditions": "bulls take out 7665; next 7677/7700/7725; author aims 7720C",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-17T13:27:06.832912+00:00"
+  "addedAt": "2026-09-17T13:27:06.832912+00:00",
+  "author": "EvaPanda",
+  "authorCorrectedAt": "2026-09-17T21:30:00+00:00"
  },
  {
   "date": "2026-09-17",
@@ -197,6 +212,83 @@
   "conditions": "SPX fails 7620; next 7600/7580/7550; author aims 7580P",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-17T13:27:07.255338+00:00"
+  "addedAt": "2026-09-17T13:27:07.255338+00:00",
+  "author": "EvaPanda",
+  "authorCorrectedAt": "2026-09-17T21:30:00+00:00"
+ },
+ {
+  "date": "2026-09-17",
+  "symbol": "MRNA",
+  "direction": "long",
+  "level": 153.0,
+  "target": null,
+  "note": "ab54325d07164f898fe30227164e92d8",
+  "availableAt": "2026-09-17T13:23:03+00:00",
+  "horizon": "intraday",
+  "conditions": "break 153 (continuation); backtest 146 as the alternative entry; no target or stop stated",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "author": "EvaPanda",
+  "addedAt": "2026-09-17T21:16:15.049142+00:00"
+ },
+ {
+  "date": "2026-09-17",
+  "symbol": "MU",
+  "direction": "long",
+  "level": 979.0,
+  "target": null,
+  "note": "ab54325d07164f898fe30227164e92d8",
+  "availableAt": "2026-09-17T13:23:03+00:00",
+  "horizon": "intraday",
+  "conditions": "break 979 (continuation); backtest 940 as the alternative entry; no target or stop stated; overnight saved plan disagreed (valid short breakdown 917.548)",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "author": "EvaPanda",
+  "addedAt": "2026-09-17T21:16:15.430605+00:00"
+ },
+ {
+  "date": "2026-09-17",
+  "symbol": "TSLA",
+  "direction": "long",
+  "level": 365.0,
+  "target": 373.0,
+  "note": "ab54325d07164f898fe30227164e92d8",
+  "availableAt": "2026-09-17T13:23:03+00:00",
+  "horizon": "intraday",
+  "conditions": "over 365 with volume toward 373; opened above the level (gap) - entry ordering/no-chase unresolved",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "author": "EvaPanda",
+  "addedAt": "2026-09-17T21:16:15.691801+00:00"
+ },
+ {
+  "date": "2026-09-17",
+  "symbol": "AMZN",
+  "direction": "long",
+  "level": 257.0,
+  "target": null,
+  "note": "ab54325d07164f898fe30227164e92d8",
+  "availableAt": "2026-09-17T13:23:03+00:00",
+  "horizon": "intraday",
+  "conditions": "wait for 257; session high 252.73 never reached it - not a miss",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "author": "EvaPanda",
+  "addedAt": "2026-09-17T21:16:15.927948+00:00"
+ },
+ {
+  "date": "2026-09-17",
+  "symbol": "GOOGL",
+  "direction": "long",
+  "level": 350.0,
+  "target": null,
+  "note": "ab54325d07164f898fe30227164e92d8",
+  "availableAt": "2026-09-17T13:23:03+00:00",
+  "horizon": "intraday",
+  "conditions": "above 350; session high 349.50 never reached it - not a miss",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "author": "EvaPanda",
+  "addedAt": "2026-09-17T21:16:16.182726+00:00"
  }
 ]
