@@ -298,13 +298,55 @@ class Team2Runner(PlanRunner):
                     f"had passed at {now_et.strftime('%H:%M:%S')} — no new order (R2)")
         return None
 
+    def _fresh_underlying(self, ap: ArmedPlan) -> tuple[float | None, str]:
+        """The underlying's fresh last print (within `stale_seconds`), or (None, why) — never a stale price."""
+        quotes = getattr(getattr(self, "engine", None), "quotes", None)
+        q = quotes.get(ap.symbol) if quotes is not None and hasattr(quotes, "get") else None
+        if q is None:
+            return None, "no quote"
+        last = float(getattr(q, "last", 0) or 0)
+        if last <= 0:
+            return None, "no last"
+        try:
+            max_age = int(self.rt("stale_seconds", 180) or 180)
+        except Exception:  # noqa: BLE001
+            max_age = 180
+        ts = getattr(q, "ts", None)
+        if ts and int(time.time() * 1000) - int(ts) > max_age * 1000:
+            return None, "stale quote"
+        return last, "quote"
+
+    def _target_live_refusal(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
+        """PR204 review (2026-09-17): immediately before a NEW order leaves — after the awaited contract pick, review, sizing
+        and on every retry — the target is judged once more against the FRESH underlying quote. A target the live price
+        has reached or crossed means no entry (the exit would fire on the first print). Pure: reads the quote cache only.
+        A trade without a target (the read's allowed shape) and an already-open position are untouched; nothing is
+        rewritten to let the order through."""
+        if ap.config.mode == "alert" or not trade.targets:
+            return None
+        try:
+            tgt = float(trade.targets[0])
+        except (TypeError, ValueError):
+            return None
+        px, _src = self._fresh_underlying(ap)
+        if px is None:
+            return None                                     # no fresh evidence: the time gate and the venue decide
+        tick = float(getattr(self.rules_for(ap), "tick", 0.01) or 0.01)
+        kind_, why_ = destination_check(tgt, None, None, px, trade.direction, tick)
+        if kind_ == "behind":
+            return f"order boundary ({stage}): {why_} — the live price reached the target during the awaited work; no entry"
+        return None
+
     async def entry_gate(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
         if stage == "order" and not getattr(trade, "is_add", False):
             self._diag_submission(ap, trade)                 # shadow: the underlying at the order boundary (2026-09-16)
-        return self._entry_time_refusal(ap, stage)
+        why = self._entry_time_refusal(ap, stage)
+        if why is None and stage in ("order", "retry"):
+            why = self._target_live_refusal(ap, trade, stage)
+        return why
 
     def entry_guard_predicate(self, ap: ArmedPlan, trade: Trade) -> str | None:
-        return self._entry_time_refusal(ap, "submit")
+        return self._entry_time_refusal(ap, "submit") or self._target_live_refusal(ap, trade, "submit")
 
     async def _trail(self, ap: ArmedPlan, kind: str, event: str, reason: str, **detail) -> None:
         """Cohort v2 (2026-09-10, user decision): the candidate -> quote -> order -> fill -> exit trail is journaled under
@@ -356,10 +398,45 @@ class Team2Runner(PlanRunner):
 
     @staticmethod
     def _transient_chain_error(exc: BaseException) -> bool:
+        if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+            return True
         msg = str(exc)
         return any(t in msg for t in ("429", "HTTP 5", "timed out", "timeout", "Timeout", "Too Many", "temporarily"))
 
+    _CHAIN_TIMEOUT_S = 20.0
+
+    class _ChainRequestCancelled(RuntimeError):
+        """The owner of a shared listing request was cancelled: its waiters are settled with this, never left pending."""
+
+    async def _chain_fetch_attempts(self, key: tuple, fn) -> int:
+        """Bounded retry: up to three attempts, each under `_CHAIN_TIMEOUT_S`; a transient failure (rate limit, 5xx, timeout)
+        waits 0.8 s then 1.6 s; anything else raises at once. The rows land in the cache before the attempt count returns."""
+        last: BaseException | None = None
+        attempts = 0
+        for i, sleep_s in enumerate((0.0,) + self._CHAIN_RETRY_SLEEPS):
+            if sleep_s:
+                await asyncio.sleep(sleep_s)
+            attempts = i + 1
+            try:
+                rows = await asyncio.wait_for(fn(), timeout=self._CHAIN_TIMEOUT_S)
+                self.__dict__.setdefault("_chain_cache", {})[key] = {"ts": int(time.time() * 1000), "rows": list(rows or [])}
+                return attempts
+            except asyncio.CancelledError:
+                raise
+            except (asyncio.TimeoutError, TimeoutError) as exc:
+                last = exc
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+                if not self._transient_chain_error(exc):
+                    break
+        raise last if last is not None else RuntimeError("chain request failed")
+
     async def _cached_chain_call(self, key: tuple, fn, *, ttl_s: float, max_age_s: float) -> tuple[list, dict]:
+        """One shared request per key. The first caller OWNS the fetch and settles a shared future with the attempt count or
+        the exception; every other concurrent caller waits on that future through `asyncio.shield`, so a waiter's own
+        cancellation never touches the fetch or the owner's result, while the owner's cancellation or failure settles every
+        waiter (never a pending future nobody can complete). In-flight state is cleared in `finally`. A stale listing may
+        serve after a failure, its age judged at the moment it is returned."""
         cache = self.__dict__.setdefault("_chain_cache", {})
         inflight = self.__dict__.setdefault("_chain_inflight", {})
         now = int(time.time() * 1000)
@@ -371,34 +448,30 @@ class Team2Runner(PlanRunner):
         if owner:
             fut = asyncio.get_running_loop().create_future()
             inflight[key] = fut
-            attempts = 0
             try:
-                last: BaseException | None = None
-                for i, sleep_s in enumerate((0.0,) + self._CHAIN_RETRY_SLEEPS):
-                    if sleep_s:
-                        await asyncio.sleep(sleep_s)
-                    attempts = i + 1
-                    try:
-                        rows = await fn()
-                        cache[key] = {"ts": int(time.time() * 1000), "rows": list(rows or [])}
-                        last = None
-                        break
-                    except Exception as exc:  # noqa: BLE001
-                        last = exc
-                        if not self._transient_chain_error(exc):
-                            break
-                if last is not None:
-                    fut.set_exception(last)
-                else:
+                attempts = await self._chain_fetch_attempts(key, fn)
+                if not fut.done():
                     fut.set_result(attempts)
+            except asyncio.CancelledError:
+                if not fut.done():
+                    fut.set_exception(self._ChainRequestCancelled("listing request cancelled by its owner"))
+                raise
+            except BaseException as exc:  # noqa: BLE001 - the shared future carries the failure to every waiter
+                if not fut.done():
+                    fut.set_exception(exc)
             finally:
-                inflight.pop(key, None)
+                if inflight.get(key) is fut:
+                    inflight.pop(key, None)
         try:
-            attempts = await fut if not owner else fut.result()
-        except Exception as exc:  # noqa: BLE001
-            if hit and now - int(hit["ts"]) <= max_age_s * 1000:
-                return list(hit["rows"]), {"listingSource": "stale-cache", "listingAgeMs": now - int(hit["ts"]),
-                                           "listingFetchedAt": int(hit["ts"]), "listingError": str(exc)[:160]}
+            attempts = fut.result() if owner else await asyncio.shield(fut)
+        except asyncio.CancelledError:
+            raise                                             # this caller was cancelled; the shared fetch is untouched
+        except BaseException as exc:  # noqa: BLE001
+            now2 = int(time.time() * 1000)
+            hit = cache.get(key)
+            if hit and now2 - int(hit["ts"]) <= max_age_s * 1000:
+                return list(hit["rows"]), {"listingSource": "stale-cache", "listingAgeMs": now2 - int(hit["ts"]),
+                                           "listingFetchedAt": int(hit["ts"]), "listingError": str(exc)[:160] or type(exc).__name__}
             raise
         h = cache.get(key) or {"ts": now, "rows": []}
         src = ("fetch" if attempts == 1 else "retry") if owner else "coalesced"
@@ -1493,7 +1566,11 @@ class Team2Runner(PlanRunner):
             stop = spot - atr if direction == "long" else spot + atr
         else:
             stop = guard_f - atr if direction == "long" else guard_f + atr
-        target, target_refusal = self.resolve_fire_target(e, setup, spot, direction, actionable=float(bar.close),
+        # PR204 review (2026-09-17): the actionable price on the LIVE entry path is the fresh underlying quote — the closed
+        # candle is the read's evidence, not the price an order would meet; a stale or missing quote falls back to the close
+        live_px, live_src = self._fresh_underlying(ap) if journal else (None, "replay")
+        actionable = float(live_px) if live_px is not None else float(bar.close)
+        target, target_refusal = self.resolve_fire_target(e, setup, spot, direction, actionable=actionable,
                                                           anchor=(setup.get("anchor") if getattr(rules_now, "target_identity_guard", True) else None),
                                                           tick=float(getattr(rules_now, "tick", 0.01) or 0.01))
         if target_refusal is not None:
@@ -1501,11 +1578,12 @@ class Team2Runner(PlanRunner):
             # own decision kind — the setup's destination is the level it just broke, for every entry kind of the setup.
             kind_ = "skip_target_collision" if "source-target collision" in target_refusal else "skip_target_behind"
             self._log(ap, kind_, f"{tid}: {target_refusal}", trigger=tid, spot=spot, close=float(bar.close), anchor=setup.get("anchor"),
-                      sourceTs=e.get("ts"))
+                      actionable=actionable, actionableSource=("quote" if live_px is not None else "candle"), sourceTs=e.get("ts"))
             if journal:
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": kind_,
-                    "spot": spot, "close": float(bar.close), "anchor": setup.get("anchor"), "why": target_refusal, "ts": e.get("ts")},
+                    "spot": spot, "close": float(bar.close), "anchor": setup.get("anchor"), "actionable": actionable,
+                    "actionableSource": ("quote" if live_px is not None else "candle"), "why": target_refusal, "ts": e.get("ts")},
                     aggregate_type="technique_run", aggregate_id=ap.run_id)
                 self._record_unfilled(ap, tid)
             return

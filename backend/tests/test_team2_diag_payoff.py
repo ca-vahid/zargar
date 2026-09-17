@@ -32,7 +32,11 @@ def test_target_room_and_payoff_estimate_are_labelled_and_stay_unknown_without_i
     # missing inputs: insufficient evidence, never a number
     assert diag.payoff_estimate(0.69, 0.68, None, None, 0.5, 1.04) == {"status": "insufficient evidence", "missing": ["delta"], "greeksSource": None}
     assert diag.payoff_estimate(0.69, 0.68, 0.4, None, None, 1.04)["missing"] == ["target room"]
-    assert diag.payoff_estimate(0.0, None, 0.4, None, 0.5, 1.04)["missing"] == ["entry ask"]
+    assert diag.payoff_estimate(0.0, None, 0.4, None, 0.5, 1.04)["missing"] == ["entry ask", "bid"]
+    # PR204 review: a missing, zero or crossed bid is NOT a zero spread — insufficient evidence, never an optimistic number
+    for bad in (None, 0.0, 0.8):
+        r = diag.payoff_estimate(0.69, bad, 0.461, 0.05, 0.5, 1.04)
+        assert r["status"] == "insufficient evidence" and ("bid" in r["missing"] or "valid spread (bid above ask)" in r["missing"])
 
 
 async def test_submission_records_room_greeks_provenance_and_payoff(monkeypatch):

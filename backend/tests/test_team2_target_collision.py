@@ -162,3 +162,64 @@ def test_read_refuses_a_pm_break_whose_destination_is_its_own_level(collision):
     else:
         assert setup["target"] > setup["anchor"] and not notes
         assert fires, "a distinct destination beyond the broken level still lets the pullback fire"
+
+
+# ---------------------------------------------------------------- PR204 review: the actionable price is the FRESH quote, judged again at the order boundary
+def _live(px, now):
+    return SimpleNamespace(get=lambda _: SimpleNamespace(last=px, bid=px - .01, ask=px + .01, ts=now, source_ts=now, source="alpaca"))
+
+
+@pytest.mark.parametrize("direction,live_spot,entries", [("long", 100.4, 1), ("long", 101.1, 0), ("short", 99.6, 1), ("short", 98.9, 0)])
+async def test_the_fresh_quote_decides_the_room_at_the_fire_long_and_short(monkeypatch, direction, live_spot, entries):
+    import zargar.execution.planrunner as shared
+    import zargar.techniques.team2.runner as module
+    runner, ap = rig()
+    now = int(dt.datetime(2026, 9, 14, 13, 10, tzinfo=ET).timestamp() * 1000)
+    monkeypatch.setattr(module.time, "time", lambda: now / 1000)
+    monkeypatch.setattr(shared, "now_ms", lambda: now)
+    ap.bar_index = 10
+    runner.engine.quotes = _live(live_spot, now)
+    up = direction == "long"
+    sid = "pm_break_up@12:15" if up else "pm_break_down@12:15"
+    e = {"event": "fire", "ts": now, "setup": sid, "touch": 1, "spot": 100.1 if up else 99.9, "target": 101.0 if up else 99.0,
+         "targetKind": "plan", "entryKind": "ema", "sizeMult": .5, "bucket": "small", "why": "valid closed-bar signal",
+         "regime": {"stack": "bull" if up else "bear", "atr": .3}}
+    res = SimpleNamespace(setups=[{"id": sid, "kind": sid.split("@")[0], "direction": direction, "anchor": 100.0, "target": e["target"]}])
+    runner.pick_contract = AsyncMock(return_value={"symbol": "TEST", "ask": .5})
+    runner._enter = AsyncMock()
+    await runner._fire_from_event(ap, e, bar(13, 9, 100.3 if up else 99.7), res, halted=False, journal=True)
+    await runner.wait_fires(ap.run_id)
+    assert runner._enter.await_count == entries
+    if not entries:
+        skipped = [c.args[1] for c in runner.engine.journal.append.await_args_list if c.args[0] == "TechniquePlanTriggerSkipped"][-1]
+        assert skipped["event"] == "skip_target_behind" and skipped["actionableSource"] == "quote" and skipped["actionable"] == live_spot
+
+
+async def test_a_target_crossed_during_the_awaited_work_is_refused_at_the_order_boundary(monkeypatch):
+    import zargar.techniques.team2.runner as module
+    runner, ap = rig()
+    now = int(dt.datetime(2026, 9, 14, 13, 10, tzinfo=ET).timestamp() * 1000)
+    monkeypatch.setattr(module.time, "time", lambda: now / 1000)
+    runner.engine.quotes = _live(100.4, now)
+    trade = __import__("zargar.execution.planrunner", fromlist=["Trade"]).Trade(
+        trigger_id="pm_break_up@12:15#1", kind="pm_break_up", fired_ts=now, window="team2", entry=100.1, stop=99.8, targets=[101.0],
+        setup_id="pm_break_up@12:15", instrument="options", multiplier=100.0, direction="long")
+    ap.trades[trade.trigger_id] = trade
+    # the time gate refuses first on this synthetic date; take it out of the way so the target gate is what is exercised
+    monkeypatch.setattr(runner, "_entry_time_refusal", lambda ap_, stage: None)
+    assert await runner.entry_gate(ap, trade, "order") is None and runner.entry_guard_predicate(ap, trade) is None
+    # the quote pick / review / sizing took time and the price ran to the target: no entry, at the order stage, on a retry and at submit
+    runner.engine.quotes = _live(101.05, now)
+    for stage in ("order", "retry"):
+        why = await runner.entry_gate(ap, trade, stage)
+        assert why and f"order boundary ({stage})" in why and "current price 101.05" in why and "reached the target" in why
+    assert "order boundary (submit)" in (runner.entry_guard_predicate(ap, trade) or "")
+    assert trade.targets == [101.0]                                           # never rewritten to let the order through
+    # a stale quote is not evidence: the time gate and the venue decide (no refusal from this gate)
+    runner.engine.quotes = _live(101.05, now - 600_000)
+    assert await runner.entry_gate(ap, trade, "order") is None
+    # the read's no-target shape and the pre-order stage are untouched
+    trade.targets = []
+    runner.engine.quotes = _live(101.05, now)
+    assert await runner.entry_gate(ap, trade, "order") is None and await runner.entry_gate(ap, trade, "pre_order") is None
+

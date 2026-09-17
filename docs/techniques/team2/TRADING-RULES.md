@@ -3122,6 +3122,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-17 review of PR #204 (other team: collision cases repaired; three code boundaries + one attribution correction; merge,
+  deployment and activation HELD)** — (1) the actionable price on the LIVE entry path is now the FRESH underlying quote (within
+  `stale_seconds`; the candle close only when no fresh quote exists, and the record says which), judged at the fire AND again at the
+  order boundary after the awaited pick/review/sizing, on every retry and at submit (`_target_live_refusal` in `entry_gate` /
+  `entry_guard_predicate`): a target the live price has reached means no entry; nothing is rewritten to let the order through; the
+  no-target shape and open positions are untouched. (2) The coalesced listing request is cancellation-safe: waiters hold the shared
+  future through `asyncio.shield` (their own cancellation never touches the fetch), an owner's cancellation or failure settles every
+  waiter, in-flight state clears in `finally`, each attempt is bounded by a 20 s timeout (a timeout is transient and retried), and a
+  stale listing's age is judged when it is returned. (3) `payoff_estimate` requires a measured spread: a missing, zero or crossed bid
+  is `insufficient evidence`, never a zero-cost estimate. (4) Attribution corrected: in hybrid mode BOTH feeds (Alpaca's stream and
+  the Yahoo chart poll with pre/post) deliver `exchange`-stamped completed bars to `_ingest_exchange_bars`, so the producer of the
+  09-17 corrections and the persistence cause are UNRESOLVED; the dropped-digit reading is a hypothesis; the chronology stands.
+  Their packet verbatim: `tests/test_codex_team2_pr204_boundaries.py` (6 failed before). No new threshold or sweep.
 - **2026-09-17 EOD review (other team: −$33.28, all commissions — one QQQ 717C round trip of 16.8 s at $0.69/$0.69; GO to develop four
   items; deployment and activation NOT approved) → v0.8.12 (PR open, unmerged until their review)** — **(1) Target role/identity
   guard.** The pre-open F81 re-derivation had set QQQ's above-target to the PM high 716.76; the later `pm_break_up@12:15` anchored on
@@ -3138,8 +3151,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   Switch `techniques.team2.target_identity_guard` (default on; off restores the pre-09-17 behaviour) so the review team can act
   without a deploy. **(2) Pre-market inputs reconciled** — see `notes/research/2026-09-17-premarket-input-reconciliation.md`: all
   three plans froze values the bank never held because the private tape accepts exchange CORRECTIONS (SPY 07:46 corrected at 08:02:09
-  to a 660.65 low = a dropped digit; IWM 04:00 corrected twice to 283.92; QQQ 08:34 high 716.78 → 716.76 — the very anchor/target of
-  item 1) while the bank kept the originals. Plans now record `pmExtrema` (source bar + input hash, journaled at 09:25 and 09:30);
+  to a 660.65 low — a dropped digit is a hypothesis; IWM 04:00 corrected twice to 283.92; QQQ 08:34 high 716.78 → 716.76 — the very anchor/target of
+  item 1) while the bank holds the originals (producer and persistence cause unresolved — see the PR #204 entry). Plans now record `pmExtrema` (source bar + input hash, journaled at 09:25 and 09:30);
   `zargar.tools.team2_pm_audit --date` reconciles read-only. Nothing historical rewritten. C6 gains step 1e. **(3) Chain listings**:
   cached per (provider, symbol, expiry) for `chain_cache_seconds` (900), concurrent requests coalesce, a 429/transient failure is
   retried twice (0.8 s, 1.6 s) and may serve a labelled stale listing within `chain_cache_max_age_seconds` (4 h); expiries cached

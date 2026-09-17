@@ -273,18 +273,22 @@ def payoff_estimate(entry_ask, bid, delta, gamma, room_points, fee: float, *, qt
     a, b, d, g, r = _f(entry_ask), _f(bid), _f(delta), _f(gamma), _f(room_points)
     if a is None or a <= 0:
         missing.append("entry ask")
+    if b is None or b <= 0:
+        missing.append("bid")                                   # PR204 review: no bid = no measured spread, never zero cost
+    elif a is not None and b > a:
+        missing.append("valid spread (bid above ask)")
     if r is None:
         missing.append("target room")
     if d is None:
         missing.append("delta")
     if missing:
         return {"status": "insufficient evidence", "missing": missing, "greeksSource": greeks_source}
-    spread = round(a - b, 4) if (b is not None and b > 0 and b <= a) else None
+    spread = round(a - b, 4)
     move = abs(d) * r + 0.5 * (g or 0.0) * r * r
-    est_exit_bid = a - (spread or 0.0) + move
+    est_exit_bid = a - spread + move
     gross = (est_exit_bid - a) * 100.0 * float(qty)
     net = gross - FEE_SIDES * float(fee or 0) * float(qty)
-    be_move = ((FEE_SIDES * float(fee or 0)) / 100.0 + (spread or 0.0)) / abs(d) if d else None
+    be_move = ((FEE_SIDES * float(fee or 0)) / 100.0 + spread) / abs(d) if d else None
     return {"status": "estimate", "estExitBid": round(est_exit_bid, 4), "estMovePremium": round(move, 4),
             "grossPerContract": round(gross / float(qty), 2), "netPerContract": round(net / float(qty), 2),
             "netPct": round(net / (a * 100.0 * float(qty)) * 100.0, 2), "breakEvenMovePoints": (round(be_move, 4) if be_move is not None else None),

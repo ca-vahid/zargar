@@ -119,3 +119,66 @@ async def test_expiries_are_cached_and_the_picker_re_quotes_every_candidate_live
     assert [x["eligible"] for x in qres["examined"]] == [False, True, False, False]
     assert qres["pick"] is not None and qres["pick"].symbol == "SPY260914C00102000" and qres["pick"].ask == 0.46
     assert all(x["delayedAsk"] == 0.5 for x in qres["examined"])       # the chain's delayed ask is reported, never the price
+
+
+# ---------------------------------------------------------------- PR204 review: the shared request is cancellation-safe and bounded
+async def test_provider_error_reaches_every_waiter_and_a_fresh_request_follows_a_cancellation():
+    runner, _ = _runner()
+    started, finish = asyncio.Event(), asyncio.Event()
+    calls = {"n": 0}
+
+    async def fetch():
+        calls["n"] += 1
+        started.set()
+        await finish.wait()
+        if calls["n"] == 1:
+            raise OptionsError("no US-listed options for XYZ (CBOE 404)")
+        return ["listing", "again"]
+    key = ("provider", "XYZ", "2026-09-14")
+    owner = asyncio.create_task(runner._cached_chain_call(key, fetch, ttl_s=900, max_age_s=14400))
+    await started.wait()
+    waiter = asyncio.create_task(runner._cached_chain_call(key, fetch, ttl_s=900, max_age_s=14400))
+    await asyncio.sleep(0)
+    finish.set()
+    results = await asyncio.gather(owner, waiter, return_exceptions=True)
+    assert all(isinstance(r, OptionsError) for r in results) and calls["n"] == 1     # one fetch, both callers told
+    assert key not in runner._chain_inflight
+    # a cancelled owner settles its waiter; the NEXT request is a fresh fetch that succeeds
+    started.clear(); finish.clear()
+    owner2 = asyncio.create_task(runner._cached_chain_call(key, fetch, ttl_s=900, max_age_s=14400))
+    await started.wait()
+    waiter2 = asyncio.create_task(runner._cached_chain_call(key, fetch, ttl_s=900, max_age_s=14400))
+    await asyncio.sleep(0)
+    owner2.cancel()
+    await asyncio.gather(owner2, return_exceptions=True)
+    await asyncio.sleep(0)
+    assert waiter2.done() and isinstance((await asyncio.gather(waiter2, return_exceptions=True))[0], RuntimeError)
+    assert key not in runner._chain_inflight
+    finish.set()
+    rows, meta = await runner._cached_chain_call(key, fetch, ttl_s=900, max_age_s=14400)
+    assert rows == ["listing", "again"] and meta["listingSource"] == "fetch" and calls["n"] == 3
+
+
+async def test_a_hung_provider_times_out_and_is_retried_within_bounds(monkeypatch):
+    import zargar.techniques.team2.runner as module
+    monkeypatch.setattr(module.Team2Runner, "_CHAIN_TIMEOUT_S", 0.05)
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(module.asyncio, "sleep", lambda s: real_sleep(0) if s >= 0.5 else real_sleep(s))
+    runner, _ = _runner()
+    calls = {"n": 0}
+
+    async def fetch():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            await real_sleep(10)                                    # hangs: the bounded timeout cuts it
+        return ["late"]
+    key = ("provider", "SPY", "2026-09-14")
+    rows, meta = await runner._cached_chain_call(key, fetch, ttl_s=900, max_age_s=14400)
+    assert rows == ["late"] and meta["listingSource"] == "retry" and meta["listingAttempts"] == 3 and calls["n"] == 3
+    # three hangs in a row surface as a timeout (no stale listing for this key); the stale rule is judged at return time
+    calls["n"] = -10
+    key2 = ("provider", "QQQ", "2026-09-14")
+    with pytest.raises((asyncio.TimeoutError, TimeoutError)):
+        await runner._cached_chain_call(key2, fetch, ttl_s=900, max_age_s=14400)
+    assert key2 not in runner._chain_inflight
+
