@@ -34,10 +34,12 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
 
 
-# Provider-rate-limit recovery (2026-09-16): who is asking decides how a 429 is handled. "entry" (a live option pick)
-# and "position" (marks / exits for a held contract) retry briefly and are never held back; "background" (enrichment,
-# the nightly liquidity screen, research) fails fast on a 429 and stays out of the way for a cooldown so the burst that
-# triggers the limit is not fed by work that can wait. Set with `with cboe_priority("background"):`.
+# Provider-rate-limit recovery (2026-09-16, PFU-04 wording): BACKGROUND cooldown with BOUNDED retry. "entry" (a live
+# option pick) and "position" (marks / exits for a held contract) retry a 429 briefly (RATE_LIMIT_RETRIES) and are not
+# subject to the cooldown; "background" (enrichment, research) fails fast on a 429 and skips requests for
+# `options.cboe_cooldown_seconds`. This reserves no provider capacity and preempts no in-flight request: an entry whose
+# retries still fail is refused by the unchanged freshness / risk checks downstream. Set with
+# `with cboe_priority("background"):`.
 CBOE_PRIORITY: contextvars.ContextVar[str] = contextvars.ContextVar("cboe_priority", default="normal")
 
 
@@ -76,10 +78,11 @@ class CboeClient:
     COOLDOWN_S = 20.0                    # background fetches stand down this long after any 429 (settings: options.cboe_cooldown_seconds)
     BACKGROUND = ("background",)
 
-    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(self, client: httpx.AsyncClient | None = None, *, cooldown_s: float | None = None) -> None:
         self._http = client or httpx.AsyncClient(timeout=30, headers={"User-Agent": UA},
                                                  follow_redirects=True)
         self._cache: dict[str, tuple[float, dict]] = {}
+        self.cooldown_s = float(cooldown_s) if cooldown_s is not None else float(self.COOLDOWN_S)   # options.cboe_cooldown_seconds
         self._cooldown_until = 0.0
         self.rate_limited = 0            # 429s seen (diagnostic)
 
@@ -110,7 +113,7 @@ class CboeClient:
         r = await self._http.get(CBOE_URL.format(symbol=sym))
         if r.status_code == 429:
             self.rate_limited += 1
-            self._cooldown_until = time.time() + self.COOLDOWN_S
+            self._cooldown_until = time.time() + self.cooldown_s
             if background:                # never retry from the back of the queue - leave the budget to entries / positions
                 raise OptionsError("CBOE HTTP 429 (rate limited; background fetch not retried)")
         for i, pause in enumerate(self.RATE_LIMIT_RETRIES):
@@ -128,7 +131,7 @@ class CboeClient:
             r = await self._http.get(CBOE_URL.format(symbol=sym))
             if r.status_code == 429:
                 self.rate_limited += 1
-                self._cooldown_until = time.time() + self.COOLDOWN_S
+                self._cooldown_until = time.time() + self.cooldown_s
         if r.status_code == 404:
             raise OptionsError(f"no US-listed options for {sym} (CBOE 404)")
         if r.status_code == 429:

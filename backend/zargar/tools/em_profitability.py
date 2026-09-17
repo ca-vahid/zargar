@@ -53,9 +53,13 @@ P02_POLICY = "small-position-exit-v1"
 P02_MAX_QTY = 2
 P02_MIN_FIRST_SALE_R = 2.0
 P03_HURDLE_MARK = 0.08                      # ranking marker (share of paid premium), never a gate
-COHORTS_ADDENDUM = "p04-p05-2026-09-16"     # frozen additions: P-04 touch vs confirmed reaction, P-05 afternoon / event-day cohort
-EVENT_DAYS = {"2026-09-16": "FOMC"}         # frozen list (the app's macro calendar is empty); extend by hand, dated
-AFTERNOON_WINDOWS = ("prime_close", "midday")  # anything at/after the mid-day boundary; the morning cohort is prime_open
+COHORTS_ADDENDUM = "p04-p05-2026-09-17"     # frozen additions (PFU-02/03 corrected): P-04 descriptive strata + PAIRED confirmation comparison, P-05 clock/event labels
+SESSION_CLOCK = "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET"   # marketstructure.sessions.session_window
+# Event provenance is HAND-KEPT (the app's macro calendar is empty): a date without an entry has UNKNOWN coverage, never
+# "ordinary". Entries added after the session are retrospective and say so. Time is the event's ET clock time.
+EVENT_CALENDAR = {"2026-09-16": {"label": "FOMC", "atEt": "14:00", "source": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)", "retrospective": True}}
+P04_CONFIRM_WINDOW_BARS = 10                # paired comparison: a confirming completed close must arrive within this many 1m bars after the touch bar
+P04_MIN_RR = 3.0                            # frozen copy of the R2 bar (technique.min_risk_reward at freeze time) - never read live, the comparison must not drift
 ROOM_BINS = (("<1R", 0.0, 1.0), ("1-3R", 1.0, 3.0), (">=3R", 3.0, float("inf")))
 NY = ZoneInfo("America/New_York")
 EM_BOOK = "045d8c35b3f149628ea001ae90a58edb"
@@ -239,6 +243,78 @@ def underlying_proxy(bars: list[dict], fired_ts: int, entry: float, stop: float,
     return "unresolved"
 
 
+def session_labels(fired_ts: int, date: str) -> dict:
+    """PFU-03: timezone-aware fire time, the versioned session window from the shared clock, and event provenance with
+    pre / post / unknown - a date without a calendar entry is `unknown_calendar`, never ordinary."""
+    from ..marketstructure.sessions import session_window
+    fired = dt.datetime.fromtimestamp(fired_ts / 1000, NY)
+    ev = EVENT_CALENDAR.get(date)
+    if not ev:
+        phase = "unknown_calendar"
+    else:
+        hh, mm = (int(x) for x in ev["atEt"].split(":"))
+        at = fired.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        phase = ("pre_event:" if fired < at else "post_event:") + ev["label"]
+    return {"firedAtIso": fired.isoformat(), "sessionWindow": session_window(fired_ts), "sessionClock": SESSION_CLOCK,
+            "eventPhase": phase, "eventProvenance": (ev["source"] if ev else "no calendar entry"), "eventRetrospective": (bool(ev.get("retrospective")) if ev else None)}
+
+
+def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: float | None, stop: float | None, tp1: float | None, tp2: float | None,
+                      cutoff_ms: int, *, window_bars: int = P04_CONFIRM_WINDOW_BARS, min_rr: float = P04_MIN_RR) -> dict:
+    """PFU-02: the PAIRED, order-free confirmation variant of one touch attempt. On the same eligible setup: wait for the
+    first COMPLETED 1m close beyond the level within `window_bars`, enter at the OPEN of the following bar (no same-close
+    hindsight fill), re-run the unchanged geometry gates (stop side, room to TP1, R2 at the exit rung against the frozen
+    bar), then follow the underlying: TP1 touch vs stop close, first come. Underlying-only R; option premium at the
+    delayed time is UNKNOWN unless a quote exists (it never does here). Distinct outcomes: no_confirmation,
+    refused_stop_side, refused_no_room, refused_r2, unknown(...), tp1_first, stop_first, unresolved."""
+    out = {"policy": "confirmed_close_then_next_open", "windowBars": window_bars, "minRr": min_rr, "outcome": None, "resultR": None,
+           "confirmTs": None, "entryTs": None, "entry": None, "riskPerUnit": None, "rr": None, "barsWaited": None}
+    if level is None or stop is None or tp1 is None:
+        out["outcome"] = "unknown (level, stop or target missing)"; return out
+    long = direction == "long"
+    path = sorted([b for b in bars if int(b["ts"]) > fired_ts and int(b["ts"]) + 60000 <= cutoff_ms], key=lambda x: x["ts"])
+    prev = fired_ts; confirm_i = None
+    for i, b in enumerate(path[:window_bars]):
+        if int(b["ts"]) - prev != 60000:
+            out["outcome"] = "unknown (bar gap before confirmation)"; return out
+        prev = int(b["ts"])
+        if (b["close"] > level) if long else (b["close"] < level):
+            confirm_i = i; break
+    if confirm_i is None:
+        out["outcome"] = "no_confirmation"; out["barsWaited"] = min(len(path), window_bars); return out
+    if confirm_i + 1 >= len(path) or int(path[confirm_i + 1]["ts"]) - int(path[confirm_i]["ts"]) != 60000:
+        out["outcome"] = "unknown (no executable bar after the confirming close)"; return out
+    eb = path[confirm_i + 1]
+    entry = float(eb["open"])
+    out.update({"confirmTs": int(path[confirm_i]["ts"]), "entryTs": int(eb["ts"]), "entry": round(entry, 4), "barsWaited": confirm_i + 1})
+    risk = (entry - stop) if long else (stop - entry)
+    if risk <= 0:
+        out["outcome"] = "refused_stop_side"; return out
+    out["riskPerUnit"] = round(risk, 4)
+    room1 = (tp1 - entry) if long else (entry - tp1)
+    if room1 <= 0:
+        out["outcome"] = "refused_no_room"; return out
+    rung = tp2 if tp2 is not None else tp1
+    rr = ((rung - entry) if long else (entry - rung)) / risk
+    out["rr"] = round(rr, 2)
+    if rr < min_rr:
+        out["outcome"] = "refused_r2"; return out
+    prev = int(eb["ts"])
+    for b in path[confirm_i + 2:]:
+        if int(b["ts"]) - prev != 60000:
+            out["outcome"] = "unknown (bar gap after entry)"; return out
+        prev = int(b["ts"])
+        stopped = (b["close"] < stop) if long else (b["close"] > stop)
+        hit = (b["high"] >= tp1) if long else (b["low"] <= tp1)
+        if hit and stopped:
+            out["outcome"] = "unknown (same-bar target and stop)"; return out
+        if hit:
+            out["outcome"] = "tp1_first"; out["resultR"] = round(room1 / risk, 2); return out
+        if stopped:
+            out["outcome"] = "stop_first"; out["resultR"] = -1.0; return out
+    out["outcome"] = "unresolved"; return out
+
+
 async def _budget_inputs(c, fired_ts: int) -> tuple[float | None, float | None, str]:
     """Book equity at the fire (last persisted equity point at or before it) and the premium-stop % from settings.
     Any failure = unknown (the report never blocks on a diagnostic)."""
@@ -349,7 +425,8 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                        "confirmation": confirmation_class(fire_bar["close"] if fire_bar else None, level, direction),
                        "sourceSymbolDirectionMatch": (a["symbol"], direction) in matched, "status": tr.get("status"), "instrument": tr.get("instrument"),
                        "intendedEntry": tr.get("entry"), "stop": tr.get("stop"), "targets": tr.get("targets"),
-                       "window": fired_ev.get("window") or tr.get("window"), "eventDay": EVENT_DAYS.get(date),
+                       "window": fired_ev.get("window") or tr.get("window"),
+                       **session_labels(int(fired_ts), date), "firedTs": int(fired_ts), "level": level, "tp2": ((tr.get("targets") or [None, None])[1] if len(tr.get("targets") or []) > 1 else None),
                        "policyVersion": policy_version, "decisionId": decision.get("decisionId"), "decisionVerdict": decision.get("verdict"),
                        "fireDecisionMode": fired_ev.get("fireDecisionMode") or ("legacy" if fired_ev else None), "timing": fired_ev.get("timing"),
                        "quoteRefresh": (intent or {}).get("quoteRefresh"),
@@ -399,6 +476,8 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                                                   "productionPerContract": per_contract or None, "entryFeePerContract": (entry_fee_pc if entry_fee_pc is not None else fee_side),
                                                   "entryOrderId": eid, "contract": {"symbol": contract.get("symbol") or tr.get("orderSymbol")},
                                                   "openedTs": tr.get("openedTs"), "closedTs": tr.get("closedTs")}, shadow, fee_side)
+                    if row.get("cohort") == COHORT_P01:
+                        row["confirmationPair"] = confirmation_pair(bars, int(fired_ts), direction, level, tr.get("stop"), tp1, row.get("tp2"), cutoff_ms)
                     trades.append(row)
                 else:
                     result = next((p for _, ty, p in evs if ty == "TechniquePlanOrderResult" and p.get("trigger") == tid), None)
@@ -408,6 +487,8 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                     row.update({"refusal": reason, "intendedQty": qty, "multiplier": (100.0 if (intent or {}).get("secType", "OPT") == "OPT" else 1.0),
                                 "friction": (friction(ask, contract.get("bid"), qty, 100.0 if (intent or {}).get("secType") == "OPT" else 1.0, fee_side) if contract else None),
                                 "underlyingProxy": underlying_proxy(bars, int(fired_ts), float(tr.get("entry") or 0), float(tr.get("stop") or 0), float(tp1), direction, cutoff_ms) if tp1 and tr.get("stop") else "unknown"})
+                    if row.get("cohort") == COHORT_P01:
+                        row["confirmationPair"] = confirmation_pair(bars, int(fired_ts), direction, level, tr.get("stop"), tp1, row.get("tp2"), cutoff_ms)
                     refused.append(row)
         return {"version": VERSION, "date": date, "cutoff": cutoff, "feePerContractSide": fee_side, "trades": trades, "refused": refused,
                 "attempts": [{k: v for k, v in x.items() if k != "ts"} for x in attempts], "sourceLedgerRows": len(ledger)}
@@ -457,7 +538,7 @@ def summarize(data: dict) -> dict:
     # cohort - fills, rejected opportunities (refused rows) and sacrificed winners (refused rows whose underlying proxy
     # reached TP1). Order-free; nothing is switched on or off by it.
     def _cohort_split(rows_t, rows_r, keyf):
-        out = defaultdict(lambda: {"fills": 0, "net": 0.0, "open": 0, "winners": 0, "losers": 0, "rejected": 0, "sacrificedWinners": 0, "unknownProxy": 0})
+        out = defaultdict(lambda: {"fills": 0, "net": 0.0, "open": 0, "winners": 0, "losers": 0, "rejected": 0, "underlyingTp1FirstRefused": 0, "unknownProxy": 0})
         for r in rows_t:
             b = out[keyf(r)]; b["fills"] += 1
             if r.get("closed"):
@@ -468,17 +549,35 @@ def summarize(data: dict) -> dict:
         for r in rows_r:
             b = out[keyf(r)]; b["rejected"] += 1
             proxy = str(r.get("underlyingProxy") or "")
-            if proxy.startswith("tp1"): b["sacrificedWinners"] += 1
+            if proxy.startswith("tp1"): b["underlyingTp1FirstRefused"] += 1     # PFU-02: an underlying-only fact, NOT a sacrificed net winner
             elif proxy == "" or proxy.startswith(("unresolved", "unknown")): b["unknownProxy"] += 1
         return {k: {**v, "net": round(v["net"], 2)} for k, v in sorted(out.items())}
     p04 = _cohort_split(coh, missed, lambda r: f"confirmation={r.get('confirmation') or 'unknown'}")
+    # P-04 PAIRED (PFU-02): baseline touch attempt vs its confirmation variant on the SAME setup; both baseline winners and
+    # losers stay in the sample; refusals of the variant are distinct outcomes; option dollars at the delayed entry are unknown.
+    paired = []
+    agg = defaultdict(int); r_sum = 0.0; r_n = 0
+    for r in coh + missed:
+        cp = r.get("confirmationPair")
+        if not cp:
+            continue
+        base = ({"kind": "fill", "net": r.get("netRealized"), "closed": r.get("closed")} if "filledQty" in r
+                else {"kind": "refused", "refusal": (r.get("refusal") or "")[:80], "underlyingProxy": r.get("underlyingProxy")})
+        paired.append({"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "baseline": base, "confirmation": cp,
+                       "dollarsAtDelayedEntry": ("unknown (no option quote at the delayed time)" if r.get("instrument") == "options" else "shares: underlying R applies")})
+        agg[cp["outcome"].split(" (")[0]] += 1
+        if cp.get("resultR") is not None:
+            r_sum += cp["resultR"]; r_n += 1
+    p04_paired = {"rows": paired, "outcomes": dict(sorted(agg.items())), "resolvedR": {"n": r_n, "sumR": round(r_sum, 2)},
+                  "baselineWinnersInSample": sum(1 for r in coh if (r.get("netRealized") or 0) > 0 and r.get("confirmationPair")),
+                  "baselineLosersInSample": sum(1 for r in coh if (r.get("netRealized") or 0) < 0 and r.get("confirmationPair")),
+                  "definition": f"touch baseline vs first completed close beyond the level within {P04_CONFIRM_WINDOW_BARS} bars, entry at the next bar OPEN, unchanged geometry gates (stop side, room, R2 >= {P04_MIN_RR} at the exit rung), underlying TP1-touch vs stop-close; descriptive until >= 30 paired rows"}
     # P-05 (frozen 2026-09-16): afternoon (prime_close / midday) vs morning (prime_open) and event-day vs ordinary day,
     # over every EM attempt (not only the P-01 cohort) - rejected opportunities and sacrificed winners included.
     def _session_key(r):
-        w = str(r.get("window") or "unknown")
-        half = "afternoon" if w in AFTERNOON_WINDOWS else ("morning" if w == "prime_open" else "unknown_window")
-        return f"{half}|{('event:' + str(r.get('eventDay'))) if r.get('eventDay') else 'ordinary'}"
+        return f"{r.get('sessionWindow') or 'unknown_window'}|{r.get('eventPhase') or 'unknown_calendar'}"
     p05 = _cohort_split(trades, refused, _session_key)
+    p05_diag = _cohort_split(trades, refused, lambda r: f"runnerWindowLabel={r.get('window') or 'unknown'}")   # the runner's own label, kept as a diagnostic
     # execution-policy cohorts (deterministic-entry-v1 vs legacy critic): actual fills, refusals and net by policy version
     by_policy = defaultdict(lambda: {"attempts": 0, "fills": 0, "refused": 0, "net": 0.0, "open": 0, "refreshOk": 0, "refreshAttempted": 0})
     census = data.get("attempts") or []
@@ -514,7 +613,7 @@ def summarize(data: dict) -> dict:
             "strata": {k: {"n": v["n"], "net": round(v["net"], 2), "open": v["open"]} for k, v in sorted(strata.items())},
             "p02": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "qty": r.get("filledQty"), "firstSaleDistanceR": r.get("firstSaleDistanceR"), **r["p02"]} for r in p02],
             "p03": p03,
-            "p04": p04, "p05": p05, "cohortsAddendum": COHORTS_ADDENDUM,
+            "p04": p04, "p04Paired": p04_paired, "p05": p05, "p05RunnerLabels": p05_diag, "sessionClock": SESSION_CLOCK, "cohortsAddendum": COHORTS_ADDENDUM,
             "unknown": {"p02WithoutObservation": sum(1 for r in p02 if r["p02"]["outcome"] == "unknown"),
                         "refusedUnresolvedOrGap": sum(1 for r in refused if str(r.get("underlyingProxy", "")).startswith(("unresolved", "unknown"))),
                         "frictionUnknown": sum(1 for e in p03 if e["hurdlePct"] is None),
@@ -554,12 +653,28 @@ def render(data: dict, s: dict) -> str:
         L.append(f"| {r['symbol']} {r['trigger']} | {'yes' if r['filled'] else 'no'} | {r.get('direction') or '-'} | {r['qty'] if r['qty'] is not None else '-'} | {_f(r['hurdle'], '{:.2f}')} | {hp} | {r['firstSaleDistanceR'] if r['firstSaleDistanceR'] is not None else '-'} | {'thin' if r['flag'] else ''} | {pay} | {ratio} | {r['riskBudgetQty'] if r['riskBudgetQty'] is not None else 'unknown'} | {(r['refusal'] or '')[:60]} |")
     if not s["p03"]:
         L.append("| (none) | | | | | | | | | | | |")
-    L += ["", f"**P-04 touch vs confirmed reaction ({COHORTS_ADDENDUM}; P-01 cohort attempts: fills + rejected opportunities; `sacrificedWinners` = rejected rows whose underlying proxy reached TP1; order-free):**",
-          "| Confirmation | Fills | Winners | Losers | Open | Net (closed) | Rejected | Sacrificed winners | Proxy unknown |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    L += [f"| {k} | {v['fills']} | {v['winners']} | {v['losers']} | {v['open']} | {v['net']:+.2f} | {v['rejected']} | {v['sacrificedWinners']} | {v['unknownProxy']} |" for k, v in s.get("p04", {}).items()] or ["| (no cohort attempts) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"]
-    L += ["", f"**P-05 afternoon / event-day cohort ({COHORTS_ADDENDUM}; every EM attempt; `afternoon` = prime_close or midday window, `morning` = prime_open; event days are a frozen hand-kept list):**",
-          "| Session cohort | Fills | Winners | Losers | Open | Net (closed) | Rejected | Sacrificed winners | Proxy unknown |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    L += [f"| {k} | {v['fills']} | {v['winners']} | {v['losers']} | {v['open']} | {v['net']:+.2f} | {v['rejected']} | {v['sacrificedWinners']} | {v['unknownProxy']} |" for k, v in s.get("p05", {}).items()] or ["| (no attempts) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"]
+    L += ["", f"**P-04 entry strata - DESCRIPTIVE ({COHORTS_ADDENDUM}; P-01 attempts split by the FIRING bar's close: `anticipated` = touch, `observed_reclaim` = the firing bar closed on the trade's side; `underlyingTp1FirstRefused` = refused rows whose underlying-only proxy reached TP1 first - not a net winner, not a policy sacrifice):**",
+          "| Firing-bar class | Fills | Winners | Losers | Open | Net (closed) | Rejected | Underlying TP1-first refused | Proxy unknown |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    L += [f"| {k} | {v['fills']} | {v['winners']} | {v['losers']} | {v['open']} | {v['net']:+.2f} | {v['rejected']} | {v['underlyingTp1FirstRefused']} | {v['unknownProxy']} |" for k, v in s.get("p04", {}).items()] or ["| (no cohort attempts) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"]
+    pp = s.get("p04Paired") or {}
+    L += ["", f"**P-04 PAIRED confirmation comparison - order-free, {pp.get('definition', '')}:**",
+          f"outcomes {json.dumps(pp.get('outcomes', {}))}; resolved underlying R: n={pp.get('resolvedR', {}).get('n', 0)} sum={pp.get('resolvedR', {}).get('sumR', 0):+.2f}; baseline winners/losers kept in the paired sample: {pp.get('baselineWinnersInSample', 0)}/{pp.get('baselineLosersInSample', 0)}",
+          "| Attempt | Baseline | Confirmation variant | Dollars at the delayed entry |", "|---|---|---|---|"]
+    for r in pp.get("rows", []):
+        b = r["baseline"]; c = r["confirmation"]
+        bl = (f"fill net {b['net']:+.2f}" if b["kind"] == "fill" and b.get("net") is not None else (f"fill open" if b["kind"] == "fill" else f"refused ({b.get('refusal')}) proxy {b.get('underlyingProxy')}"))
+        cv = f"{c['outcome']}" + (f" entry {c['entry']} after {c['barsWaited']} bar(s), R2 {c['rr']}, result {c['resultR']:+.2f}R" if c.get("resultR") is not None else (f" (entry {c['entry']}, R2 {c['rr']})" if c.get("entry") is not None else ""))
+        L.append(f"| {r['symbol']} {r['trigger']} ({r.get('instrument')}) | {bl} | {cv} | {r['dollarsAtDelayedEntry']} |")
+    if not pp.get("rows"):
+        L.append("| (no P-01 attempts) | | | |")
+    L += ["", f"**P-05 session-window / event-phase cohort ({COHORTS_ADDENDUM}; every EM attempt; window from `{s.get('sessionClock')}` on the tz-aware fire time; event phase from the hand-kept calendar - `unknown_calendar` when the date has no entry; DESCRIPTIVE, never a trading-window rule):**",
+          "| Window | Event phase | Fills | Winners | Losers | Open | Net (closed) | Rejected | Underlying TP1-first refused | Proxy unknown |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for k, v in s.get("p05", {}).items():
+        w, _, ph = k.partition("|")
+        L.append(f"| {w} | {ph} | {v['fills']} | {v['winners']} | {v['losers']} | {v['open']} | {v['net']:+.2f} | {v['rejected']} | {v['underlyingTp1FirstRefused']} | {v['unknownProxy']} |")
+    if not s.get("p05"):
+        L.append("| (no attempts) | | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
+    L += ["", "Runner window labels as recorded at fire (diagnostic): " + json.dumps({k: v['fills'] + v['rejected'] for k, v in (s.get('p05RunnerLabels') or {}).items()})]
     L += ["", "**Unknowns:** " + json.dumps(s["unknown"]), "",
           f"Fees per contract per side observed: {data.get('feePerContractSide', 0):.2f}. Source ledger rows for the day: {data.get('sourceLedgerRows', 0)}. Refused/skipped EM fires: {len(data.get('refused', []))}.", ""]
     return "\n".join(L)

@@ -60,8 +60,11 @@ class OptionsService:
                     self._tradier = TradierClient(
                         tok, sandbox=bool(getattr(self.engine.config, "tradier_sandbox", False)))
                 return self._tradier
+        cooldown = float(s.get("options.cboe_cooldown_seconds", CboeClient.COOLDOWN_S) or CboeClient.COOLDOWN_S)
         if self._cboe is None:
-            self._cboe = CboeClient()
+            self._cboe = CboeClient(cooldown_s=cooldown)
+        elif hasattr(self._cboe, "cooldown_s"):
+            self._cboe.cooldown_s = cooldown             # the setting is live-editable; the client follows it
         return self._cboe
 
     def use_client(self, client) -> None:

@@ -21,41 +21,40 @@ $log = Join-Path $logDir "watchdog.log"
 function Log($m) { Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
 $up = $false
 try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $up = [bool]$h.ok } catch { $up = $false }
-# 2026-09-16 (EM desk, PLATFORM-RULES): ONE 4 s probe timeout is not a dead engine. Three event-loop stalls that day
-# (4 s, ~10 s, ~180 s) answered health late while the process was alive and logging; the first one got a live engine
-# killed and a broken checkout launched. Classify before any kill: a second probe 15 s later, the engine process,
-# and the engine log's freshness. STALL (alive, log fresh, health late) is logged and left alone; it becomes DOWN only
-# when it persists across two consecutive ticks (>= 3 min) or the process / log are gone.
-function Get-EngineLiveness {
-  $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'zargar\.main' })
-  $logPath = Join-Path $root "backend\zargar-8420.log"
-  $logAge = 999999
-  if (Test-Path $logPath) { $logAge = [int]((Get-Date) - (Get-Item $logPath).LastWriteTime).TotalSeconds }
-  return @{ processes = $procs.Count; logAgeS = $logAge }
-}
+# 2026-09-16/17 (EM desk, PLATFORM-RULES; PFU-01): ONE 4 s probe timeout is not a dead engine. Classification is a
+# pure function in watchdog-classify.ps1 (healthy | live-unhealthy | absent) over: a second probe 15 s later, THIS
+# runtime's engine process (executable under backend\.venv), the engine log's freshness, and a time-based stall
+# marker. A live engine that does not answer health is never permission to skip readiness / quiescence / the
+# before-inventory: ordinary recovery is REFUSED (exit 2) and only the explicit override (-Override /
+# ZargarRestartOverride) may replace it. Only `absent` (no bound process, or a stale log) takes the DOWN path below.
+. (Join-Path $PSScriptRoot 'watchdog-classify.ps1')
 $stallMarker = Join-Path $logDir "watchdog-stall.txt"
+$classification = $null
 if (-not $up -and -not $Force) {
   Start-Sleep -Seconds 15
   $up2 = $false
   try { $h2 = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 8; $up2 = [bool]$h2.ok } catch { $up2 = $false }
-  if ($up2) { Log "health answered on the second probe (transient stall, no action)"; if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }; exit 0 }
-  $live = Get-EngineLiveness
-  $alive = ($live.processes -gt 0) -and ($live.logAgeS -lt 180)
-  if ($alive) {
-    $persisted = $false
-    if (Test-Path $stallMarker) { $persisted = (((Get-Date) - (Get-Item $stallMarker).LastWriteTime).TotalSeconds -lt 600) }
-    if (-not $persisted) {
-      Set-Content -Path $stallMarker -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-      Log ("STALL: engine process alive (" + $live.processes + " proc, log " + $live.logAgeS + "s old) but health unanswered twice - NOT restarting; will restart if still stalled on the next tick")
-      exit 0
-    }
-    Log ("STALL persisted across two ticks (log " + $live.logAgeS + "s old) - treating as DOWN")
-  } else {
-    Log ("DOWN confirmed: processes=" + $live.processes + " log age=" + $live.logAgeS + "s")
+  $logPath = Join-Path $root "backend\zargar-8420.log"
+  $logAge = 999999
+  if (Test-Path $logPath) { $logAge = [int]((Get-Date) - (Get-Item $logPath).LastWriteTime).TotalSeconds }
+  $markerAt = $null
+  if (Test-Path $stallMarker) { $markerAt = (Get-Item $stallMarker).LastWriteTime }
+  $bound = Get-BoundEngineProcessCount -Root $root
+  $classification = Get-EngineClassification -Probe1 $up -Probe2 $up2 -BoundProcesses $bound -LogAgeS $logAge -MarkerAt $markerAt -Now (Get-Date) -ReadOnly:$ProbeOnly
+  if ($ProbeOnly) { Log ("probe-only: class=" + $classification.class + " persisted=" + $classification.persisted + " - " + $classification.reason); exit 0 }
+  switch ($classification.markerAction) {
+    'set'   { Set-Content -Path $stallMarker -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss") }
+    'clear' { if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force } }
   }
-  if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }
+  if ($classification.class -eq 'healthy') { Log ("health answered late (" + $classification.reason + ") - no action"); exit 0 }
+  if ($classification.class -eq 'live-unhealthy') {
+    if ($Override) { Log ("OVERRIDE: live engine not answering health (" + $classification.reason + ") - replacing it on explicit override") }
+    else { Log ("REFUSED restart: engine alive but not answering health (" + $classification.reason + "); readiness unavailable - ordinary recovery refused, use ZargarRestartOverride / -Override for an emergency"); exit 2 }
+  } else {
+    Log ("DOWN confirmed: " + $classification.reason)
+  }
 }
-if ($ProbeOnly) { Log ("probe-only: up=" + $up); exit $(if ($up) { 0 } else { 3 }) }
+if ($ProbeOnly) { Log ("probe-only: class=healthy (first probe ok)"); exit 0 }
 if ($up -and -not $Force) { exit 0 }
 # one start at a time: a start takes ~30-60 s (start.ps1 stops the old process, rebuilds dist if stale, launches)
 # and the 3-minute tick must not pile a second engine onto a restart in progress. The lock is age-based

@@ -551,7 +551,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
     "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
     "ops.loop_stall_seconds": 2.0,             # event-loop stall watch: log the blocking call site when the loop is silent this long (0 = off)
-    "options.cboe_cooldown_seconds": 20.0,     # after a CBOE 429, BACKGROUND chain fetches (enrich, screens, research) wait this long; entries and held positions never wait
+    "options.cboe_cooldown_seconds": 20.0,     # after a CBOE 429, BACKGROUND chain fetches (enrich, research) skip requests this long; entry/position reads are not subject to it (they retry briefly, then the normal refusals apply)
     "technique.arm.quote_exit": True,          # intra-minute safety: exit when the live quote is decisively through the stop
     "technique.arm.quote_exit_excess_r": 0.25,  # "decisively" = beyond the stop by this x planned risk
     "technique.arm.quote_exit_polls": 2,       # consecutive ~2s polls required (one bad tick is not a breach)
