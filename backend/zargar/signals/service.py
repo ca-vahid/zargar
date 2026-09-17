@@ -1841,6 +1841,7 @@ class SignalService:
         if manifest and any(e is not primary for e in manifest):
             attachments_text, _ = build_grounding_corpus(
                 "", [{**e, "total": n_total} for e in manifest if e is not primary])
+        intake.model = self.extractor.model            # E17-03: identity on the intake record
         intake.step("extract", f"Extracting with {self.extractor.model}…"
                     + (" (image transcription included)" if image is not None else "")
                     + " — one LLM read of the whole message, usually 10–30 s.")

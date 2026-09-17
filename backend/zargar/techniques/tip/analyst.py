@@ -46,6 +46,33 @@ def _loop_now() -> float:
     return time.monotonic()
 
 
+def prompt_cache_enabled(eng) -> bool:
+    """E17-03: knob-gated prompt caching of the STABLE prefix (system prompt + schema + tool
+    definitions). Off by default - the reviewer's rule is to validate actual cache hits,
+    billable cost and latency on identical prefixes before claiming any saving, and never
+    to let cached stale evidence stand in for live quotes/positions (those ride in the
+    per-run header, outside the cached prefix)."""
+    try:
+        return bool(eng.settings.get("techniques.tip.prompt_cache", False))
+    except Exception:
+        return False
+
+
+def cacheable_request(system, tools, *, enabled: bool):
+    """(system_param, tools_param): with caching on, the system prompt becomes one text block
+    carrying `cache_control: ephemeral` and the LAST tool definition carries the same marker
+    (the provider caches everything up to and including a marked block; an exact-prefix
+    match is required, so a changed rule text or tool schema invalidates it by itself).
+    Off -> the plain string and the tool list, unchanged."""
+    if not enabled:
+        return system, tools
+    sys_blocks = [{"type": "text", "text": str(system), "cache_control": {"type": "ephemeral"}}]
+    if tools:
+        tools = [dict(t) for t in tools]
+        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    return sys_blocks, tools
+
+
 def _arm_deadline(st: dict, eng=None, *, timeout_s: float | None = None) -> dict:
     """Give a caller-held loop state a monotonic deadline + reserve (idempotent)."""
     if "deadline" not in st:
@@ -1473,6 +1500,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     st = state if state is not None else {}
     messages: list = st.setdefault("messages", [{"role": "user", "content": header}])
     usage = st.setdefault("usage", _usage_new())
+    if "promptCache" not in st:
+        st["promptCache"] = prompt_cache_enabled(eng)
+    usage["promptCache"] = bool(st["promptCache"])
+    usage.setdefault("model", model)
     from ...research import llm_stats
     stage = str(tool_ctx.get("stage") or "appraise")
     _settings = getattr(eng, "settings", None)
@@ -1507,7 +1538,8 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                                "reserveS": st.get("reserveS")})
             messages.append({"role": "user", "content":
                              "Time is nearly up. Reply with ONLY the JSON object now — request no more tools."})
-        create_kw = dict(model=model, max_tokens=turn_cap, system=system, messages=messages, tools=TOOLS)
+        _sys_param, _tools_param = cacheable_request(system, TOOLS, enabled=st.get("promptCache", False))
+        create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=messages, tools=_tools_param)
         if force_final:
             create_kw["tool_choice"] = {"type": "none"}
         resp = None
@@ -2062,6 +2094,9 @@ class IntakeRun:
         self.eng = eng
         self.id: str | None = None
         self.rec: _Recorder | None = None
+        # E17-03: the extraction model's identity (set by the intake service) rides every
+        # persisted intake record, so usage can be joined to a rate - not only on review runs
+        self.model: str | None = None
 
     async def start(self, *, source: str, chars: int, has_image: bool,
                     preview: str = "", experiment: str | None = None) -> None:
@@ -2108,11 +2143,13 @@ class IntakeRun:
         if not self.id or not self.rec:
             return
         try:
-            self.step("final", text, opinion=opinion or {"verdict": verdict,
-                                                         "rationale": text})
+            op = dict(opinion or {})
+            if self.model and not op.get("model"):
+                op["model"] = self.model
+            self.step("final", text, opinion=op or {"verdict": verdict, "rationale": text})
             await _persist_run(self.eng, self.id,
                                status="failed" if failed else "done", rec=self.rec,
-                               opinion=opinion or {}, verdict=verdict[:16],
+                               opinion=op, verdict=verdict[:16],
                                error=text[:500] if failed else None)
         except Exception:
             log.exception("intake run finish failed")
