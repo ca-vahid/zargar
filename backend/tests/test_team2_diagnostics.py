@@ -514,13 +514,17 @@ async def test_a_recent_receipt_time_never_stands_in_for_an_old_source_confirmat
     runner, ap = rig()
     runner._diag_emit = lambda *a, **k: None
     rules = runner.rules_for(ap)
-    qres = {"examined": [{"symbol": "OLD", "strike": 101, "bid": .5, "ask": .51, "priced": "opra", "eligible": True},
-                         {"symbol": "NOSRC", "strike": 102, "bid": .4, "ask": .41, "priced": "opra", "eligible": True},
-                         {"symbol": "FRESH", "strike": 103, "bid": .3, "ask": .31, "priced": "opra", "eligible": True}]}
+    qres = {"examined": [{"symbol": "OLD", "strike": 101, "bid": .5, "ask": .51, "priced": "opra", "eligible": True,
+                          "quoteTs": now - 120_000, "receivedTs": now, "source": "opra", "collectedTs": now},
+                         {"symbol": "NOSRC", "strike": 102, "bid": .4, "ask": .41, "priced": "opra", "eligible": True,
+                          "quoteTs": None, "receivedTs": now, "source": "opra", "collectedTs": now},
+                         {"symbol": "FRESH", "strike": 103, "bid": .3, "ask": .31, "priced": "opra", "eligible": True,
+                          "quoteTs": now - 3_000, "receivedTs": now, "source": "opra", "collectedTs": now}]}
     quotes = {"OLD": SimpleNamespace(bid=.5, ask=.51, ts=now, source="opra", source_ts=now - 120_000),
               "NOSRC": SimpleNamespace(bid=.4, ask=.41, ts=now, source="opra", source_ts=0),
               "FRESH": SimpleNamespace(bid=.3, ask=.31, ts=now, source="opra", source_ts=now - 3_000)}
-    runner.engine.quotes = SimpleNamespace(get=lambda sym: quotes.get(sym))
+    # whatever the cache says NOW is irrelevant to the entry rows: they were bound at examination
+    runner.engine.quotes = SimpleNamespace(get=lambda sym: SimpleNamespace(bid=9.9, ask=9.91, ts=now, source="opra", source_ts=now))
     runner._diag_candidates(ap, "s#1", qres, "FRESH", 100.0, rules, [], None)
     cands = {c["symbol"]: c for c in runner._diag_attempt(ap, "s#1")["candidates"]}
     assert cands["OLD"]["priceKnown"] is False and "stale quote (120s" in cands["OLD"]["priceUnknownReason"]
@@ -539,3 +543,58 @@ async def test_a_recent_receipt_time_never_stands_in_for_an_old_source_confirmat
     await runner._diag_observe(ap, {"attempt": "s#1", "horizon": "5m", "dueTs": now, "status": "inflight"})
     o5 = runner._diag_attempt(ap, "s#1")["observations"]["5m"]
     assert o5["quotes"]["FRESH"] is None and o5["unknown"]["FRESH"] == "not live (chain)"
+
+
+async def test_each_examined_candidate_is_one_bound_observation_through_a_moving_quote_walk(monkeypatch):
+    """Review r3 of D2: the picker's quoting walk binds bid/ask, provenance, source time and receipt time per candidate
+    at the moment it examines it. A cache update or a source change between two examinations belongs to the later
+    candidate only; the diagnostic validates and reports exactly the bound observation, never a re-joined one."""
+    import zargar.techniques.team2.runner as module
+    now = 2_000_000
+    monkeypatch.setattr(module.time, "time", lambda: now / 1000)
+    runner, ap = rig()
+    runner._diag_emit = lambda *a, **k: None
+    rules = runner.rules_for(ap)
+    syms = [f"SPY260914C{k * 1000:08d}" for k in (101, 102, 103)]
+    # the cache as the walk sees it: 101 fresh OPRA; then it flips to a chain row for 102; then a NEW fresh OPRA for 103
+    states = {syms[0]: SimpleNamespace(bid=.5, ask=.51, ts=now - 500, source="opra", source_ts=now - 1_000),
+              syms[1]: SimpleNamespace(bid=.4, ask=.41, ts=now, source="chain", source_ts=now - 900_000),
+              syms[2]: SimpleNamespace(bid=.8, ask=.81, ts=now, source="opra", source_ts=now)}
+
+    class WalkOpts:
+        async def reprice(self, c):
+            q = states[c["symbol"]]
+            c.update({"bid": q.bid, "ask": q.ask, "priced": "opra" if q.source == "opra" else "chain"})
+            return c
+
+        def snapshot_cached(self, sym):
+            return None
+    runner.engine.quotes = SimpleNamespace(get=lambda sym: states.get(sym))
+    otm = [{"symbol": s_, "strike": 101.0 + i, "option_type": "call", "ask": .5, "bid": .4} for i, s_ in enumerate(syms)]
+    qres = await runner._quote_examined(WalkOpts(), otm, 100.4, "long", rules, "2026-09-14", dt.date(2026, 9, 14))
+    ex = {x["symbol"]: x for x in qres["examined"]}
+    assert (ex[syms[0]]["bid"], ex[syms[0]]["ask"], ex[syms[0]]["quoteTs"], ex[syms[0]]["receivedTs"], ex[syms[0]]["source"]) == (.5, .51, now - 1_000, now - 500, "opra")
+    assert ex[syms[1]]["priced"] == "chain" and ex[syms[1]]["source"] == "chain" and ex[syms[1]]["quoteTs"] is None
+    assert (ex[syms[2]]["bid"], ex[syms[2]]["quoteTs"]) == (.8, now)
+    # the cache moves AFTER the walk: the bound rows do not
+    states[syms[0]] = SimpleNamespace(bid=.9, ask=.91, ts=now, source="opra", source_ts=now)
+    runner._diag_candidates(ap, "s#1", qres, syms[2], 100.4, rules, otm, WalkOpts())
+    cands = {c["symbol"]: c for c in runner._diag_attempt(ap, "s#1")["candidates"]}
+    assert (cands[syms[0]]["bid"], cands[syms[0]]["ask"], cands[syms[0]]["quoteTs"], cands[syms[0]]["receivedTs"]) == (.5, .51, now - 1_000, now - 500)
+    assert cands[syms[0]]["priceKnown"] is True and cands[syms[0]]["source"] == "opra"
+    assert cands[syms[1]]["priceKnown"] is False and cands[syms[1]]["source"] == "chain" and cands[syms[1]]["eligible"] is False   # a chain price is not fresh under require_fresh_quote
+    assert cands[syms[2]]["priceKnown"] is True and cands[syms[2]]["bid"] == .8
+    # a quote that moves between the re-price and the capture gets no source time attached (unknown, with the reason)
+    class Jumpy:
+        async def reprice(self, c):
+            c.update({"bid": .5, "ask": .51, "priced": "opra"})
+            return c
+
+        def snapshot_cached(self, sym):
+            return None
+    runner.engine.quotes = SimpleNamespace(get=lambda sym: SimpleNamespace(bid=.7, ask=.71, ts=now, source="opra", source_ts=now))
+    q2 = await runner._quote_examined(Jumpy(), otm[:1], 100.4, "long", rules, "2026-09-14", dt.date(2026, 9, 14))
+    runner._diag_candidates(ap, "s#2", q2, None, 100.4, rules, otm[:1], Jumpy())
+    c0 = runner._diag_attempt(ap, "s#2")["candidates"][0]
+    assert (c0["bid"], c0["ask"], c0["quoteTs"], c0["priceKnown"]) == (.5, .51, None, False) and "quote moved" in c0["priceUnknownReason"]
+

@@ -532,9 +532,23 @@ class Team2Runner(PlanRunner):
             if not fresh and not rules.require_fresh_quote and delayed_ask > 0:
                 c["ask"], c["bid"], c["priced"] = delayed_ask, float(raw.get("bid") or 0), "chain"
                 fresh = True
-            examined.append({"strike": float(c["strike"]), "symbol": c.get("symbol"), "delayedAsk": delayed_ask,
-                             "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced"),
-                             "eligible": bool(fresh)})
+            # D2 binding (2026-09-16 review r3): the price, its provenance and its timestamps are captured TOGETHER, here, as
+            # one immutable observation of this candidate — the Quote the re-price just read, verified to be the same
+            # bid/ask. A later cache lookup is another observation and is never joined to this price.
+            row = {"strike": float(c["strike"]), "symbol": c.get("symbol"), "delayedAsk": delayed_ask,
+                   "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced"),
+                   "eligible": bool(fresh), "collectedTs": int(time.time() * 1000), "quoteTs": None, "receivedTs": None,
+                   "source": (c.get("priced") if c.get("priced") in ("chain", "none") else None)}
+            if c.get("priced") == "opra":
+                qq = self.engine.quotes.get(str(c.get("symbol") or ""))
+                if qq is not None and float(getattr(qq, "bid", 0) or 0) == row["bid"] and float(getattr(qq, "ask", 0) or 0) == row["ask"]:
+                    row["quoteTs"] = int(getattr(qq, "source_ts", 0) or 0) or None      # the provider's confirmation of THIS bid/ask
+                    row["receivedTs"] = int(getattr(qq, "ts", 0) or 0) or None          # when the app received it — kept apart
+                    row["source"] = str(getattr(qq, "source", "") or "") or "opra"
+                else:
+                    row["source"] = "opra"
+                    row["provenanceNote"] = "quote moved between re-price and capture — no source time attached"
+            examined.append(row)
             if not fresh:
                 unpriced += 1
                 continue
@@ -662,29 +676,10 @@ class Team2Runner(PlanRunner):
                 if sym:
                     snap = opts.snapshot_cached(sym) if opts is not None and hasattr(opts, "snapshot_cached") else None
                     rows_by_sym[sym] = dict(snap) if snap else dict(r)
-            # D2 (2026-09-16 review r2): the freshness of a price is the age of its SOURCE confirmation (`Quote.source_ts`,
-            # the provider's evidence for THIS bid/ask), never `Quote.ts` (when we last received/re-stamped it) — a cache can
-            # hand back an old price under a new receipt time. Receipt and collection times are kept beside it, apart.
-            source_ts: dict[str, int] = {}
-            received_ts: dict[str, int] = {}
-            sources: dict[str, str] = {}
-            for x in qres.get("examined") or []:
-                sym = str(x.get("symbol") or "")
-                q = self.engine.quotes.get(sym) if sym else None
-                if q is None:
-                    continue
-                sts = int(getattr(q, "source_ts", 0) or 0)
-                if sts > 0:
-                    source_ts[sym] = sts                       # missing source evidence stays missing (no fallback to `ts`)
-                if getattr(q, "ts", None):
-                    received_ts[sym] = int(q.ts)
-                if getattr(q, "source", None):
-                    sources[sym] = str(q.source)
+            # D2 binding (review r3): every examined row already carries its own price, provenance and timestamps, captured
+            # together in `_quote_examined`. Nothing is looked up again here — a later cache state is another observation.
             cands = diag.candidate_rows(qres.get("examined") or [], rows_by_sym, pick_symbol, floor=float(rules.premium_floor),
-                                        band_hi=float(rules.target_premium) * MAX_OVER_TARGET, spot=spot, quote_ts=now, source_ts=source_ts)
-            for c in cands:
-                c["receivedTs"] = received_ts.get(c["symbol"])
-                c["source"] = sources.get(c["symbol"])
+                                        band_hi=float(rules.target_premium) * MAX_OVER_TARGET, spot=spot, quote_ts=now)
             rec = self._diag_attempt(ap, tid)
             rec.update({"candidates": cands, "quoteTs": now, "shadow": bool(shadow), "refusal": refusal, "selected": pick_symbol,
                         "listed": qres.get("listed"), "unexamined": qres.get("unexamined"), "unpriced": qres.get("unpriced")})
