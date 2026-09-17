@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.03",date:"2026-09-16",title:"Team2 quote freshness reads the source, not the receipt",items:[
+    {tag:"fixed",text:"Team2 shadow diagnostics: a price's freshness is judged on the provider's confirmation time for that bid/ask (the quote's source timestamp), never on when the app last received it - a recently received old price is unknown at the entry and at every follow-up, a price with no source evidence stays unknown, and a freshly confirmed unchanged price still counts. Receipt and collection times are recorded beside the source time."},
+  ]},
   {version:"0.8.03",date:"2026-09-17",title:"EM entries survive a rate-limited chain; the engine can name a stall",items:[
     {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up; expired chain data is never served for a live pick; the no-contract alert names the cause and says a short has no shares fallback by rule. Background chain fetches (enrichment, research) stand down for options.cboe_cooldown_seconds after a 429 instead of feeding the burst."},
     {tag:"improved",text:"Chart rendering for the vision passes runs off the event loop on one worker thread, and an event-loop stall watch (ops.loop_stall_seconds) logs the blocking call site and reports loopStalls / lastStall / eventLoopLagMs on /api/health - the 2026-09-16 restart storm could not say what stalled."},
