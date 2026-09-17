@@ -179,20 +179,25 @@ class CboeClient:
                 out.add(o.expiry.isoformat())
         return sorted(out)
 
+    def _normalize_all(self, rows: list[dict], sym: str, expiry: str | None = None) -> list[dict]:
+        """CPU-bound: thousands of rows x (occ.parse + symbol formatting). Stall #2 of 2026-09-16 20:58 (4.8 s) was this
+        loop on the event loop inside the enrichment pass - it runs on a worker thread now (pure, no shared state)."""
+        out = []
+        for row in rows or []:
+            n = self._normalize(row, sym)
+            if n and (expiry is None or n["expiry"] == expiry):
+                out.append(n)
+        return out
+
     async def chain(self, symbol: str, expiry: str) -> list[dict]:
         data = await self._payload(symbol)
         sym = symbol.upper().strip()
-        rows = []
-        for row in data.get("options") or []:
-            n = self._normalize(row, sym)
-            if n and n["expiry"] == expiry:
-                rows.append(n)
-        return rows
+        return await asyncio.to_thread(self._normalize_all, data.get("options") or [], sym, expiry)
 
     async def all_rows(self, symbol: str) -> list[dict]:
         data = await self._payload(symbol)
         sym = symbol.upper().strip()
-        return [n for n in (self._normalize(r, sym) for r in data.get("options") or []) if n]
+        return await asyncio.to_thread(self._normalize_all, data.get("options") or [], sym, None)
 
     async def spot(self, symbol: str) -> float | None:
         data = await self._payload(symbol)
