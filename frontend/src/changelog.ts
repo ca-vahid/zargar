@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.07";
+export const APP_VERSION = "0.8.10";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.10",date:"2026-09-17",title:"Practice share stops trigger only in the regular session, on a real quote",items:[
+    {tag:"fixed",text:"Practice (sim) share orders now rest outside 09:30-16:00 ET unless placed for extended hours, and a stop never triggers on a placeholder quote: a quarantined shadow book's AFRM stop had 'filled' 27 sh at 44.99 at 03:59 ET on a 45/75 pre-market book while the stock traded 72-74. A share quote wider than 5% of mid cannot price a simulated fill; the order waits and says why (both knobs, sim.stock_sessions / sim.max_spread_pct)."},
+  ]},
   {version:"0.8.07",date:"2026-09-16",title:"Knowledge tab: the true total, the loaded count and honest category counts",items:[
     {tag:"fixed",text:"Tips > Knowledge: the category buttons (Rules, Tickers, Sources, General, Needs you) now filter on the server BEFORE paging, so an older rule or a flagged note beyond the first 200 rows is reachable through its button instead of vanishing; their counts are the whole store's, not the loaded page's."},
     {tag:"improved",text:"The coverage line shows two separate numbers - how many notes MATCH the current view/search and how many are LOADED - with a load-more that names how many come next; it lives on its own wrapping row so it stays visible at phone widths and browser zoom instead of being pushed out of the panel header."},

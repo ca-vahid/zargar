@@ -2265,3 +2265,20 @@ Rules: (1) the watchdog must stop every `zargar.main` process before it starts o
 does not run heavy test suites while free RAM is under ~2 GB (two of this desk's background pytest runs were killed by the
 memory guard the same evening); (4) a duplicate engine is stopped through the door, never by hand. Evidence:
 `logs/watchdog.log` 18:31–18:46 PDT, `logs/restart-20260916-184851.log` (restore 14/14, resting 26/26, managed 2/2).
+
+### Simulated share fills and stop triggers happen only in the regular session, on a plausible quote — 2026-09-17 (F-HOLD-01)
+
+The sim executor triggered a GTC share stop on ANY quote and priced the fill off it. At 03:59:54 ET on 2026-09-17 the
+quarantined ab shadow book's AFRM stop (65.00) "filled" 27 sh @ 44.991 on a pre-market placeholder book — bid 45.00 /
+ask 75.00, sizes 50k / 70k, no source — while the stock traded 72-74. Practice books share the executor. Two guards,
+both knobs wired from config (`sim_stock_sessions` True, `sim_max_spread_pct` 0.05) and OFF at the constructor so
+direct test rigs keep the old any-hour behaviour (the suites' `make_test_config` turns the session gate off, as it
+does for options): (1) a share order not flagged `outside_rth` fills and a share stop triggers only inside
+`regular_session_open` — the same 09:30-16:00 ET / early-close window options already use (EOD-05); outside it the
+order RESTS with a journaled `fill_waiting` reason, the stop keeps protecting and fills on the first plausible in-session
+quote; (2) a share quote whose spread exceeds 5% of mid cannot price a fill or trigger a stop (`fill_waiting`: "Quote
+spread implausible …"). Options are untouched (wide books are normal there; their identity/session rules stand).
+Evidence + tests: `tests/test_sim_share_session_and_spread.py` (5) reproduce the AFRM event with a pinned clock. Also
+seen while testing: `tests/test_sim_fill_evidence.py::test_fill_evidence_committed_with_execution` fails on main as it
+stands (expects `syntheticMode` True; the engine fixture no longer runs on synthetic quotes) — pre-existing, not from
+this change; owner of the quote-source default to confirm.
