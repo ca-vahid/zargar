@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.05";
+export const APP_VERSION = "0.8.06";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.06",date:"2026-09-16",title:"Knowledge tab: the true total, the loaded count and honest category counts",items:[
+    {tag:"fixed",text:"Tips > Knowledge: the category buttons (Rules, Tickers, Sources, General, Needs you) now filter on the server BEFORE paging, so an older rule or a flagged note beyond the first 200 rows is reachable through its button instead of vanishing; their counts are the whole store's, not the loaded page's."},
+    {tag:"improved",text:"The coverage line shows two separate numbers - how many notes MATCH the current view/search and how many are LOADED - with a load-more that names how many come next; it lives on its own wrapping row so it stays visible at phone widths and browser zoom instead of being pushed out of the panel header."},
+  ]},
   {version:"0.8.05",date:"2026-09-16",title:"Team2 candidate quotes are bound at examination",items:[
     {tag:"fixed",text:"Team2 shadow diagnostics: each contract the picker examines is recorded as ONE observation - its bid/ask, provenance, source-confirmation time, receipt time and capture time are captured together at that moment, and the report validates and shows exactly that record. A later quote-cache state is a separate observation and is never attached to an earlier price; a quote that moves during capture is marked unknown with the reason."},
   ]},
