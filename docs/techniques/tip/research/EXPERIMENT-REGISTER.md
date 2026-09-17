@@ -92,6 +92,17 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
   criteria before shadow. **Decision rule:** narration is research, never permission (PLATFORM-RULES 19).
 - **Status:** observing.
 
+## `prompt-cache` (opened 2026-09-17, NOT enabled)
+
+- **Hypothesis:** caching the identical stable prefix (system prompt + schema + tool definitions) reduces repeated-input cost and latency without changing any judgment (the dynamic header with quotes/positions stays uncached).
+- **Variants:** off (live); on (`techniques.tip.prompt_cache` True) - not enabled.
+- **Eligible setup:** every analyst-family loop call. **Unit:** one provider call. **Episode identity:** run id + call index.
+- **Primary metric:** `usage.cacheRead` / `cacheWrite` tokens per call, billable cost from `llm.rates`, latency; judgments must be unchanged (the header is outside the cache).
+- **Costs:** the calls themselves; a cache write is billed above the input rate - measured, never assumed.
+- **Regime:** `analyst.cacheable_request`, `tools/tip_llm_cost.py`; knobs `techniques.tip.prompt_cache`, `llm.rates`.
+- **Evaluation window:** opens when the user enables the knob for a measured session; closes on observed hit rates over >= 50 calls. **Decision rule:** the user decides on measured hits and cost; recap routing stays OFF and is a separate experiment.
+- **Status:** built, off.
+
 ## `feasibility-annotate`
 
 - **Hypothesis:** annotating every TAKE with the expression's feasibility and payoff (without downgrading)
