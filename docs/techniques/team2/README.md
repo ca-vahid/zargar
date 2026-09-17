@@ -48,7 +48,8 @@ sweep with `python -m zargar.tools.team2_sweep` (`--set key=value` overlays = th
 C2 paired report `python -m zargar.tools.team2_c2_report` (validation window sealed in the tool); experiment readiness
 receipt `python -m zargar.tools.team2_receipt` (read-only: PREPARED vs READY, blockers, cardinality, provenance, C6 record);
 diagnostics report `python -m zargar.tools.team2_diag_report --date <session>` (shadow measurements: entry situations and contract
-choices after costs, with coverage; `techniques/team2/diagnostics.py` is the pure module, `tests/test_team2_diagnostics.py`).
+choices after costs, with coverage; `techniques/team2/diagnostics.py` is the pure module, `tests/test_team2_diagnostics.py`;
+v0.8.02: a quote is evidence only when live, sane and fresh by its own source timestamp; unknown enters no denominator).
 
 ## Status (2026-09-16)
 
@@ -161,7 +162,8 @@ time-of-day dependent (fails after 20:00 ET on main).
   Practice-scale figures come from an APPROXIMATE calibration (`calibrate_practice.py`: loss-risk sizing, the $2,000
   budget and the 40-contract cap; research dollars never transfer). The sizing-cap edge is a drawdown story on
   identical trades; C1's edge concentrates in week 37. Both are hypotheses with a frozen sheet, not results.
-- **The shadow diagnostics have never run a live session** (v0.8.01 deployed the evening of 2026-09-16): the follow-up quotes
+- **The shadow diagnostics have never run a live session** (v0.8.01 deployed the evening of 2026-09-16; the review's three
+  boundaries fixed in v0.8.02 the same night — a follow-up is unknown unless the quote is fresh by its own source time): the follow-up quotes
   ride the ~2 s quote watch and the options service's live re-pricing; the first session will show how many observations come back
   UNKNOWN (no OPRA quote, taken late after a restart). Counts will be tiny; the report ranks, it does not decide.
 - **The experiment infrastructure has never run a live session.** Minting, arming, restart identity and transitions

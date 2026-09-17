@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import time
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -34,11 +35,23 @@ def bar(h, m, close=100.0, high=None, low=None, symbol="SPY"):
                low=low if low is not None else close - .1, close=close, volume=100, source="exchange")
 
 
+def now_ms():
+    return int(time.time() * 1000)
+
+
 class FakeOpts:
-    """The options service surface the diagnostics touch: chain rows, live re-pricing, cached Greeks."""
+    """The options service surface the diagnostics touch: chain rows, live re-pricing, cached Greeks. Every live quote
+    carries a SOURCE timestamp (fresh unless `stale_ms` says otherwise) — the diagnostics refuse quotes without one."""
 
     def __init__(self, chain, live):
         self.chain_rows, self.live, self.calls = chain, dict(live), []
+        self.stale_ms = 0
+
+    def quote(self, sym):
+        if sym not in self.live:
+            return None
+        bid, ask = self.live[sym]
+        return SimpleNamespace(bid=bid, ask=ask, last=(bid + ask) / 2, ts=now_ms() - self.stale_ms)
 
     def provider(self):
         return SimpleNamespace(chain=AsyncMock(return_value=self.chain_rows), name="fake")
@@ -68,8 +81,13 @@ def chain(spot=100.0):
 
 def rig(opts=None, quote_last=100.4):
     q = SimpleNamespace(last=quote_last, ts=ms(10, 0), bid=quote_last - .01, ask=quote_last + .01)
+
+    def get_quote(sym):
+        if sym == "SPY":
+            return q
+        return opts.quote(sym) if opts is not None else None
     eng = SimpleNamespace(settings={}, journal=SimpleNamespace(append=AsyncMock()), trading_halted=lambda _: False,
-                          quiesce_until_ms=0, quotes=SimpleNamespace(get=lambda sym: q if sym == "SPY" else None), options=opts)
+                          quiesce_until_ms=0, quotes=SimpleNamespace(get=get_quote), options=opts)
     runner = Team2Runner(eng)
     runner.rules = lambda: replace(Team2Rules(), losses_desk_wide=False)
     for name in ("_load_warmup", "_ensure_listing", "_persist", "_clock_flatten", "_reprice_stuck_exits", "_manage_live_trims"):
@@ -191,8 +209,10 @@ def test_after_cost_and_observations_keep_unknown_unknown():
     o = diag.after_cost(0.51, 0.505, 0.37, 0.375, 1.04)
     assert o["askToBidNet"] == -16.08 and o["askToBidPct"] == -31.53 and o["midToMidNet"] == -15.08
     assert diag.after_cost(0.51, None, None, 0.4, 1.04)["askToBidNet"] is None
-    obs = diag.observation("2m", ms(10, 2), ms(10, 2, 3), {"A": {"bid": 0.4, "ask": 0.42, "priced": "opra"}, "B": {"bid": 0.3, "ask": 0.32, "priced": "chain"}, "C": None})
+    obs = diag.observation("2m", ms(10, 2), ms(10, 2, 3), {"A": {"bid": 0.4, "ask": 0.42, "priced": "opra", "quoteTs": ms(10, 2, 2)},
+                                                          "B": {"bid": 0.3, "ask": 0.32, "priced": "chain", "quoteTs": ms(10, 2, 2)}, "C": None})
     assert obs["status"] == "observed" and obs["quotes"]["A"]["mid"] == 0.41 and obs["quotes"]["B"] is None and obs["quotes"]["C"] is None
+    assert obs["unknown"] == {"B": "not live (chain)", "C": "no quote"} and obs["quotes"]["A"]["ageMs"] == 1000
     late = diag.observation("5m", ms(10, 5), ms(10, 7), {"A": {"bid": 0.4, "ask": 0.42, "priced": "opra"}})
     assert late["status"] == "unknown" and "120s after due" in late["reason"] and late["quotes"] == {}
     rec = {"trigger": "s#1", "setup": "s", "candidates": [{"symbol": "A", "strike": 101.0, "ask": 0.5, "mid": 0.45, "selected": True, "inBand": True, "delta": 0.3},
@@ -342,3 +362,140 @@ def test_report_assembles_journal_rows_into_attempt_records():
     assert len(recs) == 1 and recs[0]["entryLocation"]["movedAway"] is False and recs[0]["routing"]["netPnl"] == 30.0
     day = diag.summarize_day(recs, 1.04)
     assert day["filled"] == 1 and day["perAttempt"][0]["candidates"][0]["outcomes"]["2m"]["askToBidNet"] == 2.92
+
+
+# ---------------------------------------------------------------- 2026-09-16 review D1/D2/D3 (shadow boundaries)
+def test_quote_freshness_and_sanity_decide_an_observation():
+    due = ms(10, 2)
+    fresh = {"bid": .6, "ask": .61, "priced": "opra", "quoteTs": due - 2_000}
+    ok = diag.observation("2m", due, due, {"OPT": fresh})
+    assert ok["status"] == "observed" and ok["quotes"]["OPT"]["ageMs"] == 2000              # on-time fresh control
+    stale = diag.observation("2m", due, due, {"OPT": {**fresh, "quoteTs": due - 120_000}})
+    assert stale["status"] == "unknown" and stale["quotes"]["OPT"] is None and "stale quote (120s" in stale["unknown"]["OPT"]
+    no_ts = diag.observation("2m", due, due, {"OPT": {"bid": .6, "ask": .61, "priced": "opra"}})
+    assert no_ts["quotes"]["OPT"] is None and no_ts["unknown"]["OPT"] == "no source timestamp"
+    crossed = diag.observation("2m", due, due, {"OPT": {**fresh, "bid": .7}})
+    assert crossed["quotes"]["OPT"] is None and crossed["unknown"]["OPT"] == "crossed quote"
+    no_bid = diag.observation("2m", due, due, {"OPT": {**fresh, "bid": 0}})
+    assert no_bid["unknown"]["OPT"] == "no bid"
+    outage = diag.observation("2m", due, due, {}, unknown={"OPT": "options service unavailable"})
+    assert outage["status"] == "unknown" and outage["quotes"] == {"OPT": None} and outage["unknown"]["OPT"] == "options service unavailable"
+    late = diag.observation("2m", due, due + 200_000, {"OPT": {**fresh, "quoteTs": due + 199_000}})
+    assert late["status"] == "unknown" and late["quotes"] == {} and "after due" in late["reason"]
+    # a stale unchanged quote must never read as the contract losing only its commission
+    rec = {"trigger": "s#1", "candidates": [{"symbol": "OPT", "selected": True, "inBand": True, "ask": .61, "mid": .605, "priceKnown": True}],
+           "observations": {"2m": stale}, "routing": {}}
+    a = diag.summarize_attempt(rec, 1.04)
+    assert a["candidates"][0]["outcomes"]["2m"] is None and "stale quote" in a["candidates"][0]["unknown"]["2m"]
+
+
+def test_unknown_entry_prices_never_enter_a_return_or_a_comparison():
+    obs = {"2m": {"status": "observed", "quotes": {"sel": {"bid": .6, "mid": .605}, "alt": {"bid": .4, "mid": .405}}, "unknown": {}}}
+    # the SELECTED entry is unknown: no return anywhere for it, alternatives still stand on their own
+    rec = {"trigger": "s#1", "candidates": [{"symbol": "sel", "selected": True, "inBand": True, "ask": 0.0, "mid": None, "priceKnown": False, "priceUnknownReason": "no ask"},
+                                            {"symbol": "alt", "selected": False, "inBand": True, "ask": .35, "mid": .34, "priceKnown": True}],
+           "observations": obs, "routing": {"filledQty": 10, "netPnl": -20.0, "status": "closed"}}
+    day = diag.summarize_day([rec], 1.04)
+    row = day["perAttempt"][0]
+    assert row["candidates"][0]["outcomes"]["2m"] is None and row["candidates"][0]["unknown"]["2m"] == "entry price unknown (no ask)"
+    assert row["candidates"][1]["outcomes"]["2m"]["askToBidPct"] == 8.34
+    assert day["contractChoice"]["2m"]["selectedN"] == 0 and day["contractChoice"]["2m"]["compared"] == 0 and day["contractChoice"]["2m"]["inBandAlternativesN"] == 1
+    same = [x for x in day["situations"] if x["situation"] == "attemptClass"][0]
+    assert same["filled"] == 1 and same["actualNetSum"] == -20.0
+    assert same["selectedAskToBidPct"]["2m"] == {"mean": None, "n": 0, "missing": 1}      # the unknown is COUNTED as missing, never averaged
+    # no candidates at all
+    empty = diag.summarize_day([{"trigger": "s#2", "candidates": [], "observations": {}, "routing": {}}], 1.04)
+    assert empty["attempts"] == 1 and empty["coverage"] == {"observed": 0, "missing": 0} and empty["contractChoice"] == {}
+    # mixed known / unknown alternatives: only the known one is compared
+    mixed = {"trigger": "s#3", "candidates": [{"symbol": "sel", "selected": True, "inBand": True, "ask": .5, "mid": .495, "priceKnown": True},
+                                              {"symbol": "u", "selected": False, "inBand": False, "ask": 0.0, "mid": None, "priceKnown": False},
+                                              {"symbol": "k", "selected": False, "inBand": True, "ask": .3, "mid": .29, "priceKnown": True}],
+             "observations": {"2m": {"status": "observed", "quotes": {"sel": {"bid": .6, "mid": .605}, "u": {"bid": .4, "mid": .405}, "k": {"bid": .4, "mid": .405}}, "unknown": {}}},
+             "routing": {}}
+    d2 = diag.summarize_day([mixed], 1.04)
+    assert d2["contractChoice"]["2m"]["compared"] == 1 and d2["contractChoice"]["2m"]["alternativeBeatSelected"] == 1
+    assert d2["labels"]["candidates"].startswith("HYPOTHETICAL") and d2["labels"]["actual"].startswith("book fills")
+
+
+async def test_a_diagnostic_summary_fault_cannot_interrupt_scoring_or_session_close(monkeypatch):
+    runner, ap = rig()
+    runner._last_sim[ap.run_id] = {"trades": [], "bias": {}}
+    runner.disarm = AsyncMock(return_value=True)
+    tid = "scenario_1@09:45#1"
+    ap.trades[tid] = Trade(trigger_id=tid, kind="scenario_1", fired_ts=ms(10, 0), window="team2", entry=100.9, stop=100.4, targets=[],
+                           status="closed", setup_id="scenario_1@09:45", filled_qty=10, avg_fill=0.5, realized_pnl=40.0, instrument="options",
+                           order_symbol="SPY260914C00101000", multiplier=100.0)
+    runner._diag_of(ap.run_id)["attempts"][tid] = {"trigger": tid, "candidates": [{"symbol": "x", "selected": True, "ask": .5}], "observations": {}}
+
+    def boom(*a, **k):
+        raise RuntimeError("synthetic summary fault")
+    monkeypatch.setattr(diag, "summarize_day", boom)
+    await runner._end_session(ap, journal=True)
+    runner.disarm.assert_awaited_once()
+    sc = ap.scorecard
+    assert sc["actualFires"] == 1 and sc["realizedPnl"] <= sc["realizedPnlGross"] == 40.0      # core accounting intact
+    assert sc["diagnostics"]["status"] == "error" and "synthetic summary fault" in sc["diagnostics"]["error"]
+    assert sc["skips"] == {} and sc["correctedHistory"] is True
+
+
+def test_exit_price_is_weighted_by_confirmed_fills_only():
+    def trade(exits):
+        return SimpleNamespace(status="closed", filled_qty=10, avg_fill=.5, order_symbol="OPT", realized_pnl=100.0, opened_ts=1, closed_ts=2, exits=exits)
+    # partial exits at different prices, the stale SUBMITTED status notwithstanding
+    r = Team2Runner._diag_routing(trade([{"orderId": "a", "status": "SUBMITTED", "filledQty": 4, "qty": 4, "price": .8},
+                                         {"orderId": "b", "status": "FILLED", "filledQty": 6, "qty": 6, "price": .6}]), 20.8)
+    assert r["exitPrice"] == .68 and r["exitFilledQty"] == 10 and r["exitPriceUnknown"] is False and r["netPnl"] == 79.2
+    # an unfilled submitted exit is not a fill; the requested qty is never inferred
+    r2 = Team2Runner._diag_routing(trade([{"orderId": "a", "status": "SUBMITTED", "filledQty": 0, "qty": 10, "price": .8}]), 0)
+    assert r2["exitPrice"] is None and r2["exitFilledQty"] == 0 and r2["exitPriceUnknown"] is False
+    # duplicate updates of one order count once (the last wins)
+    r3 = Team2Runner._diag_routing(trade([{"orderId": "a", "status": "SUBMITTED", "filledQty": 4, "qty": 10, "price": .8},
+                                          {"orderId": "a", "status": "FILLED", "filledQty": 10, "qty": 10, "price": .8}]), 0)
+    assert r3["exitPrice"] == .8 and r3["exitFilledQty"] == 10
+    # a confirmed fill without a price is UNKNOWN, not zero
+    r4 = Team2Runner._diag_routing(trade([{"orderId": "a", "status": "FILLED", "filledQty": 10, "qty": 10, "price": None}]), 0)
+    assert r4["exitPrice"] is None and r4["exitPriceUnknown"] is True and r4["exitFilledQty"] == 10
+
+
+async def test_follow_up_collection_is_bounded_and_refreshes_rather_than_reusing_the_entry_quote():
+    rows = []
+    live = {}
+    for k in range(101, 109):
+        sym = f"SPY260914C{k * 1000:08d}"
+        rows.append({"symbol": sym, "strike": float(k), "option_type": "call", "ask": 0.5, "bid": 0.4, "greeks": {"delta": 0.2}})
+        live[sym] = (0.4, 0.42)
+    opts = FakeOpts(rows, live)
+    runner, ap = rig(opts)
+    tid = "scenario_1@09:45#1"
+    ap.trades[tid] = Trade(trigger_id=tid, kind="scenario_1", fired_ts=ms(10, 0), window="team2", entry=100.9, stop=100.4, targets=[103.0],
+                           setup_id="scenario_1@09:45", instrument="options", multiplier=100.0, direction="long")
+    rules = runner.rules_for(ap)
+    otm = sorted(rows, key=lambda c: c["strike"])
+    rules = type(rules)(**{**rules.to_dict(), "quote_candidates": 8}) if hasattr(rules, "to_dict") else rules
+    qres = await runner._quote_examined(opts, otm, 100.4, "long", rules, "2026-09-14", dt.date(2026, 9, 14))
+    runner._diag_candidates(ap, tid, qres, qres["pick"].symbol if qres["pick"] else None, 100.4, rules, rows, opts)
+    await drain(runner)
+    rec = runner._diag_of(ap.run_id)["attempts"][tid]
+    assert len(rec["candidates"]) == 8 and sum(1 for c in rec["candidates"] if c["followed"]) == 6
+    assert all(c["priceKnown"] and c["quoteTs"] is not None and c["collectedTs"] >= c["quoteTs"] for c in rec["candidates"])
+    # the cached entry quote is two minutes old at the follow-up: it is NOT the two-minute observation
+    opts.stale_ms = 125_000
+    pend = runner._diag_of(ap.run_id)["pending"]
+    pend[0]["dueTs"] = now_ms() - 1000
+    await runner._diag_tick(); await drain(runner)
+    o = rec["observations"]["2m"]
+    assert o["status"] == "unknown" and all(v is None for v in o["quotes"].values())
+    followed = [c["symbol"] for c in rec["candidates"] if c["followed"]]
+    assert all("stale quote" in o["unknown"][sym] for sym in followed)
+    assert all(o["unknown"][c["symbol"]] == "not followed (collection bounded)" for c in rec["candidates"] if not c["followed"])
+    # fresh again: the next horizon is observed, and the summary counts exactly the followed contracts
+    opts.stale_ms = 0
+    pend[1]["dueTs"] = now_ms() - 1000
+    await runner._diag_tick(); await drain(runner)
+    o5 = rec["observations"]["5m"]
+    assert o5["status"] == "observed" and sum(1 for v in o5["quotes"].values() if v) == 6
+    runner._last_sim[ap.run_id] = {"trades": [], "bias": {}}
+    sc = runner._score_execution(ap)
+    per = sc["diagnostics"]["perAttempt"][0]
+    assert per["coverage"]["observed"] == 6 and sc["diagnostics"]["labels"]["maxFollowed"] == 6
+
