@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.04";
+export const APP_VERSION = "0.8.06";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,12 +17,19 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.06",date:"2026-09-17",title:"The watchdog never mistakes a quiet engine for a dead one",items:[
+    {tag:"fixed",text:"Watchdog: a live engine process whose log is quiet is LIVE, not absent; a process-discovery failure is UNCERTAIN; both refuse ordinary recovery (with or without -Force) because readiness is unavailable, and only the explicit override replaces a living engine. A healthy first probe clears the stall marker and alert state; -ProbeOnly creates nothing and writes nothing. The caller decision is a pure function with mocked acceptance (20 cases)."},
+    {tag:"improved",text:"EM profitability report: the paired confirmation comparison judges the entry minute itself, keeps incomplete horizons pending, states that the touch bar never confirms, and labels itself a geometry-only underlying proxy naming the gates it does not evaluate. Research labels only; no trading change."},
+  ]},
+  {version:"0.8.05",date:"2026-09-16",title:"Team2 candidate quotes are bound at examination",items:[
+    {tag:"fixed",text:"Team2 shadow diagnostics: each contract the picker examines is recorded as ONE observation - its bid/ask, provenance, source-confirmation time, receipt time and capture time are captured together at that moment, and the report validates and shows exactly that record. A later quote-cache state is a separate observation and is never attached to an earlier price; a quote that moves during capture is marked unknown with the reason."},
   {version:"0.8.04",date:"2026-09-17",title:"EM entries survive a rate-limited chain; the engine can name a stall",items:[
     {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up; expired chain data is never served for a live pick; the no-contract alert names the cause and says a short has no shares fallback by rule. Background chain fetches (enrichment, research) stand down for options.cboe_cooldown_seconds after a 429 instead of feeding the burst."},
     {tag:"fixed",text:"Two event-loop stall causes the new stall watch named on its first evening are fixed: root logging goes through a queue (the rotating file handler wrote on the loop - one 51 s stall came from inside it), and provider chain/snapshot JSON is parsed off the loop (a multi-megabyte CBOE chain took 4 s on it); chain normalisation and the enrichment index run on a worker thread too, and the enrichment pass yields between underlyings (a 4.8 s stall was OCC formatting over thousands of rows)."},
     {tag:"improved",text:"Chart rendering for the vision passes runs off the event loop on one worker thread, and an event-loop stall watch (ops.loop_stall_seconds) logs the blocking call site and reports loopStalls / lastStall / eventLoopLagMs on /api/health - the 2026-09-16 restart storm could not say what stalled."},
     {tag:"improved",text:"EM profitability report: P-04 entry strata (descriptive) plus a paired, order-free confirmation comparison (confirmed close, then next-bar open, unchanged gates, distinct refusals, option dollars unknown), and P-05 session-window / event-phase cohorts from the shared session clock with unknown calendar coverage stated. Research labels only; no trading rule changes."},
     {tag:"fixed",text:"/api/health answers build=unknown instead of a 500 when the launch-bound build helper is missing from the checkout."},
+  ]},
   ]},
   {version:"0.8.03",date:"2026-09-16",title:"Team2 quote freshness reads the source, not the receipt",items:[
     {tag:"fixed",text:"Team2 shadow diagnostics: a price's freshness is judged on the provider's confirmation time for that bid/ask (the quote's source timestamp), never on when the app last received it - a recently received old price is unknown at the entry and at every follow-up, a price with no source evidence stays unknown, and a freshly confirmed unchanged price still counts. Receipt and collection times are recorded beside the source time."},

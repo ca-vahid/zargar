@@ -3122,6 +3122,16 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-16 review r3 of the shadow diagnostics (other team: source-time correction PASSES; entry quote BINDING open; D1/D3
+  accepted) → v0.8.05** — `_diag_candidates` still paired the picker's earlier bid/ask with the source/receipt timestamps of a
+  LATER cache lookup (an old $0.50/$0.51 wearing a new $0.80/$0.81's timestamp), and could attach `source=chain` to a row already
+  validated as live. Fix: the quoting walk (`_quote_examined`) captures each candidate's bid/ask, provenance, `source_ts`,
+  receipt `ts` and capture time TOGETHER as one immutable row at the moment it examines it (the Quote it just re-priced, verified
+  to be the same bid/ask; a quote that moved in between gets no source time and a note); `candidate_rows` validates and reports
+  exactly those fields and looks nothing up again. Their two binding probes verbatim (`tests/test_codex_team2_diag_quote_binding.py`);
+  own walk test: a cache update and a source change between examinations belong to the later candidate only. No trading
+  rule or quote-age policy change; hypothetical quoted returns stay labelled apart from fills; gates unchanged. NOT yet
+  deployed (user: maintenance in progress) — merged to main, restart pending the user's go.
 - **2026-09-16 review r2 of the shadow diagnostics (other team: D1 and D3 ACCEPTED; D2 one adapter correction; C6 plan ACCEPTED as a
   plan, its evidence gate open) → v0.8.03** — the freshness validator was fed `Quote.ts` (when the app last received / re-stamped
   the price) instead of `Quote.source_ts` (the provider's confirmation of THIS bid/ask), so a recently received old price read as
