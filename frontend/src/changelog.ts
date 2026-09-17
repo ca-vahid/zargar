@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.98";
+export const APP_VERSION = "0.7.99";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.99",date:"2026-09-16",title:"Cartel: better contract choices and preparation evidence",items:[
+    {tag:"new",text:"Automatic Practice plans can make one bounded alternative-contract search when spread is the only failed entry check. Saved limits stay intact and every entry check runs again; control it in Cartel Settings."},
+    {tag:"improved",text:"Research baselines warm for the next session overnight. Validation compares saved entry rules with non-executing gap/retest and 1x-volume diagnostics on the same data."},
+    {tag:"fixed",text:"Daily review now shows the actual execution refusal and its dated quote evidence instead of leaving a rejected entry labeled only as signalled."},
+  ]},
   {version:"0.7.98",date:"2026-09-16",title:"Current Cartel guidance and integrated release identity",items:[
     {tag:"improved",text:"Cartel's Method documentation now explains research readiness, fair baseline retries, short-pool counts, data warnings and actual versus modeled results. Stale operational snapshots are replaced with dated references."},
     {tag:"fixed",text:"The shared build-identity helper is retained on main, and health remains available if build identification fails. Deployment still requires verified source, artifact and restored state."},

@@ -205,6 +205,32 @@ def compare_entry_variants(plan, campaign, minutes, *, as_of_ms, quantity=None, 
             'minutes': [pack(b) for b in tape.values()], 'quantity': quantity, 'asOfMs': as_of_ms, 'signalAfter': signal_after})}
 
 
+ENTRY_STUDY_VERSION = 'cartel-entry-policy-diagnostics-v1'
+
+
+def entry_study_plans(plan):
+    return {
+        'saved_entry_v1': plan,
+        'gap_retest_v1': plan.model_copy(update={'entry': plan.entry.model_copy(update={'mode': 'retest', 'allow_gap_retest': True})}),
+        'volume_1x_v1': plan.model_copy(update={'entry': plan.entry.model_copy(update={'volume_multiple': 1.0})}),
+    }
+
+
+def entry_policy_study(plan, minutes, *, as_of_ms, entry_after):
+    """Same frozen pool/levels; stock-only diagnostics never confer permission."""
+    tape = _tape(plan, minutes, as_of_ms)
+    rows = []
+    for name, variant in entry_study_plans(plan).items():
+        read = read_entry(variant, list(tape.values()), as_of_ms, entry_after=entry_after)
+        rows.append({'variant': name, 'policy': variant.entry.model_dump(mode='json'),
+            'status': read['status'], 'signal': read.get('signal'), 'checks': read.get('trace', [])[-5:]})
+    return {'version': ENTRY_STUDY_VERSION, 'rows': rows, 'placesOrders': False,
+        'automaticPermissionChanged': False, 'entryAfter': entry_after,
+        'note': 'Stock-only entry diagnostics without a market-permission override. No option fill or profitability claim.',
+        'inputSha256': _digest({'plan': plan.model_dump(mode='json'), 'minutes': [pack(b) for b in tape.values()],
+            'asOfMs': as_of_ms, 'entryAfter': entry_after, 'version': ENTRY_STUDY_VERSION})}
+
+
 def _tape(plan, minutes, as_of_ms):
     tape = {}
     for bar in minutes:

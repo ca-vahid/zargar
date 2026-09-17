@@ -132,3 +132,23 @@ watch/baseline readiness and sustained market observation cutoffs. A restart or
 recovery must not create an earlier fill. Exact option quote observations retain
 availability and source time; gaps cannot be skipped to reuse an older favorable
 quote. Existing decisions and completed baseline work are preserved.
+
+## September 16 follow-through: readiness and entry diagnostics
+
+Research baselines now warm outside regular hours as soon as a compatible frozen
+next-session pool exists, including the previous evening and weekends. The same
+source/coverage checks, fair two-attempt queue and cooldown remain. Overnight
+work stops after three attempts per candidate; the normal pre-open/session
+collector can retry later under its cooldown. Select the
+next session's date in Validation to inspect attempts and readiness. A benchmark
+freshness block still prevents freezing a new pool; prewarming does not bypass it.
+
+A separate `cartel-entry-policy-diagnostics-v1` cohort compares the saved entry,
+a fixed gap/retest interpretation and a fixed 1.0x-volume interpretation. All use
+the same frozen levels, timeframe, stops, targets and source requirements. These
+are stock diagnostics without trading permission; their market eligibility is
+recorded separately. Only confirmations actually observed within the normal
+window are captured prospectively. Existing confirmations survive restart, but
+an unseen old crossing is not backfilled as an entry. Outcomes with no funded
+quantity remain underlying-price paths, not option/account profit. Neither
+challenger changes the executable entry policy or auto-promotes itself.

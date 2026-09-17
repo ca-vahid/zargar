@@ -1,7 +1,6 @@
 """Cartel signal -> reviewed execution -> durable submission -> fill reconciliation.
 
-The public observer remains alert-only until the controller's runtime lifecycle
-and primary exit cancellation gates are connected and verified.
+Automatic entries retain durable ownership, reconciliation and final dispatch guards.
 """
 from __future__ import annotations
 
@@ -230,7 +229,17 @@ class CartelEntryController:
                 {"runId": run_id, "symbol": plan.symbol, "portfolioId": spec.portfolio_id, "report": report},
                 aggregate_type="technique_run", aggregate_id=run_id, portfolio_id=spec.portfolio_id)
             if not report["passed"]:
-                return {"runId": run_id, "status": "preflight_rejected", "report": report, "placesEntryOrders": False}
+                from .contract_reselection import reselect_for_spread
+                alternative = await reselect_for_spread(self, run_id, row, plan, spec, report)
+                if alternative:
+                    row, spec = alternative
+                    priced = self._entry_conditions(row, plan, spec)
+                    report = await preflight(self.engine, priced, spec, client_kind=client, clock=self.clock)
+                    await self.engine.journal.append(ev.OPTIONS_CARTEL_PREFLIGHT,
+                        {"runId": run_id, "symbol": plan.symbol, "portfolioId": spec.portfolio_id, "report": report},
+                        aggregate_type="technique_run", aggregate_id=run_id, portfolio_id=spec.portfolio_id)
+                if not report['passed']:
+                    return {"runId": run_id, "status": "preflight_rejected", "report": report, "placesEntryOrders": False}
             if row["mode"] == "proposal" and approval_signal_id != row["state"]["signal"]["id"]:
                 return {"runId": run_id, "status": "awaiting_approval", "report": report, "placesEntryOrders": False}
             await self._reconciled(run_id, spec, plan)

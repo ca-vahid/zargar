@@ -640,6 +640,14 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- **2026-09-16 · Cartel Practice contract reselection retains execution authority.**
+  One bounded spread-only search may change only an automatically prepared sim
+  arm's contract identity before any submission reservation. Saved limits and
+  signal freshness remain authoritative; the controller reruns full preflight,
+  reconciliation and final dispatch checks. Other techniques, Live and proposal
+  approvals do not use this path. Research entry variants remain non-executable.
+
+
 - **2026-09-16 · Reviewed source and process identity remain separate.** Integrating
   a desk's previously deployed branch into main preserves the launch-bound build
   helper. A tolerant health response with build `unknown` prevents a missing-helper

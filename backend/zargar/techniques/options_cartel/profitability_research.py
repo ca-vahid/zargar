@@ -226,7 +226,7 @@ async def _update_context(engine, key, changes, candidate_id=None):
     return row
 
 
-async def _warm_baselines(runtime, context, policy, *, fetch=fetch_window):
+async def _warm_baselines(runtime, context, policy, *, fetch=fetch_window, attempt_limit=None):
     async def report(**kwargs):
         runtime._profitability_status = {'phase': 'collecting', 'message': kwargs.get('message')}
     reader = PreparationHistory(runtime.engine, fetch, report, policy, runtime.clock)
@@ -234,7 +234,8 @@ async def _warm_baselines(runtime, context, policy, *, fetch=fetch_window):
     # Scheduling order is separate from the frozen candidate/ranking order.
     # Persisted attempt counts keep retries fair across passes and restarts.
     due = [c for c in context.result['candidates'] if c['baselineStatus'] != 'ready'
-           and runtime.clock() >= c.get('nextBaselineAt', 0)]
+           and runtime.clock() >= c.get('nextBaselineAt', 0)
+           and (attempt_limit is None or c.get('baselineAttempts', 0) < attempt_limit)]
     due.sort(key=lambda c: (c.get('baselineAttempts', 0), c.get('nextBaselineAt', 0)))
     async with httpx.AsyncClient(timeout=18, headers={'User-Agent': UA}) as client:
         for candidate in due:
@@ -381,14 +382,43 @@ async def _premium_evidence(engine, context, candidate, at, *, campaign=False):
             'delayed': q.get('delayed', False) or q['status']!='observed', 'halted': q.get('halted', False)} for q in usable.values()]}
 
 
+async def prewarm_next_session(runtime, *, fetch=fetch_window):
+    """Prepare research history outside RTH; never subscribe, signal or order."""
+    from ...marketstructure.market_calendar import next_trading_day
+    now = runtime.clock(); today = dt.datetime.fromtimestamp(now/1000, ET).date()
+    opens, closes = session_bounds(today.isoformat())
+    if is_trading_day(today) and opens <= now <= closes+120_000:
+        return
+    target = today if is_trading_day(today) and now < opens else next_trading_day(today)
+    policy = read_policy(runtime.engine, 'practice')
+    if runtime.stopping or not settings(runtime.engine)['enabled'] or not policy.enabled:
+        return
+    async with runtime.engine.sf() as session:
+        context = await session.scalar(select(TechniqueRun).where(
+            TechniqueRun.technique=='options_cartel', TechniqueRun.mode=='profit_context',
+            TechniqueRun.config['workspace'].as_string()=='practice',
+            TechniqueRun.config['portfolioId'].as_string()==policy.portfolio_id,
+            TechniqueRun.config['session'].as_string()==target.isoformat())
+            .order_by(TechniqueRun.created_at.desc()).limit(1))
+    if context is None or PreparationPolicy.model_validate(context.config['policy']) != policy:
+        return
+    if context.as_of > now or context.result['frozenAt'] > now or context.result['frozenAt'] >= session_bounds(target.isoformat())[0]:
+        return
+    context = await _warm_baselines(runtime, context, policy, fetch=fetch, attempt_limit=3)
+    runtime._profitability_status = {'phase': 'preparing_next_session', 'session': target.isoformat(),
+        'baselineReady': sum(c['baselineStatus']=='ready' for c in context.result['candidates']),
+        'candidates': len(context.result['candidates'])}
+
+
 async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
-    from .research_economics import compare_entry_variants, evaluate_exit_variants, shares_vs_skip
+    from .research_economics import compare_entry_variants, evaluate_exit_variants, shares_vs_skip, entry_policy_study, entry_study_plans
     engine = runtime.engine; now = runtime.clock()
     if not settings(engine)['enabled'] or runtime.stopping:
         runtime._profitability_started = None
         return
     day = dt.datetime.fromtimestamp(now/1000, ET).date(); opens, closes = session_bounds(day.isoformat())
     if not is_trading_day(day) or not opens-45*60_000 <= now <= closes+120_000:
+        await prewarm_next_session(runtime, fetch=fetch)
         return
     policy = read_policy(engine, 'practice')
     async with engine.sf() as session:
@@ -402,8 +432,9 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
     if PreparationPolicy.model_validate(context.config['policy']) != policy:
         runtime._profitability_status = {'phase': 'fresh_preparation_required'}
         return
-    if getattr(runtime, '_profitability_started', None) is None:
+    if getattr(runtime, '_profitability_started', None) is None or getattr(runtime, '_profitability_context_id', None) != context.id:
         runtime._profitability_started = now
+        runtime._profitability_context_id = context.id
     runtime._profitability_targets = {c['id']+':'+option['selected']['symbol']: {'contextId': context.id, 'candidateId': c['id'],
         'contract': option['selected']['symbol'], 'preparationId': context.parent_run_id,
         'day': day.isoformat()} for c in context.result['candidates']
@@ -454,6 +485,40 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
             item.update(status='data_unavailable', reasons=[candidate.get('baselineReason') or 'Historical baseline warming'])
         else:
             plan = make_plan(candidate, day.isoformat(), candidate['baseline'])
+            # Separate diagnostic cohort: market eligibility is recorded, not bypassed for trading.
+            diagnostic_after = max(candidate['baselineReadyAt'], runtime._profitability_started)
+            try:
+                study = entry_policy_study(plan, tape, as_of_ms=boundary, entry_after=diagnostic_after)
+                observed_at = runtime.clock()
+                study.update(observedAt=observed_at, marketEligible=market['sustained'])
+                saved_signals = dict(candidate.get('entryPolicySignals') or {})
+                changed = False
+                for alternative in study['rows']:
+                    name = alternative['variant']; signal = alternative.get('signal')
+                    if (name not in saved_signals and signal and signal['at']==boundary
+                            and 0 <= observed_at-boundary <= 120000):
+                        saved_signals[name] = {'signal': signal, 'observedAt': observed_at,
+                            'entryAfter': diagnostic_after, 'decisionBars': [pack(b) for b in tape],
+                            'marketEligible': market['sustained']}
+                        changed = True
+                    captured = saved_signals.get(name)
+                    alternative['prospectiveConfirmation'] = captured is not None
+                    alternative['observedSignalAt'] = captured['signal']['at'] if captured else None
+                    if captured:
+                        frozen = {b[0]: unpack(candidate['symbol'], b) for b in captured['decisionBars']}
+                        evaluation = sorted([*frozen.values(), *[b for b in tape if b.ts not in frozen]], key=lambda b: b.ts)
+                        outcome = evaluate_exit_variants(entry_study_plans(plan)[name],
+                            ExitCampaign.model_validate(candidate['exitCampaign']), evaluation,
+                            [DailyBar.model_validate(b) for b in candidate['daily']], signal=captured['signal'],
+                            quantity=None, as_of_ms=boundary, entry_after=captured['observedAt'],
+                            signal_after=captured['entryAfter'], costs=None)
+                        alternative['outcome'] = outcome
+                        alternative['marketEligibleAtSignal'] = captured['marketEligible']
+                if changed and not runtime.stopping and settings(engine)['enabled'] and read_policy(engine, 'practice')==policy:
+                    context = await _update_context(engine, context.id, {'entryPolicySignals': saved_signals}, candidate['id'])
+                item['entryPolicyStudy'] = study
+            except ValueError as exc:
+                item['entryPolicyStudy'] = {'status': 'data_unavailable', 'reason': str(exc), 'placesOrders': False}
             if not item['entry'] and market['sustained']:
                 after = max(market['improvedSince'], candidate['baselineReadyAt'], runtime._profitability_started)
                 try:
@@ -579,12 +644,14 @@ async def status(engine, day, portfolio_id=None):
         rows = [{**{k: c.get(k) for k in ('id','symbol','direction','cohort','baselineRank','leaderRank','baselineSelected','leaderSelected')},
             'status': observed.get(c['id'], {}).get('status', c['baselineStatus']),
             'reasons': observed.get(c['id'], {}).get('reasons') or ([c['baselineReason']] if c.get('baselineReason') else []),
+            'entryPolicyStudy': observed.get(c['id'], {}).get('entryPolicyStudy'),
             'entry': observed.get(c['id'], {}).get('entry'), 'experiments': observed.get(c['id'], {}).get('experiments'),
             'campaignExperiments': observed.get(c['id'], {}).get('campaignExperiments'),
             'sharesComparison': observed.get(c['id'], {}).get('sharesComparison'),
             'entryComparison': c.get('fundedEntryComparison') or observed.get(c['id'], {}).get('entryComparison'),
             'optionObservation': c.get('optionObservation'), 'optionQuote': observed.get(c['id'], {}).get('optionQuote'),
-            'targetRoomProbe': c.get('targetRoomProbe'), 'gaps': [], 'baselineStatus': c['baselineStatus']} for c in context.result['candidates']]
+            'targetRoomProbe': c.get('targetRoomProbe'), 'gaps': [], 'baselineStatus': c['baselineStatus'],
+            'baselineAttempts': c.get('baselineAttempts', 0), 'nextBaselineAt': c.get('nextBaselineAt')} for c in context.result['candidates']]
         bearish = [r for r in rows if r['cohort']=='bearish']
         out.update(status=context.result['phase'], phase=context.result['phase'], asOfMs=last.as_of if last else context.as_of,
             contextId=context.id, preparationId=context.parent_run_id, protocol=context.result['protocol'],

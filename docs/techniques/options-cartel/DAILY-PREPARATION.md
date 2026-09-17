@@ -145,3 +145,21 @@ A downside plan whose stock opens below the trigger is not automatically a fresh
 breakdown. Gap/retest behavior depends on the saved entry mode; an enabled gap
 option does not convert a breakout plan into a different method. Any alternative
 belongs in a separately versioned research comparison before changing execution.
+
+## Spread-only alternative selection in Practice
+
+Settings includes **Search one alternative when only the selected option's spread
+blocks an automatic Practice entry** (`techniques.options_cartel.reselect_wide_contract`,
+default on). It applies only to automatically prepared Practice auto arms with saved
+contract limits. A single search per fresh signal uses the existing expiry/refresh
+bounds and at most 20 seconds, ending before the signal expires. It never widens
+premium, spread, delta, DTE, budget or risk limits. No substitution is made for
+Live, proposal/manual approval, other failed gates, working submissions or holdings.
+
+A selected replacement is saved and journaled, then full preflight, reconciliation,
+final quote checks and RiskGate run again. A pause, expired signal or changed saved
+configuration during the search prevents entry. A failed/interrupted search is not
+repeated for the same signal; ordinary quote retries can still observe the saved
+contract. Daily review now names execution refusals and their dated bid/ask evidence,
+separately from the earlier stock confirmation. No successful stock signal implies
+an option was bought.
