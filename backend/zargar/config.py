@@ -47,6 +47,8 @@ class AppConfig(BaseSettings):
     sim_seed: int = 0  # 0 = random each run; fixed value = deterministic quotes
     sim_history_minutes: int = 2 * 24 * 60  # synthesized 1m-bar history per symbol
     sim_option_sessions: bool = True  # EOD-05: Practice option fills need an eligible session (09:30-16:00 ET)
+    sim_stock_sessions: bool = True  # F-HOLD-01: Practice share fills / stop triggers only in the regular session
+    sim_max_spread_pct: float = 0.05  # F-HOLD-01: a share quote wider than 5% of mid cannot price a simulated fill
 
     # --- integrations ----------------------------------------------------
     # SnapTrade personal API credentials (dashboard → API Key page). Used for

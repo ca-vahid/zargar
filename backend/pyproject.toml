@@ -1,6 +1,6 @@
 [project]
 name = "zargar"
-version = "0.8.09"
+version = "0.8.10"
 description = "Zargar — personal trading engine (IBKR + simulation + signal ingestion)"
 requires-python = ">=3.11"
 dependencies = [

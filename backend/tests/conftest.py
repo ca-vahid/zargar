@@ -22,6 +22,7 @@ def make_test_config(**overrides) -> AppConfig:
         sim_seed=42,
         sim_history_minutes=30,
         sim_option_sessions=False,   # suites fill options at any hour; EOD-05 gate has its own test
+        sim_stock_sessions=False,    # suites fill shares at any hour; the F-HOLD-01 gate has its own test
         auth_token="",
         google_client_id="",       # sign-in off in tests even when backend/.env enables it
         google_allowed_emails="",

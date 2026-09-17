@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.09";
+export const APP_VERSION = "0.8.10";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.10",date:"2026-09-17",title:"Practice share stops trigger only in the regular session, on a real quote",items:[
+    {tag:"fixed",text:"Practice (sim) share orders now rest outside 09:30-16:00 ET unless placed for extended hours, and a stop never triggers on a placeholder quote: a quarantined shadow book's AFRM stop had 'filled' 27 sh at 44.99 at 03:59 ET on a 45/75 pre-market book while the stock traded 72-74. A share quote wider than 5% of mid cannot price a simulated fill; the order waits and says why (both knobs, sim.stock_sessions / sim.max_spread_pct)."},
+  ]},
   {version:"0.8.09",date:"2026-09-17",title:"EM Analyse tab stays up beside other techniques' runs",items:[
     {tag:"fixed",text:"EM > Analyse crashed (\"Cannot read properties of undefined (reading 'map')\") a few seconds after opening: the page read the newest run of ANY technique, and tonight that was an Options Cartel research run whose analysis has no EM levels. The EM page now lists only EM runs, and the result view tolerates an analysis without levels, targets or reasons."},
     {tag:"fixed",text:"EM profitability report (offline research tool): the paired confirmation comparison now tells the report's cutoff apart from the session's actual 16:00 ET close - a 10:02 ET report with one observed bar after the touch stays PENDING instead of reading as no confirmation; only the session's last bar closes an incomplete horizon. Preparation and trading unchanged."},
