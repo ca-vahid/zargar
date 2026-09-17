@@ -3122,6 +3122,16 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-16 review r2 of the shadow diagnostics (other team: D1 and D3 ACCEPTED; D2 one adapter correction; C6 plan ACCEPTED as a
+  plan, its evidence gate open) → v0.8.03** — the freshness validator was fed `Quote.ts` (when the app last received / re-stamped
+  the price) instead of `Quote.source_ts` (the provider's confirmation of THIS bid/ask), so a recently received old price read as
+  fresh at the entry and at the two-minute horizon. Fix in both adapters (`_diag_candidates`, `_diag_observe`): the source
+  confirmation time is the freshness evidence, read from the same Quote object as the price; the receipt time rides beside it as
+  `receivedTs`, the collection time as `collectedTs`; missing source evidence is missing (no fallback to the receipt time); a
+  freshly confirmed unchanged OPRA price still counts (the service re-stamps `source_ts` on confirmation); a chain-served price is
+  not live evidence. Their packet verbatim: `tests/test_codex_team2_diag_source_time.py` (2 stale-source cases failed on
+  v0.8.02, control passed). No trading rule, threshold or quote-age policy changed; hypothetical quoted returns stay labelled
+  apart from fills; no profitability ranking from a claimed freshness before this correction was live.
 - **2026-09-16 review of the shadow diagnostics v0.8.01 (other team: ledger regressions PASS; measurements NOT yet accepted for
   profitability conclusions; three boundaries D1–D3; no trading-rule change) → v0.8.02** — **D1** an alternative unpriced at the
   entry but quoted at a follow-up made `summarize_day` compare None with a float (`TypeError`) — and `_score_execution` is called by
