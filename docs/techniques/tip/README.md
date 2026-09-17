@@ -87,6 +87,8 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## Known gaps, risks and what could be wrong (read before trusting a number)
 
+- **F-FILL-02 (2026-09-17, OPEN - user/reviewer decision):** simulated OPTION fills have no spread or flash-quote sanity by design (wide books are normal), so a one-lot OPRA quote 60% below the surrounding market that lived ~3 s priced a Practice fill (MRNA Sep-18 165C bought 0.75 between 1.90/2.01 quotes; sold 4 s later at 1.90, +$115). `TipFillVsQuote` flags such fills (vsMid far negative); every Practice number that includes them is labeled suspect until a rule exists. Candidate rule: refuse/flag an option fill when the top of book is 1x1 with spread > ~40% of mid or the price deviates > ~35% from the last qualified mid within 10 s. Share fills got the equivalent guards in 0.8.10 (F-HOLD-01, PLATFORM-RULES).
+
 1. **The shadow armed books carry phantom SHORT share positions** from the over-sell classes fixed on
    2026-09-15 (eva: TSLA −5, MU −13, AAPL −15, MSTR −36, SNOW −6, GOOGL −28, AMZN −57; ab: APLD −40,600,
    RDDT −64, GOOGL −2, AMZN −3; common-stock LULU −49; muggzone MSFT −2), with stale oversize stops still
