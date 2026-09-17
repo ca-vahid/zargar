@@ -74,13 +74,27 @@ class QuoteCache:
         self._quotes[q.symbol] = q
         self._bus.publish(topics.QUOTES, q)
 
+    # venue identities whose bid/ask are authoritative: a slower feed's `last` can never
+    # bend them (E17-01, 2026-09-17: the MRNA Sep-18 165C OPRA band 1.90/2.00 was recentred
+    # on a 15-minute-old chart print of 0.70 -> 0.65/0.75 still labelled "opra" -> Practice
+    # bought at 0.75 and "won" +$115 four seconds later when the real band came back)
+    VENUE_SOURCES = ("opra", "ibkr")
+
     def _apply_overlay(self, q: Quote, ov: dict) -> None:
         for k, v in ov.items():
             setattr(q, k, v)
+        # every application starts from the overlay's RAW prices: no transform is sticky
+        q.raw_bid = q.raw_ask = 0.0
+        q.raw_source = ""
+        q.raw_source_ts = 0
+        q.transform = ""
         bid, ask = float(ov.get("bid") or 0), float(ov.get("ask") or 0)
         anchor = self._anchors.get(q.symbol)
         if bid <= 0 or ask <= 0 or anchor is None or q.last <= 0:
             return
+        src = str(ov.get("source") or "")
+        if src in self.VENUE_SOURCES:
+            return                     # a real-time NBBO stands; the print is kept as a print
         # 2026-09-02 GOOGL 0DTE 340C: the live tape printed 0.47-0.76 while the
         # ~15-min-delayed chain still said 0.12/0.13 — the practice book "bought"
         # 20 at 0.13, the premium stop measured against a fantasy basis and the
@@ -90,8 +104,15 @@ class QuoteCache:
         # centre it on what is actually trading.
         if abs(q.last - anchor) > 1e-9 and (q.last > ask or q.last < bid):
             half = max((ask - bid) / 2, 0.005)
+            # the estimate is DERIVED: raw prices preserved, provenance renamed, transform
+            # versioned - money gates and the sim refuse it, displays may show it
+            q.raw_bid, q.raw_ask = bid, ask
+            q.raw_source = src or "chain"
+            q.raw_source_ts = int(ov.get("source_ts") or 0)
             q.bid = max(round(q.last - half, 4), 0.01)
             q.ask = round(q.last + half, 4)
+            q.source = f"derived:{q.raw_source}"
+            q.transform = "recenter-v1"
 
     def set_overlay(self, symbol: str, *, anchor_last: float | None = None, **fields) -> None:
         """Override quote fields for a symbol (bid/ask/sizes) until cleared.
