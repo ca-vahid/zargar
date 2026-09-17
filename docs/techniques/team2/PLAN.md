@@ -348,6 +348,14 @@ and are now part of the plan; each carries the phase it belongs to.
   (`zargar.tools.team2_receipt`, currently PREPARED). Remaining before activation: **C6** (one tape; platform owners,
   recorded in `notes/research/c6-evidence.json`) → activation snapshot with the receipt READY → the other team's GO.
   Research settings unchanged; nothing paused; `Team2 Practice` stays the default book; sim-only forever.
+- **Profitability diagnostics (2026-09-16 evening, v0.7.100; other team's EOD GO, shadow only):** durable decision ledger for the
+  close report (unique decisions, revisions as versions, raw rows apart), decision-time records beside corrected history, entry
+  location + attempt context at every fire, contract candidates followed at 2/5/10 min and the exit with after-cost outcomes,
+  allocation-refused candidates quoted in the shadow, `zargar.tools.team2_diag_report`. HOLD: no new entry filter, wider stop,
+  loss allowance, near-ITM eligibility or concurrency from one day. Tomorrow's review reads the report's counts and coverage.
+- **C6 is the priority dependency:** `notes/research/2026-09-16-c6-completion-plan.md` — banked exchange tape verified complete
+  for RTH 2026-08-20 → 09-16; open: the live-vs-replay ATR difference (F119, user ruling) and the reviewed `c6-evidence.json`;
+  then the receipt READY and the activation snapshot. Never waived.
 - **EOD corrective batch 2026-09-14 (v0.7.73 → v0.7.82): CLOSED 2026-09-14** — A–G accepted by the other team
   (durable refusal overlay, entry gate at every order path incl. transport retries, decision watermark, funnel from
   durable verdicts, uncertain submissions reconciled by the venue's report with cumulative fills, present-time stop

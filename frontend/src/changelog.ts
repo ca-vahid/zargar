@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.98";
+export const APP_VERSION = "0.7.100";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.100",date:"2026-09-16",title:"Team2 measures its entries and contracts in the shadow",items:[
+    {tag:"fixed",text:"Team2 close report: refusals and skips are counted as UNIQUE decisions from a durable ledger (event, setup, source minute) that rides the persisted state and is rebuilt from the journal - the 400-row display buffer no longer decides the day's funnel, a re-quoted price on the same candidate is a revision, and raw row counts are reported apart. The scorecard now carries an immutable decision-time view of every fire (signal and confirmation times, tape and rules identity, release and build) beside the corrected-history comparison."},
+    {tag:"new",text:"Team2 profitability diagnostics (shadow measurements, techniques.team2.diagnostics, no order decision changes): every entry records its confirmation close, pullback candle, setup level, entry line, the underlying at the order boundary and the distances in ATR (same-close confirmation and moved-away labels); every attempt records first vs subsequent entry into the setup, whether the previous attempt lost and what fresh evidence existed; the picker keeps the selected contract and the alternatives it examined with their live quotes and Greeks, follows them 2, 5 and 10 minutes later and at the actual exit, and compares after-cost outcomes (ask-to-bid after two commissions; missing quotes stay unknown). A candidate refused by an allocation cap is quoted in the shadow too."},
+    {tag:"new",text:"python -m zargar.tools.team2_diag_report --date YYYY-MM-DD: the session's entry situations and contract choices ranked on after-cost outcomes, with observation counts and missing-data coverage."},
+  ]},
   {version:"0.7.98",date:"2026-09-16",title:"Current Cartel guidance and integrated release identity",items:[
     {tag:"improved",text:"Cartel's Method documentation now explains research readiness, fair baseline retries, short-pool counts, data warnings and actual versus modeled results. Stale operational snapshots are replaced with dated references."},
     {tag:"fixed",text:"The shared build-identity helper is retained on main, and health remains available if build identification fails. Deployment still requires verified source, artifact and restored state."},

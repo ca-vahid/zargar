@@ -130,6 +130,7 @@ TECHNIQUE_TARGET_DISTANCE = "TechniqueTargetDistance"    # diagnostic only: dist
 TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs the walk-forward replay
 TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time
 TECHNIQUE_PLAN_CONTRACT = "TechniquePlanContract"      # Team2 F108: candidate -> live quotes -> verdict (picked | deferred | refused), with every contract examined
+TECHNIQUE_PLAN_DIAGNOSTIC = "TechniquePlanDiagnostic"  # Team2 2026-09-16: SHADOW measurements (entry location, attempt context, contract candidates + follow-up quotes) - never a decision
 OPTIONS_CARTEL_PREFLIGHT = "TechniqueCartelPreflight"
 OPTIONS_CARTEL_LOSS_HALT = "TechniqueCartelLossHalt"
 OPTIONS_CARTEL_MARKS_RECOVERED = "TechniqueCartelRiskMarksRecovered"

@@ -44,6 +44,7 @@ from ...options.pick import MAX_OVER_TARGET
 from .rules import apply_overrides, Team2Rules, rules_from_settings
 from .scenario import target_is_ahead
 from .session import simulate_session
+from . import diagnostics as diag
 
 log = logging.getLogger("zargar.techniques.team2")
 
@@ -261,7 +262,9 @@ class Team2Runner(PlanRunner):
         self._sync_unfilled(ap)
         plan = ap.plan if isinstance(getattr(ap, "plan", None), dict) else {}
         return {"executionRefused": list(plan.get("executionRefused") or []),
-                "decisionWatermark": self._decision_wm.get(ap.run_id)}
+                "decisionWatermark": self._decision_wm.get(ap.run_id),
+                "decisionLedger": diag.ledger_state(self._ledger_of(ap.run_id)),          # 2026-09-16: the close report's record
+                "diagnostics": self.__dict__.get("_diag", {}).get(ap.run_id)}
 
     def restore_extras(self, ap: ArmedPlan, state: dict) -> None:
         for tid in (state or {}).get("executionRefused") or []:
@@ -269,6 +272,13 @@ class Team2Runner(PlanRunner):
         wm = (state or {}).get("decisionWatermark")
         if wm:
             self._decision_wm[ap.run_id] = max(int(wm), int(self._decision_wm.get(ap.run_id) or 0))
+        led = (state or {}).get("decisionLedger")
+        if led:
+            self.__dict__.setdefault("_ledger", {})[ap.run_id] = diag.ledger_from_state(led)
+        dg = (state or {}).get("diagnostics")
+        if isinstance(dg, dict) and isinstance(dg.get("attempts"), dict):
+            pend = [dict(p, status=("pending" if p.get("status") == "inflight" else p.get("status"))) for p in (dg.get("pending") or [])]
+            self.__dict__.setdefault("_diag", {})[ap.run_id] = {"attempts": dict(dg["attempts"]), "pending": pend}
 
     def _entry_time_refusal(self, ap: ArmedPlan, stage: str) -> str | None:
         """R2/E: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
@@ -289,6 +299,8 @@ class Team2Runner(PlanRunner):
         return None
 
     async def entry_gate(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
+        if stage == "order" and not getattr(trade, "is_add", False):
+            self._diag_submission(ap, trade)                 # shadow: the underlying at the order boundary (2026-09-16)
         return self._entry_time_refusal(ap, stage)
 
     def entry_guard_predicate(self, ap: ArmedPlan, trade: Trade) -> str | None:
@@ -429,41 +441,12 @@ class Team2Runner(PlanRunner):
             # under the floor (further out is only cheaper). Whatever was not examined is reported as unexamined —
             # a deferral, never a "no contract" verdict.
             limit = max(1, int(rules.quote_candidates))
-            examined: list[dict] = []
-            eligible: list[dict] = []
-            unpriced = 0
-            stopped_under_floor = False
-            for raw in otm[:limit]:
-                c = dict(raw)
-                delayed_ask = float(c.get("ask") or 0)
-                c["priced"] = "none"
-                c["bid"], c["ask"] = 0.0, 0.0                 # the delayed quote is never the price
-                try:
-                    await opts.reprice(c)                      # `priced: opra` when the live NBBO is served
-                except Exception as exc:  # noqa: BLE001
-                    c["priced"] = "none"
-                    c["_error"] = str(exc)
-                live = c.get("priced") == "opra" or c.get("source") == "opra" or c.get("delayed") is False
-                fresh = live and float(c.get("ask") or 0) > 0
-                if fresh:
-                    c["priced"] = "opra"
-                if not fresh and not rules.require_fresh_quote and delayed_ask > 0:
-                    c["ask"], c["bid"], c["priced"] = delayed_ask, float(raw.get("bid") or 0), "chain"
-                    fresh = True
-                examined.append({"strike": float(c["strike"]), "symbol": c.get("symbol"), "delayedAsk": delayed_ask,
-                                 "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced"),
-                                 "eligible": bool(fresh)})
-                if not fresh:
-                    unpriced += 1
-                    continue
-                eligible.append(c)
-                if float(c["ask"]) < floor:
-                    stopped_under_floor = True
-                    break
-            unexamined = max(0, len(otm) - len(examined)) if not stopped_under_floor else 0
-            pick = select_by_premium(eligible, spot, trade.direction, target_premium=rules.target_premium,
-                                     premium_floor=rules.premium_floor, expiry=expiry, today=today,
-                                     is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick) if eligible else None
+            qres = await self._quote_examined(opts, otm, spot, trade.direction, rules, expiry, today)
+            examined, eligible, unpriced, unexamined, pick = (qres["examined"], qres["eligible"], qres["unpriced"],
+                                                              qres["unexamined"], qres["pick"])
+            # shadow (2026-09-16): the selected contract AND the alternatives examined, with their quotes and Greeks,
+            # followed at 2/5/10 min and at the actual exit — a measurement, never a veto
+            self._diag_candidates(ap, trade.trigger_id, qres, (pick.symbol if pick is not None else None), spot, rules, chain, opts)
             # R2: the quotes took time — re-check the actual clock before a contract can become an order
             now_et = dt.datetime.fromtimestamp(time.time(), ET)
             live_session = str(getattr(ap, "plan_for", "") or "") == now_et.strftime("%Y-%m-%d")
@@ -520,6 +503,294 @@ class Team2Runner(PlanRunner):
                               direction=trade.direction)
             self._record_unfilled(ap, trade.trigger_id)
             return None
+
+    async def _quote_examined(self, opts, otm: list[dict], spot: float, direction: str, rules: Team2Rules, expiry: str, today) -> dict:
+        """The picker's quoting walk (F105/F108), factored so the shadow quote of a refused candidate examines exactly what
+        the live pick would have: the nearest listed OTM contracts quoted live one by one, the walk stopping only on a
+        FRESH ask under the floor; whatever was not examined is reported as unexamined."""
+        from ...options.pick import select_by_premium
+        limit = max(1, int(rules.quote_candidates))
+        floor = float(rules.premium_floor)
+        examined: list[dict] = []
+        eligible: list[dict] = []
+        unpriced = 0
+        stopped_under_floor = False
+        for raw in otm[:limit]:
+            c = dict(raw)
+            delayed_ask = float(c.get("ask") or 0)
+            c["priced"] = "none"
+            c["bid"], c["ask"] = 0.0, 0.0                 # the delayed quote is never the price
+            try:
+                await opts.reprice(c)                      # `priced: opra` when the live NBBO is served
+            except Exception as exc:  # noqa: BLE001
+                c["priced"] = "none"
+                c["_error"] = str(exc)
+            live = c.get("priced") == "opra" or c.get("source") == "opra" or c.get("delayed") is False
+            fresh = live and float(c.get("ask") or 0) > 0
+            if fresh:
+                c["priced"] = "opra"
+            if not fresh and not rules.require_fresh_quote and delayed_ask > 0:
+                c["ask"], c["bid"], c["priced"] = delayed_ask, float(raw.get("bid") or 0), "chain"
+                fresh = True
+            examined.append({"strike": float(c["strike"]), "symbol": c.get("symbol"), "delayedAsk": delayed_ask,
+                             "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced"),
+                             "eligible": bool(fresh)})
+            if not fresh:
+                unpriced += 1
+                continue
+            eligible.append(c)
+            if float(c["ask"]) < floor:
+                stopped_under_floor = True
+                break
+        unexamined = max(0, len(otm) - len(examined)) if not stopped_under_floor else 0
+        pick = select_by_premium(eligible, spot, direction, target_premium=rules.target_premium,
+                                 premium_floor=rules.premium_floor, expiry=expiry, today=today,
+                                 is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick) if eligible else None
+        return {"examined": examined, "eligible": eligible, "unpriced": unpriced, "unexamined": unexamined, "pick": pick,
+                "listed": len(otm)}
+
+    # ------------------------------------------------------------- shadow diagnostics (2026-09-16, review team GO)
+    # Measurements only: entry location, attempt context, the contract alternatives and their follow-up quotes, the
+    # decision-time record. Nothing here changes an order decision; `techniques.team2.diagnostics=false` turns the
+    # measurements off (the decision ledger below stays on — it is the close report's record).
+    def _diag_on(self) -> bool:
+        try:
+            return bool(self.rt("diagnostics", True))
+        except Exception:  # noqa: BLE001
+            return True
+
+    def _ledger_of(self, run_id: str) -> dict:
+        return self.__dict__.setdefault("_ledger", {}).setdefault(run_id, {})
+
+    def _diag_of(self, run_id: str) -> dict:
+        return self.__dict__.setdefault("_diag", {}).setdefault(run_id, {"attempts": {}, "pending": []})
+
+    def _diag_attempt(self, ap: ArmedPlan, tid: str) -> dict:
+        d = self._diag_of(ap.run_id)
+        return d["attempts"].setdefault(tid, {"trigger": tid, "setup": str(tid).split("#")[0], "observations": {}, "candidates": []})
+
+    def note_decision(self, ap: ArmedPlan, rec: dict) -> None:
+        """Every logged refusal / skip / contract verdict lands in the durable ledger under a STABLE identity (event,
+        setup, source minute); a price revision of the same candidate is a version, not a second decision."""
+        if not diag.is_decision(rec.get("event")):
+            return
+        r = dict(rec)
+        if r.get("sourceTs") is None:
+            t = ap.trades.get(str(r.get("trigger"))) if r.get("trigger") is not None else None
+            if t is not None:
+                r["sourceTs"] = t.fired_ts
+        diag.note_decision(self._ledger_of(ap.run_id), r)
+
+    def _diag_emit(self, ap: ArmedPlan, kind: str, payload: dict) -> None:
+        journal = getattr(getattr(self, "engine", None), "journal", None)
+        if journal is None:
+            return
+
+        async def _write():
+            try:
+                await journal.append(ev.TECHNIQUE_PLAN_DIAGNOSTIC, {"runId": ap.run_id, "symbol": ap.symbol, "kind": kind, **payload},
+                                     aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+            except Exception:  # noqa: BLE001
+                log.debug("team2 diagnostic not journaled (%s)", kind, exc_info=True)
+        try:
+            task = asyncio.create_task(_write(), name=f"team2-diag-{ap.symbol}-{kind}")
+            self.__dict__.setdefault("_diag_tasks", set()).add(task)
+            task.add_done_callback(self.__dict__["_diag_tasks"].discard)
+        except RuntimeError:
+            pass
+
+    def _diag_signal(self, ap: ArmedPlan, e: dict, setup: dict, trade: Trade, *, journal: bool) -> None:
+        """At the fire: where the entry sits on the tape (confirmation close, pullback candle, level, entry line, ATR
+        distances), which attempt into the setup this is, and the immutable decision-time record of what the desk knew."""
+        if not journal or not self._diag_on():
+            return
+        try:
+            rules = self.rules_for(ap)
+            bars = list(self._bars.get(ap.run_id, []))
+            today = [b for b in bars if session_date(b.ts) == ap.plan_for]
+            loc = diag.entry_location(e, setup, today, confirm_tf_ms=int(rules.confirm_tf_min) * 60_000)
+            att = diag.attempt_context(str(trade.setup_id), trade.trigger_id, int(trade.fired_ts or 0), list(ap.trades.values()),
+                                       self._fees_paid, today, trade.direction)
+            rec = self._diag_attempt(ap, trade.trigger_id)
+            rec["entryLocation"], rec["attempt"] = loc, att
+            import zargar as _pkg
+            rec["decisionTime"] = {
+                "trigger": trade.trigger_id, "setup": trade.setup_id, "signalTs": int(e.get("ts") or 0), "signalTime": e.get("time"),
+                "confirmationCloseTs": loc.get("confirmationCloseTs"), "entryKind": e.get("entryKind"), "entryLine": e.get("spot"),
+                "setupLevel": loc.get("setupLevel"), "bucket": e.get("bucket"), "sizeMult": e.get("sizeMult"), "direction": trade.direction,
+                "stop": trade.stop, "targets": list(trade.targets), "targetKind": trade.target_kind,
+                "modelStrike": e.get("strike"), "modelPremium": e.get("premium"), "why": str(e.get("why") or "")[:300],
+                "inputs": {"tapeHash": diag.tape_hash(today, int(e.get("ts") or 0)), "bars": len(today),
+                           "decisionWatermark": self._decision_wm.get(ap.run_id), "rulesHash": diag.rules_hash(rules),
+                           "appVersion": getattr(_pkg, "__version__", None),
+                           "build": (getattr(_pkg, "build_sha", lambda: None)() or None),
+                           "experiment": (ap.plan or {}).get("experiment") if isinstance(ap.plan, dict) else None},
+                "recordedAt": int(time.time() * 1000)}
+            self._diag_emit(ap, "entry_location", {"trigger": trade.trigger_id, **loc})
+            self._diag_emit(ap, "attempt", {"trigger": trade.trigger_id, **att})
+            self._diag_emit(ap, "decision_time", rec["decisionTime"])
+        except Exception:  # noqa: BLE001
+            log.debug("team2 diagnostic (signal) failed", exc_info=True)
+
+    def _diag_submission(self, ap: ArmedPlan, trade: Trade) -> None:
+        """At the order boundary: the underlying NOW against the signal candle (has price moved on?)."""
+        if not self._diag_on():
+            return
+        try:
+            rec = self._diag_of(ap.run_id)["attempts"].get(trade.trigger_id)
+            if rec is None or not rec.get("entryLocation") or "submission" in rec["entryLocation"]:
+                return
+            q = self.engine.quotes.get(ap.symbol)
+            last = float(q.last) if q is not None and q.last and q.last > 0 else None
+            disp = diag.submission_displacement(rec["entryLocation"], last, int(time.time() * 1000), getattr(q, "ts", None))
+            rec["entryLocation"].update(disp)
+            self._diag_emit(ap, "entry_submission", {"trigger": trade.trigger_id, **disp})
+        except Exception:  # noqa: BLE001
+            log.debug("team2 diagnostic (submission) failed", exc_info=True)
+
+    def _diag_candidates(self, ap: ArmedPlan, tid: str, qres: dict, pick_symbol: str | None, spot: float, rules: Team2Rules,
+                         chain, opts, *, shadow: bool = False, refusal: str | None = None) -> None:
+        """The contracts the picker examined (selected + alternatives) with their quotes and Greeks at the signal, and
+        the follow-up schedule: 2/5/10 min after the quote, plus the actual exit when a position follows."""
+        if not self._diag_on():
+            return
+        try:
+            now = int(time.time() * 1000)
+            rows_by_sym: dict[str, dict] = {}
+            for r in (chain or []):
+                sym = str(r.get("symbol") or "")
+                if sym:
+                    snap = opts.snapshot_cached(sym) if opts is not None and hasattr(opts, "snapshot_cached") else None
+                    rows_by_sym[sym] = dict(snap) if snap else dict(r)
+            cands = diag.candidate_rows(qres.get("examined") or [], rows_by_sym, pick_symbol, floor=float(rules.premium_floor),
+                                        band_hi=float(rules.target_premium) * MAX_OVER_TARGET, spot=spot, quote_ts=now)
+            rec = self._diag_attempt(ap, tid)
+            rec.update({"candidates": cands, "quoteTs": now, "shadow": bool(shadow), "refusal": refusal, "selected": pick_symbol,
+                        "listed": qres.get("listed"), "unexamined": qres.get("unexamined"), "unpriced": qres.get("unpriced")})
+            rec.setdefault("observations", {})
+            d = self._diag_of(ap.run_id)
+            if cands and not any(p["attempt"] == tid for p in d["pending"]):
+                d["pending"] += diag.schedule(tid, now, with_exit=(not shadow and pick_symbol is not None))
+            self._diag_emit(ap, "contract_candidates", {"trigger": tid, "shadow": bool(shadow), "refusal": refusal, "quoteTs": now,
+                                                        "spot": spot, "selected": pick_symbol, "candidates": cands,
+                                                        "listed": qres.get("listed"), "unexamined": qres.get("unexamined"),
+                                                        "unpriced": qres.get("unpriced")})
+        except Exception:  # noqa: BLE001
+            log.debug("team2 diagnostic (candidates) failed", exc_info=True)
+
+    def _diag_shadow(self, ap: ArmedPlan, e: dict, res, tid: str, refusal: str) -> None:
+        """A candidate refused BEFORE the picker (allocation caps) is quoted in the shadow — the same walk the live pick
+        would have made — so the review can see what the blocked contracts did. No trade, no verdict, no order."""
+        if ap.config.mode != "auto" or not self._diag_on():
+            return
+
+        async def _run():
+            try:
+                opts = getattr(self.engine, "options", None)
+                if opts is None:
+                    return
+                setup = next((s for s in res.setups if s["id"] == e.get("setup")), {})
+                direction = setup.get("direction") or ("long" if (e.get("regime") or {}).get("stack") == "bull" else "short")
+                rules = self.rules_for(ap)
+                provider = opts.provider()
+                today = dt.datetime.now(ET).date()
+                expiry, _why = await self._expiry_for(provider, ap.symbol, rules, today)
+                if expiry is None:
+                    return
+                chain = await provider.chain(ap.symbol, expiry)
+                spot = float(e.get("spot") or 0)
+                q = self.engine.quotes.get(ap.symbol)
+                if q is not None and q.last and q.last > 0:
+                    spot = float(q.last)
+                want = "call" if direction == "long" else "put"
+                side = [c for c in (chain or []) if (c.get("option_type") or "").lower() == want and c.get("strike") is not None and c.get("symbol")]
+                otm = [c for c in side if (float(c["strike"]) > spot if want == "call" else float(c["strike"]) < spot)]
+                otm.sort(key=lambda c: abs(float(c["strike"]) - spot))
+                qres = await self._quote_examined(opts, otm, spot, direction, rules, expiry, today)
+                rec = self._diag_attempt(ap, tid)
+                rec["entryLocation"] = diag.entry_location(e, setup, [b for b in self._bars.get(ap.run_id, []) if session_date(b.ts) == ap.plan_for],
+                                                           confirm_tf_ms=int(rules.confirm_tf_min) * 60_000)
+                self._diag_candidates(ap, tid, qres, (qres["pick"].symbol if qres["pick"] is not None else None), spot, rules, chain, opts,
+                                      shadow=True, refusal=refusal)
+            except Exception:  # noqa: BLE001
+                log.debug("team2 shadow quote failed", exc_info=True)
+        try:
+            task = asyncio.create_task(_run(), name=f"team2-shadow-{ap.symbol}-{tid}")
+            self.__dict__.setdefault("_diag_tasks", set()).add(task)
+            task.add_done_callback(self.__dict__["_diag_tasks"].discard)
+        except RuntimeError:
+            pass
+
+    @staticmethod
+    def _diag_routing(t: Trade, fees: float) -> dict:
+        exits = [x for x in (t.exits or []) if x.get("status") == "FILLED" and x.get("price") is not None]
+        qty = sum(float(x.get("filledQty") or x.get("qty") or 0) for x in exits)
+        px = (sum(float(x["price"]) * float(x.get("filledQty") or x.get("qty") or 0) for x in exits) / qty) if qty > 0 else None
+        return {"status": t.status, "filledQty": float(t.filled_qty or 0), "avgFill": t.avg_fill, "contract": t.order_symbol,
+                "netPnl": (round(float(t.realized_pnl or 0) - float(fees or 0), 2) if float(t.filled_qty or 0) > 0 else None),
+                "exitPrice": (round(px, 4) if px is not None else None), "openedTs": t.opened_ts, "closedTs": t.closed_ts,
+                "submitUncertain": bool(getattr(t, "submit_uncertain", False))}
+
+    async def _diag_tick(self) -> None:
+        """Called from the ~2 s quote watch: refresh the routing snapshot of every diagnosed attempt, make the exit
+        observation due when its position has closed, and take every follow-up observation that is due."""
+        if not self._diag_on():
+            return
+        now = int(time.time() * 1000)
+        plans = list(self._armed.values()) + list(getattr(self, "_closing", {}).values())
+        for ap in plans:
+            d = self.__dict__.get("_diag", {}).get(ap.run_id)
+            if not d:
+                continue
+            for tid, rec in list(d["attempts"].items()):
+                t = ap.trades.get(tid)
+                if t is None:
+                    continue
+                rec["routing"] = self._diag_routing(t, self._fees_paid(t))
+                if t.status == "closed" and float(t.filled_qty or 0) > 0:
+                    for p in d["pending"]:
+                        if p["attempt"] == tid and p["horizon"] == "exit" and p["status"] == "pending" and p["dueTs"] is None:
+                            p["dueTs"] = int(t.closed_ts or now)
+            for p in d["pending"]:
+                if p["status"] == "pending" and p["dueTs"] is not None and int(p["dueTs"]) <= now:
+                    p["status"] = "inflight"
+                    task = asyncio.create_task(self._diag_observe(ap, p), name=f"team2-observe-{ap.symbol}-{p['attempt']}-{p['horizon']}")
+                    self.__dict__.setdefault("_diag_tasks", set()).add(task)
+                    task.add_done_callback(self.__dict__["_diag_tasks"].discard)
+
+    async def _diag_observe(self, ap: ArmedPlan, p: dict) -> None:
+        d = self._diag_of(ap.run_id)
+        rec = d["attempts"].get(p["attempt"])
+        opts = getattr(self.engine, "options", None)
+        quotes: dict[str, dict | None] = {}
+        try:
+            for c in (rec or {}).get("candidates") or []:
+                sym = str(c.get("symbol") or "")
+                q = None
+                if sym and opts is not None:
+                    try:
+                        r = await opts.reprice({"symbol": sym})
+                        qq = self.engine.quotes.get(sym)
+                        if r:
+                            q = {"bid": r.get("bid"), "ask": r.get("ask"), "priced": r.get("priced"), "quoteTs": getattr(qq, "ts", None)}
+                    except Exception:  # noqa: BLE001
+                        q = None
+                quotes[sym] = q
+            obs = diag.observation(p["horizon"], p.get("dueTs"), int(time.time() * 1000), quotes)
+        except Exception as exc:  # noqa: BLE001
+            obs = {"horizon": p["horizon"], "dueTs": p.get("dueTs"), "takenTs": int(time.time() * 1000), "status": "unknown",
+                   "reason": str(exc)[:200], "quotes": {}}
+        if rec is not None:
+            rec.setdefault("observations", {})[p["horizon"]] = obs
+        p["status"] = "done"
+        self._diag_emit(ap, "contract_observation", {"trigger": p["attempt"], **obs})
+
+    async def on_quote_watch(self) -> None:
+        await super().on_quote_watch()
+        try:
+            await self._diag_tick()
+        except Exception:  # noqa: BLE001
+            log.debug("team2 diagnostic tick failed", exc_info=True)
 
     def preopen_due(self, now: dt.datetime) -> bool:
         m = now.hour * 60 + now.minute
@@ -637,6 +908,17 @@ class Team2Runner(PlanRunner):
                         if added:
                             self._log(ap, "execution_overlay_restored", f"{added} refused/deferred fire(s) re-exempted from the "
                                       f"read's proxy from the journal (R1)", restored=added)
+                    # 2026-09-16: the decision ledger is rebuilt from the same durable rows plus the skip rows — one entry per
+                    # (event, setup, source minute), so a restart neither loses nor duplicates a refusal
+                    srows = (await session.execute(_select(Event).where(Event.aggregate_id == ap.run_id,
+                                                                         Event.type == ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED)
+                                                   .order_by(Event.id))).scalars().all()
+                    led = self._ledger_of(ap.run_id)
+                    for r in list(rows) + list(srows):
+                        p = dict(r.payload or {})
+                        if p.get("sourceTs") is None and p.get("trigger") in ap.trades:
+                            p["sourceTs"] = ap.trades[p["trigger"]].fired_ts
+                        diag.note_journal_row(led, p)
         except Exception:  # noqa: BLE001
             log.warning("team2 contract verdicts not reloaded", exc_info=True)
         return n
@@ -948,7 +1230,7 @@ class Team2Runner(PlanRunner):
         if tid in ap.trades:
             return
         if ap.status == "paused":
-            self._log(ap, "paused_skip", f"{tid}: conditions met but the plan is paused", trigger=tid)
+            self._log(ap, "paused_skip", f"{tid}: conditions met but the plan is paused", trigger=tid, sourceTs=e.get("ts"))
             return
         # The kill switch blocks the MONEY modes. Alert mode places nothing (`_fire_rest` only
         # records `trade.status = "alert"`), so a halt on the shared portfolio — which another
@@ -957,11 +1239,12 @@ class Team2Runner(PlanRunner):
         # modes only; alert/proposal keep recording every read").
         if halted and ap.config.mode != "alert":
             why = self.engine.trading_halted(ap.config.portfolio_id) or "kill switch engaged"
-            self._log(ap, "halt_skip", f"{tid}: conditions met but trading is halted on this book — {why}", trigger=tid, why=why)
+            self._log(ap, "halt_skip", f"{tid}: conditions met but trading is halted on this book — {why}", trigger=tid, why=why,
+                      sourceTs=e.get("ts"))
             return
         open_or_working = sum(1 for t in ap.trades.values() if t.status in ("fired", "submitting", "working", "open"))
         if ap.config.mode == "auto" and open_or_working >= max(1, ap.config.max_open_trades):
-            self._log(ap, "max_open_skip", f"{tid}: fired but already holding {open_or_working}", trigger=tid)
+            self._log(ap, "max_open_skip", f"{tid}: fired but already holding {open_or_working}", trigger=tid, sourceTs=e.get("ts"))
             return
         # F29: the author trades ONE book — max_losses_per_day counts the whole desk (model losses across
         # every plan, plus real closed losers in money modes), not one budget per symbol
@@ -972,12 +1255,13 @@ class Team2Runner(PlanRunner):
             self._log(ap, "skip_loss_cap_desk",
                       f"{tid}: {self.losses_across_plans(portfolio_id=book)} losing trades across this book's plans today (max "
                       f"{rules_now.max_losses_per_day}, counted from the {self.losses_basis(portfolio_id=book)}) — done for the day (F29, per book)",
-                      trigger=tid)
+                      trigger=tid, sourceTs=e.get("ts"))
             if journal:
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_loss_cap_desk",
                     "losses": self.losses_across_plans(portfolio_id=book), "max": int(rules_now.max_losses_per_day), "ts": e.get("ts"),
                     "portfolioId": book}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                self._diag_shadow(ap, e, res, tid, "skip_loss_cap_desk")     # shadow: what the refused candidate's contracts did
             return
         # A12: SPY/QQQ/IWM fire together on index moves — one Team2 position across ALL its plans
         # (money modes only; alert/proposal keep recording every read)
@@ -987,13 +1271,14 @@ class Team2Runner(PlanRunner):
             if across >= cap:
                 self._log(ap, "max_concurrent_skip",
                           f"{tid}: fired but this book already holds {across} Team2 position(s) across its plans (cap {cap}, A12, per book)",
-                          trigger=tid)
+                          trigger=tid, sourceTs=e.get("ts"))
                 if journal:
                     await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "max_concurrent_positions",
                         "open": across, "max": cap, "ts": e.get("ts")},
                         aggregate_type="technique_run", aggregate_id=ap.run_id)
                     self._record_unfilled(ap, tid)          # R1: the book never held it
+                    self._diag_shadow(ap, e, res, tid, "max_concurrent_skip")   # shadow: the blocked candidate's contracts
                 return
         # R2 (2026-09-14): the read's clock is the bar's; the ORDER's clock is the wall. A signal recovered from a
         # delayed or replayed bar must not enter after the actual cutoff, outside its session, or when it is older
@@ -1029,7 +1314,7 @@ class Team2Runner(PlanRunner):
         target, target_refusal = self.resolve_fire_target(e, setup, spot, direction)
         if target_refusal is not None:
             # F72: REFUSE, never enter targetless. See `resolve_fire_target`.
-            self._log(ap, "skip_target_behind", f"{tid}: {target_refusal}", trigger=tid, spot=spot)
+            self._log(ap, "skip_target_behind", f"{tid}: {target_refusal}", trigger=tid, spot=spot, sourceTs=e.get("ts"))
             if journal:
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_target_behind",
@@ -1046,6 +1331,7 @@ class Team2Runner(PlanRunner):
         trade.setup_id = str(e.get("setup"))
         trade.target_kind = str(e.get("targetKind") or "plan")
         ap.trades[tid] = trade
+        self._diag_signal(ap, e, setup, trade, journal=journal)        # shadow: entry location + attempt context (2026-09-16)
         self._log(ap, "fired", f"{tid}: {e.get('why', '')}", trigger=tid, spot=spot, premiumModel=e.get("premium"),
                   strikeModel=e.get("strike"), modelBand=e.get("modelBand"), bucket=trade._bucket, early=e.get("early"), target=target,
                   targetKind=trade.target_kind, haltedAtFire=halted or None)
@@ -1542,13 +1828,18 @@ class Team2Runner(PlanRunner):
                              "avgFill": t.avg_fill, "qty": t.filled_qty, "contract": t.order_symbol,
                              "realizedPnl": round(t.realized_pnl - self._fees_paid(t), 2),
                              "note": "the book traded where the read (as recomputed now) did not"})
-        skips: dict[str, int] = {}
-        for e in ap.events:
-            k = str(e.get("event") or "")
-            if k.startswith("skip_") or k.startswith("contract_") or k in ("max_concurrent_skip", "max_open_skip", "halt_skip", "entry_capped",
-                                                                          "technique_loss_halt", "loss_halt", "stale_signal_skip",
-                                                                          "backdated_signal_skip", "entry_gate_refused"):
-                skips[k] = skips.get(k, 0) + 1
+        # 2026-09-16 (EOD review P2): the refusal funnel comes from the durable decision ledger — one entry per candidate
+        # (event, setup, source minute), revisions kept as versions — never from the capped display buffer. A plan
+        # restored from a release without the ledger falls back to the buffer, de-duplicated by the same rule.
+        ledger = self._ledger_of(ap.run_id) or diag.ledger_from_events(ap.events)
+        skips = diag.unique_counts(ledger)
+        diag_recs = list((self.__dict__.get("_diag", {}).get(ap.run_id) or {}).get("attempts", {}).values())
+        for rec in diag_recs:                                   # the routing facts as they stand at the close
+            t = ap.trades.get(rec.get("trigger"))
+            if t is not None:
+                rec["routing"] = self._diag_routing(t, self._fees_paid(t))
+        fee = float(getattr(self.rules_for(ap), "fee_per_contract", 0) or 0)
+        diagnostics = diag.summarize_day(diag_recs, fee) if diag_recs else None
         # the durable funnel (from the verdict list, which the journal backs — not the capped event list)
         opportunities = {str(t.trigger_id) for t in attempts} | {str(t.trigger_id) for t in real}
         funnel = {"attempts": len(opportunities), "filled": len(real), "verdicts": len(verdicts), "journalOnly": len(journal_only),
@@ -1561,7 +1852,15 @@ class Team2Runner(PlanRunner):
                 "theoreticalFires": len(model), "actualFires": len(real), "matched": matched,
                 "modelPnlPctSum": round(sum(float(mt.get("pnlPct") or 0) for mt in model), 2),
                 "realizedPnl": net, "realizedPnlGross": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
-                "skips": skips, "rows": rows, "bias": (sim.get("bias") or {}).get("label"),
+                "skips": skips, "skipRows": diag.row_counts(ledger), "decisions": diag.decisions_view(ledger),
+                "rows": rows, "correctedHistory": True,
+                "decisionTime": [dict(r["decisionTime"]) for r in diag_recs if r.get("decisionTime")],
+                "diagnostics": diagnostics,
+                "views": {"rows": "corrected history: the read as recomputed on the final tape vs the book",
+                          "decisionTime": "decision time: what the desk knew at each fire (immutable; inputs identified)",
+                          "skips": "unique decisions from the durable ledger", "skipRows": "raw log rows (revisions counted)",
+                          "diagnostics": "shadow measurements (entry location, attempts, contract alternatives after costs)"},
+                "bias": (sim.get("bias") or {}).get("label"),
                 "stopReason": ap.stop_reason or None}
 
     async def disarm(self, run_id: str, *, reason: str = "manual", flatten: bool = False) -> bool:
