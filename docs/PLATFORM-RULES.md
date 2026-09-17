@@ -2319,3 +2319,18 @@ Evidence + tests: `tests/test_sim_share_session_and_spread.py` (5) reproduce the
 seen while testing: `tests/test_sim_fill_evidence.py::test_fill_evidence_committed_with_execution` fails on main as it
 stands (expects `syntheticMode` True; the engine fixture no longer runs on synthetic quotes) — pre-existing, not from
 this change; owner of the quote-source default to confirm.
+
+### A locally transformed price never keeps venue provenance — 2026-09-17 (E17-01)
+
+`QuoteCache._apply_overlay` recentred an overlay's band on any incoming `last` outside it and left `source`/`source_ts`
+untouched, so a real-time OPRA band (1.90/2.00) bent toward a 15-minute-old chart print (0.70) became 0.65/0.75 "opra,
+fresh" and the sim priced a Practice fill at 0.75 (MRNA Sep-18 165C, 10:04:54 ET; +$112.92 four seconds later when the
+real band returned - audit `docs/techniques/tip/reviews/2026-09-17-mrna-quote-audit.md`). Rules: (1) a venue identity
+(`opra`, `ibkr`) is never recentred - a slower feed's print is kept as a print; (2) a delayed-chain estimate may be
+recentred (the 2026-09-02 GOOGL 0DTE lesson) but is then DERIVED: `Quote.raw_bid/raw_ask/raw_source/raw_source_ts`
+hold the parents, `source = "derived:<raw>"`, `transform = "recenter-v1"`, `Quote.delayed` is true; (3) money gates and
+the sim refuse transformed quotes and the fill evidence records `transform` + `raw*`. A freshness check can never
+authenticate a locally changed price. Tests: `tests/test_sep17_quote_provenance_review.py` (reviewer, verbatim) +
+`tests/test_quote_provenance_e17.py`. Pre-existing on main, unrelated: `test_options_service.py::test_option_order_practice_roundtrip`
+times out waiting for a Practice option fill off the delayed chain quote (refused since the OPRA-identity rule of
+2026-09-14) - owner of that test to re-express it on an OPRA quote.

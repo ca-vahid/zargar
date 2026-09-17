@@ -568,8 +568,13 @@ async def _expression_context(eng, ctx: dict) -> dict:
             equity = float(await eng.positions.equity(pid) or 0) or None
     budget, source = _geo.risk_budget(s, equity)
     allocation = ctx.get("budgetPerTip")
+    # fee basis = execcost's (review 2026-09-17: the preview used the commission alone and
+    # understated the modelled round trip by the regulatory $0.05 per contract per side)
+    from .execcost import fees_from_settings as _fees
+    _f = _fees(s)
     return {"riskBudget": budget, "riskBudgetSource": source, "allocationLimit": allocation,
-            "feePerContract": float(s.get("options.fee_per_contract", 0.0) or 0.0)}
+            "feePerContract": float(_f["feePerContract"]) + float(_f["regPerContract"]),
+            "feeBasis": "options.fee_per_contract + sim.reg_fee_per_contract per contract per side (execcost basis)"}
 
 
 async def _contract_evidence(eng, contract: str) -> dict:
