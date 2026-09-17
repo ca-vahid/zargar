@@ -100,7 +100,9 @@ class Engine:
         self.halt.pauses.update(restored.pauses)
 
         self.sim_executor = SimExecutor(settings=self.settings, synthetic_quotes=self.config.quote_source == "sim",
-                                        option_sessions=bool(getattr(self.config, "sim_option_sessions", True)))
+                                        option_sessions=bool(getattr(self.config, "sim_option_sessions", True)),
+                                        stock_sessions=bool(getattr(self.config, "sim_stock_sessions", True)),
+                                        max_spread_pct=float(getattr(self.config, "sim_max_spread_pct", 0.05) or 0.0))
         if self.config.broker == "ibkr":
             try:
                 from .brokers.ibkr import IBKRBroker
