@@ -1235,3 +1235,42 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
 - **Release state at the close:** live 0.7.96 build 4c84697; PR #174 merged to main (build helper + tolerant health on
   main); combined candidate 0.7.99 `53721b7` (main 0.7.98 + runtime 7a008d1 + CBOE 429 retry) ready, deploy awaits
   the user's go. Sep 17: auto sheet `fc9efd65418e` (111 setups) exists; the evening batch is the user's call.
+
+### 2026-09-16 evening - Sep 17 preparation done under a restart storm; execution follow-ups built (not deployed)
+
+- **Sep 17 batch (sheet `fc9efd65418e`, 111 eligible rows):** reviewed 111, setup 58, no-setup 53, armed 58 into EM
+  Practice (all effective `deterministic`, evidence off, auto), arming failures 0. Cost of the night: 21 paid reads
+  killed by engine restarts and re-promoted (~$3-8), and four batch attempts before one could finish.
+- **Six unplanned restarts today, none EM's:** 10:40-10:53 ET (helper missing, PLATFORM-RULES), 17:17 PT and 17:55 PT
+  (single 4 s health-probe timeouts under load - the 17:55 one mid-batch), 18:31 (the engine's LISTENER died,
+  `Accept failed on a socket`, WinError 64, while the process stayed alive), 18:34 (39 s after the previous start),
+  and 18:48-18:50 the Team2 desk's own deploy of v0.7.100 (PR #190). Load facts: the Cartel research job ran 80-180
+  technique runs per minute from ~17:30 to 18:40 (>1,200 runs) on the live engine, system CPU 100%, free RAM 1-3 GB of
+  32 (machine-wide: a WSL VM 6.7 GB, twelve Claude sessions 3.5 GB, browsers); the harness killed three of my
+  background jobs for memory. Live now: v0.7.100 build 172ce1f (not the EM candidate).
+- **Morning review inputs (equity $9,926, 2% budget $198.53, premium stop 50% -> one contract affordable only up to a
+  $3.97 ask; snapshot 2026-09-16):** 86 triggers on the 58 arms - 34 long (25 bounce, 9 breakout), 52 short (29
+  breakdown, 23 reject). Only 6 arms are option-tradeable by the liquidity screen. Longs: 2 would take an option,
+  32 fall back to shares (TP1 30% first sale). Shorts (puts only, no shares fallback): 29 have >= 1 affordable
+  contract, 16 have 0 (over budget - the NBIS/DELL/BE pattern of today), 7 have no snapshot contract. 71 of the 72
+  snapshot contracts expire 2026-09-18 = 1 DTE tomorrow (quarterly expiration Friday); 38 of them show a snapshot
+  spread > 12%, which T5.3/T5.4 refuse at the pick. Costs: $1.04 per contract per side ($2.08 round trip per
+  contract, $6.24 for 3), shares $0. First-sale rule: < 3 contracts exit in full at TP2; >= 3 contracts or shares
+  scale 30% at TP1. Median planned room to TP1: 2.1R (longs) / 1.6R (shorts).
+- **Event calendar (NOT from a feed - the app's macro calendar is empty; from the desk's calendar knowledge, verify
+  before the open):** Thu 2026-09-17 08:30 ET weekly jobless claims + Philadelphia Fed; the day after FOMC (Powell's
+  message digested overnight); Fri 2026-09-18 is the quarterly options/futures expiration - tomorrow's contracts are
+  1 DTE, so premium decay and pin behaviour are unusually strong; the Friday size multiplier applies Friday, not
+  tomorrow.
+- **Source ledger 2026-09-16 completed:** AMZN long 250 -> 255 (conditions: "above 250 can see 255/257", intraday,
+  available 09:23 ET, result `never_confirmed`); SPX 7677 -> 7750 long and 7580 -> 7500 short retained as index
+  context with conditions verbatim - no tradeable vehicle in the ledger, evaluation stays UNKNOWN by design. The
+  tool gained `--conditions`; missing information is stored as `null`, never invented.
+- **Execution follow-ups built on the EM branch `c74df44` (evidence + tests, NOT deployed):** loop-stall watch
+  (`zargar/loopwatch.py`), chart rendering off the loop (`render_chart_async`), CBOE priority + cooldown
+  (`cboe_priority`), watchdog STALL-vs-DOWN classification (`scripts/watchdog.ps1`, start-path owner's call), P-04 /
+  P-05 profitability cohorts (frozen addendum). Details: PLATFORM-RULES 2026-09-16 evening; README known gaps.
+- **Release state:** the frozen 0.7.99 candidate `68dc42a` is superseded by Team2's 0.7.100 for every Tips PR it
+  carried; what remains undeployed from EM is the CBOE 429 retry (`739e750`), the follow-ups above and the health
+  tolerance (already on main via PR #174). A new combined candidate needs the runtime checkout `172ce1f` as an
+  ancestor and the user's go.

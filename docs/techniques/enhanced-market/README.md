@@ -23,7 +23,14 @@ whenever a release, an activation or a review changes what is true. Last full re
 | `reviews/` | external review rounds, delivery responses, release verdicts, adopted regression packets | dated records; latest: `deterministic-final-review/DE-RESPONSE-2026-09-15.md` |
 | `notes/` | author video transcripts and feed notes | dated |
 
-## State of play (2026-09-16)
+## State of play (2026-09-16 evening)
+
+- **Sep 17 inventory:** 58 EM arms in EM Practice (86 triggers: 34 long / 52 short), all effective `deterministic`,
+  evidence off, from sheet `fc9efd65418e` (111 reviewed, 58 setup, 53 no-setup, 0 arming failures). Live runtime
+  v0.7.100 build `172ce1f` (Team2's deploy 18:50 PT); EM follow-ups on the branch at `c74df44`, NOT deployed.
+  Six unplanned restarts today (TRADING-RULES §5 "2026-09-16 evening").
+
+## State of play (2026-09-16, daytime)
 
 - **Runtime:** v0.7.96 build `4c84697` since 10:52 ET 2026-09-16, after three unplanned watchdog restarts
   (10:40 to 10:53 ET; a converged checkout had lost the health route's build helper, PLATFORM-RULES 2026-09-16).
