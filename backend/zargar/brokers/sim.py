@@ -44,6 +44,15 @@ def option_session_open(ts_ms: int) -> bool:
     end = 13 * 60 if is_early_close(t.date()) else 16 * 60
     return 9 * 60 + 30 <= m < end
 
+
+# F-HOLD-01 (2026-09-17): the SAME window gates simulated SHARE fills and stop triggers.
+# A resting GTC share stop at a real venue triggers on regular-session prints unless the
+# order was explicitly placed for extended hours; the sim used to trigger on ANY quote -
+# the quarantined ab shadow book's AFRM stop (65.00) "filled" 27 sh @ 44.99 at 03:59:54 ET
+# on a pre-market placeholder quote (bid 45.00 / ask 75.00, no source). Practice books
+# share this executor, so a Practice share stop could have done the same.
+regular_session_open = option_session_open
+
 # Familiar tickers get familiar prices; anything else gets a stable hash price.
 KNOWN_PRICES = {
     "AAPL": 232.0, "MSFT": 445.0, "NVDA": 128.0, "AMZN": 186.0, "GOOG": 172.0,
@@ -186,12 +195,16 @@ class SimExecutor(Executor):
         settings=None,                  # engine settings (fee schedule); None = Webull CA defaults
         synthetic_quotes: bool = False,
         option_sessions: bool = True,   # EOD-05: options fill only in an eligible venue session
+        stock_sessions: bool = False,   # F-HOLD-01: shares fill / stops trigger only in the regular session (the engine turns it ON from config)
+        max_spread_pct: float = 0.0,    # F-HOLD-01: a share quote wider than this (spread / mid) cannot price a fill (engine: 5%)
         clock=None,
     ) -> None:
         super().__init__()
         self._settings = settings
         self.synthetic_quotes = synthetic_quotes
         self._option_sessions = bool(option_sessions)
+        self._stock_sessions = bool(stock_sessions)
+        self._max_spread_pct = float(max_spread_pct or 0.0)
         self.clock = clock or (lambda: now_ms())
         self._working: dict[str, _Working] = {}
         self._oca: dict[str, set[str]] = {}
@@ -261,9 +274,19 @@ class SimExecutor(Executor):
                 o = w.order
                 if o.symbol != q.symbol or now < w.eligible_at or q.halted:
                     continue
-                if self._option_sessions and str(getattr(o, "sec_type", "") or "").upper() == "OPT" \
-                        and not option_session_open(now):
+                sec = str(getattr(o, "sec_type", "") or "").upper()
+                if self._option_sessions and sec == "OPT" and not option_session_open(now):
                     continue                       # EOD-05: resting, not filled — no session
+                if self._stock_sessions and sec != "OPT" and not getattr(o, "outside_rth", False) \
+                        and not regular_session_open(now):
+                    # F-HOLD-01: a share order (stop, market or limit) placed for the regular
+                    # session rests outside it - no pre-market trigger, no after-hours fill
+                    reason = "Share orders fill and stops trigger only in the regular session (09:30-16:00 ET)"
+                    if reason != w.waiting_reason:
+                        waiting.append(ExecReport(kind="fill_waiting", order_id=o.id, reason=reason,
+                            evidence=self.quote_evidence(q, now)))
+                    w.waiting_reason = reason
+                    continue
                 reason = self.quote_rejection(o, q, now)
                 if reason:
                     if reason != w.waiting_reason:
@@ -303,6 +326,14 @@ class SimExecutor(Executor):
             return "Delayed quotes cannot price simulated fills"
         if not 0 <= at-q.ts <= 15_000:
             return "Quote receipt is stale or future-dated"
+        if order.sec_type != "OPT" and self._max_spread_pct > 0:
+            mid = (q.bid + q.ask) / 2.0
+            if mid > 0 and (q.ask - q.bid) / mid > self._max_spread_pct:
+                # F-HOLD-01: a 45.00 / 75.00 "quote" is a placeholder book, not a market -
+                # it cannot trigger a stop or price a fill (waits for a plausible quote)
+                return (f"Quote spread implausible for a simulated share fill "
+                        f"(bid {q.bid:.2f} / ask {q.ask:.2f} = {100 * (q.ask - q.bid) / mid:.0f}% of mid, "
+                        f"limit {100 * self._max_spread_pct:.0f}%)")
         if self.synthetic_quotes and q.source in ("", "sim"):
             return None
         if order.sec_type == "OPT" and (q.source not in ("opra", "ibkr") or q.source_ts <= 0):
