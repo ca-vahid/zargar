@@ -1224,15 +1224,57 @@ async def _rules_text(eng, *, as_of=None, core_only: bool = False) -> tuple[str,
     return lines, len(rules), snapshot
 
 
-def _parse_opinion(raw: str) -> AnalystOpinion:
-    s = raw.strip()
+def parse_single_object(raw: str, model_cls, *, what: str = "reply"):
+    """E17-F2: exactly ONE schema-valid object with harmless surrounding prose / fences.
+    The first complete object is decoded and validated; the remainder is scanned for
+    FURTHER schema-valid objects - a second one is an AMBIGUOUS reply (a "correction"
+    after a verdict, two verdicts) and is refused with a typed reason so the caller's
+    bounded same-transcript clarification asks for one object. Trailing JSON that does
+    not validate against the schema (a stray {"x": 1}) is harmless and ignored; trailing
+    prose is harmless. Trading instructions are never chosen by "first object wins"."""
+    import json as _json
+    s = (raw or "").strip()
     if s.startswith("```"):
         s = s.split("\n", 1)[1] if "\n" in s else s
         s = s.rsplit("```", 1)[0]
-    i, j = s.find("{"), s.rfind("}")
-    if i == -1 or j <= i:
-        raise ValueError("no JSON object in analyst reply")
-    return AnalystOpinion.model_validate_json(s[i:j + 1])
+    i = s.find("{")
+    if i == -1:
+        raise ValueError(f"validation: no JSON object in {what}")
+    dec = _json.JSONDecoder()
+    try:
+        obj, end = dec.raw_decode(s, i)
+    except ValueError as exc:
+        raise ValueError(f"validation: invalid JSON in {what} ({exc})") from exc
+    try:
+        parsed = model_cls.model_validate(obj)
+    except Exception as exc:
+        raise ValueError(f"validation: {str(exc)[:600]}") from exc
+    # scan the remainder for competing schema-valid objects (bounded)
+    pos, extra, scanned = end, 0, 0
+    while scanned < 20:
+        k = s.find("{", pos)
+        if k == -1:
+            break
+        scanned += 1
+        try:
+            obj2, end2 = dec.raw_decode(s, k)
+        except ValueError:
+            pos = k + 1
+            continue
+        pos = end2
+        if isinstance(obj2, dict):
+            try:
+                model_cls.model_validate(obj2)
+                extra += 1
+            except Exception:
+                pass                                   # unrelated JSON - harmless
+    if extra:
+        raise ValueError(f"ambiguity: {extra + 1} schema-valid objects in one {what} - reply with exactly ONE JSON object")
+    return parsed
+
+
+def _parse_opinion(raw: str) -> AnalystOpinion:
+    return parse_single_object(raw, AnalystOpinion, what="analyst reply")
 
 
 class _Recorder:
@@ -1538,6 +1580,20 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                                "reserveS": st.get("reserveS")})
             messages.append({"role": "user", "content":
                              "Time is nearly up. Reply with ONLY the JSON object now — request no more tools."})
+        reserve = float(st.get("reserveS") or FINAL_RESERVE_S)
+        # E17-F1: OPTIONAL work (a tool-capable call) may only spend what is left ABOVE the
+        # reserve; when that is gone the call becomes the final one (tools off, bounded by
+        # the reserve itself). The reserve is therefore genuinely kept, not merely checked.
+        if remaining is not None and not force_final and (remaining - reserve) < 1.0:
+            force_final = True
+            st["forceFinal"] = True
+            if not st.get("finalDemanded"):
+                st["finalDemanded"] = True
+                rec.step("note", f"Optional-work budget exhausted ({stage}: {round(remaining, 1)} s left, reserve {reserve:g} s) "
+                                 "— tools disabled, asking for the JSON answer now.",
+                         deadline={"kind": "reserve", "stage": stage, "remainingS": round(remaining, 1), "reserveS": reserve})
+                messages.append({"role": "user", "content":
+                                 "Time is nearly up. Reply with ONLY the JSON object now — request no more tools."})
         _sys_param, _tools_param = cacheable_request(system, TOOLS, enabled=st.get("promptCache", False))
         create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=messages, tools=_tools_param)
         if force_final:
@@ -1545,11 +1601,20 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         resp = None
         for attempt in (1, 2, 3):
             _t0 = time.perf_counter()
+            # re-read the clock before EVERY attempt (a backoff sleep is an await too)
+            remaining = _remaining_s(st)
+            if remaining is not None and not force_final and (remaining - reserve) < 1.0:
+                # the retries ate the optional budget: abandon this optional call and let
+                # the outer loop start the FINAL call with the reserve intact
+                rec.step("note", f"Retry budget reached the final-answer reserve ({stage}) — switching to the final call.")
+                st["forceFinal"] = True
+                resp = None
+                break
             try:
                 st["inFlight"] = True
                 if remaining is not None:
-                    resp = await asyncio.wait_for(client.messages.create(**create_kw),
-                                                  timeout=max(1.0, remaining - 0.25))
+                    bound = (remaining - 0.25) if force_final else (remaining - reserve)
+                    resp = await asyncio.wait_for(client.messages.create(**create_kw), timeout=max(1.0, bound))
                 else:
                     resp = await client.messages.create(**create_kw)
                 st["inFlight"] = False
@@ -1598,8 +1663,19 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 rec.step("note", f"Transient API error ({type(exc).__name__}) — "
                                  f"retry {attempt}/2 in {delay:g}s.")
                 await asyncio.sleep(delay)
+        if resp is None:
+            continue                                   # optional call abandoned for the final one
         _usage_record(usage, resp, latency_ms=(time.perf_counter() - _t0) * 1000.0,
                       attempt=attempt)
+        # E17-F1: the provider's reply arrived AFTER an await - the clock moved. A reply that
+        # lands inside the reserve is treated as final: its tool requests are stubbed below.
+        remaining = _remaining_s(st)
+        if remaining is not None and remaining < reserve and not force_final:
+            force_final = True
+            st["forceFinal"] = True
+            rec.step("note", f"Provider reply landed inside the final-answer reserve ({stage}: {round(remaining, 1)} s left) "
+                             "— its tool requests are stubbed; the next call is the final one.",
+                     deadline={"kind": "reserve-after-await", "stage": stage, "remainingS": round(remaining, 1), "reserveS": reserve})
         _u = getattr(resp, "usage", None)
         # shared collector (Codex finding 10, corrected per review M1): the
         # stage comes from the CALLER (appraise/review/retro), a successful
@@ -1632,6 +1708,14 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         results = []
         for c in calls:
             args = dict(c.input)
+            # E17-F1: re-read the clock before EVERY tool - an earlier tool in the same reply
+            # may have consumed the optional budget; nothing optional runs inside the reserve
+            _rem_tool = _remaining_s(st)
+            if _rem_tool is not None and _rem_tool < reserve and not force_final:
+                force_final = True
+                st["forceFinal"] = True
+                rec.step("note", f"Final-answer reserve reached during tool work ({stage}: {round(_rem_tool, 1)} s left) "
+                                 "— remaining tool requests stubbed.")
             if len(tools_used) >= max_tools or force_final:
                 # over budget OR inside the final-answer reserve: the request is stubbed,
                 # never executed - no duplicate side effects on a repair / late turn
@@ -2218,8 +2302,7 @@ class IntakeRun:
                 state=review_state), timeout=TIMEOUT_S + 5.0)
             if text is None:
                 raise ValueError("no review produced (loop exhausted)")
-            op = ReviewOpinion.model_validate_json(
-                text[text.find("{"):text.rfind("}") + 1])
+            op = parse_single_object(text, ReviewOpinion, what="review reply")
         except asyncio.CancelledError as exc:
             # Codex v0.7.20 review gap 2: a cancelled intake review stayed
             # "running" and boot reconciliation's age gate skipped it — make

@@ -112,8 +112,9 @@ def test_empty_exception_strings_still_yield_a_typed_error():
 async def test_intake_review_failing_after_a_note_keeps_one_receipt_and_a_typed_failure(rig, monkeypatch):
     """The reviewer's failed-after-note case under the deadline: the note's receipt survives once,
     the provider call that outlives the deadline is typed, usage is partial, the error is not empty."""
-    monkeypatch.setattr(analyst, "TIMEOUT_S", 2.0)
-    monkeypatch.setattr(analyst, "FINAL_RESERVE_S", 0.3)
+    # 4 s budget, reserve clamps to 2 s: the note's tool call runs with time to spare (E17-F1 bounds
+    # optional work to remaining - reserve), the second call sleeps past that optional budget
+    monkeypatch.setattr(analyst, "TIMEOUT_S", 4.0)
     intake = IntakeRun(rig)
     await intake.start(source="OfflineAudit", chars=12, has_image=False)
     client = _SlowScripted([

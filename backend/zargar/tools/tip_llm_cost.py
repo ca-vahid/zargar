@@ -60,6 +60,8 @@ def rollup(runs: list[dict], rates: dict) -> dict:
             g[k] += int(u.get(k) or 0)
         if u.get("partial"):
             g["partialRuns"] += 1
+        if u.get("legacy"):
+            g["legacyRuns"] = int(g.get("legacyRuns") or 0) + 1
     out = []
     for g in groups.values():
         p = price(g, rates.get(g["model"]) if g["model"] else None)
@@ -75,6 +77,35 @@ def rollup(runs: list[dict], rates: dict) -> dict:
                     "unpriced groups have no rate in llm.rates; lowerBound = cut/cancelled calls or runs without usage exist"}
 
 
+def normalize_usage(u) -> dict:
+    """E17-F3: one shape for every persisted usage record. A dict is taken as is; a LEGACY
+    list of per-call entries (early audits) is summed - calls, inputTokens/outputTokens per
+    entry - and flagged `legacy`; anything else is no usage."""
+    if isinstance(u, dict):
+        return u
+    if isinstance(u, list):
+        calls = [e for e in u if isinstance(e, dict)]
+        return {"legacy": True, "calls": len(calls),
+                "in": sum(int(e.get("inputTokens") or e.get("in") or 0) for e in calls),
+                "out": sum(int(e.get("outputTokens") or e.get("out") or 0) for e in calls),
+                "cacheRead": sum(int(e.get("cacheReadTokens") or 0) for e in calls),
+                "cacheWrite": sum(int(e.get("cacheWriteTokens") or 0) for e in calls),
+                "unknownCalls": sum(1 for e in calls if e.get("inputTokens") is None and e.get("in") is None),
+                "partial": any(e.get("inputTokens") is None and e.get("in") is None for e in calls),
+                "model": next((e.get("model") for e in calls if e.get("model")), None)}
+    return {}
+
+
+def usage_model(op: dict) -> tuple[str | None, str | None]:
+    """(model that CONSUMED the tokens, extraction identity). The loop stamps `usage.model`
+    with the model it called; `opinion.model` on an intake record is the EXTRACTOR's
+    identity (E17-03) and prices nothing by itself. Only when no usage model exists AND the
+    record is an appraisal/retro (where opinion.model IS the loop's model) is opinion.model
+    a qualified fallback; intake/review records without usage.model stay unpriced."""
+    usage = normalize_usage(op.get("usage"))
+    return (usage.get("model") or None), (op.get("model") or None)
+
+
 async def load_runs(sf, *, since: str, until: str) -> list[dict]:
     start = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(0, 0), tzinfo=ET)
     end = dt.datetime.combine(dt.date.fromisoformat(until), dt.time(23, 59, 59), tzinfo=ET)
@@ -84,10 +115,18 @@ async def load_runs(sf, *, since: str, until: str) -> list[dict]:
     out = []
     for r in rows:
         op = r.opinion or {}
-        out.append({"id": r.id, "kind": r.kind or "appraise", "status": r.status,
+        kind = r.kind or "appraise"
+        usage = normalize_usage(op.get("usage"))
+        used_model, extraction_model = usage_model(op)
+        if not used_model and kind in ("appraise", "retro") and op.get("model"):
+            used_model = op.get("model")               # qualified fallback: on these kinds opinion.model IS the loop's model
+            fallback = "opinion.model (appraise/retro identity)"
+        else:
+            fallback = None
+        out.append({"id": r.id, "kind": kind, "status": r.status,
                     "day": r.created_at.astimezone(ET).strftime("%Y-%m-%d") if r.created_at else since,
-                    "model": op.get("model") or (op.get("usage") or {}).get("model"),
-                    "usage": op.get("usage") or {}})
+                    "model": used_model, "extractionModel": extraction_model if kind == "intake" else None,
+                    "modelSource": ("usage.model" if usage.get("model") else fallback), "usage": usage})
     return out
 
 

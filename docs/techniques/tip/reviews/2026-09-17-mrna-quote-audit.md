@@ -52,7 +52,7 @@ past a 15-minute-old chain band) and was never meant to move a real-time venue b
 ## Effect on the ledger and on method grading
 
 The +$112.92 stays in the booked ledger. In method grading it is shown SEPARATELY as an evidence-quality-limited
-result (the buy price was a locally transformed value that could not have been executed at the venue); the other
+result (the buy price is best explained as a locally transformed value - reproduction-backed, raw provider messages not retained - and would not have been executable at the venue if so); the other
 closed Tips results on 2026-09-17 total +$71.99, a sensitivity subtotal, not a replacement. The overnight-hold
 research row for the position carries the same label. Whether such fills should be reversed in the Practice book is
 the user's call; nothing was reversed.
