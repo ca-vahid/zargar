@@ -256,3 +256,12 @@ A gap below a short trigger is not automatically a fresh breakdown. The saved br
 or retest mode governs the decision; source examples motivate a separate experiment,
 not a silent entry-rule change. Actual daily accounting remains distinct from proxy
 paths and quote-valued research scenarios. See [the current protocol](PROFITABILITY-RESEARCH.md).
+
+## September 16 authorized follow-through
+
+User authorized a bounded spread-only alternate-contract search for automatic
+Practice plans, overnight research baseline preparation, explicit execution-refusal
+reporting and controlled entry comparisons. Existing trading gates and sizing are
+retained. Alternative contract identity is journaled and revalidated; experimental
+gap/retest and volume rules are non-executing diagnostics, not adopted source rules.
+See DAILY-PREPARATION and PROFITABILITY-RESEARCH for exact bounds.

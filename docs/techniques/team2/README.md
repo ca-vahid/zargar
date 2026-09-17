@@ -36,6 +36,7 @@ fetched again**, plus our codification of it.
 | `CODEX-REVIEW-SCRATCHPAD.md` | Codex's review charter and baseline notes for its independent Team2 review task |
 | `notes/market-watch.md` | the 30-minute market-hours watch log (scheduled task `team2-market-watch`; one section per run, findings mirror into TRADING-RULES) |
 | `notes/research/` | dated research notes: author-study evidence (09-08), review feedback, the week-37 review + change plan (09-12) with its addendum, the C2 key-levels spec (09-13), the C1/sizing controlled comparisons and the sizing-cap experiment sheet rev. 2 with its §2b parallel design (09-15). `c6-evidence.json` is the reviewed C6 record the readiness receipt reads (`satisfied`, `reviewedBy`, `date`, `datasetVersion`, `reference`) — absent until C6 lands |
+| `notes/research/2026-09-16-c6-completion-plan.md` | C6 (one tape) — definition, what is measured today, the completion steps with owners and evidence, the receipt path; never waived |
 | `notes/research/profitability-20260915-exploratory/` | the exploratory profitability comparison: `research_profit.py` (48 paired cells 08-20 → 09-11, tape `27516b61…`), `calibrate_practice.py` (Practice-scale on the loss-risk sizing basis, 40-contract cap), JSON outputs. EXPLORATORY, pre-C6 — never label it canonical |
 | `notes/research/week37-author-charts/` | the author's annotated charts for the week-37 review (jpg, local only) |
 
@@ -45,7 +46,9 @@ Code: `backend/zargar/techniques/team2/` (see ARCHITECTURE.md); shared primitive
 the `test_codex_*` files are reviewers' regressions adopted verbatim; `tests/test_book_pause.py` covers the per-book pause);
 sweep with `python -m zargar.tools.team2_sweep` (`--set key=value` overlays = the only way a variant is measured);
 C2 paired report `python -m zargar.tools.team2_c2_report` (validation window sealed in the tool); experiment readiness
-receipt `python -m zargar.tools.team2_receipt` (read-only: PREPARED vs READY, blockers, cardinality, provenance, C6 record).
+receipt `python -m zargar.tools.team2_receipt` (read-only: PREPARED vs READY, blockers, cardinality, provenance, C6 record);
+diagnostics report `python -m zargar.tools.team2_diag_report --date <session>` (shadow measurements: entry situations and contract
+choices after costs, with coverage; `techniques/team2/diagnostics.py` is the pure module, `tests/test_team2_diagnostics.py`).
 
 ## Status (2026-09-16)
 
@@ -83,6 +86,18 @@ read-only receipt (`python -m zargar.tools.team2_receipt`) reports **PREPARED wi
 path: reviewed `notes/research/c6-evidence.json` → `techniques.team2.default_portfolio` = Control →
 `experiments.enabled=true` → forced plan-now → receipt READY → the other team's GO. Until then `Team2 Practice` stays
 the default book, nothing is paused, research settings are unchanged, and no experiment touches a real-money account.
+
+**Profitability diagnostics (2026-09-16 evening, v0.7.100, other team's EOD GO).** After the day's two QQQ stop-outs (−$480) the
+review asked for MEASUREMENTS, not filters: the close report now counts unique decisions from a durable ledger (the display buffer
+had evicted refusals) and carries an immutable decision-time view beside the corrected-history rows; every fire records its entry
+location (confirmation close, pullback candle, level, entry line, the underlying at the order boundary, ATR distances; labels
+`sameCloseConfirmation` / `movedAway`) and its attempt context (first vs subsequent into the setup, previous loss); the picker keeps
+the selected contract and the alternatives it examined with quotes and Greeks and follows them at 2/5/10 min and the actual exit
+for after-cost comparison (unknown stays unknown); allocation-refused candidates are quoted in the shadow. Report:
+`python -m zargar.tools.team2_diag_report --date <session>`. No delta floor, entry-distance cutoff or re-entry ban exists — the
+review chooses from evidence. Baseline and the three experiment books are unchanged. **C6 is the priority dependency**: the
+completion plan is `notes/research/2026-09-16-c6-completion-plan.md` (the banked exchange tape covers every RTH minute of
+2026-08-20 → 09-16 for all three symbols; the open item is the live-vs-replay ATR difference and the reviewed evidence record).
 
 **Rules under observation / research (TRADING-RULES "Rules under observation"):** F81b `target_replan=structure` (gap
 days) ON since 09-09; C1 no-trade zone = B5 conjunction, C1 room rule and C3 minimum target room BUILT BEHIND KNOBS AND
@@ -146,6 +161,9 @@ time-of-day dependent (fails after 20:00 ET on main).
   Practice-scale figures come from an APPROXIMATE calibration (`calibrate_practice.py`: loss-risk sizing, the $2,000
   budget and the 40-contract cap; research dollars never transfer). The sizing-cap edge is a drawdown story on
   identical trades; C1's edge concentrates in week 37. Both are hypotheses with a frozen sheet, not results.
+- **The shadow diagnostics have never run a live session** (v0.7.100 deployed the evening of 2026-09-16): the follow-up quotes
+  ride the ~2 s quote watch and the options service's live re-pricing; the first session will show how many observations come back
+  UNKNOWN (no OPRA quote, taken late after a restart). Counts will be tiny; the report ranks, it does not decide.
 - **The experiment infrastructure has never run a live session.** Minting, arming, restart identity and transitions
   are proven in tests (one on the real engine) and the receipt has said PREPARED on the live desk — it has never said
   READY, and no experiment plan has been armed for real. The first live experiment day is the first test of the

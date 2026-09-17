@@ -241,3 +241,62 @@ async def test_report_timestamp_is_preserved_for_daily_accounting(repo, monkeypa
     assert (await controller.poll("r1"))["status"] == "managed"
     measured = await daily_loss_report(repo.engine, "pf", now_ms=controller.clock())
     assert measured["available"] and measured["pnl"] == -.1
+
+
+async def test_alternative_path_always_runs_a_second_full_preflight(repo, monkeypatch):
+    controller,_=await setup(repo,monkeypatch)
+    from zargar.techniques.options_cartel import controller as module
+    from zargar.techniques.options_cartel import contract_reselection
+    calls=[]
+    async def preflight_again(engine, priced, spec, **kwargs):
+        calls.append(spec)
+        return {'passed':False,'checks':[{'name':'entry_contract_spread' if len(calls)==1 else 'cash_available',
+            'passed':False,'reason':'fixture refusal'}],'risk':{'passed':True}}
+    async def alternative(c,rid,row,p,s,read):
+        return row,s
+    monkeypatch.setattr(module,'preflight',preflight_again)
+    monkeypatch.setattr(contract_reselection,'reselect_for_spread',alternative)
+    result=await controller.submit('r1')
+    assert len(calls)==2 and result['status']=='preflight_rejected'
+    assert result['report']['checks'][0]['name']=='cash_available'
+    async with repo.engine.sf() as session:
+        assert not (await session.scalars(select(Order))).all()
+
+
+async def test_spread_alternative_reaches_shared_order_path_with_unchanged_budget(repo, monkeypatch):
+    from zargar.techniques.options_cartel.contracts import ContractSelectionInput
+    from zargar.techniques.options_cartel import contract_reselection
+    controller,_=await setup(repo,monkeypatch)
+    old,new='HOOD270416C00050000','HOOD270416C00049000'
+    policy=ContractSelectionInput(dte_min=21,dte_max=730,target_dte=345,target_abs_delta=.5,
+        max_ask=5,max_spread_pct=20,min_open_interest=100)
+    spec=ExecutionInput(portfolio_id='pf',mode='auto',instrument='options',budget=500,risk_pct=10,
+        max_units=2,contract_symbol=old,overnight_ack=True,max_premium=5,contract_policy=policy)
+    async with repo.engine.sf() as session,session.begin():
+        armed=await session.get(TechniqueArmed,'r1')
+        armed.config={**armed.config,'execution':spec.model_dump(),
+            'preparation':{'workspace':'practice','validUntil':controller.clock()+3600000}}
+    row=await repo.load('r1')
+    repo.engine.cartel_observer=SimpleNamespace(controller=controller,rows={'r1':row},stopping=False)
+    monkeypatch.setattr('zargar.risk.is_us_market_hours',lambda *a,**k:True)
+    monkeypatch.setattr(repo.engine.quotes,'source_age_seconds',lambda symbol:0.)
+    repo.engine.options=SimpleNamespace(snapshot_cached=lambda _: {'greeks':{'delta':.5},
+        'greeksFieldAsOf':{'delta':controller.clock()}})
+    for symbol,bid,ask in [(old,1.5,2.5),(new,1.95,2.)]:
+        repo.engine.quotes.on_quote(Quote(symbol,bid=bid,ask=ask,last=ask,source='opra',
+            ts=controller.clock(),source_ts=controller.clock()))
+    calls=[]
+    async def choose(engine,p,saved):
+        calls.append(saved)
+        return {'selected':{'symbol':new,'bid':1.95,'ask':2.,'delta':.5,'openInterest':1000,
+            'quoteAsOf':controller.clock(),'deltaAsOf':controller.clock(),'quoteSource':'opra'}}
+    monkeypatch.setattr(contract_reselection,'select_contract',choose)
+    result=await controller.submit('r1')
+    assert result['status']=='working',result
+    async with repo.engine.sf() as session:
+        orders=(await session.scalars(select(Order).where(Order.side=='BUY'))).all()
+    assert len(orders)==1 and orders[0].symbol==new
+    assert orders[0].qty==2 and orders[0].limit_price==2.
+    assert orders[0].qty*orders[0].limit_price*100<=spec.budget
+    assert len(calls)==1 and calls[0].max_spread_pct==20
+    assert repo.engine.cartel_observer.rows['r1']['config']['execution']['contract_symbol']==new

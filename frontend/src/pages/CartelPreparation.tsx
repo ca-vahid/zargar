@@ -94,6 +94,14 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           catch (e) { setError(String(e)); } finally { setBusy(false); }
         }}>{status?.liveAutoAllowed ? "Disable Cartel live-auto permission" : "Enable Cartel live-auto permission"}</button>
       </>}
+      {!live && <div className="cartel-inset">
+        <label className="cartel-check"><input type="checkbox" checked={!!status?.wideContractReselection} disabled={busy} onChange={async e => {
+          const enabled=e.target.checked; setBusy(true); setError('');
+          try {await api.patchSettings({'techniques.options_cartel.reselect_wide_contract':enabled}); reload();}
+          catch (error) {setError(String(error));} finally {setBusy(false);}
+        }}/>Search one alternative when only the selected option's spread blocks an automatic Practice entry</label>
+        <p className="muted">Keeps the saved expiry, delta, premium and spread limits. One bounded search per fresh signal; all entry and risk checks run again.</p>
+      </div>}
       <div className="cartel-fields">
         <label>{workspaceLabel} account<select required value={config.portfolioId || (!live && books.length === 1 ? books[0].id : "")} onChange={e => setConfig({...config, portfolioId:e.target.value || null})}>
           <option value="" disabled>Choose an account</option>{books.map(p => <option key={p.id} value={p.id}>{p.name}{p.kind === "paper" ? " (broker paper)" : ""}</option>)}

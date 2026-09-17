@@ -9,6 +9,8 @@ type Candidate = {
   id:string; symbol:string; direction:string; cohort:'primary'|'bearish';
   baselineRank:number|null; leaderRank:number|null; status:string; reasons:string[];
   entry:Evidence|null; experiments:Evidence|null; gaps:string[];
+  entryPolicyStudy?:Evidence|null;
+  baselineAttempts?:number;
   optionObservation?:Evidence|null;
   optionQuote?:Evidence|null;
   targetRoomProbe?:Evidence|null;
@@ -48,6 +50,12 @@ function CandidateEvidence({candidate}:{candidate:Candidate}) {
   const probeSignal = Object.keys(record(probe.signal)).length ? record(probe.signal) : probe;
   return <details className="cartel-research-evidence"><summary>Study evidence for {candidate.symbol}</summary>
     {candidate.reasons?.map((reason, index) => <p key={index}>{reason}</p>)}
+    <p>Baseline attempts: {candidate.baselineAttempts ?? 0}. Overnight collection uses the same coverage requirements.</p>
+    {candidate.entryPolicyStudy && <details><summary>Controlled entry-policy study</summary>
+      <p>Saved entry, gap/retest and 1× volume are compared on the same stock data. These diagnostics cannot arm plans or establish option profit.</p>
+      {records(candidate.entryPolicyStudy.rows).map((row,index) => <p key={index}><strong>{human(String(row.variant))}</strong> · {human(String(row.status))} · {row.prospectiveConfirmation ? `confirmation observed ${time(row.observedSignalAt)}` : 'no prospectively captured confirmation'}{Object.keys(record(row.outcome)).length > 0 && <span> · {String(record(row.outcome).status)} · underlying change {number(record(record(row.outcome).underlyingPath).closeR)} R (not option profit)</span>}</p>)}
+      {typeof candidate.entryPolicyStudy.reason === 'string' && <p>{candidate.entryPolicyStudy.reason}</p>}
+    </details>}
     {entry ? <div className="cartel-research-facts">
       <p><strong>Stock confirmation</strong> · {time(entry.at)}</p>
       <p>Reference {price(entry.referencePrice ?? entry.price)} · stop {price(entry.stop)}{typeof entry.risk === 'number' ? ` · risk distance ${number(entry.risk)}` : ''}</p>
