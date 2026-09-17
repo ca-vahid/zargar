@@ -197,8 +197,10 @@ class SimExecutor(Executor):
         option_sessions: bool = True,   # EOD-05: options fill only in an eligible venue session
         stock_sessions: bool = False,   # F-HOLD-01: shares fill / stops trigger only in the regular session (the engine turns it ON from config)
         max_spread_pct: float = 0.0,    # F-HOLD-01: a share quote wider than this (spread / mid) cannot price a fill (engine: 5%)
-        max_option_spread_pct: float = 0.0,   # EM 2026-09-18 (ORCL 148C): an OPTION quote wider than this (spread / mid) cannot
-                                              # price a resting-order fill; 0 = off (proposal - activation is a user decision)
+        max_option_spread_pct: float = 0.0,   # EM 2026-09-18 (ORCL 148C): an OPENING option order cannot be priced by a quote
+                                              # wider than this (spread / mid); 0 = off (proposal - activation is a user decision).
+                                              # ED-01: keyed on the position-derived option_action - closing / reducing orders
+                                              # (SELL_TO_CLOSE, BUY_TO_CLOSE) and orders with UNKNOWN intent are never capped.
         clock=None,
     ) -> None:
         super().__init__()
@@ -340,14 +342,18 @@ class SimExecutor(Executor):
                 return (f"Quote spread implausible for a simulated share fill "
                         f"(bid {q.bid:.2f} / ask {q.ask:.2f} = {100 * (q.ask - q.bid) / mid:.0f}% of mid, "
                         f"limit {100 * self._max_spread_pct:.0f}%)")
-        if order.sec_type == "OPT" and self._max_option_spread_pct > 0:
+        if (order.sec_type == "OPT" and self._max_option_spread_pct > 0
+                and str(getattr(order, "option_action", "") or "").endswith("_TO_OPEN")):
+            # ED-01 (2026-09-17): OPENING orders only - `option_action` is derived by the order manager from the book's
+            # position (BUY_TO_CLOSE when short, SELL_TO_CLOSE when long), never from the side alone; a protective
+            # stop / flatten / reducing exit (…_TO_CLOSE) or an order of unknown intent (None) is never capped here and
+            # keeps every other quote-quality check below.
             mid = (q.bid + q.ask) / 2.0
             if mid > 0 and (q.ask - q.bid) / mid > self._max_option_spread_pct:
                 # EM 2026-09-17: a resting 2.29 limit on ORCL 148C filled at 1.12 seven seconds after a 2.10/2.29 book, on an
-                # OPRA snapshot of 0.76/1.12 (38% of mid) that no print of that minute supports (the contract traded
-                # 2.48-2.88). Simulator EVIDENCE validation only: the order RESTS until a plausible book; never applied to
-                # exits by policy here because exits are market/reduce-only paths judged elsewhere - see PLATFORM-RULES.
-                return (f"Quote spread implausible for a simulated option fill "
+                # OPRA snapshot of 0.76/1.12 (38% of mid) inconsistent with that minute's prints (2.48-2.88). Simulator
+                # EVIDENCE validation only: the entry RESTS until a plausible book.
+                return (f"Quote spread implausible for a simulated option entry "
                         f"(bid {q.bid:.2f} / ask {q.ask:.2f} = {100 * (q.ask - q.bid) / mid:.0f}% of mid, "
                         f"limit {100 * self._max_option_spread_pct:.0f}%)")
         if self.synthetic_quotes and q.source in ("", "sim"):

@@ -2337,9 +2337,11 @@ times out waiting for a Practice option fill off the delayed chain quote (refuse
 
 ### 2026-09-18 (EM desk) - simulator option spread guard (OFF) and lazy charts for deterministic re-plans
 
-- `brokers/sim.py` `max_option_spread_pct` / config `sim_max_option_spread_pct` (default 0.0 = off): when on, an OPTION quote
-  whose spread exceeds the cap (spread / mid) cannot price a simulated resting-order fill; the order rests with a journaled
-  `fill_waiting` reason and fills on the next plausible book. Shares keep F-HOLD-01's own `sim_max_spread_pct`. Evidence:
+- `brokers/sim.py` `max_option_spread_pct` / config `sim_max_option_spread_pct` (default 0.0 = off): when on, an OPENING option
+  order (`option_action` BUY_TO_OPEN / SELL_TO_OPEN, derived by the order manager from the book's position - ED-01) cannot be
+  priced by a quote whose spread exceeds the cap (spread / mid); the order rests with a journaled `fill_waiting` reason and
+  fills on the next plausible book. Closing / reducing orders (…_TO_CLOSE) and orders of unknown intent are NEVER capped and
+  keep every existing quote-quality check. Executor-wide: every Practice book, every desk. Shares keep F-HOLD-01's own `sim_max_spread_pct`. Evidence:
   ORCL 148C 2026-09-17, limit 2.29 filled at 1.12 on an OPRA snapshot 0.76/1.12 the contract never traded at. This is a
   simulator EVIDENCE guard (what counts as a market), not a cancel/reprice policy, and it is never applied to exits by this
   knob. It complements E17-01 (0.8.11: a recentred quote is `derived:` and refused) - the ORCL book was most likely that

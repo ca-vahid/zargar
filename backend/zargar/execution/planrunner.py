@@ -60,6 +60,7 @@ from .exits import (
     premium_stop_breach,
     quote_stop_breach,
     reduce_only_exit_intent,
+    tp1_reclaim_signal,
     stale_working_exit,
 )
 from .listener import SessionListener
@@ -619,15 +620,20 @@ class PlanRunner(SessionListener):
                 self._shadow_capture_rung(ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out)
         return out
 
-    def _shadow_capture_rung(self, ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out):
-        """One rung of `_shadow_capture` (pure). `label` `tp1-candidate` carries the P-02 candidate's own key."""
+    def _shadow_capture_rung(self, ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out,
+                             hit_override: bool | None = None):
+        """One rung of `_shadow_capture` (pure). `label` `tp1-candidate` carries the P-02 candidate's own key;
+        `tp1-reclaim` (P-06, ED-02) is captured on a closed-bar signal and passes `hit_override`."""
         if True:
             target = float(tr.targets[idx])
             hit = (obs <= target) if tr.direction == "short" else (obs >= target)
+            if hit_override is not None:
+                hit = hit_override
             if not hit:
                 return
             candidate = label == "tp1-candidate"
-            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx if not candidate else "tp1-candidate")
+            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1",
+                   "tp1-reclaim" if label == "tp1-reclaim" else (idx if not candidate else "tp1-candidate"))
             pending = self.__dict__.setdefault("_shadow_pending", set())
             if not candidate:
                 if key in seen or key in pending:
@@ -3507,6 +3513,7 @@ class PlanRunner(SessionListener):
                              scratch_trim=float(getattr(self.rules(), "scratch_trim", 0.5)),
                              scratch_only_far_tp1=bool(getattr(self.rules(), "scratch_only_far_tp1", False)),
                              far_tp1_r=float(getattr(self.rules(), "far_tp1_r", 3.0)))
+        self._shadow_enqueue(ap, self._reclaim_capture(ap, tr, bar))     # P-06 observation (ED-02); never awaited here
         if decision is None:
             # a single-contract position may need to advance its trim counter without an order -
             # but NEVER while an exit is working/unresolved (DA-02, 2026-09-14): a pending or later
@@ -3531,6 +3538,33 @@ class PlanRunner(SessionListener):
         tr.trims_done = decision.new_trims_done
         if decision.qty >= 1:
             await self._exit(ap, tr, decision.kind, decision.qty, journal=True, reason=decision.reason)
+
+    def _reclaim_capture(self, ap: ArmedPlan, tr: Trade, bar: Bar) -> list[dict]:
+        """P-06 (ED-02, 2026-09-17): after a CONFIRMED TP1 fill, the first completed bar whose close is back through the
+        saved TP1 records ONE `tp1-reclaim` observation of the remaining quantity's contract NBBO (same evidence rules
+        as shadow-exit-v1: provenance, freshness, uncrossed book, KNOWN size). Pure capture; the caller enqueues.
+        Research only - no exit is placed from it."""
+        try:
+            if not self._shadow_enabled(ap) or tr.status != "open" or tr.remaining <= 0 or tr.pending_exit_qty > 1e-9:
+                return []
+            if not any(x.get("kind") == "tp1" and float(x.get("filledQty") or 0) > 0 for x in tr.exits):
+                return []
+            tp1 = float(tr.targets[0]) if tr.targets else None
+            if not tp1_reclaim_signal(tr.direction, tp1, bar.close):
+                return []
+            now_ms = int(time.time() * 1000)
+            q = self.engine.quotes.get(ap.symbol)
+            seen = self.__dict__.setdefault("_shadow_seen", set())
+            prem_pct = float(self.rt("premium_stop_pct", 50.0) or 0)
+            basis = str(self.rt("premium_stop_basis", "bid") or "bid")
+            out: list[dict] = []
+            self._shadow_capture_rung(ap, tr, q, now_ms, 0.0, float(bar.close), int(bar.ts) + 60000, 0.0, seen, prem_pct, basis,
+                                      0, "tp1-reclaim", float(tr.remaining), out, hit_override=True)
+            for p in out:
+                p["signal"] = {"barTs": int(bar.ts), "close": float(bar.close), "tp1": tp1, "rule": "tp1-reclaim-runner-exit-v1"}
+            return out
+        except Exception:      # research capture must never disturb the exit path
+            return []
 
     async def _exit(self, ap: ArmedPlan, tr: Trade, kind: str, qty: float, *, journal: bool,
                     force_market: bool = False, reason: str = "") -> None:

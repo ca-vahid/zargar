@@ -80,17 +80,21 @@
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
     "outcome": "not_eligible",
-    "why": "no completed TP1 trim",
+    "why": "no TP1 trim order",
     "tp1": 262.7165,
-    "remainingQty": null,
+    "remainingAtSignal": null,
+    "tp1FilledQty": null,
+    "tp1FillTs": null,
     "reclaimTs": null,
+    "signalTs": null,
     "modeledExitTs": null,
     "modeledExitPx": null,
-    "productionExitTs": null,
-    "productionExitRef": null,
+    "modeledBasis": null,
+    "productionRunner": null,
     "underlyingDeltaR": null,
     "dollarDelta": null,
-    "premium": null
+    "alternativeRealized": null,
+    "productionRealized": null
    },
    "neverTp1": {
     "mfeR": 0.642,
@@ -213,17 +217,21 @@
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
     "outcome": "not_eligible",
-    "why": "no completed TP1 trim",
+    "why": "no TP1 trim order",
     "tp1": 82.88,
-    "remainingQty": null,
+    "remainingAtSignal": null,
+    "tp1FilledQty": null,
+    "tp1FillTs": null,
     "reclaimTs": null,
+    "signalTs": null,
     "modeledExitTs": null,
     "modeledExitPx": null,
-    "productionExitTs": null,
-    "productionExitRef": null,
+    "modeledBasis": null,
+    "productionRunner": null,
     "underlyingDeltaR": null,
     "dollarDelta": null,
-    "premium": "unknown"
+    "alternativeRealized": null,
+    "productionRealized": null
    },
    "neverTp1": {
     "mfeR": 2.259,
@@ -344,17 +352,21 @@
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
     "outcome": "not_eligible",
-    "why": "no completed TP1 trim",
+    "why": "no TP1 trim order",
     "tp1": 148.68,
-    "remainingQty": null,
+    "remainingAtSignal": null,
+    "tp1FilledQty": null,
+    "tp1FillTs": null,
     "reclaimTs": null,
+    "signalTs": null,
     "modeledExitTs": null,
     "modeledExitPx": null,
-    "productionExitTs": null,
-    "productionExitRef": null,
+    "modeledBasis": null,
+    "productionRunner": null,
     "underlyingDeltaR": null,
     "dollarDelta": null,
-    "premium": "unknown"
+    "alternativeRealized": null,
+    "productionRealized": null
    },
    "neverTp1": {
     "mfeR": 5.665,
@@ -478,17 +490,29 @@
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
     "outcome": "underlying_proxy_only",
-    "why": "option premium at the modeled exit unknown (no covered observation)",
+    "why": "no covered tp1-reclaim observation",
     "tp1": 23.3548,
-    "remainingQty": 3.0,
-    "reclaimTs": 1789651980000,
-    "modeledExitTs": 1789652040000,
-    "modeledExitPx": 23.489999771118164,
-    "productionExitTs": 1789653206200,
-    "productionExitRef": 23.809999465942383,
-    "underlyingDeltaR": 2.006,
+    "remainingAtSignal": 3.0,
+    "tp1FilledQty": 1.0,
+    "tp1FillTs": 1789651921309,
+    "reclaimTs": 1789651920000,
+    "signalTs": 1789651980000,
+    "modeledExitTs": 1789651980000,
+    "modeledExitPx": 23.540000915527344,
+    "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
+    "productionRunner": {
+     "qty": 3.0,
+     "vwap": 0.6399,
+     "fees": 3.12,
+     "kinds": [
+      "stop"
+     ],
+     "underlyingRef": 23.809999465942383
+    },
+    "underlyingDeltaR": 1.693,
     "dollarDelta": null,
-    "premium": "unknown"
+    "alternativeRealized": null,
+    "productionRealized": null
    },
    "neverTp1": null
   },
@@ -568,18 +592,29 @@
    "p02Eligible": false,
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
-    "outcome": "compared",
-    "why": null,
+    "outcome": "underlying_proxy_only",
+    "why": "shares: no executable quote evidence - proxy only",
     "tp1": 104.6325,
-    "remainingQty": 33.0,
-    "reclaimTs": 1789660320000,
-    "modeledExitTs": 1789660380000,
-    "modeledExitPx": 104.62950134277344,
-    "productionExitTs": 1789674960869,
-    "productionExitRef": 104.66500091552734,
-    "underlyingDeltaR": -0.068,
-    "dollarDelta": -1.17,
-    "premium": null
+    "remainingAtSignal": 33.0,
+    "tp1FilledQty": 14.0,
+    "tp1FillTs": 1789660260762,
+    "reclaimTs": 1789660260000,
+    "signalTs": 1789660320000,
+    "modeledExitTs": 1789660320000,
+    "modeledExitPx": 104.5999984741211,
+    "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
+    "productionRunner": {
+     "qty": 33.0,
+     "vwap": 104.7191,
+     "fees": 0.0,
+     "kinds": [
+      "flatten"
+     ]
+    },
+    "underlyingDeltaR": -0.229,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null
    },
    "neverTp1": null,
    "confirmationPair": {
@@ -679,17 +714,21 @@
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
     "outcome": "not_eligible",
-    "why": "no completed TP1 trim",
+    "why": "no TP1 trim order",
     "tp1": 298.3314,
-    "remainingQty": null,
+    "remainingAtSignal": null,
+    "tp1FilledQty": null,
+    "tp1FillTs": null,
     "reclaimTs": null,
+    "signalTs": null,
     "modeledExitTs": null,
     "modeledExitPx": null,
-    "productionExitTs": null,
-    "productionExitRef": null,
+    "modeledBasis": null,
+    "productionRunner": null,
     "underlyingDeltaR": null,
     "dollarDelta": null,
-    "premium": null
+    "alternativeRealized": null,
+    "productionRealized": null
    },
    "neverTp1": {
     "mfeR": null,
@@ -1237,7 +1276,7 @@
    "disposition": "allowed"
   }
  ],
- "sourceLedgerRows": 2,
+ "sourceLedgerRows": 7,
  "summary": {
   "byPolicy": {
    "deterministic-entry-v1": {
@@ -1350,29 +1389,50 @@
     "instrument": "options",
     "qty": 4.0,
     "outcome": "underlying_proxy_only",
-    "why": "option premium at the modeled exit unknown (no covered observation)",
-    "remainingQty": 3.0,
-    "reclaimTs": 1789651980000,
-    "modeledExitPx": 23.489999771118164,
-    "productionExitRef": 23.809999465942383,
-    "underlyingDeltaR": 2.006,
+    "why": "no covered tp1-reclaim observation",
+    "remainingAtSignal": 3.0,
+    "tp1FilledQty": 1.0,
+    "reclaimTs": 1789651920000,
+    "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
+    "modeledExitPx": 23.540000915527344,
+    "productionRunner": {
+     "qty": 3.0,
+     "vwap": 0.6399,
+     "fees": 3.12,
+     "kinds": [
+      "stop"
+     ],
+     "underlyingRef": 23.809999465942383
+    },
+    "underlyingDeltaR": 1.693,
     "dollarDelta": null,
-    "premium": "unknown"
+    "alternativeRealized": null,
+    "productionRealized": null
    },
    {
     "symbol": "SCHW",
     "trigger": "b1",
     "instrument": "shares",
     "qty": 47.0,
-    "outcome": "compared",
-    "why": null,
-    "remainingQty": 33.0,
-    "reclaimTs": 1789660320000,
-    "modeledExitPx": 104.62950134277344,
-    "productionExitRef": 104.66500091552734,
-    "underlyingDeltaR": -0.068,
-    "dollarDelta": -1.17,
-    "premium": null
+    "outcome": "underlying_proxy_only",
+    "why": "shares: no executable quote evidence - proxy only",
+    "remainingAtSignal": 33.0,
+    "tp1FilledQty": 14.0,
+    "reclaimTs": 1789660260000,
+    "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
+    "modeledExitPx": 104.5999984741211,
+    "productionRunner": {
+     "qty": 33.0,
+     "vwap": 104.7191,
+     "fees": 0.0,
+     "kinds": [
+      "flatten"
+     ]
+    },
+    "underlyingDeltaR": -0.229,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null
    }
   ],
   "neverTp1": [
@@ -1907,5 +1967,5 @@
    "roomAtActualEntry": "unknown for every fill (no underlying observation at dispatch is recorded)"
   }
  },
- "generatedAt": "2026-09-17T21:15:28.620091+00:00"
+ "generatedAt": "2026-09-17T22:25:23.918031+00:00"
 }

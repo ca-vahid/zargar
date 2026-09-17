@@ -1,8 +1,8 @@
 {
- "version": "prep-ablation-v2",
+ "version": "prep-ablation-v3",
  "sheet": "fc9efd65418e4d9991930b61317c4a32",
  "date": "2026-09-17",
- "generatedAt": "2026-09-17T17:11:00-04:00",
+ "generatedAt": "2026-09-17T18:19:50-04:00",
  "features": {
   "RR_TP3_MIN": 3.0,
   "MIN_TOUCHES": 2,
@@ -59,6 +59,10 @@
    "sumR": 2.869,
    "meanR": 0.261,
    "peakSimultaneousOpen": 6,
+   "sharedBookModel": "none - independent per-plan replays; capital, slots and order competition are NOT modeled (unscorable here)",
+   "premarketSources": {
+    "journal": 58
+   },
    "readTokens": {
     "input": 2449780,
     "output": 908613,
@@ -85,6 +89,11 @@
    "sumR": 2.098,
    "meanR": 0.131,
    "peakSimultaneousOpen": 8,
+   "sharedBookModel": "none - independent per-plan replays; capital, slots and order competition are NOT modeled (unscorable here)",
+   "premarketSources": {
+    "yahoo": 47,
+    "journal": 63
+   },
    "readTokens": {
     "input": 4219413,
     "output": 1645127,
@@ -111,6 +120,11 @@
    "sumR": 2.098,
    "meanR": 0.131,
    "peakSimultaneousOpen": 8,
+   "sharedBookModel": "none - independent per-plan replays; capital, slots and order competition are NOT modeled (unscorable here)",
+   "premarketSources": {
+    "yahoo": 40,
+    "journal": 61
+   },
    "readTokens": {
     "input": 3900114,
     "output": 1518901,
@@ -134,6 +148,11 @@
    "sumR": -4.756,
    "meanR": -0.951,
    "peakSimultaneousOpen": 3,
+   "sharedBookModel": "none - independent per-plan replays; capital, slots and order competition are NOT modeled (unscorable here)",
+   "premarketSources": {
+    "journal": 28,
+    "yahoo": 2
+   },
    "readTokens": {
     "input": 1297144,
     "output": 456688,
@@ -141,6 +160,192 @@
     "cacheWrite": 28757
    }
   }
+ },
+ "baselineFunnel": {
+  "liveFired": 12,
+  "liveRefusedBeforeOrder": 5,
+  "liveOrders": 15,
+  "liveFilled": 6,
+  "replayFired": 11,
+  "replayFilled": 11,
+  "rows": [
+   {
+    "symbol": "ARM",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 1,
+    "liveFilled": 0,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "tp2": 1
+    }
+   },
+   {
+    "symbol": "BMNR",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 3,
+    "liveFilled": 1,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "tp1": 1
+    }
+   },
+   {
+    "symbol": "COHR",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 2,
+    "liveFilled": 1,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "stopped": 1
+    }
+   },
+   {
+    "symbol": "CRCL",
+    "liveFired": 2,
+    "liveRefusedBeforeOrder": 1,
+    "liveOrders": 2,
+    "liveFilled": 1,
+    "liveRefusals": [
+     "contract skipped (T5.4 wide spread 14.4% on the NBBO (bid 1."
+    ],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "tp1": 1
+    }
+   },
+   {
+    "symbol": "CRM",
+    "liveFired": 0,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 0,
+    "liveFilled": 0,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "stopped": 1
+    }
+   },
+   {
+    "symbol": "ORCL",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 2,
+    "liveFilled": 1,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "tp3": 1
+    }
+   },
+   {
+    "symbol": "PANW",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 1,
+    "liveOrders": 0,
+    "liveFilled": 0,
+    "liveRefusals": [
+     "contract skipped (T5.4 wide spread 25.1% on the NBBO (bid 8."
+    ],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "stopped": 1
+    }
+   },
+   {
+    "symbol": "RKLB",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 1,
+    "liveOrders": 0,
+    "liveFilled": 0,
+    "liveRefusals": [
+     "contract skipped (T5.4 wide spread 20.4% on the NBBO (bid 1."
+    ],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "stopped": 1
+    }
+   },
+   {
+    "symbol": "SCHW",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 3,
+    "liveFilled": 1,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "tp1": 1
+    }
+   },
+   {
+    "symbol": "SKHY",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 1,
+    "liveOrders": 0,
+    "liveFilled": 0,
+    "liveRefusals": [
+     "one contract at 6.40 risks more than the 2% trade budget at "
+    ],
+    "replayFired": 0,
+    "replayFilled": 0,
+    "replayOutcomes": {}
+   },
+   {
+    "symbol": "SNDK",
+    "liveFired": 0,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 0,
+    "liveFilled": 0,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "tp2": 1
+    }
+   },
+   {
+    "symbol": "SOXS",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 1,
+    "liveOrders": 0,
+    "liveFilled": 0,
+    "liveRefusals": [
+     "contract skipped (T5.4 wide spread 24.5% on the NBBO (bid 2."
+    ],
+    "replayFired": 0,
+    "replayFilled": 0,
+    "replayOutcomes": {}
+   },
+   {
+    "symbol": "TXN",
+    "liveFired": 1,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 2,
+    "liveFilled": 1,
+    "liveRefusals": [],
+    "replayFired": 1,
+    "replayFilled": 1,
+    "replayOutcomes": {
+     "horizon": 1
+    }
+   }
+  ],
+  "note": "the replay fills every fired trigger on the underlying: no contract selection, spread or budget refusal, entry timeout, shares fallback, sizing or slot competition - live filled counts are therefore lower by construction"
  },
  "vetoCategories": [
   {

@@ -1393,3 +1393,17 @@ restoration 72/72 by id, resting 26 -> 26, open 0 -> 0); loop lag 1.6 ms and 0 s
   confirmed, MRNA/MU no target, TSLA gated, SPX unknown). The author's livestream content is unavailable.
 - **Runtime:** pre-open re-plan runs render no charts (45 x 4 charts on the render thread at 09:25 ET on 09-17).
 - Kept: rules, thresholds, observation knobs, the preparation flow; no batch rerun; no trading-hours deploy.
+
+### 2026-09-17 late - delivery review ED-01..04 answered (`reviews/2026-09-17-EOD-DELIVERY-CLOSURE.md`)
+
+- ED-01: the OFF option spread cap applied to every option order, protective exits included - corrected to OPENING orders
+  only (position-derived `option_action`); stops / flattens / reducing exits / unknown intent never capped. Still OFF.
+- ED-02: P-06 bound to confirmed executions of the trade instance; shares and options are underlying proxies without a
+  covered `tp1-reclaim` observation (runtime observer added, research only); the SCHW dollar comparison is withdrawn.
+- ED-03: the ablation is a descriptive underlying replay; "+0.77 R" is a cohort difference under its assumptions, never
+  measured model value or a token-dollar return; the live funnel (12 fired / 5 refused / 6 opened) vs the replay (11 fired
+  / 11 filled) is reconciled per symbol; 36 of 50 (72%) named vetoes concern already-invalid triggers.
+- ED-04: the executable-profit basket has an owner (EM desk; Tips desk for the shared quote/mark layer), the acceptance
+  contract retained, delivery scheduled ahead of any further giveback policy.
+- Reporting: $222.65 net after $16.64 commissions ($239.29 gross); the ORCL 2.29 sensitivity is arithmetic ($133.92 trade,
+  $105.65 day), not a corrected fill.

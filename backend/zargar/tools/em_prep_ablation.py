@@ -40,7 +40,7 @@ from ..technique.analysis import AnalysisRequest, compute_facts
 from ..technique.plans import build_session_plan
 from ..technique.walkforward import build_profile, plan_window, replay_plan
 
-VERSION = "prep-ablation-v2"
+VERSION = "prep-ablation-v3"   # ED-03: descriptive replay, baseline funnel reconciliation, evidence-source split
 NY = ZoneInfo("America/New_York")
 J = lambda v: (json.loads(v) if isinstance(v, str) else v) or {}   # noqa: E731
 
@@ -200,7 +200,8 @@ def _cohort_stats(rows: list[dict]) -> dict:
             "fired": sum(r["replay"]["fired"] for r in known), "filled": len(fills), "outcomes": dict(outcomes),
             "winners": sum(1 for x in rs if x > 0), "losers": sum(1 for x in rs if x < 0),
             "sumR": round(sum(rs), 3), "meanR": (round(sum(rs) / len(rs), 3) if rs else None),
-            "peakSimultaneousOpen": peak,
+            "peakSimultaneousOpen": peak, "sharedBookModel": "none - independent per-plan replays; capital, slots and order competition are NOT modeled (unscorable here)",
+            "premarketSources": dict(Counter(r["preopen"]["premarketSource"] for r in rows)),
             "readTokens": {k: sum(int((r["usage"] or {}).get(k) or 0) for r in rows) for k in ("input", "output", "cacheRead", "cacheWrite")}}
 
 
@@ -286,6 +287,32 @@ async def run(sheet: str, date: str, *, allow_yahoo: bool) -> dict:
                              "cohorts": {"A_model": an.get("verdict") == "setup", "B_valid": bool(feats.get("valid")), "B_gradeB": grade_ab, "C_exceptions": grade_ab and ok},
                              "barsSource": bsrc, "scorable": scorable, "preopen": preopen, "replay": replay, "usage": J(r["usage"])})
         cohorts = {k: _cohort_stats([x for x in out_rows if x["cohorts"][k]]) for k in ("A_model", "B_valid", "B_gradeB", "C_exceptions")}
+        # ED-03: reconcile the A replay with the ACTUAL live funnel of the same symbols from the immutable journal
+        live = await c.fetch("""select e.payload->>'symbol' sym, e.type, coalesce(e.payload->>'reason','') reason, e.payload->>'trigger' trig
+                                from events e join technique_runs r on r.id = e.aggregate_id
+                                where r.technique='enhanced_market' and e.ts >= to_timestamp($1/1000.0) and e.ts < to_timestamp($1/1000.0) + interval '7 hours'
+                                and e.type in ('TechniquePlanTriggerFired','TechniquePlanTriggerSkipped','TechniquePlanOrderResult','TechniquePlanPositionOpened')""", o_ms)
+        funnel: dict[str, dict] = {}
+        for e in live:
+            f = funnel.setdefault(e["sym"], {"fired": 0, "refusedBeforeOrder": 0, "orders": 0, "filled": 0, "refusals": []})
+            if e["type"] == "TechniquePlanTriggerFired": f["fired"] += 1
+            elif e["type"] == "TechniquePlanTriggerSkipped" and (e["reason"].startswith("contract skipped") or "budget" in e["reason"]):
+                f["refusedBeforeOrder"] += 1; f["refusals"].append(e["reason"][:60])
+            elif e["type"] == "TechniquePlanOrderResult": f["orders"] += 1
+            elif e["type"] == "TechniquePlanPositionOpened": f["filled"] += 1
+        a_syms = [x["symbol"] for x in out_rows if x["cohorts"]["A_model"]]
+        recon = []
+        for x in out_rows:
+            if not x["cohorts"]["A_model"]: continue
+            lf = funnel.get(x["symbol"], {"fired": 0, "refusedBeforeOrder": 0, "orders": 0, "filled": 0, "refusals": []})
+            if lf["fired"] or x["replay"]["fired"]:
+                recon.append({"symbol": x["symbol"], "liveFired": lf["fired"], "liveRefusedBeforeOrder": lf["refusedBeforeOrder"], "liveOrders": lf["orders"],
+                              "liveFilled": lf["filled"], "liveRefusals": lf["refusals"], "replayFired": x["replay"]["fired"], "replayFilled": x["replay"]["filled"],
+                              "replayOutcomes": x["replay"]["outcomes"]})
+        baseline = {"liveFired": sum(funnel.get(sy, {}).get("fired", 0) for sy in a_syms), "liveRefusedBeforeOrder": sum(funnel.get(sy, {}).get("refusedBeforeOrder", 0) for sy in a_syms),
+                    "liveOrders": sum(funnel.get(sy, {}).get("orders", 0) for sy in a_syms), "liveFilled": sum(funnel.get(sy, {}).get("filled", 0) for sy in a_syms),
+                    "replayFired": cohorts["A_model"]["fired"], "replayFilled": cohorts["A_model"]["filled"], "rows": recon,
+                    "note": "the replay fills every fired trigger on the underlying: no contract selection, spread or budget refusal, entry timeout, shares fallback, sizing or slot competition - live filled counts are therefore lower by construction"}
         vetoes = [x for x in out_rows if x["vetoCategory"]]
         veto_table = Counter((x["vetoCategory"], x["vetoClass"]) for x in vetoes)
         agree = Counter()
@@ -308,7 +335,7 @@ async def run(sheet: str, date: str, *, allow_yahoo: bool) -> dict:
                 "reads": len(out_rows), "barsSources": dict(Counter(x["barsSource"].split(" (")[0] for x in out_rows)),
                 "premarketSources": dict(Counter(x["preopen"]["premarketSource"] for x in out_rows)),
                 "preopenFidelity": [{"live": k[0], "offline": k[1], "n": n} for k, n in fidelity.items()],
-                "cohorts": cohorts,
+                "cohorts": cohorts, "baselineFunnel": baseline,
                 "vetoCategories": [{"category": k[0], "class": k[1], "n": n} for k, n in veto_table.most_common()],
                 "vetoNamedTrigger": {"namedValid": named_valid, "namedInvalid": named_invalid, "unnamed": len(vetoes) - named_valid - named_invalid},
                 "vetoFeatureAgreement": [{"category": k[0], "featureReproducesVeto": k[1], "against": k[2], "n": n} for k, n in sorted(agree.items(), key=lambda kv: (kv[0][0], not kv[0][1]))],
@@ -339,7 +366,18 @@ def render(d: dict) -> str:
         tk = s["readTokens"]
         L.append(f"| {names[k]} | {s['plans']} | {s['scorable']} | {s['replanned']} | {s['fired']} | {s['filled']} | {s['winners']} | {s['losers']} | {s['sumR']} | {s['meanR']} | {s['outcomes']} | {s['peakSimultaneousOpen']} | {tk['input']:,}/{tk['output']:,}/{tk['cacheRead']:,} |")
     L += ["", "Read tokens are the recorded usage of the model reads that produced each cohort's plans; cohorts B and C need NONE of them "
-          "(the plan is built before the model), so the A column is the spend the deterministic path avoids. Tokens are usage categories, not an invoice.", "",
+          "(the plan is built before the model). Tokens are usage categories, not an invoice, and proxy R is never converted into a token-dollar return.", "",
+          "**What the cohort rows are (ED-03):** independently simulated UNDERLYING trades per plan - no option selection, no executable fills, no fees, "
+          "no shared capital / slot / order competition (unmodeled, hence unscorable as economics). A difference between two cohort rows is an "
+          "'underlying independent-replay cohort difference under these assumptions', not the measured economic value of the model or of a policy. "
+          "Pre-market evidence per cohort: " + "; ".join(f"{k}: {v['premarketSources']}" for k, v in d["cohorts"].items()) + ".", "",
+          "## Baseline funnel reconciliation (cohort A symbols: live journal vs this replay)", "",
+          f"Live: fired {d['baselineFunnel']['liveFired']}, refused before an order {d['baselineFunnel']['liveRefusedBeforeOrder']}, orders {d['baselineFunnel']['liveOrders']}, "
+          f"positions opened {d['baselineFunnel']['liveFilled']} | Replay: fired {d['baselineFunnel']['replayFired']}, filled {d['baselineFunnel']['replayFilled']}. {d['baselineFunnel']['note']}", "",
+          "| symbol | live fired | live refused pre-order | live orders | live filled | replay fired | replay filled | replay outcomes | live refusal |", "|---|---:|---:|---:|---:|---:|---:|---|---|"]
+    for r in d["baselineFunnel"]["rows"]:
+        L.append(f"| {r['symbol']} | {r['liveFired']} | {r['liveRefusedBeforeOrder']} | {r['liveOrders']} | {r['liveFilled']} | {r['replayFired']} | {r['replayFilled']} | {r['replayOutcomes']} | {'; '.join(r['liveRefusals'])[:70]} |")
+    L += ["",
           "## What the model vetoed (first no-trade reason, classified)", "", "| category | class | n |", "|---|---|---:|"]
     for v in d["vetoCategories"]: L.append(f"| {v['category']} | {v['class']} | {v['n']} |")
     nt = d["vetoNamedTrigger"]
@@ -364,7 +402,9 @@ def render(d: dict) -> str:
           "- Exception features are frozen guesses at what the model's prose encodes; an unknown feature (missing touches / target basis) never fails a plan, "
           "which biases C toward inclusion. Read the agreement table before trusting C.",
           "- Symbols without stored bars were fetched from Yahoo for research; a symbol still without bars or a print is unknown, never a non-fill.",
-          "- One session. Nothing here is a verdict on the model's selection value; it is the first order-free A/B/C the review asked for."]
+          "- A feature that reproduces a veto reproduces that veto's stated reason, not the model's whole-plan eligibility decision.",
+          "- One session, and the exception features were written after reading this session's vetoes: scoring them on the same session is exploratory "
+          "by construction. Future sessions must be prospective or held out. Nothing here is a verdict on the model's selection value."]
     return "\n".join(L) + "\n"
 
 

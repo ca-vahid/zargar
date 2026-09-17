@@ -142,3 +142,17 @@ never a gate.
 
 First rows (2026-09-17, exploratory): P-06 SCHW (shares) `compared` -$1.17 on 33 shares versus the close flatten;
 BMNR (puts) `underlying_proxy_only` +2.01 R on the underlying versus the later stop, premium unknown. Two rows say nothing.
+
+**P-06 accounting after ED-02 (2026-09-17 evening; supersedes the paragraph above where they differ).** Eligible only
+after a CONFIRMED TP1 fill (executions of the trade instance's tp1 exit order; a cancelled or pending trim is not a trim).
+The remainder = original fill minus every execution at or before the signal (partial and intermediate trims reduce it).
+Signal = the first 1m bar completed after the TP1 fill (the fill minute's own bar included) whose close is back through the
+saved TP1, over consecutive minutes (a gap = unknown), inspecting only bars completed before production's next runner
+fill (a stop or trim that filled first wins: `not_triggered`). Candidate = the remainder sold at the first fresh COVERED
+executable quote after the signal when a runtime `tp1-reclaim` observation exists (options; dollars = k x (bid - fill) x m
+- actual entry fee - modeled exit fee); otherwise the next bar's open is an UNDERLYING PROXY for shares and options alike
+and no dollars are stated. Production = the remainder's actual fills after the signal (VWAP, allocated fees) to its
+terminal event; options compare underlying to underlying (the close of the bar containing production's first runner fill).
+A remainder still open at the cutoff is `partial`. Runtime observer: `PlanRunner._reclaim_capture` (behind
+`shadow_exit_observe`, same evidence rules as shadow-exit-v1, enqueued, never awaited ahead of protection). The 2026-09-17
+SCHW dollar comparison stated earlier is WITHDRAWN; both 09-17 rows are `underlying_proxy_only`.
