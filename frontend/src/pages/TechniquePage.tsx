@@ -18,6 +18,7 @@ import { fmtDateTime } from "../lib/format";
 import { useStore } from "../store";
 import { absoluteUrl } from "../lib/routing";
 import type { TechniqueRun, TechniqueSetup, TechniqueStatus } from "../types";
+import { FULL_FETCH_CONCURRENCY, isUnresolved, openIds as scanOpenIds, pickStragglers, scanFinished } from "../lib/scanProgress";
 
 const TFS = ["1m", "5m", "15m", "30m", "1h"];
 
@@ -125,49 +126,77 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   const finished = useRef(false);
   const doneOrder = useRef<string[]>([]);
 
+  // 2026-09-16: this loop once sat at "73/114 · 0 working · 0 queued · ~2.1 h left" for hours on a batch the server
+  // had finished, while hammering the engine — see lib/scanProgress.ts. Rules: the list is filtered to the batch's own
+  // trigger (another technique's research runs cannot push it out of the window), a run seen terminal is never fetched
+  // again, a run the list cannot show gets a bounded number of direct looks and is then counted as unresolved, one
+  // poll runs at a time, the full-run fetches for the table are throttled, and a batch with nothing open is FINISHED.
+  const fullRef = useRef(full); fullRef.current = full;
+  const rowsRef = useRef(rows); rowsRef.current = rows;
+  const misses = useRef<Record<string, number>>({});
+  const [missBump, setMissBump] = useState(0);        // re-render when an id becomes unresolved
+  const inFlight = useRef(false);
+  const fullQueue = useRef<string[]>([]);
+  const fullBusy = useRef(0);
+  const pumpFull = () => {
+    while (fullBusy.current < FULL_FETCH_CONCURRENCY && fullQueue.current.length) {
+      const id = fullQueue.current.shift()!;
+      if (fullRef.current[id]) continue;
+      fullBusy.current += 1;
+      api.techniqueRun(id).then((fr) => setFull((m) => ({ ...m, [fr.id]: fr }))).catch(() => undefined)
+        .finally(() => { fullBusy.current -= 1; pumpFull(); });
+    }
+  };
   useEffect(() => {
     finished.current = false;   // ids can GROW mid-scan (batch adoption below)
     let stop = false;
     const poll = async () => {
-      if (finished.current) return;
+      if (finished.current || inFlight.current) return;
+      inFlight.current = true;
       try {
-        // the list window MUST cover the whole batch — a 72-run batch once sat
-        // stuck at "60 done" because this poll only looked at the last 60 runs
-        const all = await api.techniqueRuns(Math.max(100, ids.length + 30));
-        if (stop) return;
+        const open = scanOpenIds(ids, rowsRef.current, misses.current);
         const map: Record<string, TechniqueRun> = {};
-        for (const r of all) if (ids.includes(r.id)) map[r.id] = r;
-        // stragglers that still fell outside the window: fetch them directly
-        const notFound: string[] = [];
-        for (const id of ids.filter((x) => !map[x]).slice(0, 40)) {
-          try { map[id] = await api.techniqueRun(id); } catch { notFound.push(id); }
-        }
-        if (stop) return;
-        // MERGE, never replace: a run outside this poll's window must not vanish and
-        // flip the panel between "checking" and "finished" every few seconds
-        setRows((prev) => ({ ...prev, ...map }));
-        if (notFound.length) setMissing((m) => { const n = { ...m }; for (const id of notFound) n[id] = (n[id] ?? 0) + 1; return n; });
-        for (const id of ids) {
-          const r = map[id];
-          if (r && r.status !== "running") {
-            if (!doneOrder.current.includes(id)) doneOrder.current.push(id);
-            if (!full[id] && r.status !== "failed")
-              api.techniqueRun(id).then((fr) => setFull((m) => ({ ...m, [fr.id]: fr }))).catch(() => undefined);
+        if (open.length) {
+          // the list window MUST cover the whole batch — a 72-run batch once sat stuck at "60 done" because this poll
+          // only looked at the last 60 runs; filtered to the batch's trigger so other runs cannot crowd it out
+          const all = await api.techniqueRuns(Math.max(100, ids.length + 30), undefined, { trigger: armable ? "promote" : "scan" });
+          if (stop) return;
+          for (const r of all) if (open.includes(r.id)) map[r.id] = r;
+          // stragglers the window still misses: a few direct looks per tick, concurrently, then give up on them
+          const look = pickStragglers(open, map, misses.current);
+          const got = await Promise.allSettled(look.map((id) => api.techniqueRun(id)));
+          if (stop) return;
+          let newlyUnresolved = false;
+          got.forEach((g, i) => {
+            if (g.status === "fulfilled") map[g.value.id] = g.value;
+            else { misses.current[look[i]] = (misses.current[look[i]] ?? 0) + 1; if (isUnresolved(look[i], misses.current)) newlyUnresolved = true; }
+          });
+          if (newlyUnresolved) setMissBump((n) => n + 1);
+          // MERGE, never replace: a run outside this poll's window must not vanish and
+          // flip the panel between "checking" and "finished" every few seconds
+          if (Object.keys(map).length) setRows((prev) => ({ ...prev, ...map }));
+          for (const id of Object.keys(map)) {
+            const r = map[id];
+            if (r.status !== "running") {
+              if (!doneOrder.current.includes(id)) doneOrder.current.push(id);
+              if (!fullRef.current[id] && r.status !== "failed" && !fullQueue.current.includes(id)) fullQueue.current.push(id);
+            }
           }
+          pumpFull();
+          api.techniqueStatus().then((st) => { if (!stop) setActive((st as any).activeRuns ?? {}); }).catch(() => undefined);
         }
-        api.techniqueStatus().then((st) => { if (!stop) setActive((st as any).activeRuns ?? {}); }).catch(() => undefined);
         setNow(Date.now());
-        if (ids.length && ids.every((id) => map[id] && map[id].status !== "running")) {
+        if (scanFinished(ids, { ...rowsRef.current, ...map }, misses.current)) {
           finished.current = true;
           onDone();
         }
-      } catch { /* transient */ }
+      } catch { /* transient */ } finally { inFlight.current = false; }
     };
     void poll();
     const t = setInterval(() => void poll(), 3000);
     return () => { stop = true; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids.join(","), Object.keys(full).length]);
+  }, [ids.join(",")]);
 
   const bestTrigger = (fr?: TechniqueRun) => {
     const trig = (fr?.result?.plan?.triggers ?? []).filter((t: any) => t.valid);
@@ -203,7 +232,9 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   // ---- live progress: done / working (real semaphore slots) / queued ------
   const doneIds = doneOrder.current.filter((id) => rows[id] && ids.includes(id));   // never count hidden rows
   const failedIds = doneIds.filter((id) => rows[id]?.status === "failed");
-  const allDoneNow = ids.length > 0 && ids.every((id) => rows[id] && rows[id].status !== "running");
+  void missBump;
+  const unresolvedIds = ids.filter((id) => !rows[id] && isUnresolved(id, misses.current));   // given up on: counted, never re-asked
+  const allDoneNow = scanFinished(ids, rows, misses.current);
   if (allDoneNow) finished.current = true;          // sticky: a finished batch never flips back to "checking"
   const allDone = finished.current || allDoneNow;
   // "working" time counts from when a run actually took a slot (ref lives up
@@ -218,7 +249,8 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   const queuedIds = ids.filter((id) => !active[id] && rows[id]?.status === "running" && !firstActive.current[id]);
   const loadingIds = ids.filter((id) => !rows[id]);
   void loadingIds;
-  const pct = ids.length ? Math.round((doneIds.length / ids.length) * 100) : 0;
+  const resolvedCount = doneIds.length + unresolvedIds.length;
+  const pct = ids.length ? Math.round((resolvedCount / ids.length) * 100) : 0;
   const startMs = useMemo(() => {
     const ts = ids.map((id) => rows[id]?.createdAt).filter(Boolean)
       .map((t) => new Date(t as string).getTime());
@@ -226,7 +258,8 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Object.keys(rows).length]);
   let eta = "";
-  if (!allDone && startMs && doneIds.length >= 3) {
+  // an estimate only while something is actually running — a restored panel with nothing in flight once read "~2.1 h left"
+  if (!allDone && startMs && doneIds.length >= 3 && workingIds.length + finishingIds.length + queuedIds.length > 0) {
     const remainMs = ((now - startMs) / doneIds.length) * (ids.length - doneIds.length);
     const m = Math.max(1, Math.round(remainMs / 60000));
     eta = m >= 90 ? `~${(m / 60).toFixed(1)} h left` : `~${m} min left`;
@@ -305,7 +338,7 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   // completion order while running (rows appear as they finish, no jumping);
   // the quality sort (analyst first, then score) applies once everything is in
   const tableIds = allDone
-    ? ids.slice().sort((a, b) => (Number(analystOk(full[b])) - Number(analystOk(full[a])))
+    ? ids.filter((id) => !unresolvedIds.includes(id)).sort((a, b) => (Number(analystOk(full[b])) - Number(analystOk(full[a])))
         || ((bestTrigger(full[b])?.assessment?.score ?? -1) - (bestTrigger(full[a])?.assessment?.score ?? -1)))
     : doneIds;
 
@@ -314,13 +347,14 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
       <div className="tq-progress-bar" role="progressbar" aria-valuenow={pct}>
         <div className="fill" style={{ width: `${pct}%` }} />
       </div>
-      <b className="nowrap">{doneIds.length}/{ids.length} · {pct}%</b>
+      <b className="nowrap">{resolvedCount}/{ids.length} · {pct}%</b>
       {!allDone && (
         <span className="muted nowrap">
           {workingIds.length} working{finishingIds.length ? ` · ${finishingIds.length} finishing` : ""} · {queuedIds.length} queued{eta ? ` · ${eta}` : ""}
         </span>
       )}
       {failedIds.length > 0 && <span className="neg nowrap">{failedIds.length} failed</span>}
+      {unresolvedIds.length > 0 && <span className="muted nowrap" title="The server could not return these runs after several attempts; they are counted as finished so the batch can close. Open History to look for them.">{unresolvedIds.length} not loaded</span>}
     </div>
   );
 
@@ -1036,7 +1070,9 @@ export function TechniquePage() {
     const batch = promos.filter((r) => newest - new Date(r.createdAt!).getTime() < 10 * 60_000);
     if (batch.length < 2) return;
     const ids = batch.map((r) => r.id).sort();
-    if (localStorage.getItem("zargar_tq_scan_dismissed") === ids.join(",")) return;
+    // a dismissed batch stays dismissed even when the sheet merge later grows the id set (the panel kept coming back)
+    const dismissed = new Set((localStorage.getItem("zargar_tq_scan_dismissed") ?? "").split(",").filter(Boolean));
+    if (ids.every((id) => dismissed.has(id))) return;
     setScan({ ids, done: batch.every((r) => r.status !== "running"), armable: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scan, runs.length]);
@@ -1175,11 +1211,11 @@ export function TechniquePage() {
         if (failed) toast("info", `${failed} symbol(s) could not start (daily cap / errors)`);
         if (reused.length) toast("info", `${reused.length} setup(s) already had an analyst read — reused, not re-run`);
         const ids = [...reused, ...started];
-        if (ids.length) setScan({ ids, done: false, armable: true });
+        if (ids.length) { localStorage.removeItem("zargar_tq_scan_dismissed"); setScan({ ids, done: false, armable: true }); setTab("validation"); }
       } else {
         const r = await api.techniqueScan();
         if (r.skipped?.length) toast("info", `skipped ${r.skipped.map((s: any) => `${s.symbol} (${s.reason})`).join("; ")}`.slice(0, 160));
-        if (r.started?.length) setScan({ ids: r.started, done: false });
+        if (r.started?.length) { localStorage.removeItem("zargar_tq_scan_dismissed"); setScan({ ids: r.started, done: false }); setTab("validation"); }
       }
       refreshStatus();
       api.techniqueRuns(100).then(setRuns).catch(() => undefined);
@@ -1276,12 +1312,16 @@ export function TechniquePage() {
           </div>
         </Modal>
       )}
+      {/* the check panel belongs to the Validation tab (the sheet lives there); it stays MOUNTED while hidden so switching
+          tabs neither restarts its polling nor re-fetches the table. Phones keep it on every tab (Validation is desktop-only). */}
       {scan && (
+        <div hidden={!isPhone && tab !== "validation"}>
         <ScanPanel ids={scan.ids} armable={scan.armable}
           onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
           onClose={() => { localStorage.setItem("zargar_tq_scan_dismissed", scan.ids.slice().sort().join(",")); setScan(null); }}
           onOpen={(id) => { setFocusRun(id); setTab("analyse"); }}
           onArmedAll={() => useStore.getState().setPage("armed")} />
+        </div>
       )}
       {isPhone && (tab === "chat" || tab === "validation" || tab === "backtest") ? (
         <DesktopOnly tab={tab} status={status} onAnalyse={() => setTab("analyse")} onHistory={() => setTab("history")} />
