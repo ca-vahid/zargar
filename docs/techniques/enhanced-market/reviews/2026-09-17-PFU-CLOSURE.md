@@ -1,9 +1,11 @@
 # EM closure - September 17 preparation follow-up review (PFU-01..PFU-04)
 
 Review: `C:/Cursor/zargar-codex/docs/techniques/enhanced-market/reviews/2026-09-17-PREPARATION-FOLLOWUP-REVIEW.md`
-(reviewed code c74df44, records cd3aa95). **Integrated code SHA: `47275c3f8ff02c857b46b431e71b3300ec0eea67`** on `claude/technique-review-trade-plan-fbb9ba`
-(version 0.8.02; ancestors: the CURRENT runtime checkout `3f5675d` = v0.8.01 and `origin/main` f73d990). This document
-is committed on top of that SHA. Nothing was deployed; the runtime is v0.8.01 build 3f5675d and keeps baseline Practice
+(reviewed code c74df44, records cd3aa95). **Code SHA (the PFU changes): `47275c3f8ff02c857b46b431e71b3300ec0eea67`. Integrated SHA based on the CURRENT runtime:
+`e048f5afaf5a0c23b22630e5713f80bea0be074a`** on `claude/technique-review-trade-plan-fbb9ba` - version **0.8.03** (the Team2 desk took 0.8.02 with PR #193
+while this closure was being written and deployed it at 19:57 PT; the EM block was renumbered, nobody's shipped block
+rewritten). Ancestors of `e048f5afaf5a0c23b22630e5713f80bea0be074a`: the running checkout `ed88f25` (= v0.8.02 build ed88f254, live since 19:57 PT) and
+`origin/main` fbe3fd6. Frontend build + check-release "Release 0.8.03 ... agree" on that tree. Nothing was deployed; the runtime is v0.8.01 build 3f5675d and keeps baseline Practice
 trading, the deterministic entry and observation-only collection unchanged.
 
 ## Per finding
@@ -29,7 +31,7 @@ trading, the deterministic entry and observation-only collection unchanged.
 - BUILT: all four findings, on the EM branch.
 - MERGED: into the EM branch only (main + runtime 3f5675d merged IN; nothing merged OUT to main yet - a PR follows the
   user's word).
-- DEPLOYED: nothing. The runtime stays 0.8.01 build 3f5675d. No restart for research labels; the dirty build string
+- DEPLOYED: nothing by EM. The runtime is 0.8.02 build ed88f254 (Team2's deploy 19:57 PT; the 58 EM arms, settings and helpers re-verified on it). No restart for research labels; the dirty build string
   is the runtime checkout's untracked EM research artifacts, which are committed on the EM branch.
 - COLLECTING: P-02 (observer ON), P-04b paired, P-05 labels - order-free, in the daily report.
 - EVALUATED: P-02 one comparable row (CRWV 09-16 +$61.03 vs production), five unknown for lack of covered observations;

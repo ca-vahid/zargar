@@ -1275,7 +1275,7 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
   tolerance (already on main via PR #174). A new combined candidate needs the runtime checkout `172ce1f` as an
   ancestor and the user's go.
 
-### 2026-09-17 (night of 09-16) - PFU-01..04 closed on the EM branch (`47275c3f8ff02c857b46b431e71b3300ec0eea67`), NOT deployed; runtime is 0.8.01 build 3f5675d
+### 2026-09-17 (night of 09-16) - PFU-01..04 closed on the EM branch (code `47275c3`, integrated `e048f5a` = 0.8.03 on runtime `ed88f25`), NOT deployed; runtime is 0.8.02 build ed88f254 since 19:57 PT (Team2's deploy)
 
 - **PFU-01 watchdog:** held proposal reworked as a pure classification module with a refuse-and-escalate policy for a
   live-but-unhealthy engine (PLATFORM-RULES 2026-09-16 evening, PFU-01 paragraph). Owner coordination: the Tips desk
@@ -1300,7 +1300,7 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
 - **Entry selection after costs:** P-03 friction on filled options 6.2-10.1% of premium (CVNA 09-15 10.1%, CRCL 09-16
   9.0%, CRWV 8.2%), all above the 8% marker except IREN; the marker stays a marker. The paired P-04b result above is the
   first entry-selection measurement and says "not this way" for two sessions.
-- **Verification before the open (against runtime 0.8.01 build 3f5675d, 19:5x PT):** 58 EM arms armed for 2026-09-17,
+- **Verification before the open (re-done against runtime 0.8.02 build ed88f254 at 20:08 PT after Team2's deploy):** 58 EM arms armed for 2026-09-17,
   book EM Practice, all `deterministic`, evidence off; `fire_decision_mode=deterministic`, `fire_evidence_mode=off`,
   `shadow_exit_observe=True`, `shadow_p02_candidate=True`, `preopen_at=09:25`, `trading.mode=practice`; one engine pair,
   Discord gateway and EM ingest worker alive, intake liveness live. The 06:20 PT attending owner is this session's
