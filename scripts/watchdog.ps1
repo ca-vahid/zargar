@@ -67,7 +67,13 @@ if (-not $up -and -not $Force) {
   }
 }
 if ($ProbeOnly) { Log ("probe-only: class=healthy (first probe ok)"); exit 0 }
-if ($up -and -not $Force) { exit 0 }
+if ($up -and -not $Force) {
+  # PFU-01 acceptance: a first-probe recovery clears an old stall marker (and its alert companion) so two unrelated
+  # stalls never chain - this is the normal healthy tick, so it must do the clearing too, not only the classifier path.
+  if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force; Log "engine healthy on the first probe - stall marker cleared" }
+  if (Test-Path ($stallMarker + ".alerted")) { Remove-Item ($stallMarker + ".alerted") -Force }
+  exit 0
+}
 # one start at a time: a start takes ~30-60 s (start.ps1 stops the old process, rebuilds dist if stale, launches)
 # and the 3-minute tick must not pile a second engine onto a restart in progress. The lock is age-based
 # (never deleted), so a crash mid-start cannot wedge the watchdog either.
