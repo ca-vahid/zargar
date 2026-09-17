@@ -1359,3 +1359,17 @@ restoration 72/72 by id, resting 26 -> 26, open 0 -> 0); loop lag 1.6 ms and 0 s
 - **Record consistency:** the closure document was rewritten around one tested candidate with runtime collection and
   offline report generation stated separately (command, owner, location, tool version, output timestamps).
 - Scope kept: no repeat batch, no activation, deterministic Practice trading and observation collection unchanged.
+
+### 2026-09-16 22:05 PT - re-review follow-up: the report cutoff is not the session close (research tool only)
+
+- `em_profitability.confirmation_pair` closed an incomplete horizon whenever the last observed bar sat right before the
+  REPORT cutoff - so an intraday 10:02 ET report with one observed bar read `no_confirmation`. Fixed: only the session's
+  actual last bar (16:00 ET on the firing day, `session_close_of`, or an explicit `session_close_ms`) closes a horizon;
+  an early report leaves it `pending`. Focused case `test_intraday_report_cutoff_is_not_the_session_close` (own test
+  file; reviewer files untouched). The 09-15/09-16 reports were generated after the close and do not change. Ships in
+  the next normal release (0.8.09 block); nothing about preparation or trading moved.
+- Watchdog refusals while Telegram is unconfigured: the EM desk session monitors them on every review tick (refusal lines
+  and the stall marker are printed with an ATTENTION line); one refusal was recorded at 21:43:34 PT tonight - the engine
+  was mid-restart under the 0.8.08 deploy and cleared at 21:46 (correct behaviour, no action).
+- Research load: 379 `options_cartel` manual runs hit the live engine between 18:40 and 21:40 PT (after hours). The
+  review tick now reports run volume by technique for the last 30 minutes and flags research-scale volume during RTH.

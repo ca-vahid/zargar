@@ -74,6 +74,16 @@ options_cartel 1, team2 3, tip 10), 0 missing, 0 new; resting orders 26 -> 26; o
 checkout after the swap: `scripts/tests/watchdog-classify.tests.ps1` 20/20, `watchdog.ps1 -ProbeOnly` = healthy
 (stdout only). The corrected watchdog is therefore what the `ZargarWatchdog` task runs from now on.
 
+## Follow-up after the re-review acceptance (2026-09-16 22:05 PT)
+
+The reviewers accepted the blocker corrections and asked for one more horizon case: distinguish the REPORT cutoff from the
+actual session close. Done on the branch after `e772c42` (0.8.09 block, next normal release, not deployed tonight):
+`confirmation_pair(..., session_close_ms=None)` closes an incomplete horizon only when the last observed bar is the
+session's last bar (`session_close_of` = 16:00 ET on the firing day); a 10:02 ET report with one observed bar is
+`pending`. Case: `tests/test_em_confirmation_pair_rereview.py::test_intraday_report_cutoff_is_not_the_session_close`
+(11 passed with the existing file). Watchdog refusals are monitored by the EM desk session's review tick (Telegram stays
+unconfigured); research volume on the live engine is reported per tick and flagged during market hours.
+
 ## History (earlier trees, for the record only)
 
 - `47275c3` / `e048f5a` / `d3091ae`: first PFU closure (reviewed by the re-review); its watchdog classifier treated a

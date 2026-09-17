@@ -222,6 +222,13 @@ def _ms(d: dt.date, hh: int, mm: int) -> int:
     return int(dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=NY).timestamp() * 1000)
 
 
+def session_close_of(ts_ms: int) -> int:
+    """The regular-session close (16:00 ET) of the day `ts_ms` falls on - the only clock that closes an intraday horizon.
+    Early-close days are not modelled here: a 13:00 ET close leaves horizons pending until 16:00, never the reverse."""
+    d = dt.datetime.fromtimestamp(ts_ms / 1000, tz=NY).date()
+    return _ms(d, 16, 0)
+
+
 def underlying_proxy(bars: list[dict], fired_ts: int, entry: float, stop: float, tp1: float, direction: str, cutoff_ms: int) -> str:
     """Underlying-only diagnostic for a fired trigger that produced no position: which came first after the firing bar,
     a TP1 touch or a close through the stop, by the cutoff. Not dollars, not an option outcome."""
@@ -260,7 +267,8 @@ def session_labels(fired_ts: int, date: str) -> dict:
 
 
 def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: float | None, stop: float | None, tp1: float | None, tp2: float | None,
-                      cutoff_ms: int, *, window_bars: int = P04_CONFIRM_WINDOW_BARS, min_rr: float = P04_MIN_RR) -> dict:
+                      cutoff_ms: int, *, window_bars: int = P04_CONFIRM_WINDOW_BARS, min_rr: float = P04_MIN_RR,
+                      session_close_ms: int | None = None) -> dict:
     """PFU-02 (corrected after the 2026-09-17 re-review): the PAIRED, order-free confirmation variant of one touch
     attempt - a GEOMETRY-ONLY UNDERLYING PROXY, not an admitted entry. Frozen rules:
     - the firing (touch) bar itself never qualifies as the confirming close; the scan starts at the first bar AFTER it
@@ -273,7 +281,9 @@ def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: fl
       quantity-dependent exit rung, the never-chase cap, timing windows, admission and daily-loss budgets;
     - follow the underlying FROM THE ENTRY BAR (inclusive): TP1 touch vs stop close, first come; both on one bar = unknown;
     - an incomplete horizon (fewer than `window_bars` bars observed and the session not over) is `pending`, not
-      `no_confirmation`; the session's last bar before the cutoff closes the horizon.
+      `no_confirmation`; ONLY the session's actual last bar closes the horizon (`session_close_ms`, default 16:00 ET on
+      the firing day) - the REPORT cutoff (`cutoff_ms`, e.g. a 10:02 ET intraday report) never does: fewer bars because
+      the report ran early is pending, not a non-confirmation.
     Underlying-only R (full-size proxy at TP1, -1R at the stop); option premium at the delayed time is UNKNOWN.
     Outcomes: no_confirmation, pending (...), refused_stop_side, refused_no_room, refused_r2, unknown (...), tp1_first,
     stop_first, unresolved."""
@@ -293,7 +303,8 @@ def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: fl
             confirm_i = i; break
     if confirm_i is None:
         observed = min(len(path), window_bars); out["barsWaited"] = observed
-        session_over = bool(path) and int(path[-1]["ts"]) + 2 * 60000 > cutoff_ms      # the last observed bar is the session's last bar
+        close_ms = session_close_ms if session_close_ms is not None else session_close_of(fired_ts)
+        session_over = bool(path) and int(path[-1]["ts"]) + 60000 >= close_ms         # the last observed bar IS the session's last bar
         if observed < window_bars and not session_over:
             out["outcome"] = f"pending (horizon incomplete: {observed} of {window_bars} bars observed)"; return out
         out["outcome"] = "no_confirmation"; return out

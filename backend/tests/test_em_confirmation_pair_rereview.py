@@ -54,9 +54,30 @@ def test_incomplete_horizon_is_pending_unless_the_session_ended():
     one = [_bar(fired, 99.5, 100.2, 99.0, 99.8), _bar(fired + 60000, 99.6, 99.9, 99.2, 99.7)]   # one non-confirming bar observed, hours left
     cp = confirmation_pair(one, fired, "long", level, stop, tp1, None, cutoff_ms=fired + 60 * 60000)
     assert cp["outcome"].startswith("pending (horizon incomplete: 1 of") and cp["barsWaited"] == 1
-    # the same single bar right before the cutoff = the session's last bar: the horizon is closed by the day's end
-    cp2 = confirmation_pair(one, fired, "long", level, stop, tp1, None, cutoff_ms=fired + 2 * 60000)
+    # the same single bar as the session's LAST bar (explicit close right after it): the horizon is closed by the day's end
+    cp2 = confirmation_pair(one, fired, "long", level, stop, tp1, None, cutoff_ms=fired + 2 * 60000, session_close_ms=fired + 2 * 60000)
     assert cp2["outcome"] == "no_confirmation"
+
+
+def test_intraday_report_cutoff_is_not_the_session_close():
+    """Re-review follow-up: a 10:02 ET report with ONE observed bar after a 10:00 touch must stay pending - the report
+    cutoff is not the close. The same shape at 15:59 -> 16:00 IS closed by the session (default 16:00 ET close)."""
+    level, stop, tp1 = 100.0, 99.0, 105.0
+    fired = _ms(10, 0)
+    one = [_bar(fired, 99.5, 100.2, 99.0, 99.8), _bar(fired + 60000, 99.6, 99.9, 99.2, 99.7)]   # 10:00 touch, 10:01 bar observed
+    cp = confirmation_pair(one, fired, "long", level, stop, tp1, None, cutoff_ms=_ms(10, 2))   # report generated at 10:02 ET
+    assert cp["outcome"].startswith("pending (horizon incomplete: 1 of"), cp["outcome"]
+    # the clock alone never promotes a truncated observation: a 16:00 report whose bars still end at 10:01 stays pending
+    cp_late = confirmation_pair(one, fired, "long", level, stop, tp1, None, cutoff_ms=_ms(16, 0))
+    assert cp_late["outcome"].startswith("pending"), "a truncated observation is never promoted to no_confirmation by the clock alone"
+    # the session's actual last bar closes it: touch 15:58, one bar 15:59, report at 16:00
+    fired2 = _ms(15, 58)
+    last = [_bar(fired2, 99.5, 100.2, 99.0, 99.8), _bar(fired2 + 60000, 99.6, 99.9, 99.2, 99.7)]
+    cp2 = confirmation_pair(last, fired2, "long", level, stop, tp1, None, cutoff_ms=_ms(16, 0))
+    assert cp2["outcome"] == "no_confirmation"
+    # and an intraday report at 15:59:30-equivalent (cutoff 16:00 but bars only to 15:58) stays pending - the 15:59 bar is missing
+    cp3 = confirmation_pair(last[:1] + [], fired2, "long", level, stop, tp1, None, cutoff_ms=_ms(15, 59))
+    assert cp3["outcome"].startswith("pending"), cp3["outcome"]
     # a full window of non-confirming bars is no_confirmation
     full = [_bar(fired, 99.5, 100.2, 99.0, 99.8)] + [_bar(fired + (i + 1) * 60000, 99.6, 99.9, 99.2, 99.7) for i in range(P04_CONFIRM_WINDOW_BARS)]
     assert confirmation_pair(full, fired, "long", level, stop, tp1, None, cutoff_ms=fired + 60 * 60000)["outcome"] == "no_confirmation"
