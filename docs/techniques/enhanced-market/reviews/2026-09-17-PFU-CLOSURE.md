@@ -81,7 +81,7 @@ actual session close. Done on the branch after `e772c42` (0.8.09 block, next nor
 `confirmation_pair(..., session_close_ms=None)` closes an incomplete horizon only when the last observed bar is the
 session's last bar (`session_close_of` = 16:00 ET on the firing day); a 10:02 ET report with one observed bar is
 `pending`. Case: `tests/test_em_confirmation_pair_rereview.py::test_intraday_report_cutoff_is_not_the_session_close`
-(11 passed with the existing file). Watchdog refusals are monitored by the EM desk session's review tick (Telegram stays
+(11 passed with the existing file). DEPLOYED 2026-09-16 22:02 PT as v0.8.09 build `dd525de1f8c40b70f6fd0cfe444b5d4c855b9efc` together with an EM Analyse-tab crash fix (receipt verified, restoration 72/72 by id against `logs/restart-inventory-20260916-220116.json`, resting orders 26 -> 26, open trades 0). Watchdog refusals are monitored by the EM desk session's review tick (Telegram stays
 unconfigured); research volume on the live engine is reported per tick and flagged during market hours.
 
 ## History (earlier trees, for the record only)
