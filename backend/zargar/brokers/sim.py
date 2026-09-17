@@ -325,6 +325,9 @@ class SimExecutor(Executor):
     def quote_rejection(self, order, q, at):
         if not all(math.isfinite(v) for v in (q.bid, q.ask, q.ts, q.source_ts, q.bid_size, q.ask_size)) or not 0 < q.bid <= q.ask or min(q.bid_size, q.ask_size) < 0:
             return "A finite uncrossed two-sided quote is required for a simulated fill"
+        if getattr(q, "transform", "") or str(q.source or "").startswith("derived:"):
+            return ("Locally derived prices cannot price a simulated fill "
+                    f"({q.transform or 'derived'} from {getattr(q, 'raw_source', '') or 'unknown'}; raw venue quote preserved apart)")
         if q.delayed or q.source == "chain":
             return "Delayed quotes cannot price simulated fills"
         if not 0 <= at-q.ts <= 15_000:
@@ -356,10 +359,16 @@ class SimExecutor(Executor):
         return None
 
     def quote_evidence(self, q, at):
+        tr = getattr(q, "transform", "") or ""
         result = {"policy": "sim_fill_v1", "syntheticMode": self.synthetic_quotes,
             "observedAt": at, "source": q.source, "sourceAt": q.source_ts or None,
             "receivedAt": q.ts, "symbol": q.symbol, "bid": q.bid, "ask": q.ask,
-            "bidSize": q.bid_size, "askSize": q.ask_size, "delayed": q.delayed, "halted": q.halted}
+            "bidSize": q.bid_size, "askSize": q.ask_size, "delayed": q.delayed, "halted": q.halted,
+            # E17-01: a transformed quote keeps its parents on the record (None when untouched)
+            "transform": tr,
+            "rawBid": getattr(q, "raw_bid", 0.0) if tr else None, "rawAsk": getattr(q, "raw_ask", 0.0) if tr else None,
+            "rawSource": (getattr(q, "raw_source", "") or None) if tr else None,
+            "rawSourceAt": (getattr(q, "raw_source_ts", 0) or None) if tr else None}
         return {key: None if isinstance(value, float) and not math.isfinite(value) else value for key, value in result.items()}
 
     def _try_fill(self, w: _Working, q: Quote) -> float | None:

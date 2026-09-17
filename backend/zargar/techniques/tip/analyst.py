@@ -32,6 +32,96 @@ from pydantic import BaseModel, Field
 log = logging.getLogger(__name__)
 
 TIMEOUT_S = 120.0
+# E17-02 (2026-09-17): part of the run deadline is RESERVED for the final answer / one
+# repair - optional tool or model work never starts when it would eat that reserve (the
+# AMZN appraisal spent 120 s on four calls and a repair, then died with an empty error).
+FINAL_RESERVE_S = 20.0
+
+
+class AnalystDeadline(Exception):
+    """The run's end-to-end deadline (or its final-answer reserve) is exhausted."""
+
+
+def _loop_now() -> float:
+    return time.monotonic()
+
+
+def prompt_cache_enabled(eng) -> bool:
+    """E17-03: knob-gated prompt caching of the STABLE prefix (system prompt + schema + tool
+    definitions). Off by default - the reviewer's rule is to validate actual cache hits,
+    billable cost and latency on identical prefixes before claiming any saving, and never
+    to let cached stale evidence stand in for live quotes/positions (those ride in the
+    per-run header, outside the cached prefix)."""
+    try:
+        return bool(eng.settings.get("techniques.tip.prompt_cache", False))
+    except Exception:
+        return False
+
+
+def cacheable_request(system, tools, *, enabled: bool):
+    """(system_param, tools_param): with caching on, the system prompt becomes one text block
+    carrying `cache_control: ephemeral` and the LAST tool definition carries the same marker
+    (the provider caches everything up to and including a marked block; an exact-prefix
+    match is required, so a changed rule text or tool schema invalidates it by itself).
+    Off -> the plain string and the tool list, unchanged."""
+    if not enabled:
+        return system, tools
+    sys_blocks = [{"type": "text", "text": str(system), "cache_control": {"type": "ephemeral"}}]
+    if tools:
+        tools = [dict(t) for t in tools]
+        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    return sys_blocks, tools
+
+
+def _arm_deadline(st: dict, eng=None, *, timeout_s: float | None = None) -> dict:
+    """Give a caller-held loop state a monotonic deadline + reserve (idempotent)."""
+    if "deadline" not in st:
+        st["startedAt"] = _loop_now()
+        st["deadline"] = st["startedAt"] + float(timeout_s if timeout_s is not None else TIMEOUT_S)
+    if "reserveS" not in st:
+        reserve = FINAL_RESERVE_S
+        with contextlib.suppress(Exception):
+            if eng is not None and getattr(eng, "settings", None) is not None:
+                reserve = float(eng.settings.get("techniques.tip.analyst_final_reserve_s", FINAL_RESERVE_S) or FINAL_RESERVE_S)
+        # never more than half the budget: a short run still gets to work before it must answer
+        total = float(st["deadline"]) - float(st["startedAt"])
+        st["reserveS"] = max(0.0, min(reserve, total * 0.5))
+    return st
+
+
+def _remaining_s(st: dict | None) -> float | None:
+    if not st or "deadline" not in st:
+        return None
+    return float(st["deadline"]) - _loop_now()
+
+
+def _typed_failure(kind: str, *, stage: str | None, st: dict | None, detail: str) -> dict:
+    """The record of WHY a run had no final answer: a typed kind, the stage, the elapsed
+    and remaining budget - never an empty string (a TimeoutError has none)."""
+    rem = _remaining_s(st)
+    elapsed = (_loop_now() - float(st["startedAt"])) if st and "startedAt" in st else None
+    return {"kind": kind, "stage": stage, "detail": (detail or kind)[:300],
+            "elapsedS": round(elapsed, 1) if elapsed is not None else None,
+            "remainingS": round(rem, 1) if rem is not None else None,
+            "reserveS": (st or {}).get("reserveS"), "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+
+
+def _error_text(exc: BaseException) -> str:
+    """str(exc) or, when that is empty (asyncio.TimeoutError, CancelledError), the type name."""
+    t = str(exc).strip()
+    return t if t else type(exc).__name__
+
+
+def _failure_kind(exc: BaseException) -> str:
+    if isinstance(exc, AnalystDeadline):
+        return "deadline"
+    if isinstance(exc, asyncio.TimeoutError):
+        return "timeout"
+    if isinstance(exc, asyncio.CancelledError):
+        return "cancelled"
+    if isinstance(exc, ValueError) or type(exc).__name__ in ("ValidationError", "JSONDecodeError"):
+        return "validation"
+    return "error"
 
 
 class AnalystOpinion(BaseModel):
@@ -568,8 +658,13 @@ async def _expression_context(eng, ctx: dict) -> dict:
             equity = float(await eng.positions.equity(pid) or 0) or None
     budget, source = _geo.risk_budget(s, equity)
     allocation = ctx.get("budgetPerTip")
+    # fee basis = execcost's (review 2026-09-17: the preview used the commission alone and
+    # understated the modelled round trip by the regulatory $0.05 per contract per side)
+    from .execcost import fees_from_settings as _fees
+    _f = _fees(s)
     return {"riskBudget": budget, "riskBudgetSource": source, "allocationLimit": allocation,
-            "feePerContract": float(s.get("options.fee_per_contract", 0.0) or 0.0)}
+            "feePerContract": float(_f["feePerContract"]) + float(_f["regPerContract"]),
+            "feeBasis": "options.fee_per_contract + sim.reg_fee_per_contract per contract per side (execcost basis)"}
 
 
 async def _contract_evidence(eng, contract: str) -> dict:
@@ -1277,14 +1372,31 @@ API_RETRIES = {"n": 0}            # since-boot 529-retry tally (POST-SOAK 4.4, m
 MUTATING_TOOLS = ("save_note", "update_exit_plan", "close_position", "disarm_plan")
 
 
-def _fail_meta(state: dict | None, tool_ctx: dict | None) -> dict:
+def _fail_meta(state: dict | None, tool_ctx: dict | None, *, exc: BaseException | None = None,
+               stage: str | None = None) -> dict:
     """What a FAILED run still owes the record (Codex v0.7.20 review gap 1):
-    the usage it consumed and the side effects it performed."""
+    the usage it consumed, the side effects it performed and - E17-02 - a TYPED
+    failure (kind, stage, elapsed/remaining budget). A call that was still in
+    flight when the run died is counted as an unknown call and the usage is
+    marked partial: the totals are a lower bound, never a full account."""
     out: dict = {}
-    if state and state.get("usage"):
-        out["usage"] = state["usage"]
+    usage = state.get("usage") if state else None
+    if usage is not None and state.get("inFlight"):
+        usage["unknownCalls"] = int(usage.get("unknownCalls") or 0) + 1
+        usage["partial"] = True
+        usage.setdefault("perCall", []).append({"attempt": 1, "error": "in flight when the run ended",
+                                                "at": dt.datetime.now(dt.timezone.utc).isoformat()})
+        state["inFlight"] = False
+    if usage:
+        out["usage"] = usage
     if tool_ctx and tool_ctx.get("receipts"):
         out["receipts"] = tool_ctx["receipts"]
+    failure = (state or {}).get("failure")
+    if failure is None and exc is not None:
+        failure = _typed_failure(_failure_kind(exc), stage=stage or (tool_ctx or {}).get("stage"),
+                                 st=state, detail=_error_text(exc))
+    if failure is not None:
+        out["failure"] = failure
     return out
 
 
@@ -1388,6 +1500,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     st = state if state is not None else {}
     messages: list = st.setdefault("messages", [{"role": "user", "content": header}])
     usage = st.setdefault("usage", _usage_new())
+    if "promptCache" not in st:
+        st["promptCache"] = prompt_cache_enabled(eng)
+    usage["promptCache"] = bool(st["promptCache"])
+    usage.setdefault("model", model)
     from ...research import llm_stats
     stage = str(tool_ctx.get("stage") or "appraise")
     _settings = getattr(eng, "settings", None)
@@ -1401,15 +1517,56 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         turn_cap = base_cap
         if usage["stops"] and usage["stops"][-1] == "max_tokens":
             turn_cap = min(base_cap * 2, 8192)
+        # E17-02: the end-to-end deadline governs every turn. Out of time -> a typed
+        # deadline failure (never a silent empty error). Inside the final-answer
+        # reserve -> no more tool work: the model is told to answer now, tools off.
+        remaining = _remaining_s(st)
+        force_final = bool(st.get("forceFinal"))
+        if remaining is not None:
+            if remaining <= 0.5:
+                st["failure"] = _typed_failure("deadline", stage=stage, st=st,
+                                               detail="run deadline exhausted before a final answer")
+                rec.step("error", f"Deadline exhausted ({stage}) — no final answer; typed failure recorded.")
+                raise AnalystDeadline(st["failure"]["detail"])
+            if remaining < float(st.get("reserveS") or FINAL_RESERVE_S):
+                force_final = True
+        if force_final and not st.get("finalDemanded"):
+            st["finalDemanded"] = True
+            rec.step("note", f"Final-answer reserve reached ({stage}: {remaining if remaining is None else round(remaining, 1)} s left) "
+                             "— tools disabled, asking for the JSON answer now.",
+                     deadline={"kind": "reserve", "stage": stage, "remainingS": None if remaining is None else round(remaining, 1),
+                               "reserveS": st.get("reserveS")})
+            messages.append({"role": "user", "content":
+                             "Time is nearly up. Reply with ONLY the JSON object now — request no more tools."})
+        _sys_param, _tools_param = cacheable_request(system, TOOLS, enabled=st.get("promptCache", False))
+        create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=messages, tools=_tools_param)
+        if force_final:
+            create_kw["tool_choice"] = {"type": "none"}
         resp = None
         for attempt in (1, 2, 3):
             _t0 = time.perf_counter()
             try:
-                resp = await client.messages.create(
-                    model=model, max_tokens=turn_cap, system=system,
-                    messages=messages, tools=TOOLS)
+                st["inFlight"] = True
+                if remaining is not None:
+                    resp = await asyncio.wait_for(client.messages.create(**create_kw),
+                                                  timeout=max(1.0, remaining - 0.25))
+                else:
+                    resp = await client.messages.create(**create_kw)
+                st["inFlight"] = False
                 break
+            except asyncio.TimeoutError:
+                # the provider call itself outlived the deadline: its billing is unknown
+                st["inFlight"] = False
+                _usage_record(usage, None, latency_ms=(time.perf_counter() - _t0) * 1000.0,
+                              attempt=attempt, error="timeout: provider call cut at the run deadline")
+                usage["unknownCalls"] = int(usage.get("unknownCalls") or 0) + 1
+                usage["partial"] = True
+                st["failure"] = _typed_failure("timeout", stage=stage, st=st,
+                                               detail="provider call exceeded the run deadline (usage of that call unknown)")
+                rec.step("error", f"Provider call cut at the run deadline ({stage}); usage marked partial.")
+                raise AnalystDeadline(st["failure"]["detail"])
             except asyncio.CancelledError:
+                st["inFlight"] = False
                 # shutdown/restart mid-call (KFIN-01): the attempt is on the
                 # record as cancelled — not a paid request — and the earlier
                 # paid turns stay in `usage` for the terminal persistence
@@ -1422,6 +1579,7 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 # twice with backoff, then let the run fail as before. Failed
                 # attempts are MEASURED (Codex M1) — a provider retry is a
                 # retry; an ordinary tool-use turn never is.
+                st["inFlight"] = False
                 _usage_record(usage, None, latency_ms=(time.perf_counter() - _t0) * 1000.0,
                               attempt=attempt, error=f"{type(exc).__name__}: {exc}")
                 with contextlib.suppress(Exception):
@@ -1432,6 +1590,8 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 transient = ("overloaded" in str(exc).lower()
                              or getattr(exc, "status_code", 0) in (429, 500, 502, 503, 529))
                 if not transient or attempt >= 3:
+                    st["failure"] = _typed_failure("error", stage=stage, st=st,
+                                                   detail=f"{type(exc).__name__}: {_error_text(exc)}")
                     raise
                 API_RETRIES["n"] += 1
                 delay = _API_RETRY_DELAYS[min(attempt - 1, len(_API_RETRY_DELAYS) - 1)]
@@ -1472,9 +1632,13 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         results = []
         for c in calls:
             args = dict(c.input)
-            if len(tools_used) >= max_tools:
-                out = {"error": "tool budget exhausted — answer now"}
-                rec.step("note", "Tool budget exhausted — asking for the final answer.")
+            if len(tools_used) >= max_tools or force_final:
+                # over budget OR inside the final-answer reserve: the request is stubbed,
+                # never executed - no duplicate side effects on a repair / late turn
+                out = {"error": ("tool budget exhausted — answer now" if len(tools_used) >= max_tools
+                                 else "no time left for tools — answer now")}
+                rec.step("note", "Tool budget exhausted — asking for the final answer." if len(tools_used) >= max_tools
+                         else "Final-answer reserve — tool request stubbed, asking for the final answer.")
             else:
                 rec.step("tool_call", f"→ {c.name}({json.dumps(args, default=str)})",
                          tool=c.name, args=args)
@@ -1717,7 +1881,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 "stage": "appraise", "budgetPerTip": float(policy.budget_per_tip),
                 "toolsUsed": tools_used}
 
-    loop_state: dict = {}
+    loop_state: dict = _arm_deadline({}, eng)
 
     async def loop() -> AnalystOpinion | None:
         text = await run_agent_loop(
@@ -1731,7 +1895,15 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         except ValueError as exc:
             # one cheap retry — on the SAME transcript (Codex finding 4: the
             # old repair restarted from the header, discarding every tool
-            # result and the partial answer). TIMEOUT_S bounds both attempts.
+            # result and the partial answer). The SAME deadline bounds both
+            # attempts (E17-02): a repair with no time left is a typed failure,
+            # and a repair never runs tools again (no duplicate side effects).
+            _rem = _remaining_s(loop_state)
+            if _rem is not None and _rem < 5.0:
+                loop_state["failure"] = _typed_failure("validation", stage="appraise", st=loop_state,
+                                                       detail=f"no parseable opinion and no time left for a repair: {exc}")
+                raise ValueError(loop_state["failure"]["detail"]) from exc
+            loop_state["forceFinal"] = True
             rec.step("note", f"Reply had no parseable opinion ({exc}) — same-"
                              "transcript repair, tool evidence retained; JSON only.")
             loop_state["messages"].append(
@@ -1757,8 +1929,9 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 raise
 
     try:
-        opinion = await asyncio.wait_for(loop(), timeout=TIMEOUT_S)
-    except asyncio.CancelledError:
+        # the loop enforces the deadline itself (typed); the outer wait is a backstop only
+        opinion = await asyncio.wait_for(loop(), timeout=TIMEOUT_S + 5.0)
+    except asyncio.CancelledError as exc:
         # shutdown/restart mid-run (Codex finding 4): CancelledError is not an
         # Exception — the run used to stay "running" forever; reconcile now
         rec.step("error", "Cancelled (shutdown/restart) — reconciled as failed.")
@@ -1766,13 +1939,14 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         with _ctx.suppress(Exception):
             await _persist_run(eng, run_id, status="failed", rec=rec,
                                error="cancelled: shutdown/restart",
-                               opinion=_fail_meta(loop_state, tool_ctx))
+                               opinion=_fail_meta(loop_state, tool_ctx, exc=exc, stage="appraise"))
         raise
     except Exception as exc:
-        log.warning("tip analyst failed for %s: %s", signal_row.id, exc)
-        rec.step("error", f"Analyst failed: {exc}")
-        await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500],
-                           opinion=_fail_meta(loop_state, tool_ctx))
+        meta = _fail_meta(loop_state, tool_ctx, exc=exc, stage="appraise")
+        err = f"{meta.get('failure', {}).get('kind', 'error')}: {_error_text(exc)}"
+        log.warning("tip analyst failed for %s: %s", signal_row.id, err)
+        rec.step("error", f"Analyst failed: {err}", failure=meta.get("failure"))
+        await _persist_run(eng, run_id, status="failed", rec=rec, error=err[:500], opinion=meta)
         return None
     if opinion is None:
         rec.step("error", "No opinion produced (loop exhausted).")
@@ -1920,6 +2094,9 @@ class IntakeRun:
         self.eng = eng
         self.id: str | None = None
         self.rec: _Recorder | None = None
+        # E17-03: the extraction model's identity (set by the intake service) rides every
+        # persisted intake record, so usage can be joined to a rate - not only on review runs
+        self.model: str | None = None
 
     async def start(self, *, source: str, chars: int, has_image: bool,
                     preview: str = "", experiment: str | None = None) -> None:
@@ -1966,11 +2143,13 @@ class IntakeRun:
         if not self.id or not self.rec:
             return
         try:
-            self.step("final", text, opinion=opinion or {"verdict": verdict,
-                                                         "rationale": text})
+            op = dict(opinion or {})
+            if self.model and not op.get("model"):
+                op["model"] = self.model
+            self.step("final", text, opinion=op or {"verdict": verdict, "rationale": text})
             await _persist_run(self.eng, self.id,
                                status="failed" if failed else "done", rec=self.rec,
-                               opinion=opinion or {}, verdict=verdict[:16],
+                               opinion=op, verdict=verdict[:16],
                                error=text[:500] if failed else None)
         except Exception:
             log.exception("intake run finish failed")
@@ -2030,18 +2209,18 @@ class IntakeRun:
         tool_ctx = {"ticker": (outcomes[0].get("ticker") if outcomes else ""),
                     "source": source, "signal_id": None, "run_id": self.id,
                     "stage": "review"}
-        review_state: dict = {}
+        review_state: dict = _arm_deadline({}, eng)
         try:
             text = await asyncio.wait_for(run_agent_loop(
                 eng, client, model=model, system=system, header=header,
                 rec=self.rec, run_id=self.id, max_tools=max_tools,
                 tool_ctx=tool_ctx, tools_used=tools_used,
-                state=review_state), timeout=TIMEOUT_S)
+                state=review_state), timeout=TIMEOUT_S + 5.0)
             if text is None:
                 raise ValueError("no review produced (loop exhausted)")
             op = ReviewOpinion.model_validate_json(
                 text[text.find("{"):text.rfind("}") + 1])
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
             # Codex v0.7.20 review gap 2: a cancelled intake review stayed
             # "running" and boot reconciliation's age gate skipped it — make
             # it terminal HERE, immediately, then propagate
@@ -2050,15 +2229,16 @@ class IntakeRun:
             with _ctx.suppress(Exception):
                 await _persist_run(eng, self.id, status="failed", rec=self.rec,
                                    error="cancelled: shutdown/restart",
-                                   opinion=_fail_meta(review_state, tool_ctx))
+                                   opinion=_fail_meta(review_state, tool_ctx, exc=exc, stage="review"))
             raise
         except Exception as exc:
-            log.warning("intake review failed: %s", exc)
-            self.step("error", f"Review failed: {exc}")
+            meta = _fail_meta(review_state, tool_ctx, exc=exc, stage="review")
+            err = f"{meta.get('failure', {}).get('kind', 'error')}: {_error_text(exc)}"
+            log.warning("intake review failed: %s", err)
+            self.step("error", f"Review failed: {err}", failure=meta.get("failure"))
             # finalize ONCE, metadata through finish() — a second persist with
             # opinion={} was erasing usage/receipts (Codex v0.7.21 note)
-            await self.finish("review", f"Review failed: {exc}", failed=True,
-                              opinion=_fail_meta(review_state, tool_ctx))
+            await self.finish("review", f"Review failed: {err}", failed=True, opinion=meta)
             return None
         result = {"verdict": "review", "rationale": op.headline
                   + (f" {op.details}" if op.details else ""),

@@ -421,7 +421,21 @@ def _parse_result_json(raw: str) -> ExtractionResult:
     if s.startswith("```"):
         s = s.split("\n", 1)[1] if "\n" in s else s
         s = s.rsplit("```", 1)[0]
-    i, j = s.find("{"), s.rfind("}")
-    if i == -1 or j <= i:
-        raise ValueError("no JSON object in response")
-    return ExtractionResult.model_validate_json(s[i:j + 1])
+    i = s.find("{")
+    if i == -1:
+        raise ValueError("validation: no JSON object in response")
+    # E17-02: take the FIRST complete object (TSLA 2026-09-17: prose/junk after the object
+    # made the first-{ .. last-} slice invalid, "trailing characters"); validation errors are typed
+    import json as _json
+    try:
+        obj, end = _json.JSONDecoder().raw_decode(s, i)
+    except ValueError as exc:
+        raise ValueError(f"validation: invalid JSON ({exc})") from exc
+    trailing = s[end:].strip()
+    try:
+        parsed = ExtractionResult.model_validate(obj)
+    except Exception as exc:
+        raise ValueError(f"validation: {str(exc)[:600]}") from exc
+    if trailing:
+        log.info("extraction: %d trailing character(s) after the JSON object ignored", len(trailing))
+    return parsed
