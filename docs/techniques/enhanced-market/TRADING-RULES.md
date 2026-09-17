@@ -1312,3 +1312,25 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
 - **Runtime note (superseded by the deploy above):** the running checkout was dirty only with EM research artifacts that are committed on the EM branch
   (they match after a fast-forward); its build string reads `-dirty` for that reason. The EM integrated candidate
   `47275c3f8ff02c857b46b431e71b3300ec0eea67` (0.8.02) contains runtime 3f5675d and origin/main as ancestors; no restart is requested for research labels.
+
+### 2026-09-16 20:29-20:56 PT - host WSL restart, the stall watch names two causes, both fixed and DEPLOYED as v0.8.04
+
+- **WSL / Postgres restart (user's go):** `docker compose stop` (clean Postgres shutdown) -> `wsl --shutdown` -> Docker brought the VM
+  back in 8 s -> `docker compose up -d` healthy in 30 s. VM 4.5 GB -> 2.2 GB, free RAM 4 -> 6 GB, the new 12 GB cap is in force
+  (`free -g` inside WSL: 11 GB total). The running engine kept its dead connection pool (DB-backed API calls hung, journal writes
+  partly failed for ~60 s); it was replaced by the next deploy.
+- **Stall watch, first evening on the live engine:** stalls #3 (4.0 s) and #5 (51.5 s) captured with the main thread's stack.
+  #5: `logging.handlers.RotatingFileHandler.emit` called from uvicorn's response send - synchronous file logging on the loop; #3:
+  `CboeClient._payload -> httpx.Response.json()` parsing a multi-megabyte chain on the loop. Fixed: root logging through a
+  `QueueHandler` with the file/console handlers on a `QueueListener` thread (`main.configure_logging`), provider chain/snapshot JSON
+  parsed with `asyncio.to_thread`. Tests `test_em_logging_offloop.py` + the CBOE suites.
+- **DEPLOYED 20:56 PT: v0.8.04 build 66e85f6** (renumbered twice tonight: Team2 took 0.8.02 and 0.8.03 while EM blocks were open -
+  re-read main AND the runtime branch right before committing a release block). Protocol: readiness safe after waiting out a
+  Tips analyst run; `deploy.ps1` lease + `ZargarRestart`; receipt verified 0.8.04; restoration 72/72 by id (58 EM), resting 26 -> 26,
+  open 0 -> 0; DB pool alive (portfolios 51 ms); helpers one pair each; intake live; stall watch 0 stalls after start; the CBOE
+  background cooldown visibly working in the log; the watchdog classified the swap window as `absent` (processes=0) and deferred to
+  the start lock - correct. Also in this build: a healthy first probe clears the stall marker.
+- **Not working yet:** `ZARGAR_TELEGRAM_BOT_TOKEN` / `CHAT_ID` are EMPTY in `backend/.env`, so the watchdog's refusal escalation can
+  only log (it did, at 20:25:34). The user must fill them for the Telegram path.
+- **Pre-existing test flake, not from tonight's changes:** `test_technique_api.py::test_chart_png_endpoint_on_sim_symbol` fails only
+  after other tests in the file (the shared Yahoo history httpx client reuses a closed loop); passes alone.

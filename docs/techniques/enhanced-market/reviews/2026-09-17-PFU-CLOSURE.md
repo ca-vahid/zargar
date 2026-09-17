@@ -40,6 +40,7 @@ trading, the deterministic entry and observation-only collection unchanged.
   `scripts/watchdog.ps1` from the checkout): acceptance 8/8 and `-ProbeOnly` = healthy from the runtime checkout. The user decided
   this after the owner coordination; the Tips desk's pre-open note carries the evidence. No restart for research labels; the dirty build string
   is the runtime checkout's untracked EM research artifacts, which are committed on the EM branch.
+- DEPLOYED (2): v0.8.04 build 66e85f6 at 20:56 PT - the two stall causes the watch named (queued logging, off-loop provider JSON) and the healthy-tick marker clearing; restoration 72/72 by id, DB pool alive, 0 stalls after start. TRADING-RULES 2026-09-16 20:29-20:56.
 - COLLECTING: P-02 (observer ON), P-04b paired, P-05 labels - order-free, in the daily report.
 - EVALUATED: P-02 one comparable row (CRWV 09-16 +$61.03 vs production), five unknown for lack of covered observations;
   P-04b two sessions: 12 of 13 variants refused or unconfirmed, 1 stopped; P-03 friction 6-10% on filled options.
