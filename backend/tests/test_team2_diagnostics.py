@@ -51,7 +51,8 @@ class FakeOpts:
         if sym not in self.live:
             return None
         bid, ask = self.live[sym]
-        return SimpleNamespace(bid=bid, ask=ask, last=(bid + ask) / 2, ts=now_ms() - self.stale_ms)
+        # like the real Quote: `ts` is the receipt time (always fresh here), `source_ts` the provider's confirmation
+        return SimpleNamespace(bid=bid, ask=ask, last=(bid + ask) / 2, ts=now_ms(), source="opra", source_ts=now_ms() - self.stale_ms)
 
     def provider(self):
         return SimpleNamespace(chain=AsyncMock(return_value=self.chain_rows), name="fake")
@@ -478,6 +479,7 @@ async def test_follow_up_collection_is_bounded_and_refreshes_rather_than_reusing
     rec = runner._diag_of(ap.run_id)["attempts"][tid]
     assert len(rec["candidates"]) == 8 and sum(1 for c in rec["candidates"] if c["followed"]) == 6
     assert all(c["priceKnown"] and c["quoteTs"] is not None and c["collectedTs"] >= c["quoteTs"] for c in rec["candidates"])
+    assert all(c["receivedTs"] is not None and c["source"] == "opra" for c in rec["candidates"])
     # the cached entry quote is two minutes old at the follow-up: it is NOT the two-minute observation
     opts.stale_ms = 125_000
     pend = runner._diag_of(ap.run_id)["pending"]
@@ -499,3 +501,41 @@ async def test_follow_up_collection_is_bounded_and_refreshes_rather_than_reusing
     per = sc["diagnostics"]["perAttempt"][0]
     assert per["coverage"]["observed"] == 6 and sc["diagnostics"]["labels"]["maxFollowed"] == 6
 
+
+
+
+async def test_a_recent_receipt_time_never_stands_in_for_an_old_source_confirmation(monkeypatch):
+    """Review r2 of D2: `Quote.ts` is when we last received the price; `Quote.source_ts` is the provider's confirmation of
+    THIS bid/ask. Fresh receipt + old source = stale evidence, at the entry and at every follow-up; a missing source time
+    is missing evidence, never replaced by the receipt time; a fresh source confirmation of an unchanged price stands."""
+    import zargar.techniques.team2.runner as module
+    now = 2_000_000
+    monkeypatch.setattr(module.time, "time", lambda: now / 1000)
+    runner, ap = rig()
+    runner._diag_emit = lambda *a, **k: None
+    rules = runner.rules_for(ap)
+    qres = {"examined": [{"symbol": "OLD", "strike": 101, "bid": .5, "ask": .51, "priced": "opra", "eligible": True},
+                         {"symbol": "NOSRC", "strike": 102, "bid": .4, "ask": .41, "priced": "opra", "eligible": True},
+                         {"symbol": "FRESH", "strike": 103, "bid": .3, "ask": .31, "priced": "opra", "eligible": True}]}
+    quotes = {"OLD": SimpleNamespace(bid=.5, ask=.51, ts=now, source="opra", source_ts=now - 120_000),
+              "NOSRC": SimpleNamespace(bid=.4, ask=.41, ts=now, source="opra", source_ts=0),
+              "FRESH": SimpleNamespace(bid=.3, ask=.31, ts=now, source="opra", source_ts=now - 3_000)}
+    runner.engine.quotes = SimpleNamespace(get=lambda sym: quotes.get(sym))
+    runner._diag_candidates(ap, "s#1", qres, "FRESH", 100.0, rules, [], None)
+    cands = {c["symbol"]: c for c in runner._diag_attempt(ap, "s#1")["candidates"]}
+    assert cands["OLD"]["priceKnown"] is False and "stale quote (120s" in cands["OLD"]["priceUnknownReason"]
+    assert cands["NOSRC"]["priceKnown"] is False and cands["NOSRC"]["priceUnknownReason"] == "no source timestamp" and cands["NOSRC"]["quoteTs"] is None
+    assert cands["FRESH"]["priceKnown"] is True and cands["FRESH"]["quoteTs"] == now - 3_000 and cands["FRESH"]["receivedTs"] == now
+    # the follow-up reads price and source time from the same Quote; the receipt time rides beside them
+    runner.engine.options = SimpleNamespace(refresh_now=AsyncMock(side_effect=lambda sym: quotes[sym]), served_live=lambda _: True)
+    pending = {"attempt": "s#1", "horizon": "2m", "dueTs": now, "status": "inflight"}
+    await runner._diag_observe(ap, pending)
+    o = runner._diag_attempt(ap, "s#1")["observations"]["2m"]
+    assert o["quotes"]["FRESH"] == {"bid": .3, "ask": .31, "mid": .305, "quoteTs": now - 3_000, "receivedTs": now, "source": "opra", "ageMs": 3000}
+    assert o["quotes"]["OLD"] is None and "stale quote" in o["unknown"]["OLD"]
+    assert o["quotes"]["NOSRC"] is None and o["unknown"]["NOSRC"] == "no source timestamp"
+    # a chain-served (delayed) price is not live evidence even with a recent source time
+    quotes["FRESH"] = SimpleNamespace(bid=.3, ask=.31, ts=now, source="chain", source_ts=now - 1_000)
+    await runner._diag_observe(ap, {"attempt": "s#1", "horizon": "5m", "dueTs": now, "status": "inflight"})
+    o5 = runner._diag_attempt(ap, "s#1")["observations"]["5m"]
+    assert o5["quotes"]["FRESH"] is None and o5["unknown"]["FRESH"] == "not live (chain)"

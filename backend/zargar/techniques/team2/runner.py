@@ -662,14 +662,29 @@ class Team2Runner(PlanRunner):
                 if sym:
                     snap = opts.snapshot_cached(sym) if opts is not None and hasattr(opts, "snapshot_cached") else None
                     rows_by_sym[sym] = dict(snap) if snap else dict(r)
+            # D2 (2026-09-16 review r2): the freshness of a price is the age of its SOURCE confirmation (`Quote.source_ts`,
+            # the provider's evidence for THIS bid/ask), never `Quote.ts` (when we last received/re-stamped it) — a cache can
+            # hand back an old price under a new receipt time. Receipt and collection times are kept beside it, apart.
             source_ts: dict[str, int] = {}
+            received_ts: dict[str, int] = {}
+            sources: dict[str, str] = {}
             for x in qres.get("examined") or []:
                 sym = str(x.get("symbol") or "")
                 q = self.engine.quotes.get(sym) if sym else None
-                if q is not None and getattr(q, "ts", None):
-                    source_ts[sym] = int(q.ts)
+                if q is None:
+                    continue
+                sts = int(getattr(q, "source_ts", 0) or 0)
+                if sts > 0:
+                    source_ts[sym] = sts                       # missing source evidence stays missing (no fallback to `ts`)
+                if getattr(q, "ts", None):
+                    received_ts[sym] = int(q.ts)
+                if getattr(q, "source", None):
+                    sources[sym] = str(q.source)
             cands = diag.candidate_rows(qres.get("examined") or [], rows_by_sym, pick_symbol, floor=float(rules.premium_floor),
                                         band_hi=float(rules.target_premium) * MAX_OVER_TARGET, spot=spot, quote_ts=now, source_ts=source_ts)
+            for c in cands:
+                c["receivedTs"] = received_ts.get(c["symbol"])
+                c["source"] = sources.get(c["symbol"])
             rec = self._diag_attempt(ap, tid)
             rec.update({"candidates": cands, "quoteTs": now, "shadow": bool(shadow), "refusal": refusal, "selected": pick_symbol,
                         "listed": qres.get("listed"), "unexamined": qres.get("unexamined"), "unpriced": qres.get("unpriced")})
@@ -800,13 +815,18 @@ class Team2Runner(PlanRunner):
                         qq = await refresh(sym)
                         live = (opts.served_live(sym) if hasattr(opts, "served_live") else True)
                         if qq is not None:
-                            q = {"bid": getattr(qq, "bid", None), "ask": getattr(qq, "ask", None), "priced": "opra" if live else "chain",
-                                 "quoteTs": getattr(qq, "ts", None)}
+                            # price and its SOURCE confirmation time are read from the same Quote object, together; the
+                            # receipt time (`ts`) rides beside them and never stands in for the source time
+                            src = str(getattr(qq, "source", "") or "") or ("opra" if live else "chain")
+                            q = {"bid": getattr(qq, "bid", None), "ask": getattr(qq, "ask", None), "priced": src,
+                                 "quoteTs": (int(getattr(qq, "source_ts", 0) or 0) or None), "receivedTs": getattr(qq, "ts", None)}
                     else:
                         r = await opts.reprice({"symbol": sym})
                         qq = self.engine.quotes.get(sym)
                         if r:
-                            q = {"bid": r.get("bid"), "ask": r.get("ask"), "priced": r.get("priced"), "quoteTs": getattr(qq, "ts", None)}
+                            q = {"bid": r.get("bid"), "ask": r.get("ask"), "priced": r.get("priced"),
+                                 "quoteTs": (int(getattr(qq, "source_ts", 0) or 0) or None) if qq is not None else None,
+                                 "receivedTs": getattr(qq, "ts", None) if qq is not None else None}
                 except Exception as exc:  # noqa: BLE001
                     unknown[sym] = f"quote service error: {str(exc)[:80]}"
                     q = None
