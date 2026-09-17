@@ -106,10 +106,22 @@ class Quote:
     # the ~15-min-delayed chain row. Money gates read this, not `ts`, for options.
     source: str = ""
     source_ts: int = 0
+    # E17-01 (2026-09-17): when a price was TRANSFORMED locally (the delayed chain's band
+    # recentred on a live print), the raw venue prices ride along untouched and `source`
+    # becomes "derived:<raw source>" - a display estimate never carries executable provenance
+    raw_bid: float = 0.0
+    raw_ask: float = 0.0
+    raw_source: str = ""
+    raw_source_ts: int = 0
+    transform: str = ""        # "" = untouched venue/feed quote; "recenter-v1" = QuoteCache._apply_overlay
 
     @property
     def delayed(self) -> bool:
-        return self.source == "chain"
+        return self.source == "chain" or self.source.startswith("derived:")
+
+    @property
+    def derived(self) -> bool:
+        return bool(self.transform) or self.source.startswith("derived:")
 
     @property
     def mid(self) -> float:

@@ -87,6 +87,7 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## Known gaps, risks and what could be wrong (read before trusting a number)
 
+- **E17-01 (2026-09-17, FIXED in 0.8.11, not yet deployed):** the MRNA 165C 0.75 fill was a locally RECENTRED OPRA band (a stale 0.70 chart print bent the fresh 1.90/2.00 band to 0.65/0.75 and kept `source=opra`); venue bands are never recentred now and any derived estimate carries `derived:` provenance the sim refuses - audit in `reviews/2026-09-17-mrna-quote-audit.md`; the +$112.92 stays booked and is shown apart in method grading.
 - **F-FILL-02 (2026-09-17, OPEN - user/reviewer decision):** simulated OPTION fills have no spread or flash-quote sanity by design (wide books are normal), so a one-lot OPRA quote 60% below the surrounding market that lived ~3 s priced a Practice fill (MRNA Sep-18 165C bought 0.75 between 1.90/2.01 quotes; sold 4 s later at 1.90, +$115). `TipFillVsQuote` flags such fills (vsMid far negative); every Practice number that includes them is labeled suspect until a rule exists. Candidate rule: refuse/flag an option fill when the top of book is 1x1 with spread > ~40% of mid or the price deviates > ~35% from the last qualified mid within 10 s. Share fills got the equivalent guards in 0.8.10 (F-HOLD-01, PLATFORM-RULES).
 
 1. **The shadow armed books carry phantom SHORT share positions** from the over-sell classes fixed on
