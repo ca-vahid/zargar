@@ -1,5 +1,10 @@
 # Cartel documentation changes
 
+## 2026-09-17 — Lane A proposal package (review pending, no behaviour change)
+
+- Added `reviews/2026-09-17-proposal/` (bottleneck reconstruction from runtime records, executable funnel map, rule matrix, Lane A proposal with acceptance criteria and incremental plan) and the read-only `zargar.tools.cartel_evidence` reproduction tool.
+- Repairs the evidence gap for 2026-09-16/17 (QS spread refusal, TTWO/PWR contract affordability and target status, APTV no-setup, coverage-blocked candidates). No setting, arm, order or runtime process changed.
+
 ## 2026-09-16 — end-of-day follow-through
 
 - Documented Practice-only spread reselection, unchanged saved limits and full revalidation.
