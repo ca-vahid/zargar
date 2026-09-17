@@ -40,3 +40,5 @@ Current research regression entry points: `test_options_cartel_profitability_res
 `test_options_cartel_profitability_api.py`, `test_options_cartel_research_economics.py`,
 `test_options_cartel_research_quotes.py`, `test_options_cartel_session_warning.py`.
 These supplement the execution/replay suites rather than replacing them.
+
+September 16 follow-through: `contract_reselection.py` owns the bounded Practice spread-only search; `session_review.py` reads dated preflight refusals; `profitability_research.py` prewarms future-session baselines and records non-executing entry-policy diagnostics. Regression coverage is in `test_options_cartel_contract_reselection.py` and `test_cartel_sep16_followthrough.py`.

@@ -13,6 +13,8 @@ const server=createServer(async(req,res)=>{
 });await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const base=`http://127.0.0.1:${server.address().port}`, browser=await chromium.launch({headless:true});
 const result={account:'Options Cartel Practice',session:'2026-09-14',baseCurrency:'USD',totals:{netRealized:-61.13,grossRealized:-59.05,realizedFees:2.08},closedCampaigns:1,openInstruments:0,entryOrders:1,exitOrders:1,note:'Actual executions and fees.',issues:[],rows:[{planId:'apa',symbol:'APA',category:'closed',exitReasons:['cartel:stop'],decisions:[],recoveries:[],assets:[{netRealized:-61.13,remainingQty:0}]}],candidates:[{symbol:'HOG',status:'plan_blocked',reason:'Opening history incomplete',volumeCoverage:{available:18,expected:26}}],attempts:[{id:'one',symbol:'OKTA',status:'expired',at:Date.now(),reason:'Entry window ended'}],fillEvidence:[],missingFillEvidence:2};
+result.rows.push({planId:'qs',symbol:'QS',category:'execution_rejected',exitReasons:[],decisions:[],recoveries:[],assets:[],latestExecutionCheck:{reasons:['Final option spread exceeds the saved 20% limit.']},executionChecks:[{at:Date.now(),passed:false,reasons:['Final option spread exceeds the saved 20% limit.'],expression:{symbol:'QS261120P00007000',bid:1.86,ask:2.39}}]});
+
 try{
  for(const [name,device] of [['desktop',{viewport:{width:1440,height:1000}}],['phone',devices['iPhone SE']]]){
   for(const theme of ['light','dark']){
@@ -32,6 +34,7 @@ try{
    await page.getByText('Daily review · trades, costs and missed opportunities',{exact:true}).click();
    await page.getByRole('button',{name:'Load daily review',exact:true}).click();
    await page.getByText('Net realized -$61.13',{exact:true}).waitFor();
+   await page.getByText('Final option spread exceeds the saved 20% limit.',{exact:true}).waitFor();
    assert.equal(await page.getByRole('link',{name:'APA',exact:true}).getAttribute('href'),'/techniques/options-cartel/run/apa');
    await page.getByText('Preparation exclusions and pending plans · 1',{exact:true}).click();
    await page.getByText(/HOG/).waitFor();

@@ -33,6 +33,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.options_cartel.recovery_enabled": False,
     "techniques.options_cartel.record_option_quotes": False,
     "techniques.options_cartel.intraday_research": True,  # non-executing Practice observations only
+    "techniques.options_cartel.reselect_wide_contract": True,  # bounded spread-only alternative, automatic Practice only
     "techniques.options_cartel.profitability_research": True,  # prospective Practice studies, never orders
     "techniques.options_cartel.profitability_research.candidate_cap": 50,
     "techniques.options_cartel.profitability_research.bearish_enabled": True,

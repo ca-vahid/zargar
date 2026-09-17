@@ -241,3 +241,23 @@ async def test_report_timestamp_is_preserved_for_daily_accounting(repo, monkeypa
     assert (await controller.poll("r1"))["status"] == "managed"
     measured = await daily_loss_report(repo.engine, "pf", now_ms=controller.clock())
     assert measured["available"] and measured["pnl"] == -.1
+
+
+async def test_alternative_path_always_runs_a_second_full_preflight(repo, monkeypatch):
+    controller,_=await setup(repo,monkeypatch)
+    from zargar.techniques.options_cartel import controller as module
+    from zargar.techniques.options_cartel import contract_reselection
+    calls=[]
+    async def preflight_again(engine, priced, spec, **kwargs):
+        calls.append(spec)
+        return {'passed':False,'checks':[{'name':'entry_contract_spread' if len(calls)==1 else 'cash_available',
+            'passed':False,'reason':'fixture refusal'}],'risk':{'passed':True}}
+    async def alternative(c,rid,row,p,s,read):
+        return row,s
+    monkeypatch.setattr(module,'preflight',preflight_again)
+    monkeypatch.setattr(contract_reselection,'reselect_for_spread',alternative)
+    result=await controller.submit('r1')
+    assert len(calls)==2 and result['status']=='preflight_rejected'
+    assert result['report']['checks'][0]['name']=='cash_available'
+    async with repo.engine.sf() as session:
+        assert not (await session.scalars(select(Order))).all()
