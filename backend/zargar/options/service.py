@@ -245,7 +245,9 @@ class OptionsService:
         if not refresh and o.symbol in self._snapshots:
             return self._snapshots[o.symbol]
         try:
-            rows = await self.provider().chain(o.underlying, o.expiry.isoformat())
+            from .chain import cboe_priority
+            with cboe_priority("position"):                  # a held contract's mark / exit read is never held back by a cooldown
+                rows = await self.provider().chain(o.underlying, o.expiry.isoformat())
         except OptionsError as exc:
             log.info("chain unavailable for %s: %s", o.symbol, exc)
             return self._snapshots.get(o.symbol)
@@ -442,7 +444,9 @@ class OptionsService:
             if not contracts:
                 continue
             try:
-                rows = await self.provider().all_rows(underlying)
+                from .chain import cboe_priority
+                with cboe_priority("background"):            # 2026-09-16: enrichment never competes with an entry or a held position
+                    rows = await self.provider().all_rows(underlying)
             except OptionsError as exc:
                 log.info("enrich skipped for %s: %s", underlying, exc)
                 continue

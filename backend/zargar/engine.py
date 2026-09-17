@@ -231,6 +231,16 @@ class Engine:
             asyncio.create_task(self._daily_loss_monitor(), name="daily-loss-monitor"),
             asyncio.create_task(self._event_loop_monitor(), name="event-loop-monitor"),
         ]
+        # 2026-09-16: a stalled loop cannot report itself - a daemon thread captures the blocking call site
+        try:
+            from .loopwatch import LoopStallWatch
+            thr = float(self.settings.get("ops.loop_stall_seconds", 2.0) or 0)
+            self.loop_watch = LoopStallWatch(threshold_s=thr) if thr > 0 else None
+            if self.loop_watch is not None:
+                self.loop_watch.start()
+        except Exception:  # pragma: no cover - diagnostics never block a start
+            log.warning("loop stall watch not started", exc_info=True)
+            self.loop_watch = None
         if isinstance(self.feed, HybridQuoteFeed):
             self._tasks.append(asyncio.create_task(self._feed_monitor(), name="feed-monitor"))
         if self.snaptrade_sync is not None:

@@ -60,7 +60,7 @@ from .outcome import (
 from .plans import build_session_plan, plan_summary_text
 from .provenance import snapshot as provenance_snapshot
 from .provenance import sweep_version, technique_source_version
-from .render import render_chart
+from .render import render_chart, render_chart_async
 from .review import diff_runs, review_dict, validate_review
 from .rulebook import (
     DEFAULT_THRESHOLDS,
@@ -671,8 +671,8 @@ class TechniqueService:
                 imgs: dict[str, bytes] = {}
                 for tfx in req.timeframes:
                     if tfx in bars:
-                        png = render_chart(bars[tfx][-WINDOW_FOR_TF.get(tfx, 150):],
-                                           title=f"{symbol} {tfx}", tf=tfx)
+                        png = await render_chart_async(bars[tfx][-WINDOW_FOR_TF.get(tfx, 150):],
+                                                       title=f"{symbol} {tfx}", tf=tfx)
                         imgs[tfx] = png
                         images_meta[tfx] = await chat.store_asset(png, "image/png", thread_id=thread_id,
                                                                   meta={"kind": "pass_chart", "tf": tfx})
@@ -807,11 +807,11 @@ class TechniqueService:
                                    "strong": lv.touches >= 3} for lv in (a.levels if a else [])][:8]
                     caption = _chart_caption(a, rejected_overlay)
                 if ptf in bars:
-                    png = render_chart(bars[ptf][-WINDOW_FOR_TF.get(ptf, 150):],
-                                       title=f"{symbol} {ptf}" + (f" — plan for {plan_d['planFor']}" if plan_d else ""),
-                                       tf=ptf, levels=lv_overlay, setup=setup_overlay,
-                                       rejected=rejected_overlay, caption=caption,
-                                       wedge=(facts.get("wedge") or {}).get(ptf))
+                    png = await render_chart_async(bars[ptf][-WINDOW_FOR_TF.get(ptf, 150):],
+                                                   title=f"{symbol} {ptf}" + (f" — plan for {plan_d['planFor']}" if plan_d else ""),
+                                                   tf=ptf, levels=lv_overlay, setup=setup_overlay,
+                                                   rejected=rejected_overlay, caption=caption,
+                                                   wedge=(facts.get("wedge") or {}).get(ptf))
                     images_meta["annotated"] = await chat.store_asset(
                         png, "image/png", thread_id=thread_id, meta={"kind": "annotated", "tf": ptf})
 
@@ -2160,8 +2160,10 @@ class TechniqueService:
         if not spot:
             return {"available": False, "error": "no spot price",
                     "provider": getattr(client, "name", "?")}
-        out = await pick_for_setup(client, symbol, spot, direction, max_strike=max_strike,
-                                   min_strike=min_strike, avoid_0dte=avoid_0dte)
+        from ..options.chain import cboe_priority
+        with cboe_priority("entry"):                         # 2026-09-16: a live pick retries a 429 and is never held back
+            out = await pick_for_setup(client, symbol, spot, direction, max_strike=max_strike,
+                                       min_strike=min_strike, avoid_0dte=avoid_0dte)
         out["spot"] = spot
         return out
 

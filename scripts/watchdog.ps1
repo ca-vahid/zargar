@@ -13,7 +13,7 @@
 # Every restart records the engine's state before (armed plans, open trades, pending exits, working
 # orders) and compares it after (restoration check, PLATFORM-RULES 2026-09-09); a mismatch is logged
 # as RESTORE MISMATCH with the missing ids and exits 4.
-param([switch]$Force, [switch]$Override)
+param([switch]$Force, [switch]$Override, [switch]$ProbeOnly)
 $root = Split-Path -Parent $PSScriptRoot
 $logDir = Join-Path $root "logs"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
@@ -21,6 +21,41 @@ $log = Join-Path $logDir "watchdog.log"
 function Log($m) { Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
 $up = $false
 try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $up = [bool]$h.ok } catch { $up = $false }
+# 2026-09-16 (EM desk, PLATFORM-RULES): ONE 4 s probe timeout is not a dead engine. Three event-loop stalls that day
+# (4 s, ~10 s, ~180 s) answered health late while the process was alive and logging; the first one got a live engine
+# killed and a broken checkout launched. Classify before any kill: a second probe 15 s later, the engine process,
+# and the engine log's freshness. STALL (alive, log fresh, health late) is logged and left alone; it becomes DOWN only
+# when it persists across two consecutive ticks (>= 3 min) or the process / log are gone.
+function Get-EngineLiveness {
+  $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'zargar\.main' })
+  $logPath = Join-Path $root "backend\zargar-8420.log"
+  $logAge = 999999
+  if (Test-Path $logPath) { $logAge = [int]((Get-Date) - (Get-Item $logPath).LastWriteTime).TotalSeconds }
+  return @{ processes = $procs.Count; logAgeS = $logAge }
+}
+$stallMarker = Join-Path $logDir "watchdog-stall.txt"
+if (-not $up -and -not $Force) {
+  Start-Sleep -Seconds 15
+  $up2 = $false
+  try { $h2 = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 8; $up2 = [bool]$h2.ok } catch { $up2 = $false }
+  if ($up2) { Log "health answered on the second probe (transient stall, no action)"; if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }; exit 0 }
+  $live = Get-EngineLiveness
+  $alive = ($live.processes -gt 0) -and ($live.logAgeS -lt 180)
+  if ($alive) {
+    $persisted = $false
+    if (Test-Path $stallMarker) { $persisted = (((Get-Date) - (Get-Item $stallMarker).LastWriteTime).TotalSeconds -lt 600) }
+    if (-not $persisted) {
+      Set-Content -Path $stallMarker -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+      Log ("STALL: engine process alive (" + $live.processes + " proc, log " + $live.logAgeS + "s old) but health unanswered twice - NOT restarting; will restart if still stalled on the next tick")
+      exit 0
+    }
+    Log ("STALL persisted across two ticks (log " + $live.logAgeS + "s old) - treating as DOWN")
+  } else {
+    Log ("DOWN confirmed: processes=" + $live.processes + " log age=" + $live.logAgeS + "s")
+  }
+  if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }
+}
+if ($ProbeOnly) { Log ("probe-only: up=" + $up); exit $(if ($up) { 0 } else { 3 }) }
 if ($up -and -not $Force) { exit 0 }
 # one start at a time: a start takes ~30-60 s (start.ps1 stops the old process, rebuilds dist if stale, launches)
 # and the 3-minute tick must not pile a second engine onto a restart in progress. The lock is age-based

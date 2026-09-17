@@ -68,3 +68,30 @@ sessions in `research/profitability/`.
   different observed value, not a silent constant.
 - The underlying proxy for refused fires uses stored 1m bars from the firing bar onward, close-based stop, same-bar
   target+stop = unknown. It is a chart diagnostic and is labelled so.
+
+
+## Addendum 2026-09-16 (`p04-p05-2026-09-16`): two frozen comparisons, order-free, nothing activated
+
+Prepared on the user's instruction after the first deterministic session. Both are REPORT cohorts over the rows the
+per-session report already carries; they change no entry or exit rule, no risk limit, no chase limit, and the 8%
+friction marker stays a ranking marker. Every EM attempt is counted - fills, rejected opportunities (refused rows:
+budget bounds, not chased, contract failures) and sacrificed winners (refused rows whose underlying-only proxy reached
+TP1 first) - so the comparison never hides what the gates removed.
+
+**P-04 - touch versus confirmed reaction.** Over the P-01 cohort (`long_bounce_next_resistance`), split by the
+`confirmation` stratum already frozen in v1: `anticipated` = the firing bar closed on the wrong side of the level (a
+touch entry), `observed_reclaim` = the firing bar CLOSED on the trade's side (a confirmed reaction), `unknown` = no
+firing bar. Reported per side: fills, winners, losers, open, net (closed), rejected, sacrificed winners, proxy unknown.
+Question it answers: does waiting for the confirmed close cost more in sacrificed winners than it saves in stops?
+Decision threshold: >= 30 fills per side across sessions; until then the table is descriptive.
+
+**P-05 - afternoon / event-day cohort.** Over EVERY EM attempt (all families), keyed by the fire window
+(`prime_open` = morning; `prime_close` or `midday` = afternoon; missing = `unknown_window`) and by event day. Event days
+are a frozen, hand-kept list in the tool (`EVENT_DAYS`: 2026-09-16 FOMC) because the app's macro calendar is empty;
+add a day only with a dated note. Reported per key: the same nine columns as P-04. Question it answers: is the
+afternoon window on an event day a different population (fills, refusals, sacrificed winners) than an ordinary
+morning? Decision threshold: >= 5 sessions of each kind before any window rule is even proposed; a proposal would be a
+separate versioned rule with its own sweep.
+
+Both live in `tools/em_profitability.py` (`summarize()["p04"]`, `["p05"]`) and print as two tables in the daily
+report. Tests: `tests/test_em_profitability_p04_p05.py`.

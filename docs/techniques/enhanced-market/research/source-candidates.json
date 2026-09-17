@@ -140,6 +140,35 @@
   "horizon": "intraday",
   "retrospective": false,
   "version": "source-continuation-v1",
-  "addedAt": "2026-09-16T13:26:50.093497+00:00"
+  "addedAt": "2026-09-16T13:26:50.093497+00:00",
+  "conditions": "AMZN, above 250 can see 255/257 (author's caption 09:23 ET); direction long; entry condition = above 250, no timeframe stated (missing: confirmation bar, stop, size)"
+ },
+ {
+  "date": "2026-09-16",
+  "symbol": "SPX",
+  "direction": "long",
+  "level": 7677.0,
+  "target": 7750.0,
+  "note": "83c5dd3fd0d94c8fb60a8a04cbf17dcc",
+  "availableAt": "2026-09-16T09:23:28-04:00",
+  "horizon": "intraday",
+  "conditions": "7677 is the level to watch to test 7750 (index level; no tradeable vehicle in this ledger - evaluation stays unknown by design)",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "addedAt": "2026-09-17T00:56:54.341085+00:00"
+ },
+ {
+  "date": "2026-09-16",
+  "symbol": "SPX",
+  "direction": "short",
+  "level": 7580.0,
+  "target": 7500.0,
+  "note": "83c5dd3fd0d94c8fb60a8a04cbf17dcc",
+  "availableAt": "2026-09-16T09:23:28-04:00",
+  "horizon": "intraday",
+  "conditions": "7580 is the level to test 7500; 7600 remains the battleground (same playbook as yesterday); author: likely nothing until Powell speaks (index level; evaluation stays unknown by design)",
+  "retrospective": false,
+  "version": "source-continuation-v1",
+  "addedAt": "2026-09-17T00:56:56.414487+00:00"
  }
 ]

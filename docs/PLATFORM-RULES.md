@@ -2078,6 +2078,31 @@ boundaries can be measured separately from provider and venue latency.
   `/api/health` now answers `build=unknown` instead of a 500 when `zargar.build_sha` is absent (EM branch, PR #174,
   which also puts the helper on `main`). The probe policy (confirm DOWN with a second probe before any kill) is the
   start-path owner's decision; until it changes, every load stall longer than 4 s is a restart risk in RTH.
+- **2026-09-16 evening (EM desk) - the event-loop stall is real, measured, and now instrumented; the single-probe
+  watchdog killed a live engine FIVE times today.** Evidence (engine log gaps with no line at all, followed by an
+  Alpaca "no close frame" reconnect): 07:40 PT ~4 s, 08:56 ~10 s, 17:17 (unknown length, engine killed), 17:42-17:45
+  183 s, 17:52-17:54 141 s (killed at 17:55 mid-batch). The long ones coincide with technique-run load (Cartel
+  research 17:39; the EM review batch from 17:47 with 9 reads in flight, system CPU 100%). Confirmed on the loop:
+  `technique/render.py::render_chart` (matplotlib, 0.3-2 s per PNG) was called synchronously at every vision pass
+  (`technique/service.py` two sites) and the legacy fire critic (`technique/arming.py`) - now `render_chart_async`
+  on ONE worker thread (matplotlib is not thread-safe; renders are serialised, not parallelised). Model calls were
+  already async. Whether rendering explains a 141-183 s silence is NOT proven - a stall that long is either one
+  blocking call or a starved main thread - so the engine now carries a **loop stall watch** (`zargar/loopwatch.py`,
+  `ops.loop_stall_seconds` default 2 s): a daemon thread that captures the loop thread's stack while the loop is
+  blocked, logs the stall length on resume, and reports `loopStalls` / `lastStall` / `eventLoopLagMs` in
+  `/api/health.local.delivery`. The next stall names its call site. Diagnostic only; never cancels or restarts.
+  **Watchdog classification (proposal on the EM branch, `scripts/watchdog.ps1`, start-path owner's call):** before any
+  kill, a second probe 15 s later, then process + engine-log freshness; alive-and-logging with health late is logged
+  as STALL and left alone for one tick, and becomes DOWN only when it persists into the next tick or the process /
+  log are gone. `-ProbeOnly` classifies without acting. Parse-checked; exercised once against the worktree (probe
+  path). Not deployed; the runtime keeps the current single-probe script until the owner adopts it.
+  **Provider rate limits (CBOE):** callers now declare a priority (`options/chain.py::cboe_priority`): `entry` (a
+  live option pick) and `position` (a held contract's mark / exit read) retry a 429 briefly and are never held back;
+  `background` (enrichment, the nightly liquidity screen, research) fails fast on a 429 and skips requests for a
+  cooldown (`options.cboe_cooldown_seconds`, 20 s) so the burst that trips the limit is not fed by work that can wait.
+  Freshness checks (`risk.stale_quote_seconds`, delayed-row refusal) and every risk limit are untouched. Tests:
+  `test_em_loop_stall_watch.py`, `test_em_render_offloop.py`, `test_em_cboe_priority_cooldown.py`,
+  `test_em_cboe_rate_limit_retry.py`.
 - **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
   `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
   returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and

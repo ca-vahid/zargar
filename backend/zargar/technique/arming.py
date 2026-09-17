@@ -151,7 +151,7 @@ class PlanArmer(PlanRunner):
         from dataclasses import replace as dc_replace
 
         from .analysis import AnalysisRequest, compute_facts
-        from .render import render_chart
+        from .render import render_chart_async
         from .vision import VisionPipeline
         # fire-time reads don't need deep thinking — latency IS cost here
         eff = str(self.engine.settings.get("technique.arm.critic_effort", "low") or "low")
@@ -165,7 +165,7 @@ class PlanArmer(PlanRunner):
             bars = pre[-1500:] + bars
         req = AnalysisRequest(symbol=ap.symbol, primary_tf="1m", context_tfs=(), thresholds=self.technique.thresholds())
         facts = compute_facts(req, {"1m": bars}, []) if bars else {}
-        png = render_chart(bars[-240:], title=f"{ap.symbol} 1m", tf="1m") if bars else None
+        png = (await render_chart_async(bars[-240:], title=f"{ap.symbol} 1m", tf="1m")) if bars else None
         vp = VisionPipeline(self.technique._get_client(), llm, thresholds=self.technique.thresholds(),
                             max_passes=2, trace=judgement.trace)
         # give the critic the whole live picture, not just the draft: which

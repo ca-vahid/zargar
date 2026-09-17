@@ -287,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         a.add_argument(k, required=True)
     a.add_argument("--target")
     a.add_argument("--horizon", default="intraday")
+    a.add_argument("--conditions", default=None, help="the author's stated condition for the level (verbatim); omitted = recorded as missing")
     a.add_argument("--retrospective", action="store_true", help="the row was written after the session's outcome was seen")
     e = sub.add_parser("evaluate"); e.add_argument("--date", required=True)
     s = sub.add_parser("show"); s.add_argument("--date", required=True)
@@ -297,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
         rows = load_ledger()
         rows.append({"date": args.date, "symbol": args.symbol.upper(), "direction": args.direction, "level": float(args.level),
                      "target": (float(args.target) if args.target else None), "note": args.note, "availableAt": args.available_at,
-                     "horizon": args.horizon, "retrospective": bool(args.retrospective), "version": VERSION,
+                     "horizon": args.horizon, "conditions": (args.conditions or None), "retrospective": bool(args.retrospective), "version": VERSION,
                      "addedAt": dt.datetime.now(dt.timezone.utc).isoformat()})
         save_ledger(rows)
         print(f"added; ledger now {len(rows)} row(s)")
