@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.04";
+export const APP_VERSION = "0.8.05";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,8 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.05",date:"2026-09-16",title:"Team2 candidate quotes are bound at examination",items:[
+    {tag:"fixed",text:"Team2 shadow diagnostics: each contract the picker examines is recorded as ONE observation - its bid/ask, provenance, source-confirmation time, receipt time and capture time are captured together at that moment, and the report validates and shows exactly that record. A later quote-cache state is a separate observation and is never attached to an earlier price; a quote that moves during capture is marked unknown with the reason."},
   {version:"0.8.04",date:"2026-09-17",title:"EM entries survive a rate-limited chain; the engine can name a stall",items:[
     {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up; expired chain data is never served for a live pick; the no-contract alert names the cause and says a short has no shares fallback by rule. Background chain fetches (enrichment, research) stand down for options.cboe_cooldown_seconds after a 429 instead of feeding the burst."},
     {tag:"fixed",text:"Two event-loop stall causes the new stall watch named on its first evening are fixed: root logging goes through a queue (the rotating file handler wrote on the loop - one 51 s stall came from inside it), and provider chain/snapshot JSON is parsed off the loop (a multi-megabyte CBOE chain took 4 s on it); chain normalisation and the enrichment index run on a worker thread too, and the enrichment pass yields between underlyings (a 4.8 s stall was OCC formatting over thousands of rows)."},
