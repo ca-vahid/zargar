@@ -66,8 +66,13 @@ Earlier tonight (all on the user's "do it all"): v0.8.03 build d3091ae at 20:25 
 (queued logging, off-loop provider JSON); v0.8.04 build 662a8e6 at 21:04 PT (off-loop chain normalisation). Each
 through `deploy.ps1` under the lease + the `ZargarRestart` task, receipt verified, restoration 72/72 by id.
 
-**This candidate:** see the "Deployed" line appended below by the deploy step (build SHA, time, receipt phase,
-restoration counts). If that line is absent, `3d458d0` was not deployed.
+**This candidate - DEPLOYED 2026-09-16 21:26 PT as v0.8.06 build `152ebd4601f310ec3e7d2700b3d4f62d40007161`** (= code
+`3d458d0` + this closure record; the user's standing "do it all"): readiness safe (market closed, 0 open trades);
+`deploy.ps1` under the lease -> `ZargarRestart` task; receipt phase `verified`, expected/healthy 0.8.06; restoration by
+hand against `logs/restart-inventory-20260916-212457.json`: 72 armed before and after by id (enhanced_market 58,
+options_cartel 1, team2 3, tip 10), 0 missing, 0 new; resting orders 26 -> 26; open trades 0 -> 0. From the runtime
+checkout after the swap: `scripts/tests/watchdog-classify.tests.ps1` 20/20, `watchdog.ps1 -ProbeOnly` = healthy
+(stdout only). The corrected watchdog is therefore what the `ZargarWatchdog` task runs from now on.
 
 ## History (earlier trees, for the record only)
 
