@@ -378,11 +378,17 @@ def build_signal_routes(app, eng, auth, config) -> None:
 
     @app.get("/api/tip/notes/search", dependencies=[auth])
     async def search_tip_notes(q: str = "", scope: str = "", offset: int = 0,
-                               limit: int = 100, history: bool = False):
-        """KB-04: paginated server-side search with a total — no silent cutoff."""
+                               limit: int = 100, history: bool = False, category: str = "all"):
+        """KB-04: paginated server-side search with a total — no silent cutoff.
+        `category` (all|rule|ticker|source|general|flagged|daily|experiment|other)
+        filters BEFORE pagination; the reply carries the filtered `total` and the
+        GLOBAL per-category `counts`."""
         scopes = [s.strip() for s in scope.split(",") if s.strip()] or None
-        return await eng.signals_service.search_tip_notes(
-            q, scopes, offset=offset, limit=limit, include_history=history)
+        try:
+            return await eng.signals_service.search_tip_notes(
+                q, scopes, offset=offset, limit=limit, include_history=history, category=category)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     class NoteBody(BaseModel):
         scope: str = "general"
