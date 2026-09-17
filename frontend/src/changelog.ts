@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.01";
+export const APP_VERSION = "0.8.02";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.02",date:"2026-09-16",title:"Team2 shadow measurements: unknown stays unknown",items:[
+    {tag:"fixed",text:"Team2 diagnostics (review of v0.8.01): a follow-up quote counts only when it is live, sane and carries its own source timestamp within 30 s of collection - a cached entry quote re-served two minutes later is unknown, with the reason; every candidate keeps its source and collection timestamps; the shadow follow-up refreshes through the options service's forced path and follows at most six contracts per attempt. A candidate whose entry price is unknown produces no hypothetical return and enters no denominator or comparison. The shadow summary is isolated from the close: a fault in it is recorded as diagnostic-incomplete while P&L, the funnel and the disarm complete. Exit prices are weighted by confirmed filled quantity, whatever the cached order status says; a requested quantity is never a fill."},
+    {tag:"improved",text:"The diagnostics report labels the two kinds of number apart: actual book fills (realized, after commissions) versus HYPOTHETICAL quoted ask-to-bid returns after two commissions."},
+  ]},
   {version:"0.8.01",date:"2026-09-16",title:"Team2 measures its entries and contracts in the shadow",items:[
     {tag:"fixed",text:"Team2 close report: refusals and skips are counted as UNIQUE decisions from a durable ledger (event, setup, source minute) that rides the persisted state and is rebuilt from the journal - the 400-row display buffer no longer decides the day's funnel, a re-quoted price on the same candidate is a revision, and raw row counts are reported apart. The scorecard now carries an immutable decision-time view of every fire (signal and confirmation times, tape and rules identity, release and build) beside the corrected-history comparison."},
     {tag:"new",text:"Team2 profitability diagnostics (shadow measurements, techniques.team2.diagnostics, no order decision changes): every entry records its confirmation close, pullback candle, setup level, entry line, the underlying at the order boundary and the distances in ATR (same-close confirmation and moved-away labels); every attempt records first vs subsequent entry into the setup, whether the previous attempt lost and what fresh evidence existed; the picker keeps the selected contract and the alternatives it examined with their live quotes and Greeks, follows them 2, 5 and 10 minutes later and at the actual exit, and compares after-cost outcomes (ask-to-bid after two commissions; missing quotes stay unknown). A candidate refused by an allocation cap is quoted in the shadow too."},
