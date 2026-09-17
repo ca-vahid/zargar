@@ -73,6 +73,8 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## What changed on 2026-09-15/16 (why older docs read differently)
 
+- **Knowledge tab pagination (2026-09-16 evening, v0.8.06):** `GET /api/tip/notes/search` takes `category` (all | rule | ticker | source | general | flagged | daily | experiment | other) and filters on the server BEFORE paging; `total` is the filtered total and `counts` are global per-category counts over the history/search filter. The tab shows "N match · M loaded" apart, load-more names the next page size, and the category buttons / Needs-you banner read the global counts - older rules and flagged notes beyond the first 200 rows were previously unreachable and uncounted. Analyst supply limits unchanged (`tests/test_tip_knowledge_pagination.py`).
+
 | Older statement | Now |
 |---|---|
 | "hold study samples at 15:50 / 09:36 fixed" (PROF-03 v1) | `holdstudy-v2`: exchange-calendar windows, jobs relative to the close and from 09:30, admission on the actual sample time, durable observation identity, fees both sides, R rebased to the sampled size, carry reported as quote drift APART from the managed outcome; the three 2026-09-15 v1 rows are `outside_window` / insufficient |

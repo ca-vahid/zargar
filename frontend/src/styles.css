@@ -2259,6 +2259,18 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface-2); color: var(--text-1); }
 .kb-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.kb-head { flex-wrap: wrap; }
+.kb-bar .seg.sm { flex-wrap: wrap; }
+.kb-search { flex: 1 1 160px; min-width: 120px; max-width: 320px; }
+/* 2026-09-16: coverage is its own wrapping row, never squeezed out of the panel head -
+   the filtered TOTAL and the LOADED count are separate numbers, and load-more stays
+   reachable at any width / zoom (it wraps instead of overflowing) */
+.kb-coverage { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: -4px 0 10px;
+  font-size: var(--fs-1); color: var(--text-2); min-height: 22px; }
+.kb-coverage b { font-variant-numeric: tabular-nums; color: var(--text-1); }
+.kb-coverage .kb-cov-total, .kb-coverage .kb-cov-loaded { white-space: nowrap; }
+.kb-coverage .kb-more { font-size: var(--fs-1); text-decoration: underline; white-space: nowrap; }
+.kb-coverage .kb-more:disabled { opacity: .6; cursor: progress; }
 .kb-hist { font-size: var(--fs-0); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .kb-sec { margin-bottom: 16px; }
 .kb-sec-t { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
