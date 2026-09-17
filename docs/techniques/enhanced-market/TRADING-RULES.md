@@ -1305,6 +1305,10 @@ counted once per (run, trigger, decision) and a row is never double-counted agai
   `shadow_exit_observe=True`, `shadow_p02_candidate=True`, `preopen_at=09:25`, `trading.mode=practice`; one engine pair,
   Discord gateway and EM ingest worker alive, intake liveness live. The 06:20 PT attending owner is this session's
   session-local cron (job 64ad08c1); it dies with the session - the user must keep the session open or assign another.
-- **Runtime note:** the running checkout is dirty only with EM research artifacts that are committed on the EM branch
+- **DEPLOYED 20:25 PT (user: "do it all"):** v0.8.03 build d3091ae, restoration 72/72 by id (58 EM), 0 open trades, watchdog
+  classification live via the checkout, stall watch reporting on health (`eventLoopLagMs` 15.4 at start). Host: `.wslconfig` written
+  (12 GB cap on the WSL2 VM that hosts Docker/Postgres, 4 processors, 4 GB swap) - applies at the next WSL restart, deliberately
+  NOT restarted tonight (a WSL shutdown stops Postgres under the engine). Recommend a quiet-time reboot, not a trading day.
+- **Runtime note (superseded by the deploy above):** the running checkout was dirty only with EM research artifacts that are committed on the EM branch
   (they match after a fast-forward); its build string reads `-dirty` for that reason. The EM integrated candidate
   `47275c3f8ff02c857b46b431e71b3300ec0eea67` (0.8.02) contains runtime 3f5675d and origin/main as ancestors; no restart is requested for research labels.

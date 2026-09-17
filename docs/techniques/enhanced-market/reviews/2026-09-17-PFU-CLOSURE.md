@@ -31,7 +31,14 @@ trading, the deterministic entry and observation-only collection unchanged.
 - BUILT: all four findings, on the EM branch.
 - MERGED: into the EM branch only (main + runtime 3f5675d merged IN; nothing merged OUT to main yet - a PR follows the
   user's word).
-- DEPLOYED: nothing by EM. The runtime is 0.8.02 build ed88f254 (Team2's deploy 19:57 PT; the 58 EM arms, settings and helpers re-verified on it). No restart for research labels; the dirty build string
+- DEPLOYED: **v0.8.03 build `d3091ae468a52ba410b93a76772688d86537ecc3` at 20:25 PT 2026-09-16 on the user's "do it all"** (readiness safe,
+  market closed, 0 open trades; `deploy.ps1` under the lease -> `ZargarRestart` task; receipt phase `verified`, expected/healthy 0.8.03;
+  restoration by hand: 72 armed before and after by id - enhanced_market 58, options_cartel 1, team2 3, tip 10 - 0 missing, 0 new;
+  resting orders 26 -> 26; open trades 0 -> 0). On the new build: 58 EM arms effective `deterministic`, evidence off; settings intact;
+  `/api/health.local.delivery` now reports `eventLoopLagMs` 15.4, `loopStalls` 0; `logs/engine.pid` stamped (65008); one engine pair,
+  gateway and ingest alive, intake live. The watchdog classification is LIVE by construction (the scheduled task reads
+  `scripts/watchdog.ps1` from the checkout): acceptance 8/8 and `-ProbeOnly` = healthy from the runtime checkout. The user decided
+  this after the owner coordination; the Tips desk's pre-open note carries the evidence. No restart for research labels; the dirty build string
   is the runtime checkout's untracked EM research artifacts, which are committed on the EM branch.
 - COLLECTING: P-02 (observer ON), P-04b paired, P-05 labels - order-free, in the daily report.
 - EVALUATED: P-02 one comparable row (CRWV 09-16 +$61.03 vs production), five unknown for lack of covered observations;
