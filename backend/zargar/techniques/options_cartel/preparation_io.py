@@ -43,6 +43,10 @@ class PreparationHistory:
         self.cache_hits = 0
         self.requests = 0
         self.last_request = 0.
+        self.pacing_seconds = 0.
+        self.effective_interval = policy.request_interval_seconds
+        self.cooldown_until = 0.
+        self.rate_limit_retries = 0
         self.request_lock = asyncio.Lock()
         self.provider_error = None
         self.active_requests = 0
@@ -52,6 +56,13 @@ class PreparationHistory:
         self.batch_values = {}
         self.fallback_provider_key = f'{getattr(fetch, "__module__", "injected")}.{getattr(fetch, "__qualname__", "provider")}:daily-yahoo-rth'
         self.provider_key = 'alpaca:sip:raw:daily:v1' if self.native_batch else self.fallback_provider_key
+
+    def rate_limit_backoff(self, seconds):
+        # Slow only this preparation, in addition to the shared provider's retry
+        # sleeps and concurrency ceiling. Never weaken a data/error boundary.
+        self.rate_limit_retries += 1
+        self.effective_interval = min(5., max(.25, self.effective_interval*2))
+        self.cooldown_until = max(self.cooldown_until, time.monotonic()+seconds)
 
     @asynccontextmanager
     async def prefetch(self, listings, at, client, *, skip):
@@ -276,8 +287,9 @@ class PreparationHistory:
 
         await self.report(symbol=symbol, message=f'Loading {symbol} {timeframe} history')
         async with self.request_lock:
-            delay = max(0, self.policy.request_interval_seconds-(time.monotonic()-self.last_request))
+            delay = max(0, self.effective_interval-(time.monotonic()-self.last_request), self.cooldown_until-time.monotonic())
             if delay:
+                self.pacing_seconds += delay
                 await asyncio.sleep(delay)
             if self.provider_error:
                 raise self.provider_error
@@ -288,7 +300,8 @@ class PreparationHistory:
             kwargs = {'refresh': True} if refresh and self.fetch is fetch_window else {}
             if self.fetch is fetch_window:
                 from ...marketstructure.history import fetch_window_ex
-                bars, provider = await observed_work(fetch_window_ex(symbol, timeframe, start, end, client=client, **kwargs),
+                bars, provider = await observed_work(fetch_window_ex(symbol, timeframe, start, end, client=client,
+                    on_rate_limit=self.rate_limit_backoff, **kwargs),
                     self.report, message=f'Loading {symbol} {timeframe} history')
                 self.response_providers[(symbol, timeframe)] = provider
                 return bars

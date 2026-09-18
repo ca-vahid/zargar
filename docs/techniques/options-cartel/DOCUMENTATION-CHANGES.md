@@ -75,3 +75,7 @@ Application release metadata changes only to publish the bundled Method-library 
 ## 2026-09-18 completion
 
 Added DIAGNOSTICS-2026-09-18: immutable decision capture, read-only provider parity results, evidence limits and inactive experiment boundaries. Historical proposal revisions remain dated records rather than current operating instructions.
+
+## 2026-09-18 performance
+
+Added PREPARATION-PERFORMANCE.md: measured download and CPU pilots, adaptive pacing, shortlist-before-research order, and explicit end-to-end limitations. Updated the operating guide. No method or risk thresholds changed.

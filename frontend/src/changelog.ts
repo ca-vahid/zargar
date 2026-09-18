@@ -21,6 +21,10 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"Bars retain their data provider, and Yahoo updates cannot replace Alpaca bars. Team2 can use Alpaca-only history and preserve each plan's indicator warm-up through restarts and replay."},
     {tag:"new",text:"Practice experiment books get scheduled half-hour equity reviews with persistent book pauses at their agreed review thresholds. Activation still requires verified data and a readiness receipt."},
   ]},
+  {version:"0.8.15",date:"2026-09-18",title:"Cartel: faster preparation and clearer progress",items:[
+    {tag:"improved",text:"Cartel checks and arms its shortlist before optional research finishes. Plans shows stage timings and separates shortlist readiness from research completion."},
+    {tag:"new",text:"History request spacing offers a Fast option with automatic slowdown on provider throttling. Scan coverage, data source and trading checks stay unchanged."},
+  ]},
   {version:"0.8.14",date:"2026-09-18",title:"Options Cartel: explain missed entries",items:[
     {tag:"improved",text:"Cartel records partial candle evidence, delayed-bar counts and the dollar cost of option spreads to explain missed entries. Trading thresholds and account protections are unchanged."},
     {tag:"new",text:"Offline Cartel method comparisons now distinguish original preparation, later recovery and unavailable evidence. Experimental setup and volume rules remain inactive."},

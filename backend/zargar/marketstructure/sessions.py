@@ -4,6 +4,7 @@ dates and bounds. Shared by every technique — a schedule rule (EM's R6) is a
 from __future__ import annotations
 
 import datetime as dt
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
@@ -42,9 +43,16 @@ def session_bounds(date: str) -> tuple[int, int]:
     (13:00 ET: July 3, Black Friday, Christmas Eve) come from the market calendar
     (2026-09-03, Team2 desk — every technique's clock-driven close now honours them)."""
     from .market_calendar import session_close_minutes
+    close_min = session_close_minutes(dt.date.fromisoformat(date))
+    return _session_bounds(date, close_min)
+
+
+@lru_cache(maxsize=4096)
+def _session_bounds(date: str, close_min: int) -> tuple[int, int]:
+    # Cache immutable timestamp arithmetic, not the calendar policy. A changed
+    # early-close rule is resolved above and forms part of the cache key.
     y, m, d = (int(x) for x in date.split("-"))
     o = dt.datetime(y, m, d, 9, 30, tzinfo=ET)
-    close_min = session_close_minutes(dt.date(y, m, d))
     c = dt.datetime(y, m, d, close_min // 60, close_min % 60, tzinfo=ET)
     return int(o.timestamp() * 1000), int(c.timestamp() * 1000)
 
