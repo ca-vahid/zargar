@@ -95,6 +95,12 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         }}>{status?.liveAutoAllowed ? "Disable Cartel live-auto permission" : "Enable Cartel live-auto permission"}</button>
       </>}
       {!live && <div className="cartel-inset">
+        <label className="cartel-check"><input type="checkbox" checked={!!status?.verifiedIntervals} disabled={busy} onChange={async e => {
+          setBusy(true); setError('');
+          try { await api.patchSettings({'techniques.options_cartel.verified_intervals':e.target.checked}); reload(); }
+          catch (error) {setError(String(error));} finally {setBusy(false);}
+        }}/>Verify provider-omitted price intervals for Practice</label>
+        <p className="muted">Requires complete trade-feed evidence. No candles are invented; unresolved gaps still block entries, and repaired history cannot create late entries.</p>
         <label className="cartel-check"><input type="checkbox" checked={!!status?.wideContractReselection} disabled={busy} onChange={async e => {
           const enabled=e.target.checked; setBusy(true); setError('');
           try {await api.patchSettings({'techniques.options_cartel.reselect_wide_contract':enabled}); reload();}

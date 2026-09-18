@@ -83,3 +83,7 @@ Added PREPARATION-PERFORMANCE.md: measured download and CPU pilots, adaptive pac
 ## 2026-09-18 minute boundary
 
 The observer now rejects misaligned and wrong-symbol bus updates before merging them into a decision tape. Morning runtime inspection found no malformed timestamps persisted in any of the five arms: the failed transaction rolled back. This fixes handler exceptions; it does not repair legitimate sampled/unknown minute gaps or establish that a valid entry was missed. Regression verifies rejected updates leave state unchanged and subsequent valid candles still trigger.
+
+## 2026-09-18 verified intervals
+
+Added VERIFIED-INTERVALS.md: positive trade evidence, per-field aggregation, Practice-only activation, causal recovery and replay boundaries. No zero-volume or price candles are fabricated.

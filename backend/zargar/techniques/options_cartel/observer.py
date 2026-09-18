@@ -294,7 +294,8 @@ class CartelObserver(SessionListener):
         dto.bar_index = len(state.get("minutes", {}))
         result = dto.to_dict(portfolio=self.engine.positions.portfolio(row["portfolioId"]),
                              quote=self.engine.quotes.get(plan.symbol), now_ms=self.clock())
-        result.update(volumeCoverage=baseline_coverage(plan), observationHealth=plan_coverage(plan, state, self.clock()), decisionHistory=state.get("decisionHistory", []), observation=state.get("observation"), signal=state.get("signal"),
+        from .nonemission import enabled
+        result.update(volumeCoverage=baseline_coverage(plan), observationHealth=plan_coverage(plan, state, self.clock(), use_verified=enabled(self.engine,row)), decisionHistory=state.get("decisionHistory", []), observation=state.get("observation"), signal=state.get("signal"),
                       phase=state["phase"], executionAvailable=False, barDrops=self.drops.snapshot(run_id) or state.get("barDrops"))
         trigger = {"id": "cartel_entry", "label": "Cartel entry",
                    "kind": "breakdown" if plan.direction == "short" and plan.entry.mode == "breakout" else plan.entry.mode,
@@ -407,7 +408,11 @@ class CartelObserver(SessionListener):
                 # that invalidated it while pending, paused or restoring.
                 plan = self.plans[rid]
                 tape = [unpack(symbol, values) for values in minutes.values()]
-                observation = read_entry(plan, tape, now, entry_after=state.get("observeAfter", state["armedAt"]))
+                from .nonemission import effective
+                interval_evidence = effective(self.engine, self.repository.view(row))
+                observation = read_entry(plan, tape, now, entry_after=state.get("observeAfter", state["armedAt"]),
+                                         verified_intervals=interval_evidence)
+                observation['verifiedIntervals'] = interval_evidence
                 observation['dataEvidence'] = evidence(minutes)
                 from .decision_evidence import capture
                 captured_events = await capture(session, row, plan, minutes, state, observation, now)

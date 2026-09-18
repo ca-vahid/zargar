@@ -51,3 +51,5 @@ No full public-feed coverage, exact author replication, broker-verified author r
   and promotion criteria. Actual trades remain in Daily review.
 
 Current completion: [September 18 diagnostics and provider reconstruction](DIAGNOSTICS-2026-09-18.md).
+
+Data repair: [Verified provider intervals](VERIFIED-INTERVALS.md).
