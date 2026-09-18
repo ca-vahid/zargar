@@ -458,6 +458,10 @@ def _parse_result_json(raw: str) -> ExtractionResult:
                 pass
     if extra:
         raise ValueError(f"ambiguity: {extra + 1} schema-valid extraction objects in one reply - reply with exactly ONE JSON object")
+    if s.find("{", pos) != -1:
+        # F2-R3: scan budget exhausted with unexamined JSON content - never certify uniqueness
+        raise ValueError("ambiguity: scan limit reached with unexamined JSON content after the first object "
+                         "- reply with exactly ONE JSON object and no other JSON")
     if trailing:
         log.info("extraction: %d trailing character(s) after the JSON object ignored", len(trailing))
     return parsed

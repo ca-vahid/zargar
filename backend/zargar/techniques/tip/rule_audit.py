@@ -135,17 +135,19 @@ async def _judge(client, *, model: str, system: str, header: str, cap: int,
                                            messages=[{"role": "user", "content": header}]),
                     timeout=AUDIT_TIMEOUT_S)
         except asyncio.CancelledError as exc:          # shutdown/restart mid-call
-            calls.append({"attempt": attempt, "maxTokens": cap, "error": "cancelled"})
+            calls.append({"attempt": attempt, "maxTokens": cap, "error": "cancelled", "model": model})
             raise JudgeCancelled(calls) from exc
         except Exception as exc:                       # timeout / provider error
-            calls.append({"attempt": attempt, "maxTokens": cap, "error": str(exc)[:160]})
+            calls.append({"attempt": attempt, "maxTokens": cap, "error": str(exc)[:160], "model": model})
             raise JudgeError(f"judge call failed: {exc}", calls) from exc
         llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms, retried=attempt > 1)
         u = getattr(resp, "usage", None)
         stop = getattr(resp, "stop_reason", None)
-        calls.append({"attempt": attempt,
+        calls.append({"attempt": attempt, "model": model,                       # COST-R3: stamped on every attempt
                       "inputTokens": int(getattr(u, "input_tokens", 0) or 0) if u else None,
                       "outputTokens": int(getattr(u, "output_tokens", 0) or 0) if u else None,
+                      "cacheReadTokens": int(getattr(u, "cache_read_input_tokens", 0) or 0) if u else None,
+                      "cacheWriteTokens": int(getattr(u, "cache_creation_input_tokens", 0) or 0) if u else None,
                       "stopReason": str(stop) if stop else None, "latencyMs": round(_t.ms, 1),
                       "maxTokens": cap})
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")

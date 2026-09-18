@@ -27,32 +27,82 @@ without changing any judgment? The dynamic header (quotes, positions, evidence, 
 - **Pricing:** `tools/tip_llm_cost.py` with the verified card (Opus 5: in 5.00, out 25.00, cache read 0.50, 5-minute
   cache write 6.25 USD/MTok) - warm-up cost counted, list price = estimate.
 
-## Budget (list price, upper bound)
+## Budget (list price, upper bound) - CORRECTED 2026-09-17 late (R3)
 
-One SBLK appraisal request ≈ 170k input tokens (the day's appraisals averaged 178k input per call) and ≈ 1.5k output.
+**Correction of the earlier estimate.** The first draft read "≈ 170k input tokens per request (the day's appraisals
+averaged 178k input per call)". That was wrong: the day's 12 appraisals made **46 provider calls for 2.14M input
+tokens = ~46.5k input tokens per call on average**, not 178k (178k was the per-RUN average: a run is a multi-turn
+tool loop and each turn re-sends the growing conversation). Everything below is recomputed from measured sizes.
 
-| Arm | Calls | Input tokens | Est. cost |
+**Measured on the pilot bundle `fb-e0221ed3d071cc60` (dry-run harness, chars/4 estimates - the provider's own count
+is what the pilot will record):**
+
+| Part of the request | Chars / 4 | What it is |
+|---|---:|---|
+| Cacheable PREFIX (system prompt + 13 tool definitions), byte-identical across calls | **~5.3k tokens** | the only part `cacheable_request` marks |
+| Uncached HEADER (rules, notes, positions, evidence, quotes for this tip) | **~20.4k tokens** | changes per tip, outside the cache |
+| First call total | ~26.5k tokens | matches the 26,530 the cache-off dry run reported |
+
+So the cacheable share of a FIRST call is ~20%, and of the day's average call (~46.5k, conversation included) ~11%.
+
+**Savings ceiling from the prefix alone (Opus 5 list: in 5.00, cache read 0.50, 5-minute write 6.25 USD/MTok):**
+one read saves 5.3k x (5.00 - 0.50) / 1e6 ≈ **$0.024**; the warm-up write costs 5.3k x 1.25 / 1e6 ≈ $0.007 extra.
+Upper bound for a day like 2026-09-17 (46 calls, EVERY one a hit - not realistic within 5-minute windows):
+≈ $1.10 against the $11.83 appraise spend, i.e. under 10%. The larger, uncached part is the conversation that
+multi-turn loops re-send; extending the cache marker to the last message of the conversation (a different request
+shape, not part of this pilot) is the follow-on question the pilot's per-attempt data can inform.
+
+**Pilot budget at measured sizes (first-call replays; a real model may take up to `analyst_max_tools` tool turns,
+each re-sending the conversation, so a replay can be several attempts - the ceiling is enforced per attempt):**
+
+| Arm | Calls | Est. cost (first call only) | Worst case incl. tool turns |
 |---|---:|---:|---:|
-| off x3 | 3 | ~510k | ~$2.55 + output ~$0.11 |
-| on warm-up | 1 | ~170k (write at 6.25) | ~$1.06 |
-| on reads x3 | 3 | ~510k (prefix ~150k each read at 0.50; ~20k uncached header at 5.00) | ~$0.23 + ~$0.30 |
-| on after expiry | 1 | ~170k (write) | ~$1.06 |
-| **Total** | **8** | **~1.4M** | **≈ $5.5, cap $8** |
+| off x3 | 3 | ~$0.51 | ~$2.4 |
+| on warm-up | 1 | ~$0.18 | ~$0.8 |
+| on reads x3 | 3 | ~$0.44 | ~$2.2 |
+| on after expiry (write) | 1 | ~$0.18 | ~$0.8 |
+| **Total** | **8+** | **≈ $1.3** | **≈ $6.2; hard cap $8 enforced** |
+
+## Harness (executable, CACHE-P1/P2, 2026-09-17 late)
+
+```
+python -m zargar.tools.tip_frozen replay --bundle fb-e0221ed3d071cc60 --variants current --cache off --budget-usd 8 --repeats 3
+python -m zargar.tools.tip_frozen replay --bundle fb-e0221ed3d071cc60 --variants current --cache on  --budget-usd 8 --repeats 4
+# > 5 minutes later
+python -m zargar.tools.tip_frozen replay --bundle fb-e0221ed3d071cc60 --variants current --cache on  --budget-usd 8
+```
+
+- `--cache off|on` (default off) shapes the request through the SAME `analyst.cacheable_request` production uses.
+- `--budget-usd` is an ENFORCED ceiling shared by every attempt of the invocation: `ReplayBudget` checks a
+  conservative estimate (prompt chars/4 at the input rate + the full `max_tokens` at the output rate) BEFORE each
+  attempt and charges the provider's own usage AFTER (input, output, cache read, cache write at `llm.rates`);
+  a failed or cut attempt with unknown billing is charged at its estimate. A paid replay without a cap is refused
+  before any client is built; without a complete rate card for the model it is refused too.
+- Per attempt on the replay report: tokens in/out, cache write/read, latency, stop reason, estimate, priced usd and the
+  billing basis; the report also carries `promptCache`, `prefixChars`/`prefixTokensEst` and `headerChars`/
+  `headerTokensEst` separately.
+- **Scripted dry run (2026-09-17 late, stub model, synthetic usage, $0):** cache off -> 26,530 in, prefix ~5,331 /
+  header ~20,418; cache on x2 under `--budget-usd 8` -> attempt 1 write 5,573 ($0.1408), attempt 2 read 5,573
+  ($0.1087), spent $0.2495 of $8; `--budget-usd 0.05` -> attempt 1 REFUSED before the call ("would cost ~$0.21 on
+  top of $0.00 spent (cap $0.05)"), no verdict, nothing sent; no cap on a paid replay -> refused. Dry-run rows are
+  persisted with model `dry-run-stub(claude-opus-5)` and `dryRun: true`, never attributed to the real model.
 
 Stop rule: abort if any call reports `cache_creation_input_tokens` 0 AND `cache_read_input_tokens` 0 on the `on` arm
 (caching not taking effect - prefix not identical or marker rejected) after the second `on` call; report the reason.
 
 ## Success / read-out (no policy change either way)
 
-- Hits observed: reads x3 with `cacheRead` ≈ the prefix size, cost per call on the `on` arm below `off` after the
-  warm-up, latency reported separately (expect lower time-to-first-token, not guaranteed).
+- Hits observed: reads x3 with `cacheRead` ≈ the measured prefix (~5k tokens, provider count), priced cost per call on
+  the `on` arm below `off` after the warm-up, latency reported separately (expect lower time-to-first-token, not
+  guaranteed).
 - Judgments identical across arms on the frozen inputs.
-- Output: a short report in `research/` with the per-call table, the priced totals (warm-up included), the prefix
-  hashes and a break-even statement (5-minute writes pay off after one read; the desk's appraisal cadence decides
+- Output: a short report in `research/` with the per-attempt table, the priced totals (warm-up included), the prefix
+  hashes and a break-even statement (a 5-minute write pays off after one read; the desk's appraisal cadence decides
   whether hits would occur in production - that is the follow-on question, measured over a session only if this
-  pilot is favourable and the user approves).
+  pilot is favourable and the user approves). State the savings ceiling honestly: at the measured prefix it is under
+  10% of appraisal spend unless the cached span is extended to the conversation.
 
 ## What this pilot does NOT do
 
 No live routing change, no recap route, no context trimming (a separate experiment), no order, no knowledge write, no
-change to `techniques.tip.prompt_cache` in production. Approval needed: the ~$8 cap and the go.
+change to `techniques.tip.prompt_cache` in production (OFF). Approval needed: the $8 cap and the go for PAID calls.
