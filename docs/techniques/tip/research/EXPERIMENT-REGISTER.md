@@ -100,8 +100,8 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Primary metric:** `usage.cacheRead` / `cacheWrite` tokens per call, billable cost from `llm.rates`, latency; judgments must be unchanged (the header is outside the cache).
 - **Costs:** the calls themselves; a cache write is billed above the input rate - measured, never assumed.
 - **Regime:** `analyst.cacheable_request`, `tools/tip_llm_cost.py`; knobs `techniques.tip.prompt_cache`, `llm.rates`.
-- **Evaluation window:** opens when the user enables the knob for a measured session; closes on observed hit rates over >= 50 calls. **Decision rule:** the user decides on measured hits and cost; recap routing stays OFF and is a separate experiment.
-- **Status:** built, off.
+- **Evaluation window:** step 1 = the bounded side-effect-free PILOT in `research/2026-09-17-prompt-cache-pilot-plan.md` (8 frozen-replay calls, cap $8 at list, warm-up counted, prefix hashes checked, judgments compared) - runs only on the user's approval; step 2 (a measured session) only if the pilot is favourable and approved. **Decision rule:** the user decides on measured hits, priced cost incl. warm-up, and latency; recap routing stays OFF and is a separate experiment.
+- **Status:** built, off; pilot plan awaiting approval (2026-09-17).
 
 ## `feasibility-annotate`
 
