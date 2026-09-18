@@ -1435,3 +1435,9 @@ measurement (ED-04, EM desk owner; Tips desk for the shared quote/mark layer).
 
 A first contract quote with some depth but less than the remainder is raw evidence for the reclaim observation; the covered
 key stays open (verified while the raw write is queued and after it is acknowledged). P-02 semantics untouched. Research only.
+
+### 2026-09-17 late - 0.8.14 candidate consolidated (`586ed13`), not deployed
+
+Partial-depth rule accepted; main `edc5dd0` (Tips #206-#208) merged cleanly; 70 focused + shared-change tests, build and
+release check green on the merged SHA; arming solo on the pre-merge tree 30 passed + the known baseline failure. Live stays
+v0.8.13 build `46c50eb`. Strategy changes deferred; the executable-profit measurement (ED-04) is the next work item.
