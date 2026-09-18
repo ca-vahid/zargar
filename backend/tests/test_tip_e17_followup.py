@@ -52,7 +52,10 @@ async def test_two_tools_in_one_reply_first_consumes_the_reserve_second_is_stubb
 async def test_retry_backoff_that_reaches_the_reserve_switches_to_the_final_call(rig, monkeypatch):
     clock = {"t": 0.0}
     monkeypatch.setattr(analyst, "_loop_now", lambda: clock["t"])
-    monkeypatch.setattr(analyst.asyncio, "sleep", AsyncMock(side_effect=lambda d: clock.__setitem__("t", clock["t"] + 25.0)))
+    # the backoff seam, never asyncio.sleep globally (a global mock stalls wait_for / engine loops)
+    async def _fake_backoff(d):
+        clock["t"] += 25.0
+    monkeypatch.setattr(analyst, "_backoff_sleep", _fake_backoff)
 
     class Overloaded(Exception):
         status_code = 529
