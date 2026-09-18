@@ -2327,3 +2327,7 @@ midpoint by `quote_ts`/`source_ts`, else unavailable).
 ### Cartel decision evidence — 2026-09-18
 
 Cartel commits distinct decision occurrences, immutable input-context references and journal evidence atomically with its arm update. Two additive tables preserve original inputs independently of mutable tapes. These records grant no trading permission; existing account, quote, risk and protective-exit behavior is unchanged. See `techniques/options-cartel/DIAGNOSTICS-2026-09-18.md`.
+
+### History performance without changing trading evidence — 2026-09-18
+
+Shared session timestamp arithmetic is memoized by date plus the resolved close time (early-close policy remains authoritative). Shared Yahoo history accepts an optional rate-limit callback; existing concurrency and retries remain unchanged. Only the Cartel caller uses it to slow its own request pacing after 429. See Cartel PREPARATION-PERFORMANCE.md for measured pilot results and end-to-end limits.

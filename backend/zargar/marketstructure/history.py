@@ -210,6 +210,7 @@ async def fetch_window_ex(
     client: httpx.AsyncClient | None = None,
     session: str = "rth",
     refresh: bool = False,
+    on_rate_limit=None,
 ) -> tuple[list[Bar], str | None]:
     """`fetch_window` plus WHICH provider answered ("alpaca" | "yahoo" | None when nothing did) —
     a repair that zeroes history may only do so on a venue response it can name (review R5)."""
@@ -267,6 +268,8 @@ async def fetch_window_ex(
                 async with _sem:
                     from ..brokers.yahoo import yahoo_symbol
                     resp = await http.get(CHART_URL.format(symbol=yahoo_symbol(symbol)), params=params)
+                if resp.status_code == 429 and on_rate_limit is not None:
+                    on_rate_limit(pause if pause is not None else _RETRY_PAUSES[-1])
                 if resp.status_code != 429 or pause is None:
                     break
                 log.info("yahoo 429 for %s %s — retry %d in %.0fs", symbol, tf, attempt + 1, pause)
