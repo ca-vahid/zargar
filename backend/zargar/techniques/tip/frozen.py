@@ -633,12 +633,79 @@ def _report_hash(report: dict) -> str:
     return _sha(_canonical(keep))
 
 
+class ReplayBudgetExceeded(Exception):
+    """The next provider attempt would push the replay past its dollar ceiling."""
+
+
+class ReplayBudget:
+    """CACHE-P2 (2026-09-17): an ENFORCED dollar ceiling for paid replays. Every attempt is
+    checked BEFORE it is sent (conservative estimate: prompt chars / 4 input tokens at the
+    input rate + the full max_tokens output at the output rate) and charged AFTER it returns
+    from the provider's own usage (input, output, cache read, cache write at the rate card);
+    an attempt that fails or is cut - billing unknown - is charged at its ESTIMATE, so retries
+    and unknown-billed attempts count against the cap too. Without a complete rate card a
+    paid replay cannot be budgeted and is refused."""
+
+    def __init__(self, cap_usd: float, rate: dict | None, *, model: str = ""):
+        self.cap_usd = float(cap_usd)
+        self.rate = rate or {}
+        self.model = model
+        self.spent_usd = 0.0
+        self.attempts: list[dict] = []
+        self.refused: list[dict] = []
+        missing = [k for k in ("in", "out", "cacheRead", "cacheWrite") if self.rate.get(k) is None]
+        if missing:
+            raise ValueError(f"no complete rate card for model {model!r} (missing {missing}) - a paid replay cannot be budgeted")
+
+    @staticmethod
+    def est_tokens(*parts) -> int:
+        return sum(len(json.dumps(p, default=str)) if not isinstance(p, str) else len(p) for p in parts) // 4
+
+    def estimate_usd(self, *, system, messages, tools, max_tokens: int) -> float:
+        tokens_in = self.est_tokens(system, messages, tools)
+        return tokens_in / 1e6 * float(self.rate["in"]) + int(max_tokens) / 1e6 * float(self.rate["out"])
+
+    def price(self, *, inp: int = 0, out: int = 0, cache_read: int = 0, cache_write: int = 0) -> float:
+        r = self.rate
+        return (inp / 1e6 * float(r["in"]) + out / 1e6 * float(r["out"])
+                + cache_read / 1e6 * float(r["cacheRead"]) + cache_write / 1e6 * float(r["cacheWrite"]))
+
+    def allow(self, estimate_usd: float, *, label: str) -> None:
+        if self.spent_usd + estimate_usd > self.cap_usd + 1e-9:
+            self.refused.append({"label": label, "estimateUsd": round(estimate_usd, 4), "spentUsd": round(self.spent_usd, 4),
+                                 "capUsd": self.cap_usd})
+            raise ReplayBudgetExceeded(f"budget: {label} would cost ~${estimate_usd:.2f} on top of ${self.spent_usd:.2f} spent "
+                                       f"(cap ${self.cap_usd:.2f}) - refused before the call")
+
+    def charge(self, entry: dict) -> float:
+        """Price one attempt from its recorded usage (or its estimate when billing is unknown)."""
+        if entry.get("error") or entry.get("inputTokens") is None:
+            usd = float(entry.get("estimateUsd") or 0.0)
+            entry["billing"] = "unknown - charged at estimate"
+        else:
+            usd = self.price(inp=int(entry.get("inputTokens") or 0), out=int(entry.get("outputTokens") or 0),
+                             cache_read=int(entry.get("cacheReadTokens") or 0), cache_write=int(entry.get("cacheWriteTokens") or 0))
+            entry["billing"] = "provider usage"
+        entry["usd"] = round(usd, 4)
+        self.spent_usd = round(self.spent_usd + usd, 4)
+        self.attempts.append(entry)
+        return usd
+
+    def summary(self) -> dict:
+        return {"capUsd": self.cap_usd, "spentUsd": round(self.spent_usd, 4), "attempts": len(self.attempts),
+                "unknownBilled": sum(1 for a in self.attempts if a.get("billing", "").startswith("unknown")),
+                "refused": list(self.refused), "model": self.model, "rate": dict(self.rate)}
+
+
 async def replay(bundle: dict, *, variant: str, client, model: str | None = None,
-                 max_tools: int | None = None, max_tokens: int | None = None) -> dict:
+                 max_tools: int | None = None, max_tokens: int | None = None,
+                 prompt_cache: bool = False, budget: "ReplayBudget | None" = None) -> dict:
     """One isolated replay. Inputs: the bundle and an LLM client - nothing
     else. Returns the report (never raises for a model failure: a no-verdict
-    is a measured outcome)."""
-    from .analyst import SYSTEM, TOOLS, AnalystOpinion, _parse_opinion
+    is a measured outcome). CACHE-P1: `prompt_cache` shapes the request through
+    the SAME `cacheable_request` production uses (system block + last tool marked);
+    CACHE-P2: `budget` is checked before and charged after EVERY attempt."""
+    from .analyst import SYSTEM, TOOLS, AnalystOpinion, _parse_opinion, cacheable_request
 
     kv = variant_knowledge(bundle, variant)
     base = {"bundleId": bundle.get("id"), "variant": variant, "at": _iso(dt.datetime.now(dt.timezone.utc)),
@@ -677,24 +744,53 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
 
     served = _Served(bundle)
     messages: list = [{"role": "user", "content": header}]
-    usage = {"in": 0, "out": 0, "calls": 0, "stops": [], "cacheRead": 0, "cacheCreation": 0}
+    usage = {"in": 0, "out": 0, "calls": 0, "stops": [], "cacheRead": 0, "cacheCreation": 0,
+             "attempts": [], "unknownBilled": 0, "model": model, "promptCache": bool(prompt_cache)}
+    sys_param, tools_param = cacheable_request(system, TOOLS, enabled=bool(prompt_cache))
+    # the two request parts measured APART: the cacheable prefix (system + tool definitions) and
+    # the uncached per-run header - savings are estimated from the prefix, never from the total
+    prefix_chars = len(system) + len(json.dumps(TOOLS, default=str))
     tools_used = 0
     text: str | None = None
     error: str | None = None
     t0 = time.perf_counter()
     try:
         for _ in range(max_tools + 2):
-            resp = await client.messages.create(model=model, max_tokens=max_tokens, system=system,
-                                                messages=messages, tools=TOOLS)
+            entry: dict = {"attempt": usage["calls"] + 1, "model": model, "promptCache": bool(prompt_cache)}
+            if budget is not None:
+                est = budget.estimate_usd(system=sys_param, messages=messages, tools=tools_param, max_tokens=max_tokens)
+                entry["estimateUsd"] = round(est, 4)
+                budget.allow(est, label=f"{variant} attempt {entry['attempt']}")      # raises -> recorded below
+            _ta = time.perf_counter()
+            try:
+                resp = await client.messages.create(model=model, max_tokens=max_tokens, system=sys_param,
+                                                    messages=messages, tools=tools_param)
+            except Exception as exc:
+                entry.update(error=f"{type(exc).__name__}: {str(exc)[:200]}", latencyMs=round((time.perf_counter() - _ta) * 1000.0, 1))
+                usage["attempts"].append(entry)
+                usage["unknownBilled"] += 1
+                if budget is not None:
+                    budget.charge(entry)
+                raise
             usage["calls"] += 1
             usage["stops"].append(str(getattr(resp, "stop_reason", None)))
             u = getattr(resp, "usage", None)
+            entry.update(latencyMs=round((time.perf_counter() - _ta) * 1000.0, 1), stopReason=str(getattr(resp, "stop_reason", None)))
             if u is not None:
-                usage["in"] += int(getattr(u, "input_tokens", 0) or 0)
-                usage["out"] += int(getattr(u, "output_tokens", 0) or 0)
+                entry.update(inputTokens=int(getattr(u, "input_tokens", 0) or 0), outputTokens=int(getattr(u, "output_tokens", 0) or 0),
+                             cacheReadTokens=int(getattr(u, "cache_read_input_tokens", 0) or 0),
+                             cacheWriteTokens=int(getattr(u, "cache_creation_input_tokens", 0) or 0))
+                usage["in"] += entry["inputTokens"]
+                usage["out"] += entry["outputTokens"]
                 # PROF-05: effective billed usage includes the cache side
-                usage["cacheRead"] += int(getattr(u, "cache_read_input_tokens", 0) or 0)
-                usage["cacheCreation"] += int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+                usage["cacheRead"] += entry["cacheReadTokens"]
+                usage["cacheCreation"] += entry["cacheWriteTokens"]
+            else:
+                entry.update(inputTokens=None, outputTokens=None, cacheReadTokens=None, cacheWriteTokens=None)
+                usage["unknownBilled"] += 1
+            usage["attempts"].append(entry)
+            if budget is not None:
+                budget.charge(entry)
             calls = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
             think = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
             if not calls:
@@ -716,6 +812,8 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
                 messages.append({"role": "user", "content":
                                  "Tool budget exhausted. Reply with ONLY the JSON "
                                  "opinion object now - request no more tools."})
+    except ReplayBudgetExceeded as exc:          # the ceiling is an outcome too - nothing was sent
+        error = str(exc)[:300]
     except Exception as exc:                     # a provider failure is an outcome
         error = f"{type(exc).__name__}: {str(exc)[:300]}"
     latency_ms = (time.perf_counter() - t0) * 1000.0
@@ -749,8 +847,12 @@ async def replay(bundle: dict, *, variant: str, client, model: str | None = None
         "latencyMs": round(latency_ms, 1),
         "tokens": {"in": usage["in"], "out": usage["out"], "calls": usage["calls"],
                    "stops": usage["stops"], "cacheRead": usage["cacheRead"], "cacheCreation": usage["cacheCreation"],
-                   "effectiveInput": usage["in"] + usage["cacheRead"] + usage["cacheCreation"]},
-        "headerChars": len(header),
+                   "effectiveInput": usage["in"] + usage["cacheRead"] + usage["cacheCreation"],
+                   "attempts": usage["attempts"], "unknownBilled": usage["unknownBilled"]},
+        "promptCache": bool(prompt_cache),
+        "prefixChars": prefix_chars, "prefixTokensEst": prefix_chars // 4,
+        "headerChars": len(header), "headerTokensEst": len(header) // 4,
+        "budget": (budget.summary() if budget is not None else None),
         "toolCalls": {"served": len(served.served), "missing": len(served.missing),
                       "servedCalls": served.served, "missingCalls": served.missing},
         "proposedNotes": served.proposed_notes,     # captured, NEVER written

@@ -117,6 +117,7 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
     system = (SYSTEM.replace("{maxp}", str(MAX_PROMOTIONS))
               + json.dumps(DigestOpinion.model_json_schema(), separators=(",", ":")))
     usage = _usage_new()
+    usage["model"] = model                      # COST-R3: the model that consumes these tokens, on the record
     receipts: list[dict] = []
     partial: dict = {"noteId": None, "promoted": []}
 

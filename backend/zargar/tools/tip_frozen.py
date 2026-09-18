@@ -32,16 +32,31 @@ class _StubBlock:
 
 
 class _StubClient:
-    """No-cost stand-in: answers a 'review' opinion without a provider."""
+    """No-cost stand-in: answers a 'review' opinion without a provider. Its usage is SYNTHETIC
+    (prompt chars / 4, output 40 tokens; with a cache-marked system the prefix is reported as a
+    cache write on the first call and a cache read afterwards) so the dry run exercises the
+    per-attempt accounting and the budget guard for free - the numbers are not measurements."""
 
     def __init__(self):
         self.messages = self
+        self.calls = 0
 
     async def create(self, **kw):
+        self.calls += 1
+        sys_p, tools_p = kw.get("system"), kw.get("tools") or []
+        cached = isinstance(sys_p, list) and any(isinstance(b, dict) and b.get("cache_control") for b in sys_p)
+        prefix = len(json.dumps(sys_p, default=str)) // 4 + len(json.dumps(tools_p, default=str)) // 4
+        header = len(json.dumps(kw.get("messages"), default=str)) // 4
         text = json.dumps({"verdict": "review", "rationale": "dry run - stub model, no provider call",
                            "confidence": 0.0, "invalidation": "n/a"})
-        return _StubBlock(content=[_StubBlock(type="text", text=text)], stop_reason="end_turn",
-                          usage=_StubBlock(input_tokens=0, output_tokens=0))
+        if cached:
+            usage = _StubBlock(input_tokens=header, output_tokens=40,
+                               cache_creation_input_tokens=prefix if self.calls == 1 else 0,
+                               cache_read_input_tokens=0 if self.calls == 1 else prefix)
+        else:
+            usage = _StubBlock(input_tokens=prefix + header, output_tokens=40,
+                               cache_creation_input_tokens=0, cache_read_input_tokens=0)
+        return _StubBlock(content=[_StubBlock(type="text", text=text)], stop_reason="end_turn", usage=usage)
 
 
 async def _open():
@@ -102,6 +117,23 @@ async def run(a) -> int:
         if a.cmd == "replay":
             variants = [v.strip() for v in (a.variants or str(settings.get("techniques.tip.frozen_variants")
                                                                  or "current,core_only")).split(",") if v.strip()]
+            # CACHE-P1/P2: explicit cache switch + an enforced dollar ceiling shared by every attempt
+            # of every replay in this invocation (retries and unknown-billed attempts included)
+            prompt_cache = (a.cache == "on")
+            model_for_budget = a.model or (bundle.get("run") or {}).get("model") or str(settings.get("techniques.tip.analyst_model") or "") \
+                or str(settings.get("llm.model") or "")
+            budget = None
+            if a.budget_usd is not None:
+                rates = settings.get("llm.rates") or {}
+                rates = rates.get("v", rates) if isinstance(rates, dict) and "v" in rates else rates
+                card = (rates or {}).get(model_for_budget) if isinstance(rates, dict) else None
+                try:
+                    budget = frozen.ReplayBudget(float(a.budget_usd), card, model=model_for_budget)
+                except ValueError as exc:
+                    sys.exit(f"cannot budget this replay: {exc}")
+            elif not a.dry_run:
+                sys.exit("a paid replay needs --budget-usd <cap> (an enforced ceiling incl. retries); --dry-run needs none")
+            # the client is built only after the ceiling is in place - a paid replay never starts uncapped
             if a.dry_run:
                 client = _StubClient()
             else:
@@ -112,13 +144,37 @@ async def run(a) -> int:
             reports = []
             for v in variants:
                 for _ in range(max(1, a.repeats)):
-                    rep = await frozen.replay(bundle, variant=v, client=client, model=a.model)
+                    # a dry run is labelled as such on the persisted row: the stub's synthetic usage is
+                    # priced at the intended model's card but never attributed to that model
+                    rep = await frozen.replay(bundle, variant=v, client=client,
+                                              model=(f"dry-run-stub({model_for_budget})" if a.dry_run else a.model),
+                                              prompt_cache=prompt_cache, budget=budget)
+                    rep["dryRun"] = bool(a.dry_run)
                     rid = await frozen.persist_replay(sf, rep, journal=journal)
                     reports.append(rep)
-                    print(f"  {v:<13} replay {rid[:8]} verdict={rep.get('verdict')} "
+                    tk = rep.get("tokens") or {}
+                    print(f"  {v:<13} replay {rid[:8]} cache={'on' if rep.get('promptCache') else 'off'} verdict={rep.get('verdict')} "
                           f"noVerdict={rep.get('noVerdict')} changed={rep.get('decisionChanged')} "
                           f"served/missing={rep['toolCalls']['served']}/{rep['toolCalls']['missing']} "
-                          f"proposedNotes={len(rep.get('proposedNotes') or [])} hash={rep.get('reportHash', '')[:12]}")
+                          f"in/out={tk.get('in')}/{tk.get('out')} cacheWrite/Read={tk.get('cacheCreation')}/{tk.get('cacheRead')} "
+                          f"prefix~{rep.get('prefixTokensEst')}tok header~{rep.get('headerTokensEst')}tok "
+                          f"attempts={len(tk.get('attempts') or [])} unknownBilled={tk.get('unknownBilled')} "
+                          f"{('error=' + str(rep.get('error'))[:80]) if rep.get('error') else ''} hash={rep.get('reportHash', '')[:12]}")
+                    for at in (tk.get("attempts") or []):
+                        print(f"      attempt {at.get('attempt')}: in={at.get('inputTokens')} out={at.get('outputTokens')} "
+                              f"cacheWrite={at.get('cacheWriteTokens')} cacheRead={at.get('cacheReadTokens')} "
+                              f"est=${at.get('estimateUsd', 0) or 0:.4f} usd=${at.get('usd', 0) or 0:.4f} {at.get('billing', '')} "
+                              f"{('error=' + str(at.get('error'))[:60]) if at.get('error') else ''}")
+                    if rep.get("error") and str(rep["error"]).startswith("budget:"):
+                        print("  budget ceiling reached - no further replays in this invocation")
+                        break
+                else:
+                    continue
+                break
+            if budget is not None:
+                bs = budget.summary()
+                print(f"budget: spent ${bs['spentUsd']:.4f} of ${bs['capUsd']:.2f} over {bs['attempts']} attempt(s), "
+                      f"{bs['unknownBilled']} unknown-billed (charged at estimate), {len(bs['refused'])} refused; model {bs['model']}")
             _print_report(frozen.compare(reports))
             return 0
         if a.cmd == "assemble":
@@ -159,7 +215,9 @@ def main() -> None:
     ap.add_argument("--variants", default="")
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--model", default=None)
-    ap.add_argument("--dry-run", action="store_true", help="replay with a stub model (no provider call)")
+    ap.add_argument("--dry-run", action="store_true", help="replay with a stub model (no provider call; synthetic usage)")
+    ap.add_argument("--cache", choices=["off", "on"], default="off", help="CACHE-P1: mark the stable prefix cacheable (off by default)")
+    ap.add_argument("--budget-usd", type=float, default=None, help="CACHE-P2: enforced dollar ceiling for every attempt of this invocation")
     ap.add_argument("--json", default="", help="report: also write the full JSON report here")
     a = ap.parse_args()
     if a.cmd == "capture" and not (a.signal or a.run):
