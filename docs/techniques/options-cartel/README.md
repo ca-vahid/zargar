@@ -30,6 +30,7 @@ Practice uses the configured Options Cartel Practice book. Live has separate set
 | Source evidence | [Source ledger](SOURCES.md), [source-version review](SOURCE-REVIEW.md), [video evidence](VIDEO-REVIEW.md), [examples](EXAMPLES.md), [public ledger audit](LEDGER-REVIEW.md), [industry evidence](INDUSTRY-DATA.md) |
 | Developer work | [Work status/backlog](PLAN.md), [release handoff](RELEASE-HANDOFF.md), [September 12 release scope](RELIABILITY-RELEASE-2026-09-12.md) |
 | Historical evidence | [September 12 deployment](DEPLOYMENT-2026-09-12.md), [weekend review](WEEKEND-REVIEW-2026-09-12.md), [original proposal](IMPLEMENTATION-PLAN-2026-09-12.md), [archived milestones](archive/PLAN-PRE-2026-09-13.md) |
+| Proposal under review | [2026-09-17 Lane A package](reviews/2026-09-17-proposal/README.md): reconstructed bottlenecks (APA, QS, TTWO, PWR, APTV), gate map, rule matrix, proposal; read-only tool `zargar.tools.cartel_evidence` |
 | Documentation changes | [Change record](DOCUMENTATION-CHANGES.md) |
 
 The in-app Method library bundles selected Markdown chapters. A frontend rebuild is needed to display updated text. Git documentation updates do not themselves restart the app or change account settings.
@@ -48,3 +49,5 @@ No full public-feed coverage, exact author replication, broker-verified author r
 - [Profitability research](PROFITABILITY-RESEARCH.md): prospective candidate/ranking,
   bearish, campaign-target and exit comparisons in Practice; operating instructions
   and promotion criteria. Actual trades remain in Daily review.
+
+Current completion: [September 18 diagnostics and provider reconstruction](DIAGNOSTICS-2026-09-18.md).

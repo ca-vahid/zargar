@@ -424,6 +424,7 @@ class CartelRuntime(CartelObserver):
                     await self.pause(rid)
                     await self._error(rid, "Cartel daily loss halt is latched for this book.")
             self._publish(rid)
+        await self._flush_drop_diagnostics()  # D4: bounded journal of bars refused for age
 
     async def on_quote_watch(self):
         if not self.stopping and self.clock()-self._intraday_research_last >= 60_000 and (self._intraday_research_task is None or self._intraday_research_task.done()):

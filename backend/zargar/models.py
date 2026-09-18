@@ -157,6 +157,25 @@ class Execution(Base):
     ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class CartelDecisionContext(Base):
+    """Content-addressed, append-only Cartel decision inputs; never a live tape."""
+    __tablename__ = "cartel_decision_contexts"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSONVariant)
+
+
+class CartelDecisionBundle(Base):
+    """One immutable observation occurrence, not an overwriteable bucket projection."""
+    __tablename__ = "cartel_decision_bundles"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    bucket_end: Mapped[int] = mapped_column(BigInteger, index=True)
+    observed_at: Mapped[int] = mapped_column(BigInteger)
+    context_id: Mapped[str] = mapped_column(ForeignKey("cartel_decision_contexts.id"))
+    payload: Mapped[dict] = mapped_column(JSONVariant)
+
+
 class CartelPreparationAttempt(Base):
     """Append-only candidate recovery/selection evidence, independent of UI projections."""
     __tablename__ = "cartel_preparation_attempts"
