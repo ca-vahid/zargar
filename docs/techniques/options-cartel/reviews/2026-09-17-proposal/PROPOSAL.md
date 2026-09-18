@@ -168,7 +168,43 @@ crossed → confirmed → filled → outcome, with the first blocker for every d
 
 No daily trade quota. No profitability statement from underlying movement.
 
+### 4b. Frozen replay result (2026-09-18, order-free, `zargar.tools.cartel_lane_a_eval`)
+
+Lane A's definition was run over the fullest original preparation run of each session from
+2026-09-08 to 2026-09-17 and the frozen analysis runs those rows cite (`lane-a/frozen-replay-strict.md`,
+`lane-a/frozen-replay-moderate.md`, with JSON). Only screen-and-context-passing rows can qualify,
+so the evaluated rows are the complete Lane A candidate set; the denominators are the runs' own.
+
+| Basis | Sessions with a bullish read | Context-passing rows evaluated | Lane A qualified | Experimental 1.5R passes | Feasibility of qualified |
+|---|---|---|---|---|---|
+| **Strict** (Lane A's definition) | 1 of 8 (09-08 only; 09-09/10/14 were `mixed`, 09-11/16/17 `short`, 09-15 `mixed`) | 2 (SPCX, ZIM on 09-08) | **0** — both ceilings tested once | — | — |
+| Moderate read (information only, not the definition) | 4 of 8 | 155 across the window | **10** (09-09: VG, CVNA, AA, FUTU; 09-10: CVNA, ABUS, BGC, GROY, FUTU; 09-14: OII) | **0 of 10** (structural R 0.06–1.09; first targets 0.52–2.18% away except FUTU 9.99%) | CVNA `affordable` (chain 09-08 / 09-09); the other 9 `unknown_stale` (no dated chain snapshot) |
+
+What this establishes and what it does not:
+
+- Under strict alignment the lane would have planned **nothing** in these eight sessions; the
+  long arms the current rules produced (APA, CPRT, DRAM, CVNA, NOV, …) were all made under the
+  Practice Moderate read on sessions strict called `mixed`. Lane A as defined is therefore rarer
+  than the current planner, by construction, and its first evaluation may wait for the market.
+- Even under the Moderate read, the bases that pass the repeated-ceiling test have a **confirmed
+  pivot just above the ceiling** in 9 of 10 cases (room 0.5–2.2%, structural R < 0.5). The
+  inactive 1.5R experiment would have excluded all ten. This is a measurement about the target
+  rule (nearest confirmed pivot) meeting this sample, not a verdict on the author's method.
+- Nothing here is an entry, a fill or an outcome; feasibility is planning-time chain evidence
+  and `unknown_stale` rows stay in the denominator with no later stage inferred.
+
+Open for the reviewer: whether Lane A's target rule should look past the nearest pivot (e.g. the
+next pivot beyond a minimum room) or whether the sample simply contained no valid long bases —
+both are testable on the same frozen inputs before any production wiring.
+
 ## 5. Incremental plan
+
+Status 2026-09-18: **D3, D4 (both halves) and D5 are built** as diagnostics (commit "Cartel D3/D4/D5
+diagnostics"); no decision, gate or protection changed. **The pure Lane A reviewer, feasibility
+classifier and frozen-replay tool are built** (`techniques/options_cartel/lane_a.py`,
+`tools/cartel_lane_a_eval.py`); nothing on the preparation, arming or entry path imports them.
+D1 remains at "classification recorded" (probe + artifacts); D2, S1–S3, R1 and any production
+change wait for review.
 
 **D — data and diagnostics (no strategy change)**
 

@@ -1,0 +1,5099 @@
+{
+ "end": "2026-09-17",
+ "feasibilityPolicy": {
+  "dte_max": 90,
+  "dte_min": 21,
+  "max_ask": 5.0,
+  "max_spread_pct": 20.0,
+  "min_abs_delta": 0.25,
+  "min_open_interest": 100,
+  "target_dte": 45
+ },
+ "generatedAt": "2026-09-18T01:55:24+00:00",
+ "marketBasis": "moderate",
+ "note": "Read-only frozen replay; no arm, order or setting was touched.",
+ "parameters": {
+  "base_sessions": 10,
+  "experimental_min_planning_r": 1.5,
+  "min_ceiling_touches": 2,
+  "min_target_distance_pct": 0.5,
+  "touch_tolerance_pct": 0.5
+ },
+ "sessions": [
+  {
+   "alignmentMode": null,
+   "contextPassingRows": 2,
+   "denominator": {
+    "armed": 1,
+    "candidatesChecked": null,
+    "dataErrors": 0,
+    "discovered": 3090,
+    "eligible": 3090,
+    "evaluated": 58,
+    "planErrors": 0,
+    "qualifying": 2
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {},
+   "laneAQualified": 0,
+   "laneAStages": {
+    "ceiling_tests": 2
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "long",
+   "marketModerate": "long",
+   "marketStrict": "long",
+   "preparationCreatedAt": "2026-09-08 04:40:59.415207+00:00",
+   "preparationId": "4f312571eca34cbabc50d042d690a40e",
+   "rows": [
+    {
+     "analysisId": "da09ecaa388440789dd7dd9e8812caaf",
+     "currentReason": "",
+     "currentSetup": "inside_day",
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-08T04:41:05.999000+00:00",
+      "availability": "frozen analysis run created 2026-09-08 04:41:06.751632+00:00",
+      "dailyBars": 59,
+      "inputSha256": "19c508287374ccee64c56815a818b624e4d6bf41f45e84e6e782a0fb12822914"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 152.3000030517578,
+       "touchSessions": [
+        "2026-09-03"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "SPCX"
+    },
+    {
+     "analysisId": "48f083c62a1640e68d7a12c4c9499cc4",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-08T04:41:05.999000+00:00",
+      "availability": "frozen analysis run created 2026-09-08 04:41:08.297067+00:00",
+      "dailyBars": 377,
+      "inputSha256": "96a25c701a17a8d5db2c463bd027d5afd0d53049eb294319ead03cf64d57ce16"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 29.03499984741211,
+       "touchSessions": [
+        "2026-08-24"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "ZIM"
+    }
+   ],
+   "runsForSession": 3,
+   "session": "2026-09-08"
+  },
+  {
+   "alignmentMode": "moderate",
+   "contextPassingRows": 39,
+   "denominator": {
+    "armed": 5,
+    "candidatesChecked": null,
+    "dataErrors": 8,
+    "discovered": 3092,
+    "eligible": 3092,
+    "evaluated": 3084,
+    "planErrors": 0,
+    "qualifying": 31
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {
+    "affordable": 1,
+    "unknown_stale": 3
+   },
+   "laneAQualified": 4,
+   "laneAStages": {
+    "ceiling_tests": 24,
+    "confirmed_target": 1,
+    "data_error": 8,
+    "distance_floor": 2,
+    "qualified": 4
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "long",
+   "marketModerate": "long",
+   "marketStrict": "mixed",
+   "preparationCreatedAt": "2026-09-09 04:42:11.402502+00:00",
+   "preparationId": "112796517f0b4495bfd62ca833f7d79b",
+   "rows": [
+    {
+     "analysisId": "d6fce429f3af411792f92e635f3915d5",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:42:20.574193+00:00",
+      "dailyBars": 60,
+      "inputSha256": "1321a7de6aaada32d395c39162f84132940d276f563be9c865c507e901d2c908"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 155.0,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "SPCX"
+    },
+    {
+     "analysisId": "9051670e41274ef6aa51086f234e2341",
+     "currentReason": "",
+     "currentSetup": "base",
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:42:31.451030+00:00",
+      "dailyBars": 109,
+      "inputSha256": "4e60f9ae8e5f91cd81885e8292303e6779302ce9d702836ba3543eb438e84027"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 62.08000183105469,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "DRAM"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2025-11-12",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2025-11-12"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "FISV"
+    },
+    {
+     "analysisId": "e7fbf364b4c44fe599f1bf537f6b5139",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:42:40.780414+00:00",
+      "dailyBars": 377,
+      "inputSha256": "2b19feb56672e681d74f822d6cfb3c06208719c9167c770c6b4c29a37e10857f"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 15.15999984741211,
+       "touchSessions": [
+        "2026-09-01",
+        "2026-09-08"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 0.9234851235612163,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.09722248897148182
+     },
+     "shortlistStatus": "armed",
+     "symbol": "VG"
+    },
+    {
+     "analysisId": "7f1b6f5a573e461495191ebc1b8f0353",
+     "currentReason": "",
+     "currentSetup": "flag",
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:42:48.834543+00:00",
+      "dailyBars": 377,
+      "inputSha256": "2356b413188794caea26cd2ba5e868addf0f372deb8c6d6d90fdaac831292b30"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 38.91999816894531,
+       "touchSessions": [
+        "2026-09-02",
+        "2026-09-03"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": 0.4367985396726574,
+      "qualified": false,
+      "reasons": [
+       "First target 0.44% away; floor 0.5% (existing rule)."
+      ],
+      "stage": "distance_floor",
+      "structuralR": 0.07024880672396074
+     },
+     "shortlistStatus": "armed",
+     "symbol": "CMG"
+    },
+    {
+     "analysisId": "b458b70cfcc14f0f9f650acdb9f5322c",
+     "currentReason": "",
+     "currentSetup": "base",
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:43:04.934280+00:00",
+      "dailyBars": 377,
+      "inputSha256": "1d804c058915ea4c2ab6d248fff7a83a5e6139d20036abb27dbf965f852c8e43"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 34.439998626708984,
+       "touchSessions": [
+        "2026-09-03"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "CPRT"
+    },
+    {
+     "analysisId": "576a59c151b34034bd308e40d322fd6f",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "feasibility": {
+      "best": {
+       "ask": 3.65,
+       "bid": 3.6,
+       "delta": 0.405,
+       "dte": 37,
+       "expiry": "2026-10-16",
+       "openInterest": 1919,
+       "spreadPct": 1.3793103448275814,
+       "symbol": "CVNA261016C00080000"
+      },
+      "eligible": 9,
+      "firstFailingFilter": {
+       "delta": 40,
+       "open_interest": 54,
+       "premium": 24,
+       "quotes": 1,
+       "spread": 4
+      },
+      "lowestOtherwiseEligibleAsk": 5.1,
+      "note": "Planning-time chain evidence only; a fresh quote and full preflight remain required before any order.",
+      "observedAt": "2026-09-08",
+      "policy": {
+       "dte_max": 90,
+       "dte_min": 21,
+       "max_ask": 5.0,
+       "max_spread_pct": 20.0,
+       "min_abs_delta": 0.25,
+       "min_open_interest": 100,
+       "target_dte": 45
+      },
+      "rowsInRange": 132,
+      "state": "affordable"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:43:21.656507+00:00",
+      "dailyBars": 377,
+      "inputSha256": "bdc7d052e0f2261f1678c4de9b16647876b33c50689bbaa68af9c4fb2a54f06a"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 76.80000305175781,
+       "touchSessions": [
+        "2026-08-25",
+        "2026-08-26",
+        "2026-09-03"
+       ],
+       "touches": 3
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 0.5208253653516227,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.06493403550143423
+     },
+     "shortlistStatus": null,
+     "symbol": "CVNA"
+    },
+    {
+     "analysisId": "6ea73482eca84df98d646e43660e67a4",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:43:31.043880+00:00",
+      "dailyBars": 377,
+      "inputSha256": "24a1d4d4e70f2c6fc802840075c16abff331aedfcbc998b6f5291a5b8ee3da92"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 4.320000171661377,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "MNKD"
+    },
+    {
+     "analysisId": "2d5d8a7f569744669ba9d8ede9ee328c",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:43:35.643836+00:00",
+      "dailyBars": 377,
+      "inputSha256": "9b78ce029268d25f5ccb5a98a3801f2f2fd8680865f348d9a34bd06a8897c38a"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 33.2400016784668,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "OSCR"
+    },
+    {
+     "analysisId": "f7e955fc9c3f4e5abe4f894ababd0f32",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:43:35.798715+00:00",
+      "dailyBars": 377,
+      "inputSha256": "9826dced64a11bdba1d6147cefef022f0afb1c368fc31aabed962f3a9dfb2efe"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 206.1300048828125,
+       "touchSessions": [
+        "2026-08-27"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ANET"
+    },
+    {
+     "analysisId": "0971b9c6ca6e4c8d9eca8cb3e0938a8d",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:44:00.865907+00:00",
+      "dailyBars": 377,
+      "inputSha256": "373d03c7b94aab829d36a3633cef1a75efcbc4643ce0b8578130c38e15c5bf62"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 52.779998779296875,
+       "touchSessions": [
+        "2026-09-03",
+        "2026-09-08"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 1.0610105840144088,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.15094380363455398
+     },
+     "shortlistStatus": null,
+     "symbol": "AA"
+    },
+    {
+     "analysisId": "2c73f3db720b4b67956b6e91cd4a5231",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:44:28.531839+00:00",
+      "dailyBars": 377,
+      "inputSha256": "623bc521197079da69cff2a135b352890457dbf666fd4d386ca3b50c5bb938e5"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 11.4399995803833,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "OCUL"
+    },
+    {
+     "analysisId": "2f4db7b9407949b6b58332fa8e0ca329",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:44:29.135255+00:00",
+      "dailyBars": 377,
+      "inputSha256": "f0d68376a26988df026e41db97c89a63d4b444c4821ee59e5248e080e90c8334"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 108.37999725341797,
+       "touchSessions": [
+        "2026-08-27"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "EL"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "daily provider timestamp is not the expected US exchange open",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: daily provider timestamp is not the expected US exchange open"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "UA"
+    },
+    {
+     "analysisId": "de414290dcee49f6849f89caf90bb220",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:01.655580+00:00",
+      "dailyBars": 377,
+      "inputSha256": "823d9cd683d810821cd07c11a6e42a135df25cdcec8caae3e37dab185eb05d85"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 24.799999237060547,
+       "touchSessions": [
+        "2026-08-25"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "VRDN"
+    },
+    {
+     "analysisId": "cdac150303c34109a760363c685590e7",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:05.589243+00:00",
+      "dailyBars": 377,
+      "inputSha256": "33572e3bd15be6a17bffe5d0230403041d821bfcc0ef484da23c88d2323872ac"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 27.100000381469727,
+       "touchSessions": [
+        "2026-09-02"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "NOG"
+    },
+    {
+     "analysisId": "4602aab66b7d40a9a35f9e83e578f30a",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:06.013315+00:00",
+      "dailyBars": 377,
+      "inputSha256": "7c2464e5a2b54d2d2167f703a5c8ad2f013d8b3cbb0779c622fe763e5162bb9e"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 12.350000381469727,
+       "touchSessions": [
+        "2026-09-01"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "BGC"
+    },
+    {
+     "analysisId": "ee0adab54a4c4ea1838a719b40b4e12d",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:17.368810+00:00",
+      "dailyBars": 377,
+      "inputSha256": "14df12cfcf407a96a397cda3adbae1996934ea9882b103ec12a570e1b8d2933c"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 38.310001373291016,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "MUR"
+    },
+    {
+     "analysisId": "0b2b199d8a984c5abe9a9891bad4e555",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:29.883605+00:00",
+      "dailyBars": 377,
+      "inputSha256": "5d3c21016315ecffb0b192f4a483ae76fc8fefcf1af30797d05a061282d65b8e"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 45.20000076293945,
+       "touchSessions": [
+        "2026-09-04"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "LAZ"
+    },
+    {
+     "analysisId": "a3f1e7cb9c8b495ebae65f015c50261b",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:32.045478+00:00",
+      "dailyBars": 377,
+      "inputSha256": "2be10824f5b95b8b58ce6118c639049870ea289588b4568408ebb853c01227ca"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 3.549999952316284,
+       "touchSessions": [
+        "2026-08-25"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "GROY"
+    },
+    {
+     "analysisId": "76deff2cdf034e0bb88f3bdd5fa25526",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:59.601899+00:00",
+      "dailyBars": 377,
+      "inputSha256": "c4ce09c52daf9ad5cb760b62064a7b26a51322da2d4c389fd79c4d1ff19b668e"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 58.470001220703125,
+       "touchSessions": [
+        "2026-09-03"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "TGTX"
+    },
+    {
+     "analysisId": "a8d9c84f8b4046189f16c366708d947e",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:45:59.925883+00:00",
+      "dailyBars": 377,
+      "inputSha256": "8d7e455554d9642ac4d9fabe077d0d8544778f3a1cda36226dc86c93342552c3"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 121.52999877929688,
+       "touchSessions": [
+        "2026-09-03"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "EPAM"
+    },
+    {
+     "analysisId": "3a07a7f716644361940b73d15667a1cd",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:05.410018+00:00",
+      "dailyBars": 377,
+      "inputSha256": "bf1cfdcee7c76d4a0a239ad69cf969b70f9f9066ea6027e61264349b77c126d6"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 4.235000133514404,
+       "touchSessions": [
+        "2026-08-25"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "LRMR"
+    },
+    {
+     "analysisId": "fe5d825a4c804c7995870978f3d6ad44",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:06.171399+00:00",
+      "dailyBars": 377,
+      "inputSha256": "84f141fe579f0d223982d27cf71310a90f6b40342acf110778f4e032d122f76e"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 343.17999267578125,
+       "touchSessions": [
+        "2026-08-27"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "NTRA"
+    },
+    {
+     "analysisId": "02c1200b8c13464ea648b01ac0d51fe7",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:09.212993+00:00",
+      "dailyBars": 377,
+      "inputSha256": "674d9e24bb6a6a459e8131ee524e73e3428d5239263507f3ec38b28a884a5907"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 333.82000732421875,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "KEYS"
+    },
+    {
+     "analysisId": "87f453cb93fb46e8bb45acb1cdd14aed",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:14.456961+00:00",
+      "dailyBars": 377,
+      "inputSha256": "3d62f0dedd24ae51159223cf6a0dddbcca689de5b716edc7fb50d7019d57ad79"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 23.190000534057617,
+       "touchSessions": [
+        "2026-08-26"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "CGEM"
+    },
+    {
+     "analysisId": "94bae4e5b43b40948628ac8d5ec4bbf0",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:26.365917+00:00",
+      "dailyBars": 377,
+      "inputSha256": "94a8cde4b84f6f35df1253f424e8cfda29d4f118501a4a91b2da4dbe1b3f7a98"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 17.299999237060547,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "HNRG"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "daily provider timestamp is not the expected US exchange open",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: daily provider timestamp is not the expected US exchange open"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "ADEA"
+    },
+    {
+     "analysisId": "5659caef6a4b48d0944640710c63d51a",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:36.686845+00:00",
+      "dailyBars": 377,
+      "inputSha256": "bdbba0ba8042b96b5d6162ce7416cc7f37f28e0708827d890f56a41e76f742b9"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 128.4250030517578,
+       "touchSessions": [
+        "2026-08-26",
+        "2026-08-27"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 9.994153124454566,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 1.0881716952512783
+     },
+     "shortlistStatus": null,
+     "symbol": "FUTU"
+    },
+    {
+     "analysisId": "f5ea51afbedc4bc2b56f582fbe3f32b9",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:43.561673+00:00",
+      "dailyBars": 377,
+      "inputSha256": "345125e302f318230404e85585e00536f5a1c5ec94605a0bb33ebc94f11c698a"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 85.48999786376953,
+       "touchSessions": [
+        "2026-08-27"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "GRAL"
+    },
+    {
+     "analysisId": "e9f770a19d224490b66bd7f3cb7fe3f1",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:43.642167+00:00",
+      "dailyBars": 377,
+      "inputSha256": "74c5a9fd68bb2ac152de3a47873166f0b4f6e582a856e524655af32d01f0652d"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 68.76000213623047,
+       "touchSessions": [
+        "2026-08-28"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "VIRT"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "daily provider timestamp is not the expected US exchange open",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: daily provider timestamp is not the expected US exchange open"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "WLY"
+    },
+    {
+     "analysisId": "6f22a57294c441358e12050f73975e45",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:46:47.150725+00:00",
+      "dailyBars": 377,
+      "inputSha256": "00bd81fcabfaa77a5f3fc1a1927d965a1854d186f9f1b0bdc61baa02d10e5253"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 20.889999389648438,
+       "touchSessions": [
+        "2026-08-25",
+        "2026-09-04"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": 0.23935445605592795,
+      "qualified": false,
+      "reasons": [
+       "First target 0.24% away; floor 0.5% (existing rule)."
+      ],
+      "stage": "distance_floor",
+      "structuralR": 0.02793361570633208
+     },
+     "shortlistStatus": null,
+     "symbol": "WWW"
+    },
+    {
+     "analysisId": "7ce6e5224784437eb2457a341c390325",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:47:10.831848+00:00",
+      "dailyBars": 377,
+      "inputSha256": "2982a7c707ecac4063a8a84a6e5e399568ed277a3ea7369ac60796bce5ad6ef4"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 37.47999954223633,
+       "touchSessions": [
+        "2026-08-25",
+        "2026-09-02",
+        "2026-09-03"
+       ],
+       "touches": 3
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "No confirmed daily pivot above the trigger (Fibonacci fallback is off in Lane A)."
+      ],
+      "stage": "confirmed_target",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ANRO"
+    },
+    {
+     "analysisId": "aa2c242f60bf47bea81763e65f33f006",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-09T04:42:19.182000+00:00",
+      "availability": "frozen analysis run created 2026-09-09 04:47:17.478096+00:00",
+      "dailyBars": 377,
+      "inputSha256": "fb52f5670933572d5bf0616d4c6a61ff2d33d2ac85646f3596cfbc04928b4b69"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 51.619998931884766,
+       "touchSessions": [
+        "2026-08-25"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "TBBB"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "daily provider timestamp is not the expected US exchange open",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: daily provider timestamp is not the expected US exchange open"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "HUBB"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2026-07-20",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2026-07-20"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "WCT"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2026-07-20",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2026-07-20"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "CTSO"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2026-07-20",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2026-07-20"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "SFWL"
+    }
+   ],
+   "runsForSession": 4,
+   "session": "2026-09-09"
+  },
+  {
+   "alignmentMode": "moderate",
+   "contextPassingRows": 16,
+   "denominator": {
+    "armed": 4,
+    "candidatesChecked": null,
+    "dataErrors": 2,
+    "discovered": 3083,
+    "eligible": 3083,
+    "evaluated": 3081,
+    "planErrors": 9,
+    "qualifying": 14
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {
+    "affordable": 1,
+    "unknown_stale": 4
+   },
+   "laneAQualified": 5,
+   "laneAStages": {
+    "ceiling_tests": 8,
+    "data_error": 2,
+    "distance_floor": 1,
+    "qualified": 5
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "long",
+   "marketModerate": "long",
+   "marketStrict": "mixed",
+   "preparationCreatedAt": "2026-09-10 04:27:36.651452+00:00",
+   "preparationId": "33e2a50888434b1a92d3e5c17732994c",
+   "rows": [
+    {
+     "analysisId": "80aa477c416c44c3876b219a3b426e8d",
+     "currentReason": "",
+     "currentSetup": "inside_day",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.573021657884352,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:27:48.199481+00:00",
+      "dailyBars": 61,
+      "inputSha256": "da10a0d2c0323bbf4da8daa3ba17ced3229b38c783c987bcbd3d8851d1ff2111"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 155.0,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "SPCX"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2025-11-12",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2025-11-12"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "FISV"
+    },
+    {
+     "analysisId": "1545a43558f64612af24c29111ffee1e",
+     "currentReason": "",
+     "currentSetup": "base",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.06493403550143423,
+     "feasibility": {
+      "best": {
+       "ask": 3.1,
+       "bid": 2.96,
+       "delta": 0.3624,
+       "dte": 36,
+       "expiry": "2026-10-16",
+       "openInterest": 3686,
+       "spreadPct": 4.620462046204624,
+       "symbol": "CVNA261016C00080000"
+      },
+      "eligible": 9,
+      "firstFailingFilter": {
+       "delta": 46,
+       "open_interest": 47,
+       "premium": 20,
+       "quotes": 2,
+       "spread": 12
+      },
+      "lowestOtherwiseEligibleAsk": 5.1,
+      "note": "Planning-time chain evidence only; a fresh quote and full preflight remain required before any order.",
+      "observedAt": "2026-09-09",
+      "policy": {
+       "dte_max": 90,
+       "dte_min": 21,
+       "max_ask": 5.0,
+       "max_spread_pct": 20.0,
+       "min_abs_delta": 0.25,
+       "min_open_interest": 100,
+       "target_dte": 45
+      },
+      "rowsInRange": 136,
+      "state": "affordable"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:28:59.581992+00:00",
+      "dailyBars": 378,
+      "inputSha256": "f259e4fdacd2f46566de4481cb6e9221bb9d8b5dd512831b0b99d8bfcef0b086"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 76.80000305175781,
+       "touchSessions": [
+        "2026-08-26",
+        "2026-09-03"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 0.5208253653516227,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.06493403550143423
+     },
+     "shortlistStatus": "armed",
+     "symbol": "CVNA"
+    },
+    {
+     "analysisId": "2d782e96c4c245a1bbd071c28b320524",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.13759830615482654,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:29:01.600522+00:00",
+      "dailyBars": 378,
+      "inputSha256": "fca2f0c74faa6226d7ed2b6cd2c7f69b0d9a617aa409f7212b378586f2268dca"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 195.85000610351562,
+       "touchSessions": [
+        "2026-09-03"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "COIN"
+    },
+    {
+     "analysisId": "9c2f102b88a1449d869101aa02eb43a0",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 1.1000023841880648,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:29:08.530255+00:00",
+      "dailyBars": 378,
+      "inputSha256": "88e415c007ccdc0c5f89288cf4da547c688171795a43a7a9cb635bcff3ef1aad"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 5.230000019073486,
+       "touchSessions": [
+        "2026-08-26",
+        "2026-08-27",
+        "2026-09-09"
+       ],
+       "touches": 3
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 2.1032530231977176,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.45833341611747663
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "ABUS"
+    },
+    {
+     "analysisId": "bd37b9be218540b7a36f2edd5b294fa1",
+     "currentReason": "Volume baseline covers 17/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:29:47.259781+00:00",
+      "dailyBars": 378,
+      "inputSha256": "d339d8962429284c44cc234c656e4e6e1a0232c3d63bfb0e722df559d58572eb"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 7.480000019073486,
+       "touchSessions": [
+        "2026-08-26"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ACVA"
+    },
+    {
+     "analysisId": "fcbf8d35c11a4c4bab324c9dd4efb658",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.5861002330303862,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:30:06.473190+00:00",
+      "dailyBars": 378,
+      "inputSha256": "7c87366c5bd5d4c23a94db11d5d7f57aab9fa72b16b0bc9d8231b76fc7788af6"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 108.37999725341797,
+       "touchSessions": [
+        "2026-08-27"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "EL"
+    },
+    {
+     "analysisId": "8ee3a4644a3f40dfbebb0b2e7128fd83",
+     "currentReason": "Volume baseline covers 12/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:30:43.546688+00:00",
+      "dailyBars": 378,
+      "inputSha256": "070d837a2c9879334905e541f1b839a57e672e1dbe0a69373ec062930240493f"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 12.350000381469727,
+       "touchSessions": [
+        "2026-09-01",
+        "2026-09-09"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 0.8906854516562812,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.14473634677595437
+     },
+     "shortlistStatus": null,
+     "symbol": "BGC"
+    },
+    {
+     "analysisId": "f974d15bea5f463593874059fe9969c8",
+     "currentReason": "Volume baseline covers 15/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:31:06.079126+00:00",
+      "dailyBars": 378,
+      "inputSha256": "2a0fce664eeaa6358bbeb7b4255752f47de3dadb91eb48b26ceae027b43cab06"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 3.5,
+       "touchSessions": [
+        "2026-08-26",
+        "2026-08-27"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 0.5714280264718192,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.06666661368475178
+     },
+     "shortlistStatus": null,
+     "symbol": "GROY"
+    },
+    {
+     "analysisId": "2bbc7662a88b4b218d0b80856f4d7545",
+     "currentReason": "Volume baseline covers 6/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:31:28.579435+00:00",
+      "dailyBars": 378,
+      "inputSha256": "1cc45a930b0093673d767bc07e767d3c20a85561d7033b6b6ec93c286078c50a"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 30.399999618530273,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ZIM"
+    },
+    {
+     "analysisId": "c01d0346c3624818b7a3ff8d94a9bcd0",
+     "currentReason": "Volume baseline covers 2/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:34:38.880142+00:00",
+      "dailyBars": 378,
+      "inputSha256": "173cee535a7f2db922000e34f12d47a2b144d731e72e9621882572f219357299"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 4.804999828338623,
+       "touchSessions": [
+        "2026-08-31",
+        "2026-09-01"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": 0.3121819741654481,
+      "qualified": false,
+      "reasons": [
+       "First target 0.31% away; floor 0.5% (existing rule)."
+      ],
+      "stage": "distance_floor",
+      "structuralR": 0.046154929618794145
+     },
+     "shortlistStatus": null,
+     "symbol": "CTKB"
+    },
+    {
+     "analysisId": "a465670483c04db99c059c76899d719a",
+     "currentReason": "Volume baseline covers 2/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:34:51.384677+00:00",
+      "dailyBars": 378,
+      "inputSha256": "cdc41672981679d0648f3bb61807e9eff19313042d2b407d3da1fdc70326d880"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 51.70000076293945,
+       "touchSessions": [
+        "2026-09-09"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "TBBB"
+    },
+    {
+     "analysisId": "c649c3925a564c68ad04dbb157651206",
+     "currentReason": "Volume baseline covers 4/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:35:11.877765+00:00",
+      "dailyBars": 378,
+      "inputSha256": "e1ffc620efaed865c6b7db28b1977ec586022a1718d319d3d79dec4f43890f33"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 343.17999267578125,
+       "touchSessions": [
+        "2026-08-27"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "NTRA"
+    },
+    {
+     "analysisId": "6220262fd7ac41bca5ec0ef487e5e716",
+     "currentReason": "Volume baseline covers 10/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:35:25.949763+00:00",
+      "dailyBars": 378,
+      "inputSha256": "858e360c6a0d78fc491d55cfe3565e51749342ada5630d05095f34fb75470326"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 128.4250030517578,
+       "touchSessions": [
+        "2026-08-26",
+        "2026-08-27"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 9.994153124454566,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 1.0881716952512783
+     },
+     "shortlistStatus": null,
+     "symbol": "FUTU"
+    },
+    {
+     "analysisId": "7920171fd3134b8ea3c776c537b23f61",
+     "currentReason": "Volume baseline covers 1/26 periods; plan saved but not armed. Rebuild with complete history.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-10T04:27:45.262000+00:00",
+      "availability": "frozen analysis run created 2026-09-10 04:35:48.520967+00:00",
+      "dailyBars": 378,
+      "inputSha256": "8601ec92efefc5065a2d8185d3ade6b1e670127b4c720a1d4f5adc5fcaaae395"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 85.48999786376953,
+       "touchSessions": [
+        "2026-08-27"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "GRAL"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2026-09-08",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2026-09-08"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "SFWL"
+    }
+   ],
+   "runsForSession": 3,
+   "session": "2026-09-10"
+  },
+  {
+   "alignmentMode": "moderate",
+   "contextPassingRows": 35,
+   "denominator": {
+    "armed": 5,
+    "candidatesChecked": 14,
+    "dataErrors": 1,
+    "discovered": 3078,
+    "eligible": 3078,
+    "evaluated": 3077,
+    "planErrors": 4,
+    "qualifying": 34
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {},
+   "laneAQualified": 0,
+   "laneAStages": {
+    "data_error": 1,
+    "direction": 34
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "short",
+   "marketModerate": "short",
+   "marketStrict": "short",
+   "preparationCreatedAt": "2026-09-11 04:49:37.344174+00:00",
+   "preparationId": "a973b3a438314f61b4975b3ec087650b",
+   "rows": [
+    {
+     "analysisId": "d000672f57be4390987faad3a9990c92",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.2413795371398035,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:32:26.848939+00:00",
+      "dailyBars": 379,
+      "inputSha256": "f4eda80f159277e4b30e8af2c6e03ade435d61679094c755dbff7b8abaf616f7"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "QUBT"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2025-11-12",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2025-11-12"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "FISV"
+    },
+    {
+     "analysisId": "f15af25b1b8b45b194049eecd76488f2",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 1.195146810464875,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:32:55.959993+00:00",
+      "dailyBars": 379,
+      "inputSha256": "c6b7911ccfa6b738f7a978bf15599cbd2576bf831b8984b708b76f06ab64f31c"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "AMAT"
+    },
+    {
+     "analysisId": "7148ec2692ff4e12818a068b9229b5bc",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:33:32.577897+00:00",
+      "dailyBars": 379,
+      "inputSha256": "251634d18ca319f4d2475f97ab05d99ed1287af3adf42bccd4ebde55c2b80ee9"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "VIK"
+    },
+    {
+     "analysisId": "c86df82b041c431dbdda8e6be2b2b525",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:34:36.987127+00:00",
+      "dailyBars": 379,
+      "inputSha256": "457f116c5b0e473ab1c005c7932f151eadad9e79b72c4341bfe0c3e21da97aa5"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ZM"
+    },
+    {
+     "analysisId": "ab85e55f3c1341cdbf84649498808d22",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.23711294257372786,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:34:41.182583+00:00",
+      "dailyBars": 379,
+      "inputSha256": "3bad08acbb477aee0d29dd2d43692d944f5c588eaf29b06f19a7e9ade72f7fe8"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "CENX"
+    },
+    {
+     "analysisId": "df2bc6cf840a45008b7632e6a7fc256f",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:35:08.240915+00:00",
+      "dailyBars": 379,
+      "inputSha256": "13d83640401b7e62d3da0d2440601431a23885f739bfae16ab8b8b5e174d9a24"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "REZI"
+    },
+    {
+     "analysisId": "e60866e48ebf4b35bee1d9d839967741",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:35:24.731890+00:00",
+      "dailyBars": 379,
+      "inputSha256": "423388e7322cd5a2b4c919252c9166b4260afde4b5056bb0482275e77d647fe1"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "DNUT"
+    },
+    {
+     "analysisId": "1d2b84e4f39c42089ab51bfc3ab50f0d",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.45631240555835384,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:35:31.417813+00:00",
+      "dailyBars": 379,
+      "inputSha256": "ee707a725b178afe72339717cb0778d569bc8acec10506bbee56292ff374ec91"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "YETI"
+    },
+    {
+     "analysisId": "83d15a6e58d048fea5d32e03f375990e",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:38:45.866575+00:00",
+      "dailyBars": 379,
+      "inputSha256": "5c6296f6f2c17ac8711fdd92e163291ac48c0da348869c34777666892890199b"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "BHF"
+    },
+    {
+     "analysisId": "b8e68451e68e4df4b94d728eb3fcf668",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:38:46.385283+00:00",
+      "dailyBars": 379,
+      "inputSha256": "cc23580df0882420f98f61e01bc6083de1370acc574a328684890e15498fa239"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SVRA"
+    },
+    {
+     "analysisId": "d5373ceedf7c410c92db7656d13371bd",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:39:05.631642+00:00",
+      "dailyBars": 379,
+      "inputSha256": "c067013a238e5892267320a1073931508220310e3e5a52c87d0f4d548916b15b"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "KC"
+    },
+    {
+     "analysisId": "e68dcf04fbf540d788c1f354229c28cc",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.7355372421924753,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:39:29.051595+00:00",
+      "dailyBars": 379,
+      "inputSha256": "cc75aaa094c290ee2ce53befe3649ca215132127025ac7424d823cb20eee347d"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "AAP"
+    },
+    {
+     "analysisId": "9a4d4f9b92d14b33b5609a510127c5d9",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.5789493497432603,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:39:29.291496+00:00",
+      "dailyBars": 379,
+      "inputSha256": "18160261e38594f95aaa2a478a5ac44e2945af79e33ef123d626a0247c3cab87"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "HLIT"
+    },
+    {
+     "analysisId": "e58ad6a9666040d792c0d0ef81ab9c8a",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:39:32.692656+00:00",
+      "dailyBars": 379,
+      "inputSha256": "c278459ab20c9ad54109bdc9df4cc563cfbc93082eabedb576239ee4504a158b"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "AMTM"
+    },
+    {
+     "analysisId": "ff488057f9164e35aa4df42087217fce",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:39:48.749762+00:00",
+      "dailyBars": 379,
+      "inputSha256": "1b76d30cf45d68ce8d87b0950d3445d7793e1671a35c4149012b4f72eb160ebb"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "LAZ"
+    },
+    {
+     "analysisId": "fe2a954cbc4546499969ed22cc66f159",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:39:59.238809+00:00",
+      "dailyBars": 379,
+      "inputSha256": "24bef3cd8424311e15c32bd7348494470521215906837f7ca1bffb1a0fd36a91"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ACHC"
+    },
+    {
+     "analysisId": "30fefc3ec7dd4790bb2d8e8aab650159",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:19.271073+00:00",
+      "dailyBars": 379,
+      "inputSha256": "dff53fa3342a28baa69b8b70b226ff1edb87a0579ba4db4e7311babee09a92a8"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "CMC"
+    },
+    {
+     "analysisId": "35feb443e27640e5b93474f529c1a4cc",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:25.609152+00:00",
+      "dailyBars": 379,
+      "inputSha256": "209e06c41f3fd75d4f261835e95d3acf693404020860d33aafe815e58fb4b872"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "VNDA"
+    },
+    {
+     "analysisId": "341e0efa031341f490c8768306eb2f18",
+     "currentReason": "",
+     "currentSetup": "base",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.7821425797987202,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:26.762418+00:00",
+      "dailyBars": 379,
+      "inputSha256": "1508d031c8a45a18216a7b71a873e3160ad9bfa53a4afdd46af421a662999e6e"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "LQDA"
+    },
+    {
+     "analysisId": "670bf42365f04e9b9659bdd04d79ee14",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:27.456729+00:00",
+      "dailyBars": 379,
+      "inputSha256": "2c715a96255d38b76d97535e1afd070f6194e7ebad57785bf8007f02f714b5ff"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "CLDX"
+    },
+    {
+     "analysisId": "b479416ee6dc41079d485d1db966bcff",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:27.707978+00:00",
+      "dailyBars": 379,
+      "inputSha256": "c2965deec5c8c8e5c85b1121f902e295da5a38a0057764938ac5b346892926a1"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ATAT"
+    },
+    {
+     "analysisId": "c6f70ea321ba449189b919ac95f79741",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:47.640080+00:00",
+      "dailyBars": 379,
+      "inputSha256": "deaf5270e4778aca16326c59c3e03bcebf3ee2628e50b655c22b7910ddb9a631"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "LRMR"
+    },
+    {
+     "analysisId": "1bea42fe1b984572bd7749b126b2bfb9",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:55.728900+00:00",
+      "dailyBars": 379,
+      "inputSha256": "669aa61e0cc91ee57d8f81ae5c2e3a833ef9301bbc716b3e477de37d319b9fe8"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "NOMD"
+    },
+    {
+     "analysisId": "4168e9d5a6e94d44baf11a9dbf0cac54",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:40:57.251725+00:00",
+      "dailyBars": 379,
+      "inputSha256": "0e9c92bf41dfd663941984a13f1e4b8bcb545d8acada1af31399031afe51f7de"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "AVR"
+    },
+    {
+     "analysisId": "885494dcb1974bbd9bb06b342f2a27b4",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 3.54160408997955,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:41:07.133204+00:00",
+      "dailyBars": 68,
+      "inputSha256": "758a356ca6a6b0049735e658542f6ef057657b975ce6627267ed372e1b4323f4"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "LFTO"
+    },
+    {
+     "analysisId": "ba6bffdc77a249bbbd79f5b0d4e85d44",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:41:11.216082+00:00",
+      "dailyBars": 379,
+      "inputSha256": "ddb7b95da37c4cb560670a1122bfa6645b67b7c1c1d957b9396ee788228fd576"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "AURA"
+    },
+    {
+     "analysisId": "270319a2f5524a4fb6b09897a3144a0a",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 1.3036247099126976,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:41:46.992462+00:00",
+      "dailyBars": 379,
+      "inputSha256": "8b8ad3a83e6534b16a6508467e8ba73b368282c9413767be8e1486e5b943b956"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "STLD"
+    },
+    {
+     "analysisId": "d0e0fc1823804ff6b4306834e59b1018",
+     "currentReason": "Volume baseline covers 1/26 periods; no usable entry window under covered_periods policy. Plan saved but not armed.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:41:58.839045+00:00",
+      "dailyBars": 379,
+      "inputSha256": "661ec6c511b8455844aaa82991fbd4e3b3e3ecbefb4ace07519582267a1b5a61"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "FUL"
+    },
+    {
+     "analysisId": "d5be0727c1e34472be180b9eab9c0acd",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:42:06.899058+00:00",
+      "dailyBars": 379,
+      "inputSha256": "b3f8fb8f3fce081d6adcbe6f8ef553c8e5c7e2609b846562eb5792e5362eeb55"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "BOOT"
+    },
+    {
+     "analysisId": "a848934a058f4813a955dbee32109c3e",
+     "currentReason": "Volume baseline covers 1/26 periods; no usable entry window under covered_periods policy. Plan saved but not armed.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:42:09.471838+00:00",
+      "dailyBars": 379,
+      "inputSha256": "3fb6dfeaf72186e88608f8387d1df70dd20eee2c11adaf623526dcd32051f31f"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "KN"
+    },
+    {
+     "analysisId": "1be802afb88346e29b1baf04b9665c08",
+     "currentReason": "Volume baseline covers 1/26 periods; no usable entry window under covered_periods policy. Plan saved but not armed.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:42:24.649731+00:00",
+      "dailyBars": 379,
+      "inputSha256": "7fe8a46d18b9cb6efd0324cf94a125f77a9e23be933af9e66084f2956072a28f"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SSYS"
+    },
+    {
+     "analysisId": "749d60aa724d46e5849b6af3eb85a937",
+     "currentReason": "",
+     "currentSetup": "flag",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.2453889750395956,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:42:25.940453+00:00",
+      "dailyBars": 379,
+      "inputSha256": "fab96d14d4a44959386bb380dcf9dc455159fbae7163e8638c7e1c591f16bcbc"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "PWR"
+    },
+    {
+     "analysisId": "ac03e5aaccb04650901be55a35cddbcb",
+     "currentReason": "Volume baseline covers 1/26 periods; no usable entry window under covered_periods policy. Plan saved but not armed.",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:42:29.155677+00:00",
+      "dailyBars": 379,
+      "inputSha256": "5e3e13b0a7d5eb027aacf106a71629eeb3ce6db94f65fa7cb0fbb607f7c8ffe1"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ATRO"
+    },
+    {
+     "analysisId": "77e57ed1156f48219800ec18e4184982",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-11T04:31:17.076000+00:00",
+      "availability": "frozen analysis run created 2026-09-11 04:42:36.483684+00:00",
+      "dailyBars": 379,
+      "inputSha256": "41a17a16949c919ce7f9b00febd77dbcf3e4e587cf68bd1677a1db1d7ee79621"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "TLN"
+    }
+   ],
+   "runsForSession": 1,
+   "session": "2026-09-11"
+  },
+  {
+   "alignmentMode": "moderate",
+   "contextPassingRows": 12,
+   "denominator": {
+    "armed": 3,
+    "candidatesChecked": 11,
+    "dataErrors": 1,
+    "discovered": 3076,
+    "eligible": 3076,
+    "evaluated": 3075,
+    "planErrors": 7,
+    "qualifying": 11
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {
+    "unknown_stale": 1
+   },
+   "laneAQualified": 1,
+   "laneAStages": {
+    "ceiling_tests": 8,
+    "confirmed_target": 2,
+    "data_error": 1,
+    "qualified": 1
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "long",
+   "marketModerate": "long",
+   "marketStrict": "mixed",
+   "preparationCreatedAt": "2026-09-13 02:14:35.786805+00:00",
+   "preparationId": "98bd007f09694c778c1fe53e84b9fb5a",
+   "rows": [
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2025-11-12",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2025-11-12"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "FISV"
+    },
+    {
+     "analysisId": "af3f65033e77453b97b47e040cf5ecf7",
+     "currentReason": "",
+     "currentSetup": "inside_day",
+     "currentStatus": "candidate",
+     "currentStructuralR": 1.8045183962022584,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:16:21.602397+00:00",
+      "dailyBars": 378,
+      "inputSha256": "14f816108239f1a22d4063e99f35f45125d4fb7d39c1b88ed6d77d3e1d33eaf1"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 46.099998474121094,
+       "touchSessions": [
+        "2026-09-10"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "APA"
+    },
+    {
+     "analysisId": "fbd5d03f73524885bf765190df58ca4a",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:16:30.899142+00:00",
+      "dailyBars": 378,
+      "inputSha256": "7821039bbcb85f5d46c57921eba55c94505cc7fac950357680c98b1d252e4298"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 36.40999984741211,
+       "touchSessions": [
+        "2026-09-04"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "VERA"
+    },
+    {
+     "analysisId": "9a6b2bb39d0e4285b9b9a00366fdb4c9",
+     "currentReason": "",
+     "currentSetup": "base",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.7878617975370231,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:16:50.636107+00:00",
+      "dailyBars": 378,
+      "inputSha256": "74189e2f49b69fba04c0d5d8caa4bf3c17c1b9fa02b03ba7d3ff1f70072b191b"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 21.93000030517578,
+       "touchSessions": [
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-08",
+        "2026-09-09"
+       ],
+       "touches": 4
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "No confirmed daily pivot above the trigger (Fibonacci fallback is off in Lane A)."
+      ],
+      "stage": "confirmed_target",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "NOV"
+    },
+    {
+     "analysisId": "be0c27125b9d4bcda00d2230d6d9ff12",
+     "currentReason": "",
+     "currentSetup": "base",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.9075851944106891,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:17:18.280119+00:00",
+      "dailyBars": 378,
+      "inputSha256": "b31cef7707b4f72f56d51a579ff0d9760b8def56264ea62501c9e5b92c91dc64"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 179.44000244140625,
+       "touchSessions": [
+        "2026-09-10"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "OKTA"
+    },
+    {
+     "analysisId": "8b223cc1fd46439c84c819cd314a79ab",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:19:08.186889+00:00",
+      "dailyBars": 378,
+      "inputSha256": "c9c3811fac3656566d0d6e0664a502d9afb9631b289af7eef13e83bf60de1ebb"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 28.860000610351562,
+       "touchSessions": [
+        "2026-09-04"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "HOG"
+    },
+    {
+     "analysisId": "49df53514529436c8c5f6c269b5b3cd1",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.25555993540429534,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:19:28.051292+00:00",
+      "dailyBars": 378,
+      "inputSha256": "023efff56980f8a48368db1179177a7a056f5271690f18321f50bf09c6880a3d"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 64.33999633789062,
+       "touchSessions": [
+        "2026-09-11"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "CGNX"
+    },
+    {
+     "analysisId": "7300514ce484409d973f95abdee2fa95",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "feasibility": {
+      "note": "No chain snapshot dated before the session; planning-time quotes were not recorded.",
+      "observedAt": null,
+      "state": "unknown_stale"
+     },
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:20:10.133152+00:00",
+      "dailyBars": 378,
+      "inputSha256": "7379eca19b9be825263c592b036d66f39885f4e9bf702ae474c70d6e2407fd40"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 52.70000076293945,
+       "touchSessions": [
+        "2026-09-01",
+        "2026-09-03"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": false
+      },
+      "firstTargetPct": 2.1821588131557688,
+      "qualified": true,
+      "reasons": [],
+      "stage": "qualified",
+      "structuralR": 0.2705876967486213
+     },
+     "shortlistStatus": null,
+     "symbol": "OII"
+    },
+    {
+     "analysisId": "dc84c9918e7a47ccba5a61ab8938a73e",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:20:16.934317+00:00",
+      "dailyBars": 378,
+      "inputSha256": "0e610a9542b235e975db4706c6902aa3da3b2a724e5c5b13d7a2aec1af582dd3"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 32.18000030517578,
+       "touchSessions": [
+        "2026-08-31"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "PPC"
+    },
+    {
+     "analysisId": "a03507d6a9e248b492543308eaa51803",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:20:45.701433+00:00",
+      "dailyBars": 378,
+      "inputSha256": "2e287db72692b538acfb727b2fed56e886269284cc034368c622939c5997ee68"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 10.680000305175781,
+       "touchSessions": [
+        "2026-09-02",
+        "2026-09-03"
+       ],
+       "touches": 2
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "No confirmed daily pivot above the trigger (Fibonacci fallback is off in Lane A)."
+      ],
+      "stage": "confirmed_target",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SXC"
+    },
+    {
+     "analysisId": "29dd5e4e622b44dba2977e9e2ab78bd5",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:20:56.921649+00:00",
+      "dailyBars": 378,
+      "inputSha256": "def007e25647a5f532c5590b346a46c3fb8f3b4a3642ce26dcc83d7d98eaa938"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 82.73999786376953,
+       "touchSessions": [
+        "2026-09-08"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "URBN"
+    },
+    {
+     "analysisId": "48f3f294a0e1450eb176bfd5068256ff",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-13T02:14:43.374000+00:00",
+      "availability": "frozen analysis run created 2026-09-13 02:21:26.949582+00:00",
+      "dailyBars": 378,
+      "inputSha256": "c0e2c18b6a5be2d5e467f36845b9861cd6fdec858efc507239211660ca3516d5"
+     },
+     "laneA": {
+      "ceilingTests": {
+       "ceiling": 339.29998779296875,
+       "touchSessions": [
+        "2026-08-28"
+       ],
+       "touches": 1
+      },
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Ceiling tested 1 time(s); Lane A requires 2."
+      ],
+      "stage": "ceiling_tests",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "NTRA"
+    }
+   ],
+   "runsForSession": 3,
+   "session": "2026-09-14"
+  },
+  {
+   "alignmentMode": "moderate",
+   "contextPassingRows": 2,
+   "denominator": {
+    "armed": 0,
+    "candidatesChecked": 0,
+    "dataErrors": 2,
+    "discovered": 3072,
+    "eligible": 3072,
+    "evaluated": 3070,
+    "planErrors": 0,
+    "qualifying": 0
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {},
+   "laneAQualified": 0,
+   "laneAStages": {
+    "data_error": 2
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "mixed",
+   "marketModerate": "mixed",
+   "marketStrict": "mixed",
+   "preparationCreatedAt": "2026-09-15 04:21:50.672901+00:00",
+   "preparationId": "072d5e98556646d29f30bffc1fc8d1e4",
+   "rows": [
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2025-11-12",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2025-11-12"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "FISV"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2026-09-10",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2026-09-10"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "NFE"
+    }
+   ],
+   "runsForSession": 7,
+   "session": "2026-09-15"
+  },
+  {
+   "alignmentMode": "moderate",
+   "contextPassingRows": 33,
+   "denominator": {
+    "armed": 5,
+    "candidatesChecked": 18,
+    "dataErrors": 4,
+    "discovered": 3066,
+    "eligible": 3066,
+    "evaluated": 3062,
+    "planErrors": 10,
+    "qualifying": 29
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {},
+   "laneAQualified": 0,
+   "laneAStages": {
+    "data_error": 4,
+    "direction": 29
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "short",
+   "marketModerate": "short",
+   "marketStrict": "short",
+   "preparationCreatedAt": "2026-09-16 02:26:52.119603+00:00",
+   "preparationId": "ed6d9da2da1d4f06981ad43b6d0edfe5",
+   "rows": [
+    {
+     "analysisId": "e87f9d24dfd341059706a3f1bee2e42a",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.6071426746797955,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:27:41.099274+00:00",
+      "dailyBars": 377,
+      "inputSha256": "cbb6065ed2b4e6c9f9028f9c2154b1194fb6911ea17cee4c3f8da260a796e1a4"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "QS"
+    },
+    {
+     "analysisId": "2624b20d6435432cbfaccbc59fdf7a2b",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:27:52.100761+00:00",
+      "dailyBars": 377,
+      "inputSha256": "8c2cb41382d81f668a5b21426a35fe07dbc202034e8a95cebf4b98916e718749"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "TOST"
+    },
+    {
+     "analysisId": "643be66540904294a6b7958560add847",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.30882344691402347,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:27:53.413122+00:00",
+      "dailyBars": 377,
+      "inputSha256": "ec21a1835a56984c5e13af0de045759ae9d8a6affc7d40377b1dd6d28cbb0f67"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "HIMS"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2025-11-12",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2025-11-12"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "FISV"
+    },
+    {
+     "analysisId": "983c0b5552c9419eb6043db6265244a6",
+     "currentReason": "",
+     "currentSetup": "inside_day",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.40740793068553294,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:28:39.801869+00:00",
+      "dailyBars": 377,
+      "inputSha256": "e713e4eea8585661c97064df5f20f4ff00d04e3dcd7788e5cf34309de7aad226"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "QUBT"
+    },
+    {
+     "analysisId": "5923b83605d94441ba0aa9572bac5fb9",
+     "currentReason": "",
+     "currentSetup": "base",
+     "currentStatus": "candidate",
+     "currentStructuralR": 1.7085536497442775,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:29:12.216027+00:00",
+      "dailyBars": 377,
+      "inputSha256": "62d4fa88f94e985f90e5504647394a2ec6692c3dfe2e749cbba39639357769ab"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "APTV"
+    },
+    {
+     "analysisId": "b376b621fa6149c287d958a7d3a562f6",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:30:36.335010+00:00",
+      "dailyBars": 377,
+      "inputSha256": "310cac3b3bc2f2af0172d696a22aa9aba81467f28d668f6d8dc4e51c829a3ae1"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "DNUT"
+    },
+    {
+     "analysisId": "7986b4e285be44f1bc83ac80910c7fd8",
+     "currentReason": "",
+     "currentSetup": "wedge",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.461518387296831,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:30:52.604490+00:00",
+      "dailyBars": 377,
+      "inputSha256": "fac0eb17a5e74bf6fbeb92377f5f4a8705bc79b1b17b18bf445c1a6c33608f90"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "NVT"
+    },
+    {
+     "analysisId": "1641c65e1b16476cb4125e142c890e13",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.3220331038049979,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:31:34.529111+00:00",
+      "dailyBars": 377,
+      "inputSha256": "627f99c589a683bdb4c056a9f044733871ae7544366b6248cecde40bd8944c22"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "REAL"
+    },
+    {
+     "analysisId": "c8ead152fce6442d8bd3298d35ddaef5",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.1951227681686655,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:32:17.598557+00:00",
+      "dailyBars": 377,
+      "inputSha256": "b2497d5464642643919b030cb763eafa3d9526710f4cb533ca14d35fe4d48297"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "AAP"
+    },
+    {
+     "analysisId": "cb2649950e5c4517be36d67103b13007",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:32:23.606159+00:00",
+      "dailyBars": 377,
+      "inputSha256": "6e2ed2ed6d2bd4861b1e5c9e7af8db082614e1f451e8eb3e4fd603dcc99062e3"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "CSTM"
+    },
+    {
+     "analysisId": "8745259eba3c42ca8549883740f8c5ae",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:32:29.756901+00:00",
+      "dailyBars": 377,
+      "inputSha256": "8d36bbf10d2ad25c7ec4b1576d75b75f8337c211101661ee97cbae4941c8f30c"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SVRA"
+    },
+    {
+     "analysisId": "9a0a5c534f3f438685437473cde3cb72",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:32:50.582782+00:00",
+      "dailyBars": 377,
+      "inputSha256": "5c852f5d217636c46b85fb8292666586d40ad91fbc30657f5cd40e9a052037ca"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ACHC"
+    },
+    {
+     "analysisId": "5191838d83b144fbafaf41c77ec780c8",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:32:57.406795+00:00",
+      "dailyBars": 377,
+      "inputSha256": "88e1c279749f9c1eebd8e7a858ec5b8c0a086650e82a297b8ec1d2a8779c7def"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "STLD"
+    },
+    {
+     "analysisId": "0a4c6a11e7614fa6932a2e54d31d7a3a",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:33:25.837729+00:00",
+      "dailyBars": 234,
+      "inputSha256": "40676ea6921126c556da907f9306ecba1fed537b371cf5703f03524eda00b128"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ALH"
+    },
+    {
+     "analysisId": "98600be6706048b68c21b6bf53d5c8fa",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:33:51.727955+00:00",
+      "dailyBars": 377,
+      "inputSha256": "4c5b2acf8386cecd44088df6571841d44424c774180499533205e3385b90c0c4"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SSYS"
+    },
+    {
+     "analysisId": "2a416db8033b4893852d980431cd7192",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:34:03.419103+00:00",
+      "dailyBars": 377,
+      "inputSha256": "0aa40774d35743e345d40e797ae12513a73c5e663654ea43b83182ccaeab3d33"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "PLAB"
+    },
+    {
+     "analysisId": "12f386e8c5e143b691e96bc5f79803bf",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:34:17.508609+00:00",
+      "dailyBars": 377,
+      "inputSha256": "c7985671d3c15350c745a7b7bc161c1f0c5051f06f95c985fce09559434338f1"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ORKA"
+    },
+    {
+     "analysisId": "62e3e872cddf40da82cf7c2a4cb27c6e",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:34:20.870955+00:00",
+      "dailyBars": 377,
+      "inputSha256": "836b185401571cd047a7310038632e671dd75f905b0bfb23321e0e4e08afa00b"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "EH"
+    },
+    {
+     "analysisId": "c9a4a89d34e449279a6ae6f94dae5697",
+     "currentReason": "",
+     "currentSetup": "flag",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.22552785737833794,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:34:24.310128+00:00",
+      "dailyBars": 377,
+      "inputSha256": "78ed2fd60982eb4da190aebbfa9fbd2ca55c73c9dfc2da89b41bad7d3ae01251"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "PWR"
+    },
+    {
+     "analysisId": "e5d7ce00d340449495fdc7f9734dda92",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:34:30.785757+00:00",
+      "dailyBars": 377,
+      "inputSha256": "2e2c0dfc13fa5e41ff5fd69b2130dcbd7dc841108b57ea48f071c8c424e40b23"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "KN"
+    },
+    {
+     "analysisId": "d38e0e837a2741e186345a4e2f119c96",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:34:36.572501+00:00",
+      "dailyBars": 377,
+      "inputSha256": "89f279a42ca9c585b02cf72681ba24ff07695db5a97da40c1c5f22b2be59d7ad"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "LZB"
+    },
+    {
+     "analysisId": "354417b169014360863ac11fea39f20a",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:34:48.868283+00:00",
+      "dailyBars": 377,
+      "inputSha256": "77ce2c49f8f71384a6f0dfeb6e1c8c5cd8c0e943a71d6a2a4d1a383787ec8531"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "KLIC"
+    },
+    {
+     "analysisId": "8b28a5e652694ef38da75f293a9c1cbf",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:35:03.354712+00:00",
+      "dailyBars": 377,
+      "inputSha256": "e7fcd1b1893bc37783cfec24b3ee7b0ab6709e54c4a7d768590614eb1c449d06"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SKY"
+    },
+    {
+     "analysisId": "2d8a151536cd4162a9ac2fef23f9995b",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:35:10.908768+00:00",
+      "dailyBars": 377,
+      "inputSha256": "9531ebb21fe833211b7a9773cd24c6364144f07b01a30c5c8e962bd15deaa670"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "GNRC"
+    },
+    {
+     "analysisId": "1683a97ad3de4f348ba818a885ea1b10",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:35:16.508534+00:00",
+      "dailyBars": 377,
+      "inputSha256": "bc7b06053b86faade19952ee868a07607550bbb0dee7ea2505055594bca24eb8"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "RERE"
+    },
+    {
+     "analysisId": "b432ac1bf3374fb88bf55aef9f1d94f9",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:35:32.476095+00:00",
+      "dailyBars": 377,
+      "inputSha256": "f1e2361d759659c57e432c376b2303a97ece09cd891c47192eed983cc8c7b3ad"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "XENE"
+    },
+    {
+     "analysisId": "3b5bfaba16fb4d25bd30ad12ff4a97ba",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:35:33.212956+00:00",
+      "dailyBars": 377,
+      "inputSha256": "e9a9996921e9db576bfb0333ae4b528e0aa4e8be543ea85adbb30662bcf52f63"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "AVR"
+    },
+    {
+     "analysisId": "f87eb19f1e924b509a80697cfcc4183a",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:35:40.304866+00:00",
+      "dailyBars": 377,
+      "inputSha256": "46b97f6236ca1655ac02c39c18ecb285981c2ccad9d982eaab76f80385357852"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "URGN"
+    },
+    {
+     "analysisId": "b1ef3dc83d5d4c7c8a0741578be3b9b8",
+     "currentReason": "",
+     "currentSetup": null,
+     "currentStatus": "candidate",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-16T02:26:59.467000+00:00",
+      "availability": "frozen analysis run created 2026-09-16 02:35:50.087851+00:00",
+      "dailyBars": 377,
+      "inputSha256": "1bb6623bbaae635334bc326034b97907903c8416f24a84f8f4b42a2deeb41677"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "ATHM"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value={'symbol': 'CLBR', '",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: 1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value="
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "CLBR"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value={'symbol': 'MTAL', '",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: 1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value="
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "MTAL"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value={'symbol': 'BRK.A', ",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: 1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value="
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "BRK.A"
+    }
+   ],
+   "runsForSession": 7,
+   "session": "2026-09-16"
+  },
+  {
+   "alignmentMode": "moderate",
+   "contextPassingRows": 16,
+   "denominator": {
+    "armed": 1,
+    "candidatesChecked": 13,
+    "dataErrors": 3,
+    "discovered": 3059,
+    "eligible": 3059,
+    "evaluated": 3056,
+    "planErrors": 10,
+    "qualifying": 13
+   },
+   "experimentalMinRPasses": 0,
+   "feasibility": {},
+   "laneAQualified": 0,
+   "laneAStages": {
+    "data_error": 3,
+    "direction": 13
+   },
+   "marketBasis": "moderate",
+   "marketDirection": "short",
+   "marketModerate": "short",
+   "marketStrict": "short",
+   "preparationCreatedAt": "2026-09-17 01:11:47.089129+00:00",
+   "preparationId": "cee03dd791ce404ab322378626339849",
+   "rows": [
+    {
+     "analysisId": null,
+     "currentReason": "missing regular-session bar: 2025-11-12",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: missing regular-session bar: 2025-11-12"
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "FISV"
+    },
+    {
+     "analysisId": "205dc0677da44ddda0c9f009b064e949",
+     "currentReason": "",
+     "currentSetup": "breakout_retest",
+     "currentStatus": "candidate",
+     "currentStructuralR": 5.158946072759181,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:18:30.939497+00:00",
+      "dailyBars": 378,
+      "inputSha256": "d8ab4a1a7a387e4d252fdcb46eca448ddfac589ee663b81c0ec0b642134551dd"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "armed",
+     "symbol": "APTV"
+    },
+    {
+     "analysisId": "d27e9ef59d3846eeafff8165d43c4a14",
+     "currentReason": "",
+     "currentSetup": "ma_pullback",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.28271192966694475,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:20:15.494919+00:00",
+      "dailyBars": 378,
+      "inputSha256": "667ff1c07ef9b0dce282d9b46c25d7a36a3ec5f4ac9b8bbdf63c5554b03cbb14"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "TTWO"
+    },
+    {
+     "analysisId": "ae38dac92da848cbab04a2276ce18944",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:23:10.433621+00:00",
+      "dailyBars": 378,
+      "inputSha256": "f94d85eebb60d8a245ce3d1f4ca2068aa5703538694a88c79d42e114adbdd36f"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "GNRC"
+    },
+    {
+     "analysisId": "d737452bb3b749a6b6706245209b2383",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:27:45.917220+00:00",
+      "dailyBars": 378,
+      "inputSha256": "d6adb969199cc837163e5045751e618b0a3581c074ca23e417a4833a544abd80"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "PLAB"
+    },
+    {
+     "analysisId": "7086c4b4a0a84cffae1fb9e30a2b80b7",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:27:58.653747+00:00",
+      "dailyBars": 378,
+      "inputSha256": "00474ce3469c9fdd922d343c08809941f9d5e98a4019dd3050d7f948a16eb3fe"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "BWXT"
+    },
+    {
+     "analysisId": "ba7f34f48d2a4e209fdc397847b7079d",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:28:44.638431+00:00",
+      "dailyBars": 378,
+      "inputSha256": "a2086b81b7b8d7135aba721cc3cb0ce6d7c5b6a9b55a671e08ff6a2b144afbd0"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "STLD"
+    },
+    {
+     "analysisId": "0c8968f6f84a4054a96e98041f3c6753",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:29:06.449797+00:00",
+      "dailyBars": 378,
+      "inputSha256": "858448596589c82f5d16433e108648844cfc346f6ac2272e5b93b0c3ec72dfda"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SYNA"
+    },
+    {
+     "analysisId": "7f033627fd994e0bb91cfbfab844779c",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:30:15.222722+00:00",
+      "dailyBars": 378,
+      "inputSha256": "88cee11fb10649b7485c669acaa5d7048c2bfbddfe78d2861ababbc2e61bedde"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "LZB"
+    },
+    {
+     "analysisId": "0c67a1cffc374e1786fb80b66f70a417",
+     "currentReason": "",
+     "currentSetup": "wedge",
+     "currentStatus": "candidate",
+     "currentStructuralR": 0.07465607081343885,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:30:21.551070+00:00",
+      "dailyBars": 378,
+      "inputSha256": "9e38434b65d15d2eb39c84311ba0a7ce29d7c6e7680e9894f6ebee13458ca26c"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": "awaiting_contract",
+     "symbol": "PWR"
+    },
+    {
+     "analysisId": "c8a9a133fd974174a5d32da18e5c76d0",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:30:23.748902+00:00",
+      "dailyBars": 378,
+      "inputSha256": "2e25f9430373235df606413981331560c5986d271142f5fcc5b5315256ea630f"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SKY"
+    },
+    {
+     "analysisId": "a1f1382a749e40f39dedcb511bbcb0b2",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:30:54.078849+00:00",
+      "dailyBars": 378,
+      "inputSha256": "f1d842e769608719557d25f79e8ba1c641fd3990e52fe22e3dcadb4985fb5931"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "MRCY"
+    },
+    {
+     "analysisId": "dc38501dc89f494b915fe7749c3d2e6c",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:31:29.193513+00:00",
+      "dailyBars": 378,
+      "inputSha256": "e470dbff141cb091ba5df0969c1ebf12c714174ab42cd0a50c73165f42e1ac28"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "SSYS"
+    },
+    {
+     "analysisId": "5c98ac10ad5b4cacb359e0fc34b8cb47",
+     "currentReason": "Opening and broad coverage requires the first hour and 80% of pre-close windows",
+     "currentSetup": null,
+     "currentStatus": "candidate/plan_blocked",
+     "currentStructuralR": null,
+     "inputs": {
+      "analysisAsOf": "2026-09-17T01:11:55.622000+00:00",
+      "availability": "frozen analysis run created 2026-09-17 01:32:08.905389+00:00",
+      "dailyBars": 378,
+      "inputSha256": "d1e318cc75357fee24f141a1252284ad39ae8dccadd2ae1f521d1d5fefad7f40"
+     },
+     "laneA": {
+      "ceilingTests": null,
+      "experimental": {
+       "active": false,
+       "minPlanningR": 1.5,
+       "passes": null
+      },
+      "firstTargetPct": null,
+      "qualified": false,
+      "reasons": [
+       "Lane A plans only long setups on strict-bullish sessions (direction=short, market=short)."
+      ],
+      "stage": "direction",
+      "structuralR": null
+     },
+     "shortlistStatus": null,
+     "symbol": "CW"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value={'symbol': 'WENN', '",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: 1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value="
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "WENN"
+    },
+    {
+     "analysisId": null,
+     "currentReason": "1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value={'symbol': 'BRK.A', ",
+     "currentSetup": null,
+     "currentStatus": "data_error",
+     "currentStructuralR": null,
+     "laneA": {
+      "qualified": false,
+      "reasons": [
+       "Daily history error in preparation: 1 validation error for DailyBar\n  Value error, invalid OHLC geometry [type=value_error, input_value="
+      ],
+      "stage": "data_error"
+     },
+     "shortlistStatus": null,
+     "symbol": "BRK.A"
+    }
+   ],
+   "runsForSession": 7,
+   "session": "2026-09-17"
+  }
+ ],
+ "start": "2026-09-08"
+}

@@ -36,6 +36,18 @@ the coexistence contract, acceptance, plan).
 | P2 coexistence and capacity | `lane_a_focus` defaults 0 and bypasses selection, ranking and chain fetch entirely; fallback to the general plan when Lane A has no capacity or is not executable; pending items never held/managed and never reserve slots; feasibility states extended with `filtered_other` (first-failing-filter counts) and `no_chain` | PROPOSAL §3 |
 | D1 answers | execution unchanged; separate versioned volume calculation `volume_eligibility_v1` evaluated offline first, no double counting; buckets with `trades_without_bar` stay non-executable; session-extreme coverage not touched (a protection); missing historical chain quotes = `unknown`, kept in the denominator, conclusions stop at the last supported stage | PROPOSAL §5 D1, §4 |
 
+## Cleared implementation delivered after revision 3 (separate commits)
+
+| Commit | Scope | What it changes | Evidence |
+|---|---|---|---|
+| "Cartel D3/D4/D5 diagnostics" | diagnostics only | D3: `read_entry` records `known` (present/missing/untrusted minutes, partial values, slot baseline, `notComputed`) on `missing_bucket`/`untrusted_confirmation` and a `bucketInputHash` on `watch_only`/`triggered` — decisions unchanged. D4: `DropRegistry` counts bars refused for age per symbol/session; journaled per plan at most every 5 min (`bars_dropped_for_age`, `state.barDrops`, shown on the Armed detail); the profitability collector yields between candidates and runs its two synchronous studies in a thread. D5: preflight `expression.spread` = cents, percent of mid, dollars per unit and for the sized quantity | `tests/test_cartel_diagnostics.py` (4); `test_options_cartel_entry.py`, `_observer.py`, `_execution.py`, `_runtime.py`, `_profitability_research.py`, `_pending_integrity.py` green on `zargar_test_cartel` |
+| "Cartel Lane A pure evaluation" | order-free, unwired | `techniques/options_cartel/lane_a.py` (pure reviewer with the inactive 1.5R experiment; feasibility classifier with the six states) and `tools/cartel_lane_a_eval.py` (read-only frozen replay over past preparation runs; strict basis = the definition, Moderate basis = information-only variant) | `tests/test_cartel_lane_a.py` (4); `lane-a/frozen-replay-strict.md`, `lane-a/frozen-replay-moderate.md` + JSON; result in PROPOSAL §4b |
+
+Frozen replay headline: on the strict basis Lane A qualifies **0** rows in 2026-09-08 → 09-17
+(only 09-08 was strict-bullish; its two context-passing names had the ceiling tested once). On the
+Moderate read it qualifies 10 rows, all with structural R below 1.5 (nine below 0.5) — the
+inactive experiment would exclude every one. Feasibility: 1 `affordable` (CVNA), 9 `unknown_stale`.
+
 ## Reproduction
 
 From `backend/` with the main checkout's interpreter. A worktree has no `.env`; pass the database
@@ -64,7 +76,11 @@ python -m zargar.tools.cartel_evidence --database-url %U% latency --since 2026-0
 python -m zargar.tools.cartel_evidence --env-file <main>\backend\.env alpaca-minutes PLAB 2026-09-16 --limit 44 --artifact-dir <pkg>\evidence
 python -m zargar.tools.cartel_evidence --env-file <main>\backend\.env alpaca-minutes LZB 2026-09-16 --limit 55 --artifact-dir <pkg>\evidence
 python -m zargar.tools.cartel_evidence --env-file <main>\backend\.env alpaca-minutes PWR 2026-09-17 --limit 17 --artifact-dir <pkg>\evidence
-python -m pytest tests/test_cartel_evidence_tool.py -q
+python -m zargar.tools.cartel_lane_a_eval --database-url %U% --start 2026-09-08 --end 2026-09-17 --market-basis strict --out-dir <pkg>\lane-a
+python -m zargar.tools.cartel_lane_a_eval --database-url %U% --start 2026-09-08 --end 2026-09-17 --market-basis moderate --out-dir <pkg>\lane-a
+python -m pytest tests/test_cartel_evidence_tool.py tests/test_cartel_diagnostics.py tests/test_cartel_lane_a.py -q
+set ZARGAR_TEST_DATABASE_URL=postgresql+asyncpg://zargar:zargar@127.0.0.1:5433/zargar_test_<yours>
+python -m pytest tests/test_options_cartel_entry.py tests/test_options_cartel_observer.py tests/test_options_cartel_execution.py tests/test_options_cartel_runtime.py tests/test_options_cartel_profitability_research.py tests/test_options_cartel_pending_integrity.py -q
 ```
 
 Values the commands must reproduce (details in BOTTLENECKS.md):

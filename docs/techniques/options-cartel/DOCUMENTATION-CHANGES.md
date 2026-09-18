@@ -1,5 +1,10 @@
 # Cartel documentation changes
 
+## 2026-09-18 — cleared diagnostics and order-free Lane A evaluation
+
+- D3/D4/D5 diagnostics built without changing any decision, gate or protection: refusal measurements and bucket input hashes in `read_entry`, a bounded dropped-bar registry with per-plan journaling, the profitability collector off the event loop, spread cost on preflight records.
+- Pure Lane A reviewer and feasibility classifier (`lane_a.py`) plus the read-only frozen replay (`cartel_lane_a_eval.py`); results in `reviews/2026-09-17-proposal/lane-a/`: strict basis 0 qualifiers in 09-08 → 09-17, Moderate variant 10 qualifiers all below the inactive 1.5R experiment. Nothing wired into preparation, arming or entry.
+
 ## 2026-09-18 — Lane A proposal revision 3 (P1 evidence fixes; no behaviour change)
 
 - Evidence tool: trade-tape probe enforces [start, end) minute boundaries locally, records per-interval verification times, classifies by reported conditions with size statistics separate, treats incomplete bar pagination and unprobed minutes as non-certifying, writes credential-free artifacts (`reviews/2026-09-17-proposal/evidence/`). Replay renamed to final-arm-tape; journaled decisions are the authority; per-minute value comparison added.
