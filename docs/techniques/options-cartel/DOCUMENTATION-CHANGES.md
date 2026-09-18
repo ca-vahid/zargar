@@ -1,5 +1,10 @@
 # Cartel documentation changes
 
+## 2026-09-18 — Lane A proposal revision 2 (review corrections; no behaviour change)
+
+- Evidence tool corrected per review: attribution by plan/order/position id, production-consistent partial-bucket handling, engine `read_entry` replay over decision-time and stored tapes, exchange-calendar sessions, spread in cents/dollars, `latency` and the read-only `alpaca-minutes` D1 probe.
+- D1 probe result recorded: every probed absent SIP minute (PLAB, LZB 09-16; PWR 09-17) had odd-lot trades — none was a no-trade minute. Proposal revised: 1.5R inactive experimental filter, provisional retryable feasibility, causal snapshot per input, legacy controls separated from Lane A examples, coexistence via `lane_a_focus`, causal stop observations.
+
 ## 2026-09-17 — Lane A proposal package (review pending, no behaviour change)
 
 - Added `reviews/2026-09-17-proposal/` (bottleneck reconstruction from runtime records, executable funnel map, rule matrix, Lane A proposal with acceptance criteria and incremental plan) and the read-only `zargar.tools.cartel_evidence` reproduction tool.

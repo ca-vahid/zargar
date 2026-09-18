@@ -1,6 +1,6 @@
-# The executable funnel, gate by gate
+# The executable funnel, gate by gate (revision 2)
 
-Source revision: origin/main `731edbd` (v0.8.11), 2026-09-17. Line numbers refer to that
+Source revision: origin/main `731edbd` (v0.8.11), 2026-09-17; wording corrected 2026-09-18 per review. Line numbers refer to that
 revision; module paths are under `backend/zargar/techniques/options_cartel/` unless noted.
 "Effective setting" is the persisted Practice policy (`techniques.options_cartel.preparation`,
 last saved 2026-09-14 00:52Z) — not the code default where they differ.
@@ -56,7 +56,7 @@ change an arm; they share the pure reads (`screen`, `setups`, `entry.read_entry`
 |---|---|---|---|---|---|
 | D1 | 20-session 1m baseline: slot sample only if all 15 minutes present; slot usable with ≥5 samples and positive median | `prepare.py:26-60`, `preparation_io.py:233-263` | 20 sessions, 15 m, `require_exchange_history=true` | Alpaca SIP 1m (Yahoo fallback), cached per provider | Removes as `plan_blocked` ("No supported same-time volume baseline") |
 | D2 | Coverage policy | `preparation.py:551-556`, `preparation_readiness.py:9-20` | `coverage_policy=opening_and_broad` (slots 0–3 and ≥20/25 pre-close usable); `baseline_readiness=covered_periods` | D1 output | Removes as `plan_blocked` for this run; the run becomes resumable (≤3 attempts per evening/pre-open window, 5→10→20 min backoff). **Not re-checked in-session** |
-| D3 | Contract selection from chain evidence: identity, uncrossed quotes, delta ≥0.25 (target 0.5), spread ≤20% (mid basis), OI ≥100, ask ≤ min(5, budget/100, equity·risk%/100) | `automatic_plans.py:planning_contract`, `preparation.py:87-106` | DTE 21–90 target 45; `max_ask=5`; budget 500 | CBOE chain (delayed) | Delays as `awaiting_contract`; the pending watcher retries every ~60 s from 45 min pre-open until the close. **Effective cap $5 means stocks above roughly $100–150 rarely have an eligible 0.5-delta contract** |
+| D3 | Contract selection from chain evidence: identity, uncrossed quotes, delta ≥0.25 (target 0.5), spread ≤20% (mid basis), OI ≥100, ask ≤ min(5, budget/100, equity·risk%/100) | `automatic_plans.py:planning_contract`, `preparation.py:87-106` | DTE 21–90 target 45; `max_ask=5`; budget 500 | CBOE chain (delayed) | Delays as `awaiting_contract`; the pending watcher retries every ~60 s from 45 min pre-open until the close. Observed 09-16/17: for TTWO, PWR, NVT no contract in the inspected snapshots passed all configured limits (premium and spread between them; the delta floor is 0.25) |
 | D4 | Pre-arm readiness: coverage ready; window not expired; a usable slot still ahead; no missing/untrusted current-session minutes; no completed invalidating bucket; first target not already passed | `preparation_readiness.py:24-70` | `require_exchange_history` → `require_exchange_bars=true` | current-session tape (`bars` + recovery cache + bounded fetch) | Delays (non-terminal reasons) or **Invalidates** the pending item (`invalidated` / `target_passed` are terminal) |
 | D5 | Arm with capacity and scope | `preparation.py:70-84, 577-581` | — | — | Armed; `validUntil` = close of the first session |
 
@@ -99,5 +99,8 @@ change an arm; they share the pure reads (`screen`, `setups`, `entry.read_entry`
 
 Two observations for the proposal: (1) the only *planning-time* quality bar is the 0.5%
 distance (C3); the ≥1.5:1 reward/risk in the source's checklist (S14) is not implemented
-anywhere; (2) contract feasibility (D3) is consulted only after ranking (C5) and only for the
-top 25, so unaffordable high-priced names occupy focus slots and pending-watcher time all day.
+anywhere (an engineering reading of it is proposed as an inactive experimental filter); (2)
+contract feasibility (D3) is consulted only after ranking (C5) and only for the top 25, so names
+with no contract passing the saved limits consume the 25-candidate checking budget and
+pending-watcher work all day. They do not occupy focus slots: capacity counts occupied arms and
+held positions (C6).
