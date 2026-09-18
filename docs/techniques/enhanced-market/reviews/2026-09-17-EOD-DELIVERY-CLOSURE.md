@@ -74,8 +74,10 @@ corrected reducer: BMNR `underlying_proxy_only` (+1.69 R underlying vs the later
 did not exist that day), SCHW `underlying_proxy_only` (-0.23 R). The observer is a new observation-only path active under the
 already-on shadow knob once deployed (PLATFORM-RULES entry).
 
-- [ ] Second preparation receipt: _pending_ (tonight's 39 arms for 2026-09-18 stand; no rerun)
-- [ ] Second deployment receipt: _pending_ (0.8.13)
+**Tested SHA for the P-06 corrections: `330328ce0d09069e0fc27564a2d9f63b5ee12187`** (12/12 P-06 cases; 61 passed across the P-06, sim guard, prep ablation, profitability and shadow-observer suites; arming solo 30 passed + the known baseline failure; import smoke ok; frontend build + check-release green in the worktree). **Deployed SHA `46c50eb7f6c1e06fd0b9be2ac0046749a470265c`** = the same code plus `backend/pyproject.toml` at 0.8.13 (left out of 330328c; the runtime's check-release refused the first deploy attempt at the build step - no restart, served bundle intact).
+
+- [x] **Second preparation receipt (2026-09-17 18:45 PT, before the restart):** no rerun. The 39 EM arms for 2026-09-18 from the 14:55-16:23 PT batch stand: server EM armed = 39, all `planFor` 2026-09-18, status `armed`, attention 0; total armed 54 (tip 12, team2 3). Nothing in the P-06 corrections touches preparation, thresholds or arming.
+- [x] **Second deployment receipt (2026-09-17 18:49 PT):** readiness safe (market closed, 0 open trades, no analyst run in flight); `deploy.ps1` under the lease from `C:/Cursor/zargar` (fast-forward 330328c -> 46c50eb, frontend build + check-release green) -> elevated shell exit 8 -> `ZargarRestart` task at 18:49:43; health v0.8.13 build `46c50eb7` after 95 s; receipt phase `verified`, expected / healthy 0.8.13. Restoration by hand against `logs/restart-inventory-20260917-184920.json` (60 s probe, retries): armed 54 before / 54 after by id (enhanced_market 39, tip 12, team2 3), 0 missing, 0 new; resting orders 27 -> 27; open trades 0 -> 0; one engine pair + gateway + ingest workers; bundle rebuilt 18:49; no log errors. Runtime defaults after the restart: `sim_max_option_spread_pct` 0.0 (OFF); `shadow_exit_observe` True and `shadow_p02_candidate` True (unchanged, user decision) - the P-06 reclaim observer is therefore ACTIVE as an observation-only path from this restart (disclosed; journal rows only, no order, no exit); `fire_decision_mode` deterministic. Loop lag 10 ms, 0 stalls.
 
 ## Kept
 

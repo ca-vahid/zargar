@@ -1423,3 +1423,10 @@ Deployment through the protocol after the batch, restoration 54/54 by id. Defaul
 - Disclosure: once deployed, the observer is a NEW code path active under the already-on `shadow_exit_observe` knob -
   observation-only (journal rows), no order, no exit, no setting change. P-02 collection untouched.
 - The executable-profit measurement (ED-04) remains the next priority; nothing here substitutes for it.
+
+### 2026-09-17 18:51 PT - v0.8.13 build `46c50eb` live (P-06 corrections); 39 arms for 2026-09-18 unchanged
+
+Tested code 330328c; deployed 46c50eb (adds the pyproject version line the first attempt lacked - the runtime's check-release
+refused that attempt at the build step, no restart happened). Restoration 54/54 by id. From this restart the P-06 reclaim
+observer runs as an observation-only path under the on `shadow_exit_observe` knob. Next priority: the executable-profit
+measurement (ED-04, EM desk owner; Tips desk for the shared quote/mark layer).
