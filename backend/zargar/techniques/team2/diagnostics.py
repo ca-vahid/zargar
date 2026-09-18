@@ -242,6 +242,61 @@ def submission_displacement(loc: dict, underlying: float | None, at_ts: int, quo
             "movedAway": (None if from_close is None else bool(from_close > float(moved_away_atr)))}
 
 
+def target_room(loc: dict, underlying: float | None, target: float | None, stop: float | None, anchor: float | None) -> dict:
+    """Item 4 (2026-09-17): the room to the target and to the stop from the ACTUAL underlying at the order boundary, in
+    points and ATR, and whether the target is the setup's own source level. Unknown inputs stay None."""
+    sign = 1.0 if loc.get("direction") == "long" else -1.0
+    atr = _f(loc.get("atr"))
+    px = _f(underlying)
+    t, st, a = _f(target), _f(stop), _f(anchor)
+
+    def room(dest, favour: float):
+        if px is None or dest is None:
+            return None, None
+        pts = round((dest - px) * favour, 4)
+        return pts, (round(pts / atr, 3) if atr else None)
+
+    tr, tra = room(t, sign)
+    sr, sra = room(st, -sign)
+    return {"targetRoomPoints": tr, "targetRoomAtr": tra, "stopRoomPoints": sr, "stopRoomAtr": sra,
+            "targetIsSourceLevel": (None if t is None or a is None else bool(abs(t - a) <= 0.011)),
+            "targetToAnchorPoints": (None if t is None or a is None else round((t - a) * sign, 4)),
+            "underlyingAtBoundary": px}
+
+
+def payoff_estimate(entry_ask, bid, delta, gamma, room_points, fee: float, *, qty: float = 1.0, greeks_source: str | None = None) -> dict:
+    """Item 4 (2026-09-17): a LABELLED estimate of what the selected contract could pay at the target — delta (and gamma)
+    times the room, no theta or IV change, the current spread held constant and the exit taken at the bid — against the
+    round-trip commissions. Never an executable price; an estimate is `insufficient evidence` when a pricing input is
+    missing (Greeks unknown, no room, no entry ask)."""
+    missing = []
+    a, b, d, g, r = _f(entry_ask), _f(bid), _f(delta), _f(gamma), _f(room_points)
+    if a is None or a <= 0:
+        missing.append("entry ask")
+    if b is None or b <= 0:
+        missing.append("bid")                                   # PR204 review: no bid = no measured spread, never zero cost
+    elif a is not None and b > a:
+        missing.append("valid spread (bid above ask)")
+    if r is None:
+        missing.append("target room")
+    if d is None:
+        missing.append("delta")
+    if missing:
+        return {"status": "insufficient evidence", "missing": missing, "greeksSource": greeks_source}
+    spread = round(a - b, 4)
+    move = abs(d) * r + 0.5 * (g or 0.0) * r * r
+    est_exit_bid = a - spread + move
+    gross = (est_exit_bid - a) * 100.0 * float(qty)
+    net = gross - FEE_SIDES * float(fee or 0) * float(qty)
+    be_move = ((FEE_SIDES * float(fee or 0)) / 100.0 + spread) / abs(d) if d else None
+    return {"status": "estimate", "estExitBid": round(est_exit_bid, 4), "estMovePremium": round(move, 4),
+            "grossPerContract": round(gross / float(qty), 2), "netPerContract": round(net / float(qty), 2),
+            "netPct": round(net / (a * 100.0 * float(qty)) * 100.0, 2), "breakEvenMovePoints": (round(be_move, 4) if be_move is not None else None),
+            "spreadAssumed": spread, "deltaUsed": d, "gammaUsed": g, "greeksSource": greeks_source,
+            "assumptions": "delta-gamma over the target room; no theta or IV change; spread held constant; exit at the bid; "
+                           "commissions both ways — a labelled estimate, never an executable price"}
+
+
 # ---------------------------------------------------------------- 3. attempt context
 def _net(t, fees_fn) -> float | None:
     if float(getattr(t, "filled_qty", 0) or 0) <= 0:
@@ -353,7 +408,9 @@ def candidate_rows(examined: list[dict], chain_rows: dict, pick_symbol: str | No
                     "inBand": bool(eligible and ask is not None and float(floor) <= ask <= float(band_hi)),
                     "selected": bool(pick_symbol and sym == pick_symbol),
                     "delta": _f(g.get("delta")), "gamma": _f(g.get("gamma")), "theta": _f(g.get("theta")), "iv": _f(g.get("mid_iv")),
-                    "greeksLive": bool(row.get("greeksLive")), "greeksAsOf": row.get("asOf") or row.get("ts"),
+                    "greeksLive": bool(row.get("greeksLive")), "greeksAsOf": row.get("greeksAsOf") or row.get("asOf") or row.get("ts"),
+                    "greeksSource": row.get("greeksSource") or ("chain" if _f(g.get("delta")) is not None else "none"),
+                    "greeksProvider": row.get("greeksProvider"),
                     "spot": spot, "distancePct": (round((strike - spot) / spot * 100, 3) if strike is not None and spot else None),
                     "quoteTs": sts, "receivedTs": x.get("receivedTs"), "collectedTs": collected, "source": source,
                     "quoteAgeMs": (clean or {}).get("ageMs"),
@@ -462,7 +519,12 @@ def summarize_attempt(rec: dict, fee: float) -> dict:
             "movedAway": (rec.get("entryLocation") or {}).get("movedAway"),
             "submissionFromCloseAtr": (rec.get("entryLocation") or {}).get("submissionFromCloseAtr"),
             "actual": {"filledQty": routing.get("filledQty"), "avgFill": routing.get("avgFill"), "netPnl": routing.get("netPnl"),
+                       "grossPnl": routing.get("grossPnl"), "fees": routing.get("fees"),
+                       "grossBreakevenNetLoss": routing.get("grossBreakevenNetLoss"),
                        "exitPrice": routing.get("exitPrice"), "status": routing.get("status")},
+            "targetRoomAtr": (rec.get("entryLocation") or {}).get("targetRoomAtr"),
+            "targetIsSourceLevel": (rec.get("entryLocation") or {}).get("targetIsSourceLevel"),
+            "payoffEstimate": (rec.get("entryLocation") or {}).get("payoffEstimate"),
             "candidates": cands, "coverage": {"observed": observed, "missing": missing, "horizons": horizons}}
 
 
@@ -533,10 +595,29 @@ def summarize_day(attempts: list[dict], fee: float) -> dict:
                     "otherAlternativesMeanPct": _mean(v["alternativesOther"]), "otherAlternativesN": len(v["alternativesOther"]),
                     "alternativeBeatSelected": v["alternativeBeatSelected"], "compared": v["compared"]}
                 for h, v in choice.items() if v["selected"] or v["alternativesInBand"] or v["alternativesOther"]}
+    # item 4 (2026-09-17): coverage is reported SEPARATELY for attempts (did a contract set get captured at all), for
+    # Greeks (do the captured candidates carry a delta, and from where) and for follow-up quotes (observed / missing)
+    without = [{"trigger": a.get("trigger"), "reason": (a.get("refusal") or "no contracts captured (deferred or refused before examination)")}
+               for a in attempts if not (a.get("candidates") or [])]
+    cands_all = [c for a in attempts for c in (a.get("candidates") or [])]
+    greeks_cov = {"candidates": len(cands_all), "withDelta": sum(1 for c in cands_all if c.get("delta") is not None),
+                  "bySource": {}}
+    for c in cands_all:
+        k = str(c.get("greeksSource") or ("chain" if c.get("delta") is not None else "none"))
+        greeks_cov["bySource"][k] = greeks_cov["bySource"].get(k, 0) + 1
+    gross_sum = sum(float(s["actual"].get("grossPnl") or 0) for s in summaries if (s["actual"].get("filledQty") or 0) > 0)
+    net_sum = sum(float(s["actual"].get("netPnl") or 0) for s in summaries if (s["actual"].get("filledQty") or 0) > 0)
     return {"attempts": len(summaries), "filled": sum(1 for s in summaries if (s["actual"].get("filledQty") or 0) > 0),
             "shadow": sum(1 for s in summaries if s["shadow"]),
             "coverage": {"observed": sum(s["coverage"]["observed"] for s in summaries),
                          "missing": sum(s["coverage"]["missing"] for s in summaries)},
+            "coverageDetail": {"attempts": {"total": len(attempts), "withCandidates": len(attempts) - len(without), "withoutCandidates": without},
+                               "greeks": greeks_cov,
+                               "followUps": {"observed": sum(s["coverage"]["observed"] for s in summaries),
+                                             "missing": sum(s["coverage"]["missing"] for s in summaries)}},
+            "actualOutcomes": {"grossSum": round(gross_sum, 2), "netSum": round(net_sum, 2),
+                               "grossBreakevenNetLoss": sum(1 for s in summaries if s["actual"].get("grossBreakevenNetLoss")),
+                               "note": "book fills: gross realized and net after commissions, apart; the risk counter's basis is unchanged"},
             "situations": situations, "contractChoice": contract, "perAttempt": summaries,
             "labels": {"movedAwayAtr": MOVED_AWAY_ATR, "horizons": list(HORIZONS) + ["exit"], "feePerSide": fee,
                        "maxQuoteAgeMs": MAX_QUOTE_AGE_MS, "maxFollowed": MAX_FOLLOWED,

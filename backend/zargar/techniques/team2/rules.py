@@ -113,6 +113,8 @@ class Team2Rules(MarketRules):
     fee_per_contract: float = 1.04          # Webull CA 0.99 + ~0.05 regulatory, per side
     slippage_ticks: int = 1                 # pay the ask + 1 tick, sell the bid − 1 tick
     tick: float = 0.01
+    target_identity_guard: bool = True      # 2026-09-17: a destination must be distinct from the setup's source level (off = the pre-09-17 behaviour)
+    target_identity_guard: bool = True      # 2026-09-17: a destination must be distinct from the setup's source level (off = the pre-09-17 behaviour)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -154,6 +156,8 @@ SETTINGS_MAP: dict[str, str] = {
     "max_concurrent_positions": "max_concurrent_positions", "shrink_after_win": "shrink_after_win",
     "avoid_event_days": "avoid_event_days", "fee_per_contract": "fee_per_contract",
     "quote_candidates": "quote_candidates", "warmup_sessions": "warmup_sessions", "require_fresh_quote": "require_fresh_quote",
+    "target_identity_guard": "target_identity_guard",
+    "target_identity_guard": "target_identity_guard",
     "no_trade_zone": "no_trade_zone", "pm_room_atr": "pm_room_atr", "min_target_atr": "min_target_atr",
     "key_levels": "key_levels", "max_signal_age_min": "max_signal_age_min",
 }
