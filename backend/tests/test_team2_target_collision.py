@@ -192,7 +192,8 @@ async def test_the_fresh_quote_decides_the_room_at_the_fire_long_and_short(monke
     assert runner._enter.await_count == entries
     if not entries:
         skipped = [c.args[1] for c in runner.engine.journal.append.await_args_list if c.args[0] == "TechniquePlanTriggerSkipped"][-1]
-        assert skipped["event"] == "skip_target_behind" and skipped["actionableSource"] == "quote" and skipped["actionable"] == live_spot
+        assert skipped["event"] == "skip_target_behind" and skipped["actionableSource"] == "mid" and skipped["actionable"] == live_spot
+        assert skipped["actionableTs"] == now and skipped["actionableAgeMs"] == 0
 
 
 async def test_a_target_crossed_during_the_awaited_work_is_refused_at_the_order_boundary(monkeypatch):
@@ -212,7 +213,7 @@ async def test_a_target_crossed_during_the_awaited_work_is_refused_at_the_order_
     runner.engine.quotes = _live(101.05, now)
     for stage in ("order", "retry"):
         why = await runner.entry_gate(ap, trade, stage)
-        assert why and f"order boundary ({stage})" in why and "current price 101.05" in why and "reached the target" in why
+        assert why and f"order boundary ({stage})" in why and "current price 101.05" in why and "reached the target" in why and "(mid, 0s old)" in why
     assert "order boundary (submit)" in (runner.entry_guard_predicate(ap, trade) or "")
     assert trade.targets == [101.0]                                           # never rewritten to let the order through
     # a stale quote is not evidence: the time gate and the venue decide (no refusal from this gate)
@@ -222,4 +223,65 @@ async def test_a_target_crossed_during_the_awaited_work_is_refused_at_the_order_
     trade.targets = []
     runner.engine.quotes = _live(101.05, now)
     assert await runner.entry_gate(ap, trade, "order") is None and await runner.entry_gate(ap, trade, "pre_order") is None
+
+
+# ---------------------------------------------------------------- PR204 round 2: the price's own time decides its freshness
+def test_fresh_underlying_binds_the_age_to_the_field_it_uses(monkeypatch):
+    import zargar.techniques.team2.runner as module
+    from zargar.domain import Quote
+    runner, ap = rig()
+    now = int(dt.datetime(2026, 9, 14, 13, 10, tzinfo=ET).timestamp() * 1000)
+    monkeypatch.setattr(module.time, "time", lambda: now / 1000)
+    store = {}
+    runner.engine.quotes = SimpleNamespace(get=lambda _: store.get("q"))
+    # a fresh print: the last, aged by its own trade time — the receipt time is irrelevant
+    store["q"] = Quote(symbol="SPY", bid=100.38, ask=100.42, last=100.4, ts=now - 900_000, last_ts=now - 2_000, quote_ts=now - 1_000)
+    assert runner._fresh_underlying(ap) == (100.4, "last") and runner._actionable_evidence()["ageMs"] == 2_000
+    # a ten-minute-old print re-emitted under a NEW bid/ask: the print is not fresh, the quote midpoint is
+    store["q"] = Quote(symbol="SPY", bid=101.10, ask=101.12, last=100.4, ts=now, last_ts=now - 600_000, quote_ts=now)
+    assert runner._fresh_underlying(ap) == (101.11, "mid") and runner._actionable_evidence()["source"] == "mid"
+    # the options NBBO convention: `source_ts` is bid/ask evidence when `quote_ts` is not carried
+    store["q"] = SimpleNamespace(last=100.4, bid=101.10, ask=101.12, ts=now, source_ts=now - 3_000)
+    assert runner._fresh_underlying(ap) == (101.11, "mid")
+    # old print AND old quote: unavailable, never the receipt time
+    store["q"] = Quote(symbol="SPY", bid=101.10, ask=101.12, last=100.4, ts=now, last_ts=now - 600_000, quote_ts=now - 600_000)
+    assert runner._fresh_underlying(ap) == (None, "stale price")
+    # a crossed quote is not evidence for the midpoint
+    store["q"] = Quote(symbol="SPY", bid=101.20, ask=101.12, last=100.4, ts=now, last_ts=now - 600_000, quote_ts=now)
+    assert runner._fresh_underlying(ap)[0] is None
+    # zero / missing times are no time at all
+    store["q"] = Quote(symbol="SPY", bid=101.10, ask=101.12, last=100.4, ts=0)
+    assert runner._fresh_underlying(ap) == (None, "no price time")
+    store["q"] = SimpleNamespace(last=100.4, ts=now)
+    assert runner._fresh_underlying(ap) == (None, "no price time")
+    store["q"] = SimpleNamespace(last=0.0, bid=0.0, ask=0.0, ts=now)
+    assert runner._fresh_underlying(ap) == (None, "no price")
+    # a time from the future is not fresh either
+    store["q"] = Quote(symbol="SPY", last=100.4, ts=now, last_ts=now + 60_000)
+    assert runner._fresh_underlying(ap)[0] is None
+
+
+def test_alpaca_bars_and_prints_stamp_the_time_of_the_price_they_set(monkeypatch):
+    import zargar.brokers.alpaca as feed_module
+    from zargar.brokers.alpaca import AlpacaQuoteFeed
+    now = int(dt.datetime(2026, 9, 14, 13, 10, tzinfo=ET).timestamp() * 1000)
+    monkeypatch.setattr(feed_module, "now_ms", lambda: now)
+    emitted = []
+    feed = AlpacaQuoteFeed(emitted.append, "", "", on_bars=lambda bars: None)
+    iso = lambda t: dt.datetime.fromtimestamp(t / 1000, dt.timezone.utc).isoformat()
+    # a completed bar sets last to its close, timed at the bar's close
+    feed.handle({"T": "b", "S": "SPY", "t": iso(now - 120_000), "o": 100.0, "h": 100.5, "l": 99.9, "c": 100.3, "v": 1000})
+    feed.handle({"T": "q", "S": "SPY", "bp": 100.28, "ap": 100.32, "bs": 1, "as": 1, "t": iso(now - 500)})
+    q = emitted[-1]
+    assert q.last == 100.3 and q.last_ts == now - 60_000 and q.quote_ts == now - 500 and q.ts == now
+    # a later bid/ask message keeps the print's own time; only the quote time moves
+    feed._st("SPY")["emit_ms"] = 0
+    feed.handle({"T": "q", "S": "SPY", "bp": 101.10, "ap": 101.12, "bs": 1, "as": 1, "t": iso(now)})
+    q2 = emitted[-1]
+    assert q2.last == 100.3 and q2.last_ts == now - 60_000 and q2.quote_ts == now
+    # an eligible print moves last and its time together
+    feed._st("SPY")["emit_ms"] = 0
+    feed.handle({"T": "t", "S": "SPY", "p": 101.11, "s": 100, "t": iso(now)})
+    q3 = emitted[-1]
+    assert q3.last == 101.11 and q3.last_ts == now
 

@@ -81,7 +81,8 @@ def chain(spot=100.0):
 
 
 def rig(opts=None, quote_last=100.4):
-    q = SimpleNamespace(last=quote_last, ts=ms(10, 0), bid=quote_last - .01, ask=quote_last + .01)
+    # the print carries its OWN venue time (PR #204 r2): a quote without one is correctly 'unavailable'
+    q = SimpleNamespace(last=quote_last, ts=ms(10, 0), bid=quote_last - .01, ask=quote_last + .01, last_ts=now_ms(), quote_ts=now_ms())
 
     def get_quote(sym):
         if sym == "SPY":

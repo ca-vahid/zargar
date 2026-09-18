@@ -106,6 +106,13 @@ class Quote:
     # the ~15-min-delayed chain row. Money gates read this, not `ts`, for options.
     source: str = ""
     source_ts: int = 0
+    # PR #204 r2 (2026-09-17, Team2): the freshness of a PRICE is the venue time of THAT field, never `ts` (receipt). A
+    # bid/ask message re-emits the quote with the previous `last` and a new `ts` — that does not re-confirm the print.
+    # `last_ts` = the venue time of the trade or bar that set `last` (0 = unknown); `quote_ts` = the venue time of the
+    # current bid/ask (0 = unknown; for options `source_ts` already carries the NBBO confirmation). Consumers that judge
+    # a price's age read the field's own time and treat 0 as "no evidence".
+    last_ts: int = 0
+    quote_ts: int = 0
     # E17-01 (2026-09-17): when a price was TRANSFORMED locally (the delayed chain's band
     # recentred on a live print), the raw venue prices ride along untouched and `source`
     # becomes "derived:<raw source>" - a display estimate never carries executable provenance

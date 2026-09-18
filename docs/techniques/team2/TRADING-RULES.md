@@ -3122,6 +3122,18 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-17 review r2 of PR #204 (other team: cancellation, measured spread and attribution ACCEPTED; one price-freshness
+  boundary; merge/deployment/activation HELD)** — `_fresh_underlying` read `Quote.last` but aged it by `Quote.ts`, the RECEIPT time:
+  Alpaca's bid/ask messages re-emit the previous print under a new receipt time, so a ten-minute-old last of 100.40 read as fresh
+  beside a new 101.10/101.12 quote and a 101 target still looked ahead; a zero time was accepted too. Fix: the shared `Quote` gains
+  `last_ts` (venue time of the print or bar that set `last`) and `quote_ts` (venue time of the current bid/ask), stamped by the
+  Alpaca trade/quote/bar handlers and by the Yahoo chart poll (the chart minute's close; 0 when unknown); the helper's convention:
+  the last print aged by its OWN time, else the bid/ask midpoint aged by the quote's own time (`quote_ts`, or the NBBO's `source_ts`,
+  which describes bid/ask), else unavailable — never the receipt time, a zero time is no time, a future time is not fresh, a crossed
+  quote is no midpoint. The decision record carries `actionableSource` (last | mid | candle), `actionableTs` and `actionableAgeMs`;
+  the order-boundary refusal names the source and age. Unavailable keeps the accepted behaviour (candle fallback at the fire, no new
+  refusal at the boundary). Their packet verbatim: `tests/test_codex_team2_pr204_price_age.py` (2 failed before, 3 pass). No new
+  trading rule, threshold or sweep.
 - **2026-09-17 review of PR #204 (other team: collision cases repaired; three code boundaries + one attribution correction; merge,
   deployment and activation HELD)** — (1) the actionable price on the LIVE entry path is now the FRESH underlying quote (within
   `stale_seconds`; the candle close only when no fresh quote exists, and the record says which), judged at the fire AND again at the

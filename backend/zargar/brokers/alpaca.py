@@ -209,6 +209,7 @@ class AlpacaQuoteFeed(QuoteFeed):
         return self._state.setdefault(s, {
             "bid": 0.0, "ask": 0.0, "bid_size": 0, "ask_size": 0,
             "last": 0.0, "volume": 0, "day_high": 0.0, "day_low": 0.0, "emit_ms": 0,
+            "last_ts": 0, "quote_ts": 0,   # PR #204 r2: venue time of the print that set `last` / of the current bid-ask
             # F19 (2026-09-04): the day range/volume are SESSION-to-date, not process-to-date.
             # `day` = the ET session the running numbers belong to (reset on a new session);
             # `vol_live` = regular-session prints seen since that reset; `vol_seed` = the
@@ -252,6 +253,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             st["ask"] = float(m.get("ap") or 0)
             st["bid_size"] = int((m.get("bs") or 0) * 100)     # round lots → shares
             st["ask_size"] = int((m.get("as") or 0) * 100)
+            st["quote_ts"] = parse_rfc3339_ms(str(m["t"])) if m.get("t") else now_ms()
             self._emit(s, st)
         elif t == "t" and s:
             st = self._st(s)
@@ -267,6 +269,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             regular = self._is_regular(ts)
             if px > 0 and not (conds & _NO_LAST_CONDS):
                 st["last"] = px
+                st["last_ts"] = ts                       # the print's own venue time (PR #204 r2)
                 if regular:                              # F19: the day range is the regular session's
                     st["day_high"] = max(st["day_high"], px)
                     st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)
@@ -283,6 +286,7 @@ class AlpacaQuoteFeed(QuoteFeed):
                       volume=int(m.get("v") or 0), source="exchange")
             if bar.close > 0:
                 st["last"] = bar.close
+                st["last_ts"] = bar.ts + 60_000          # the bar's close time (PR #204 r2)
             if self._on_bars is not None and bar.open > 0:
                 self._on_bars([bar])
         elif t == "error":
@@ -324,7 +328,10 @@ class AlpacaQuoteFeed(QuoteFeed):
                   day_high=st["day_high"],
                   day_low=st["day_low"],
                   session=(ctx.session if ctx else ""),
-                  trade_size=int(st.get("pending_size") or 0))
+                  trade_size=int(st.get("pending_size") or 0),
+                  # a `last` that is really the bid/ask midpoint (no print yet) carries the quote's time as its evidence
+                  last_ts=int((st.get("last_ts") or 0) if st["last"] else (st.get("quote_ts") or 0)),
+                  quote_ts=int(st.get("quote_ts") or 0))
         st["pending_size"] = 0
         q.ts = now
         self._on_quote(q)

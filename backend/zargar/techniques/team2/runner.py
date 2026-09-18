@@ -299,22 +299,48 @@ class Team2Runner(PlanRunner):
         return None
 
     def _fresh_underlying(self, ap: ArmedPlan) -> tuple[float | None, str]:
-        """The underlying's fresh last print (within `stale_seconds`), or (None, why) — never a stale price."""
+        """The underlying's ACTIONABLE price with evidence bound to the field it comes from (PR #204 r2, 2026-09-17):
+        (1) the last print when its own venue time (`Quote.last_ts`) is within `stale_seconds` — source `last`; else
+        (2) the bid/ask midpoint when the quote is sane and its own venue time (`quote_ts`, or the NBBO's `source_ts`)
+        is within the bound — source `mid`; else (3) unavailable, with the reason. `Quote.ts` (receipt) is never
+        evidence: a bid/ask message re-emits an old print under a new receipt time, and a zero time is no time.
+        The caller treats unavailable as "no fresh evidence" (candle fallback at the fire, no refusal at the boundary)."""
         quotes = getattr(getattr(self, "engine", None), "quotes", None)
         q = quotes.get(ap.symbol) if quotes is not None and hasattr(quotes, "get") else None
         if q is None:
             return None, "no quote"
-        last = float(getattr(q, "last", 0) or 0)
-        if last <= 0:
-            return None, "no last"
         try:
-            max_age = int(self.rt("stale_seconds", 180) or 180)
+            max_age_ms = int(self.rt("stale_seconds", 180) or 180) * 1000
         except Exception:  # noqa: BLE001
-            max_age = 180
-        ts = getattr(q, "ts", None)
-        if ts and int(time.time() * 1000) - int(ts) > max_age * 1000:
-            return None, "stale quote"
-        return last, "quote"
+            max_age_ms = 180_000
+        now = int(time.time() * 1000)
+        self.__dict__["_last_actionable"] = None
+
+        def fresh(ts_) -> bool:
+            try:
+                t = int(ts_ or 0)
+            except (TypeError, ValueError):
+                return False
+            return t > 0 and 0 <= now - t <= max_age_ms
+
+        last = float(getattr(q, "last", 0) or 0)
+        last_ts = getattr(q, "last_ts", 0)
+        if last > 0 and fresh(last_ts):
+            self.__dict__["_last_actionable"] = {"price": last, "source": "last", "priceTs": int(last_ts), "ageMs": now - int(last_ts)}
+            return last, "last"
+        bid, ask = float(getattr(q, "bid", 0) or 0), float(getattr(q, "ask", 0) or 0)
+        qts = getattr(q, "quote_ts", 0) or getattr(q, "source_ts", 0)
+        if bid > 0 and ask > 0 and bid <= ask and fresh(qts):
+            mid = round((bid + ask) / 2, 4)
+            self.__dict__["_last_actionable"] = {"price": mid, "source": "mid", "priceTs": int(qts), "ageMs": now - int(qts)}
+            return mid, "mid"
+        if last <= 0 and not (bid > 0 and ask > 0):
+            return None, "no price"
+        return None, ("stale price" if (last > 0 and int(last_ts or 0) > 0) or int(qts or 0) > 0 else "no price time")
+
+    def _actionable_evidence(self) -> dict:
+        """The price/source/time of the helper's most recent answer (for the decision record)."""
+        return dict(self.__dict__.get("_last_actionable") or {})
 
     def _target_live_refusal(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
         """PR204 review (2026-09-17): immediately before a NEW order leaves — after the awaited contract pick, review, sizing
@@ -328,13 +354,15 @@ class Team2Runner(PlanRunner):
             tgt = float(trade.targets[0])
         except (TypeError, ValueError):
             return None
-        px, _src = self._fresh_underlying(ap)
+        px, src = self._fresh_underlying(ap)
         if px is None:
             return None                                     # no fresh evidence: the time gate and the venue decide
         tick = float(getattr(self.rules_for(ap), "tick", 0.01) or 0.01)
         kind_, why_ = destination_check(tgt, None, None, px, trade.direction, tick)
         if kind_ == "behind":
-            return f"order boundary ({stage}): {why_} — the live price reached the target during the awaited work; no entry"
+            ev_ = self._actionable_evidence()
+            return (f"order boundary ({stage}): {why_} — the live price ({src}, {int((ev_.get('ageMs') or 0) / 1000)}s old) reached the "
+                    f"target during the awaited work; no entry")
         return None
 
     async def entry_gate(self, ap: ArmedPlan, trade: Trade, stage: str) -> str | None:
@@ -810,9 +838,11 @@ class Team2Runner(PlanRunner):
             rec = self._diag_of(ap.run_id)["attempts"].get(trade.trigger_id)
             if rec is None or not rec.get("entryLocation") or "submission" in rec["entryLocation"]:
                 return
-            q = self.engine.quotes.get(ap.symbol)
-            last = float(q.last) if q is not None and q.last and q.last > 0 else None
-            disp = diag.submission_displacement(rec["entryLocation"], last, int(time.time() * 1000), getattr(q, "ts", None))
+            last, src = self._fresh_underlying(ap)        # the same convention as the target gate: a price with its own time
+            ev_ = self._actionable_evidence()
+            disp = diag.submission_displacement(rec["entryLocation"], last, int(time.time() * 1000), ev_.get("priceTs"))
+            disp["submission"]["priceSource"] = src if last is not None else None
+            disp["submission"]["priceAgeMs"] = ev_.get("ageMs")
             # 2026-09-17 item 4: target / stop room from the ACTUAL underlying quote at the order boundary, the
             # source-level identity of the target, and a labelled payoff estimate for the selected contract
             room = diag.target_room(rec["entryLocation"], last, trade.targets[0] if trade.targets else None, trade.stop,
@@ -1570,6 +1600,7 @@ class Team2Runner(PlanRunner):
         # candle is the read's evidence, not the price an order would meet; a stale or missing quote falls back to the close
         live_px, live_src = self._fresh_underlying(ap) if journal else (None, "replay")
         actionable = float(live_px) if live_px is not None else float(bar.close)
+        act_ev = self._actionable_evidence() if live_px is not None else {"price": float(bar.close), "source": "candle", "reason": live_src}
         target, target_refusal = self.resolve_fire_target(e, setup, spot, direction, actionable=actionable,
                                                           anchor=(setup.get("anchor") if getattr(rules_now, "target_identity_guard", True) else None),
                                                           tick=float(getattr(rules_now, "tick", 0.01) or 0.01))
@@ -1578,12 +1609,14 @@ class Team2Runner(PlanRunner):
             # own decision kind — the setup's destination is the level it just broke, for every entry kind of the setup.
             kind_ = "skip_target_collision" if "source-target collision" in target_refusal else "skip_target_behind"
             self._log(ap, kind_, f"{tid}: {target_refusal}", trigger=tid, spot=spot, close=float(bar.close), anchor=setup.get("anchor"),
-                      actionable=actionable, actionableSource=("quote" if live_px is not None else "candle"), sourceTs=e.get("ts"))
+                      actionable=actionable, actionableSource=act_ev.get("source"), actionableTs=act_ev.get("priceTs"),
+                      actionableAgeMs=act_ev.get("ageMs"), sourceTs=e.get("ts"))
             if journal:
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": kind_,
                     "spot": spot, "close": float(bar.close), "anchor": setup.get("anchor"), "actionable": actionable,
-                    "actionableSource": ("quote" if live_px is not None else "candle"), "why": target_refusal, "ts": e.get("ts")},
+                    "actionableSource": act_ev.get("source"), "actionableTs": act_ev.get("priceTs"), "actionableAgeMs": act_ev.get("ageMs"),
+                    "actionableUnavailable": act_ev.get("reason"), "why": target_refusal, "ts": e.get("ts")},
                     aggregate_type="technique_run", aggregate_id=ap.run_id)
                 self._record_unfilled(ap, tid)
             return

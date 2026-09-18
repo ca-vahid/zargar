@@ -2313,3 +2313,13 @@ evidence), why the bank and the private tape diverged, and whether a correction 
 should be quarantined at intake. Read-only evidence:
 `python -m zargar.tools.team2_pm_audit --date 2026-09-17`; note `docs/techniques/team2/notes/research/2026-09-17-premarket-input-reconciliation.md`.
 No plan or bar was rewritten.
+
+### A price is as fresh as ITS OWN venue time, never as the quote's receipt time — 2026-09-17 (Team2 PR #204 r2; shared `Quote` fields)
+
+`Quote.ts` is when the app received/re-stamped the object. A feed that emits on every bid/ask message re-emits the previous
+`last` under a new `ts`, so aging `last` by `ts` called a ten-minute-old print fresh (review r2 of PR #204). `Quote` now carries
+`last_ts` (venue time of the print or bar that set `last`) and `quote_ts` (venue time of the current bid/ask); the Alpaca
+trade/quote/bar handlers and the Yahoo chart poll stamp them (0 = unknown). Rule for every consumer that judges a price's age:
+read the field's own time, treat 0 as no evidence, never fall back to `ts`; for options the NBBO's `source_ts` is the bid/ask
+evidence (its contract, F-2026-09-02). Team2's `_fresh_underlying` is the reference implementation (last by `last_ts`, else the
+midpoint by `quote_ts`/`source_ts`, else unavailable).
