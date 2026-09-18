@@ -221,23 +221,76 @@ def test_observer_stale_first_sample_is_raw_and_a_later_fresh_quote_supplies_the
     assert [p for p in out3 if p["rung"] == "tp1-reclaim"] == []
 
 
-def test_observer_partial_depth_is_raw_then_sufficient_depth_is_covered_and_pending_exit_blocks_the_signal():
+def _bar_at_signal():
+    return SimpleNamespace(ts=SIGNAL_BAR, close=23.55, open=23.35, high=23.6, low=23.33)
+
+
+def _reclaim_records(fake, PR, ap, tr, quotes, at):
+    return [p for p in PR._shadow_capture(fake, ap, [tr], quotes["BMNR"], at, 0.25) if p["rung"] == "tp1-reclaim"]
+
+
+def test_observer_partial_depth_uses_the_raw_key_and_full_depth_later_is_covered_while_the_raw_record_is_still_queued():
+    """Remainder 3: the signal-time quote shows depth 1 (positive but below the remainder) -> raw key, record queued (pending,
+    not yet acknowledged); a later quote with depth 3 arrives BEFORE the raw write is acknowledged -> the covered key is
+    captured anyway. Then, once both are acknowledged, no further reclaim record is produced."""
     now = _ms(9, 33, 1)
-    quotes = {"BMNR": _quote("BMNR", 23.53, 23.55, 100, now), "BMNR260925P00023000": _quote("BMNR260925P00023000", 0.78, 0.83, 1, now)}   # depth 1 < remaining 3
+    quotes = {"BMNR": _quote("BMNR", 23.53, 23.55, 100, now), "BMNR260925P00023000": _quote("BMNR260925P00023000", 0.78, 0.83, 1, now)}
     fake, PR = _fake_runner(quotes)
     ap = SimpleNamespace(run_id="RUN", symbol="BMNR", config=SimpleNamespace(portfolio_id="p", single_contract_exit="tp2"))
-    tr = _trade()
-    out = PR._reclaim_signal(fake, ap, tr, SimpleNamespace(ts=SIGNAL_BAR, close=23.55, open=23.35, high=23.6, low=23.33))
-    assert out[0]["modeled"]["scorable"] is True and out[0]["modeled"]["coveredQty"] == 1 and out[0]["modeled"]["unresolvedQty"] == 2
-    # the observer records what it saw; coverage below the remainder is the REDUCER's rejection (partial coverage case) -
-    # the rung's covered key is consumed by a scorable sample, so the reducer must see coverage explicitly
-    fake._shadow_seen.add(out[0]["_key"])
-    r = runner_protection("short", OTP1, OENTRY, OSTOP, OEXITS, OEXECS, _opt_bars(), CUT, observations=[{**out[0], "observedAt": now}], **OPT)
-    assert r["outcome"] == "underlying_proxy_only" and any("coverage" in x["why"] for x in r["observationsRejected"])
-    # a working exit blocks the signal entirely (pending-exit precedence)
-    tr2 = _trade(); tr2.exits.append({"kind": "tp2", "orderId": "o-tp2", "qty": 1, "filledQty": 0.0, "status": "SUBMITTED"})   # a working exit
-    assert tr2.pending_exit_qty == 1.0
-    assert PR._reclaim_signal(fake, ap, tr2, SimpleNamespace(ts=SIGNAL_BAR, close=23.55, open=23.35, high=23.6, low=23.33)) == [] and tr2.reclaim_signal is None
+    tr = _trade(remaining=3.0)
+    first = PR._reclaim_signal(fake, ap, tr, _bar_at_signal())
+    assert len(first) == 1 and first[0]["_key"][-1] == "tp1-reclaim-raw", "positive coverage below the remainder is RAW"
+    assert first[0]["modeled"]["scorable"] is True and first[0]["modeled"]["coveredQty"] == 1 and first[0]["modeled"]["unresolvedQty"] == 2
+    assert first[0]["_key"] in fake._shadow_pending and first[0]["_key"] not in fake._shadow_seen      # queued, not acknowledged
+    # a second depth-1 quote while the raw record is queued: nothing new (raw recorded once)
+    later = now + 6000
+    quotes["BMNR260925P00023000"] = _quote("BMNR260925P00023000", 0.785, 0.835, 1, later); quotes["BMNR"] = _quote("BMNR", 23.54, 23.56, 100, later)
+    assert _reclaim_records(fake, PR, ap, tr, quotes, later) == []
+    # full depth arrives while the raw record is STILL queued -> covered key captured
+    later2 = now + 12_000
+    quotes["BMNR260925P00023000"] = _quote("BMNR260925P00023000", 0.79, 0.84, 3, later2); quotes["BMNR"] = _quote("BMNR", 23.56, 23.58, 100, later2)
+    cov = _reclaim_records(fake, PR, ap, tr, quotes, later2)
+    assert len(cov) == 1 and cov[0]["_key"][-1] == "tp1-reclaim" and cov[0]["modeled"]["coveredQty"] == 3 and cov[0]["modeled"]["unresolvedQty"] == 0
+    assert cov[0]["signal"]["barTs"] == SIGNAL_BAR and cov[0]["tradeInstance"] == "ENTRY-1"
+    # acknowledge both writes; a later even deeper / better quote produces nothing more
+    for k in (first[0]["_key"], cov[0]["_key"]):
+        fake._shadow_seen.add(k); fake._shadow_pending.discard(k)
+    quotes["BMNR260925P00023000"] = _quote("BMNR260925P00023000", 0.95, 1.00, 10, later2 + 5000)
+    assert _reclaim_records(fake, PR, ap, tr, quotes, later2 + 5000) == []
+    # the reducer: the raw depth-1 record is rejected for coverage, the depth-3 record is the earliest valid one -> compared
+    obs = [{**first[0], "observedAt": now}, {**cov[0], "observedAt": later2}]
+    for o in obs:
+        o.pop("_key", None)
+    r = runner_protection("short", OTP1, OENTRY, OSTOP, OEXITS, OEXECS, _opt_bars(), CUT, observations=obs, **OPT)
+    assert r["outcome"] == "compared" and r["modeledExitPx"] == 0.79 and r["modeledExitTs"] == later2
+    assert any("coverage" in x["why"] for x in r["observationsRejected"])
+
+
+def test_observer_partial_depth_raw_acknowledged_first_then_full_depth_is_covered_and_pending_exit_blocks_the_signal():
+    """Same shape, but the raw record is ACKNOWLEDGED before the full-depth quote arrives; eligibility must still be open."""
+    now = _ms(9, 33, 1)
+    quotes = {"BMNR": _quote("BMNR", 23.53, 23.55, 100, now), "BMNR260925P00023000": _quote("BMNR260925P00023000", 0.78, 0.83, 1, now)}
+    fake, PR = _fake_runner(quotes)
+    ap = SimpleNamespace(run_id="RUN", symbol="BMNR", config=SimpleNamespace(portfolio_id="p", single_contract_exit="tp2"))
+    tr = _trade(remaining=3.0)
+    first = PR._reclaim_signal(fake, ap, tr, _bar_at_signal())
+    assert first[0]["_key"][-1] == "tp1-reclaim-raw"
+    fake._shadow_seen.add(first[0]["_key"]); fake._shadow_pending.discard(first[0]["_key"])           # acknowledged
+    later = now + 9000
+    quotes["BMNR260925P00023000"] = _quote("BMNR260925P00023000", 0.80, 0.85, 3, later); quotes["BMNR"] = _quote("BMNR", 23.56, 23.58, 100, later)
+    cov = _reclaim_records(fake, PR, ap, tr, quotes, later)
+    assert len(cov) == 1 and cov[0]["_key"][-1] == "tp1-reclaim" and cov[0]["modeled"]["coveredQty"] == 3
+    # P-02 semantics untouched: a tp1-candidate sample with depth >= its k (1 of 2 contracts) is covered on the first scorable sample
+    tr2 = _trade(remaining=2.0); tr2.filled_qty = 2.0; tr2.exits.clear()
+    quotes["BMNR260925P00023000"] = _quote("BMNR260925P00023000", 0.80, 0.85, 1, later)
+    quotes["BMNR"] = _quote("BMNR", 23.28, 23.30, 100, later)               # the underlying AT the P-02 candidate's TP1 (short: <= 23.3548)
+    fake.rt = lambda key, default=None: True if key == "shadow_p02_candidate" else default
+    out = [p for p in PR._shadow_capture(fake, ap, [tr2], quotes["BMNR"], later, 0.25) if p["rung"] == "tp1-candidate"]
+    assert len(out) == 1 and out[0]["_key"][-1] == "tp1-candidate" and out[0]["modeled"]["coveredQty"] == 1
+    # a working exit blocks the reclaim signal entirely (pending-exit precedence)
+    tr3 = _trade(); tr3.exits.append({"kind": "tp2", "orderId": "o-tp2", "qty": 1, "filledQty": 0.0, "status": "SUBMITTED"})
+    assert tr3.pending_exit_qty == 1.0
+    assert PR._reclaim_signal(fake, ap, tr3, _bar_at_signal()) == [] and tr3.reclaim_signal is None
 
 
 def test_never_tp1_diag_is_descriptive_and_skips_filled_trims():

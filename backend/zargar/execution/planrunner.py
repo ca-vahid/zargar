@@ -706,8 +706,11 @@ class PlanRunner(SessionListener):
             if candidate:
                 # PF-01 (2026-09-15) / P-06 re-review (2026-09-17): the frozen policies take the FIRST COVERED opportunity - an
                 # unscorable sample (stale, absent, thin, pending exit, stop first) is recorded once as raw evidence under its
-                # own key and leaves the candidate eligible for a later covered observation
-                if not scorable:
+                # own key and leaves the candidate eligible for a later covered observation. P-06 needs the WHOLE remainder
+                # covered (the candidate sells all of it), so positive coverage below `proposed` is raw too and the covered key
+                # stays open for a later full-depth quote; P-02 keeps its own quantity semantics (its reducer applies k).
+                partial = label == "tp1-reclaim" and covered + 1e-9 < float(proposed)
+                if not scorable or partial:
                     key = key[:4] + (label + "-raw",)
                     if key in seen or key in pending:
                         return

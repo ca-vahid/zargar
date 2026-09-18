@@ -79,6 +79,20 @@ already-on shadow knob once deployed (PLATFORM-RULES entry).
 - [x] **Second preparation receipt (2026-09-17 18:45 PT, before the restart):** no rerun. The 39 EM arms for 2026-09-18 from the 14:55-16:23 PT batch stand: server EM armed = 39, all `planFor` 2026-09-18, status `armed`, attention 0; total armed 54 (tip 12, team2 3). Nothing in the P-06 corrections touches preparation, thresholds or arming.
 - [x] **Second deployment receipt (2026-09-17 18:49 PT):** readiness safe (market closed, 0 open trades, no analyst run in flight); `deploy.ps1` under the lease from `C:/Cursor/zargar` (fast-forward 330328c -> 46c50eb, frontend build + check-release green) -> elevated shell exit 8 -> `ZargarRestart` task at 18:49:43; health v0.8.13 build `46c50eb7` after 95 s; receipt phase `verified`, expected / healthy 0.8.13. Restoration by hand against `logs/restart-inventory-20260917-184920.json` (60 s probe, retries): armed 54 before / 54 after by id (enhanced_market 39, tip 12, team2 3), 0 missing, 0 new; resting orders 27 -> 27; open trades 0 -> 0; one engine pair + gateway + ingest workers; bundle rebuilt 18:49; no log errors. Runtime defaults after the restart: `sim_max_option_spread_pct` 0.0 (OFF); `shadow_exit_observe` True and `shadow_p02_candidate` True (unchanged, user decision) - the P-06 reclaim observer is therefore ACTIVE as an observation-only path from this restart (disclosed; journal rows only, no order, no exit); `fire_decision_mode` deterministic. Loop lag 10 ms, 0 stalls.
 
+## Addendum 2 - the remaining partial-depth case (reviewer follow-up after the 0.8.13 verification)
+
+`_shadow_capture_rung`: for the `tp1-reclaim` rung, positive coverage below the required remainder now takes the RAW key and
+leaves full-coverage eligibility open (P-02's `tp1-candidate` quantity semantics unchanged). End-to-end cases in
+`tests/test_em_runner_protection.py`: remainder 3, first quote depth 1 -> raw key (scorable, coveredQty 1, unresolved 2), a
+second depth-1 quote records nothing, a depth-3 quote arriving WHILE the raw record is still queued -> covered key with
+coveredQty 3; after both are acknowledged a later deeper quote records nothing; the reducer rejects the raw record for
+coverage and compares on the depth-3 one. Second variant: raw record ACKNOWLEDGED before the depth-3 quote -> still covered;
+P-02 control: a 2-contract candidate with depth 1 (>= its k) is covered on the first scorable sample; a working exit still
+blocks the signal. Research correction only - no batch rerun, no trading-policy change; rides the NEXT coordinated release
+(0.8.14 block on the branch, not deployed at the time of this addendum).
+
+- [ ] Third deployment receipt (0.8.14): _pending the next coordinated release_
+
 ## Kept
 
 Rules, thresholds, observation knobs, the preparation flow and live gates unchanged; the 8% friction marker a marker; no

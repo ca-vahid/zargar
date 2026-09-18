@@ -1430,3 +1430,8 @@ Tested code 330328c; deployed 46c50eb (adds the pyproject version line the first
 refused that attempt at the build step, no restart happened). Restoration 54/54 by id. From this restart the P-06 reclaim
 observer runs as an observation-only path under the on `shadow_exit_observe` knob. Next priority: the executable-profit
 measurement (ED-04, EM desk owner; Tips desk for the shared quote/mark layer).
+
+### 2026-09-17 late - P-06 partial-depth rule (0.8.14 block, next coordinated release)
+
+A first contract quote with some depth but less than the remainder is raw evidence for the reclaim observation; the covered
+key stays open (verified while the raw write is queued and after it is acknowledged). P-02 semantics untouched. Research only.

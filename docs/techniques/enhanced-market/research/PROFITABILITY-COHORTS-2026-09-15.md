@@ -171,3 +171,9 @@ chronological quote/observation times, disposition `observed`, coverage >= remai
 cutoff and position close - a missing field fails; the EARLIEST valid observation wins, rejections are listed with
 reasons. Dollars are OPTION-ONLY (shares are proxy-only even with an observation - disclosed); until an observation
 passes in production every P-06 row is `underlying_proxy_only` or unavailable. P-02 collection and reducer unchanged.
+
+**P-06 partial-depth rule (2026-09-17 late, reviewer follow-up).** The candidate sells the WHOLE remainder, so an observation
+whose covered quantity is positive but below the remainder is RAW evidence (key `tp1-reclaim-raw`, recorded once) and the
+covered key `tp1-reclaim` stays open for a later fully covered quote - both while the raw write is still queued and after it
+is acknowledged. The reducer already rejected partial coverage; the observer now agrees with it. P-02's `tp1-candidate`
+keeps its own quantity semantics (its reducer applies k; a depth >= k sample is covered on the first scorable sample).
