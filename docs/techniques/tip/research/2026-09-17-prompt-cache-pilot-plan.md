@@ -106,3 +106,13 @@ Stop rule: abort if any call reports `cache_creation_input_tokens` 0 AND `cache_
 
 No live routing change, no recap route, no context trimming (a separate experiment), no order, no knowledge write, no
 change to `techniques.tip.prompt_cache` in production (OFF). Approval needed: the $8 cap and the go for PAID calls.
+
+## User decision 2026-09-17 late: paid pilot SKIPPED for now, caching stays OFF
+
+The user closed E17 without running the paid pilot: "Its expected benefit is small, and the claimed $8 hard cap still
+relies on estimated tokens and doesn't fully account for retries across separate invocations. It is not a deployment
+blocker." Both caveats are correct and recorded here: (1) the pre-call check prices a chars/4 ESTIMATE - only the
+post-call charge uses the provider's count, so a single attempt can overshoot the remaining headroom by the gap between
+estimate and actual; (2) `ReplayBudget` lives for ONE CLI invocation - a second invocation starts a fresh ledger, so the
+ceiling is per command, not per day. Neither is fixed here (no further feature work for this review). Production
+`techniques.tip.prompt_cache` remains False; the harness stays available for a later, separately approved measurement.
