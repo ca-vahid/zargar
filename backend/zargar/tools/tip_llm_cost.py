@@ -174,7 +174,8 @@ def main() -> None:
         finally:
             await db.dispose()
         rep = rollup(runs, rates)
-        print(f"Tips model usage {a.since}..{until} - {len(runs)} run(s); rates for: {sorted(rates) or 'NONE (all unpriced)'}")
+        named = sorted(k for k in rates if not str(k).startswith("_"))
+        print(f"Tips model usage {a.since}..{until} - {len(runs)} run(s); rates for: {named or 'NONE (all unpriced)'}")
         print("| day | kind | model | runs | calls | in | out | cacheRead | cacheWrite | unknownCalls | partialRuns | noUsage | failed | USD |")
         print("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for g in rep["groups"]:

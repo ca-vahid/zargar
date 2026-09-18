@@ -46,6 +46,12 @@ def _loop_now() -> float:
     return time.monotonic()
 
 
+async def _backoff_sleep(seconds: float) -> None:
+    """Provider-retry backoff. A seam: tests replace THIS, never asyncio.sleep globally (a global
+    sleep mock stalls wait_for / the engine's own loops - Codex review 2026-09-17)."""
+    await asyncio.sleep(seconds)
+
+
 def prompt_cache_enabled(eng) -> bool:
     """E17-03: knob-gated prompt caching of the STABLE prefix (system prompt + schema + tool
     definitions). Off by default - the reviewer's rule is to validate actual cache hits,
@@ -1233,10 +1239,10 @@ def parse_single_object(raw: str, model_cls, *, what: str = "reply"):
     not validate against the schema (a stray {"x": 1}) is harmless and ignored; trailing
     prose is harmless. Trading instructions are never chosen by "first object wins"."""
     import json as _json
-    s = (raw or "").strip()
-    if s.startswith("```"):
-        s = s.split("\n", 1)[1] if "\n" in s else s
-        s = s.rsplit("```", 1)[0]
+    import re as _re
+    # E17-F2-R2: a closing fence is NOT the end of the reply - strip every fence marker and
+    # inspect the COMPLETE text, so a "Correction:" object after the fence is seen
+    s = _re.sub(r"```[A-Za-z0-9_-]*", "\n", raw or "").strip()
     i = s.find("{")
     if i == -1:
         raise ValueError(f"validation: no JSON object in {what}")
@@ -1620,15 +1626,30 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 st["inFlight"] = False
                 break
             except asyncio.TimeoutError:
-                # the provider call itself outlived the deadline: its billing is unknown
+                # the provider call outlived its allowance: its billing is unknown either way
                 st["inFlight"] = False
                 _usage_record(usage, None, latency_ms=(time.perf_counter() - _t0) * 1000.0,
-                              attempt=attempt, error="timeout: provider call cut at the run deadline")
+                              attempt=attempt, error=("timeout: final call cut at the run deadline" if force_final
+                                                      else "timeout: optional call cut at the reserve boundary"))
                 usage["unknownCalls"] = int(usage.get("unknownCalls") or 0) + 1
                 usage["partial"] = True
+                _rem_after = _remaining_s(st)
+                if not force_final and (_rem_after is None or _rem_after > 1.0):
+                    # E17-F1-R2: an OPTIONAL call was cut at the reserve boundary - the reserve is
+                    # still there, so spend it on the final answer (tools off) inside the original
+                    # deadline instead of failing the run with time in hand
+                    st["forceFinal"] = True
+                    rec.step("note", f"Optional call cut at the reserve boundary ({stage}: "
+                                     f"{'n/a' if _rem_after is None else round(_rem_after, 1)} s left) — usage marked partial; "
+                                     "asking for the final answer with tools disabled.",
+                             deadline={"kind": "optional-timeout", "stage": stage,
+                                       "remainingS": None if _rem_after is None else round(_rem_after, 1), "reserveS": reserve})
+                    resp = None
+                    break
+                # the FINAL call itself was cut: terminal, typed
                 st["failure"] = _typed_failure("timeout", stage=stage, st=st,
-                                               detail="provider call exceeded the run deadline (usage of that call unknown)")
-                rec.step("error", f"Provider call cut at the run deadline ({stage}); usage marked partial.")
+                                               detail="final answer call exceeded the run deadline (usage of that call unknown)")
+                rec.step("error", f"Final call cut at the run deadline ({stage}); usage marked partial.")
                 raise AnalystDeadline(st["failure"]["detail"])
             except asyncio.CancelledError:
                 st["inFlight"] = False
@@ -1662,7 +1683,7 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 delay = _API_RETRY_DELAYS[min(attempt - 1, len(_API_RETRY_DELAYS) - 1)]
                 rec.step("note", f"Transient API error ({type(exc).__name__}) — "
                                  f"retry {attempt}/2 in {delay:g}s.")
-                await asyncio.sleep(delay)
+                await _backoff_sleep(delay)
         if resp is None:
             continue                                   # optional call abandoned for the final one
         _usage_record(usage, resp, latency_ms=(time.perf_counter() - _t0) * 1000.0,

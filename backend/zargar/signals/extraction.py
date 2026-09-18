@@ -417,10 +417,9 @@ def _parse_result_json(raw: str) -> ExtractionResult:
     """Model text -> ExtractionResult. Tolerates markdown fences and prose
     around the object; pydantic validation (incl. the enum normalizers in
     schemas.py) is the contract."""
-    s = raw.strip()
-    if s.startswith("```"):
-        s = s.split("\n", 1)[1] if "\n" in s else s
-        s = s.rsplit("```", 1)[0]
+    import re as _re
+    # E17-F2-R2: fences are markers, not boundaries - strip them all and inspect the whole reply
+    s = _re.sub(r"```[A-Za-z0-9_-]*", "\n", raw or "").strip()
     i = s.find("{")
     if i == -1:
         raise ValueError("validation: no JSON object in response")
