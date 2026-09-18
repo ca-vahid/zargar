@@ -90,6 +90,33 @@ def build_skeleton(symbol: str, date: str, prev_bars_15m: list[Bar], rules: Team
     }
 
 
+def premarket_extrema(today_bars_1m: list[Bar], date: str) -> dict:
+    """2026-09-17 (other team's EOD review §5): a derived level names the bar that produced it. SPY's plan froze a PML of
+    660.65 while the bank held 757.53 — an exchange CORRECTION of the 07:46 minute had delivered a corrupt low into the
+    private tape, and nothing recorded which bar the extreme came from. Every pre-market extreme now carries its source
+    bar (ts, OHLCV, provenance) and the hash of every input bar, so a frozen value can be reconciled against the bank
+    and against replay without rewriting the decision."""
+    import hashlib
+    from ...marketstructure.aggregate import bar_session
+    pre = sorted([b for b in today_bars_1m if session_date(b.ts) == date and bar_session(b.ts) == "pre"], key=lambda b: b.ts)
+    h = hashlib.sha1()
+    for b in pre:
+        h.update(f"{b.ts}|{b.open}|{b.high}|{b.low}|{b.close}|{b.volume}|{getattr(b, 'source', '') or ''}\n".encode())
+    def ident(b: Bar | None) -> dict | None:
+        if b is None:
+            return None
+        return {"ts": int(b.ts), "open": float(b.open), "high": float(b.high), "low": float(b.low), "close": float(b.close),
+                "volume": int(b.volume or 0), "source": getattr(b, "source", "") or ""}
+    hi = max(pre, key=lambda b: b.high) if pre else None
+    lo = min(pre, key=lambda b: b.low) if pre else None
+    return {"pmh": ({"value": float(hi.high), "bar": ident(hi)} if hi else None),
+            "pml": ({"value": float(lo.low), "bar": ident(lo)} if lo else None),
+            "inputs": {"bars": len(pre), "hash": h.hexdigest()[:16], "firstTs": (int(pre[0].ts) if pre else None),
+                       "lastTs": (int(pre[-1].ts) if pre else None),
+                       "sources": sorted({(getattr(b, "source", "") or "unknown") for b in pre})},
+            "computedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+
+
 def complete_plan(skeleton: dict, today_bars_1m: list[Bar]) -> dict:
     from ...marketstructure.dailylevels import Zone
     plan = dict(skeleton)
@@ -106,7 +133,7 @@ def complete_plan(skeleton: dict, today_bars_1m: list[Bar]) -> dict:
         pre = filter_session(today, "pre")
         open_price = sorted(pre, key=lambda b: b.ts)[-1].close if pre else None
         open_src = "premarket_last" if pre else None
-    plan.update({"pmh": pmh, "pml": pml})
+    plan.update({"pmh": pmh, "pml": pml, "pmExtrema": premarket_extrema(today, date)})
     if plan.get("keyLevels"):
         from .levels import mask_pm
         plan["keyLevels"] = mask_pm(plan["keyLevels"], pmh, pml, stage=("completed" if rth else "provisional"))

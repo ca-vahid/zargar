@@ -150,6 +150,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.chase_cap_mult": 1.5,          # F14: entry limit <= target_premium x this (the premium band)
     "techniques.team2.premium_pick": "closest",      # F36: model and live pick the strike CLOSEST to the target
     "techniques.team2.quote_candidates": 8,          # F105/F108: listed OTM contracts (nearest spot first) quoted live before a verdict
+    "techniques.team2.chain_cache_seconds": 900,     # 2026-09-17: listing (which contracts exist) cached per provider/symbol/expiry; prices are always re-quoted live
+    "techniques.team2.chain_cache_max_age_seconds": 14400,   # after a rate-limited/transient failure a listing up to this old may serve (labelled stale-cache)
+    "techniques.team2.target_identity_guard": True,  # 2026-09-17 item 1: a target that is the setup\'s own broken level is refused (both entry kinds); false = pre-09-17 behaviour
     "techniques.team2.require_fresh_quote": True,    # F108: no live NBBO -> the entry is DEFERRED, never priced off the delayed chain
     "techniques.team2.key_levels": "off",            # C2 (2026-09-13, research): off | D1 | D2 | D3 — sweeps only, gated on C6
     "techniques.team2.max_signal_age_min": 3,        # R2 (2026-09-14): a fire older than this at decision time is stale — recorded, never sent

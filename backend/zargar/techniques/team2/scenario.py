@@ -87,6 +87,43 @@ def body_closed_beyond(bar: Bar, level: float, direction: str) -> bool:
     return bar.close > level if direction == "long" else bar.close < level
 
 
+def destination_check(target: float | None, anchor: float | None, entry: float | None, actionable: float | None,
+                      direction: str, tick: float = 0.01) -> tuple[str | None, str | None]:
+    """2026-09-17 (other team's EOD review, QQQ 13:10): a setup's profit destination must be DISTINCT from, and beyond,
+    the structural level the setup broke or held (`anchor`), and ahead of BOTH the entry line and the current
+    actionable price. Returns (refusal kind, reason) or (None, None). Kinds: `collision` = the target IS the source
+    level (within one tick) or sits at/behind it in the trade's direction — the F81 pre-open re-derivation had set
+    QQQ's target to the PM high 716.76 and the later PM-break setup anchored on that same 716.76, so an EMA entry at
+    716.7557 traded toward its own broken level for 0.004 points; `behind` = the target is not ahead of the entry line
+    or the current price (F72's rule, now judged on the actionable price too, so the EMA and level entries of one
+    setup resolve the same way). No distance threshold is used: identity and order, never an ATR minimum. A target of
+    None is the read's allowed no-target shape and passes; the caller decides whether that shape is permitted."""
+    if target is None:
+        return None, None
+    try:
+        t = float(target)
+    except (TypeError, ValueError):
+        return "invalid", f"target {target!r} is not a number"
+    tick = max(float(tick or 0.0), 0.0)
+    long = direction == "long"
+    if anchor is not None:
+        a = float(anchor)
+        if abs(t - a) <= tick:
+            return "collision", (f"target {t:.2f} is the setup's own source level {a:.2f} — a breakout cannot use the level it "
+                                 f"just broke as its destination (source-target collision)")
+        if (t <= a) if long else (t >= a):
+            return "collision", (f"target {t:.2f} sits {'below' if long else 'above'} the setup's source level {a:.2f} — behind "
+                                 f"the break in the trade's direction (source-target collision)")
+    for label, px in (("entry line", entry), ("current price", actionable)):
+        if px is None:
+            continue
+        p = float(px)
+        if (t <= p) if long else (t >= p):
+            return "behind", (f"target {t:.2f} is {'below' if long else 'above'} the {label} {p:.2f} — no room left, the exit would "
+                              f"trigger on the first bar or the first live print (F72)")
+    return None, None
+
+
 def target_is_ahead(target: float | None, spot: float | None, direction: str) -> bool:
     """F72 (2026-09-09): a profit target is only a target if it sits AHEAD of the entry in the
     trade's own direction — strictly above for a long, strictly below for a short.
@@ -194,6 +231,6 @@ def confirmed_break(bars15m: list[Bar], level: float, direction: str) -> Bar | N
     return None
 
 
-__all__ = ["classify_day", "sizing_bucket", "body_closed_beyond", "target_is_ahead", "Bias", "ScenarioTracker", "confirmed_break",
+__all__ = ["destination_check", "classify_day", "sizing_bucket", "body_closed_beyond", "target_is_ahead", "Bias", "ScenarioTracker", "confirmed_break",
            "SCENARIO_LABEL", "SCENARIO_DIRECTION", "TREND_SCENARIOS", "DAY_GAP_UP", "DAY_GAP_DOWN", "DAY_INSIDE",
            "DAY_NORMAL"]

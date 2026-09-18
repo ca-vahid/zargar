@@ -356,6 +356,9 @@ and are now part of the plan; each carries the phase it belongs to.
   Review of v0.8.01 → v0.8.02: quotes count only when live, sane and fresh by their own source timestamp; unknown entry
   prices enter no return; the summary cannot interrupt the close; exit prices weigh confirmed fills. Actual fills and hypothetical
   quoted returns are labelled apart. The measurements are not accepted for conclusions until the probes pass on a live day.
+- **2026-09-17 findings (v0.8.12, developed on GO; deployment and activation NOT approved):** target identity guard (item 1, behind
+  `target_identity_guard`, default on), pre-market input provenance + audit (item 2; C6 step 1e), chain-listing cache (item 3),
+  shadow payoff/room/coverage/gross-vs-net (item 4). Loss counter's basis unchanged pending their decision. HOLD list honoured.
 - **C6 is the priority dependency:** `notes/research/2026-09-16-c6-completion-plan.md` — banked exchange tape verified complete
   for RTH 08-18 → 09-16 (21 dates; 57 cells for 08-20 → 09-16); open: provider provenance + precedence policy + same warm-up
   inputs (coverage and `source=exchange` do not identify Alpaca), the live-vs-replay ATR difference (F119, user ruling) and the

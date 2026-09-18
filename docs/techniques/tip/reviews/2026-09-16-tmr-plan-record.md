@@ -585,3 +585,23 @@ profitability collector; mitigation = fewer resident processes (user). Verified 
 (DOL claims 08:30, Philly Fed 08:30, Treasury auctions 11:30/13:00; 09-18: Fed G.17 09:15, Bowman 09:30, BLS state
 employment 10:00). Open items owned elsewhere: Telegram paging credentials empty; ab shadow book quarantined; TSLA on eva
 armed shadow in `attention` since 09-14.
+
+## Operating cost, rates and the cache pilot (2026-09-17 late, E17-03 follow-through)
+
+**Rate table populated (journaled `SettingChanged` 22:23 ET):** `llm.rates["claude-opus-5"]` = in 5.00 / out 25.00 /
+cache read 0.50 / 5-minute cache write 6.25 USD per MTok - Anthropic Claude API first-party, global routing, standard
+list price (no batch, no fast mode), source platform.claude.com/docs/en/about-claude/pricing verified 2026-09-17; list
+price is an ESTIMATE of cost, not the invoice. Unknown model ids stay unpriced by rule.
+
+**First priced report (`tip_llm_cost --since 2026-09-17`, on the 0.8.13 runtime with the F3 attribution rule):**
+appraise 12 runs / 46 calls / 2.14M in / 45k out = **$11.83**; retro 5 runs / 14 calls / 0.49M in = **$2.77**;
+priced total **$14.60 as a LOWER BOUND**. Unpriced because their records carry no usage-level model (they pre-date the
+model stamping shipped today, and the rule is never to infer a historical model from today's settings): intake 89
+runs / 256 calls / 10.41M in / 169k out; rule_audit 2 runs / 53 calls / 0.63M in / 145k out (17 cut calls, partial);
+digest 3 runs; the failed AMZN appraisal (199k in). Illustrative only, NOT a priced figure: had every unpriced call
+been Opus 5 at list, the day's model spend would be roughly $70 against +$185 realised on Tips Practice ($72 excluding
+the questioned MRNA flash fill). From tomorrow every intake/review record carries `usage.model`, so the priced share
+rises to the whole desk without inference.
+
+**Cache pilot:** plan written for approval - `research/2026-09-17-prompt-cache-pilot-plan.md` (frozen-replay harness,
+off x3 / on x4 + one post-expiry call, cap $8, warm-up counted, prefix hashes, judgment equality). Knob stays OFF.

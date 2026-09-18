@@ -36,6 +36,7 @@ fetched again**, plus our codification of it.
 | `CODEX-REVIEW-SCRATCHPAD.md` | Codex's review charter and baseline notes for its independent Team2 review task |
 | `notes/market-watch.md` | the 30-minute market-hours watch log (scheduled task `team2-market-watch`; one section per run, findings mirror into TRADING-RULES) |
 | `notes/research/` | dated research notes: author-study evidence (09-08), review feedback, the week-37 review + change plan (09-12) with its addendum, the C2 key-levels spec (09-13), the C1/sizing controlled comparisons and the sizing-cap experiment sheet rev. 2 with its §2b parallel design (09-15). `c6-evidence.json` is the reviewed C6 record the readiness receipt reads (`satisfied`, `reviewedBy`, `date`, `datasetVersion`, `reference`) — absent until C6 lands |
+| `notes/research/2026-09-17-premarket-input-reconciliation.md` | the 09-17 frozen-vs-bank reconciliation: the private tape accepted exchange corrections the bank never kept (SPY 660.65, IWM 283.92, QQQ 716.76); mechanism, evidence, C6 consequence |
 | `notes/research/2026-09-16-c6-completion-plan.md` | C6 (one tape) — definition, what is measured today, the completion steps with owners and evidence, the receipt path; never waived |
 | `notes/research/profitability-20260915-exploratory/` | the exploratory profitability comparison: `research_profit.py` (48 paired cells 08-20 → 09-11, tape `27516b61…`), `calibrate_practice.py` (Practice-scale on the loss-risk sizing basis, 40-contract cap), JSON outputs. EXPLORATORY, pre-C6 — never label it canonical |
 | `notes/research/week37-author-charts/` | the author's annotated charts for the week-37 review (jpg, local only) |
@@ -47,7 +48,8 @@ the `test_codex_*` files are reviewers' regressions adopted verbatim; `tests/tes
 sweep with `python -m zargar.tools.team2_sweep` (`--set key=value` overlays = the only way a variant is measured);
 C2 paired report `python -m zargar.tools.team2_c2_report` (validation window sealed in the tool); experiment readiness
 receipt `python -m zargar.tools.team2_receipt` (read-only: PREPARED vs READY, blockers, cardinality, provenance, C6 record);
-diagnostics report `python -m zargar.tools.team2_diag_report --date <session>` (shadow measurements: entry situations and contract
+pre-market input audit `python -m zargar.tools.team2_pm_audit --date <session>` (read-only: frozen PMH/PML vs the bank, contributing
+minutes and their revision chains); diagnostics report `python -m zargar.tools.team2_diag_report --date <session>` (shadow measurements: entry situations and contract
 choices after costs, with coverage; `techniques/team2/diagnostics.py` is the pure module, `tests/test_team2_diagnostics.py`;
 v0.8.02: a quote is evidence only when live, sane and fresh by its own source timestamp; unknown enters no denominator).
 
@@ -99,6 +101,11 @@ for after-cost comparison (unknown stays unknown); allocation-refused candidates
 review chooses from evidence. Baseline and the three experiment books are unchanged. **C6 is the priority dependency**: the
 completion plan is `notes/research/2026-09-16-c6-completion-plan.md` (the banked exchange tape covers every RTH minute of
 2026-08-20 → 09-16 for all three symbols; the open item is the live-vs-replay ATR difference and the reviewed evidence record).
+
+**2026-09-17 development (v0.8.12, PR open — deployment NOT approved):** the target identity guard (a setup's destination must be
+distinct from and beyond its source level, judged alike for EMA and level entries; `skip_target_collision`; switch
+`techniques.team2.target_identity_guard`), pre-market extrema provenance + `team2_pm_audit`, chain-listing cache/coalescing/retry,
+and the shadow payoff/room/coverage/gross-vs-net diagnostics. The 09-17 book: −$33.28, all commissions, one 16.8 s round trip.
 
 **Rules under observation / research (TRADING-RULES "Rules under observation"):** F81b `target_replan=structure` (gap
 days) ON since 09-09; C1 no-trade zone = B5 conjunction, C1 room rule and C3 minimum target room BUILT BEHIND KNOBS AND

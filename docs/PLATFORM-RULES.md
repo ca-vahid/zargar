@@ -2357,3 +2357,28 @@ rows only - no order, no exit, no setting - through the bounded non-blocking sha
 wait on them. "Settings unchanged" therefore means "no behaviour change", not "no new code path": the path is disclosed here.
 The trade state gains one persisted field (`reclaimSignal`, nullable; additive). Other desks' runners are unaffected unless
 their own `shadow_exit_observe` resolves true (Tips/Team2: `execution.shadow_exit_observe` default - unchanged).
+### Exchange corrections reach the private tape but not the bank — 2026-09-17 (Team2 desk observation; for the platform owners)
+
+Team2's 09:25 plan completion reads the runner's private 1m tape. On 2026-09-17 that tape accepted exchange CORRECTIONS of
+pre-market minutes (via `Engine._ingest_exchange_bars` → `BarAggregator.ingest_exchange_bar` → publish → `Team2Runner._merge_revision`,
+journaled `bar_revised`) while the `bars` table kept the FIRST observation of each minute: SPY 07:46 corrected at 08:02:09 ET to
+760.12/760.2369/**660.65**/760.2285 (same volume 615; a dropped digit is a hypothesis), IWM 04:00 corrected twice to a 283.92 low, QQQ
+08:34 high 716.78 → 716.76. Later corrections carry float32-shaped values (716.760009765625). The PRODUCER is unresolved: in hybrid
+mode both the Alpaca stream and `YahooQuoteFeed` (chart polls with `includePrePost=true`, completed bars via `on_bars`) reach
+`_ingest_exchange_bars` stamped `exchange`, so the label, the arrival time and the float shape do not identify it. Consequences: two
+tapes for one session (C6), and a suspicious correction becomes a decision input (SPY's frozen PML 660.65 vs the bank's 757.53).
+Questions for the owners of `marketdata`: which adapter and request delivered each correction (correlated producer/request/write
+evidence), why the bank and the private tape diverged, and whether a correction that moves a bar's low 100 points on unchanged volume
+should be quarantined at intake. Read-only evidence:
+`python -m zargar.tools.team2_pm_audit --date 2026-09-17`; note `docs/techniques/team2/notes/research/2026-09-17-premarket-input-reconciliation.md`.
+No plan or bar was rewritten.
+
+### A price is as fresh as ITS OWN venue time, never as the quote's receipt time — 2026-09-17 (Team2 PR #204 r2; shared `Quote` fields)
+
+`Quote.ts` is when the app received/re-stamped the object. A feed that emits on every bid/ask message re-emits the previous
+`last` under a new `ts`, so aging `last` by `ts` called a ten-minute-old print fresh (review r2 of PR #204). `Quote` now carries
+`last_ts` (venue time of the print or bar that set `last`) and `quote_ts` (venue time of the current bid/ask); the Alpaca
+trade/quote/bar handlers and the Yahoo chart poll stamp them (0 = unknown). Rule for every consumer that judges a price's age:
+read the field's own time, treat 0 as no evidence, never fall back to `ts`; for options the NBBO's `source_ts` is the bid/ask
+evidence (its contract, F-2026-09-02). Team2's `_fresh_underlying` is the reference implementation (last by `last_ts`, else the
+midpoint by `quote_ts`/`source_ts`, else unavailable).
