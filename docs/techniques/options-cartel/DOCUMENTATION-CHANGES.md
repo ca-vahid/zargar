@@ -79,3 +79,7 @@ Added DIAGNOSTICS-2026-09-18: immutable decision capture, read-only provider par
 ## 2026-09-18 performance
 
 Added PREPARATION-PERFORMANCE.md: measured download and CPU pilots, adaptive pacing, shortlist-before-research order, and explicit end-to-end limitations. Updated the operating guide. No method or risk thresholds changed.
+
+## 2026-09-18 minute boundary
+
+The observer now rejects misaligned and wrong-symbol bus updates before merging them into a decision tape. Morning runtime inspection found no malformed timestamps persisted in any of the five arms: the failed transaction rolled back. This fixes handler exceptions; it does not repair legitimate sampled/unknown minute gaps or establish that a valid entry was missed. Regression verifies rejected updates leave state unchanged and subsequent valid candles still trigger.

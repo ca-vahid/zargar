@@ -369,6 +369,11 @@ class CartelObserver(SessionListener):
 
     async def on_minute_bar(self, symbol, bar):
         now = self.clock()
+        # The bus can contain provider stubs which persistence already refuses.
+        # Reject them before merging: never round a timestamp or credit another
+        # symbol's candle to this plan. Missing/trust checks remain authoritative.
+        if bar.symbol != symbol or bar.ts % 60_000:
+            return
         if bar.tf != "1m" or bar_session(bar.ts) != "rth" or bar.ts+60_000 > now:
             return
         if now-(bar.ts+60_000) > CONFIRMATION_MAX_AGE_MS:
