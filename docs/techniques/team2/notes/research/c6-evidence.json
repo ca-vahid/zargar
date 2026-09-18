@@ -1,0 +1,21 @@
+{
+  "satisfied": true,
+  "reviewedBy": "Codex - implementation and bounded acceptance under user overnight authorization",
+  "date": "2026-09-18",
+  "datasetVersion": "2a345877d5448459a3ff9c478eb4ea6713325d41271ecadd7870297ab1f84b75",
+  "reference": "2026-09-18-c6-release.md; 2026-09-18-c6-manifest.json; tests/test_team2_c6_canonical.py",
+  "scope": "Prospective Control/Sizing/C1 Practice cohort starting 2026-09-18; Alpaca SIP only",
+  "historicalLimitations": "Prior generic exchange labels do not identify the original provider. Historical decision-time corrections and the exact old F119 input sets are not retrospectively recoverable. Old live-vs-research comparisons remain exploratory; no original decision is overwritten. New plans use immutable canonical warm-up and journal decision input hashes.",
+  "provider": "alpaca",
+  "warmupSnapshots": {
+    "SPY": "ae93488796f184a7425819bf63076a92cc7e42ed51c1f3604223f0c95685c3df",
+    "QQQ": "55ae0c194b8c0cb7b4e7606a6bb9b2fcf27635e1d5fff6d308d1784c9f3e201c",
+    "IWM": "f07f71f385125ba0ddc9a82a94b070b0cbfbc24ed38179b30698b009bd0836a0"
+  },
+  "beforeImageSnapshots": {
+    "SPY": "11e70c27105279d45ff7c030f4293597d2c5d199ebde26511cb0015fd134c2e1",
+    "QQQ": "440b34997203272cb618cc385d6a426ce2a0c63c03a4d508d2148eacd82660bc",
+    "IWM": "5a567538731960c43711a0a5909ee51dd752bd25a30bbd3e452ca840b7141614"
+  },
+  "validation": "C2 September 14-October 9 outcomes remain sealed; only bar/input/indicator coverage inspected."
+}
