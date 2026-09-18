@@ -116,3 +116,20 @@ async def test_sampled_experiment_threshold_pauses_only_its_book(monkeypatch, ca
     if expect_pause:
         assert engine.pause_book.await_args.args[0] == 'sizing'
     settings.set.assert_awaited_once()
+
+
+async def test_observation_state_accepted_and_restored_by_real_settings(fresh_db):
+    from zargar.settings_service import SettingsService
+    from zargar.events import Journal
+    from zargar.techniques.team2.experiment_watch import STATE_KEY
+    eng = make_engine(TEST_DB_URL); sf = make_session_factory(eng); bus = Bus()
+    try:
+        settings = SettingsService(sf, bus, Journal(sf, bus))
+        await settings.load()
+        state = {'startDate': '2026-09-18', 'books': {'sizing': {'startingEquity': 10000., 'highWater': 10100.}}}
+        await settings.set(STATE_KEY, state)
+        restored = SettingsService(sf, bus, Journal(sf, bus))
+        await restored.load()
+        assert restored.get(STATE_KEY) == state
+    finally:
+        await eng.dispose()
