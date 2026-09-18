@@ -646,7 +646,8 @@ async def preparation_status(engine, workspace=None):
         latest['result']['armed'] = sum(r['status'] == 'armed' for r in latest['result'].get('shortlist', []))
     refresh = getattr(getattr(engine, 'cartel_observer', None), 'preparation_quote_status', {})
     contracts = {a.config.get('execution', {}).get('contract_symbol') for a in arms}
-    return {'wideContractReselection': policy.workspace == 'practice' and bool(engine.settings.get('techniques.options_cartel.reselect_wide_contract', True)),
+    return {'verifiedIntervals': policy.workspace == 'practice' and bool(engine.settings.get('techniques.options_cartel.verified_intervals', False)),
+            'wideContractReselection': policy.workspace == 'practice' and bool(engine.settings.get('techniques.options_cartel.reselect_wide_contract', True)),
             'configuration': policy.model_dump(mode='json', by_alias=True), 'latest': latest, 'liveAutoAllowed': bool(engine.settings.get('techniques.options_cartel.allow_live_auto', False)),
             'canResume': bool(row and resumable(row, policy, now_ms())), 'serverNow': now_ms(),
             'quoteRefresh': {**refresh, 'errors': {k: v for k, v in refresh.get('errors', {}).items() if k in contracts}},

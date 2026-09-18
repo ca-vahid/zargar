@@ -97,7 +97,9 @@ class CartelEntryController:
             opens, _ = session_bounds(session_date(signal['at']-1))
             start = opens if plan.entry.stop_mode == 'session_extreme' else signal['at']-plan.entry.timeframe_minutes*60000
             candles = row['state'].get('minutes', {})
-            if any(str(t) not in candles or not trusted(unpack(plan.symbol, candles[str(t)]), simulation=plan.entry.allow_simulated_bars)
+            from .nonemission import effective, minute_set
+            verified = minute_set(effective(self.engine, row), plan.symbol, now)
+            if any(t not in verified and (str(t) not in candles or not trusted(unpack(plan.symbol, candles[str(t)]), simulation=plan.entry.allow_simulated_bars))
                    for t in range(start, signal['at'], 60000)):
                 raise ValueError('Execution confirmation/stop contains missing or untrusted source bars')
         if plan.entry.baseline_policy == 'covered_periods':
