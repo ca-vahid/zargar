@@ -1,5 +1,9 @@
 # Cartel documentation changes
 
+## 2026-09-18 — revision 5 (remaining D4 registry defects, compact artifacts)
+
+- Dropped-bar registry: captured-snapshot persistence (in-flight drops stay dirty), forward-only session rollover, throttled failed attempts, pruning against the active plan set so every retirement path is covered; regressions added. Replay artifacts compacted with reproducibility manifests. Conclusion stated as zero strict qualifiers among the available frozen analyses (09-08: 58 analyses, 3,032 prefiltered listings unavailable). Reviewer answers on D3 storage, the Moderate column and provider-reconstruction order recorded.
+
 ## 2026-09-18 — revision 4 corrections (review of e162858 / 7ffd689)
 
 - Lane A frozen replay rebuilt on the complete population (analyses parented by or cited by each session's original preparation run; explicit book/workspace; lineage and later recovery apart) with old-planner outcomes reported beside Lane A's verdict; feasibility relabelled hypothetical (previous-session nightly snapshot, saved limits, effective cap) with every failure set preserved. Regenerated `lane-a/` reports: strict 0 qualifiers, Moderate variant 6.

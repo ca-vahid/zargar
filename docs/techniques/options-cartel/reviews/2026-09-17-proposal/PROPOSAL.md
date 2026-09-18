@@ -1,4 +1,4 @@
-# Proposal (revision 4): Lane A — long daily-base breakout, one setup, one entry mode
+# Proposal (revision 5): Lane A — long daily-base breakout, one setup, one entry mode
 
 Status: revised 2026-09-18 after the reviewer's findings on revision 1 (d7c226b). Verdict on
 revision 1: proceed with evidence and diagnostic corrections; revise the strategy proposal
@@ -201,6 +201,10 @@ snapshot for the previous session).
 
 What this establishes and what it does not:
 
+- **Precise conclusion:** zero strict qualifiers **among the available frozen analyses**. The only
+  strict-bullish session, 09-08, had 58 analyses; 3,032 listings were excluded by the then-strict
+  industry pre-filter before any history was fetched and are unavailable for Lane A evaluation.
+  The zero result therefore says nothing about those 3,032 names on that day.
 - Under **strict** alignment Lane A would have planned nothing in these eight sessions. The only
   strict-bullish read was 09-08; every long arm the current rules made (APA, CGNX, NOV, CPRT,
   CVNA, COIN, EL, SPCX, …) came from the Practice Moderate read on sessions strict called `mixed`.
@@ -230,7 +234,26 @@ limits and effective cap, hypothetical labelling). Nothing on the preparation, a
 path imports them. D1 remains at "classification recorded"; D2, S1–S3, R1 and any production
 change wait for review.
 
-Reviewer answers folded in (2026-09-18):
+Reviewer answers folded in (2026-09-18, revisions 4 and 5):
+
+- **D3 storage:** a dedicated immutable table for decision bundles with a journal reference (the
+  events row carries the decision, bundle id, hash and summary; the table holds the reconstructible
+  inputs). Identity is per decision **occurrence**, not `(run_id, bucket_end)`: the same bucket can be
+  re-evaluated with different availability, provenance or cutoffs, so revisions are preserved and
+  only exact retries deduplicate (same inputs hash, same cutoff, same observeAfter). Bundle and
+  journal reference are written atomically where possible; session context is an immutable
+  reference, not copied per decision. Tests: changed-input re-evaluation, duplicate retry, restart,
+  reference to a missing bundle.
+- **Moderate-read comparison:** kept as an *information-only variant* with the same population and
+  evidence cutoff as the strict comparison and later reruns reported apart; showing it is not
+  approval to activate Moderate Lane A, and neither result demonstrates profitability.
+- **Provider reconstruction first:** before any Zargar-side volume calculation, reproduce from the
+  SIP trade tape for PLAB, LZB and PWR (then a liquid control and an early-close fixture): the
+  provider's emitted minute-bar volume and OHLC, the conditions under which it suppresses a bar,
+  and the eligible volume inside suppressed intervals reported separately — summing emitted bars
+  and summing all volume-eligible trades are different measurements and are not forced to agree.
+  Rules and comparison criteria are frozen before results; mismatches are explained by timestamps,
+  conditions, pagination and revisions, not absorbed by a tolerance.
 
 - **Volume eligibility (D1):** a versioned **field-specific eligibility matrix**, not one exclusion
   list: per tape and condition combination, which fields (open/high/low/close/volume) a trade may

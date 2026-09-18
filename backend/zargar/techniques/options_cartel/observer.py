@@ -34,11 +34,19 @@ class DropRegistry:
     """Counts minute bars an armed plan was eligible to observe but the observer refused for age (D4).
 
     A bar older than the acceptance window produces no decision, so a delivery stall used to be
-    invisible. Counters are keyed by ``(run_id, session)``; a plan keeps only its current
-    session's entry, retired plans are pruned, the whole registry is bounded, duplicate delivery
-    of the same minute is counted apart from distinct dropped minutes, and persistence failures
-    are recorded on the entry and never raised into the caller's maintenance loop. The registry
-    is in-memory: a restart starts from zero and the last persisted summary stays on the arm row.
+    invisible. Counters are keyed by ``(run_id, session)``. Rules (revision 5, 2026-09-18):
+
+    * a plan keeps one live session entry; a bar from an **older** session than the live entry is
+      rejected (counted as ``olderSessionBars`` on the live entry), never a backward rollover;
+    * distinct dropped minutes and duplicate deliveries are counted apart, and both make the entry
+      dirty for persistence;
+    * ``flush`` persists a **captured snapshot** and marks exactly that snapshot as persisted, so a
+      drop arriving during the await stays dirty; a failed attempt records its attempt time and is
+      retried only after the interval, and never raises;
+    * ``flush`` also prunes entries whose plan is no longer in the caller's active set, which covers
+      every retirement path (alert and money modes) without each path calling ``retire``;
+    * the registry is bounded and in-memory: a restart starts from zero and the last persisted
+      summary stays on the arm row.
     """
 
     def __init__(self, *, interval_ms=DROP_JOURNAL_INTERVAL_MS, keep=20, max_entries=500):
@@ -60,64 +68,85 @@ class DropRegistry:
         expires = state.get("expiresAt")
         return (opens is None or bar_ts >= opens) and (expires is None or bar_ts < expires)
 
-    def note(self, run_id: str, bar_ts: int, now: int) -> dict:
+    def _live(self, run_id: str):
+        for key, entry in self.entries.items():
+            if key[0] == run_id:
+                return key, entry
+        return None, None
+
+    def note(self, run_id: str, bar_ts: int, now: int) -> dict | None:
         session = session_date(bar_ts)
-        for key in [k for k in self.entries if k[0] == run_id and k[1] != session]:
-            self.entries.pop(key, None)  # one live session per plan
-        entry = self.entries.get((run_id, session))
-        if entry is None:
+        key, live = self._live(run_id)
+        if live is not None and key[1] > session:
+            live["olderSessionBars"] += 1          # delayed bar from an earlier session: never a backward rollover
+            return None
+        if live is not None and key[1] < session:
+            self.entries.pop(key, None)            # forward rollover: the new session starts fresh
+            live = None
+        if live is None:
             if len(self.entries) >= self.max_entries:
                 oldest = min(self.entries, key=lambda k: self.entries[k]["lastObservedAt"])
                 self.entries.pop(oldest, None)
-            entry = self.entries[(run_id, session)] = {"runId": run_id, "session": session, "count": 0, "duplicates": 0, "maxAgeMs": 0,
-                                                       "minutes": set(), "recent": [], "journaledCount": 0, "journaledAt": None,
-                                                       "journalFailures": 0, "lastObservedAt": now}
+            live = self.entries[(run_id, session)] = {
+                "runId": run_id, "session": session, "count": 0, "duplicates": 0, "olderSessionBars": 0, "maxAgeMs": 0,
+                "minutes": set(), "recent": [], "version": 0,
+                "persistedVersion": 0, "persistedAt": None, "lastAttemptAt": None, "journalFailures": 0, "lastObservedAt": now}
         age = now - (bar_ts + 60_000)
-        if bar_ts in entry["minutes"]:
-            entry["duplicates"] += 1
+        if bar_ts in live["minutes"]:
+            live["duplicates"] += 1
         else:
-            entry["minutes"].add(bar_ts)
-            entry["count"] += 1
-        entry["maxAgeMs"] = max(entry["maxAgeMs"], age)
-        entry["recent"] = [*entry["recent"], {"barTs": bar_ts, "ageMs": age, "observedAt": now}][-self.keep:]
-        entry["lastObservedAt"] = now
-        return entry
+            live["minutes"].add(bar_ts)
+            live["count"] += 1
+        live["version"] += 1
+        live["maxAgeMs"] = max(live["maxAgeMs"], age)
+        live["recent"] = [*live["recent"], {"barTs": bar_ts, "ageMs": age, "observedAt": now}][-self.keep:]
+        live["lastObservedAt"] = now
+        return live
 
     def retire(self, run_id: str) -> None:
         for key in [k for k in self.entries if k[0] == run_id]:
             self.entries.pop(key, None)
 
+    def prune(self, active_run_ids) -> int:
+        active = set(active_run_ids)
+        gone = [k for k in self.entries if k[0] not in active]
+        for key in gone:
+            self.entries.pop(key, None)
+        return len(gone)
+
     def snapshot(self, run_id: str) -> dict | None:
-        for key, entry in self.entries.items():
-            if key[0] == run_id:
-                return {k: v for k, v in entry.items() if k != "minutes"}
-        return None
+        _, entry = self._live(run_id)
+        return {k: v for k, v in entry.items() if k != "minutes"} if entry else None
 
     def due(self, run_id: str, now: int) -> dict | None:
-        for key, entry in self.entries.items():
-            if key[0] != run_id or entry["count"] <= entry["journaledCount"]:
-                continue
-            if entry["journaledAt"] is not None and now - entry["journaledAt"] < self.interval_ms:
-                continue
-            return entry
-        return None
+        _, entry = self._live(run_id)
+        if entry is None or entry["version"] <= entry["persistedVersion"]:
+            return None
+        last = entry["lastAttemptAt"]
+        if last is not None and now - last < self.interval_ms:
+            return None
+        return entry
 
-    async def flush(self, run_ids, now: int, persist) -> list[str]:
-        """Persist due summaries through ``persist(run_id, payload)``; failures are counted, never raised."""
+    async def flush(self, active_run_ids, now: int, persist) -> list[str]:
+        """Persist due summaries through ``persist(run_id, payload)``; prune retired plans; never raise."""
+        self.prune(active_run_ids)
         flushed = []
-        for run_id in list(run_ids):
+        for run_id in list(active_run_ids):
             entry = self.due(run_id, now)
             if entry is None:
                 continue
-            payload = {"session": entry["session"], "count": entry["count"], "duplicates": entry["duplicates"], "maxAgeMs": entry["maxAgeMs"],
-                       "recent": entry["recent"][-5:], "acceptanceMs": CONFIRMATION_MAX_AGE_MS, "journalFailures": entry["journalFailures"]}
+            captured_version = entry["version"]
+            payload = {"session": entry["session"], "count": entry["count"], "duplicates": entry["duplicates"],
+                       "olderSessionBars": entry["olderSessionBars"], "maxAgeMs": entry["maxAgeMs"], "recent": entry["recent"][-5:],
+                       "acceptanceMs": CONFIRMATION_MAX_AGE_MS, "journalFailures": entry["journalFailures"], "version": captured_version}
+            entry["lastAttemptAt"] = now
             try:
                 await persist(run_id, payload)
             except Exception:  # noqa: BLE001 - a diagnostic must never interrupt protective maintenance
                 entry["journalFailures"] += 1
                 continue
-            entry["journaledCount"] = entry["count"]
-            entry["journaledAt"] = now
+            entry["persistedVersion"] = max(entry["persistedVersion"], captured_version)  # later drops stay dirty
+            entry["persistedAt"] = now
             flushed.append(run_id)
         return flushed
 
@@ -125,6 +154,7 @@ class DropRegistry:
 class CartelObserver(SessionListener):
     TECHNIQUE_ID = "options_cartel"
     OBSERVED_MODES = ("alert",)
+    ACTIVE_STATUSES = ("armed", "paused", "closing")
 
     def __init__(self, engine):
         super().__init__(engine, name="cartel-observer")
@@ -143,9 +173,10 @@ class CartelObserver(SessionListener):
         await self.repository._journal(snapshot, "bars_dropped_for_age")
 
     async def _flush_drop_diagnostics(self):
-        """D4: journal dropped-bar counts for active plans, at most once per plan per interval; never raises."""
+        """D4: journal dropped-bar counts for active plans (throttled) and prune retired ones; never raises."""
         try:
-            await self.drops.flush(list(self.rows), self.clock(), self._persist_drop_summary)
+            active = [rid for rid, row in self.rows.items() if row.get("status") in self.ACTIVE_STATUSES]
+            await self.drops.flush(active, self.clock(), self._persist_drop_summary)
         except Exception:  # noqa: BLE001 - belt and braces around the registry's own isolation
             return
 

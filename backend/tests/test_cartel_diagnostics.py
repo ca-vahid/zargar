@@ -68,13 +68,13 @@ def test_eligibility_requires_an_armed_waiting_plan_and_a_minute_inside_its_hori
     assert DropRegistry.eligible(_row(), two_day, NEXT_OPEN + 5 * MIN)
     assert not DropRegistry.eligible(_row(status="paused"), two_day, OPEN + 5 * MIN)
     assert not DropRegistry.eligible(_row(phase="signalled"), two_day, OPEN + 5 * MIN)
-    previous_session = OPEN - 24 * 60 * MIN                     # a bar from the day before the plan's first session
+    previous_session = OPEN - 24 * 60 * MIN
     assert not DropRegistry.eligible(_row(), two_day, previous_session)
-    assert not DropRegistry.eligible(_row(), plan(), NEXT_OPEN + 5 * MIN)   # single-session plan: tomorrow is outside
+    assert not DropRegistry.eligible(_row(), plan(), NEXT_OPEN + 5 * MIN)
     assert not DropRegistry.eligible(_row(expires=OPEN + 10 * MIN), two_day, OPEN + 20 * MIN)
 
 
-def test_registry_counts_distinct_minutes_and_duplicates_per_plan_session_and_resets_on_rollover():
+def test_registry_counts_distinct_minutes_and_duplicates_and_rolls_forward_only():
     registry = DropRegistry(interval_ms=300_000, keep=3)
     now = OPEN + 30 * MIN
     late = OPEN + 5 * MIN
@@ -82,49 +82,67 @@ def test_registry_counts_distinct_minutes_and_duplicates_per_plan_session_and_re
     for i in range(5):
         entry = registry.note("r1", late + i * MIN, now)
     registry.note("r1", late, now + 1_000)                          # the same minute delivered twice
-    assert entry["count"] == 5 and entry["duplicates"] == 1 and len(entry["recent"]) == 3
-    assert registry.due("r1", now) is not None
-    registry.mark = None
-    # journal, then the same count is not due again inside the interval
-    entry["journaledCount"], entry["journaledAt"] = 5, now
-    assert registry.due("r1", now + 1_000) is None
-    registry.note("r1", late + 6 * MIN, now + 2_000)
-    assert registry.due("r1", now + 2_000) is None                  # inside the interval
-    assert registry.due("r1", now + 300_000) is not None            # interval elapsed and the count grew
-    # rollover: the next session starts a fresh entry; yesterday's journaled count cannot suppress today's first drop
+    assert entry["count"] == 5 and entry["duplicates"] == 1 and len(entry["recent"]) == 3 and entry["version"] == 6
+    # forward rollover: the next session starts a fresh entry with nothing persisted
     fresh = registry.note("r1", NEXT_OPEN + 5 * MIN, NEXT_OPEN + 40 * MIN)
-    assert fresh["count"] == 1 and fresh["journaledCount"] == 0 and fresh["journaledAt"] is None
-    assert registry.due("r1", NEXT_OPEN + 40 * MIN) is not None
-    assert [k for k in registry.entries if k[0] == "r1"] == [("r1", NEXT_DAY.isoformat())]   # only one live session per plan
+    assert fresh["count"] == 1 and fresh["persistedVersion"] == 0 and fresh["persistedAt"] is None
+    assert [k for k in registry.entries if k[0] == "r1"] == [("r1", NEXT_DAY.isoformat())]
+    # backward: a delayed bar from the earlier session never replaces the live entry
+    assert registry.note("r1", late + 7 * MIN, NEXT_OPEN + 41 * MIN) is None
+    assert registry.snapshot("r1")["session"] == NEXT_DAY.isoformat() and registry.snapshot("r1")["olderSessionBars"] == 1
 
 
-def test_registry_prunes_retired_plans_and_stays_bounded():
+@pytest.mark.asyncio
+async def test_flush_marks_only_the_captured_snapshot_and_keeps_later_drops_dirty():
+    registry = DropRegistry(interval_ms=300_000)
+    now = OPEN + 30 * MIN
+    registry.note("r1", OPEN + 5 * MIN, now)
+    persisted = []
+
+    async def persist(run_id, payload):
+        persisted.append(payload["count"])
+        registry.note("r1", OPEN + 6 * MIN, now + 10)              # a drop arrives while persistence is in flight
+
+    assert await registry.flush(["r1"], now, persist) == ["r1"]
+    assert persisted == [1]
+    entry = registry.snapshot("r1")
+    assert entry["count"] == 2 and entry["version"] == 2 and entry["persistedVersion"] == 1     # the second drop stays dirty
+    assert registry.due("r1", now + 300_000) is not None                                         # ... and is flushed after the interval
+    # duplicate-only changes are also dirty
+    await registry.flush(["r1"], now + 300_000, persist)
+    registry.note("r1", OPEN + 5 * MIN, now + 300_100)             # duplicate of an already-counted minute
+    assert registry.due("r1", now + 600_000) is not None
+
+
+@pytest.mark.asyncio
+async def test_flush_throttles_failed_attempts_and_never_raises():
+    registry = DropRegistry(interval_ms=300_000)
+    now = OPEN + 30 * MIN
+    registry.note("broken", OPEN + 5 * MIN, now)
+    attempts = []
+
+    async def persist(run_id, payload):
+        attempts.append(now)
+        raise RuntimeError("journal unavailable")
+
+    assert await registry.flush(["broken"], now, persist) == []
+    assert await registry.flush(["broken"], now + 1, persist) == []                              # one millisecond later: throttled
+    assert attempts == [now] and registry.snapshot("broken")["journalFailures"] == 1
+    assert registry.due("broken", now + 300_000) is not None                                     # retried after the interval
+
+
+@pytest.mark.asyncio
+async def test_flush_prunes_plans_outside_the_active_set_and_stays_bounded():
     registry = DropRegistry(max_entries=3)
     now = OPEN + 30 * MIN
     for i in range(5):
         registry.note(f"r{i}", OPEN + 5 * MIN, now + i)
-    assert len(registry.entries) == 3 and ("r0", DAY.isoformat()) not in registry.entries     # oldest evicted
-    registry.retire("r4")
-    assert registry.snapshot("r4") is None and len(registry.entries) == 2
-    assert "minutes" not in registry.snapshot("r3")                                          # the set never leaves the registry
-
-
-@pytest.mark.asyncio
-async def test_flush_isolates_persistence_failures_and_only_marks_successes():
-    registry = DropRegistry()
-    now = OPEN + 30 * MIN
-    registry.note("ok", OPEN + 5 * MIN, now)
-    registry.note("broken", OPEN + 5 * MIN, now)
-    calls = []
+    assert len(registry.entries) == 3 and ("r0", DAY.isoformat()) not in registry.entries          # oldest evicted
 
     async def persist(run_id, payload):
-        calls.append((run_id, payload["count"], payload["session"]))
-        if run_id == "broken":
-            raise RuntimeError("journal unavailable")
+        pass
 
-    flushed = await registry.flush(["ok", "broken", "unknown"], now, persist)
-    assert flushed == ["ok"] and [c[0] for c in calls] == ["ok", "broken"]
-    assert registry.snapshot("broken")["journalFailures"] == 1 and registry.snapshot("broken")["journaledCount"] == 0
-    assert registry.snapshot("ok")["journaledCount"] == 1
-    # a restart starts from zero in memory; the last persisted summary lives on the arm row, not here
-    assert DropRegistry().snapshot("ok") is None
+    await registry.flush(["r3"], now, persist)                                                     # r2 and r4 retired by any path
+    assert set(k[0] for k in registry.entries) == {"r3"}
+    assert "minutes" not in registry.snapshot("r3")
+    assert DropRegistry().snapshot("r3") is None                                                    # a restart starts from zero

@@ -1,4 +1,4 @@
-# 2026-09-17 proposal package — Lane A (long base breakout), revision 4
+# 2026-09-17 proposal package — Lane A (long base breakout), revision 5
 
 Implementation desk handback for review. Read in this order: BOTTLENECKS.md (what happened, from
 records, with the boundary-enforced D1 probe and the tape-revision finding), FUNNEL.md (every gate
@@ -17,7 +17,7 @@ the coexistence contract, acceptance, plan).
   bucket eligibility, stop coverage or active ranking changed. No setting, arm, order or runtime
   process changed. Merge, deployment and Practice activation remain off.
 
-- Revision 4 (this commit): verdicts on revision 3 were evidence fixes accepted, D3/D4/D5 and the
+- Revision 4 (dd2f22e): verdicts on revision 3 were evidence fixes accepted, D3/D4/D5 and the
   Lane A evaluator "changes requested". This revision corrects them: complete Lane A population and
   preparation lineage with explicit book/workspace selection; old-planner outcome reported apart;
   hypothetical point-in-time feasibility from saved limits and the effective cap with every
@@ -27,10 +27,19 @@ the coexistence contract, acceptance, plan).
   Still no production baseline, live bucket eligibility, stop coverage or active ranking change;
   merge, deployment and Practice activation remain off.
 
+- Revision 5 (this commit): offline evaluator findings closed for the stated scope; the three
+  remaining D4 registry defects fixed with regressions (captured-snapshot persistence, forward-only
+  rollover, throttled failed attempts) plus pruning against the active set so every retirement path
+  is covered; replay artifacts compacted (~27 MB of formatted JSON replaced by readable summaries,
+  compact evidence and reproducibility manifests); the conclusion made precise. D3 immutable capture
+  and offline provider reconstruction are the next commits, not merge blockers. Lane A, the 1.5R
+  filter and any altered volume eligibility stay inactive. Merge pending review of the diagnostic
+  fixes; deployment and activation remain off.
+
 ## Branch, commit, revisions examined
 
 - Worktree `C:\Cursor\zargar\.claude\worktrees\session-2026-09-17`, branch
-  `claude/cartel-lane-a-proposal` on origin/main `731edbd` (v0.8.11). The revision-4 commit is the
+  `claude/cartel-lane-a-proposal` on origin/main `731edbd` (v0.8.11). The revision-5 commit is the
   branch head; its SHA is in the handback message.
 - Source reviewed at `731edbd`; runtime database `zargar` on 127.0.0.1:5433 read with read-only
   transactions; Alpaca SIP bars and trades read for three symbol-sessions with the main checkout's
@@ -45,6 +54,17 @@ the coexistence contract, acceptance, plan).
 | README claim "both tapes reproduce … 0 provenance differences" | withdrawn; replaced by the measured comparison and the finding in BOTTLENECKS §8c (stored bars revised after decisions) | BOTTLENECKS §3, §6, §8c |
 | P2 coexistence and capacity | `lane_a_focus` defaults 0 and bypasses selection, ranking and chain fetch entirely; fallback to the general plan when Lane A has no capacity or is not executable; pending items never held/managed and never reserve slots; feasibility states extended with `filtered_other` (first-failing-filter counts) and `no_chain` | PROPOSAL §3 |
 | D1 answers | execution unchanged; separate versioned volume calculation `volume_eligibility_v1` evaluated offline first, no double counting; buckets with `trades_without_bar` stay non-executable; session-extreme coverage not touched (a protection); missing historical chain quotes = `unknown`, kept in the denominator, conclusions stop at the last supported stage | PROPOSAL §5 D1, §4 |
+
+## Revision 5: review item -> change -> where to verify
+
+| Item | Change | Verify |
+|---|---|---|
+| P2 drop lost during persistence | `flush` captures the entry's `version` before the await and marks only that version persisted; later drops (and duplicate-only changes) stay dirty and flush after the interval | `test_flush_marks_only_the_captured_snapshot_and_keeps_later_drops_dirty` |
+| P2 backward rollover | `note` rejects a bar from an older session than the live entry (`olderSessionBars` counter) and rolls forward only | `test_registry_counts_distinct_minutes_and_duplicates_and_rolls_forward_only` |
+| P2 failure throttle | every attempt records `lastAttemptAt`; a failed attempt is retried only after the interval | `test_flush_throttles_failed_attempts_and_never_raises` (two attempts 1 ms apart -> one call) |
+| Retirement coverage | `flush` prunes entries whose plan is not in the caller's active set (`armed`/`paused`/`closing`), so the runtime's overridden disarm/expiry/closing paths are covered without per-path calls; explicit `retire` kept where the base observer pops rows | `test_flush_prunes_plans_outside_the_active_set_and_stays_bounded`; `CartelObserver._flush_drop_diagnostics` |
+| Artifact size | compact JSON keeps per-session counts, non-bulk rows and bulk-stage symbol lists; a manifest records arguments, original run ids, populations and sha256 of both files | `lane-a/frozen-replay-*.json`, `lane-a/frozen-replay-*.manifest.json` (sizes below) |
+| Conclusion wording | "zero strict qualifiers among the available frozen analyses"; 09-08 had 58 analyses with 3,032 industry-prefiltered listings unavailable | PROPOSAL 4b |
 
 ## Revision 4: review item -> change -> where to verify
 

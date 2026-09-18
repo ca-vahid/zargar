@@ -249,6 +249,47 @@ async def evaluate_session(conn, session: str, runs: list[dict], params: LaneAPa
             "rows": rows_out}
 
 
+def compact_evidence(report: dict) -> dict:
+    """Compact machine-readable evidence: per-session counts plus only the rows that reached a history stage
+    or ended outside the bulk classes. Bulk `direction`/`screen`/`context` rows are kept as counts and as a
+    sorted symbol list per stage so the population is verifiable without a million formatted lines."""
+    bulk = ("direction", "screen", "context", "prefiltered")
+    sessions = []
+    for s in report["sessions"]:
+        if not s.get("original"):
+            sessions.append({k: s[k] for k in ("session", "original", "lineage", "note") if k in s})
+            continue
+        kept, bulk_symbols = [], {}
+        for e in s["rows"]:
+            stage = e["laneA"]["stage"]
+            if stage in bulk:
+                bulk_symbols.setdefault(stage, []).append(e["symbol"])
+                continue
+            kept.append({k: v for k, v in e.items() if k not in ("laneACandidate",)})
+        sessions.append({**{k: s[k] for k in s if k != "rows"}, "rows": kept,
+                         "bulkStageSymbols": {k: sorted(v) for k, v in bulk_symbols.items()}})
+    return {**{k: report[k] for k in report if k != "sessions"}, "sessions": sessions,
+            "compaction": "rows limited to non-bulk stages; bulk stages listed by symbol; full row detail is regenerable with the command in the manifest"}
+
+
+def reproducibility_manifest(report: dict, args, md_path: str, json_path: str) -> dict:
+    import hashlib
+
+    from .. import __version__
+
+    def sha(path):
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+
+    return {"tool": "zargar.tools.cartel_lane_a_eval", "codeVersion": __version__, "generatedAt": report["generatedAt"],
+            "arguments": {k: getattr(args, k) for k in ("portfolio", "workspace", "start", "end", "market_basis", "experimental_min_r")},
+            "databaseUrlRedacted": args.database_url.split("@")[-1] if "@" in args.database_url else args.database_url,
+            "originalRuns": {s["session"]: s["original"]["id"] for s in report["sessions"] if s.get("original")},
+            "populations": {s["session"]: s.get("populationStats") for s in report["sessions"] if s.get("original")},
+            "artifacts": {os.path.basename(md_path): sha(md_path), os.path.basename(json_path): sha(json_path)},
+            "note": "Re-running the command against the same database reproduces the markdown and compact JSON byte-for-byte except generatedAt."}
+
+
 def render_markdown(report: dict) -> str:
     basis = report["marketBasis"]
     p = report["parameters"]
@@ -344,12 +385,16 @@ def main(argv=None) -> None:
     if args.out_dir:
         os.makedirs(args.out_dir, exist_ok=True)
         stem = f"frozen-replay-{args.market_basis}"
-        with open(os.path.join(args.out_dir, stem + ".md"), "w", encoding="utf-8", newline="\n") as fh:
+        md_path = os.path.join(args.out_dir, stem + ".md")
+        with open(md_path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(render_markdown(report))
-        slim = {**report, "sessions": [{**s, "rows": [{k: v for k, v in e.items() if k != "laneACandidate"} for e in s["rows"]]} for s in report["sessions"]]}
+        compact = compact_evidence(report)
         with open(os.path.join(args.out_dir, stem + ".json"), "w", encoding="utf-8") as fh:
-            json.dump(slim, fh, indent=1, default=str, sort_keys=True)
-        print("written", os.path.join(args.out_dir, stem + ".md"))
+            json.dump(compact, fh, separators=(",", ":"), default=str, sort_keys=True)
+        manifest = reproducibility_manifest(report, args, md_path, os.path.join(args.out_dir, stem + ".json"))
+        with open(os.path.join(args.out_dir, stem + ".manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=1, default=str, sort_keys=True)
+        print("written", md_path)
     if args.json:
         json.dump(report, sys.stdout, indent=1, default=str)
     else:
