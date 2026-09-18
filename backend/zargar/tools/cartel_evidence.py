@@ -17,15 +17,16 @@ Output is a summary (identifiers, timestamps, derived numbers), never a bulk dum
 
 Two tapes exist for a plan and are never blended:
 
-* the **decision-time tape**: ``technique_armed.state.minutes`` as the observer saw it (only
-  for armed plans, only the last observed session);
+* the **final arm tape**: ``technique_armed.state.minutes`` as last saved on the arm (only for
+  armed plans, only the last observed session) — not what the observer saw at each decision;
 * the **stored tape**: the shared ``bars`` table as it stands *now*. Stored rows carry no
   receipt time, so a minute that is ``exchange`` today may have been ``sampled`` or absent when
   the decision was made. ``replay`` runs the engine's own ``read_entry`` over each tape.
 
 Minute classes: ``exchange`` (venue bar), ``sampled-only`` (quote-derived bar without a venue
 bar; its volume is a Yahoo cumulative-volume delta, not proof of trades), ``absent`` (no row).
-Nothing is called an empty or no-trade minute from bar data alone. ``alpaca-minutes`` is the
+Nothing is called an empty or no-trade minute from bar data alone; journaled decisions stay the
+authority for what happened. ``alpaca-minutes`` is the
 one command that consults the provider's trade tape (read-only market data, not the runtime).
 
 Sessions use the exchange calendar (``marketstructure.sessions.session_bounds``, early closes
@@ -209,8 +210,8 @@ async def plan_report(conn, run_id: str) -> dict:
             "contract": (config.get("execution") or {}).get("contract_symbol"),
             "contractPolicy": (config.get("execution") or {}).get("contract_policy"),
             "budget": (config.get("execution") or {}).get("budget"), "riskPct": (config.get("execution") or {}).get("risk_pct"),
-            "decisionTapeDay": state.get("day"), "decisionTapeMinutes": len(tape),
-            "decisionTapeSources": dict(Counter((v[6] if len(v) > 6 else "unknown") for v in tape.values())),
+            "finalArmTapeDay": state.get("day"), "finalArmTapeMinutes": len(tape),
+            "finalArmTapeSources": dict(Counter((v[6] if len(v) > 6 else "unknown") for v in tape.values())),
             "decisions": [{"at": utc(d.get("at")), "decision": d.get("decision"), "reason": d.get("reason"), "measurements": d.get("measurements")}
                           for d in state.get("decisionHistory") or []],
             "signalHistory": state.get("signalHistory"),
@@ -296,7 +297,7 @@ def print_plan(rep: dict) -> None:
     arm = rep.get("armed")
     if arm:
         print(f"  ARMED {arm['status']} mode {arm['mode']} for {arm['planFor']} book {arm['portfolioId'][:8]} contract {arm['contract']} budget {arm['budget']} risk% {arm['riskPct']} validUntil {arm['validUntil']} expiresAt {arm['expiresAt']}")
-        print(f"    decision-time tape: day {arm['decisionTapeDay']} minutes {arm['decisionTapeMinutes']} sources {arm['decisionTapeSources']} lastMinute {arm['lastMinute']} observeAfter {arm['observeAfter']}")
+        print(f"    final arm tape (last saved, not decision-time): day {arm["finalArmTapeDay"]} minutes {arm["finalArmTapeMinutes"]} sources {arm["finalArmTapeSources"]} lastMinute {arm['lastMinute']} observeAfter {arm['observeAfter']}")
         for d in arm["decisions"]:
             m = d.get("measurements") or {}
             extra = f" volx{m.get('volumeRatio'):.2f} loc {m.get('closeLocation'):.2f} R {m.get('firstTargetR'):.2f}" if m and m.get("volumeRatio") is not None else ""
@@ -306,7 +307,7 @@ def print_plan(rep: dict) -> None:
         if arm.get("lastExecutionResult"):
             print(f"    last execution result: {json.dumps(arm['lastExecutionResult'])[:300]}")
     else:
-        print("  never armed (no technique_armed row; no decision-time tape exists)")
+        print("  never armed (no technique_armed row; no arm tape exists)")
     print(f"  EVENTS {len(rep['events'])} (journal ts = when recorded; decisionAt = the bucket end it judged; attributed by plan/order/position id)")
     for e in rep["events"]:
         if e["type"] == "TechniqueCartelPreflight":
@@ -446,8 +447,36 @@ def _partial_evidence(trace_entry: dict, tape_by_ts: dict, plan, opens: int) -> 
     return known
 
 
+def compare_minute_values(a: dict[int, tuple], b: dict[int, tuple]) -> dict:
+    """Per-minute comparison of two tapes' (open, high, low, close, volume, source) tuples."""
+    keys = set(a) | set(b)
+    only_a = sorted(k for k in keys if k not in b)
+    only_b = sorted(k for k in keys if k not in a)
+    both = [k for k in keys if k in a and k in b]
+    source_diff = sorted(k for k in both if a[k][5] != b[k][5])
+    value_diff = sorted(k for k in both if a[k][:5] != b[k][:5])
+    volume_diff = sorted(k for k in both if a[k][4] != b[k][4])
+    return {"minutesCompared": len(both), "onlyInFirst": len(only_a), "onlyInSecond": len(only_b),
+            "sourceLabelDiffers": len(source_diff), "priceOrVolumeDiffers": len(value_diff), "volumeDiffers": len(volume_diff),
+            "examples": [{"minute": et(k)[11:16], "first": a[k][:5], "second": b[k][:5]} for k in value_diff[:5]]}
+
+
 async def replay_report(conn, run_id: str, session: str | None) -> dict:
-    """Run the engine's ``read_entry`` over the decision-time tape and over the stored tape."""
+    """Journaled decisions (authoritative) beside two replays of ``read_entry`` that are *not* reconstructions.
+
+    * ``journaled``: the decisions the observer actually made, with the live measurements it
+      recorded. This is what happened.
+    * ``finalArmTapeReplay``: ``read_entry`` over the arm's *final saved* minutes with its *final*
+      ``observeAfter``. The observer ran incrementally on a growing tape and its ``observeAfter``
+      moved (e.g. after a signal expired), so this replay can suppress or alter decisions that
+      were made earlier; it is a consistency check, not a reconstruction.
+    * ``storedTapeReplay``: ``read_entry`` over the shared ``bars`` table as it stands now with
+      ``entry_after=None``. Stored rows may have been revised after the decision and carry no
+      receipt time.
+
+    Exact reconstruction of a decision needs the input values, their availability time and the
+    cutoff at that decision; where those are not persisted the report says so.
+    """
     from ..techniques.options_cartel.data_quality import unpack
     from ..techniques.options_cartel.entry import read_entry
     from ..techniques.options_cartel.plans import CartelPlan
@@ -460,7 +489,13 @@ async def replay_report(conn, run_id: str, session: str | None) -> dict:
     opens, closes = session_window(session)
     out: dict = {"runId": run_id, "symbol": plan.symbol, "session": session, "trigger": plan.trigger, "direction": plan.direction,
                  "invalidation": plan.invalidation, "firstTarget": plan.targets[0], "entry": plan.entry.model_dump(),
-                 "createdAt": utc(plan.created_at)}
+                 "createdAt": utc(plan.created_at),
+                 "reconstruction": "Journaled decisions are authoritative. Neither replay is a decision-time reconstruction: per-decision "
+                                   "input values, availability times and cutoffs are not persisted for this plan."}
+    journaled = [{"at": utc(d.get("at")), "decision": d.get("decision"), "reason": d.get("reason"), "measurements": d.get("measurements")}
+                 for d in state.get("decisionHistory") or []]
+    out["journaled"] = {"decisions": journaled, "signalHistory": state.get("signalHistory") or [],
+                        "note": "From technique_armed.state.decisionHistory/signalHistory (journaled as TechniqueCartelStateChanged). Measurements are the live values."}
 
     def render(decision, tape):
         by_ts = {b.ts: b for b in tape}
@@ -468,40 +503,68 @@ async def replay_report(conn, run_id: str, session: str | None) -> dict:
                 "trace": [{"at": utc(t.get("at")), "decision": t.get("decision"), "reason": t.get("reason"), "measurements": t.get("measurements"),
                            "partialEvidence": _partial_evidence(t, by_ts, plan, opens)} for t in decision["trace"]]}
 
+    def tuples(tape):
+        return {b.ts: (b.open, b.high, b.low, b.close, b.volume, b.source) for b in tape}
+
     minutes = state.get("minutes") or {}
-    decision_minutes = {}
+    arm_tape = []
     if arm and state.get("day") == session and minutes:
-        tape = [unpack(plan.symbol, v) for v in minutes.values()]
-        decision = read_entry(plan, tape, closes, entry_after=state.get("observeAfter", state.get("armedAt")))
-        out["decisionTape"] = {"minutes": len(tape), "sources": dict(Counter(b.source for b in tape)), "observeAfter": utc(state.get("observeAfter")),
-                               **render(decision, tape),
-                               "note": "read_entry over technique_armed.state.minutes with the arm's final observeAfter. The live observer ran the same "
-                                       "function incrementally on a growing tape; decisions journaled before observeAfter were made on that earlier state."}
-        decision_minutes = {b.ts: b.source for b in tape}
+        arm_tape = [unpack(plan.symbol, v) for v in minutes.values()]
+        decision = read_entry(plan, arm_tape, closes, entry_after=state.get("observeAfter", state.get("armedAt")))
+        out["finalArmTapeReplay"] = {"minutes": len(arm_tape), "sources": dict(Counter(b.source for b in arm_tape)),
+                                     "observeAfterUsed": utc(state.get("observeAfter")), "lastMinute": utc(state.get("lastMinute")),
+                                     **render(decision, arm_tape),
+                                     "note": "read_entry over the arm's FINAL saved minutes with its FINAL observeAfter; a consistency check, not what the observer saw at each decision."}
     else:
-        out["decisionTape"] = None
+        out["finalArmTapeReplay"] = None
     rows = await _stored_rows(conn, plan.symbol, opens, closes)
     classes = classify_minutes(rows, opens, closes)
     preferred = [dict(m) for m in classes.values() if m["class"] != "absent"]
     stored_bars = _bars_from_rows(plan.symbol, preferred)
     stored = read_entry(plan, stored_bars, closes, entry_after=None)
-    out["storedTape"] = {"minutes": len(preferred), "classes": dict(Counter(m["class"] for m in classes.values())), **render(stored, stored_bars),
-                         "note": "read_entry over the shared bars table as it stands now, entry_after=None (a pure historical replay). Stored rows "
-                                 "have no receipt time; this is not what the observer saw."}
-    diffs = []
-    if decision_minutes:
-        for ts, m in classes.items():
-            then = decision_minutes.get(ts)
-            now = None if m["class"] == "absent" else m["source"]
-            if then != now:
-                diffs.append({"minute": et(ts)[11:16], "decisionTime": then or "absent", "storedNow": now or "absent"})
-    out["provenanceDifferences"] = diffs
+    out["storedTapeReplay"] = {"minutes": len(preferred), "classes": dict(Counter(m["class"] for m in classes.values())), **render(stored, stored_bars),
+                               "note": "read_entry over the shared bars table as it stands now, entry_after=None. Rows may have been revised after the decision (exchange-over-exchange refresh); no receipt times."}
+    out["tapeComparison"] = compare_minute_values(tuples(arm_tape), tuples(stored_bars)) if arm_tape else None
+    # Decision-by-decision comparison at matching bucket ends (journaled vs each replay).
+    def index(trace):
+        return {(t["at"], t["decision"]): t for t in trace}
+    comparisons = []
+    for label in ("finalArmTapeReplay", "storedTapeReplay"):
+        rep = out.get(label)
+        if not rep:
+            continue
+        idx = index(rep["trace"])
+        for j in journaled:
+            match = idx.get((j["at"], j["decision"]))
+            jm, rm = j.get("measurements") or {}, (match or {}).get("measurements") or {}
+            comparisons.append({"replay": label, "at": j["at"], "decision": j["decision"], "reproduced": match is not None,
+                                "liveVolumeRatio": jm.get("volumeRatio"), "replayVolumeRatio": rm.get("volumeRatio"),
+                                "liveCloseLocation": jm.get("closeLocation"), "replayCloseLocation": rm.get("closeLocation")})
+        for s in state.get("signalHistory") or []:
+            rs = rep.get("signal") or {}
+            comparisons.append({"replay": label, "at": utc(s.get("at")), "decision": "signal", "reproduced": bool(rs) and rs.get("at") == s.get("at"),
+                                "liveVolumeRatio": s.get("volumeRatio"), "replayVolumeRatio": rs.get("volumeRatio") if rs else None,
+                                "liveCloseLocation": s.get("closeLocation"), "replayCloseLocation": rs.get("closeLocation") if rs else None})
+    out["decisionComparison"] = comparisons
     return out
+
+
+def _fmt(v):
+    return f"{v:.2f}" if isinstance(v, (int, float)) else "n/a"
 
 
 def print_replay(rep: dict) -> None:
     print(f"REPLAY {rep['runId']} {rep['symbol']} {rep['session']} {rep['direction']} trigger {rep['trigger']} invalidation {rep['invalidation']} target1 {rep['firstTarget']} plan created {rep['createdAt']}")
-    for label in ("decisionTape", "storedTape"):
+    print(f"  {rep['reconstruction']}")
+    j = rep["journaled"]
+    print(f"  JOURNALED (authoritative): {len(j['decisions'])} decisions, {len(j['signalHistory'])} signals")
+    for d in j["decisions"]:
+        m = d.get("measurements") or {}
+        extra = f" volx{_fmt(m.get('volumeRatio'))} loc {_fmt(m.get('closeLocation'))} R {_fmt(m.get('firstTargetR'))}" if m else ""
+        print(f"    bucket-end {d['at']} {d['decision']}: {d['reason']}{extra}")
+    for s in j["signalHistory"]:
+        print(f"    signal bucket-end {utc(s.get('at'))} ref {s.get('referencePrice')} stop {s.get('stop')} volx{_fmt(s.get('volumeRatio'))} loc {_fmt(s.get('closeLocation'))}")
+    for label in ("finalArmTapeReplay", "storedTapeReplay"):
         t = rep.get(label)
         if not t:
             print(f"  {label}: none")
@@ -510,15 +573,21 @@ def print_replay(rep: dict) -> None:
         print(f"    {t['note']}")
         for x in t["trace"]:
             m = x.get("measurements") or {}
-            extra = f" volx{m.get('volumeRatio'):.2f} loc {m.get('closeLocation'):.2f} R {m.get('firstTargetR'):.2f}" if m and m.get("volumeRatio") is not None else ""
+            extra = f" volx{_fmt(m.get('volumeRatio'))} loc {_fmt(m.get('closeLocation'))} R {_fmt(m.get('firstTargetR'))}" if m and m.get("volumeRatio") is not None else ""
             pe = x.get("partialEvidence")
             partial = f" | known: {json.dumps(pe)}" if pe else ""
             print(f"    bucket-end {x['at']} {x['decision']}: {x['reason']}{extra}{partial}")
         if t["signal"]:
             s = t["signal"]
             print(f"    SIGNAL at {utc(s['at'])} ref {s['referencePrice']} stop {s['stop']} risk {s['risk']:.4f} volx{s['volumeRatio']:.2f} loc {s['closeLocation']:.2f}")
-    d = rep["provenanceDifferences"]
-    print(f"  minutes whose provenance differs between the two tapes: {len(d)}" + (f" e.g. {d[:6]}" if d else ""))
+    c = rep.get("tapeComparison")
+    if c:
+        print(f"  final arm tape vs stored tape: {c['minutesCompared']} minutes compared; source label differs {c['sourceLabelDiffers']}; price/volume differs {c['priceOrVolumeDiffers']} (volume {c['volumeDiffers']}); only-in-arm {c['onlyInFirst']} only-in-stored {c['onlyInSecond']}")
+        for e in c["examples"]:
+            print(f"    {e['minute']} arm {e['first']} stored {e['second']}")
+    print("  decision comparison (journaled vs replay):")
+    for x in rep["decisionComparison"]:
+        print(f"    {x['replay']:20s} {x['at']} {x['decision']:24s} reproduced={x['reproduced']} live volx{_fmt(x['liveVolumeRatio'])}/loc {_fmt(x['liveCloseLocation'])} replay volx{_fmt(x['replayVolumeRatio'])}/loc {_fmt(x['replayCloseLocation'])}")
 
 
 # ------------------------------------------------------------------------- coverage
@@ -640,20 +709,68 @@ def print_latency(rep: dict) -> None:
 
 # --------------------------------------------------------------------- alpaca probe
 
-async def alpaca_minutes_report(symbol: str, session: str, env_file: str | None, limit: int) -> dict:
+ODD_LOT_CONDITION = "I"  # SIP sale condition for an odd-lot trade; interpretation of other codes is left to the provider's documented rules
+
+
+def trades_in_minute(trades: list[dict], start_ms: int, end_ms: int) -> list[dict]:
+    """Keep only trades with ``start_ms <= timestamp < end_ms``.
+
+    The provider's ``end`` request parameter is inclusive, so a trade stamped exactly at the
+    next minute boundary comes back and must be dropped here. Timestamps are parsed to
+    millisecond precision (nanoseconds truncated), which keeps a trade at 09:31:00.000000500
+    on the 09:31 side of the boundary.
+    """
+    from ..brokers.alpaca import parse_rfc3339_ms
+
+    kept = []
+    for t in trades:
+        ts = t.get("t")
+        if not isinstance(ts, str):
+            continue
+        ms = parse_rfc3339_ms(ts)
+        if start_ms <= ms < end_ms:
+            kept.append(t)
+    return kept
+
+
+def classify_absent_minute(trades: list[dict], *, pagination_complete: bool, error: str | None, bars_complete: bool) -> str:
+    """One of verified_no_trades | trades_without_bar | incomplete_evidence.
+
+    A minute can only be certified absent if the *bar* pagination was complete; otherwise the
+    bar may simply not have been fetched, and the class is ``incomplete_evidence`` regardless
+    of what the trade tape says.
+    """
+    if not bars_complete or error or not pagination_complete:
+        return "incomplete_evidence"
+    return "verified_no_trades" if not trades else "trades_without_bar"
+
+
+def trade_statistics(trades: list[dict]) -> dict:
+    sizes = [int(t.get("s") or 0) for t in trades]
+    conditions = Counter(c for t in trades for c in (t.get("c") or []))
+    odd_lot_flagged = sum(1 for t in trades if ODD_LOT_CONDITION in (t.get("c") or []))
+    return {"trades": len(trades), "sharesTraded": int(sum(sizes)),
+            "sizeMin": min(sizes) if sizes else None, "sizeMax": max(sizes) if sizes else None,
+            "tradesUnder100Shares": sum(1 for s in sizes if s < 100),
+            "conditions": dict(conditions.most_common(8)),
+            "oddLotConditionOnEveryTrade": bool(trades) and odd_lot_flagged == len(trades),
+            "tradesWithOddLotCondition": odd_lot_flagged}
+
+
+async def alpaca_minutes_report(symbol: str, session: str, env_file: str | None, limit: int, artifact_dir: str | None) -> dict:
     """D1 probe: for session minutes with no SIP 1Min bar, ask the SIP trade tape what happened.
 
-    Read-only market-data requests; no runtime, database or settings involved. Classification per
-    absent minute: ``verified_no_trades`` (complete trade page, zero trades), ``trades_without_bar``
-    (trades exist; the provider produced no eligible minute bar — e.g. odd-lot-only or
-    excluded conditions), ``incomplete_evidence`` (pagination not exhausted, HTTP error, or the
-    provider returned nothing verifiable). Every entry records the request boundaries and the
-    verification time.
+    Read-only market-data requests; no runtime, database or settings involved. Every interval
+    records its request bounds, response counts, conditions, a sha256 of the response body and
+    its own verification completion time. Unprobed absent minutes are ``unknown``. A compact,
+    credential-free artifact is written to ``artifact_dir`` when given.
     """
+    import hashlib
+    import os
+
     import httpx
 
     from ..config import AppConfig
-    from ..brokers.alpaca import parse_rfc3339_ms
 
     cfg = AppConfig(_env_file=env_file) if env_file else AppConfig()
     if not (cfg.alpaca_key_id and cfg.alpaca_secret):
@@ -661,19 +778,24 @@ async def alpaca_minutes_report(symbol: str, session: str, env_file: str | None,
     headers = {"APCA-API-KEY-ID": cfg.alpaca_key_id, "APCA-API-SECRET-KEY": cfg.alpaca_secret}
     opens, closes = session_window(session)
     iso = lambda ms: dt.datetime.fromtimestamp(ms / 1000, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    verified_at = utc(int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000))
-    out: dict = {"symbol": symbol, "session": session, "feed": "sip", "verifiedAt": verified_at, "sessionMinutes": (closes - opens) // MINUTE}
+    now_iso = lambda: dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    out: dict = {"symbol": symbol, "session": session, "feed": "sip", "startedAt": now_iso(), "sessionMinutes": (closes - opens) // MINUTE,
+                 "toolVersion": "cartel_evidence.alpaca-minutes/2"}
+    from ..brokers.alpaca import parse_rfc3339_ms
+
     async with httpx.AsyncClient(timeout=30) as http:
-        # 1) SIP 1Min bars for the session, fully paginated.
         params = {"timeframe": "1Min", "start": iso(opens), "end": iso(closes), "limit": 10000, "feed": "sip", "adjustment": "raw"}
-        bars, pages, token = {}, 0, None
+        bars, pages, token, bar_hashes = {}, 0, None, []
+        bar_error = None
         while True:
             if token:
                 params["page_token"] = token
             r = await http.get(f"https://data.alpaca.markets/v2/stocks/{symbol}/bars", params=params, headers=headers)
             pages += 1
             if r.status_code >= 400:
-                raise SystemExit(f"Alpaca bars HTTP {r.status_code}: {r.text[:160]}")
+                bar_error = f"HTTP {r.status_code}: {r.text[:160]}"
+                break
+            bar_hashes.append(hashlib.sha256(r.content).hexdigest())
             data = r.json()
             for row in data.get("bars") or []:
                 ts = parse_rfc3339_ms(str(row["t"]))
@@ -682,14 +804,16 @@ async def alpaca_minutes_report(symbol: str, session: str, env_file: str | None,
             token = data.get("next_page_token")
             if not token or pages >= 20:
                 break
+        bars_complete = bar_error is None and token is None
         absent = [ts for ts in range(opens, closes, MINUTE) if ts not in bars]
-        out["bars"] = {"minutesWithBar": len(bars), "minutesAbsent": len(absent), "pages": pages, "paginationComplete": token is None,
+        out["bars"] = {"request": {"start": iso(opens), "end": iso(closes), "timeframe": "1Min", "feed": "sip", "adjustment": "raw"},
+                       "minutesWithBar": len(bars), "minutesAbsent": len(absent), "pages": pages, "paginationComplete": token is None,
+                       "error": bar_error, "complete": bars_complete, "responseSha256": bar_hashes, "completedAt": now_iso(),
                        "barVolumeSum": int(sum(b["v"] for b in bars.values())), "barTradeCountSum": int(sum((b["n"] or 0) for b in bars.values()))}
-        # 2) For up to `limit` absent minutes, read the SIP trade tape for exactly that minute.
         probes = []
         for ts in absent[:limit]:
             tparams = {"start": iso(ts), "end": iso(ts + MINUTE), "limit": 10000, "feed": "sip"}
-            trades, tpages, ttoken, error = [], 0, None, None
+            raw, tpages, ttoken, error, hashes = [], 0, None, None, []
             while True:
                 if ttoken:
                     tparams["page_token"] = ttoken
@@ -698,46 +822,56 @@ async def alpaca_minutes_report(symbol: str, session: str, env_file: str | None,
                 if tr.status_code >= 400:
                     error = f"HTTP {tr.status_code}: {tr.text[:120]}"
                     break
+                hashes.append(hashlib.sha256(tr.content).hexdigest())
                 tdata = tr.json()
-                trades.extend(tdata.get("trades") or [])
+                raw.extend(tdata.get("trades") or [])
                 ttoken = tdata.get("next_page_token")
                 if not ttoken or tpages >= 10:
                     break
-            if error or ttoken:
-                klass = "incomplete_evidence"
-            elif not trades:
-                klass = "verified_no_trades"
-            else:
-                klass = "trades_without_bar"
-            conditions = Counter(c for t in trades for c in (t.get("c") or []))
-            sizes = [int(t.get("s") or 0) for t in trades]
-            probes.append({"minute": et(ts)[11:16], "requestStart": iso(ts), "requestEnd": iso(ts + MINUTE), "class": klass, "trades": len(trades),
-                           "sharesTraded": int(sum(sizes)), "oddLotsOnly": bool(sizes) and all(s < 100 for s in sizes), "conditions": dict(conditions.most_common(6)),
-                           "pages": tpages, "paginationComplete": ttoken is None, "error": error})
+            inside = trades_in_minute(raw, ts, ts + MINUTE)
+            klass = classify_absent_minute(inside, pagination_complete=ttoken is None, error=error, bars_complete=bars_complete)
+            stats = trade_statistics(inside)
+            probes.append({"minute": et(ts)[11:16], "minuteStartMs": ts, "request": {"start": iso(ts), "end": iso(ts + MINUTE), "feed": "sip"},
+                           "returnedTrades": len(raw), "tradesInsideBoundary": len(inside), "droppedAtBoundary": len(raw) - len(inside),
+                           "class": klass, **stats, "pages": tpages, "paginationComplete": ttoken is None, "error": error,
+                           "responseSha256": hashes, "verifiedAt": now_iso()})
         out["probes"] = probes
-        out["probeSummary"] = dict(Counter(p["class"] for p in probes))
+        out["unprobedAbsentMinutes"] = [et(ts)[11:16] for ts in absent[limit:]]
+        summary = Counter(p["class"] for p in probes)
+        summary["unknown"] = len(absent) - len(probes)
+        out["probeSummary"] = dict(summary)
         out["probeSharesWithoutBar"] = int(sum(p["sharesTraded"] for p in probes if p["class"] == "trades_without_bar"))
-        out["note"] = ("Interval boundaries: [start, end) per minute; trade timestamps are SIP participant timestamps as delivered. Trade conditions are "
-                       "reported, not interpreted: whether a condition excludes a trade from the provider's minute bar is the provider's rule and must be "
-                       "checked against its documentation before any minute is treated as zero-volume. A `trades_without_bar` minute must never be "
-                       "labelled an exchange bar; `verified_no_trades` would be a distinct source label with this verification time.")
+        out["boundaryDropsTotal"] = int(sum(p["droppedAtBoundary"] for p in probes))
+        out["completedAt"] = now_iso()
+        out["note"] = ("Interval boundaries enforced locally as [start, end) because the provider's end parameter is inclusive. Conditions are "
+                       "reported, not interpreted: whether a condition excludes a trade from the provider's minute bar is the provider's documented "
+                       "rule. A trades_without_bar minute is never an exchange bar; verified_no_trades would be a distinct source label carrying "
+                       "its verification time. Unprobed absent minutes are unknown.")
+    if artifact_dir:
+        os.makedirs(artifact_dir, exist_ok=True)
+        path = os.path.join(artifact_dir, f"alpaca-minutes-{symbol}-{session}.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(out, fh, indent=1, sort_keys=True)
+        out["artifact"] = path
     return out
 
 
 def print_alpaca_minutes(rep: dict) -> None:
     b = rep["bars"]
-    print(f"ALPACA-MINUTES {rep['symbol']} {rep['session']} feed {rep['feed']} verified {rep['verifiedAt']}: {b['minutesWithBar']}/{rep['sessionMinutes']} minutes have a SIP 1Min bar, {b['minutesAbsent']} absent; pages {b['pages']} complete {b['paginationComplete']}; bar volume sum {b['barVolumeSum']} trades-in-bars {b['barTradeCountSum']}")
-    print(f"  probed {len(rep['probes'])} absent minutes: {rep['probeSummary']}; shares traded in trades_without_bar minutes: {rep['probeSharesWithoutBar']}")
+    print(f"ALPACA-MINUTES {rep['symbol']} {rep['session']} feed {rep['feed']} started {rep['startedAt']} completed {rep['completedAt']}: {b['minutesWithBar']}/{rep['sessionMinutes']} minutes have a SIP 1Min bar, {b['minutesAbsent']} absent; bar pages {b['pages']} complete {b['complete']}; bar volume sum {b['barVolumeSum']} trades-in-bars {b['barTradeCountSum']}")
+    print(f"  probed {len(rep['probes'])} absent minutes: {rep['probeSummary']} (unknown = unprobed); shares in trades_without_bar minutes {rep['probeSharesWithoutBar']}; trades dropped at the [start,end) boundary {rep['boundaryDropsTotal']}")
     print(f"  {rep['note']}")
+    if rep.get("artifact"):
+        print(f"  artifact: {rep['artifact']}")
     for p in rep["probes"]:
-        print(f"    {p['minute']} {p['class']:22s} trades {p['trades']:3d} shares {p['sharesTraded']:6d} oddLotsOnly {p['oddLotsOnly']} conditions {p['conditions']} pages {p['pages']} complete {p['paginationComplete']} {p['error'] or ''}")
+        print(f"    {p['minute']} {p['class']:22s} returned {p['returnedTrades']:3d} inside {p['tradesInsideBoundary']:3d} shares {p['sharesTraded']:6d} sizes {p['sizeMin']}..{p['sizeMax']} <100sh {p['tradesUnder100Shares']} oddLotCondAll {p['oddLotConditionOnEveryTrade']} conditions {p['conditions']} verified {p['verifiedAt'][11:23]} {p['error'] or ''}")
 
 
 # ------------------------------------------------------------------------------ cli
 
 async def _run(args) -> None:
     if args.command == "alpaca-minutes":
-        rep, printer = await alpaca_minutes_report(args.symbol, args.session, args.env_file, args.limit), print_alpaca_minutes
+        rep, printer = await alpaca_minutes_report(args.symbol, args.session, args.env_file, args.limit, args.artifact_dir), print_alpaca_minutes
     else:
         from ..config import AppConfig
 
@@ -782,7 +916,7 @@ def main(argv=None) -> None:
     p.add_argument("session", help="YYYY-MM-DD (ET, exchange session)")
     p.add_argument("--plan", default=None, help="plan run id: adds descriptive crossing over complete trusted buckets")
     p.add_argument("--step", type=int, default=15)
-    p = sub.add_parser("replay", help="engine read_entry over the decision-time tape and over the stored tape, with partial evidence on data refusals")
+    p = sub.add_parser("replay", help="journaled decisions (authoritative) beside final-arm-tape and stored-tape read_entry replays")
     p.add_argument("run_id")
     p.add_argument("--session", default=None)
     p = sub.add_parser("coverage", help="cached history provenance and per-session returned/absent minutes (exchange calendar)")
@@ -794,7 +928,8 @@ def main(argv=None) -> None:
     p = sub.add_parser("alpaca-minutes", help="D1 probe: SIP 1Min bars vs SIP trades for the absent minutes of one session (market data only)")
     p.add_argument("symbol")
     p.add_argument("session")
-    p.add_argument("--limit", type=int, default=40, help="max absent minutes to probe")
+    p.add_argument("--limit", type=int, default=40, help="max absent minutes to probe; the rest are reported as unknown")
+    p.add_argument("--artifact-dir", default=None, help="write a compact credential-free JSON artifact here")
     args = parser.parse_args(argv)
     asyncio.run(_run(args))
 

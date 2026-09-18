@@ -18,10 +18,12 @@ Reading rules:
   close − actual stop), from the signal record. Option dollar risk = full debit × quantity. The
   three are never substituted for one another.
 - "What price did afterwards" is context only; nothing here is a profitability claim.
-- Two tapes: the **decision-time tape** (`technique_armed.state.minutes`, what the observer saw)
-  and the **stored tape** (`bars` as it stands now, no receipt times). Bucket tables from the
-  stored tape are descriptive; the engine's decisions are reproduced with `replay`, which runs
-  `read_entry` over each tape. Where the two tapes differ it is stated.
+- **Journaled decisions are authoritative** for what happened. Two tapes exist beside them: the
+  **final arm tape** (`technique_armed.state.minutes` as last saved, with the arm's final
+  `observeAfter`) and the **stored tape** (`bars` as it stands now, revised after the fact, no
+  receipt times). `replay` runs `read_entry` over each as a consistency check; neither is a
+  decision-time reconstruction, because per-decision input values, availability times and
+  cutoffs were not persisted. Bucket tables from the stored tape are descriptive.
 
 ## 1. Session funnels
 
@@ -83,9 +85,16 @@ at the first bucket is ~1.5% on an ADR > 3% stock (TRADING-RULES Q2, open). APA 
 | 15:15 → 15:45 ET buckets | no new crossing | closes 4.92 / 4.92 / 4.955 (already below the trigger); the closing bucket cannot start an entry. |
 | 20:00:01 | expired | preparation `validUntil` = 09-16 close. |
 
-`replay` over the stored tape reproduces the same three decisions (18:15 watch_only 3.06×/0.61;
-19:00 triggered; 20:00 closed) and the decision-time tape has no provenance differences from the
-stored tape (390 exchange minutes in both).
+What `replay` shows (revision 3): the journaled decisions above are authoritative. The
+**final-arm-tape replay** (the arm's last saved minutes with its final `observeAfter` = 19:42Z,
+set when the signal expired) returns only `entry_window_closed` — it suppresses the 18:15 and
+19:00 decisions and is therefore not a reconstruction of what the observer saw. The
+**stored-tape replay** reproduces the three decision kinds at the same bucket ends, but with
+different values: signal 3.08× / 0.99 against the live 3.06× / 0.88, because the stored bars were
+revised after the decision — 379 of 390 minutes differ in price or volume from the arm's saved
+minutes (366 in volume; e.g. 09:30 ET live volume 116,007 vs stored 172,764) while every source
+label is identical. Zero label differences does not mean identical inputs. Exact reconstruction
+needs per-decision input values, availability times and cutoffs, which this plan did not persist.
 
 Recorded quotes (8,078 observations): spread **5.7%** ($0.12) from 10:15 ET to ~13:45 ET,
 then 24.9% ($0.53) from ~13:47 ET to the close with changing sizes (bid 55–3,745), so a live
@@ -136,9 +145,12 @@ the trigger; from 11:46 ET the provenance rule would have refused arming; struct
 `base` short, trigger 43.55, invalidation 48.24, Fibonacci targets 35.54 / 25.34 / 14.09
 (room 18.4%, structural R 1.71). Contract APTV261016P00045000 (2.5/2.9 = $0.40, 14.8%, OI 118).
 
-`replay` over the **decision-time tape** (386 exchange + 4 sampled minutes; no provenance
-differences from the stored tape) reproduces the journaled decisions; known partial evidence is
-now recorded for the data refusals:
+The journaled decisions are authoritative. The final-arm-tape replay (386 exchange + 4 sampled
+minutes) reproduces the three `untrusted_confirmation` kinds and the close, but not the 19:00
+`watch_only` (its final `observeAfter` postdates it); the stored-tape replay reproduces the
+`watch_only` with the same 1.32× / 1.00 while 386 of 390 minutes differ in price or volume from
+the arm's saved minutes (labels identical). Known partial evidence for the data refusals, from
+the tape:
 
 | Bucket end (ET) | Decision | Known partial evidence (from the tape; crossing/volume ratio/close location/session extreme not computed) |
 |---|---|---|
@@ -201,31 +213,51 @@ What follows, and what is only a hypothesis:
   bases and unmatched sessions; it does not prove truncation absent, and it does not show the
   relative-volume ratio is unaffected. Matched-provider, matched-session analysis is required.
 
-### 8b. D1 probe: what the absent minutes actually contained
+### 8b. D1 probe: what the absent minutes actually contained (revision 3, boundary-enforced)
 
-Read-only SIP trade-tape probe (`alpaca-minutes`, verified 2026-09-18 00:15Z, feed `sip`,
-[start, end) minute boundaries, pagination complete on every request):
+Read-only SIP trade-tape probe (`alpaca-minutes`, tool version 2, feed `sip`, bar pagination
+complete on every run, trades filtered locally to `start <= t < end` because the provider's
+`end` parameter is inclusive, per-interval verification times, credential-free artifacts in
+`evidence/`). Every absent minute of each session was probed, so none is `unknown`.
 
-| Symbol, session | Minutes with a SIP 1Min bar | Absent | Probed | `verified_no_trades` | `trades_without_bar` | Odd-lot-only minutes | Shares in probed absent minutes |
-|---|---|---|---|---|---|---|---|
-| PLAB 2026-09-16 | 346/390 | 44 | 40 | 0 | **40** | 30 of 40 | 7,320 |
-| LZB 2026-09-16 | 335/390 | 55 | 30 | 0 | **30** | 28 of 30 | 7,012 |
-| PWR 2026-09-17 | 373/390 | 17 | 17 | 0 | **17** | 17 of 17 | 5,428 |
+| Symbol, session | SIP 1Min bars | Absent | Probed | `verified_no_trades` | `trades_without_bar` | Odd-lot condition on every trade | All sizes < 100 | Shares inside probed minutes | Trades dropped at the boundary | Run (UTC) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| PLAB 2026-09-16 | 346/390 | 44 | 44 | 0 | **44** | 32 of 44 | 32 of 44 | 9,334 | 0 | 2026-09-18 01:35:46–51 |
+| LZB 2026-09-16 | 335/390 | 55 | 55 | 0 | **55** | 51 of 55 | 51 of 55 | 11,264 | 0 | 01:35:53–59 |
+| PWR 2026-09-17 | 373/390 | 17 | 17 | 0 | **17** | 15 of 17 | 17 of 17 | 5,428 | 0 | 01:36:00–02 |
 
-Every probed absent minute had trades; almost all were odd-lot-only (condition `I`), with
-`4` (derivatively priced), `F` (intermarket sweep) and `W` (average price) appearing. The
-provider's minute bar was absent because no trade in the minute was eligible for its
-aggregation, as its documentation describes — not because nothing traded. Consequences, all
-recorded in PROPOSAL.md D1: an absent minute is `trades_without_bar` until a trade query says
-otherwise; it must never be relabelled an ordinary exchange bar; its volume, OHLC, crossing and
-session-extreme effects have to be defined separately; and the "count absent minutes as zero
-volume" idea from revision 1 is withdrawn (it would have understated volume by the odd-lot shares
-and invented price certainty). Whether odd-lot shares belong in the 1.5× comparison at all is a
-provider-aggregation question to settle against the documentation before D1 changes any sample.
+Condition counts across the probed trades: PLAB `@` 829, `I` 816, `4` 181, `F` 41, `W` 13; LZB
+` ` 840, `I` 836, `4` 144, `F` 62, `B` 4; PWR ` ` 717, `I` 715, `F` 62, `4` 52, `B` 2. The
+revision-2 counts (40/30/17 probed) stand after boundary enforcement: zero trades fell on the
+[start, end) boundary in any probed minute, and the classification is now by the reported
+odd-lot condition (`I`) rather than by size, with size statistics kept separately (the two
+measures agree except for 2 PWR minutes with a sub-100 trade lacking the `I` flag and 12 PLAB
+minutes where a round-lot trade carried another condition).
+
+Every probed absent minute had trades. The provider's minute bar was absent because no trade in
+the minute was eligible for its bar aggregation, as its documentation describes — not because
+nothing traded. Consequences, recorded in PROPOSAL.md D1: an absent minute is
+`trades_without_bar` until a trade query says otherwise; it is never relabelled an ordinary
+exchange bar; volume and price eligibility differ (odd-lot trades can carry volume without
+setting OHLC), so any alternative aggregation is a separate versioned calculation evaluated
+offline first, with no double counting and no change to execution behaviour or stop coverage.
+The "count absent minutes as zero volume" idea from revision 1 is withdrawn.
 
 The live tape shows the same thing from the other side: PWR's 17 "unverified provenance" minutes
 on 09-17 are exactly the 17 minutes with odd-lot-only trades and no SIP bar; Yahoo's sampled
 volume deltas for them (307, 214, 898 shares …) are consistent in magnitude with the probe.
+
+### 8c. Stored bars are revised after decisions (finding from the replay comparison)
+
+For every armed plan compared, the arm's last saved minutes and the current `bars` rows differ in
+price or volume in most minutes with identical source labels: QS 379/390 (366 volume), APTV
+09-16 386/390 (375 volume), APA 15/15. The live observer judged streaming exchange bars; the
+stored rows were later refreshed (exchange-over-exchange merge, PLATFORM-RULES F75) with
+different, mostly higher, volumes (QS 09:30 ET: 116,007 live vs 172,764 stored). So the
+stored tape can only ever be a consistency check for a decision, and the same-slot baseline
+(built from the provider's historical bars) and the live confirmation (streaming bars) are not
+on one volume basis. This is a measurement, not yet a defect classification; the offline
+`volume_eligibility_v1` comparison in PROPOSAL D1 is where it gets quantified.
 
 ## 9. Journal latency of entry decisions (bounded diagnostic)
 

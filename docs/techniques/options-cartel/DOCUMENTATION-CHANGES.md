@@ -1,5 +1,10 @@
 # Cartel documentation changes
 
+## 2026-09-18 — Lane A proposal revision 3 (P1 evidence fixes; no behaviour change)
+
+- Evidence tool: trade-tape probe enforces [start, end) minute boundaries locally, records per-interval verification times, classifies by reported conditions with size statistics separate, treats incomplete bar pagination and unprobed minutes as non-certifying, writes credential-free artifacts (`reviews/2026-09-17-proposal/evidence/`). Replay renamed to final-arm-tape; journaled decisions are the authority; per-minute value comparison added.
+- Probe rerun: PLAB 44/44, LZB 55/55, PWR 17/17 absent minutes had trades (odd-lot dominated), zero boundary drops. New finding: stored bars are revised after decisions (most minutes differ in value from the arm's saved minutes). Proposal: coexistence contract (`lane_a_focus` default 0, fallback, pending never reserves), D1 as an offline versioned volume comparison, execution unchanged.
+
 ## 2026-09-18 — Lane A proposal revision 2 (review corrections; no behaviour change)
 
 - Evidence tool corrected per review: attribution by plan/order/position id, production-consistent partial-bucket handling, engine `read_entry` replay over decision-time and stored tapes, exchange-calendar sessions, spread in cents/dollars, `latency` and the read-only `alpaca-minutes` D1 probe.

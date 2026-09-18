@@ -85,23 +85,40 @@ bars. Each expired Lane A plan records `expiredWithoutSetup` (trigger never reac
 `expiredAfterRefusal` (a bucket crossed and was refused, with the refusal reasons), so expiry
 is never read as the cause of a miss.
 
-## 3. Coexistence and capacity
+## 3. Coexistence and capacity (contract)
 
 Lane A **supplements** the existing long planner inside the same preparation run; it does not
 replace it and it changes nothing on sessions where strict bullish alignment is absent (the
 existing planner, the Moderate experiment and the bearish path run exactly as today).
 
-- Same discovery, screen and context pass. Two reviewers then run over the context-passing
-  pool: the Lane A reviewer (this definition) and the existing `automatic_review`.
-- One plan per symbol per session. If both reviewers qualify a symbol, the Lane A plan is taken
-  and the record notes `alsoQualified: general`; a symbol already armed, pending or held is
-  `already_managed` for both (existing rule).
-- Shared five focus slots: Lane A plans are ranked first up to `lane_a_focus` (proposed 2, a
-  setting), then the existing ranking fills the remainder. `lane_a_focus = 0` is the rollback
-  and leaves every other behaviour untouched. The 25-candidate checking budget is shared.
-- Lane identity and policy are snapshotted on the analysis run (`config.lane`), the plan
-  snapshot, the arm config, the order tags (`cartel_lane:A`) and the managed position's
-  `config.extras`, so fills and held positions can be attributed to the lane after the fact.
+- **Disabled path.** `lane_a_focus` defaults to **0**. At 0 the Lane A reviewer is not invoked,
+  no Lane A candidate is produced, ranking is the existing ranking unchanged, and no Lane A
+  chain fetch or feasibility computation happens. The only observable difference is the
+  setting's presence.
+- **Same pass.** Discovery, screen and context are shared. With `lane_a_focus > 0` the Lane A
+  reviewer runs over the context-passing pool beside the existing `automatic_review`.
+- **One plan per symbol per session.** If both reviewers qualify a symbol and Lane A has a free
+  slot, the Lane A plan is taken and records `alsoQualified: general`. If Lane A has **no free
+  slot or the Lane A plan is not executable** (no confirmed target, feasibility not `affordable`
+  at arming time, readiness refused), the symbol **falls back to the general plan** exactly as
+  today, recording `laneA: {qualified: true, taken: false, reason}`. A symbol already armed,
+  pending or held is `already_managed` for both reviewers (existing rule).
+- **Slots.** Lane A plans are ranked first up to `lane_a_focus` (proposed 2 of the shared 5),
+  then the existing ranking fills the remainder. Only **armed** Lane A plans and held positions
+  count toward `lane_a_focus` and toward the shared capacity — the same occupancy rule as today.
+- **Pending stays pending.** An `awaiting_contract` Lane A item remains pending and retryable by
+  the pending watcher within the existing budget; it is never classified held/managed and never
+  reserves a slot implicitly. When a pending Lane A item becomes armed, the general plan for
+  another symbol is not disarmed to make room; capacity is checked at that moment as today.
+- **Feasibility states** (extended so every fresh-chain outcome is named): `affordable` (a
+  contract passes every configured limit), `over_budget` (fails premium only), `spread_blocked`
+  (fails spread only), `filtered_other` (every inspected contract fails delta, DTE, OI or two or
+  more filters; the first-failing-filter counts are recorded), `no_chain` (provider returned no
+  expiries in range or an error) and `unknown_stale` (no chain observation newer than the
+  configured horizon). Each carries the observation time and the lowest otherwise-eligible ask.
+- **Lane identity** is snapshotted on the analysis run (`config.lane`), the plan snapshot, the
+  arm config, the order tags (`cartel_lane:A`) and the managed position's `config.extras`, so
+  fills and held positions can be attributed to the lane after the fact.
 
 ## 4. Evaluation and acceptance
 
@@ -110,8 +127,13 @@ session or the quote's `source_ts`), availability time (when the process observe
 `historyObservedAt`, chain observation time, quote `available_at`) and the decision cutoff it
 was judged against. A preparation run's `created_at` is not an availability time for data
 fetched later in the run. Historical comparisons name missing point-in-time evidence as
-`unknown` (for example, planning-time chain quotes were not stored before 2026-09-16); they
-never substitute a later cache.
+`unknown` (planning-time chain quotes were not stored before 2026-09-16, so feasibility for
+earlier sessions is `unknown` — accepted by the reviewer); such candidates stay in the
+denominator, evidence coverage is reported per stage, and conclusions stop at the last
+supported stage. No armed, filled or profitable outcome is ever inferred for them. The
+evidence tool's replay comparison shows why this matters: the stored tape's minute values
+differ from the arm's last saved minutes in most minutes (revised bars), so a stored-tape
+replay is a consistency check, not a reconstruction.
 
 **Denominator.** All discovered listings of a session. Before/after = Lane A's planning re-run
 over the frozen rows and analysis inputs of the existing preparation runs, order-free, per session:
@@ -150,20 +172,28 @@ No daily trade quota. No profitability statement from underlying movement.
 
 **D — data and diagnostics (no strategy change)**
 
-- **D1 Missing-minute classification** (probe results in BOTTLENECKS §8b: every probed absent
-  minute had trades, mostly odd lots — none verified as no-trade). Classes: `verified_no_trades`
-  (complete trade page, zero trades), `trades_without_bar` (trades exist, no eligible provider
-  bar), `incomplete_evidence` (pagination not exhausted, error, feed mismatch). Requirements:
-  same feed (`sip`) for bars and trades, complete pagination, [start, end) minute boundaries,
-  trade conditions recorded and interpreted only per the provider's aggregation rules,
-  verification timestamp on every classified minute. A constructed minute is **never** labelled
-  `exchange`; it gets its own source label (`verified_empty` / `trades_no_bar`) and its own
-  effects, defined separately: volume = verified shares (zero for `verified_no_trades`); OHLC
-  absent (a bucket's high/low/close come from provider bars only); crossing is not judged on a
-  constructed minute; the session extreme ignores it. Late corrections stay context-only and can
-  never create a retroactive entry (existing `observeAfter` boundary). Roll-out: verification is
-  recorded first (diagnostic), used for baseline samples second (after the reviewer sees the
-  slot-count effect), used for live buckets last. Rollback: verification off = today.
+- **D1 Missing-minute classification and a separate, versioned volume calculation.** Probe
+  results (BOTTLENECKS §8b, boundary-enforced rerun): every probed absent minute had trades —
+  none verified as no-trade. Classes: `verified_no_trades` (complete bar and trade pagination,
+  zero trades inside [start, end)), `trades_without_bar` (trades inside the minute, no provider
+  bar), `incomplete_evidence` (bar or trade pagination not exhausted, error, feed mismatch);
+  unprobed minutes are `unknown`. Requirements: same feed (`sip`) for bars and trades, complete
+  pagination, [start, end) boundaries enforced locally (the provider's `end` is inclusive),
+  trade conditions recorded and interpreted only per the provider's documented aggregation
+  rules, per-interval verification completion time, a credential-free artifact per run.
+  Per the reviewer's answers: **execution behaviour is unchanged**; neither "exclude all odd
+  lots" nor "add odd lots only in missing minutes" is implemented. Instead a **separate,
+  versioned volume calculation** (`volume_eligibility_v1`) is evaluated **offline first**, applying
+  the same documented eligibility rules to historical and current buckets, with double-counting
+  prevented by construction (trade-tape volume is used only for minutes that have no emitted
+  bar; minutes with a bar keep the bar's volume). Buckets containing `trades_without_bar` minutes
+  stay **non-executable** under the present policy. The offline comparison specifies separately:
+  eligible opening and closing prices, high/low, volume, empty boundary minutes, and
+  session-extreme coverage — changing what the session extreme covers would change a trading
+  protection and is not proposed. A constructed minute is never labelled `exchange`. Late
+  corrections stay context-only and never create a retroactive entry (existing `observeAfter`
+  boundary). Roll-out order: classification recorded (diagnostic) → offline comparison tables →
+  review → only then any production change, each with its own rollback.
 - **D2 Provisional feasibility** as in §2: compute, record, rank; never exclude.
 - **D3 Measurements on every refusal** (`untrusted_confirmation`, `missing_bucket`): the known
   partial values and the fields not computed, as the evidence tool now shows.

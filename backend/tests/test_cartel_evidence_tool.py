@@ -1,5 +1,8 @@
 """Pure checks for the read-only Cartel evidence tool (no database, no network)."""
-from zargar.tools.cartel_evidence import MINUTE, annotate_display_crossings, bucketize, classify_minutes, session_window
+from zargar.tools.cartel_evidence import (
+    MINUTE, annotate_display_crossings, bucketize, classify_absent_minute, classify_minutes,
+    compare_minute_values, session_window, trade_statistics, trades_in_minute,
+)
 
 
 def _row(ts, o, h, l, c, v, source="exchange"):
@@ -40,3 +43,42 @@ def test_partial_buckets_report_known_values_and_never_a_crossing():
     assert table[0]["crossedDisplay"] is True and abs(table[0]["volumeRatio"] - 1.5) < 1e-9
     assert table[1]["crossedDisplay"] is None and "volumeRatio" not in table[1]  # partial: nothing judged
     assert table[2]["crossedDisplay"] is None
+
+
+def test_trades_in_minute_enforces_half_open_boundary_with_nanosecond_stamps():
+    start = session_window("2026-09-16")[0]           # 09:30:00 ET
+    end = start + MINUTE                               # 09:31:00 ET
+    trades = [
+        {"t": "2026-09-16T13:30:00Z", "s": 100},                    # exactly at start: kept
+        {"t": "2026-09-16T13:30:59.999999999Z", "s": 5},            # last nanosecond of the minute: kept
+        {"t": "2026-09-16T13:31:00Z", "s": 100},                    # exactly at end: dropped (provider end is inclusive)
+        {"t": "2026-09-16T13:31:00.000000500Z", "s": 7},            # just past end: dropped
+        {"t": "2026-09-16T13:29:59.9Z", "s": 1},                    # before start: dropped
+        {"s": 3},                                                    # no timestamp: dropped
+    ]
+    kept = trades_in_minute(trades, start, end)
+    assert [t["s"] for t in kept] == [100, 5]
+
+
+def test_classify_absent_minute_requires_complete_bar_and_trade_pagination():
+    assert classify_absent_minute([], pagination_complete=True, error=None, bars_complete=True) == "verified_no_trades"
+    assert classify_absent_minute([{"s": 1}], pagination_complete=True, error=None, bars_complete=True) == "trades_without_bar"
+    assert classify_absent_minute([], pagination_complete=True, error=None, bars_complete=False) == "incomplete_evidence"
+    assert classify_absent_minute([{"s": 1}], pagination_complete=False, error=None, bars_complete=True) == "incomplete_evidence"
+    assert classify_absent_minute([], pagination_complete=True, error="HTTP 429", bars_complete=True) == "incomplete_evidence"
+
+
+def test_trade_statistics_separate_conditions_from_sizes():
+    stats = trade_statistics([{"s": 40, "c": ["@", "I"]}, {"s": 300, "c": ["@", "I"]}, {"s": 99, "c": ["@"]}])
+    assert stats["trades"] == 3 and stats["sharesTraded"] == 439
+    assert stats["tradesUnder100Shares"] == 2 and stats["sizeMax"] == 300     # size facts kept separately
+    assert stats["tradesWithOddLotCondition"] == 2 and stats["oddLotConditionOnEveryTrade"] is False  # condition-based
+    assert trade_statistics([])["oddLotConditionOnEveryTrade"] is False
+
+
+def test_compare_minute_values_reports_value_and_label_differences_separately():
+    a = {1: (1, 2, 0.5, 1.5, 100, "exchange"), 2: (1, 2, 0.5, 1.5, 100, "exchange"), 3: (1, 1, 1, 1, 1, "sampled")}
+    b = {1: (1, 2, 0.5, 1.5, 100, "exchange"), 2: (1, 2, 0.5, 1.5, 120, "exchange"), 4: (2, 2, 2, 2, 2, "exchange")}
+    c = compare_minute_values(a, b)
+    assert c["minutesCompared"] == 2 and c["onlyInFirst"] == 1 and c["onlyInSecond"] == 1
+    assert c["sourceLabelDiffers"] == 0 and c["priceOrVolumeDiffers"] == 1 and c["volumeDiffers"] == 1
