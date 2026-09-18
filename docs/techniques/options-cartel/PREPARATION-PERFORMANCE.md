@@ -51,3 +51,22 @@ Keep performance results separate for cold/new-session fetches, warm repeats and
 resumed runs. Never claim a fivefold complete scan improvement from only the HTTP
 pilot. Assess the next full run with `phaseDurationsMs`, `historyPacingMs`,
 `historyRateLimitRetries`, `cacheHits`, and actual shortlist readiness.
+
+## First deployed full-universe validation
+
+On v0.8.17 build `783be1a14d1071b74701d49328611f5301de59b2`, run
+`0a3d8cebe39d4803b5f44286875c7213` processed all 3,072 listings for September 18:
+
+- Shortlist checks completed at 284 seconds (4m44s); total 383 seconds (6m23s).
+- Evaluation: 271.865 seconds; optional research: 98.911 seconds. Discovery and
+  market/industry context accounted for roughly 12 seconds.
+- Warm caches: 3,074 cache hits, two history calls, zero rate-limit retries.
+- Five existing automatic arms were retained: BBY, DAR, NTNX, CNH and CLF.
+- 3,071 analyses succeeded; FISV remained excluded for a missing 2025-11-12
+  regular-session bar. This did not affect the five armed symbols.
+
+This was a **warm-cache validation with existing arms**, not a cold-fetch or
+fresh-arming benchmark. It does not prove a fivefold end-to-end speedup. The next
+measured bottleneck is per-symbol evaluation/persistence, followed by optional
+research; improving only network pacing cannot remove those costs. No further
+late-night trading-policy changes were made.
