@@ -1412,3 +1412,14 @@ restoration 72/72 by id, resting 26 -> 26, open 0 -> 0); loop lag 1.6 ms and 0 s
 
 Preparation: 102 setup rows reviewed (setup 39 / no_setup 62 / 1 provider failure retried -> no_setup), 39 armed, 0 failed.
 Deployment through the protocol after the batch, restoration 54/54 by id. Defaults unchanged (option spread cap OFF).
+
+### 2026-09-17 late - P-06 re-review corrections (three bounded, `reviews/2026-09-17-EOD-DELIVERY-CLOSURE.md` addendum)
+
+- Observer seeks the first covered quote after a persisted signal (raw samples never consume eligibility); reducer walks
+  fills and bars chronologically (first TP1 fill = eligibility; intermediate trims reduce, not end; stop-first wins;
+  pending exits explicit; cutoff-filtered executions); strict observation validator with identity, contract, signal,
+  chronology, coverage, lifetime and cutoff - the reviewer's reproduction (foreign identity, wrong contract, after-cutoff)
+  is rejected with reasons. Dollars option-only; both 09-17 rows stay `underlying_proxy_only`.
+- Disclosure: once deployed, the observer is a NEW code path active under the already-on `shadow_exit_observe` knob -
+  observation-only (journal rows), no order, no exit, no setting change. P-02 collection untouched.
+- The executable-profit measurement (ED-04) remains the next priority; nothing here substitutes for it.

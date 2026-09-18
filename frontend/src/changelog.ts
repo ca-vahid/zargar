@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.12";
+export const APP_VERSION = "0.8.13";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.13",date:"2026-09-18",title:"EM research: the runner-protection observation seeks a real quote",items:[
+    {tag:"improved",text:"EM research observer (behind the already-on shadow knob, order-free): after a confirmed TP1 trim, the bar that closes back through the saved first target now records the signal once and keeps looking for the first fresh, adequately covered contract quote on later quotes - a stale or thin first sample is raw evidence and no longer ends the search. The offline reducer walks fills and completed bars in time order, validates every observation strictly (trade, contract, signal, chronology, coverage, lifetime, cutoff) and reports proxy-only until an observation passes. No exit is placed from any of this; nothing else changes."},
+  ]},
   {version:"0.8.12",date:"2026-09-18",title:"EM: the pre-open re-plan stops drawing charts nobody reads; profit-protection and prep-ablation research",items:[
     {tag:"improved",text:"EM pre-open re-plan runs (09:25 ET, deterministic, no model pass) no longer render four charts each on the single render thread - 45 of them did at the open on 09-17. Every run a model or a person reads keeps its charts and annotated map."},
     {tag:"new",text:"Practice simulator: an OPTION quote implausibly wide for its mid can be barred from pricing an OPENING order (config sim_max_option_spread_pct, OFF by default; stops, flattens and reducing exits are never capped - a proposal after the ORCL 148C fill at 1.12 on a 0.76/1.12 snapshot the contract never traded at). Share orders keep their own 5% rule."},

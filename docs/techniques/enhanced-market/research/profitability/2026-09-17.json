@@ -82,9 +82,9 @@
     "outcome": "not_eligible",
     "why": "no TP1 trim order",
     "tp1": 262.7165,
-    "remainingAtSignal": null,
+    "eligibleAt": null,
     "tp1FilledQty": null,
-    "tp1FillTs": null,
+    "remainingAtSignal": null,
     "reclaimTs": null,
     "signalTs": null,
     "modeledExitTs": null,
@@ -94,7 +94,9 @@
     "underlyingDeltaR": null,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    },
    "neverTp1": {
     "mfeR": 0.642,
@@ -219,9 +221,9 @@
     "outcome": "not_eligible",
     "why": "no TP1 trim order",
     "tp1": 82.88,
-    "remainingAtSignal": null,
+    "eligibleAt": null,
     "tp1FilledQty": null,
-    "tp1FillTs": null,
+    "remainingAtSignal": null,
     "reclaimTs": null,
     "signalTs": null,
     "modeledExitTs": null,
@@ -231,7 +233,9 @@
     "underlyingDeltaR": null,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    },
    "neverTp1": {
     "mfeR": 2.259,
@@ -354,9 +358,9 @@
     "outcome": "not_eligible",
     "why": "no TP1 trim order",
     "tp1": 148.68,
-    "remainingAtSignal": null,
+    "eligibleAt": null,
     "tp1FilledQty": null,
-    "tp1FillTs": null,
+    "remainingAtSignal": null,
     "reclaimTs": null,
     "signalTs": null,
     "modeledExitTs": null,
@@ -366,7 +370,9 @@
     "underlyingDeltaR": null,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    },
    "neverTp1": {
     "mfeR": 5.665,
@@ -490,11 +496,11 @@
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
     "outcome": "underlying_proxy_only",
-    "why": "no covered tp1-reclaim observation",
+    "why": "no strictly valid covered tp1-reclaim observation",
     "tp1": 23.3548,
-    "remainingAtSignal": 3.0,
+    "eligibleAt": 1789651921309,
     "tp1FilledQty": 1.0,
-    "tp1FillTs": 1789651921309,
+    "remainingAtSignal": 3.0,
     "reclaimTs": 1789651920000,
     "signalTs": 1789651980000,
     "modeledExitTs": 1789651980000,
@@ -512,7 +518,9 @@
     "underlyingDeltaR": 1.693,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    },
    "neverTp1": null
   },
@@ -593,11 +601,11 @@
    "p06": {
     "policy": "tp1-reclaim-runner-exit-v1",
     "outcome": "underlying_proxy_only",
-    "why": "shares: no executable quote evidence - proxy only",
+    "why": "shares: no dollar branch in this implementation - proxy only",
     "tp1": 104.6325,
-    "remainingAtSignal": 33.0,
+    "eligibleAt": 1789660260762,
     "tp1FilledQty": 14.0,
-    "tp1FillTs": 1789660260762,
+    "remainingAtSignal": 33.0,
     "reclaimTs": 1789660260000,
     "signalTs": 1789660320000,
     "modeledExitTs": 1789660320000,
@@ -614,7 +622,9 @@
     "underlyingDeltaR": -0.229,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    },
    "neverTp1": null,
    "confirmationPair": {
@@ -716,9 +726,9 @@
     "outcome": "not_eligible",
     "why": "no TP1 trim order",
     "tp1": 298.3314,
-    "remainingAtSignal": null,
+    "eligibleAt": null,
     "tp1FilledQty": null,
-    "tp1FillTs": null,
+    "remainingAtSignal": null,
     "reclaimTs": null,
     "signalTs": null,
     "modeledExitTs": null,
@@ -728,7 +738,9 @@
     "underlyingDeltaR": null,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    },
    "neverTp1": {
     "mfeR": null,
@@ -1389,9 +1401,10 @@
     "instrument": "options",
     "qty": 4.0,
     "outcome": "underlying_proxy_only",
-    "why": "no covered tp1-reclaim observation",
+    "why": "no strictly valid covered tp1-reclaim observation",
     "remainingAtSignal": 3.0,
     "tp1FilledQty": 1.0,
+    "eligibleAt": 1789651921309,
     "reclaimTs": 1789651920000,
     "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
     "modeledExitPx": 23.540000915527344,
@@ -1407,7 +1420,9 @@
     "underlyingDeltaR": 1.693,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    },
    {
     "symbol": "SCHW",
@@ -1415,9 +1430,10 @@
     "instrument": "shares",
     "qty": 47.0,
     "outcome": "underlying_proxy_only",
-    "why": "shares: no executable quote evidence - proxy only",
+    "why": "shares: no dollar branch in this implementation - proxy only",
     "remainingAtSignal": 33.0,
     "tp1FilledQty": 14.0,
+    "eligibleAt": 1789660260762,
     "reclaimTs": 1789660260000,
     "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
     "modeledExitPx": 104.5999984741211,
@@ -1432,7 +1448,9 @@
     "underlyingDeltaR": -0.229,
     "dollarDelta": null,
     "alternativeRealized": null,
-    "productionRealized": null
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
    }
   ],
   "neverTp1": [
@@ -1967,5 +1985,5 @@
    "roomAtActualEntry": "unknown for every fill (no underlying observation at dispatch is recorded)"
   }
  },
- "generatedAt": "2026-09-17T22:25:23.918031+00:00"
+ "generatedAt": "2026-09-18T01:36:42.217603+00:00"
 }

@@ -2348,3 +2348,12 @@ times out waiting for a Practice option fill off the delayed chain quote (refuse
   transform; an aberrant but untransformed book is what this cap catches. Activation and the cap value are a user decision. Tests: `tests/test_em_sim_option_spread.py`.
 - `technique/service.py`: a plan run with `trigger == "preopen_replan"` and no vision pass renders no charts (no model or
   person reads them at 09:25 ET; the UI renders on demand). Every other run is unchanged. Test in `test_technique_walkforward.py`.
+
+### 2026-09-17 late (EM desk) - P-06 reclaim observation: a new observation-only path under an existing knob
+
+`PlanRunner._reclaim_signal` (closed-bar handler) + the `tp1-reclaim` rung in `_shadow_capture` (quote watch) run whenever
+`techniques.enhanced_market.shadow_exit_observe` is on (it is, user decision 2026-09-15). They journal `TechniqueExitShadow`
+rows only - no order, no exit, no setting - through the bounded non-blocking shadow recorder, so protective decisions never
+wait on them. "Settings unchanged" therefore means "no behaviour change", not "no new code path": the path is disclosed here.
+The trade state gains one persisted field (`reclaimSignal`, nullable; additive). Other desks' runners are unaffected unless
+their own `shadow_exit_observe` resolves true (Tips/Team2: `execution.shadow_exit_observe` default - unchanged).

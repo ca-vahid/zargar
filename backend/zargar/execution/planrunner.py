@@ -180,6 +180,10 @@ class Trade:
     multiplier: float = 1.0              # 100 for options
     single_exit: str = "tp2"             # options with < 3 contracts: exit everything at this target
     direction: str = "long"              # long (call) | short (put) — the underlying idea's side
+    # P-06 `tp1-reclaim-runner-exit-v1` (re-review 2026-09-17): the causal reclaim signal, set ONCE on the closed bar
+    # whose close is back through the saved TP1 after a confirmed TP1 fill; persisted so the quote watch keeps seeking
+    # the first covered contract quote across a restart. Research only - never an exit.
+    reclaim_signal: dict | None = None
     # a durable-position handoff has claimed this trade's fill (ARM-GAPS B5):
     # the session exit machinery must not touch it while the adopt is in flight
     handoff_pending: bool = False
@@ -248,7 +252,7 @@ class Trade:
                 "lastPrice": self.last_price, "errors": list(self.errors),
                 "retries": self.retries, "openedTs": self.opened_ts, "closedTs": self.closed_ts,
                 "critic": self.critic, "criticAdvisory": self.critic_advisory, "scratched": self.scratched,
-                "criticDisposition": self.critic_disposition,
+                "criticDisposition": self.critic_disposition, "reclaimSignal": self.reclaim_signal,
                 "decision": self.decision, "decisionDisposition": self.decision_disposition, "timing": dict(self.timing)}
 
 
@@ -618,6 +622,14 @@ class PlanRunner(SessionListener):
                     rungs.append((0, "tp1-candidate", (1.0 if float(tr.filled_qty) >= 2 else float(tr.filled_qty))))
             for idx, label, proposed in rungs:
                 self._shadow_capture_rung(ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out)
+            # P-06: a persisted reclaim signal keeps seeking its first COVERED contract quote on every fresh observation
+            sig = getattr(tr, "reclaim_signal", None)
+            if sig and tr.targets:
+                self._shadow_capture_rung(ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis,
+                                          0, "tp1-reclaim", float(tr.remaining), out, hit_override=True)
+                for p in out:
+                    if p.get("rung") == "tp1-reclaim" and "signal" not in p:
+                        p["signal"] = dict(sig)
         return out
 
     def _shadow_capture_rung(self, ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out,
@@ -631,9 +643,9 @@ class PlanRunner(SessionListener):
                 hit = hit_override
             if not hit:
                 return
-            candidate = label == "tp1-candidate"
+            candidate = label in ("tp1-candidate", "tp1-reclaim")     # first-COVERED semantics: raw samples never consume eligibility
             key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1",
-                   "tp1-reclaim" if label == "tp1-reclaim" else (idx if not candidate else "tp1-candidate"))
+                   label if candidate else idx)
             pending = self.__dict__.setdefault("_shadow_pending", set())
             if not candidate:
                 if key in seen or key in pending:
@@ -692,10 +704,11 @@ class PlanRunner(SessionListener):
             if disposition != "observed" and why is None:
                 why = disposition
             if candidate:
-                # PF-01 (2026-09-15): the frozen policy takes the FIRST COVERED opportunity - an unscorable touch is
-                # recorded once as raw evidence (its own key) and leaves the candidate eligible for a later covered one
+                # PF-01 (2026-09-15) / P-06 re-review (2026-09-17): the frozen policies take the FIRST COVERED opportunity - an
+                # unscorable sample (stale, absent, thin, pending exit, stop first) is recorded once as raw evidence under its
+                # own key and leaves the candidate eligible for a later covered observation
                 if not scorable:
-                    key = key[:4] + ("tp1-candidate-raw",)
+                    key = key[:4] + (label + "-raw",)
                     if key in seen or key in pending:
                         return
                 pending.add(key)
@@ -1798,7 +1811,7 @@ class PlanRunner(SessionListener):
                 realized_pnl=float(td.get("realizedPnl") or 0), instrument=td.get("instrument") or "shares",
                 contract=td.get("contract"), order_symbol=td.get("orderSymbol"),
                 multiplier=float(td.get("multiplier") or 1.0), opened_ts=td.get("openedTs"),
-                closed_ts=td.get("closedTs"), fire_bar_index=None,
+                closed_ts=td.get("closedTs"), fire_bar_index=None, reclaim_signal=td.get("reclaimSignal"),
                 # FIX-05 (2026-09-14): review evidence survives a restart - the critic's opinion, whether the
                 # entry went ahead against it, and the failure history (INTC/HOOD restored with false flags)
                 critic=td.get("critic"), critic_advisory=bool(td.get("criticAdvisory", False)),
@@ -3513,7 +3526,7 @@ class PlanRunner(SessionListener):
                              scratch_trim=float(getattr(self.rules(), "scratch_trim", 0.5)),
                              scratch_only_far_tp1=bool(getattr(self.rules(), "scratch_only_far_tp1", False)),
                              far_tp1_r=float(getattr(self.rules(), "far_tp1_r", 3.0)))
-        self._shadow_enqueue(ap, self._reclaim_capture(ap, tr, bar))     # P-06 observation (ED-02); never awaited here
+        self._shadow_enqueue(ap, self._reclaim_signal(ap, tr, bar))      # P-06 signal + first sample; never awaited here
         if decision is None:
             # a single-contract position may need to advance its trim counter without an order -
             # but NEVER while an exit is working/unresolved (DA-02, 2026-09-14): a pending or later
@@ -3539,12 +3552,16 @@ class PlanRunner(SessionListener):
         if decision.qty >= 1:
             await self._exit(ap, tr, decision.kind, decision.qty, journal=True, reason=decision.reason)
 
-    def _reclaim_capture(self, ap: ArmedPlan, tr: Trade, bar: Bar) -> list[dict]:
-        """P-06 (ED-02, 2026-09-17): after a CONFIRMED TP1 fill, the first completed bar whose close is back through the
-        saved TP1 records ONE `tp1-reclaim` observation of the remaining quantity's contract NBBO (same evidence rules
-        as shadow-exit-v1: provenance, freshness, uncrossed book, KNOWN size). Pure capture; the caller enqueues.
-        Research only - no exit is placed from it."""
+    def _reclaim_signal(self, ap: ArmedPlan, tr: Trade, bar: Bar) -> list[dict]:
+        """P-06 (re-review 2026-09-17): on the first completed bar whose close is back through the saved TP1 after a
+        CONFIRMED TP1 fill, persist the causal SIGNAL on the trade (once; survives a restart) and take the first sample
+        of the remaining quantity's contract NBBO. The quote watch (`_shadow_capture`) then keeps seeking the first
+        fresh, adequately covered quote on later observations; an unscorable sample is raw evidence only. Pending exit
+        / stop precedence: a signal is never set while an exit is working, and every observation carries the shadow
+        disposition. Pure capture; the caller enqueues. Research only - no exit is placed from it."""
         try:
+            if getattr(tr, "reclaim_signal", None):
+                return []                                            # already signalled: the quote watch owns the seeking
             if not self._shadow_enabled(ap) or tr.status != "open" or tr.remaining <= 0 or tr.pending_exit_qty > 1e-9:
                 return []
             if not any(x.get("kind") == "tp1" and float(x.get("filledQty") or 0) > 0 for x in tr.exits):
@@ -3552,7 +3569,11 @@ class PlanRunner(SessionListener):
             tp1 = float(tr.targets[0]) if tr.targets else None
             if not tp1_reclaim_signal(tr.direction, tp1, bar.close):
                 return []
-            now_ms = int(time.time() * 1000)
+            now_ms = int(getattr(self, "_now_ms", lambda: int(time.time() * 1000))())     # wall clock; tests pin it
+            tr.reclaim_signal = {"barTs": int(bar.ts), "signalTs": int(bar.ts) + 60000, "close": float(bar.close), "tp1": tp1,
+                                 "remaining": float(tr.remaining), "setAt": now_ms, "rule": "tp1-reclaim-runner-exit-v1"}
+            self._log(ap, "reclaim_signal", f"{tr.trigger_id}: P-06 signal - bar {bar.ts} closed {bar.close:.4f} back through TP1 {tp1:.4f} "
+                      f"(remaining {tr.remaining:g}); seeking the first covered contract quote (research only)", trigger=tr.trigger_id)
             q = self.engine.quotes.get(ap.symbol)
             seen = self.__dict__.setdefault("_shadow_seen", set())
             prem_pct = float(self.rt("premium_stop_pct", 50.0) or 0)
@@ -3561,7 +3582,7 @@ class PlanRunner(SessionListener):
             self._shadow_capture_rung(ap, tr, q, now_ms, 0.0, float(bar.close), int(bar.ts) + 60000, 0.0, seen, prem_pct, basis,
                                       0, "tp1-reclaim", float(tr.remaining), out, hit_override=True)
             for p in out:
-                p["signal"] = {"barTs": int(bar.ts), "close": float(bar.close), "tp1": tp1, "rule": "tp1-reclaim-runner-exit-v1"}
+                p["signal"] = dict(tr.reclaim_signal)
             return out
         except Exception:      # research capture must never disturb the exit path
             return []

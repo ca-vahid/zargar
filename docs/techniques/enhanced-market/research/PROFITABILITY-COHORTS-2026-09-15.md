@@ -156,3 +156,18 @@ terminal event; options compare underlying to underlying (the close of the bar c
 A remainder still open at the cutoff is `partial`. Runtime observer: `PlanRunner._reclaim_capture` (behind
 `shadow_exit_observe`, same evidence rules as shadow-exit-v1, enqueued, never awaited ahead of protection). The 2026-09-17
 SCHW dollar comparison stated earlier is WITHDRAWN; both 09-17 rows are `underlying_proxy_only`.
+
+**P-06 after the ED closure re-review (2026-09-17 late; supersedes the two paragraphs above where they differ).**
+(1) Observer: the reclaim SIGNAL is persisted on the trade once (bar, close, TP1, remaining; survives a restart) and the
+quote watch then seeks the FIRST fresh, adequately covered contract quote on subsequent observations; an unscorable
+sample (stale, absent, thin depth, stop-first, pending exit) is recorded once as raw evidence under its own key and never
+consumes eligibility; a signal is never set while an ordinary exit is working. (2) Reducer: a chronological walk over the
+trade instance's confirmed executions and completed bars up to the cutoff - eligibility opens at the FIRST TP1 fill (a
+later partial fill never moves it), the remainder is updated as later trims fill (an intermediate TP2 trim does not end
+the evaluation), a fill that empties the runner ends it (`not_triggered`), a working ordinary exit at the cutoff is
+`partial` (a later sale is never assumed), executions after the cutoff are ignored. (3) Validator
+(`validate_observation`, strict, shared-capable): trade instance, contract, the observation's own signal identity,
+chronological quote/observation times, disposition `observed`, coverage >= remainder, lifetime 15 min after the signal,
+cutoff and position close - a missing field fails; the EARLIEST valid observation wins, rejections are listed with
+reasons. Dollars are OPTION-ONLY (shares are proxy-only even with an observation - disclosed); until an observation
+passes in production every P-06 row is `underlying_proxy_only` or unavailable. P-02 collection and reducer unchanged.

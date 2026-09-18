@@ -57,6 +57,26 @@ shell hands the restart to the `ZargarRestart` task; restoration is verified by 
 
 - [x] **Deployment receipt (2026-09-17 17:08 PT):** target `e6cb4b7ec1e45863bf260ad90962ee9cf01544f6` = tested `ad8796f` + closure record `d09b677` + origin/main `3ea992d` (Tips PR #205, re-merged on the Tips desk's request before the deploy; check-release / import / frontend build green on the merge). Readiness safe (market closed, 0 open trades, batch finished); `deploy.ps1` under the lease from `C:/Cursor/zargar` -> elevated shell exit 8 -> `ZargarRestart` task at 17:08:53; health v0.8.12 build `e6cb4b7e` after 90 s; receipt phase `verified`, expected / healthy 0.8.12. Restoration by hand against `logs/restart-inventory-20260917-170833.json`: armed 54 before / 54 after by id (enhanced_market 39, tip 12, team2 3), 0 missing, 0 new; resting orders 27 -> 27; open trades 0 -> 0; 5 managed positions restored; one engine pair + gateway + ingest workers. Runtime defaults after the restart: `sim_max_option_spread_pct` = 0.0 (OFF; no env override), observation knobs unchanged. Note: the first restoration probe timed out at 8 s while the engine was still restoring (a client timeout, not a state); the 60 s retry returned the counts above. The Tips-flagged `test_sim_fill_evidence::test_fill_evidence_committed_with_execution` fails on this tree as well (pre-existing, `syntheticMode` expectation; not EM's).
 
+## Addendum - P-06 re-review (`2026-09-17-ED-CLOSURE-REREVIEW.md`): three bounded corrections
+
+ED-01 and ED-03 accepted at source-review level; ED-04 remains assigned, not delivered (the next priority). The three P-06
+corrections below are on the tree named in the second receipt set; P-06 results stay proxy-only / unavailable until an
+observation passes strict validation in production. Preparation, baseline trading and P-02 collection unchanged.
+
+| # | Correction | Where | Acceptance cases (`tests/test_em_runner_protection.py`, 12 passed) |
+|---|---|---|---|
+| 1 | Persist the causal signal; seek the first usable quote on later observations with raw/covered keys (raw never consumes eligibility); signal never set while an exit is working | `planrunner.py`: `Trade.reclaim_signal` (persisted `reclaimSignal`), `_reclaim_signal`, `_shadow_capture` reclaim rung, `_shadow_capture_rung` candidate semantics for `tp1-reclaim` | stale first sample -> raw key, fresh covered quote 12 s later -> covered key, later better quote not captured; partial depth recorded with coverage, reducer rejects it; pending exit blocks the signal; signal set once |
+| 2 | Chronological reduction across partial trims; eligibility at the FIRST TP1 fill; intermediate trims reduce, a fill that empties the runner ends; explicit pending-exit semantics; executions cutoff-filtered | `em_profitability.py::runner_protection` | later partial TP1 fill does not move eligibility (remainder 42); intermediate TP2 trim then reclaim (remainder 23); full stop-first; missing minute after eligibility = unknown; cancelled trim; working ordinary exit = partial; fills after the cutoff ignored |
+| 3 | Strict shared observation validator: trade instance, contract, signal identity, chronology, coverage, disposition, lifetime, cutoff; earliest valid wins; rejections listed | `em_profitability.py::validate_observation`, caller passes identity | reviewer reproduction (OTHER_ENTRY / WRONG_CONTRACT / after-cutoff) rejected; missing identity / missing signal / different signal bar / out-of-order quote / before signal / partial coverage / pending disposition / unscorable / beyond lifetime all rejected with reasons; earliest valid chosen over a later more favourable one |
+
+Scope disclosed: the dollar branch is OPTION-ONLY; shares are proxy-only even with an observation. 09-17 rows after the
+corrected reducer: BMNR `underlying_proxy_only` (+1.69 R underlying vs the later stop; no valid observation - the observer
+did not exist that day), SCHW `underlying_proxy_only` (-0.23 R). The observer is a new observation-only path active under the
+already-on shadow knob once deployed (PLATFORM-RULES entry).
+
+- [ ] Second preparation receipt: _pending_ (tonight's 39 arms for 2026-09-18 stand; no rerun)
+- [ ] Second deployment receipt: _pending_ (0.8.13)
+
 ## Kept
 
 Rules, thresholds, observation knobs, the preparation flow and live gates unchanged; the 8% friction marker a marker; no

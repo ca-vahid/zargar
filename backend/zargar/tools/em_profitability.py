@@ -143,111 +143,167 @@ def _minute(ts_ms: int) -> int:
     return (int(ts_ms) // 60000) * 60000
 
 
+P06_OBSERVATION_LIFETIME_MS = 15 * 60000     # a covered quote later than this after the signal is not "the first opportunity"
+
+
+def validate_observation(o: dict, *, rung: str, entry_order_id, contract_symbol: str | None, signal_bar_ts: int | None,
+                         signal_ts: int, remaining: float, cutoff_ms: int, opened_ts=None, closed_ts=None,
+                         lifetime_ms: int = P06_OBSERVATION_LIFETIME_MS) -> tuple[bool, str | None, float | None, int | None]:
+    """STRICT shared validator for a money comparison (re-review 2026-09-17, correction 3). Returns (ok, why, bid, at).
+    Every identity must be PRESENT and match: rung; tradeInstance == the entry order id; contract symbol == the trade's
+    contract; the observation's own signal identity (signal.barTs) == the reducer's signal bar. Chronology: the contract
+    quote's source time <= observedAt; observedAt within [signalTs, min(cutoff, signalTs + lifetime, closedTs)] and not
+    before the position opened. Disposition must be `observed` (stop / pending exit lose), scorable, with coverage >= the
+    remaining quantity. A missing field is a failure, never a pass."""
+    if o.get("rung") != rung:
+        return False, "other rung", None, None
+    inst = o.get("tradeInstance")
+    if entry_order_id is None or inst is None or str(inst) != str(entry_order_id):
+        return False, "trade instance missing or different", None, None
+    contract = o.get("contract") or {}
+    csym = contract.get("symbol")
+    if not contract_symbol or not csym or str(csym) != str(contract_symbol):
+        return False, "contract missing or different", None, None
+    sig = o.get("signal") or {}
+    if signal_bar_ts is None or sig.get("barTs") is None or int(sig["barTs"]) != int(signal_bar_ts):
+        return False, "signal identity missing or different", None, None
+    at = o.get("observedAt", o.get("observedTs"))
+    if at is None:
+        return False, "no observation time", None, None
+    at = int(at)
+    src = contract.get("sourceTs")
+    if src is None or int(src) > at:
+        return False, "contract quote time missing or after the observation (out of order)", None, at
+    if at < int(signal_ts):
+        return False, "observed before the signal", None, at
+    upper = min(int(cutoff_ms), int(signal_ts) + int(lifetime_ms), int(closed_ts) if closed_ts else int(cutoff_ms))
+    if at > upper:
+        return False, "observed after the cutoff / lifetime / position close", None, at
+    if opened_ts is not None and at < int(opened_ts):
+        return False, "before the position opened", None, at
+    if o.get("disposition") != "observed":
+        return False, f"disposition {o.get('disposition')}", None, at
+    m = o.get("modeled") or {}
+    if not m.get("scorable") or not m.get("bid"):
+        return False, f"unscorable ({m.get('why') or 'no coverage'})", None, at
+    if float(m.get("coveredQty") or 0) + 1e-9 < float(remaining):
+        return False, f"coverage {m.get('coveredQty')} below the remainder {remaining:g}", None, at
+    return True, None, float(m["bid"]), at
+
+
 def runner_protection(direction: str, tp1: float | None, entry: float | None, stop: float | None, exits: list[dict], executions: list,
                       bars: list[dict], cutoff_ms: int, *, filled_qty: float, multiplier: float, instrument: str | None,
                       avg_fill: float | None = None, entry_fee_per_unit: float | None = None, fee_side: float = 0.0,
-                      observations: list[dict] | None = None) -> dict:
-    """P-06 `tp1-reclaim-runner-exit-v1` (frozen 2026-09-18; ED-02 corrections 2026-09-17 evening). Bound to ONE trade
-    instance: `exits` are that trade's own exit records (kind, orderId, ...) and `executions` the fills of those orders
-    (order_id, side, qty, price, commission, ts). Rules:
-    - eligible only after a CONFIRMED TP1 fill (executions of the tp1 exit order; a cancelled / unfilled trim is not a trim);
-      the remaining quantity is the ORIGINAL fill minus every execution at or before the signal (partial trims and
-      intermediate trims reduce it);
-    - the reclaim signal = the first 1m bar COMPLETED after the TP1 fill (the fill minute's own bar included) whose close is
-      back through the saved TP1 (long: close < TP1; short: close > TP1); bars must be consecutive minutes (a gap = unknown) and only bars
-      completed BEFORE the production runner's next execution are visible (a stop or trim that filled first wins:
-      `not_triggered`);
-    - the candidate exits the remainder at the FIRST fresh covered executable quote after the signal when a
-      `tp1-reclaim` observation exists (options: dollars = k x (bid - fill) x m - actual entry fee - modeled exit fee);
-      otherwise the NEXT bar's open is an UNDERLYING PROXY for shares and options alike - no dollars;
-    - production = the actual executions of the remainder after the signal (VWAP, allocated fees), to its terminal event;
-      a remainder still open at the cutoff is `partial`.
-    Never chosen after the fact: TP1 is the plan's saved first target."""
-    out = {"policy": P06_POLICY, "outcome": "unknown", "why": None, "tp1": tp1, "remainingAtSignal": None, "tp1FilledQty": None,
-           "tp1FillTs": None, "reclaimTs": None, "signalTs": None, "modeledExitTs": None, "modeledExitPx": None, "modeledBasis": None,
-           "productionRunner": None, "underlyingDeltaR": None, "dollarDelta": None, "alternativeRealized": None, "productionRealized": None}
+                      observations: list[dict] | None = None, entry_order_id=None, contract_symbol: str | None = None,
+                      opened_ts=None, closed_ts=None) -> dict:
+    """P-06 `tp1-reclaim-runner-exit-v1` (frozen 2026-09-18; re-review corrections 2026-09-17 evening). A CHRONOLOGICAL
+    walk over this trade instance's confirmed executions and completed bars up to the cutoff:
+    - eligibility opens at the FIRST TP1 fill (any partial); a later partial TP1 fill never moves it; the remainder is the
+      original fill minus every execution seen so far, updated as later trims fill;
+    - after eligibility, bars are consumed in completion order (consecutive minutes; a gap = unknown); a fill of any
+      kind between bars reduces the remainder (an intermediate TP2 trim does NOT end the evaluation); a fill that takes
+      the remainder to zero ends it (`not_triggered`: production closed the runner first);
+    - the signal = the first completed bar whose close is back through the saved TP1 while a remainder exists and no
+      ordinary exit is working; the remainder at the signal is frozen;
+    - candidate = the EARLIEST strictly validated `tp1-reclaim` observation (identity, contract, signal identity,
+      chronology, coverage, lifetime, cutoff - `validate_observation`); options only: dollars = k x (bid - fill) x m -
+      actual entry fee - modeled exit fee; shares have NO dollar branch (disclosed: proxy only even with an observation);
+      without a valid observation the next bar's open is an UNDERLYING PROXY for shares and options alike;
+    - production = the remainder's fills after the signal to its terminal event (VWAP, allocated fees); a working
+      ordinary exit at the cutoff or an unsold remainder = `partial` (explicit: a later sale is never assumed).
+    Executions after the cutoff are ignored. TP1 is the plan's saved first target - never chosen after the fact."""
+    out = {"policy": P06_POLICY, "outcome": "unknown", "why": None, "tp1": tp1, "eligibleAt": None, "tp1FilledQty": None,
+           "remainingAtSignal": None, "reclaimTs": None, "signalTs": None, "modeledExitTs": None, "modeledExitPx": None, "modeledBasis": None,
+           "productionRunner": None, "underlyingDeltaR": None, "dollarDelta": None, "alternativeRealized": None, "productionRealized": None,
+           "observationsRejected": [], "dollarScope": "options only - shares are proxy-only in this implementation"}
     if tp1 is None or entry is None or stop is None or abs(float(entry) - float(stop)) <= 0:
         out["why"] = "geometry missing"; return out
     long = direction != "short"; risk = abs(float(entry) - float(stop))
-    ex_by_order: dict[str, list] = {}
-    for e in executions or []:
-        ex_by_order.setdefault(str(e["order_id"]), []).append({"ts": _ev_ms(e["ts"]), "qty": float(e["qty"] or 0), "price": float(e["price"] or 0),
-                                                                "commission": float(e["commission"] or 0), "side": str(e["side"] or "")})
-    exit_orders = [(x, ex_by_order.get(str(x.get("orderId") or ""), [])) for x in (exits or []) if x.get("orderId")]
-    tp1_fills = [f for x, fl in exit_orders if x.get("kind") == "tp1" for f in fl if f["side"] == "SELL" and f["qty"] > 0]
-    if not any(x.get("kind") == "tp1" for x, _ in exit_orders):
+    order_kind = {str(x.get("orderId")): x.get("kind") for x in (exits or []) if x.get("orderId")}
+    fills = sorted(({"ts": _ev_ms(e["ts"]), "qty": float(e["qty"] or 0), "price": float(e["price"] or 0), "commission": float(e["commission"] or 0),
+                     "kind": order_kind[str(e["order_id"])], "orderId": str(e["order_id"])}
+                    for e in executions or [] if str(e["order_id"]) in order_kind and str(e["side"] or "") == "SELL" and float(e["qty"] or 0) > 0
+                    and _ev_ms(e["ts"]) <= cutoff_ms), key=lambda f: f["ts"])
+    if not any(k == "tp1" for k in order_kind.values()):
         out["outcome"] = "not_eligible"; out["why"] = "no TP1 trim order"; return out
-    if not tp1_fills:
-        out["outcome"] = "not_eligible"; out["why"] = "TP1 trim never filled (cancelled or pending) - not a completed trim"; return out
-    tp1_ts = max(f["ts"] for f in tp1_fills); out["tp1FillTs"] = tp1_ts
-    out["tp1FilledQty"] = sum(f["qty"] for f in tp1_fills)
-    all_sells = sorted((f for _, fl in exit_orders for f in fl if f["side"] == "SELL" and f["qty"] > 0), key=lambda f: f["ts"])
-    later = [f for f in all_sells if f["ts"] > tp1_ts]
-    first_later_ts = later[0]["ts"] if later else None
-    # bars completed strictly after the TP1 fill minute, consecutive, and completed before the production runner's next fill
-    # bars that COMPLETE strictly after the TP1 fill (the fill minute's own bar included), consecutive minutes, and only
-    # those completed before the production runner's next fill
-    path = sorted((b for b in bars if int(b["ts"]) >= _minute(tp1_ts) and int(b["ts"]) + 60000 > tp1_ts and int(b["ts"]) + 60000 <= cutoff_ms), key=lambda b: b["ts"])
-    prev = _minute(tp1_ts) - 60000; reclaim = None
+    first_tp1 = next((f for f in fills if f["kind"] == "tp1"), None)
+    if first_tp1 is None:
+        out["outcome"] = "not_eligible"; out["why"] = "TP1 trim never filled by the cutoff (cancelled or pending) - not a completed trim"; return out
+    t_e = first_tp1["ts"]; out["eligibleAt"] = t_e
+    out["tp1FilledQty"] = sum(f["qty"] for f in fills if f["kind"] == "tp1")
+    # working ordinary exits (an order without any fill by the cutoff and not cancelled) - explicit semantics
+    filled_orders = {f["orderId"] for f in fills}
+    working = [x for x in (exits or []) if x.get("orderId") and str(x["orderId"]) not in filled_orders
+               and str(x.get("status") or "").upper() not in ("CANCELLED", "REJECTED", "EXPIRED", "REJECTED_RISK")]
+    # ---- chronological walk: bars completing after the first TP1 fill, fills interleaved
+    path = sorted((b for b in bars if int(b["ts"]) + 60000 > t_e and int(b["ts"]) + 60000 <= cutoff_ms), key=lambda b: b["ts"])
+    remaining = float(filled_qty) - sum(f["qty"] for f in fills if f["ts"] <= t_e)
+    consumed = [f for f in fills if f["ts"] <= t_e]
+    prev_ts = _minute(t_e) - 60000; reclaim = None; ended = None     # the first bar consumed is the fill minute's own bar
     for b in path:
-        ts = int(b["ts"])
-        if first_later_ts is not None and ts + 60000 > first_later_ts:
-            break                                                   # this bar completes after production already sold: invisible
-        if ts - prev != 60000:
-            out["why"] = f"bar gap after the TP1 fill ({dt.datetime.fromtimestamp(prev / 1000, NY).strftime('%H:%M')} -> {dt.datetime.fromtimestamp(ts / 1000, NY).strftime('%H:%M')})"; return out
-        prev = ts
+        ts = int(b["ts"]); done_at = ts + 60000
+        if ts - prev_ts != 60000:
+            out["why"] = f"bar gap after eligibility ({dt.datetime.fromtimestamp(prev_ts / 1000, NY).strftime('%H:%M')} -> {dt.datetime.fromtimestamp(ts / 1000, NY).strftime('%H:%M')})"; return out
+        prev_ts = ts
+        for f in fills:                                   # fills that completed before this bar did reduce the remainder first
+            if f in consumed or f["ts"] > done_at:
+                continue
+            consumed.append(f); remaining -= f["qty"]
+            if remaining <= 1e-9:
+                ended = f; break
+        if ended is not None:
+            break
         if (float(b["close"]) < float(tp1)) if long else (float(b["close"]) > float(tp1)):
             reclaim = b; break
+    if ended is not None:
+        out["outcome"] = "not_triggered"; out["why"] = f"production closed the runner ({ended['kind']}) before any completed close back through TP1"; return out
     if reclaim is None:
-        if first_later_ts is not None:
-            kinds = [x.get("kind") for x, fl in exit_orders if any(f["ts"] == first_later_ts for f in fl)]
-            out["outcome"] = "not_triggered"; out["why"] = f"production exited first ({', '.join(k for k in kinds if k) or 'exit'}) before any close back through TP1"
-        elif path and int(path[-1]["ts"]) + 60000 >= cutoff_ms - 60000:
+        if path and int(path[-1]["ts"]) + 60000 >= cutoff_ms - 60000:
             out["outcome"] = "not_triggered"; out["why"] = "no completed close back through TP1 before the session's end"
         else:
             out["outcome"] = "partial"; out["why"] = "runner still open and no reclaim observed at the cutoff"
         return out
     signal_ts = int(reclaim["ts"]) + 60000
-    out.update({"reclaimTs": int(reclaim["ts"]), "signalTs": signal_ts})
-    sold_before = sum(f["qty"] for f in all_sells if f["ts"] <= signal_ts)
-    remaining = float(filled_qty) - sold_before
-    out["remainingAtSignal"] = remaining
-    if remaining <= 0:
-        out["outcome"] = "not_eligible"; out["why"] = "nothing left to protect at the signal (trims took the whole position)"; return out
-    # production branch: the remainder's actual executions after the signal, to its terminal event
-    prod = [f for f in all_sells if f["ts"] > signal_ts]
+    out.update({"reclaimTs": int(reclaim["ts"]), "signalTs": signal_ts, "remainingAtSignal": remaining})
+    if remaining <= 1e-9:
+        out["outcome"] = "not_eligible"; out["why"] = "nothing left to protect at the signal"; return out
+    if any(x for x in working if (x.get("ts") or 0) and int(x["ts"]) <= signal_ts):
+        out["outcome"] = "not_triggered"; out["why"] = "an ordinary exit was already working at the signal (pending exit precedence)"; return out
+    # ---- production branch: the remainder's fills after the signal to its terminal event
+    prod = [f for f in fills if f["ts"] > signal_ts]
     prod_qty = sum(f["qty"] for f in prod)
     if prod_qty + 1e-9 < remaining:
-        out["outcome"] = "partial"; out["why"] = f"production still holds {remaining - prod_qty:g} of the remainder at the cutoff"; return out
+        out["outcome"] = "partial"
+        out["why"] = (f"production still holds {remaining - prod_qty:g} of the remainder at the cutoff"
+                      + (" (an ordinary exit is working - not assumed filled)" if working else ""))
+        return out
     prod_vwap = sum(f["qty"] * f["price"] for f in prod) / prod_qty
     prod_fees = sum(f["commission"] for f in prod)
-    out["productionRunner"] = {"qty": prod_qty, "vwap": round(prod_vwap, 4), "fees": round(prod_fees, 2),
-                               "kinds": sorted({x.get("kind") for x, fl in exit_orders if any(f["ts"] > signal_ts for f in fl) if x.get("kind")})}
-    # candidate branch: first fresh covered executable quote after the signal, else the next bar's open as an underlying proxy
-    nxt = next((b for b in path if int(b["ts"]) == signal_ts), None)
-    obs = None
+    out["productionRunner"] = {"qty": prod_qty, "vwap": round(prod_vwap, 4), "fees": round(prod_fees, 2), "kinds": sorted({f["kind"] for f in prod if f["kind"]})}
+    # ---- candidate: the EARLIEST strictly valid observation; rejected ones are listed with their reason
+    valid = []
     for o in observations or []:
-        if o.get("rung") != "tp1-reclaim":
-            continue
-        m = o.get("modeled") or {}
-        if m.get("scorable") and m.get("bid") and float(o.get("observedAt") or 0) >= signal_ts:
-            obs = o; break
-    if obs is not None and instrument == "options" and avg_fill is not None:
-        bid = float(obs["modeled"]["bid"]); k = min(remaining, float(obs["modeled"].get("coveredQty") or 0))
-        if k >= remaining - 1e-9:
-            entry_fee = float(entry_fee_per_unit if entry_fee_per_unit is not None else fee_side)
-            alt = remaining * ((bid - float(avg_fill)) * float(multiplier) - entry_fee - fee_side)
-            prod_real = remaining * ((prod_vwap - float(avg_fill)) * float(multiplier) - entry_fee) - prod_fees
-            out.update({"outcome": "compared", "modeledBasis": "covered executable bid at the first fresh observation after the signal",
-                        "modeledExitTs": int(obs.get("observedAt")), "modeledExitPx": bid,
-                        "alternativeRealized": round(alt, 2), "productionRealized": round(prod_real, 2), "dollarDelta": round(alt - prod_real, 2)})
-            return out
-        out["why"] = "reclaim observation covers only part of the remainder"
+        ok, why, bid, at = validate_observation(o, rung="tp1-reclaim", entry_order_id=entry_order_id, contract_symbol=contract_symbol,
+                                                signal_bar_ts=int(reclaim["ts"]), signal_ts=signal_ts, remaining=remaining, cutoff_ms=cutoff_ms,
+                                                opened_ts=opened_ts, closed_ts=closed_ts)
+        if ok:
+            valid.append((at, bid, o))
+        else:
+            out["observationsRejected"].append({"observedAt": at, "why": why})
+    valid.sort(key=lambda x: x[0])
+    if valid and instrument == "options" and avg_fill is not None:
+        at, bid, o = valid[0]
+        entry_fee = float(entry_fee_per_unit if entry_fee_per_unit is not None else fee_side)
+        alt = remaining * ((bid - float(avg_fill)) * float(multiplier) - entry_fee - fee_side)
+        prod_real = remaining * ((prod_vwap - float(avg_fill)) * float(multiplier) - entry_fee) - prod_fees
+        out.update({"outcome": "compared", "modeledBasis": "earliest strictly validated covered executable bid after the signal",
+                    "modeledExitTs": at, "modeledExitPx": bid, "alternativeRealized": round(alt, 2), "productionRealized": round(prod_real, 2),
+                    "dollarDelta": round(alt - prod_real, 2)})
+        return out
+    nxt = next((b for b in path if int(b["ts"]) == signal_ts), None)
     if nxt is None:
-        out["outcome"] = "unknown"; out["why"] = (out["why"] or "no completed bar after the signal minute to exit at"); return out
+        out["outcome"] = "unknown"; out["why"] = "no completed bar after the signal minute to exit at"; return out
     px = float(nxt["open"])
-    # the production reference must be an UNDERLYING price too: shares fill on the underlying (VWAP); an option's fills are
-    # premiums, so the underlying close of the bar containing production's first runner fill stands in (labelled)
     if instrument == "options":
         pb = next((b for b in sorted(bars, key=lambda x: x["ts"]) if int(b["ts"]) <= prod[0]["ts"] < int(b["ts"]) + 60000), None)
         if pb is None:
@@ -258,7 +314,8 @@ def runner_protection(direction: str, tp1: float | None, entry: float | None, st
     favour = (px - prod_ref) if long else (prod_ref - px)
     out.update({"outcome": "underlying_proxy_only", "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
                 "modeledExitTs": int(nxt["ts"]), "modeledExitPx": px, "underlyingDeltaR": round(favour / risk, 3),
-                "why": out["why"] or ("no covered tp1-reclaim observation" if instrument == "options" else "shares: no executable quote evidence - proxy only")})
+                "why": ("shares: no dollar branch in this implementation - proxy only" if instrument != "options"
+                        else ("no strictly valid covered tp1-reclaim observation" + (f" ({len(out['observationsRejected'])} rejected)" if out["observationsRejected"] else "")))})
     return out
 
 
@@ -650,7 +707,9 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                     row["p06"] = runner_protection(direction, tp1, tr.get("entry"), tr.get("stop"), list(tr.get("exits") or []), list(ex), bars, cutoff_ms,
                                                    filled_qty=q, multiplier=m, instrument=tr.get("instrument"), avg_fill=avg_fill,
                                                    entry_fee_per_unit=entry_fee_pc, fee_side=fee_side,
-                                                   observations=[p for p in shadow if p.get("rung") == "tp1-reclaim"])
+                                                   observations=[p for _, ty, p in evs if ty == "TechniqueExitShadow" and p.get("rung") == "tp1-reclaim"],
+                                                   entry_order_id=eid, contract_symbol=(contract.get("symbol") or tr.get("orderSymbol") or (a["symbol"] if tr.get("instrument") != "options" else None)),
+                                                   opened_ts=tr.get("openedTs"), closed_ts=tr.get("closedTs"))
                     row["neverTp1"] = never_tp1_diag(direction, tr.get("entry"), tr.get("stop"), tr.get("openedTs"), tr.get("closedTs"),
                                                      [(0, x) for x in (tr.get("exits") or []) if (x.get("filledQty") or 0) > 0], bars) if closed else None
                     if row.get("cohort") == COHORT_P01:
@@ -794,7 +853,7 @@ def summarize(data: dict) -> dict:
             "missedWinnersCandidates": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "refusal": (r.get("refusal") or "")[:90],
                                          "underlyingProxy": r.get("underlyingProxy"), "roomPlanned": r.get("roomBin")} for r in missed],
             "strata": {k: {"n": v["n"], "net": round(v["net"], 2), "open": v["open"]} for k, v in sorted(strata.items())},
-            "p06": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "qty": r.get("filledQty"), **{k: (r["p06"] or {}).get(k) for k in ("outcome", "why", "remainingAtSignal", "tp1FilledQty", "reclaimTs", "modeledBasis", "modeledExitPx", "productionRunner", "underlyingDeltaR", "dollarDelta", "alternativeRealized", "productionRealized")}} for r in p06],
+            "p06": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "qty": r.get("filledQty"), **{k: (r["p06"] or {}).get(k) for k in ("outcome", "why", "remainingAtSignal", "tp1FilledQty", "eligibleAt", "reclaimTs", "modeledBasis", "modeledExitPx", "productionRunner", "underlyingDeltaR", "dollarDelta", "alternativeRealized", "productionRealized", "observationsRejected", "dollarScope")}} for r in p06],
             "neverTp1": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "netRealized": r.get("netRealized"), "exitKinds": r.get("exitKinds"), **(r.get("neverTp1") or {})} for r in never],
             "p02": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "qty": r.get("filledQty"), "firstSaleDistanceR": r.get("firstSaleDistanceR"), **r["p02"]} for r in p02],
             "p03": p03,
@@ -829,7 +888,7 @@ def render(data: dict, s: dict) -> str:
     L += ["", f"**P-02 `{P02_POLICY}` - PROVISIONAL (identical entry/contract/quantity; actual entry and retained fees, modeled exit fee {data.get('feePerContractSide', 0):.2f}/contract on the hypothetical sale; unknown without a covered TP1 bid observation bound to the trade instance):**",
           "| Position | Qty | First sale (R) | Outcome | Production net | Alternative net | Delta | Forgone on winner | Why |", "|---|---:|---:|---|---:|---:|---:|---:|---|"]
     L += [f"| {r['symbol']} {r['trigger']} | {int(r['qty'] or 0)} | {r['firstSaleDistanceR']} | {r['outcome']} | {r['productionRealized'] if r['productionRealized'] is not None else 'open'} | {_f(r['alternativeRealized'], '{:.2f}')} | {_f(r['delta'])} | {_f(r['forgoneOnWinner'], '{:.2f}')} | {r['why'] or ''} |" for r in s["p02"]] or ["| (no eligible small position) | | | | | | | | |"]
-    L += ["", f"**P-06 `{P06_POLICY}` - PROSPECTIVE, frozen 2026-09-18, ED-02 accounting (eligible only after a CONFIRMED TP1 fill; signal = first completed 1m close back through the saved TP1, consecutive minutes, only bars completed before production's next fill; candidate = covered executable bid at the first fresh `tp1-reclaim` observation (options, dollars with actual entry fee + modeled exit fee) else the next bar's open as an UNDERLYING PROXY for shares and options alike (no dollars); production = the remainder's actual fills after the signal, VWAP with allocated fees):**",
+    L += ["", f"**P-06 `{P06_POLICY}` - PROSPECTIVE, frozen 2026-09-18, re-review accounting (chronological walk over confirmed fills and completed bars: eligibility at the FIRST TP1 fill, remainder updated by later trims, a fill that empties the runner ends it; signal = first completed 1m close back through the saved TP1; candidate = the EARLIEST strictly validated covered `tp1-reclaim` observation - identity, contract, signal, chronology, coverage, lifetime {P06_OBSERVATION_LIFETIME_MS // 60000} min, cutoff - OPTIONS ONLY for dollars (shares are proxy-only in this implementation), else the next bar's open as an UNDERLYING PROXY; production = the remainder's actual fills after the signal, VWAP with allocated fees; a working ordinary exit at the cutoff = partial). Results stay proxy-only / unavailable until the observer is verified in production:**",
           "| Position | Instr | TP1 filled | Remainder | Outcome | Signal (ET) | Modeled exit | Basis | Production runner | Underlying delta (R) | Alt $ | Prod $ | Delta $ | Why |", "|---|---|---:|---:|---|---|---:|---|---|---:|---:|---:|---:|---|"]
     L += [f"| {r['symbol']} {r['trigger']} | {r.get('instrument')} | {_f(r.get('tp1FilledQty'), '{:g}')} | {_f(r.get('remainingAtSignal'), '{:g}')} | {r['outcome']} | {dt.datetime.fromtimestamp(r['reclaimTs'] / 1000 + 60, NY).strftime('%H:%M') if r.get('reclaimTs') else '-'} | {_f(r.get('modeledExitPx'), '{:.2f}')} | {(r.get('modeledBasis') or '-')[:40]} | {(f"{r['productionRunner']['qty']:g} @ {r['productionRunner']['vwap']:.2f} ({', '.join(r['productionRunner'].get('kinds') or [])})" if r.get('productionRunner') else '-')} | {_f(r.get('underlyingDeltaR'), '{:+.2f}')} | {_f(r.get('alternativeRealized'), '{:+.2f}')} | {_f(r.get('productionRealized'), '{:+.2f}')} | {_f(r.get('dollarDelta'), '{:+.2f}')} | {r.get('why') or ''} |" for r in s["p06"]] or ["| (no position completed a TP1 trim) | | | | | | | | | | | | | |"]
     L += ["", "**Closed positions WITHOUT a TP1 trim (descriptive, winners and losers alike - single-contract full exits included; best underlying excursion during the completed holding minutes vs the exit; no threshold is derived):**",
