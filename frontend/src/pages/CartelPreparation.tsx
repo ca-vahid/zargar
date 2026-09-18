@@ -103,6 +103,10 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         <p className="muted">Keeps the saved expiry, delta, premium and spread limits. One bounded search per fresh signal; all entry and risk checks run again.</p>
       </div>}
       <div className="cartel-fields">
+        <label>History request spacing<select value={config.requestIntervalSeconds ?? .25} onChange={e => setConfig({...config, requestIntervalSeconds:Number(e.target.value)})}>
+          <option value={.05}>Fast — 50 ms, adaptive slowdown</option><option value={.25}>Conservative — 250 ms</option>
+          {![.05,.25].includes(config.requestIntervalSeconds ?? .25) && <option value={config.requestIntervalSeconds}>Custom — {config.requestIntervalSeconds} seconds</option>}
+        </select></label>
         <label>{workspaceLabel} account<select required value={config.portfolioId || (!live && books.length === 1 ? books[0].id : "")} onChange={e => setConfig({...config, portfolioId:e.target.value || null})}>
           <option value="" disabled>Choose an account</option>{books.map(p => <option key={p.id} value={p.id}>{p.name}{p.kind === "paper" ? " (broker paper)" : ""}</option>)}
         </select></label>
@@ -195,6 +199,9 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         </section>}
         <div className="cartel-inset" role="status" aria-live="polite">
           <strong>{result.message || (running ? `Working: ${label(result.phase || "starting")}` : "Preparation finished")}</strong>
+          {running && result.shortlistReadyAt && <p>The executable shortlist has been checked. Optional research is finishing; any armed plans are already monitored.</p>}
+          {result.phaseDurationsMs && <p className="muted">Stage times: {Object.entries(result.phaseDurationsMs).map(([phase, ms]) => `${label(phase)} ${Math.round(Number(ms)/1000)}s`).join(" · ")}{result.historyPacingMs > 0 ? ` · Provider pacing ${Math.round(result.historyPacingMs/1000)}s (included above)` : ""}</p>}
+          {result.historyRateLimitRetries > 0 && <p className="cartel-notice">Provider throttling: {result.historyRateLimitRetries} retries. Request spacing increased to {result.effectiveHistoryIntervalSeconds}s for this run.</p>}
           {running && <>
             {result.phase === "discovering" ? <><p>{progress?.received || 0}{progress?.total != null ? ` / ${progress.total}` : ""} listings received</p>
               <progress aria-label="Discovery progress" max={progress?.total || 1} {...(progress?.total ? {value:progress.received} : {})}/></> :

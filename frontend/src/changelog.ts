@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.14";
+export const APP_VERSION = "0.8.15";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.15",date:"2026-09-18",title:"Cartel: faster preparation and clearer progress",items:[
+    {tag:"improved",text:"Cartel checks and arms its shortlist before optional research finishes. Plans shows stage timings and separates shortlist readiness from research completion."},
+    {tag:"new",text:"History request spacing offers a Fast option with automatic slowdown on provider throttling. Scan coverage, data source and trading checks stay unchanged."},
+  ]},
   {version:"0.8.14",date:"2026-09-18",title:"Options Cartel: explain missed entries",items:[
     {tag:"improved",text:"Cartel records partial candle evidence, delayed-bar counts and the dollar cost of option spreads to explain missed entries. Trading thresholds and account protections are unchanged."},
     {tag:"new",text:"Offline Cartel method comparisons now distinguish original preparation, later recovery and unavailable evidence. Experimental setup and volume rules remain inactive."},
