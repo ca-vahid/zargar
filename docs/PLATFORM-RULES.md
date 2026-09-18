@@ -2328,6 +2328,10 @@ midpoint by `quote_ts`/`source_ts`, else unavailable).
 
 Cartel commits distinct decision occurrences, immutable input-context references and journal evidence atomically with its arm update. Two additive tables preserve original inputs independently of mutable tapes. These records grant no trading permission; existing account, quote, risk and protective-exit behavior is unchanged. See `techniques/options-cartel/DIAGNOSTICS-2026-09-18.md`.
 
+### C6 provider identity and frozen Team2 inputs - 2026-09-18
+
+Bar.provider identifies Alpaca or Yahoo independently of source=exchange. Alpaca bars cannot be overwritten by Yahoo or unidentified observations; one policy applies to memory, batch and SQL. Within-provider corrections retain the existing zero-volume rule; cross-provider replacement never borrows volume. Additive schema preserves existing rows as unknown provider. Dataset hashes include provider. Archives precede the scoped Team2 backfill. Team2 canonical plans pin immutable warm-up snapshots across restart/replay and reject noncanonical input bars. Other techniques' settings and orders remain untouched. Details: techniques/team2/notes/research/2026-09-18-c6-release.md.
+
 ### History performance without changing trading evidence — 2026-09-18
 
 Shared session timestamp arithmetic is memoized by date plus the resolved close time (early-close policy remains authoritative). Shared Yahoo history accepts an optional rate-limit callback; existing concurrency and retries remain unchanged. Only the Cartel caller uses it to slow its own request pacing after 429. See Cartel PREPARATION-PERFORMANCE.md for measured pilot results and end-to-end limits.

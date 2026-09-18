@@ -178,5 +178,7 @@ class Bar:
     # stream), "sampled" (built from our quote stream), "sim" (the synthetic feed), "" = unknown
     source: str = ""
 
+    provider: str = ""  # C6: alpaca | yahoo | unknown; independent of observation quality
+
     def to_row(self) -> list:
         return [self.ts, self.open, self.high, self.low, self.close, self.volume]

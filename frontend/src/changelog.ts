@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.15";
+export const APP_VERSION = "0.8.16";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.16",date:"2026-09-18",title:"Team2: consistent inputs for Practice comparisons",items:[
+    {tag:"fixed",text:"Bars retain their data provider, and Yahoo updates cannot replace Alpaca bars. Team2 can use Alpaca-only history and preserve each plan's indicator warm-up through restarts and replay."},
+    {tag:"new",text:"Practice experiment books get scheduled half-hour equity reviews with persistent book pauses at their agreed review thresholds. Activation still requires verified data and a readiness receipt."},
+  ]},
   {version:"0.8.15",date:"2026-09-18",title:"Cartel: faster preparation and clearer progress",items:[
     {tag:"improved",text:"Cartel checks and arms its shortlist before optional research finishes. Plans shows stage timings and separates shortlist readiness from research completion."},
     {tag:"new",text:"History request spacing offers a Fast option with automatic slowdown on provider throttling. Scan coverage, data source and trading checks stay unchanged."},

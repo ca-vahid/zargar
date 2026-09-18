@@ -89,7 +89,8 @@ class Team2Service:
         rows = await load_bars(self.engine.sf, symbol.upper(), "1m", limit=limit)
         if not rows:
             return []
-        return rows
+        provider = self.engine.settings.get("techniques.team2.canonical_provider", "")
+        return [b for b in rows if not provider or b.provider == provider]
 
     @staticmethod
     def warmup_slice(prior: list[Bar], *, sessions: int) -> tuple[list[Bar], dict]:
@@ -124,7 +125,7 @@ class Team2Service:
         rows = await self.bars_1m(symbol)
         prior = [b for b in rows if session_date(b.ts) < date]
         today = [b for b in rows if session_date(b.ts) == date]
-        if not prior:
+        if not prior and not self.engine.settings.get("techniques.team2.canonical_provider", ""):
             # nothing banked yet: fetch straight from history (Yahoo keeps ~20 days of 1m)
             try:
                 from ...marketstructure.history import fetch_window
@@ -181,6 +182,14 @@ class Team2Service:
         plan = {**sk, "planFor": date, "triggers": [], "referencePrice": last_close, "lastClose": last_close,
                 "triggerTf": "2m", **self._event_flags(date),
                 **({"experiment": dict(experiment)} if experiment else {})}      # FROZEN on the plan: the runner reads this, never the live map
+        provider = self.engine.settings.get("techniques.team2.canonical_provider", "")
+        if provider:
+            from .tape import save_snapshot
+            warm, rep = await self.warmup_for(symbol, date, sessions=rules.warmup_sessions)
+            if len(rep["sessionsUsed"]) != rules.warmup_sessions:
+                raise ValueError("C6: incomplete canonical warm-up; no plan minted")
+            plan["inputProvider"] = provider
+            plan["warmup"] = {**rep, "snapshot": await save_snapshot(self.engine.sf, warm)}
         run = TechniqueRun(id=new_id(), technique="team2", tags=[], symbol=symbol.upper(), as_of=None,
                            primary_tf="2m", mode="plan", trigger="scan", status="done", verdict="plan",
                            setup_type="team2", confidence=None, grounded=True, facts={},
@@ -378,6 +387,9 @@ class Team2Service:
             bars = await fetch_extended_session(symbol, "1m", date)
             bars = [b for b in bars if b.close and b.close > 0]
             if bars:
+                provider = self.engine.settings.get("techniques.team2.canonical_provider", "")
+                if provider:
+                    bars = [b for b in bars if b.provider == provider]
                 await persist_bars(self.engine.sf, bars)
             return bars
         except Exception:  # noqa: BLE001
@@ -511,6 +523,10 @@ class Team2Service:
         # F99: the replay seeds from the SAME warm-up rule the desk ran on and says whether it matched
         warm, wrep = self.warmup_slice(prior, sessions=rules.warmup_sessions)
         stamped = (plan.get("warmup") or {}) if isinstance(plan.get("warmup"), dict) else {}
+        if stamped.get("snapshot"):
+            from .tape import load_snapshot
+            warm = await load_snapshot(self.engine.sf, stamped["snapshot"])
+            warm, wrep = self.warmup_slice(warm, sessions=rules.warmup_sessions)
         wrep["stamped"] = stamped.get("hash")
         wrep["match"] = (stamped.get("hash") == wrep.get("hash")) if stamped.get("hash") else None
         res = simulate_session({**plan, "date": date}, today, rules, sigma=sigma, warmup_1m=warm)

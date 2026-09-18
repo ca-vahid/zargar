@@ -226,6 +226,14 @@ class BarRow(Base):
     volume: Mapped[int] = mapped_column(BigInteger, default=0)
     # F75 (2026-09-09): where the row came from — exchange | sampled | sim | unknown (legacy rows)
     source: Mapped[str] = mapped_column(String(12), default="unknown")
+    provider: Mapped[str] = mapped_column(String(16), default="")
+
+
+class Team2TapeSnapshot(Base):
+    """Content-addressed immutable warm-up/archive inputs; no trading outcomes."""
+    __tablename__ = "team2_tape_snapshots"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
 
 
 class BarQuarantineRow(Base):
@@ -245,6 +253,7 @@ class BarQuarantineRow(Base):
     close: Mapped[float] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(BigInteger, default=0)
     source: Mapped[str] = mapped_column(String(12), default="unknown")
+    provider: Mapped[str] = mapped_column(String(16), default="")
     reason: Mapped[str] = mapped_column(String(40))
     batch: Mapped[str] = mapped_column(String(32))
     note: Mapped[str] = mapped_column(String(200), default="")
