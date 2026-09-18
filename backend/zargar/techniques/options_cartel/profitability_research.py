@@ -474,6 +474,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
         previous.result.get('markets', {}).get(d) if previous else None) for d in ('long', 'short')}
     observations = []
     for candidate in context.result['candidates']:
+        await asyncio.sleep(0)  # D4 (2026-09-18): yield between candidates so research never monopolises the loop
         market = markets[candidate['direction']]
         tape = [b for b in bars if b.symbol==candidate['symbol']]
         item = {'id': candidate['id'], 'symbol': candidate['symbol'], 'direction': candidate['direction'],
@@ -488,7 +489,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
             # Separate diagnostic cohort: market eligibility is recorded, not bypassed for trading.
             diagnostic_after = max(candidate['baselineReadyAt'], runtime._profitability_started)
             try:
-                study = entry_policy_study(plan, tape, as_of_ms=boundary, entry_after=diagnostic_after)
+                study = await asyncio.to_thread(entry_policy_study, plan, tape, as_of_ms=boundary, entry_after=diagnostic_after)
                 observed_at = runtime.clock()
                 study.update(observedAt=observed_at, marketEligible=market['sustained'])
                 saved_signals = dict(candidate.get('entryPolicySignals') or {})
@@ -524,7 +525,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
                 try:
                     if {b.ts for b in tape} != set(range(opens, boundary, 60000)):
                         raise ValueError('Current-session minute context is incomplete')
-                    comparison = compare_entry_variants(plan, ExitCampaign.model_validate(candidate['exitCampaign']),
+                    comparison = await asyncio.to_thread(compare_entry_variants, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
                         tape, as_of_ms=boundary, signal_after=after)
                     decision_at = runtime.clock()
                     read = comparison['baseline']

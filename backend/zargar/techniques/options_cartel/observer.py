@@ -26,6 +26,55 @@ from .preparation_readiness import baseline_coverage, retain_decisions
 from .state import ArmRepository
 
 
+CONFIRMATION_MAX_AGE_MS = 120_000
+DROP_JOURNAL_INTERVAL_MS = 300_000
+
+
+class DropRegistry:
+    """Counts minute bars the observer refused for age (D4, 2026-09-18).
+
+    A bar older than the acceptance window produces no decision at all, so a loop stall used to
+    be invisible in the record. This keeps a bounded in-memory tally per symbol and session and
+    lets the observer journal a summary at most once per plan per interval — bounded overhead,
+    no per-bar writes.
+    """
+
+    def __init__(self, *, interval_ms=DROP_JOURNAL_INTERVAL_MS, keep=20):
+        self.interval_ms = interval_ms
+        self.keep = keep
+        self.by_symbol: dict[str, dict] = {}
+        self.journaled_at: dict[str, int] = {}
+
+    def note(self, symbol: str, bar_ts: int, now: int) -> dict:
+        age = now - (bar_ts + 60_000)
+        day = session_date(bar_ts)
+        entry = self.by_symbol.setdefault(symbol, {"count": 0, "maxAgeMs": 0, "day": day, "recent": []})
+        if entry["day"] != day:
+            entry.update(count=0, maxAgeMs=0, day=day, recent=[])
+        entry["count"] += 1
+        entry["maxAgeMs"] = max(entry["maxAgeMs"], age)
+        entry["recent"] = [*entry["recent"], {"barTs": bar_ts, "ageMs": age, "observedAt": now}][-self.keep:]
+        return entry
+
+    def snapshot(self, symbol: str) -> dict | None:
+        return self.by_symbol.get(symbol)
+
+    def due(self, run_id: str, symbol: str, now: int) -> bool:
+        entry = self.by_symbol.get(symbol)
+        if not entry or entry["count"] == 0:
+            return False
+        last = self.journaled_at.get(run_id)
+        if last is not None and now - last < self.interval_ms:
+            return False
+        journaled_count = entry.get("journaledCount", {}).get(run_id, 0)
+        return entry["count"] > journaled_count
+
+    def mark_journaled(self, run_id: str, symbol: str, now: int) -> None:
+        entry = self.by_symbol[symbol]
+        entry.setdefault("journaledCount", {})[run_id] = entry["count"]
+        self.journaled_at[run_id] = now
+
+
 class CartelObserver(SessionListener):
     TECHNIQUE_ID = "options_cartel"
     OBSERVED_MODES = ("alert",)
@@ -36,6 +85,24 @@ class CartelObserver(SessionListener):
         self.rows = {}
         self.plans = {}
         self.clock = lambda: int(time.time()*1000)
+        self.drops = DropRegistry()
+
+    async def _flush_drop_diagnostics(self):
+        """Journal dropped-bar counts for active plans, at most once per plan per interval."""
+        now = self.clock()
+        for rid, row in list(self.rows.items()):
+            symbol = row["symbol"]
+            if not self.drops.due(rid, symbol, now):
+                continue
+            entry = self.drops.snapshot(symbol)
+            async with self.engine.sf() as session, session.begin():
+                locked = await self.repository._locked(session, rid)
+                locked.state = {**locked.state, "barDrops": {"day": entry["day"], "count": entry["count"], "maxAgeMs": entry["maxAgeMs"],
+                                                                 "recent": entry["recent"][-5:], "acceptanceMs": CONFIRMATION_MAX_AGE_MS}}
+                snapshot = self.repository.view(locked)
+            self.rows[rid] = snapshot
+            self.drops.mark_journaled(rid, symbol, now)
+            await self.repository._journal(snapshot, "bars_dropped_for_age")
 
     @property
     def armer(self):
@@ -150,7 +217,7 @@ class CartelObserver(SessionListener):
         result = dto.to_dict(portfolio=self.engine.positions.portfolio(row["portfolioId"]),
                              quote=self.engine.quotes.get(plan.symbol), now_ms=self.clock())
         result.update(volumeCoverage=baseline_coverage(plan), observationHealth=plan_coverage(plan, state, self.clock()), decisionHistory=state.get("decisionHistory", []), observation=state.get("observation"), signal=state.get("signal"),
-                      phase=state["phase"], executionAvailable=False)
+                      phase=state["phase"], executionAvailable=False, barDrops=self.drops.snapshot(plan.symbol) or state.get("barDrops"))
         trigger = {"id": "cartel_entry", "label": "Cartel entry",
                    "kind": "breakdown" if plan.direction == "short" and plan.entry.mode == "breakout" else plan.entry.mode,
                    "status": "invalidated" if (state.get("observation") or {}).get("status") == "invalidated" else
@@ -224,7 +291,11 @@ class CartelObserver(SessionListener):
 
     async def on_minute_bar(self, symbol, bar):
         now = self.clock()
-        if bar.tf != "1m" or bar_session(bar.ts) != "rth" or bar.ts+60_000 > now or now-(bar.ts+60_000) > 120_000:
+        if bar.tf != "1m" or bar_session(bar.ts) != "rth" or bar.ts+60_000 > now:
+            return
+        if now-(bar.ts+60_000) > CONFIRMATION_MAX_AGE_MS:
+            if any(cached["symbol"] == symbol for cached in self.rows.values()):
+                self.drops.note(symbol, bar.ts, now)  # D4: counted, never judged
             return
         for rid, cached in list(self.rows.items()):
             if cached["symbol"] != symbol:
@@ -331,6 +402,7 @@ class CartelObserver(SessionListener):
                 self.rows[rid] = await self.repository.set_status(rid, "expired")
                 self._publish(rid)
                 self.rows.pop(rid, None)
+        await self._flush_drop_diagnostics()
 
     async def audit(self, run_id, *, limit=200):
         if run_id not in self.plans:
