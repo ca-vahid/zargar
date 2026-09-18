@@ -18,6 +18,11 @@ study on after the market has opened does not manufacture earlier observations.
 Historical scans that predate this feature do not acquire a prospective research
 record retroactively. Missing observations remain missing.
 
+As of 0.8.15, executable shortlist checks and arming finish before this optional
+research is frozen. It still uses the same saved analysis pool, not only the armed
+symbols, and must finish before the session opens. Plans reports shortlist readiness
+separately so research does not delay monitoring otherwise-ready arms.
+
 The collection setting is `techniques.options_cartel.profitability_research`.
 Its candidate cap defaults to 50; the bearish research switch defaults on.
 These settings do not alter the preparation shortlist size, the 10% risk ceiling,
