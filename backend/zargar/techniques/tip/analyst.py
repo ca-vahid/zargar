@@ -1276,6 +1276,11 @@ def parse_single_object(raw: str, model_cls, *, what: str = "reply"):
                 pass                                   # unrelated JSON - harmless
     if extra:
         raise ValueError(f"ambiguity: {extra + 1} schema-valid objects in one {what} - reply with exactly ONE JSON object")
+    if s.find("{", pos) != -1:
+        # F2-R3: the scan budget ran out with JSON-looking content still unexamined - a unique
+        # answer cannot be certified, so refuse rather than guess
+        raise ValueError(f"ambiguity: scan limit reached with unexamined JSON content after the first object in the {what} "
+                         "- reply with exactly ONE JSON object and no other JSON")
     return parsed
 
 

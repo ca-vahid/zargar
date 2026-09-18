@@ -605,3 +605,41 @@ rises to the whole desk without inference.
 
 **Cache pilot:** plan written for approval - `research/2026-09-17-prompt-cache-pilot-plan.md` (frozen-replay harness,
 off x3 / on x4 + one post-expiry call, cap $8, warm-up counted, prefix hashes, judgment equality). Knob stays OFF.
+
+## E17 round 3 (2026-09-17 late) - scan-limit refusal, model on every attempt, the pilot made executable and budgeted
+
+**Accepted from round 2 (reviewer):** F1-R2 timeout recovery, the closing-fence correction, backoff isolation, register fix.
+
+**F2-R3 - ambiguity detection finished.** Both parsers (`analyst.parse_single_object`, `extraction._parse_result_json`)
+scanned at most 20 further objects and then CERTIFIED a unique answer with unexamined content left. Now, when the scan
+budget is exhausted and another `{` remains, they refuse: `ambiguity: scan limit reached with unexamined JSON content
+...` - the caller's bounded re-ask says why. Single objects and bounded unrelated JSON (≤ 20 objects) still parse.
+Tests: the reviewer's `tests/test_e17_scan_limit_review.py` (3, verbatim: 20 junk objects then a conflicting answer)
++ `tests/test_tip_e17_r3.py::test_scan_limit_refusal_...` (positive controls at 5/19 junk objects).
+
+**COST-R3 - model on every attempt.** `digest.py` stamps `usage.model`; `rule_audit._judge` stamps `model` on every
+attempt record - success, error AND cancelled - plus cache read/write token fields. Historical records without a model
+stay unpriced (`normalize_usage` reads the model from list entries, never from today's settings). Test:
+`test_rule_audit_attempts_carry_the_model_on_success_and_failure`.
+
+**CACHE-P1/P2 - executable, budgeted pilot.** `frozen.replay(prompt_cache=, budget=)`: the cache switch shapes the
+request through `analyst.cacheable_request` (system block + last tool marked; OFF = today's shape); every attempt is
+recorded (tokens, cache write/read, latency, stop, estimate, usd, billing basis; a failed attempt is `unknown - charged
+at estimate`); the cacheable prefix and the uncached header are measured apart (`prefixChars`/`headerChars` + token
+estimates). `ReplayBudget(cap, rate_card)` checks a conservative estimate BEFORE each attempt and charges provider
+usage AFTER; the cap covers retries and unknown-billed attempts; no complete rate card = refused. CLI:
+`tip_frozen replay --cache off|on --budget-usd <cap>`; a paid replay without a cap is refused before a client exists;
+dry-run rows are labelled `dry-run-stub(<model>)` + `dryRun: true`. Scripted dry run on `fb-e0221ed3d071cc60`
+recorded in the pilot plan (cache off 26,530 in; on: write 5,573 then read 5,573, $0.2495 of $8; $0.05 cap -> refused
+before the call). Tests: `test_replay_budget_checks_before_and_charges_after_including_unknown_billed`,
+`test_replay_cache_switch_shapes_the_request_and_accounts_every_attempt`,
+`test_replay_stops_at_the_ceiling_and_charges_a_failed_attempt_at_estimate`.
+
+**Token estimate corrected.** 2.14M input over 46 calls = **~46.5k per call**, not 178k (that was per run). Measured on
+the pilot bundle: cacheable prefix ~5.3k tokens vs uncached header ~20.4k (chars/4). Savings ceiling from the prefix
+alone: ~$0.024 per read, under 10% of the day's appraise spend even if every call hit; the uncached conversation that
+multi-turn loops re-send is the larger part (follow-on question, not this pilot). Pilot at measured sizes ≈ $1.3
+(first calls) to ≈ $6.2 (worst case with tool turns), hard cap $8 enforced.
+
+**Unchanged:** `techniques.tip.prompt_cache` OFF; no trading-policy change; no production timeout change; recap off;
+feasibility annotate; knowledge propose-only; risk limits unchanged. Paid pilot calls wait for the user's go.
