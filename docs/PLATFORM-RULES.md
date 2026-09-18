@@ -2382,3 +2382,7 @@ trade/quote/bar handlers and the Yahoo chart poll stamp them (0 = unknown). Rule
 read the field's own time, treat 0 as no evidence, never fall back to `ts`; for options the NBBO's `source_ts` is the bid/ask
 evidence (its contract, F-2026-09-02). Team2's `_fresh_underlying` is the reference implementation (last by `last_ts`, else the
 midpoint by `quote_ts`/`source_ts`, else unavailable).
+
+### Cartel decision evidence — 2026-09-18
+
+Cartel commits distinct decision occurrences, immutable input-context references and journal evidence atomically with its arm update. Two additive tables preserve original inputs independently of mutable tapes. These records grant no trading permission; existing account, quote, risk and protective-exit behavior is unchanged. See `techniques/options-cartel/DIAGNOSTICS-2026-09-18.md`.

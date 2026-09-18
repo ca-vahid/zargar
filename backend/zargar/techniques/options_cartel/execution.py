@@ -48,6 +48,23 @@ class ExecutionInput(WireModel):
         return self
 
 
+def spread_cost(bid, ask, quantity, multiplier=100):
+    """Absolute and quantity-adjusted spread beside the percent-of-mid basis (D5, 2026-09-18).
+
+    Diagnostic only: the saved percent limit remains the gate. Buying at the ask and selling at
+    the bid immediately costs the full spread before fees; ``usdForQuantity`` is that cost for the
+    sized quantity (QS 2026-09-16: $0.53 x 2 contracts = $106).
+    """
+    numeric = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    if not (numeric(bid) and numeric(ask) and 0 < bid <= ask):
+        return None
+    cents = ask - bid
+    mid = (ask + bid) / 2
+    qty = int(quantity) if isinstance(quantity, (int, float)) and quantity > 0 else 0
+    return {"cents": round(cents * 100, 2), "pctOfMid": round(cents / mid * 100, 2) if mid else None,
+            "usdPerUnit": round(cents * multiplier, 2), "usdForQuantity": round(cents * multiplier * qty, 2), "quantity": qty}
+
+
 def contract_entry_checks(engine, plan, spec, at):
     """Synchronous last-mile checks from current observations, with no provider I/O.
 
@@ -211,6 +228,7 @@ async def preflight(engine, plan: CartelPlan, spec: ExecutionInput, *, client_ki
             and bool(risk and risk["passed"]), "checks": checks, "risk": risk,
             "expression": {"symbol": order_symbol, "instrument": spec.instrument, "quantity": qty,
                            "bid": bid, "ask": ask, "quoteAgeSeconds": age,
+                           "spread": spread_cost(bid, ask, qty, multiplier),
                            "notional": qty*ask*multiplier if valid_price else None,
                            "quoteCurrency": currency, "budgetCurrency": base_currency, "fxRate": fx,
                            "delta": delta if valid_delta else None,

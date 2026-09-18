@@ -82,6 +82,7 @@ export function CartelArmControls({runId, active, preferredPortfolioId, onChange
         run("Checking execution", async () => setReport(await api.post(`/api/options-cartel/runs/${runId}/preflight`, payload())));
       }}>Check execution now</button>
       {report && <><p>{report.passed ? "Current checks passed" : "Current checks block entry"} · proposed units {report.expression?.quantity}</p>
+        {report.expression?.spread && <p className="muted">Bid/ask spread: {report.expression.spread.cents} cents ({report.expression.spread.pctOfMid}% of midpoint). Buying at ask and immediately selling at bid would cost {report.expression.quoteCurrency} {report.expression.spread.usdForQuantity.toFixed(2)} for {report.expression.spread.quantity} units, before fees.</p>}
         <ul>{report.checks?.filter((c: any) => !c.passed).map((c: any) => <li key={c.name}>{c.reason}</li>)}
           {report.risk?.checks?.filter((c: any) => !c.passed).map((c: any) => <li key={c.name}>{c.detail || c.name}</li>)}</ul></>}
     </>}
