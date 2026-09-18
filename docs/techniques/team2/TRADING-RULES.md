@@ -3122,6 +3122,12 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-17 review r3 of PR #204 (other team: field-bound freshness ACCEPTED; one adapter boundary; merge/deployment HELD)** —
+  the Alpaca trade and quote handlers substituted `now_ms()` (receipt) when a message carried no venue time, so a print or quote
+  without `t` read as fresh evidence. Fix: `venue_ms()` returns 0 for a missing or malformed stamp and that is what `last_ts` /
+  `quote_ts` carry; the receipt-time fallback stays confined to session-roll and volume bookkeeping. The helper then reports the
+  price unavailable (candle fallback at the fire, no new refusal at the boundary — unchanged). Their packet verbatim:
+  `tests/test_codex_team2_pr204_missing_venue_time.py` (2 failed before, 4 pass). No strategy work or sweep.
 - **2026-09-17 review r2 of PR #204 (other team: cancellation, measured spread and attribution ACCEPTED; one price-freshness
   boundary; merge/deployment/activation HELD)** — `_fresh_underlying` read `Quote.last` but aged it by `Quote.ts`, the RECEIPT time:
   Alpaca's bid/ask messages re-emit the previous print under a new receipt time, so a ten-minute-old last of 100.40 read as fresh

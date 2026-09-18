@@ -64,6 +64,18 @@ def is_us_equity(symbol: str) -> bool:
     return not is_occ(s)
 
 
+def venue_ms(t) -> int:
+    """PR #204 r3 (2026-09-17): the venue time a message carries, or 0 when it carries none or it is malformed — NEVER
+    the receipt time. Receipt-time bookkeeping (session roll, volume) stays separate from the time exported as price
+    evidence (`Quote.last_ts` / `Quote.quote_ts`), which downstream consumers treat as "no evidence" when 0."""
+    if not t:
+        return 0
+    try:
+        return int(parse_rfc3339_ms(str(t)) or 0)
+    except Exception:  # noqa: BLE001 - a malformed stamp is no stamp
+        return 0
+
+
 def parse_rfc3339_ms(t: str) -> int:
     """Alpaca timestamps are RFC3339, sometimes with nanosecond precision."""
     s = t.replace("Z", "+00:00")
@@ -253,7 +265,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             st["ask"] = float(m.get("ap") or 0)
             st["bid_size"] = int((m.get("bs") or 0) * 100)     # round lots → shares
             st["ask_size"] = int((m.get("as") or 0) * 100)
-            st["quote_ts"] = parse_rfc3339_ms(str(m["t"])) if m.get("t") else now_ms()
+            st["quote_ts"] = venue_ms(m.get("t"))               # 0 when the message carries no venue time (r3)
             self._emit(s, st)
         elif t == "t" and s:
             st = self._st(s)
@@ -264,12 +276,13 @@ class AlpacaQuoteFeed(QuoteFeed):
             # touch last/high/low — one such print painted a PM 1m bar with a
             # low 5 points under the tape (2026-08-26 09:55, low 190.045).
             conds = set(m.get("c") or [])
-            ts = parse_rfc3339_ms(str(m["t"])) if m.get("t") else now_ms()
+            venue_ts = venue_ms(m.get("t"))                      # price EVIDENCE: the print's own time, 0 when absent (r3)
+            ts = venue_ts or now_ms()                            # session/volume BOOKKEEPING may use the receipt time
             self._roll_day(st, ts)
             regular = self._is_regular(ts)
             if px > 0 and not (conds & _NO_LAST_CONDS):
                 st["last"] = px
-                st["last_ts"] = ts                       # the print's own venue time (PR #204 r2)
+                st["last_ts"] = venue_ts                 # never the receipt time (PR #204 r2/r3)
                 if regular:                              # F19: the day range is the regular session's
                     st["day_high"] = max(st["day_high"], px)
                     st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)

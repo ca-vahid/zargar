@@ -285,3 +285,31 @@ def test_alpaca_bars_and_prints_stamp_the_time_of_the_price_they_set(monkeypatch
     q3 = emitted[-1]
     assert q3.last == 101.11 and q3.last_ts == now
 
+
+def test_alpaca_keeps_a_missing_venue_time_at_zero_while_bookkeeping_still_runs(monkeypatch):
+    """PR #204 r3: a message without `t` yields last_ts / quote_ts = 0 (no price evidence), the receipt time serves only the
+    session roll and the volume, and the helper reports the price unavailable; a malformed stamp is treated the same."""
+    import zargar.brokers.alpaca as feed_module
+    from zargar.brokers.alpaca import AlpacaQuoteFeed, venue_ms
+    now = int(dt.datetime(2026, 9, 14, 13, 10, tzinfo=ET).timestamp() * 1000)
+    monkeypatch.setattr(feed_module, "now_ms", lambda: now)
+    assert venue_ms(None) == 0 and venue_ms("") == 0 and venue_ms("not-a-time") == 0
+    assert venue_ms(dt.datetime.fromtimestamp(now / 1000, dt.timezone.utc).isoformat()) == now
+    emitted = []
+    feed = AlpacaQuoteFeed(emitted.append, "", "")
+    feed.handle({"T": "t", "S": "SPY", "p": 101.1, "s": 100})                         # no venue time
+    q = emitted[-1]
+    assert q.last == 101.1 and q.last_ts == 0 and q.ts == now and q.volume >= 100         # bookkeeping ran, evidence absent
+    feed._st("SPY")["emit_ms"] = 0
+    feed.handle({"T": "q", "S": "SPY", "bp": 101.1, "ap": 101.12, "bs": 1, "as": 1})   # no venue time
+    q2 = emitted[-1]
+    assert q2.quote_ts == 0 and q2.last_ts == 0
+    runner, ap = rig()
+    monkeypatch.setattr(__import__("zargar.techniques.team2.runner", fromlist=["time"]).time, "time", lambda: now / 1000)
+    runner.engine.quotes = SimpleNamespace(get=lambda _: q2)
+    assert runner._fresh_underlying(ap) == (None, "no price time")
+    # a malformed stamp is no stamp either
+    feed._st("SPY")["emit_ms"] = 0
+    feed.handle({"T": "t", "S": "SPY", "p": 101.2, "s": 100, "t": "garbage"})
+    assert emitted[-1].last == 101.2 and emitted[-1].last_ts == 0
+
