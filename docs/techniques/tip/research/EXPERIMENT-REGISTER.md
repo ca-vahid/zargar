@@ -100,7 +100,7 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Primary metric:** `usage.cacheRead` / `cacheWrite` tokens per call, billable cost from `llm.rates`, latency; judgments must be unchanged (the header is outside the cache).
 - **Costs:** the calls themselves; a cache write is billed above the input rate - measured, never assumed.
 - **Regime:** `analyst.cacheable_request`, `tools/tip_llm_cost.py`; knobs `techniques.tip.prompt_cache`, `llm.rates`.
-- **Evaluation window:** step 1 = the bounded side-effect-free PILOT in `research/2026-09-17-prompt-cache-pilot-plan.md` (8 frozen-replay calls, cap $8 at list, warm-up counted, prefix hashes checked, judgments compared) - runs only on the user's approval; step 2 (a measured session) only if the pilot is favourable and approved. **Decision rule:** the user decides on measured hits, priced cost incl. warm-up, and latency; recap routing stays OFF and is a separate experiment.
+- **Evaluation window:** step 1 = the bounded side-effect-free PILOT in `research/2026-09-17-prompt-cache-pilot-plan.md` (harness EXECUTABLE since 2026-09-17 late: `tip_frozen replay --cache on|off --budget-usd 8`, enforced ceiling incl. retries, per-attempt accounting, prefix ~5.3k vs header ~20.4k tokens measured on the bundle; dry run demonstrated at $0; warm-up counted, prefix hashes checked, judgments compared) - runs only on the user's approval; step 2 (a measured session) only if the pilot is favourable and approved. **Decision rule:** the user decides on measured hits, priced cost incl. warm-up, and latency; recap routing stays OFF and is a separate experiment.
 - **Status:** built, off; pilot plan awaiting approval (2026-09-17).
 
 ## `feasibility-annotate`
