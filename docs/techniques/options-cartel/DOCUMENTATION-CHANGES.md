@@ -1,5 +1,34 @@
 # Cartel documentation changes
 
+## 2026-09-18 — revision 5 (remaining D4 registry defects, compact artifacts)
+
+- Dropped-bar registry: captured-snapshot persistence (in-flight drops stay dirty), forward-only session rollover, throttled failed attempts, pruning against the active plan set so every retirement path is covered; regressions added. Replay artifacts compacted with reproducibility manifests. Conclusion stated as zero strict qualifiers among the available frozen analyses (09-08: 58 analyses, 3,032 prefiltered listings unavailable). Reviewer answers on D3 storage, the Moderate column and provider-reconstruction order recorded.
+
+## 2026-09-18 — revision 4 corrections (review of e162858 / 7ffd689)
+
+- Lane A frozen replay rebuilt on the complete population (analyses parented by or cited by each session's original preparation run; explicit book/workspace; lineage and later recovery apart) with old-planner outcomes reported beside Lane A's verdict; feasibility relabelled hypothetical (previous-session nightly snapshot, saved limits, effective cap) with every failure set preserved. Regenerated `lane-a/` reports: strict 0 qualifiers, Moderate variant 6.
+- D4 dropped-bar registry keyed by plan and session, eligibility-aware, pruned, bounded, duplicate-aware, persistence failures isolated; research studies on one bounded worker. Reviewer answers (volume eligibility matrix, D3 decision bundle, APA tape, targets) recorded in the proposal.
+
+## 2026-09-18 — cleared diagnostics and order-free Lane A evaluation
+
+- D3/D4/D5 diagnostics built without changing any decision, gate or protection: refusal measurements and bucket input hashes in `read_entry`, a bounded dropped-bar registry with per-plan journaling, the profitability collector off the event loop, spread cost on preflight records.
+- Pure Lane A reviewer and feasibility classifier (`lane_a.py`) plus the read-only frozen replay (`cartel_lane_a_eval.py`); results in `reviews/2026-09-17-proposal/lane-a/`: strict basis 0 qualifiers in 09-08 → 09-17, Moderate variant 10 qualifiers all below the inactive 1.5R experiment. Nothing wired into preparation, arming or entry.
+
+## 2026-09-18 — Lane A proposal revision 3 (P1 evidence fixes; no behaviour change)
+
+- Evidence tool: trade-tape probe enforces [start, end) minute boundaries locally, records per-interval verification times, classifies by reported conditions with size statistics separate, treats incomplete bar pagination and unprobed minutes as non-certifying, writes credential-free artifacts (`reviews/2026-09-17-proposal/evidence/`). Replay renamed to final-arm-tape; journaled decisions are the authority; per-minute value comparison added.
+- Probe rerun: PLAB 44/44, LZB 55/55, PWR 17/17 absent minutes had trades (odd-lot dominated), zero boundary drops. New finding: stored bars are revised after decisions (most minutes differ in value from the arm's saved minutes). Proposal: coexistence contract (`lane_a_focus` default 0, fallback, pending never reserves), D1 as an offline versioned volume comparison, execution unchanged.
+
+## 2026-09-18 — Lane A proposal revision 2 (review corrections; no behaviour change)
+
+- Evidence tool corrected per review: attribution by plan/order/position id, production-consistent partial-bucket handling, engine `read_entry` replay over decision-time and stored tapes, exchange-calendar sessions, spread in cents/dollars, `latency` and the read-only `alpaca-minutes` D1 probe.
+- D1 probe result recorded: every probed absent SIP minute (PLAB, LZB 09-16; PWR 09-17) had odd-lot trades — none was a no-trade minute. Proposal revised: 1.5R inactive experimental filter, provisional retryable feasibility, causal snapshot per input, legacy controls separated from Lane A examples, coexistence via `lane_a_focus`, causal stop observations.
+
+## 2026-09-17 — Lane A proposal package (review pending, no behaviour change)
+
+- Added `reviews/2026-09-17-proposal/` (bottleneck reconstruction from runtime records, executable funnel map, rule matrix, Lane A proposal with acceptance criteria and incremental plan) and the read-only `zargar.tools.cartel_evidence` reproduction tool.
+- Repairs the evidence gap for 2026-09-16/17 (QS spread refusal, TTWO/PWR contract affordability and target status, APTV no-setup, coverage-blocked candidates). No setting, arm, order or runtime process changed.
+
 ## 2026-09-16 — end-of-day follow-through
 
 - Documented Practice-only spread reselection, unchanged saved limits and full revalidation.
@@ -42,3 +71,7 @@
 - Updated the in-app Method chapter links and shared project pointers. No backend trading logic, account settings, orders or runtime processes changed in this documentation task.
 
 Application release metadata changes only to publish the bundled Method-library text; a running app requires a later frontend rebuild/deployment to display it. This document does not claim such a deployment occurred.
+
+## 2026-09-18 completion
+
+Added DIAGNOSTICS-2026-09-18: immutable decision capture, read-only provider parity results, evidence limits and inactive experiment boundaries. Historical proposal revisions remain dated records rather than current operating instructions.

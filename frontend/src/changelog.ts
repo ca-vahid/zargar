@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.12";
+export const APP_VERSION = "0.8.14";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.14",date:"2026-09-18",title:"Options Cartel: explain missed entries",items:[
+    {tag:"improved",text:"Cartel records partial candle evidence, delayed-bar counts and the dollar cost of option spreads to explain missed entries. Trading thresholds and account protections are unchanged."},
+    {tag:"new",text:"Offline Cartel method comparisons now distinguish original preparation, later recovery and unavailable evidence. Experimental setup and volume rules remain inactive."},
+  ]},
   {version:"0.8.12",date:"2026-09-17",title:"Team2: a breakout never targets the level it broke",items:[
     {tag:"fixed",text:"Team2 target resolution (September 17 QQQ finding): a setup's destination must be distinct from, and beyond, the structural level it broke or held, and ahead of the current actionable price (the fresh underlying print aged by its own trade time, else the bid/ask midpoint aged by the quote's own time, judged at the fire and again at the order boundary after the awaited work) - the same way for the EMA entry and the level entry of one setup. A target that is the setup's own source level is refused with a clear reason (skip_target_collision) instead of being re-planned to a farther level or silently dropped; no distance threshold is used. Switch: techniques.team2.target_identity_guard (default on; off = the earlier behaviour)."},
     {tag:"new",text:"Team2 pre-market inputs carry provenance: every frozen PMH/PML names the bar it came from and the hash of all pre-market bars (journaled at 09:25 and at the 09:30 finalization), and python -m zargar.tools.team2_pm_audit --date reconciles a plan's frozen extremes against the bank and the plan's own bar-revision history without rewriting the decision."},
