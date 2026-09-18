@@ -670,7 +670,7 @@ prefix; the $8 ceiling's pre-call check is estimate-based and its ledger is per 
 plan and the register), production caching stays OFF; no further feature work, trading-policy changes or broad test runs
 for E17; attention returns to trading results and actual operating costs.
 
-**Where the numbers stand (2026-09-17, Tips Practice):** closed today MRNA +$115.00 (10:04 ET) + MRNA +$94.10 (11:04 ET) +
+**Where the numbers stand (2026-09-17, Tips Practice) - SUPERSEDED by the net correction below (the +$189.07 figure is before option fees):** closed today MRNA +$115.00 (10:04 ET) + MRNA +$94.10 (11:04 ET) +
 ORCL -$20.03 (11:04 ET) = **+$189.07 realised** (the first MRNA tranche keeps its evidence-quality qualification from the
 quote audit); equity 8,925.42 at 23:01 ET, cash 6,679.92, three open positions above. Model cost today (list price,
 `tip_llm_cost --since 2026-09-17`): appraise $11.83 + retro $2.77 = **$14.60 priced lower bound**; intake (89 runs / 256
@@ -678,4 +678,26 @@ calls / 10.4M input), rule_audit (2 runs / 53 calls, 17 cut) and digest stay unp
 stamping (stage rollups show every one of those calls was `claude-opus-5`, which would put the day near $70 at list -
 illustrative, not a priced figure). From the build now live, intake, digest and rule-audit records carry the model, so
 tomorrow's report prices the whole desk without inference.
+
+## Correction (review team, 2026-09-17 late) - today's realised result is NET of matched option fees
+
+The +$189.07 above was the managed-position realised P&L BEFORE matched option fees. Fees from the execution records:
+$1.04 per contract per side on the two closed option round trips (MRNA 165C 1+1, ORCL 160C 1+1) = **$4.16**; the MRNA
+share exits carried no commission.
+
+| Closed 2026-09-17 | Gross | Matched fees | **Net** | Note |
+|---|---:|---:|---:|---|
+| MRNA 260918C165 (option) | +$115.00 | $2.08 | **+$112.92** | QUESTIONED - keep the evidence-quality flag (quote audit `2026-09-17-mrna-quote-audit.md`) |
+| MRNA shares | +$94.10 | $0.00 | **+$94.10** | |
+| ORCL 260925C160 (option) | -$20.03 | $2.08 | **-$22.11** | |
+| **Total** | +$189.07 | $4.16 | **+$184.91** | |
+| **Excluding the questioned MRNA option** | | | **+$71.99** | |
+
+Model costs stay SEPARATE from trading P&L: **$14.60 is the priced lower bound**; the ~$70 all-Opus-5 figure is
+illustrative only, never a priced number.
+
+**Cost reporting from 2026-09-18 on:** report priced, unpriced and partial usage as three explicit lines. Model stamping
+(intake, digest, rule-audit, live since build e14f9fb) widens what CAN be priced; it does not make the bill complete -
+cut or cancelled calls stay partial/unknown, records without a stamp stay unpriced, and list price is an estimate of
+the invoice.
 
