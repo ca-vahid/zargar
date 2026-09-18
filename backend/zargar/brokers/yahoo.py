@@ -262,10 +262,14 @@ class YahooQuoteFeed(QuoteFeed):
         block = ((result.get("indicators") or {}).get("quote") or [{}])[0]
         closes = block.get("close") or []
         volumes = block.get("volume") or []
+        stamps = result.get("timestamp") or []
         last = 0.0
+        last_ts = 0
         for i in range(len(closes) - 1, -1, -1):
             if closes[i] is not None:
                 last = float(closes[i])
+                # PR #204 r2: the print's own time = the close of the chart minute it came from (0 when unknown)
+                last_ts = int(stamps[i]) * 1000 + 60_000 if i < len(stamps) and stamps[i] else 0
                 break
         # F19 (2026-09-04): `volume` is the SESSION total (what brokers show and what seeds the
         # Alpaca day range), not the last minute's bar — Yahoo's meta carries it; the sum of the
@@ -274,6 +278,7 @@ class YahooQuoteFeed(QuoteFeed):
         reg_price = _num(meta.get("regularMarketPrice"))
         if last <= 0:  # off-session fallback: meta close (may be stale)
             last = reg_price
+            last_ts = int(_num(meta.get("regularMarketTime")) or 0) * 1000
         if last <= 0:
             return None
         return Quote(
@@ -281,6 +286,7 @@ class YahooQuoteFeed(QuoteFeed):
             bid=round(last * (1 - SYNTH_SPREAD), 4),
             ask=round(last * (1 + SYNTH_SPREAD), 4),
             last=last,
+            last_ts=last_ts,                   # the synthetic bid/ask carry no venue time of their own (quote_ts stays 0)
             bid_size=0,
             ask_size=0,
             volume=volume,
