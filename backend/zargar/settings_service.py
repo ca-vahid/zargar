@@ -121,6 +121,7 @@ DEFAULTS: dict[str, Any] = {
     # --- tip technique (docs/techniques/tip/PLAN.md; per-source overrides in .sources) ---
     # --- Team2 technique (2026-09-03; docs/techniques/team2/PLAN.md D1-D14) --------------------------
     "techniques.team2.canonical_provider": "",  # C6: opt in after verified Alpaca backfill
+    "techniques.team2.experiment_observation": {},  # persistent sampled equity/high-water state
     "techniques.team2.enabled": True,
     "techniques.team2.default_portfolio": "",    # Team2's own Practice book (2026-09-08); empty = trading.default_portfolio
     "techniques.options_cartel.default_portfolio": "",   # Options Cartel's own Practice book (2026-09-08)
