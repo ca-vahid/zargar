@@ -91,6 +91,23 @@ EXPERIMENTS: dict[str, dict] = {
                              "decisionRule": "narration is research, never permission (PLATFORM-RULES 19)"},
         "status": "observing",
     },
+    "prompt-cache": {
+        "hypothesis": "Caching the identical stable prefix (system prompt + schema + tool definitions) reduces repeated-input cost "
+                      "and latency without changing any judgment; the dynamic header (quotes, positions, evidence) stays uncached.",
+        "variants": ["off (live)", "on (techniques.tip.prompt_cache True) - not enabled"],
+        "eligibleSetup": "every analyst-family loop call",
+        "unit": "one provider call",
+        "episodeIdentity": "run id + call index",
+        "primaryMetric": "usage.cacheRead / cacheWrite per call, priced cost from llm.rates incl. the warm-up write, latency; judgments unchanged",
+        "costs": "the calls themselves; a cache write is billed above the input rate - measured, never assumed",
+        "regime": {"module": "techniques/tip/analyst.py cacheable_request + tools/tip_llm_cost.py",
+                   "knobs": ["techniques.tip.prompt_cache", "llm.rates"]},
+        "alternativesTried": [],
+        "evaluationWindow": {"opened": "2026-09-17 (plan research/2026-09-17-prompt-cache-pilot-plan.md; pilot awaiting approval)",
+                             "closes": "step 1: the bounded side-effect-free pilot (8 frozen-replay calls, cap $8); step 2 (a measured session) only if favourable and approved",
+                             "decisionRule": "user decides on measured hits, priced cost incl. warm-up and latency; recap routing stays OFF (separate experiment)"},
+        "status": "built, off",
+    },
     "feasibility-annotate": {
         "hypothesis": "Annotating every TAKE with the expression's feasibility and payoff (without downgrading) reduces "
                       "unfittable option purchases over time; downgrade mode is NOT enabled.",
