@@ -1,5 +1,10 @@
 # Cartel documentation changes
 
+## 2026-09-18 — revision 4 corrections (review of e162858 / 7ffd689)
+
+- Lane A frozen replay rebuilt on the complete population (analyses parented by or cited by each session's original preparation run; explicit book/workspace; lineage and later recovery apart) with old-planner outcomes reported beside Lane A's verdict; feasibility relabelled hypothetical (previous-session nightly snapshot, saved limits, effective cap) with every failure set preserved. Regenerated `lane-a/` reports: strict 0 qualifiers, Moderate variant 6.
+- D4 dropped-bar registry keyed by plan and session, eligibility-aware, pruned, bounded, duplicate-aware, persistence failures isolated; research studies on one bounded worker. Reviewer answers (volume eligibility matrix, D3 decision bundle, APA tape, targets) recorded in the proposal.
+
 ## 2026-09-18 — cleared diagnostics and order-free Lane A evaluation
 
 - D3/D4/D5 diagnostics built without changing any decision, gate or protection: refusal measurements and bucket input hashes in `read_entry`, a bounded dropped-bar registry with per-plan journaling, the profitability collector off the event loop, spread cost on preflight records.

@@ -1,232 +1,97 @@
-# Lane A frozen replay — 2026-09-08 → 2026-09-17 (market basis: strict)
+# Lane A frozen replay — 2026-09-08 → 2026-09-17 (book 0b48ed48, practice, market basis: strict)
 
-Lane A's definition uses the **strict** read (both indices above their 8/21/50 EMAs). Both readings are recorded per session in the table.
+Lane A's definition uses the **strict** market read. Generated 2026-09-18T02:31:56+00:00 by `zargar.tools.cartel_lane_a_eval` (read-only). Population = every frozen analysis run under the session's original preparation run; the old planner's own row/shortlist statuses are reported beside Lane A's verdict, never used as the denominator. Lane A parameters: base 10 sessions, ceiling tests ≥ 2 within 0.5%, confirmed pivots only, distance floor 0.5%, experimental planning R ≥ 1.5 **recorded, inactive**.
 
-Generated 2026-09-18T01:55:13+00:00 by `zargar.tools.cartel_lane_a_eval` (read-only) from the original preparation run of each session and the frozen analysis runs it cited. Lane A parameters: base 10 sessions, ceiling tests ≥ 2 within 0.5%, confirmed pivots only, distance floor 0.5%, experimental planning R ≥ 1.5 **recorded, inactive**. Feasibility from the newest chain snapshot dated before the session with the effective cap $5.00; `unknown_stale` where none exists.
-
-A `qualified` row is a planning verdict under Lane A's definition over frozen inputs. It is not an entry, a fill or an outcome; conclusions stop at the last supported stage. Only screen-and-context-passing rows can qualify (Lane A keeps those gates), so the rows below are the complete candidate set for the lane; the denominators are the preparation run's own counts.
+Feasibility is **hypothetical under stated assumptions**: the nightly chain snapshot dated the previous exchange session (research job ~16:30 ET, date-only records), the preparation's saved contract limits, and the effective cap min(policy, budget/100, equity x risk%/100) with the book equity last persisted before the run. It is not historical affordability. A `qualified` row is a planning verdict, not an entry, fill or outcome.
 
 ## Sessions
 
-| Session | Market strict / Moderate read | Discovered | Evaluated | Context-passing | Lane A qualified | Exp. 1.5R passes | Lane A stages | Feasibility of qualified | Current rules armed |
+| Session | Original run | Market strict / Moderate (used) | Population | Lane A stages | Qualified | Exp. 1.5R passes | Feasibility of qualified | Old planner armed | Later runs |
 |---|---|---|---|---|---|---|---|---|---|
-| 2026-09-08 | long / long (used: long) | 3090 | 58 | 2 | **0** | 0 | {'ceiling_tests': 2} | — | 1 |
-| 2026-09-09 | mixed / long (used: mixed) | 3092 | 3084 | 39 | **0** | 0 | {'direction': 31, 'data_error': 8} | — | 5 |
-| 2026-09-10 | mixed / long (used: mixed) | 3083 | 3081 | 16 | **0** | 0 | {'direction': 14, 'data_error': 2} | — | 4 |
-| 2026-09-11 | short / short (used: short) | 3078 | 3077 | 35 | **0** | 0 | {'direction': 34, 'data_error': 1} | — | 5 |
-| 2026-09-14 | mixed / long (used: mixed) | 3076 | 3075 | 12 | **0** | 0 | {'data_error': 1, 'direction': 11} | — | 3 |
-| 2026-09-15 | mixed / mixed (used: mixed) | 3072 | 3070 | 2 | **0** | 0 | {'data_error': 2} | — | 0 |
-| 2026-09-16 | short / short (used: short) | 3066 | 3062 | 33 | **0** | 0 | {'direction': 29, 'data_error': 4} | — | 5 |
-| 2026-09-17 | short / short (used: short) | 3059 | 3056 | 16 | **0** | 0 | {'data_error': 3, 'direction': 13} | — | 1 |
+| 2026-09-08 | `4f312571` 2026-09-08 04:40Z complete | long / long (long) | 58 (0 reused from earlier runs; +3032 rows without analysis) | {'context': 22, 'screen': 34, 'ceiling_tests': 2, 'prefiltered': 3032} | **0** | 0 | — | 1 | 0 |
+| 2026-09-09 | `02b8a8bb` 2026-09-09 03:37Z partial | mixed / mixed (mixed) | 3080 (0 reused from earlier runs; +11 rows without analysis) | {'direction': 3080, 'unavailable_evidence': 11} | **0** | 0 | — | 0 | 3 |
+| 2026-09-10 | `33e2a508` 2026-09-10 04:27Z partial | mixed / long (mixed) | 3081 (0 reused from earlier runs; +2 rows without analysis) | {'direction': 3081, 'unavailable_evidence': 2} | **0** | 0 | — | 4 | 2 |
+| 2026-09-11 | `a973b3a4` 2026-09-11 04:49Z partial | short / short (short) | 3077 (2554 reused from earlier runs; +1 rows without analysis) | {'direction': 3077, 'unavailable_evidence': 1} | **0** | 0 | — | 5 | 0 |
+| 2026-09-14 | `98bd007f` 2026-09-13 02:14Z partial | mixed / long (mixed) | 3075 (0 reused from earlier runs; +1 rows without analysis) | {'direction': 3075, 'unavailable_evidence': 1} | **0** | 0 | — | 3 | 2 |
+| 2026-09-15 | `072d5e98` 2026-09-15 04:21Z partial | mixed / mixed (mixed) | 3070 (2013 reused from earlier runs; +2 rows without analysis) | {'direction': 3070, 'unavailable_evidence': 2} | **0** | 0 | — | 0 | 18 |
+| 2026-09-16 | `ed6d9da2` 2026-09-16 02:26Z partial | short / short (short) | 3062 (0 reused from earlier runs; +4 rows without analysis) | {'direction': 3062, 'unavailable_evidence': 4} | **0** | 0 | — | 5 | 28 |
+| 2026-09-17 | `cee03dd7` 2026-09-17 01:11Z partial | short / short (short) | 3056 (0 reused from earlier runs; +3 rows without analysis) | {'direction': 3056, 'unavailable_evidence': 3} | **0** | 0 | — | 1 | 14 |
 
-## Rows (context-passing symbols per session)
+## Old planner outcome of the same population
 
-### 2026-09-08 — market long, preparation `4f312571` (created 2026-09-08 04:40:59Z; 3 runs that session)
+| Session | Classes |
+|---|---|
+| 2026-09-08 | {'screen_or_context_rejected': 56, 'old_planner_candidate:armed': 1, 'old_planner_candidate:awaiting_contract': 1, 'prefiltered': 3032} |
+| 2026-09-09 | {'screen_or_context_rejected': 3049, 'research_only': 31, 'unavailable_evidence': 11} |
+| 2026-09-10 | {'screen_or_context_rejected': 3064, 'old_planner_candidate:awaiting_contract': 1, 'old_planner_candidate:not_shortlisted': 9, 'old_planner_candidate:armed': 4, 'old_planner_rejected': 3, 'unavailable_evidence': 2} |
+| 2026-09-11 | {'screen_or_context_rejected': 3034, 'old_planner_rejected': 9, 'old_planner_candidate:armed': 5, 'old_planner_candidate:not_shortlisted': 24, 'old_planner_candidate:awaiting_contract': 5, 'unavailable_evidence': 1} |
+| 2026-09-14 | {'screen_or_context_rejected': 3061, 'old_planner_candidate:armed': 3, 'old_planner_rejected': 3, 'old_planner_candidate:not_shortlisted': 7, 'old_planner_candidate:awaiting_contract': 1, 'unavailable_evidence': 1} |
+| 2026-09-15 | {'screen_or_context_rejected': 3061, 'research_only': 9, 'unavailable_evidence': 2} |
+| 2026-09-16 | {'screen_or_context_rejected': 3020, 'old_planner_candidate:armed': 5, 'old_planner_candidate:not_shortlisted': 21, 'old_planner_rejected': 13, 'old_planner_candidate:awaiting_contract': 3, 'unavailable_evidence': 4} |
+| 2026-09-17 | {'screen_or_context_rejected': 3041, 'old_planner_rejected': 2, 'old_planner_candidate:armed': 1, 'old_planner_candidate:not_shortlisted': 10, 'old_planner_candidate:awaiting_contract': 2, 'unavailable_evidence': 3} |
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| SPCX | candidate → armed | inside_day / — | ceiling_tests | 1 | — | — | — | Ceiling tested 1 time(s); Lane A requires 2. |
-| ZIM | candidate → awaiting_contract | ma_pullback / — | ceiling_tests | 1 | — | — | — | Ceiling tested 1 time(s); Lane A requires 2. |
+## Lineage (all preparation runs per session; later runs are recovery, not original-time eligibility)
 
-### 2026-09-09 — market mixed, preparation `11279651` (created 2026-09-09 04:42:11Z; 4 runs that session)
+- **2026-09-08**: `4f312571` 2026-09-08 04:40Z complete market long/long armed 1
+- **2026-09-09**: `39fa3e1c` 2026-09-09 00:20Z no_market_alignment market unknown/unknown armed 0; `bc8e704a` 2026-09-09 01:58Z no_market_alignment market mixed/mixed armed 0; `02b8a8bb` 2026-09-09 03:37Z partial market mixed/mixed armed 0; `11279651` 2026-09-09 04:42Z partial market mixed/long armed 5
+- **2026-09-10**: `28f58799` 2026-09-10 00:20Z partial market unknown/unknown armed 0; `33e2a508` 2026-09-10 04:27Z partial market mixed/long armed 4; `57aab353` 2026-09-10 05:31Z partial market mixed/long armed 1
+- **2026-09-11**: `a973b3a4` 2026-09-11 04:49Z partial market short/short armed 5 (resumed from `887e0bee`)
+- **2026-09-14**: `f451f827` 2026-09-12 00:20Z partial market unknown/unknown armed 0; `98bd007f` 2026-09-13 02:14Z partial market mixed/long armed 3; `ccaa6c2c` 2026-09-14 00:52Z partial market mixed/long armed 0
+- **2026-09-15**: `e365b997` 2026-09-15 00:20Z waiting_for_benchmark market unknown/unknown armed 0; `74b0f7b9` 2026-09-15 00:20Z waiting_for_benchmark market unknown/unknown armed 0; `bb66cb11` 2026-09-15 00:25Z waiting_for_benchmark market unknown/unknown armed 0; `4a3d3738` 2026-09-15 00:49Z waiting_for_benchmark market unknown/unknown armed 0; `dfea7456` 2026-09-15 00:54Z waiting_for_benchmark market unknown/unknown armed 0; `0844b834` 2026-09-15 00:59Z waiting_for_benchmark market unknown/unknown armed 0; `d1f642d3` 2026-09-15 01:08Z waiting_for_benchmark market unknown/unknown armed 0; `7ce9e5b0` 2026-09-15 01:13Z waiting_for_benchmark market unknown/unknown armed 0; `8c9a6a91` 2026-09-15 01:18Z waiting_for_benchmark market unknown/unknown armed 0; `81b6d920` 2026-09-15 01:23Z waiting_for_benchmark market unknown/unknown armed 0; `38deb5b4` 2026-09-15 01:28Z waiting_for_benchmark market unknown/unknown armed 0; `20bd99ae` 2026-09-15 01:33Z waiting_for_benchmark market unknown/unknown armed 0; `072d5e98` 2026-09-15 04:21Z partial market mixed/mixed armed 0 (resumed from `cf8834f1`); `99278d42` 2026-09-15 04:34Z partial market mixed/mixed armed 0 (resumed from `072d5e98`); `6455e37d` 2026-09-15 04:49Z partial market mixed/mixed armed 0 (resumed from `99278d42`); `970f33bc` 2026-09-15 05:09Z partial market mixed/mixed armed 0 (resumed from `6455e37d`); `c612794b` 2026-09-15 12:45Z partial market mixed/mixed armed 0 (resumed from `970f33bc`); `e3cde41e` 2026-09-15 13:00Z partial market mixed/mixed armed 0 (resumed from `c612794b`); `b026e513` 2026-09-15 13:26Z partial market mixed/mixed armed 0 (resumed from `e3cde41e`)
+- **2026-09-16**: `f1bb38d5` 2026-09-16 00:10Z waiting_for_benchmark market unknown/unknown armed 0; `b7fd41d1` 2026-09-16 00:18Z waiting_for_benchmark market unknown/unknown armed 0; `866d97b8` 2026-09-16 00:20Z waiting_for_benchmark market unknown/unknown armed 0; `58b2fdce` 2026-09-16 00:23Z waiting_for_benchmark market unknown/unknown armed 0; `54f472f1` 2026-09-16 00:28Z waiting_for_benchmark market unknown/unknown armed 0; `e9c0f53b` 2026-09-16 00:33Z waiting_for_benchmark market unknown/unknown armed 0; `d37b6f39` 2026-09-16 00:38Z waiting_for_benchmark market unknown/unknown armed 0; `c37cc76d` 2026-09-16 00:43Z waiting_for_benchmark market unknown/unknown armed 0; `7da93979` 2026-09-16 00:52Z waiting_for_benchmark market unknown/unknown armed 0; `d27fd92c` 2026-09-16 00:57Z waiting_for_benchmark market unknown/unknown armed 0; `5383488f` 2026-09-16 01:02Z waiting_for_benchmark market unknown/unknown armed 0; `e6c35152` 2026-09-16 01:07Z waiting_for_benchmark market unknown/unknown armed 0; `b288ae2b` 2026-09-16 01:12Z waiting_for_benchmark market unknown/unknown armed 0; `870dfe1c` 2026-09-16 01:41Z waiting_for_benchmark market unknown/unknown armed 0; `f88011f0` 2026-09-16 01:46Z waiting_for_benchmark market unknown/unknown armed 0; `349408c4` 2026-09-16 01:51Z waiting_for_benchmark market unknown/unknown armed 0; `27945174` 2026-09-16 01:56Z waiting_for_benchmark market unknown/unknown armed 0; `f572d0b4` 2026-09-16 02:01Z waiting_for_benchmark market unknown/unknown armed 0; `b9bde169` 2026-09-16 02:06Z waiting_for_benchmark market unknown/unknown armed 0; `5d0474de` 2026-09-16 02:11Z waiting_for_benchmark market unknown/unknown armed 0; `4cbb91dc` 2026-09-16 02:16Z waiting_for_benchmark market unknown/unknown armed 0; `30b113f6` 2026-09-16 02:21Z waiting_for_benchmark market unknown/unknown armed 0; `ed6d9da2` 2026-09-16 02:26Z partial market short/short armed 5; `6ac86f85` 2026-09-16 02:52Z partial market short/short armed 0 (resumed from `ed6d9da2`); `f5fa1018` 2026-09-16 03:15Z partial market short/short armed 0 (resumed from `6ac86f85`); `5b252a94` 2026-09-16 03:41Z partial market short/short armed 0 (resumed from `f5fa1018`); `75de9fa7` 2026-09-16 12:45Z partial market short/short armed 0 (resumed from `5b252a94`); `97a0780a` 2026-09-16 12:59Z partial market short/short armed 0 (resumed from `75de9fa7`); `e02f0a2b` 2026-09-16 13:24Z partial market short/short armed 0 (resumed from `97a0780a`)
+- **2026-09-17**: `54438c99` 2026-09-17 00:20Z waiting_for_benchmark market unknown/unknown armed 0; `f76ee34a` 2026-09-17 00:24Z waiting_for_benchmark market unknown/unknown armed 0; `eb7efb62` 2026-09-17 00:29Z waiting_for_benchmark market unknown/unknown armed 0; `a2ed9e18` 2026-09-17 00:34Z waiting_for_benchmark market unknown/unknown armed 0; `70f7c328` 2026-09-17 00:39Z waiting_for_benchmark market unknown/unknown armed 0; `67704047` 2026-09-17 00:45Z waiting_for_benchmark market unknown/unknown armed 0; `ac1c6e72` 2026-09-17 00:50Z waiting_for_benchmark market unknown/unknown armed 0; `fb5d4965` 2026-09-17 01:06Z waiting_for_benchmark market unknown/unknown armed 0; `cee03dd7` 2026-09-17 01:11Z partial market short/short armed 1; `467e472e` 2026-09-17 02:35Z partial market short/short armed 0 (resumed from `46b712ad`); `c45b6dff` 2026-09-17 02:50Z partial market short/short armed 0 (resumed from `467e472e`); `a3244050` 2026-09-17 03:18Z partial market short/short armed 0 (resumed from `c45b6dff`); `7a0a0964` 2026-09-17 12:45Z partial market short/short armed 0 (resumed from `a3244050`); `8b11e3ce` 2026-09-17 12:58Z partial market short/short armed 0 (resumed from `7a0a0964`); `bc78bc51` 2026-09-17 13:23Z partial market short/short armed 0 (resumed from `8b11e3ce`)
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| SPCX | candidate → armed | ma_pullback / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| DRAM | candidate → armed | base / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| FISV | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2025-11-12 |
-| VG | candidate → armed | ma_pullback / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| CMG | candidate → armed | flag / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| CPRT | candidate → armed | base / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| CVNA | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| MNKD | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| OSCR | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| ANET | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| AA | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| OCUL | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| EL | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| UA | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: daily provider timestamp is not the expected US exchan |
-| VRDN | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| NOG | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| BGC | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| MUR | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| LAZ | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| GROY | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| TGTX | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| EPAM | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| LRMR | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| NTRA | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| KEYS | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| CGEM | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| HNRG | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| ADEA | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: daily provider timestamp is not the expected US exchan |
-| FUTU | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| GRAL | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| VIRT | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| WLY | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: daily provider timestamp is not the expected US exchan |
-| WWW | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| ANRO | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| TBBB | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| HUBB | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: daily provider timestamp is not the expected US exchan |
-| WCT | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2026-07-20 |
-| CTSO | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2026-07-20 |
-| SFWL | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2026-07-20 |
+## Rows that reached the history stages (screen and context passed under Lane A)
 
-### 2026-09-10 — market mixed, preparation `33e2a508` (created 2026-09-10 04:27:36Z; 3 runs that session)
+### 2026-09-08 — 2 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 10000.0 at 2026-09-08T04:40:46.391000+00:00)
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| SPCX | candidate → armed | inside_day / 0.57 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| FISV | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2025-11-12 |
-| CVNA | candidate → armed | base / 0.06 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| COIN | candidate → armed | ma_pullback / 0.14 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| ABUS | candidate → awaiting_contract | ma_pullback / 1.10 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| ACVA | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| EL | candidate → armed | ma_pullback / 0.59 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| BGC | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| GROY | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| ZIM | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| CTKB | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| TBBB | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| NTRA | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| FUTU | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| GRAL | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| SFWL | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2026-09-08 |
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
+| SPCX | old_planner_candidate:armed | — | ceiling_tests | 1 | — | — | — |  | Ceiling tested 1 time(s); Lane A requires 2. |
+| ZIM | old_planner_candidate:awaiting_contract | — | ceiling_tests | 1 | — | — | — |  | Ceiling tested 1 time(s); Lane A requires 2. |
 
-### 2026-09-11 — market short, preparation `a973b3a4` (created 2026-09-11 04:49:37Z; 1 runs that session)
+### 2026-09-09 — 0 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 10000.0 at 2026-09-09T03:36:44.979000+00:00)
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| QUBT | candidate → armed | ma_pullback / 0.24 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| FISV | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2025-11-12 |
-| AMAT | candidate → awaiting_contract | ma_pullback / 1.20 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| VIK | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ZM | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| CENX | candidate → armed | ma_pullback / 0.24 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| REZI | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| DNUT | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| YETI | candidate → armed | ma_pullback / 0.46 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| BHF | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SVRA | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| KC | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| AAP | candidate → armed | ma_pullback / 0.74 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| HLIT | candidate → awaiting_contract | ma_pullback / 0.58 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| AMTM | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| LAZ | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ACHC | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| CMC | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| VNDA | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| LQDA | candidate → awaiting_contract | base / 0.78 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| CLDX | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ATAT | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| LRMR | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| NOMD | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| AVR | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| LFTO | candidate → armed | ma_pullback / 3.54 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| AURA | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| STLD | candidate → awaiting_contract | ma_pullback / 1.30 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| FUL | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| BOOT | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| KN | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SSYS | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| PWR | candidate → awaiting_contract | flag / 0.25 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ATRO | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| TLN | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
 
-### 2026-09-14 — market mixed, preparation `98bd007f` (created 2026-09-13 02:14:35Z; 3 runs that session)
+### 2026-09-10 — 0 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 10000.0 at 2026-09-10T04:27:32.085000+00:00)
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| FISV | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2025-11-12 |
-| APA | candidate → armed | inside_day / 1.80 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| VERA | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| NOV | candidate → armed | base / 0.79 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| OKTA | candidate → awaiting_contract | base / 0.91 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| HOG | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| CGNX | candidate → armed | ma_pullback / 0.26 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| OII | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| PPC | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| SXC | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| URBN | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
-| NTRA | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=long, market=mixed). |
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
 
-### 2026-09-15 — market mixed, preparation `072d5e98` (created 2026-09-15 04:21:50Z; 7 runs that session)
+### 2026-09-11 — 0 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 10000.0 at 2026-09-11T04:49:37.232000+00:00)
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| FISV | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2025-11-12 |
-| NFE | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2026-09-10 |
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
 
-### 2026-09-16 — market short, preparation `ed6d9da2` (created 2026-09-16 02:26:52Z; 7 runs that session)
+### 2026-09-14 — 0 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 10000.0 at 2026-09-13T02:14:19.434000+00:00)
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| QS | candidate → armed | ma_pullback / 0.61 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| TOST | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| HIMS | candidate → armed | ma_pullback / 0.31 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| FISV | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2025-11-12 |
-| QUBT | candidate → armed | inside_day / 0.41 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| APTV | candidate → armed | base / 1.71 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| DNUT | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| NVT | candidate → awaiting_contract | wedge / 0.46 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| REAL | candidate → awaiting_contract | ma_pullback / 0.32 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| AAP | candidate → armed | ma_pullback / 0.20 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| CSTM | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SVRA | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ACHC | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| STLD | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ALH | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SSYS | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| PLAB | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ORKA | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| EH | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| PWR | candidate → awaiting_contract | flag / 0.23 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| KN | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| LZB | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| KLIC | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SKY | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| GNRC | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| RERE | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| XENE | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| AVR | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| URGN | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| ATHM | candidate | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| CLBR | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: 1 validation error for DailyBar
-  Value error, invalid |
-| MTAL | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: 1 validation error for DailyBar
-  Value error, invalid |
-| BRK.A | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: 1 validation error for DailyBar
-  Value error, invalid |
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
 
-### 2026-09-17 — market short, preparation `cee03dd7` (created 2026-09-17 01:11:47Z; 7 runs that session)
+### 2026-09-15 — 0 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 9938.869999999999 at 2026-09-15T04:21:32.860000+00:00)
 
-| Symbol | Current rules | Current setup / R | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (chain date) | Note |
-|---|---|---|---|---|---|---|---|---|
-| FISV | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: missing regular-session bar: 2025-11-12 |
-| APTV | candidate → armed | breakout_retest / 5.16 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| TTWO | candidate → awaiting_contract | ma_pullback / 0.28 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| GNRC | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| PLAB | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| BWXT | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| STLD | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SYNA | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| LZB | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| PWR | candidate → awaiting_contract | wedge / 0.07 | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SKY | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| MRCY | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| SSYS | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| CW | candidate/plan_blocked | — / — | direction | — | — | — | — | Lane A plans only long setups on strict-bullish sessions (direction=short, market=short). |
-| WENN | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: 1 validation error for DailyBar
-  Value error, invalid |
-| BRK.A | data_error | — / — | data_error | — | — | — | — | Daily history error in preparation: 1 validation error for DailyBar
-  Value error, invalid |
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
+
+### 2026-09-16 — 0 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 9938.869999999999 at 2026-09-16T02:26:43.093000+00:00)
+
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
+
+### 2026-09-17 — 0 rows; saved limits {'dte_max': 90, 'dte_min': 21, 'max_ask': 5.0, 'target_dte': 45, 'min_abs_delta': 0.25, 'refresh_limit': 6, 'max_spread_pct': 20.0, 'target_abs_delta': 0.5, 'min_open_interest': 100}; effective cap $5.00 (policy; equity 9938.869999999999 at 2026-09-17T01:11:18.230000+00:00)
+
+| Symbol | Old planner | Later recovery | Lane A stage | Ceiling tests | Lane A R / room% | Exp. 1.5R | Feasibility (snapshot date) | Failure sets | Note |
+|---|---|---|---|---|---|---|---|---|---|
 
 ## Reading
 
-- `direction` = the session was not strict-bullish or the row was a short candidate; Lane A does not plan it.
-- `context` / `base_family` = the existing gates or the `base` geometry did not pass in the frozen analysis.
-- `ceiling_tests` = the base ceiling was tested fewer than the required times (Lane A's one added source-backed requirement).
-- `confirmed_target` = no confirmed pivot above the trigger (the Fibonacci fallback is off in Lane A).
-- `distance_floor` = the existing 0.5% first-target floor; kept active.
-- Experimental 1.5R is recorded per qualified row and applied nowhere.
-- Feasibility `unknown_stale` means no dated chain observation exists for that name; the candidate stays in the denominator and no later stage is inferred.
+- `direction`: not a strict-bullish session or not a long analysis — Lane A does not plan it.
+- `screen` / `context`: the existing (unchanged) gates failed in the frozen analysis; the failed gate or check is named.
+- `base_family`, `ceiling_tests`, `confirmed_target`, `distance_floor`: Lane A's own stages.
+- `missing_analysis` / `unavailable_evidence` / `prefiltered`: a preparation row with no frozen analysis run, a daily-history error, or a listing the (then strict) industry pre-filter excluded before any history was fetched.
+- Population = analyses parented by the original run plus analyses its rows cite (a resumed run reuses analyses an earlier run created); the reused count is shown per session.
+- Old planner classes: `old_planner_rejected` = context passed but the current automatic review filtered it; `old_planner_blocked` = plan_blocked; `old_planner_candidate:<shortlist status>`.
+- Later recovery lists shortlist statuses from later runs of the same session; it never changes the original-time verdict.
+- Feasibility `unknown_stale`: no nightly snapshot for the previous session; the row stays in the denominator and no later stage is inferred.

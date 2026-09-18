@@ -120,22 +120,42 @@ class FeasibilityPolicy(BaseModel):
 FeasibilityState = Literal["affordable", "over_budget", "spread_blocked", "filtered_other", "no_chain"]
 
 
+def effective_cap(policy_max_ask: float, budget: float | None, equity: float | None, risk_pct: float | None,
+                  *, multiplier: int = 100, fx: float = 1.0) -> dict:
+    """The ask cap preparation actually applies: min(policy, budget/(mult*fx), equity*risk%/(mult*fx)).
+
+    Mirrors ``preparation.affordable_contract_policy``. Missing budget or equity leaves that bound
+    out and says so; nothing is assumed.
+    """
+    bounds = {"policy": policy_max_ask}
+    if isinstance(budget, (int, float)) and budget > 0:
+        bounds["budget"] = budget / (multiplier * fx)
+    if isinstance(equity, (int, float)) and equity > 0 and isinstance(risk_pct, (int, float)) and risk_pct > 0:
+        bounds["equityRisk"] = equity * risk_pct / 100 / (multiplier * fx)
+    binding = min(bounds, key=bounds.get)
+    return {"maxAsk": bounds[binding], "binding": binding, "bounds": bounds,
+            "missing": [b for b in ("budget", "equityRisk") if b not in bounds]}
+
+
 def feasibility_from_chain(rows: list[dict], *, direction: str, first_session: dt.date, policy: FeasibilityPolicy,
                            observed_at: str | None) -> dict:
     """Classify a dated chain observation (rows with expiry, option_type, delta, bid, ask, open_interest).
 
-    Every row records its first failing filter; the state names why nothing passed. This is
-    planning-time evidence only: a fresh quote is still required before any order.
+    Every inspected row keeps its **complete** failure set. The summary state is derived from those
+    sets, never from a first failure: ``over_budget`` requires a contract whose only failure is
+    premium, ``spread_blocked`` one whose only failure is spread; anything else that fails is
+    ``filtered_other`` with the failure-set counts. Planning-time evidence only.
     """
     right = "call" if direction == "long" else "put"
     numeric = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
-    first_fail: dict[str, int] = {}
-    eligible, lowest_ask, examined = [], None, 0
+    failure_sets: dict[str, int] = {}
+    eligible, examined = [], 0
+    premium_only, spread_only = [], []
     for r in rows:
         expiry = r.get("expiry")
         if isinstance(expiry, str):
             expiry = dt.date.fromisoformat(expiry)
-        if r.get("option_type") not in (right, right[0].upper(), right[0]):
+        if str(r.get("option_type") or "").lower() not in (right, right[0]):
             continue
         dte = (expiry - first_session).days if expiry else None
         if dte is None or not policy.dte_min <= dte <= policy.dte_max:
@@ -143,20 +163,24 @@ def feasibility_from_chain(rows: list[dict], *, direction: str, first_session: d
         examined += 1
         bid, ask, delta, oi = r.get("bid"), r.get("ask"), r.get("delta"), r.get("open_interest")
         failures = []
-        if not (numeric(bid) and numeric(ask) and 0 < bid <= ask):
+        valid_quote = numeric(bid) and numeric(ask) and 0 < bid <= ask
+        if not valid_quote:
             failures.append("quotes")
         if not (numeric(delta) and policy.min_abs_delta <= abs(delta) <= 1 and delta * (1 if direction == "long" else -1) > 0):
             failures.append("delta")
-        if numeric(bid) and numeric(ask) and 0 < bid <= ask and (ask - bid) / ((ask + bid) / 2) * 100 > policy.max_spread_pct:
+        if valid_quote and (ask - bid) / ((ask + bid) / 2) * 100 > policy.max_spread_pct:
             failures.append("spread")
         if policy.min_open_interest and (not numeric(oi) or oi < policy.min_open_interest):
             failures.append("open_interest")
         if numeric(ask) and ask > policy.max_ask:
             failures.append("premium")
         if failures:
-            first_fail[failures[0]] = first_fail.get(failures[0], 0) + 1
-            if failures == ["premium"] and numeric(ask):
-                lowest_ask = ask if lowest_ask is None else min(lowest_ask, ask)
+            key = "+".join(failures)
+            failure_sets[key] = failure_sets.get(key, 0) + 1
+            if failures == ["premium"]:
+                premium_only.append(ask)
+            elif failures == ["spread"]:
+                spread_only.append(ask)
             continue
         eligible.append({"symbol": r.get("occ"), "expiry": expiry.isoformat(), "dte": dte, "delta": delta, "bid": bid, "ask": ask,
                          "spreadPct": (ask - bid) / ((ask + bid) / 2) * 100, "openInterest": oi})
@@ -164,14 +188,15 @@ def feasibility_from_chain(rows: list[dict], *, direction: str, first_session: d
         state = "no_chain"
     elif eligible:
         state = "affordable"
-    elif first_fail and set(first_fail) == {"premium"}:
+    elif premium_only:
         state = "over_budget"
-    elif first_fail and set(first_fail) == {"spread"}:
+    elif spread_only:
         state = "spread_blocked"
     else:
         state = "filtered_other"
     eligible.sort(key=lambda c: (abs(c["dte"] - policy.target_dte), abs(abs(c["delta"]) - 0.5), c["spreadPct"]))
     return {"state": state, "observedAt": observed_at, "rowsInRange": examined, "eligible": len(eligible),
-            "firstFailingFilter": first_fail, "lowestOtherwiseEligibleAsk": lowest_ask, "best": eligible[0] if eligible else None,
+            "failureSets": failure_sets, "premiumOnlyContracts": len(premium_only), "spreadOnlyContracts": len(spread_only),
+            "lowestOtherwiseEligibleAsk": min(premium_only) if premium_only else None, "best": eligible[0] if eligible else None,
             "policy": policy.model_dump(mode="json"),
             "note": "Planning-time chain evidence only; a fresh quote and full preflight remain required before any order."}

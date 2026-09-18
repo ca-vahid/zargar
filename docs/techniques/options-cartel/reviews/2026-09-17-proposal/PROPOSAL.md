@@ -1,4 +1,4 @@
-# Proposal (revision 2): Lane A — long daily-base breakout, one setup, one entry mode
+# Proposal (revision 4): Lane A — long daily-base breakout, one setup, one entry mode
 
 Status: revised 2026-09-18 after the reviewer's findings on revision 1 (d7c226b). Verdict on
 revision 1: proceed with evidence and diagnostic corrections; revise the strategy proposal
@@ -168,43 +168,88 @@ crossed → confirmed → filled → outcome, with the first blocker for every d
 
 No daily trade quota. No profitability statement from underlying movement.
 
-### 4b. Frozen replay result (2026-09-18, order-free, `zargar.tools.cartel_lane_a_eval`)
+### 4b. Frozen replay result (revision 4, 2026-09-18, order-free, `zargar.tools.cartel_lane_a_eval`)
 
-Lane A's definition was run over the fullest original preparation run of each session from
-2026-09-08 to 2026-09-17 and the frozen analysis runs those rows cite (`lane-a/frozen-replay-strict.md`,
-`lane-a/frozen-replay-moderate.md`, with JSON). Only screen-and-context-passing rows can qualify,
-so the evaluated rows are the complete Lane A candidate set; the denominators are the runs' own.
+Population corrected per review: for each session the **original** preparation run of the Options
+Cartel Practice book (earliest run with a known market read that evaluated the universe) and
+**every frozen analysis it evaluated or reused** (analyses parented by that run plus the analyses
+its rows cite — a resumed run reuses analyses an earlier run created). Lane A's own gates are
+applied to every analysis; the old planner's row/shortlist status is reported beside the verdict,
+never used as the denominator. Later runs of the same session are lineage ("later recovery") and
+never change original-time eligibility. Files: `lane-a/frozen-replay-strict.md` (Lane A's
+definition), `lane-a/frozen-replay-moderate.md` (information-only variant), both with JSON.
 
-| Basis | Sessions with a bullish read | Context-passing rows evaluated | Lane A qualified | Experimental 1.5R passes | Feasibility of qualified |
-|---|---|---|---|---|---|
-| **Strict** (Lane A's definition) | 1 of 8 (09-08 only; 09-09/10/14 were `mixed`, 09-11/16/17 `short`, 09-15 `mixed`) | 2 (SPCX, ZIM on 09-08) | **0** — both ceilings tested once | — | — |
-| Moderate read (information only, not the definition) | 4 of 8 | 155 across the window | **10** (09-09: VG, CVNA, AA, FUTU; 09-10: CVNA, ABUS, BGC, GROY, FUTU; 09-14: OII) | **0 of 10** (structural R 0.06–1.09; first targets 0.52–2.18% away except FUTU 9.99%) | CVNA `affordable` (chain 09-08 / 09-09); the other 9 `unknown_stale` (no dated chain snapshot) |
+| Session | Original run (UTC) | Market strict / Moderate | Population | Strict: Lane A qualified | Moderate variant: qualified (exp. 1.5R passes) | Old planner: candidates / rejected after context passed / armed |
+|---|---|---|---|---|---|---|
+| 09-08 | `4f312571` 04:40 | long / long | 58 analyses (+3,032 `prefiltered` by the then-strict industry gate, no history fetched) | 0 (SPCX, ZIM: ceiling tested once) | 0 | 2 / 0 / 1 |
+| 09-09 | `02b8a8bb` 03:37 | mixed / mixed | 3,080 | 0 (direction) | 0 (the 04:42 rerun read Moderate `long`; that is later recovery, not original-time) | 31 research-only |
+| 09-10 | `33e2a508` 04:27 | mixed / long | 3,081 | 0 (direction) | **5** (ABUS 0.46R, BGC 0.14R, CVNA 0.06R, FUTU 1.09R, GROY 0.07R) — 0 pass 1.5R | 14 / 3 / 4 |
+| 09-11 | `a973b3a4` 04:49 | short / short | 3,077 (2,554 reused from earlier runs) | 0 (direction) | 0 | 34 / 9 / 5 |
+| 09-14 | `98bd007f` 09-13 02:14 | mixed / long | 3,075 | 0 (direction) | **1** (OII 0.27R) — 0 pass | 11 / 3 / 3 |
+| 09-15 | `072d5e98` | mixed / mixed | 3,070 (2,013 reused) | 0 (direction) | 0 | 9 research-only |
+| 09-16 | `ed6d9da2` 02:26 | short / short | 3,062 | 0 (direction) | 0 | 29 / 13 / 5 |
+| 09-17 | `cee03dd7` 01:11 | short / short | 3,056 | 0 (direction) | 0 | 13 / 2 / 1 |
+
+Stage breakdown where the market read allowed long planning (Moderate variant, 09-10 / 09-14):
+screen 2,755 / 2,778; context 309 / 283; `base` ceiling tested once 10 / 10; distance floor 2 / 1;
+no confirmed pivot 0 / 2 (NOV, SXC); qualified 5 / 1. Every qualified base had a **confirmed pivot
+0.5–2.2% above the ceiling** (FUTU 10.0% apart), so the inactive 1.5R experiment would have
+excluded all six. Hypothetical feasibility of the six under the saved limits and the effective cap
+($5.00, bound by the policy; equity $10,000 at the run): CVNA `affordable` from the 09-09 snapshot
+(failure sets recorded for every inspected contract), the other five `unknown_stale` (no nightly
+snapshot for the previous session).
 
 What this establishes and what it does not:
 
-- Under strict alignment the lane would have planned **nothing** in these eight sessions; the
-  long arms the current rules produced (APA, CPRT, DRAM, CVNA, NOV, …) were all made under the
-  Practice Moderate read on sessions strict called `mixed`. Lane A as defined is therefore rarer
-  than the current planner, by construction, and its first evaluation may wait for the market.
-- Even under the Moderate read, the bases that pass the repeated-ceiling test have a **confirmed
-  pivot just above the ceiling** in 9 of 10 cases (room 0.5–2.2%, structural R < 0.5). The
-  inactive 1.5R experiment would have excluded all ten. This is a measurement about the target
-  rule (nearest confirmed pivot) meeting this sample, not a verdict on the author's method.
-- Nothing here is an entry, a fill or an outcome; feasibility is planning-time chain evidence
-  and `unknown_stale` rows stay in the denominator with no later stage inferred.
-
-Open for the reviewer: whether Lane A's target rule should look past the nearest pivot (e.g. the
-next pivot beyond a minimum room) or whether the sample simply contained no valid long bases —
-both are testable on the same frozen inputs before any production wiring.
+- Under **strict** alignment Lane A would have planned nothing in these eight sessions. The only
+  strict-bullish read was 09-08; every long arm the current rules made (APA, CGNX, NOV, CPRT,
+  CVNA, COIN, EL, SPCX, …) came from the Practice Moderate read on sessions strict called `mixed`.
+- The old planner also **rejected after context passed** 3–13 names per session (`old_planner_rejected`);
+  those are now in the population and judged by Lane A's gates, which is what the review asked.
+- Among long context-passing bases, the single added source-backed requirement (a ceiling tested
+  twice) removes about two thirds; the rest carry a confirmed pivot very close above. This is a
+  measurement about the target algorithm meeting this sample — first resistance versus a
+  meaningful campaign target — not a verdict on the author's method and not grounds for skipping
+  the nearest pivot (reviewer's answer: keep nearby resistance visible; any farther-target study
+  distinguishes first resistance / first trim / campaign target under a frozen definition of
+  significant resistance and reports the obstacles crossed).
+- Nothing here is an entry, fill or outcome; feasibility is hypothetical under the stated
+  assumptions (date-only nightly snapshots, saved limits, effective cap); `unknown_stale` rows stay
+  in the denominator and no later stage is inferred. Neither a farther-target rule nor the 1.5R
+  filter is justified by these results.
 
 ## 5. Incremental plan
 
-Status 2026-09-18: **D3, D4 (both halves) and D5 are built** as diagnostics (commit "Cartel D3/D4/D5
-diagnostics"); no decision, gate or protection changed. **The pure Lane A reviewer, feasibility
-classifier and frozen-replay tool are built** (`techniques/options_cartel/lane_a.py`,
-`tools/cartel_lane_a_eval.py`); nothing on the preparation, arming or entry path imports them.
-D1 remains at "classification recorded" (probe + artifacts); D2, S1–S3, R1 and any production
+Status 2026-09-18 (revision 4): **D3, D4 and D5 are built as diagnostics** and corrected per review
+(D4 registry keyed by plan and session, eligibility-aware, pruned and bounded, duplicate delivery
+counted apart, persistence failures isolated; the collector's studies run on one bounded worker,
+which limits concurrency but cannot cancel a running study). **The pure Lane A reviewer,
+feasibility classifier and frozen replay are built and corrected** (complete population and
+lineage, all failure sets preserved, single-cause states reserved for single failures, saved
+limits and effective cap, hypothetical labelling). Nothing on the preparation, arming or entry
+path imports them. D1 remains at "classification recorded"; D2, S1–S3, R1 and any production
 change wait for review.
+
+Reviewer answers folded in (2026-09-18):
+
+- **Volume eligibility (D1):** a versioned **field-specific eligibility matrix**, not one exclusion
+  list: per tape and condition combination, which fields (open/high/low/close/volume) a trade may
+  update for minute and for daily aggregation, strictest applicable rule for multiple conditions,
+  validated against the provider's own bar output before any use; historical and live buckets on
+  the same basis, explicit late-correction handling, no double counting; offline first.
+- **D3 decision bundle:** persist inputs **and** a hash. A bucket alone is insufficient — crossing
+  depends on the previous bucket's state and the session-extreme stop on earlier minutes. The
+  bundle per distinct decision: bucket input values with provenance; previous crossing/retest
+  state and `observeAfter`; plan/policy and baseline versions; decision cutoff and available
+  observation times; the session context used for the stop as an immutable reference (one
+  session tape object per plan-session, referenced by hash, not copied per tick).
+- **APA's 15-minute arm tape:** no trimming operation exists; the observer accepts decision bars
+  only while the arm is `armed` and `waiting`, and APA signalled in the first bucket, so the tape
+  stopped growing at the signal. Entry evidence should be preserved independently of mutable arm
+  state (part of the D3 bundle).
+- **Targets:** the nearest pivot is never skipped to manufacture a higher R; any farther-target
+  study is offline, distinguishes first resistance / first trim / campaign target, and reports the
+  obstacles crossed.
 
 **D — data and diagnostics (no strategy change)**
 
