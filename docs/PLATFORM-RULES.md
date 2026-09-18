@@ -2335,3 +2335,7 @@ Bar.provider identifies Alpaca or Yahoo independently of source=exchange. Alpaca
 ### History performance without changing trading evidence — 2026-09-18
 
 Shared session timestamp arithmetic is memoized by date plus the resolved close time (early-close policy remains authoritative). Shared Yahoo history accepts an optional rate-limit callback; existing concurrency and retries remain unchanged. Only the Cartel caller uses it to slow its own request pacing after 429. See Cartel PREPARATION-PERFORMANCE.md for measured pilot results and end-to-end limits.
+
+### Cartel provider non-emission — 2026-09-18
+
+Opt-in Cartel Practice interval verification retains positive, complete SIP trade evidence for minutes with no price-eligible trade and no emitted native bar. Proofs are separate from bars and saved in decision-context v2. Real gaps, incomplete responses and Live/paper accounts remain strict; recovery advances observation cutoff and never creates historical entries. Existing risk and exit paths are unchanged. See techniques/options-cartel/VERIFIED-INTERVALS.md.

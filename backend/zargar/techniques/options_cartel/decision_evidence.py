@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from ...models import CartelDecisionBundle, CartelDecisionContext, Event
 
-VERSION = 'cartel-decision-inputs-v1'
+VERSION = 'cartel-decision-inputs-v2'
 
 
 def digest(value):
@@ -30,6 +30,7 @@ async def capture(session, row, plan, minutes, previous, observation, now):
                'minutes': sorted(minutes.values(), key=lambda b: b[0]),
                'entryAfter': previous.get('observeAfter', previous.get('armedAt')),
                'previousPhase': previous.get('phase'), 'previousSignal': previous.get('signal'),
+               'verifiedIntervals': observation.get('verifiedIntervals', {}),
                'asOfMs': now, 'availability': 'Present in the observer at this cutoff; individual receipt times were not recorded.'}
     context_id = digest(context)
     await session.execute(insert(CartelDecisionContext).values(id=context_id,payload=context).on_conflict_do_nothing())

@@ -46,7 +46,7 @@ def bucket_diagnostics(day_bars: dict[int, "Bar"], start: int, end: int, opens: 
     return known
 
 
-def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_after: int | None = None) -> dict:
+def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_after: int | None = None, verified_intervals=None) -> dict:
     """An observation cutoff suppresses missed entries, never prior invalidations.
 
     Live recovery supplies its durable resume timestamp. Historical replay leaves
@@ -59,6 +59,8 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
 
     if as_of_ms < plan.created_at:
         return result("not_created")
+    from .nonemission import minute_set
+    verified = minute_set(verified_intervals, plan.symbol, as_of_ms)
     days: dict[dt.date, dict[int, Bar]] = defaultdict(dict)
     for bar in minutes:
         if bar.ts + MINUTE > as_of_ms:
@@ -71,6 +73,8 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             continue
         if bar.symbol != plan.symbol or bar.tf != "1m" or bar.ts % MINUTE:
             raise ValueError("entry read requires symbol-matched, minute-aligned 1m bars")
+        if bar.ts in verified and not trusted(bar, simulation=plan.entry.allow_simulated_bars):
+            continue  # sampled prices are not provider prices for a suppressed interval
         values = (bar.open, bar.high, bar.low, bar.close, bar.volume)
         if not all(math.isfinite(v) for v in values) or min(values[:4]) <= 0 or bar.volume < 0:
             raise ValueError("invalid entry candle values")
@@ -94,7 +98,7 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             if end > min(closes, as_of_ms):
                 continue
             expected = list(range(start, end, MINUTE))
-            if not all(ts in day_bars for ts in expected):
+            if not all(ts in day_bars or ts in verified for ts in expected):
                 missing = True
                 previous_close = None
                 broke_at = None
@@ -103,7 +107,12 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                               "reason": "Incomplete confirmation bucket; no crossing inferred across a data gap.",
                               "known": bucket_diagnostics(day_bars, start, end, opens, plan)})
                 continue
-            bucket = [day_bars[ts] for ts in expected]
+            bucket = [day_bars[ts] for ts in expected if ts in day_bars]
+            if not bucket:
+                previous_close = broke_at = gap_at = None
+                trace.append({'at':end,'rule':'DATA','decision':'no_price_observations',
+                              'reason':'Verified interval has no emitted price bars; no candle or crossing inferred.'})
+                continue
             high, low = max(b.high for b in bucket), min(b.low for b in bucket)
             close, opening = bucket[-1].close, bucket[0].open
             before = previous_close if previous_close is not None else opening
@@ -177,10 +186,10 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                 stop = low if sign == 1 else high
             elif plan.entry.stop_mode == "session_extreme":
                 session_minutes = list(range(opens, end, MINUTE))
-                if not all(ts in day_bars and (not plan.entry.require_exchange_bars or trusted(day_bars[ts], simulation=plan.entry.allow_simulated_bars)) for ts in session_minutes):
+                if not all(ts in verified or (ts in day_bars and (not plan.entry.require_exchange_bars or trusted(day_bars[ts], simulation=plan.entry.allow_simulated_bars))) for ts in session_minutes):
                     reasons.append("Cannot determine the session extreme with missing minutes since the open.")
                 else:
-                    seen = [day_bars[ts] for ts in session_minutes]
+                    seen = [day_bars[ts] for ts in session_minutes if ts in day_bars]
                     stop = min(b.low for b in seen) if sign == 1 else max(b.high for b in seen)
             if (close - stop) * sign <= 0:
                 reasons.append("No positive entry-to-stop risk.")

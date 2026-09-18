@@ -1,4 +1,7 @@
-"""Offline provider parity; never imported by trading/arming paths.
+"""Provider parity and frozen field-eligibility rules.
+
+Reconstruction/comparison remain offline. The bounded non-emission verifier also
+uses the pure eligibility/timestamp functions; it never injects reconstructed bars.
 
 Frozen Alpaca market-data FAQ matrix, retrieved 2026-09-18:
 https://docs.alpaca.markets/us/docs/market-data-faq#how-are-bars-aggregated
