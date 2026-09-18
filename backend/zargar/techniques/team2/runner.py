@@ -97,7 +97,7 @@ class Team2Runner(PlanRunner):
         self._loss_tally: dict[str, dict[str, tuple]] = {}   # day -> run_id -> (losers, basis, portfolio_id) (F37/F38)
 
     async def stop(self) -> None:
-        for name in ("team2_plan_nightly", "team2_preopen"):
+        for name in ("team2_plan_nightly", "team2_preopen", *[f"team2_experiment_{m}" for m in range(570, 961, 30)]):
             with contextlib.suppress(Exception):
                 self.engine.scheduler.unregister(name)
         await super().stop()
@@ -1148,15 +1148,17 @@ class Team2Runner(PlanRunner):
         hhmm = dt.datetime.fromtimestamp(bar.ts / 1000, ET).strftime('%H:%M')
         for i, b in enumerate(bars):
             if b.ts == bar.ts:
+                from ...marketdata import merge_exchange
+                bar = merge_exchange(b, bar) if b.source == bar.source == "exchange" else bar
                 same = (b.open, b.high, b.low, b.close, b.volume) == (bar.open, bar.high, bar.low, bar.close, bar.volume)
-                if same:
+                if same and b.provider == bar.provider:
                     return None
                 bars[i] = bar
                 text = (f"the {hhmm} bar was corrected ({b.source or 'unknown'} o/h/l/c/v {b.open}/{b.high}/{b.low}/{b.close}/{b.volume} → "
                         f"{bar.source or 'unknown'} {bar.open}/{bar.high}/{bar.low}/{bar.close}/{bar.volume}); the next read runs on "
                         f"the corrected tape (R3)")
                 rec = {"event": "bar_revised", "text": text, "ts_": bar.ts, "before": [b.open, b.high, b.low, b.close, b.volume],
-                       "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "source": bar.source,
+                       "after": [bar.open, bar.high, bar.low, bar.close, bar.volume], "source": bar.source, "provider": bar.provider, "previousProvider": b.provider,
                        "decisionWatermark": self._decision_wm.get(ap.run_id)}
                 self._log(ap, "bar_revised", text, **{k: v for k, v in rec.items() if k not in ("event", "text")})
                 return rec
@@ -1211,7 +1213,6 @@ class Team2Runner(PlanRunner):
     async def _load_warmup(self, ap: ArmedPlan) -> None:
         if ap.run_id in self._warm_loaded:
             return
-        self._warm_loaded.add(ap.run_id)
         rules = self.rules_for(ap)
         try:
             from ...marketdata import load_bars
@@ -1222,6 +1223,9 @@ class Team2Runner(PlanRunner):
         # sessions (F75 validation inside), stamped on the plan by content hash so replay can prove parity.
         # Before this the live path took the last 6,000 rows (~6 sessions), replay 12 and the sweep 12 dates.
         from .service import Team2Service
+        provider = ap.plan.get("inputProvider")
+        if provider:
+            rows = [b for b in rows if b.provider == provider]
         prior = [b for b in rows if session_date(b.ts) < ap.plan_for]
         warm, rep = Team2Service.warmup_slice(prior, sessions=rules.warmup_sessions)
         if rep["excluded"]:
@@ -1229,7 +1233,7 @@ class Team2Runner(PlanRunner):
                       + ", ".join(f"{x['date']} ({x['reason']})" for x in rep["excluded"][:6]) + " (F75)",
                       excluded=rep["excluded"], used=rep["sessionsUsed"][-12:])
         ap.plan["contractAuthority"] = "quotes"      # F108: on the live path the model never vetoes a contract
-        if len(warm) < 400:
+        if len(warm) < 400 and not provider:
             # day one: nothing banked yet — the 200 EMA on 2m needs ~400 minutes of history, so
             # fetch the last sessions' extended-hours tape once (Yahoo keeps ~20 days)
             try:
@@ -1244,13 +1248,21 @@ class Team2Runner(PlanRunner):
                 log.warning("team2 warm-up fetch failed for %s", ap.symbol)
             # the fetched tape goes through the same rule — the stamp below describes what the read consumes
             warm, rep = Team2Service.warmup_slice(warm, sessions=rules.warmup_sessions)
+        snapshot = (ap.plan.get("warmup") or {}).get("snapshot")
+        if snapshot:
+            from .tape import load_snapshot
+            warm = await load_snapshot(self.engine.sf, snapshot)
+            warm, rep = Team2Service.warmup_slice(warm, sessions=rules.warmup_sessions)
         ap.plan["warmup"] = {k: rep.get(k) for k in ("sessions", "sessionsUsed", "hash", "rows")}
+        if snapshot:
+            ap.plan["warmup"]["snapshot"] = snapshot
         self._log(ap, "warmup", f"EMA warm-up: {rep['rows']} bars over {len(rep['sessionsUsed'])} valid session(s) "
                   f"(rule: last {rules.warmup_sessions}); identity {str(rep.get('hash') or '')[:12]} (F99)",
                   warmup=ap.plan["warmup"])
         await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "warmup", f"{rep['rows']} bars, {len(rep['sessionsUsed'])} valid session(s)",
                           warmup=ap.plan["warmup"])
         self._warm[ap.run_id] = warm
+        self._warm_loaded.add(ap.run_id)
         # today's bars already banked (pre-market) join the live list
         todays = [b for b in rows if session_date(b.ts) == ap.plan_for]
         have = {b.ts for b in self._bars.get(ap.run_id, [])}
@@ -1261,10 +1273,10 @@ class Team2Runner(PlanRunner):
     def merge_bars(self, ap: ArmedPlan, fresh: list[Bar]) -> None:
         """Add banked/fetched 1m bars of the plan's date (pre-market at 09:25) without disturbing
         the live sequence; the read re-runs over the merged list at the next 2m close."""
-        cur = self._bars.setdefault(ap.run_id, [])
-        have = {b.ts for b in cur}
-        cur.extend(b for b in fresh if session_date(b.ts) == ap.plan_for and b.ts not in have)
-        cur.sort(key=lambda b: b.ts)
+        provider = ap.plan.get("inputProvider")
+        for b in sorted(fresh, key=lambda b: b.ts):
+            if session_date(b.ts) == ap.plan_for and (not provider or b.provider == provider):
+                self._merge_revision(ap, b)
 
     async def _today_bars(self, ap: ArmedPlan) -> list[Bar]:
         await self._load_warmup(ap)
@@ -1348,6 +1360,8 @@ class Team2Runner(PlanRunner):
     async def _on_bar(self, ap: ArmedPlan, bar: Bar, *, journal: bool) -> None:
         if session_date(bar.ts) != ap.plan_for:
             return
+        if ap.plan.get("inputProvider") and bar.provider != ap.plan["inputProvider"]:
+            return
         if ap.last_bar_ts is not None and bar.ts <= ap.last_bar_ts:
             # R3 (2026-09-14): a minute the desk already passed is a REVISION (an exchange correction) or a RECOVERED
             # HOLE — merge it into the private tape by timestamp instead of dropping it. No decision is re-run here:
@@ -1415,6 +1429,14 @@ class Team2Runner(PlanRunner):
         res = simulate_session(plan, self._bars.get(ap.run_id, []), rules, sigma=sigma, now_ms=now_ms,
                                warmup_1m=self._warm.get(ap.run_id, []))
         self._last_sim[ap.run_id] = res.to_dict()
+        if journal and ap.plan.get("inputProvider"):
+            from ...marketdata import hash_bars
+            today_input = [b for b in self._bars.get(ap.run_id, []) if b.ts + 60_000 <= now_ms]
+            identity = hash_bars({ap.symbol: today_input})
+            await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "decision_inputs", "canonical decision inputs",
+                              decisionTs=now_ms, provider=ap.plan["inputProvider"],
+                              todayInputs=identity, warmup=ap.plan.get("warmup"), regime=res.regime_last)
+
         seen_fp = self._seen_fp.setdefault(ap.run_id, set())
         fps = [self._fingerprint(e) for e in res.events]
         missing = seen_fp - set(fps)
@@ -2442,6 +2464,10 @@ async def attach_team2_runner(engine) -> None:
                               lambda: engine.team2.nightly_plans())
     engine.scheduler.register("team2_preopen", str(engine.settings.get("techniques.team2.preopen_at", "09:25")),
                               lambda: engine.team2.preopen_complete())
+    from .experiment_watch import sample_books
+    for minute in range(570, 961, 30):
+        engine.scheduler.register(f"team2_experiment_{minute}", f"{minute // 60:02d}:{minute % 60:02d}",
+                                  lambda: sample_books(engine))
 
 
 __all__ = ["Team2Runner", "attach_team2_runner"]
