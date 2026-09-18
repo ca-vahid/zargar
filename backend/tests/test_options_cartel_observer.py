@@ -74,6 +74,22 @@ async def test_pause_resume_disarm_and_expiry(repo, monkeypatch):
         await instance.stop()
 
 
+async def test_rejects_provider_stubs_and_wrong_symbol_before_merging(repo, monkeypatch):
+    instance = await observer(repo, monkeypatch)
+    try:
+        before = (await repo.load('r1'))['state']
+        instance.clock = lambda: OPEN + 61_000
+        await instance.on_minute_bar('HOOD', replace(tape()[0], ts=OPEN+1_000))
+        await instance.on_minute_bar('HOOD', replace(tape()[0], symbol='OTHER'))
+        assert (await repo.load('r1'))['state'] == before
+        for bar in tape():
+            instance.clock = lambda b=bar: b.ts+60_000
+            await instance.on_minute_bar('HOOD', bar)
+        assert (await repo.load('r1'))['state']['phase'] == 'signalled'
+    finally:
+        await instance.stop()
+
+
 async def test_money_modes_cannot_be_enabled_through_alert_adapter(repo, monkeypatch):
     instance = await observer(repo, monkeypatch)
     try:

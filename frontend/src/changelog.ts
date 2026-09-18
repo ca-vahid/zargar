@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.17";
+export const APP_VERSION = "0.8.18";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.18",date:"2026-09-18",title:"Cartel: reject malformed minute updates",items:[
+    {tag:"fixed",text:"Cartel rejects misaligned or wrong-symbol minute updates before they reach entry evaluation. Valid updates continue normally; incomplete and unverified candles still block entries."},
+  ]},
   {version:"0.8.17",date:"2026-09-18",title:"Team2: retain experiment review state",items:[
     {tag:"fixed",text:"Practice experiment starting equity and sampled high-water marks can be saved and restored through the settings service. Trading rules are unchanged."},
   ]},
