@@ -47,7 +47,7 @@ Tonight's normal next-session preparation (sheet `ed48a80aa9854e3d8ecb3da887aacf
 review-and-arm batch, 4 reads in flight) was running while this closure was written and is reported in its own receipt
 below when it completes. Nothing in ED-01..04 touches it.
 
-- [ ] Preparation receipt: _pending_ (reviewed / setup / no-setup / armed / failed counts, log `evening_batch_0918.log`)
+- [x] **Preparation receipt (2026-09-17 14:55-16:23 PT, one batch, MAX_INFLIGHT 4, baseline ritual unchanged):** sheet `ed48a80aa9854e3d8ecb3da887aacfaa` for 2026-09-18, 141 rows, 102 with a valid trigger reviewed -> `setup` 39, `no_setup` 62, `failed` 1 (CVX, provider `overloaded_error`; retried once after the batch at 16:59 PT -> `no_setup`, R3.1 volume floor). Armed 39 / 39 into EM Practice, 0 failed; server shows EM armed = 39, all `planFor` 2026-09-18, status `armed`, attention 0. Reads took 130-493 s each (median 238 s; provider slow). Log `evening_batch_0918.log`. No rule, threshold or setting changed.
 
 ## Deployment receipt (separate)
 
@@ -55,7 +55,7 @@ below when it completes. Nothing in ED-01..04 touches it.
 `/api/ops/restart-check` is safe, never over open EM trades and never by interrupting another desk's run; the elevated
 shell hands the restart to the `ZargarRestart` task; restoration is verified by hand against the before-inventory.
 
-- [ ] Deployment receipt: _pending_ (target SHA, receipt phase, restoration before / after by id)
+- [x] **Deployment receipt (2026-09-17 17:08 PT):** target `e6cb4b7ec1e45863bf260ad90962ee9cf01544f6` = tested `ad8796f` + closure record `d09b677` + origin/main `3ea992d` (Tips PR #205, re-merged on the Tips desk's request before the deploy; check-release / import / frontend build green on the merge). Readiness safe (market closed, 0 open trades, batch finished); `deploy.ps1` under the lease from `C:/Cursor/zargar` -> elevated shell exit 8 -> `ZargarRestart` task at 17:08:53; health v0.8.12 build `e6cb4b7e` after 90 s; receipt phase `verified`, expected / healthy 0.8.12. Restoration by hand against `logs/restart-inventory-20260917-170833.json`: armed 54 before / 54 after by id (enhanced_market 39, tip 12, team2 3), 0 missing, 0 new; resting orders 27 -> 27; open trades 0 -> 0; 5 managed positions restored; one engine pair + gateway + ingest workers. Runtime defaults after the restart: `sim_max_option_spread_pct` = 0.0 (OFF; no env override), observation knobs unchanged. Note: the first restoration probe timed out at 8 s while the engine was still restoring (a client timeout, not a state); the 60 s retry returned the counts above. The Tips-flagged `test_sim_fill_evidence::test_fill_evidence_committed_with_execution` fails on this tree as well (pre-existing, `syntheticMode` expectation; not EM's).
 
 ## Kept
 

@@ -1407,3 +1407,8 @@ restoration 72/72 by id, resting 26 -> 26, open 0 -> 0); loop lag 1.6 ms and 0 s
   contract retained, delivery scheduled ahead of any further giveback policy.
 - Reporting: $222.65 net after $16.64 commissions ($239.29 gross); the ORCL 2.29 sensitivity is arithmetic ($133.92 trade,
   $105.65 day), not a corrected fill.
+
+### 2026-09-17 17:10 PT - v0.8.12 build `e6cb4b7` live; 39 arms for 2026-09-18
+
+Preparation: 102 setup rows reviewed (setup 39 / no_setup 62 / 1 provider failure retried -> no_setup), 39 armed, 0 failed.
+Deployment through the protocol after the batch, restoration 54/54 by id. Defaults unchanged (option spread cap OFF).
