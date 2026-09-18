@@ -296,7 +296,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             bar = Bar(symbol=s, tf="1m", ts=parse_rfc3339_ms(str(m.get("t"))),
                       open=float(m.get("o") or 0), high=float(m.get("h") or 0),
                       low=float(m.get("l") or 0), close=float(m.get("c") or 0),
-                      volume=int(m.get("v") or 0), source="exchange")
+                      volume=int(m.get("v") or 0), source="exchange", provider="alpaca")
             if bar.close > 0:
                 st["last"] = bar.close
                 st["last_ts"] = bar.ts + 60_000          # the bar's close time (PR #204 r2)

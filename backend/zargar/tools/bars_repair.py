@@ -164,7 +164,7 @@ async def select_quarantine(sf, *, reason: str, symbols: list[str] | None, date_
     return picked
 
 
-_ROW_COLS = ("symbol", "tf", "ts", "open", "high", "low", "close", "volume", "source")
+_ROW_COLS = ("symbol", "tf", "ts", "open", "high", "low", "close", "volume", "source", "provider")
 
 
 async def apply_quarantine(sf, rows: list[BarRow], *, reason: str, note: str = "") -> dict:

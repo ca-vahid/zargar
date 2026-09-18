@@ -39,7 +39,7 @@ INTRADAY_TF_MS.update({k: v for k, v in TF_MS.items() if k != "1d"})
 # too) whose volume never goes down.
 SOURCE_RANK = {"sim": 0, "": 1, "unknown": 1, "sampled": 2, "exchange": 3}   # F79: no provenance < sampled
 # the data-processing rules a dataset version is hashed together with — bump when write rules change
-DATA_RULES_VERSION = ("bars-rules/2026-09-09b: bucket-aligned writes; source precedence exchange>sampled|unknown>sim; "
+DATA_RULES_VERSION = ("bars-rules/2026-09-18: alpaca provider protected; bucket-aligned writes; source precedence exchange>sampled|unknown>sim; "
                       "exchange-over-exchange merge (newer OHLC, zero volume = incomplete); calendar-gated 04:00-20:00 ET "
                       "trading days; sim bars isolated")
 
@@ -50,9 +50,11 @@ def merge_exchange(old: Bar, new: Bar) -> Bar:
     volume of 0 is an INCOMPLETE observation (a venue bar exists only where trades happened, and Yahoo
     fills volume with a lag), so the known volume stands; any other newer volume — a lower one
     included — is a correction and stands."""
-    vol = old.volume if (int(new.volume or 0) == 0 and int(old.volume or 0) > 0) else new.volume
+    if old.provider == "alpaca" and new.provider != "alpaca":
+        return old
+    vol = old.volume if (old.provider == new.provider and int(new.volume or 0) == 0 and int(old.volume or 0) > 0) else new.volume
     return Bar(symbol=new.symbol, tf=new.tf, ts=new.ts, open=new.open, high=new.high, low=new.low,
-               close=new.close, volume=vol, source="exchange")
+               close=new.close, volume=vol, source="exchange", provider=new.provider)
 
 
 class QuoteCache:
@@ -304,7 +306,8 @@ class BarAggregator:
         forming = self._forming.get(bar.symbol)
         if forming is not None and bar.ts >= forming.ts:
             if bar.ts == forming.ts:
-                self._early[bar.symbol] = bar          # keep it: it replaces the sampled bar on the roll
+                previous = self._early.get(bar.symbol)
+                self._early[bar.symbol] = merge_exchange(previous, bar) if previous and previous.ts == bar.ts else bar  # keep it: it replaces the sampled bar on the roll
             return                                   # don't clobber the live/forming minute
         dq = self._bars[bar.symbol]
         pending = self._pending.get(bar.symbol)
@@ -318,7 +321,7 @@ class BarAggregator:
                 merged = merge_exchange(dq[i], bar) if (dq[i].source or "") == "exchange" else bar
                 same = (dq[i].open, dq[i].high, dq[i].low, dq[i].close, dq[i].volume) == \
                        (merged.open, merged.high, merged.low, merged.close, merged.volume)
-                if same and not held:
+                if same and dq[i].provider == merged.provider and not held:
                     return                           # already accurate and already published
                 dq[i] = merged
                 self._publish(merged, "exchange")
@@ -418,7 +421,7 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar], *, 
     rows = [
         {"symbol": b.symbol, "tf": b.tf, "ts": b.ts, "open": b.open,
          "high": b.high, "low": b.low, "close": b.close, "volume": b.volume,
-         "source": (b.source or "unknown")}
+         "source": (b.source or "unknown"), "provider": b.provider}
         for b in bars
     ]
     # asyncpg caps a statement at 32,767 bind parameters (8 per row): a 20-day
@@ -441,14 +444,15 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar], *, 
             new_rank = case((exc_src == "exchange", 3), (exc_src == "sampled", 2), (exc_src == "sim", 0), else_=1)
             old_rank = case((BarRow.source == "exchange", 3), (BarRow.source == "sampled", 2), (BarRow.source == "sim", 0), else_=1)
             both_exchange = (exc_src == "exchange") & (BarRow.source == "exchange")
-            better = (new_rank > old_rank) | both_exchange
+            provider_ok = (BarRow.provider != "alpaca") | (ins.excluded.provider == "alpaca")
+            better = ((new_rank > old_rank) | both_exchange) & provider_ok
             # F79/R4: two venue observations of one minute merge by the ONE policy (`merge_exchange`): OHLC
             # follows the newer bar; a newer volume of 0 is incomplete and the known volume stands; any
             # other newer volume — lower included — is a correction
-            volume_expr = case((both_exchange & (ins.excluded.volume == 0) & (BarRow.volume > 0), BarRow.volume),
+            volume_expr = case((both_exchange & (BarRow.provider == ins.excluded.provider) & (ins.excluded.volume == 0) & (BarRow.volume > 0), BarRow.volume),
                                else_=ins.excluded.volume)
             set_ = {"open": ins.excluded.open, "high": ins.excluded.high, "low": ins.excluded.low,
-                    "close": ins.excluded.close, "volume": volume_expr, "source": exc_src}
+                    "close": ins.excluded.close, "volume": volume_expr, "source": exc_src, "provider": ins.excluded.provider}
             if dialect == "postgresql":
                 stmt = ins.on_conflict_do_update(constraint="uq_bar", set_=set_, where=better)
             else:
@@ -488,7 +492,7 @@ async def load_bars(
         rows = (await session.execute(stmt)).scalars().all()
     return [
         Bar(symbol=r.symbol, tf=r.tf, ts=r.ts, open=r.open, high=r.high, low=r.low,
-            close=r.close, volume=r.volume, source=(r.source or "unknown"))
+            close=r.close, volume=r.volume, source=(r.source or "unknown"), provider=r.provider)
         for r in reversed(rows)
     ]
 
@@ -537,8 +541,8 @@ def _scope_hasher(syms: list[str], tf: str, start: str | None, end: str | None):
     return h
 
 
-def _row_line(sym: str, ts: int, o, hi, lo, c, v, src) -> bytes:
-    return f"{sym}|{ts}|{o!r}|{hi!r}|{lo!r}|{c!r}|{int(v or 0)}|{src or 'unknown'}\n".encode("utf-8")
+def _row_line(sym: str, ts: int, o, hi, lo, c, v, src, provider="") -> bytes:
+    return f"{sym}|{ts}|{o!r}|{hi!r}|{lo!r}|{c!r}|{int(v or 0)}|{src or 'unknown'}|{provider or 'unknown'}\n".encode("utf-8")
 
 
 def hash_bars(bars_by_symbol: dict[str, list[Bar]], *, tf: str = "1m", start: str | None = None,
@@ -557,7 +561,7 @@ def hash_bars(bars_by_symbol: dict[str, list[Bar]], *, tf: str = "1m", start: st
                 continue
             if end_ms is not None and b.ts >= end_ms:
                 continue
-            h.update(_row_line(sym, b.ts, b.open, b.high, b.low, b.close, b.volume, b.source))
+            h.update(_row_line(sym, b.ts, b.open, b.high, b.low, b.close, b.volume, b.source, b.provider))
             n += 1
     return {"hash": h.hexdigest(), "rows": n, "symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION}
 
@@ -584,15 +588,15 @@ async def dataset_version(session_factory: async_sessionmaker, symbols: list[str
     n = 0
     async with session_factory() as session:
         for sym in syms:
-            stmt = select(BarRow.ts, BarRow.open, BarRow.high, BarRow.low, BarRow.close, BarRow.volume, BarRow.source).where(
+            stmt = select(BarRow.ts, BarRow.open, BarRow.high, BarRow.low, BarRow.close, BarRow.volume, BarRow.source, BarRow.provider).where(
                 BarRow.symbol == sym, BarRow.tf == tf)
             if start_ms is not None:
                 stmt = stmt.where(BarRow.ts >= start_ms)
             if end_ms is not None:
                 stmt = stmt.where(BarRow.ts < end_ms)
             res = await session.execute(stmt.order_by(BarRow.ts))
-            for ts, o, hi, lo, c, v, src in res:
-                h.update(_row_line(sym, ts, o, hi, lo, c, v, src))
+            for ts, o, hi, lo, c, v, src, provider in res:
+                h.update(_row_line(sym, ts, o, hi, lo, c, v, src, provider))
                 n += 1
     digest = h.hexdigest()
     scope = {"symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION}
