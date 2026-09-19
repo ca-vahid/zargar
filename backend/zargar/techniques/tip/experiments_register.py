@@ -124,8 +124,11 @@ EXPERIMENTS: dict[str, dict] = {
                               "active source always passed it - no reduction"],
         "evaluationWindow": {"opened": "2026-09-19 (retrospective 2026-09-09..18: 186/556 reviews skipped, $121.83, 0 false negatives)",
                              "closes": "5 observe sessions (2026-09-21..25) - tip_review_gate_eval --prospective",
-                             "decisionRule": "enforce only with 0 prospective false negatives AND the retrospective replay still at 0; "
-                                             "the user approves the switch"},
+                             "decisionRule": "a REVIEW checkpoint, never an automatic switch: 0 management false negatives "
+                                             "(prospective AND retrospective) are necessary, and a human reads the skipped "
+                                             "corrections / new entries / mixed messages / deferred actions; sessions are counted "
+                                             "after the actual deployment; the user approves any switch (ECON-03 fixed 2026-09-19: "
+                                             "absent or unrestored desk components always review)"},
         "status": "built, observe",
     },
     "feasibility-annotate": {
