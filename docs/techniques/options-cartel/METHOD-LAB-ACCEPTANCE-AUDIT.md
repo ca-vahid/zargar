@@ -38,3 +38,11 @@ Market sessions beginning September 21 would be required for the optional
 prospective study, but are no longer prerequisites for this implementation goal. Original source posts may remain unavailable;
 mirrors do not remove that limitation. Neither constraint is permission to invent
 results, relax gates or turn research into automatic trades.
+
+## Accountability correction — September 19
+
+Completing the historical packet did not improve automatic trading behavior or
+solve profitability. The user requires actionable progress toward Monday, not
+more research infrastructure alone. The prior completion wording applies only
+to the delivered packet. See [Monday action](MONDAY-ACTION-2026-09-21.md) for the
+verified affordability constraint and the proposed bounded shares integration.
