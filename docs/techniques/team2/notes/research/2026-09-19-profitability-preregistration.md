@@ -65,3 +65,21 @@ experiment, not to this replay.
 - Queue position, partial fills and the true NBBO at our decision instant (prints, not quotes).
 - The author's discretion (flags, "A+" selection, sitting out), which the code does not implement.
 - Behaviour on dates before 2026-05-07 or in a different volatility regime.
+
+---
+
+## Round 2 (registered 2026-09-19, after round 1 was measured on TRAIN and before any round-2 arm was run)
+
+Round 1 on TRAIN: no arm met criterion 1 (results in the review package). Round 2 comes from the OPPORTUNITY LEDGER against the
+author's six documented trades inside the data window (2026-09-01..09-18): same direction on six of six, none of his winners
+captured. Those dates lie in the HOLDOUT and after it, so for round 2 the holdout is CONTAMINATED as a source of ideas and is
+not used as confirmation. Round-2 arms are judged on TRAIN only (dates that played no part in forming the idea) and can only
+earn a PROSPECTIVE Practice experiment, never an adoption.
+
+| id | factor | definition | source of the idea |
+|----|--------|------------|--------------------|
+| E1 | target collision | `target_collision=replan`: when a setup's planned target IS its own source level, re-derive the destination from the next structural level beyond the entry (the F81b order: pre-market extreme ahead, else next ladder level), on any day type; still refused when nothing distinct lies ahead. Default `refuse` is unchanged | Collision refusals emptied 31 of 36 symbol-days they touched, including the author's 2026-09-03 SPY and 2026-09-10 IWM winners; his own plan named a farther level |
+| E2 | target exit | `target_exit=false`: no outright sale of the whole position at the first planned level; trims, the candle stop and the flatten manage it | His documented winners run +112% to +445% on real prints; our baseline sells 100% at the first level for +26% on average |
+
+Criteria: the same six as round 1, with criterion 2 (holdout) replaced by: "reported on the holdout for information, not as
+confirmation". No other arm or value.
