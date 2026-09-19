@@ -100,6 +100,7 @@ CONTRACTS: dict[str, dict] = {
     "ManagedPositionBracketReleased": {"version": 1, "required": ("positionId", "symbol", "portfolioId", "phase", "orders")},
     "TipFillVsQuote": {"version": 1, "required": ("proposalId", "orderId", "fillPrice", "fillQty")},
     "TipReviewGate": {"version": 1, "required": ("version", "mode", "path", "decision", "applied", "reason", "tickers", "matched", "intakeRunId")},   # review-gate-v1: skips a review only under enforce
+    "SignalColdParkRecheck": {"version": 1, "required": ("signalId", "ticker", "waitedS")},   # 2026-09-19: a cold-quote park re-verified on its first real quote
     "TipRecapClassified": {"version": 1, "required": ("category", "confidence", "recommendedRoute", "route", "knob")},
     "OrderBracketSkipped": {"version": 1, "required": ("reason",)},
     "ManagedPositionRolledUp": {"version": 1, "required": ("positionId", "symbol", "from", "to", "qty", "creditPerContract")},

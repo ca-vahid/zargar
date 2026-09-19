@@ -262,14 +262,185 @@ async def build_census(conn, *, since_text: str, portfolio: str = "", kinds: tup
             "signals": sigs, "proposals": props}
 
 
+# ---------------------------------------------------------------------------------------------------
+# Opportunity dispositions (opportunity-dispositions-v1, 2026-09-19): every ACTIONABLE idea ends in exactly one
+# traceable disposition with its timestamps, reason and linked evidence ids. Built on the census (one ledger).
+DISPOSITIONS = ("filled", "declined", "risk_infeasible", "late", "analysis_failed", "approval_expired",
+                "order_unfilled", "pending")
+ACTIONABLE_STATUSES = ("proposed", "verified", "parked", "expired")
+# a miss the DESK caused (processing), as opposed to a judgement, a risk boundary or the market not coming to the level
+AVOIDABLE = {"analysis_failed": "the appraisal never produced a verdict",
+             "approval_expired": "a TAKE waited for an approval that never came",
+             "order_unfilled:quote_age": "the order was refused because our quote was stale at submission"}
+
+
+def _j(v):
+    return (json.loads(v) if isinstance(v, str) else v) or {}
+
+
+def classify_disposition(*, signal_status: str, verdict: str | None, filled: bool, open_qty: float,
+                         proposals: list[dict], orders: list[dict], appraise: dict | None, plan: dict | None) -> dict:
+    """Pure. One disposition + reason for one idea. Precedence: a fill wins; then the order's own fate; then the
+    risk boundary; then a failed analysis; then a judgement; then an expired approval; then a parked (late) idea."""
+    if filled:
+        return {"disposition": "filled", "detail": "open" if open_qty > 1e-9 else "closed", "reason": None}
+    bad = [o for o in orders if o.get("side") == "BUY" and o.get("status") not in ("FILLED", "PARTIALLY_FILLED")]
+    if bad:
+        o = bad[-1]
+        why = str(o.get("reject_reason") or "")
+        if o.get("status") == "REJECTED_RISK" and "quote age" in why:
+            return {"disposition": "order_unfilled", "detail": "quote_age", "reason": why}
+        if o.get("status") == "REJECTED_RISK":
+            return {"disposition": "order_unfilled", "detail": "risk_gate", "reason": why}
+        if o.get("status") in ("CANCELLED", "EXPIRED"):
+            # a resting limit the market never came back to (DAY order ended unfilled) - the market's doing, not ours
+            return {"disposition": "order_unfilled", "detail": "limit_not_reached", "reason": why or "the limit never traded before the order ended"}
+        return {"disposition": "order_unfilled", "detail": str(o.get("status") or "").lower(), "reason": why or None}
+    live = [p for p in proposals if p.get("status") in ("pending", "approved")]
+    if live:
+        return {"disposition": "pending", "detail": "proposal", "reason": None}
+    infeasible = next((p for p in proposals if p.get("reviewRequired") and p.get("status") != "executed"
+                       and (verdict == "take" or p.get("verdict") == "take")), None)
+    if infeasible:
+        return {"disposition": "risk_infeasible", "detail": "budget" if "risk budget" in infeasible["reviewRequired"] else "no_risk_estimate",
+                "reason": infeasible["reviewRequired"]}
+    if appraise and appraise.get("status") == "failed" and not verdict:
+        return {"disposition": "analysis_failed", "detail": None, "reason": appraise.get("error") or "appraisal failed"}
+    if verdict in ("skip", "watch"):
+        return {"disposition": "declined", "detail": verdict, "reason": next((p.get("declineReason") for p in proposals if p.get("declineReason")), None)}
+    if any(p.get("status") == "rejected" for p in proposals):
+        return {"disposition": "declined", "detail": "human", "reason": None}
+    if verdict == "take" and any(p.get("status") == "expired" for p in proposals):
+        return {"disposition": "approval_expired", "detail": None, "reason": "take proposal expired undecided"}
+    if plan is not None:
+        if plan.get("armed"):
+            return {"disposition": "pending", "detail": "armed plan waiting", "reason": None}
+        return {"disposition": "order_unfilled", "detail": "level_never_reached", "reason": plan.get("reason")}
+    if signal_status == "parked":
+        return {"disposition": "late", "detail": "parked", "reason": "price had moved past the entry at verification"}
+    if signal_status == "expired":
+        return {"disposition": "late", "detail": "expired", "reason": "the idea expired before any lane acted"}
+    return {"disposition": "pending", "detail": signal_status, "reason": None}
+
+
+def avoidable_key(d: dict) -> str | None:
+    k = d["disposition"] if d["disposition"] in AVOIDABLE else f"{d['disposition']}:{d.get('detail')}"
+    return k if k in AVOIDABLE else None
+
+
+async def build_dispositions(conn, *, since_text: str, portfolio: str = "", census: dict | None = None) -> list[dict]:
+    """Every actionable idea since `since_text` with ONE disposition, timestamps, reason and evidence ids."""
+    census = census or await build_census(conn, since_text=since_text, portfolio=portfolio)
+    since = census["since"]
+    by_id = {r["id"]: r for r in census["rows"]}
+    props = collections_defaultdict_list()
+    for p in census["proposals"]:
+        if p["signal_id"]:
+            ctx = _j(p["context"])
+            props[p["signal_id"]].append({"status": p["status"], "created_at": p["created_at"], "decided_via": p["decided_via"],
+                                          "verdict": (ctx.get("analyst") or {}).get("verdict"),
+                                          "reviewRequired": ctx.get("reviewRequired"), "declineReason": ctx.get("declineReason"),
+                                          "analystRunId": ctx.get("analystRunId")})
+    full_orders = await conn.fetch(
+        """SELECT o.id, o.signal_id, o.side, o.status, o.reject_reason, o.created_at FROM orders o
+           WHERE o.created_at >= $1 AND ($2 = '' OR o.portfolio_id = $2)""", since, census["pf_scope"] or "")
+    orders = collections_defaultdict_list()
+    for o in full_orders:
+        owner = o["signal_id"] or census["ownerByOrder"].get(o["id"])
+        if owner:
+            orders[owner].append(dict(o))
+    runs = {}
+    for r in await conn.fetch("""SELECT id, signal_id, status, error, created_at, finished_at FROM tip_analyst_runs
+                                 WHERE kind = 'appraise' AND created_at >= $1 ORDER BY created_at""", since):
+        runs[r["signal_id"]] = dict(r)                      # the latest appraisal wins
+    plans = {}
+    for r in await conn.fetch("""SELECT r.id, r.config->>'signalId' AS sid,
+               (SELECT max(e.ts) FROM events e WHERE e.type = 'TechniquePlanArmed' AND e.payload->>'runId' = r.id) AS armed_at,
+               (SELECT max(e.ts) FROM events e WHERE e.type = 'TechniquePlanDisarmed' AND e.payload->>'runId' = r.id) AS disarmed_at,
+               (SELECT e.payload->>'reason' FROM events e WHERE e.type = 'TechniquePlanDisarmed' AND e.payload->>'runId' = r.id
+                ORDER BY e.ts DESC LIMIT 1) AS reason
+               FROM technique_runs r WHERE r.technique = 'tip' AND r.created_at >= $1""", since):
+        if r["sid"] and r["armed_at"]:
+            plans[r["sid"]] = {"runId": r["id"], "armedAt": r["armed_at"], "disarmedAt": r["disarmed_at"], "reason": r["reason"],
+                               "armed": r["disarmed_at"] is None or r["disarmed_at"] < r["armed_at"]}
+    out = []
+    for s in census["signals"]:
+        sid = s["id"]
+        ext = _j(s["extraction"])
+        verdict = (ext.get("analyst") or {}).get("verdict")
+        row = by_id.get(sid) or {}
+        filled = str(row.get("disp") or "").startswith("filled")
+        if not (s["status"] in ACTIONABLE_STATUSES or filled or sid in props or sid in plans):
+            continue
+        d = classify_disposition(signal_status=s["status"], verdict=verdict, filled=filled,
+                                 open_qty=float((census["open_by_idea"].get(sid) or {}).get("qty") or 0),
+                                 proposals=props.get(sid, []), orders=orders.get(sid, []), appraise=runs.get(sid), plan=plans.get(sid))
+        pr = props.get(sid, [])
+        out.append({"signalId": sid, "source": s["source_name"] or "unknown", "symbol": row.get("symbol") or "", "verdict": verdict,
+                    **d, "avoidable": avoidable_key(d),
+                    "at": {"signal": s["created_at"], "appraised": (runs.get(sid) or {}).get("finished_at"),
+                           "proposal": pr[0]["created_at"] if pr else None,
+                           "order": min((o["created_at"] for o in orders.get(sid, [])), default=None)},
+                    "evidence": {"analystRunId": (runs.get(sid) or {}).get("id"), "planRunId": (plans.get(sid) or {}).get("runId"),
+                                 "orderIds": [o["id"] for o in orders.get(sid, [])]},
+                    "realized": row.get("realized")})
+    return out
+
+
+def collections_defaultdict_list():
+    return defaultdict(list)
+
+
+def render_dispositions(rows: list[dict], since_text: str) -> str:
+    L = [f"# Tips opportunity dispositions (opportunity-dispositions-v1) - ideas since {since_text}\n",
+         "Every ACTIONABLE idea (passed verification, or reached a proposal, plan or fill) has ONE disposition. "
+         "An AVOIDABLE miss is one the desk caused by processing (failed analysis, expired approval, stale quote at "
+         "submission, our own cancel) - a judgement, a risk boundary, or a level that never came is not.\n",
+         "| source | ideas | takes | filled | declined | risk-infeasible | late | analysis failed | approval expired | order unfilled | pending | avoidable |",
+         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    by = defaultdict(list)
+    for r in rows:
+        by[r["source"]].append(r)
+
+    def line(name, g):
+        c = lambda k: sum(1 for r in g if r["disposition"] == k)
+        return (f"| {name} | {len(g)} | {sum(1 for r in g if r['verdict'] == 'take')} | {c('filled')} | {c('declined')} | "
+                f"{c('risk_infeasible')} | {c('late')} | {c('analysis_failed')} | {c('approval_expired')} | {c('order_unfilled')} | "
+                f"{c('pending')} | {sum(1 for r in g if r['avoidable'])} |")
+    for src, g in sorted(by.items()):
+        L.append(line(src, g))
+    L.append(line("**all**", rows))
+    av = [r for r in rows if r["avoidable"]]
+    L.append(f"\n## Avoidable misses ({len(av)})\n")
+    L.append("| signal at (UTC) | source | symbol | verdict | disposition | reason | evidence |")
+    L.append("|---|---|---|---|---|---|---|")
+    for r in sorted(av, key=lambda r: r["at"]["signal"]):
+        ev = r["evidence"]
+        L.append(f"| {r['at']['signal']:%m-%d %H:%M} | {r['source']} | {r['symbol']} | {r['verdict'] or '-'} | {r['disposition']}"
+                 f"{(':' + r['detail']) if r.get('detail') else ''} | {str(r['reason'] or '')[:110]} | run {str(ev['analystRunId'] or '-')[:8]} "
+                 f"orders {','.join(o[:8] for o in ev['orderIds']) or '-'} |")
+    un = [r for r in rows if r["disposition"] == "order_unfilled" and not r["avoidable"]]
+    L.append(f"\nOrder-unfilled ideas that were NOT avoidable: {len(un)} "
+             f"({sum(1 for r in un if r.get('detail') == 'level_never_reached')} armed plans whose level never came, "
+             f"{sum(1 for r in un if r.get('detail') == 'risk_gate')} refused by a risk-gate price check).")
+    L.append("\nAn avoidable miss is an OPPORTUNITY, not a forgone profit: no outcome is assigned to a trade that never happened.")
+    return "\n".join(L) + "\n"
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
     ap.add_argument("--since", default="2026-09-08")   # the Practice-book reset
     ap.add_argument("--portfolio", default="",
                     help="Tips Practice book id (default: techniques.tip.default_portfolio)")
+    ap.add_argument("--dispositions", action="store_true", help="print the opportunity dispositions instead of the census")
     a = ap.parse_args()
     conn = await asyncpg.connect(a.db)
+    if getattr(a, "dispositions", False):
+        rows = await build_dispositions(conn, since_text=a.since, portfolio=str(getattr(a, "portfolio", "") or ""))
+        print(render_dispositions(rows, a.since))
+        await conn.close()
+        return
     d = await build_census(conn, since_text=a.since, portfolio=str(getattr(a, "portfolio", "") or ""))
     rows, acct, open_by_idea = d["rows"], d["acct"], d["open_by_idea"]
     unallocated, unknown_owner_lots, pf_scope, since = (d["unallocated"], d["unknown_owner_lots"],
