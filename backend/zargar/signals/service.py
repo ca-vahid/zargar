@@ -1973,9 +1973,10 @@ class SignalService:
                                     ((o.get("signal") or {}).get("verification") or {}).get("checks", [])
                                     if not c.get("passed")]}
                         for o in out]
-            await intake.review(source=content.source_name or "unknown",
-                                message_text=source_text, outcomes=outcomes,
-                                client=self._analyst_client)
+            if await self._review_gate(intake, content, out, outcomes, path="discarded"):
+                await intake.review(source=content.source_name or "unknown",
+                                    message_text=source_text, outcomes=outcomes,
+                                    client=self._analyst_client)
         else:
             n_trade = len(tradable)
             if not sigs and await self._source_has_open_items(content.source_name):
@@ -1983,9 +1984,10 @@ class SignalService:
                 # everything") from a source with open items on the desk is a
                 # follow-up, not noise — the analyst reviews it against what we
                 # hold and wait for
-                await intake.review(source=content.source_name or "unknown",
-                                    message_text=source_text, outcomes=[],
-                                    client=self._analyst_client)
+                if await self._review_gate(intake, content, out, [], path="followup"):
+                    await intake.review(source=content.source_name or "unknown",
+                                        message_text=source_text, outcomes=[],
+                                        client=self._analyst_client)
             else:
                 await intake.finish(
                     f"{n_trade} tip{'s' if n_trade != 1 else ''}" if sigs else "no signals",
@@ -1999,6 +2001,41 @@ class SignalService:
                 "intakeRunId": intake.id,
                 "source": (refreshed.source_name if refreshed else content.source_name),
                 "sourceDetected": bool((refreshed.meta or {}).get("sourceDetected")) if refreshed else False}
+
+    async def _review_gate(self, intake, content, out: list[dict], outcomes: list[dict], *, path: str) -> bool:
+        """review-gate-v1 (2026-09-19): may this message reach anything the desk holds or waits on?
+        Returns True when the review should run. `observe` (default) journals the decision and always
+        reviews; `enforce` skips an irrelevant message on the record; `off` decides nothing. Fail-open:
+        any error here reviews."""
+        from ..techniques.tip import review_gate as rg
+        eng = self.engine
+        mode = rg.mode_of(eng.settings)
+        if mode == "off":
+            return True
+        try:
+            tickers = [(o.get("signal") or {}).get("ticker") for o in out if (o.get("signal") or {}).get("ticker")]
+            items, read_errors = await rg.desk_items(eng)
+            d = rg.decide(tickers=tickers, source=content.source_name or "unknown", outcomes=outcomes, items=items)
+        except Exception:                                  # noqa: BLE001 - the gate never blocks intake
+            log.exception("review gate failed - reviewing")
+            return True
+        if read_errors and not d["review"]:               # an incomplete desk picture never justifies a skip
+            d = {**d, "review": True, "reason": f"desk state incomplete ({', '.join(read_errors)}) - reviewing"}
+        skip = (mode == "enforce" and not d["review"])
+        with contextlib.suppress(Exception):
+            await eng.journal.append(ev.TIP_REVIEW_GATE, {
+                "version": rg.VERSION, "mode": mode, "path": path, "decision": "review" if d["review"] else "skip",
+                "applied": skip, "reason": d["reason"], "tickers": d["tickers"], "matched": d["matched"],
+                "source": content.source_name, "contentId": getattr(content, "id", None), "intakeRunId": intake.id,
+                "deskItems": len(items), "readErrors": read_errors}, aggregate_type="tip_intake", aggregate_id=intake.id or "")
+        if skip:
+            intake.step("note", f"Review gate ({rg.VERSION}): {d['reason']} - not reviewed. The message stays in the "
+                                "mirror; nothing on the desk can be managed from it.")
+            await intake.finish("gated", f"Not reviewed - {d['reason']}.", opinion={"reviewGate": d})
+            return False
+        if not d["review"]:
+            intake.step("note", f"Review gate ({rg.VERSION}, observe): would skip - {d['reason']}. Reviewing anyway.")
+        return True
 
     async def _source_has_open_items(self, source: str | None) -> bool:
         """Does this source have anything OPEN on the desk (tips, waiting armed
