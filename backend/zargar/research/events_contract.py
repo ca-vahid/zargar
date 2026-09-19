@@ -78,6 +78,7 @@ CONTRACTS: dict[str, dict] = {
     "TechniquePlanExit":      {"version": 1, "required": ("runId", "symbol", "trigger", "kind", "qty", "reduceOnly")},
     "TechniquePlanError":     {"version": 1, "required": ("runId", "symbol", "stage", "error")},
     "TechniquePlanScored":    {"version": 1, "required": ("runId", "symbol", "planFor", "rows")},
+    "TechniquePlanDiagnostic": {"version": 1, "required": ("runId", "symbol", "kind")},   # Team2 shadow diagnostics (2026-09-16): observation only, never a decision input
     "TechniquePlanPreopen":   {"version": 1, "required": ("runId", "symbol", "planFor", "premarket", "triggers", "replan")},
     "TechniquePlanReplanned": {"version": 1, "required": ("runId", "parentRunId", "symbol", "planFor")},
     "TechniqueHookStats":     {"version": 1, "required": ("technique", "date", "hooks")},
