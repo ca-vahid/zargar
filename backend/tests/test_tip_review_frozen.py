@@ -67,7 +67,7 @@ async def test_replay_serves_the_exact_read_and_never_executes_management():
     assert json.loads(client.sent[1]["messages"][-1]["content"][0]["content"]) == {"positions": [{"symbol": "SBLK", "qty": 62}]}
     assert json.loads(client.sent[2]["messages"][-1]["content"][0]["content"])["frozen"] is True      # nothing was changed
     assert rep["compare"]["outcome"] == "agree"                     # the reason's wording is not part of the instruction
-    assert rep["budget"]["attempts"] == 3 and rep["budget"]["withinCeiling"] is True
+    assert rep["budget"]["attempts"] == 3 and rep["budget"]["withinGuard"] is True
 
 
 async def test_a_changed_stop_level_is_a_disagreement_not_agreement():
@@ -147,7 +147,7 @@ async def test_one_ceiling_covers_both_models_all_cases_turns_retries_and_invoca
     over = await rf.replay_review(rf.build_case(_run()), client=greedy, model="claude-sonnet-5", budget=b3, max_tokens=200_000)
     assert greedy.sent == [] and "budget" in over["error"] and over["compare"]["outcome"] == "invalid"
     s = b3.summary()
-    assert s["withinCeiling"] is True and s["spentUsd"] <= cap and s["refused"] == 1
+    assert s["withinGuard"] is True and s["spentUsd"] <= cap and s["refused"] == 1
     assert set(s["byModel"]) == {"claude-sonnet-5", "claude-haiku-4-5"} and s["attempts"] == sent == 22
     assert s["unknownBilled"] == 2                                   # each failed attempt stays charged at its reservation
     assert abs(s["spentUsd"] - sum(s["byModel"].values())) < 1e-4 and b3.spent_usd == b2.spent_usd

@@ -37,7 +37,7 @@ Outputs live outside the checkout on purpose: a dirty runtime checkout blocks de
 3. Marked performance after costs (primary), realized after costs beside it; questioned fills and shadow books apart.
 4. Opportunity dispositions and avoidable misses; cold-ticker rechecks (`SignalColdParkRecheck`) and the waits they
    replaced.
-5. P2 readiness: captured cases per type against the 60-case quota. No paid run without the user's approval.
+5. P2 readiness: captured cases per type against the 60-case quota. No paid run without the user's approval; the $35 budget is an estimate-based spending guard, not a guaranteed maximum.
 
 Boundaries that do not move with this report: P1 stays observe (no automatic enforcement), P3 approval expiry
 unchanged, P4 research only, P5 pending, P6 exit and overnight policies unchanged, no production-model change.

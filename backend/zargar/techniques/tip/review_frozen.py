@@ -13,7 +13,7 @@ history at that minute) was never kept. This module closes that gap WITHOUT touc
 * compare - `compare(case, report)` judges the INSTRUCTION, not just the tool: target, stop levels, targets,
   fractions, sale quantity, hold cap. A changed level is a disagreement. A replay that asked for evidence the case
   does not hold is INCONCLUSIVE - never an equivalence pass.
-* budget  - `SuiteBudget`: ONE dollar ceiling for the whole evaluation (all models, cases, turns, retries, separate
+* budget  - `SuiteBudget`: ONE estimate-based spending GUARD for the whole evaluation (not a guaranteed maximum) (all models, cases, turns, retries, separate
   invocations) - durable write-ahead ledger, per-model rate cards, conservative reservation before every attempt.
 
 Nothing here changes which model production uses.
@@ -122,20 +122,24 @@ class _ServedReview:
                          "evidence is MISSING from the case and is not replaced by any other request's output"}
 
 
-# ------------------------------------------------------------------ one ceiling for the whole evaluation
+# ------------------------------------------------------------------ one spending guard for the whole evaluation
 class SuiteBudgetExceeded(Exception):
-    """The next attempt's reservation would cross the suite ceiling - refused before anything is sent."""
+    """The next attempt's reservation would cross the suite guard - refused before anything is sent."""
 
 
 class SuiteBudget:
-    """ONE dollar ceiling across every model, case, turn, retry and separate invocation of an evaluation.
+    """ONE estimate-based spending GUARD across every model, case, turn, retry and separate invocation of an evaluation.
+
+    It is NOT a guaranteed maximum: reservations are estimates (request characters / 3, list prices) and the provider's
+    actual bill can exceed a reservation; the guard refuses the NEXT attempt once recorded spend plus the next
+    reservation would pass the cap, so the final bill can end above the cap by at most one attempt's overrun.
 
     * durable: the ledger is a JSON file, re-read on construction - a second process continues the same total;
     * write-ahead: `reserve()` records the attempt's RESERVATION before the provider call; `settle()` replaces it
       with the provider's own usage; an attempt that fails, is cut, or is never settled (crash) stays charged at
       its reservation - billing unknown is never free;
     * conservative reservation: input = request characters / 3 (not /4) at that model's input rate, plus the FULL
-      `max_tokens` at its output rate, times HEADROOM. The ceiling therefore holds as long as no single attempt's
+      `max_tokens` at its output rate, times HEADROOM. The total stays within the cap only as long as no single attempt's
       real bill exceeds HEADROOM x that reservation; an overrun is recorded (`overruns`) and still counted;
     * per-model complete rate cards are mandatory; the client must not retry silently (`replay_review` disables SDK
       retries where the client allows it - every retry is its own reserved attempt).
@@ -220,7 +224,7 @@ class SuiteBudget:
         return {"capUsd": self.cap_usd, "spentUsd": round(self.spent_usd, 4), "attempts": len(self.entries), "byModel": by,
                 "unknownBilled": sum(1 for e in self.entries if not e.get("settled")),
                 "overruns": sum(1 for e in self.entries if e.get("overrun")), "refused": len(self.refused),
-                "withinCeiling": self.spent_usd <= self.cap_usd + 1e-9}
+                "withinGuard": self.spent_usd <= self.cap_usd + 1e-9, "guaranteedMaximum": False}
 
 
 # ------------------------------------------------------------------ replay
