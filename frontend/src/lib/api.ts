@@ -227,6 +227,12 @@ export const api = {
   techniqueIngestNote: (id: string) => request<import("../types").MethodNote>("GET", `/api/technique/ingest/notes/${id}`),
   techniqueIngestExtract: (id: string) => request<import("../types").MethodNote>("POST", `/api/technique/ingest/notes/${id}/extract`),
   techniqueIngestBoardCheck: (id: string) => request<import("../types").MethodNote>("POST", `/api/technique/ingest/notes/${id}/board-check`),
+  // EM integrated review (2026-09-18): read-only source / policy / candidates / first-sale / profit-capture surfaces
+  emManifest: () => request<any>("GET", "/api/technique/em/manifest"),
+  emSourceTable: (date: string) => request<any>("GET", `/api/technique/em/source-table?date=${encodeURIComponent(date)}`),
+  emCandidates: (date: string) => request<any>("GET", `/api/technique/em/candidates?date=${encodeURIComponent(date)}`),
+  emFirstSale: (date: string) => request<any>("GET", `/api/technique/em/first-sale?date=${encodeURIComponent(date)}`),
+  emProfitCapture: (date: string) => request<any>("GET", `/api/technique/em/profit-capture?date=${encodeURIComponent(date)}`),
   techniqueArmed: (slim = false) => request<import("../types").ArmedPlan[]>("GET", `/api/technique/armed${slim ? "?slim=1" : ""}`),
   techniqueArmedSummary: () => request<import("../types").ArmedSummary>("GET", "/api/technique/armed/summary"),
   techniqueArmedDetail: (runId: string) => request<import("../types").ArmedPlan>("GET", `/api/technique/armed/${runId}`),
