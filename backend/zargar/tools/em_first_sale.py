@@ -29,7 +29,7 @@ async def build(date: str) -> dict:
     from .. import config as _config
     d = dt.date.fromisoformat(date)
     c = await asyncpg.connect(_config.AppConfig().database_url.replace("postgresql+asyncpg://", "postgresql://"))
-    await c.execute("set transaction read only")
+    await c.execute("set default_transaction_read_only = on")
     try:
         evs = await c.fetch("""select e.ts, e.aggregate_id rid, e.payload p, r.config cfg, r.result->'plan' plan from events e join technique_runs r on r.id = e.aggregate_id
             where e.type='TechniquePlanOrderIntent' and r.technique='enhanced_market' and e.portfolio_id=$1 and e.ts >= to_timestamp($2/1000.0) and e.ts < to_timestamp($3/1000.0) order by e.ts""",

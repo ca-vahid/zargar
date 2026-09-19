@@ -1,7 +1,7 @@
 {
  "manifest": {
   "version": "prep-compare-v1",
-  "generatedAt": "2026-09-19T00:47:43+00:00",
+  "generatedAt": "2026-09-19T02:47:33+00:00",
   "policyVersion": "em-prep-policy-v1",
   "reviewVersion": "conditional-review-v1",
   "replayVersion": "prep-ablation-v3",
@@ -27,7 +27,10 @@
    "2026-09-17": "fc9efd65418e4d9991930b61317c4a32",
    "2026-09-18": "ed48a80aa9854e3d8ecb3da887aacfaa"
   },
-  "pricingRows": 0,
+  "pricingSource": "llm.rates",
+  "pricedModels": [
+   "claude-opus-5"
+  ],
   "paidModelCalls": 0,
   "book": "045d8c35b3f149628ea001ae90a58edb"
  },
@@ -657,14 +660,12 @@
      "invoices": 0
     },
     "estimated": {
-     "usd": null,
-     "requests": 0
+     "usd": 64.9894,
+     "requests": 112
     },
     "unknown": {
-     "requests": 112,
-     "why": {
-      "no dated price configured for anthropic/claude-opus-5": 112
-     }
+     "requests": 0,
+     "why": {}
     },
     "subscriptionAllocation": null,
     "byModel": {
@@ -676,8 +677,8 @@
        "cacheRead": 2201537,
        "cacheWrite": 38377
       },
-      "estimatedUsd": 0.0,
-      "unknownRequests": 112
+      "estimatedUsd": 64.989441,
+      "unknownRequests": 0
      }
     },
     "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
@@ -1379,14 +1380,12 @@
      "invoices": 0
     },
     "estimated": {
-     "usd": null,
-     "requests": 0
+     "usd": 59.4689,
+     "requests": 110
     },
     "unknown": {
-     "requests": 110,
-     "why": {
-      "no dated price configured for anthropic/claude-opus-5": 110
-     }
+     "requests": 0,
+     "why": {}
     },
     "subscriptionAllocation": null,
     "byModel": {
@@ -1398,8 +1397,8 @@
        "cacheRead": 2075236,
        "cacheWrite": 35143
       },
-      "estimatedUsd": 0.0,
-      "unknownRequests": 110
+      "estimatedUsd": 59.468874,
+      "unknownRequests": 0
      }
     },
     "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
@@ -2122,14 +2121,12 @@
      "invoices": 0
     },
     "estimated": {
-     "usd": null,
-     "requests": 0
+     "usd": 64.4684,
+     "requests": 111
     },
     "unknown": {
-     "requests": 111,
-     "why": {
-      "no dated price configured for anthropic/claude-opus-5": 111
-     }
+     "requests": 0,
+     "why": {}
     },
     "subscriptionAllocation": null,
     "byModel": {
@@ -2141,8 +2138,8 @@
        "cacheRead": 2088130,
        "cacheWrite": 120142
       },
-      "estimatedUsd": 0.0,
-      "unknownRequests": 111
+      "estimatedUsd": 64.468358,
+      "unknownRequests": 0
      }
     },
     "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
@@ -2617,14 +2614,12 @@
      "invoices": 0
     },
     "estimated": {
-     "usd": null,
-     "requests": 0
+     "usd": 56.3436,
+     "requests": 102
     },
     "unknown": {
-     "requests": 102,
-     "why": {
-      "no dated price configured for anthropic/claude-opus-5": 102
-     }
+     "requests": 0,
+     "why": {}
     },
     "subscriptionAllocation": null,
     "byModel": {
@@ -2636,8 +2631,8 @@
        "cacheRead": 1921860,
        "cacheWrite": 34794
       },
-      "estimatedUsd": 0.0,
-      "unknownRequests": 102
+      "estimatedUsd": 56.343574,
+      "unknownRequests": 0
      }
     },
     "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"

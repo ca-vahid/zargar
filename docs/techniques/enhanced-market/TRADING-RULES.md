@@ -1494,3 +1494,26 @@ assumed. `enforce` is a separate activation decision.
   data, never a loop. The missed trade belongs in the counterfactual ledger after the fix is live (rollout checklist).
 - ORCL 09-17: both fills carry `source: opra` raw evidence with no transform (buy 1.12 at the ask of 0.76/1.12, sell 3.65 at the
   bid of 3.65/3.90). The 0.36-wide entry book (38% of mid) is the questionable part, not a derived quote. Cash is not rewritten.
+
+### 2026-09-19 - candidate review IR-01..IR-05 answered on one corrected candidate (`reviews/INTEGRATED-DELIVERY-RESPONSE-2026-09-18.md`, revision 2)
+
+The reviewers reproduced real defects in the first candidate; all five are corrected, none was deployed, nothing was activated.
+- **First sale (IR-01/IR-04).** v1 judged the SAVED entry and only reported the live underlier; it rounded before comparing; under
+  `enforce` an unknown or an exception passed; it ran once, before the order waits; and it shipped `observe` by default with an awaited
+  journal write on the entry path. `first-sale-v2`: the validated executable underlying bound owns admission (long ask / short bid),
+  the comparison is unrounded, `enforce` fails closed and is re-decided inside the final entry guard after every wait and retry, an
+  invalid setting refuses, the record goes to a bounded non-blocking recorder, and the default is **OFF**. Historical admission is
+  UNKNOWN for all 28 entries of 09-15..09-18 (the executable underlier was never captured) - the earlier "enforce would have refused
+  one of 28" read the saved geometry only and is withdrawn as a back-test.
+- **Executable profit (IR-02/IR-03).** v1 scored a quote with no source, spent the same displayed depth once per trade, and took
+  realized totals from in-memory trades. v2: unknown provenance is unknown; depth is spent once per contract/side across the book;
+  realized totals and per-trade attribution come from the session's executions (restart / disarm / late start / prior session safe);
+  capture ids are idempotent; the reducer reconciles net, fees, the sum of closed trades and cash against the ledger.
+- **Candidates (IR-05).** The pricing stage is real (`candidate-pricing-v1`): with contemporaneous evidence it evaluates contract,
+  quote, spread, sizing, budget and executable-price no-chase; without it every gate is unknown. Decided once at the trigger.
+- **Dispatch tests.** The reviewers' EM dispatch cases failed because `size_multiplier` read the WALL clock: on a Friday the x0.5
+  multiplier sized a $150-risk contract to zero against a $100 budget and the entry never reached the RiskGate. The weekday now comes
+  from the test-pinnable `zargar.clock` (production = real time) and those modules run on a controlled Wednesday clock. Verified by
+  running the unchanged cases under a pinned clock before and after the fix; not an after-hours effect.
+- **Activation order changes:** measurement first (ED-04 recorder, then first-sale OBSERVE). Enforcement is not recommended on the
+  strength of one avoided loser.

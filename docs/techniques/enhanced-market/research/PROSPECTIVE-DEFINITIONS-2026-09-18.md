@@ -1,5 +1,7 @@
 # EM prospective definitions - frozen 2026-09-18 (integrated delivery)
 
+> SUPERSEDED 2026-09-19 by `PROSPECTIVE-DEFINITIONS-2026-09-19.md` before any validation data was collected. Kept unchanged below as the record of what was frozen on 09-18.
+
 Frozen BEFORE any validation data is collected. September 15-18 are exploratory fixtures: they shaped these
 definitions and therefore can never validate them. Nothing here is a live rule; every item is order-free or
 observation-only until a separate activation decision. A definition is changed only by a NEW dated file with a new

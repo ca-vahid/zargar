@@ -54,3 +54,12 @@ def test_no_outcome_leaks_into_selection_and_costs_are_never_inferred_from_r():
     assert "replay" not in src and "outcome" not in src and '"r"' not in src, "selection reads the plan and the saved review only - never what happened next"
     body = inspect.getsource(cmp)
     assert "never converted into dollars" in body and "paidModelCalls" in body and "anthropic.Anthropic" not in body and "messages.create" not in body
+
+
+def test_runtime_rates_envelope_and_provenance_keys():
+    """Owner re-check 2026-09-19: the settings envelope is unwrapped like the Tips cost tool; a bare card passes; junk is empty."""
+    from zargar.tools.em_prep_compare import unwrap_rates
+    card = {"_meta": {"verifiedAt": "2026-09-17"}, "claude-opus-5": {"in": 5.0, "out": 25.0}}
+    assert unwrap_rates({"v": card}) == card and unwrap_rates(card) == card
+    assert unwrap_rates(None) == {} and unwrap_rates({"v": 3}) == {"v": 3} and unwrap_rates([1]) == {}
+    assert sorted(k for k in unwrap_rates({"v": card}) if not k.startswith("_")) == ["claude-opus-5"]

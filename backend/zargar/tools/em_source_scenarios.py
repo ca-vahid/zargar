@@ -44,7 +44,7 @@ def _hm(ts) -> str:
 
 async def build(date: str, *, allow_yahoo: bool, corrections: list | None) -> dict:
     c = await asyncpg.connect(abl._db_url())
-    await c.execute("set transaction read only")
+    await c.execute("set default_transaction_read_only = on")
     try:
         day = dt.date.fromisoformat(date)
         a = dt.datetime(day.year, day.month, day.day, 0, 0, tzinfo=NY); b = a + dt.timedelta(days=1)

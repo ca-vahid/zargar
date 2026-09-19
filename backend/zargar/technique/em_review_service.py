@@ -37,7 +37,7 @@ def manifest(svc) -> dict:
     get = svc.engine.settings.get
     rows = [{"key": k, "default": DEFAULTS.get(k), "effective": get(k, DEFAULTS.get(k))} for k in KNOBS]
     return {"policy": pp.effective(get), "knobs": rows, "observer": getattr(getattr(svc.armer, "_book_observer", None), "stats", None),
-            "modelPriceSource": {"setting": "llm.rates", "pricedModels": sorted((get("llm.rates", {}) or {}).keys())}}
+            "modelPriceSource": {"setting": "llm.rates", "pricedModels": sorted(k for k in (get("llm.rates", {}) or {}) if not str(k).startswith("_"))}}
 
 
 async def _payloads(svc, date: str) -> list:

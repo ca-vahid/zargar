@@ -138,7 +138,7 @@ async def _sheet_for(c, date: str) -> str | None:
 async def build_day(date: str, *, allow_yahoo: bool, pricing: list) -> dict:
     c = await asyncpg.connect(abl._db_url())
     try:
-        await c.execute("set transaction read only")
+        await c.execute("set default_transaction_read_only = on")
         sheet = await _sheet_for(c, date)
         if not sheet:
             return {"date": date, "status": "no_prepared_sheet"}
@@ -150,7 +150,7 @@ async def build_day(date: str, *, allow_yahoo: bool, pricing: list) -> dict:
     d = await abl.run(sheet, date, allow_yahoo=allow_yahoo)
     c = await asyncpg.connect(abl._db_url())
     try:
-        await c.execute("set transaction read only")
+        await c.execute("set default_transaction_read_only = on")
         ids = [r["runId"] for r in d["rows"]]
         rr = await c.fetch("""select id, status, created_at, llm, usage, result->'plan' p, result->'analysis' a, jsonb_array_length(coalesce(result->'passes','[]'::jsonb)) np
                               from technique_runs where id = any($1::text[])""", ids)
@@ -186,14 +186,20 @@ async def build_day(date: str, *, allow_yahoo: bool, pricing: list) -> dict:
             "modelCost": mc.summarize(reqs, table=pricing), "deterministicModelCalls": 0}
 
 
+def unwrap_rates(v) -> dict:
+    """The settings table stores a value in a {"v": ...} envelope (same rule as `tools/tip_llm_cost.load_rates`)."""
+    if isinstance(v, dict) and isinstance(v.get("v"), dict):
+        v = v["v"]
+    return v if isinstance(v, dict) else {}
+
+
 async def _runtime_rates() -> dict:
     """The platform's `llm.rates` card from the settings table (read-only). Empty = cost unknown, never invented."""
     c = await asyncpg.connect(abl._db_url())
     try:
-        await c.execute("set transaction read only")
+        await c.execute("set default_transaction_read_only = on")
         v = await c.fetchval("select value from settings where key = 'llm.rates'")
-        v = J(v)
-        return v if isinstance(v, dict) else {}
+        return unwrap_rates(J(v))
     except Exception:                                      # noqa: BLE001
         return {}
     finally:
@@ -263,7 +269,7 @@ def main(argv=None) -> int:
     manifest = {"version": VERSION, "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "policyVersion": pp.VERSION, "reviewVersion": pp.REVIEW_VERSION,
                 "replayVersion": abl.VERSION, "gradeFloor": "B", "exceptionFeatures": {"RR_TP3_MIN": abl.RR_TP3_MIN, "MIN_TOUCHES": abl.MIN_TOUCHES, "frozen": "2026-09-18"},
                 "capacity": {**CAPACITY, "slots": slots, "haltAtR": -(CAPACITY["dailyLossHaltPct"] / CAPACITY["riskPctPerEntry"])}, "sheets": {d["date"]: d.get("sheet") for d in days},
-                "pricingSource": "llm.rates", "pricedModels": sorted(pricing) if isinstance(pricing, dict) else len(pricing), "paidModelCalls": 0, "book": EM_BOOK}
+                "pricingSource": "llm.rates", "pricedModels": sorted(k for k in pricing if not str(k).startswith("_")) if isinstance(pricing, dict) else len(pricing), "paidModelCalls": 0, "book": EM_BOOK}
     md = render(days, manifest)
     os.makedirs(OUT_DIR, exist_ok=True)
     name = f"{dates[0]}_{dates[-1]}" if len(dates) > 1 else dates[0]

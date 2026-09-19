@@ -2424,3 +2424,16 @@ so a retried or failed model request is never read as free. New EM-owned tables 
 `/api/technique/em/*`. Lesson for every desk's tooling: a walk-forward row's `session` is the session a plan was BUILT FROM; the
 session it TRADES is `technique_sweeps.params.planFor` - joining on the former shifted a whole comparison by one day before it
 was caught against the execution ledger.
+
+### 2026-09-19 (EM desk) - candidate-review corrections to the shared hooks; owner review recorded
+
+`execution/planrunner.py`: the first-sale hooks are now `first_sale_policy / prepare / record / decide / publish` (base: off / no-op /
+None / allow / no-op). `_first_sale_check` no longer awaits any research write (the record goes to the technique's bounded recorder);
+a refusal is journaled on the existing `_refuse_entry` path, which gained an optional `detail` payload key. `first_sale_final` is the
+first call inside `_entry_guard.guard()` - synchronous, None for every desk that does not opt into `enforce`; a refusal raises the same
+`RuntimeError("entry gate: ...")` shape as FC-01, so it takes the established order-rejection path. Exits never reach either.
+EM's `size_multiplier` reads the weekday from `zargar.clock` (test-pinnable; production is real time). `tests/conftest.py` pins a
+controlled clock for the modules `test_codex_em_final_dispatch_*` only. Owner review (Tips/platform desk, 2026-09-19): no objection to
+the hook placement, the fill call sites or the additive tables/routes/defaults, with one standing condition - an attached observer's
+`snap` stays O(1) capture + `put_nowait`, no I/O, no locks (kept by test). Their two findings were applied: ONE model price source
+(`llm.rates`; the duplicate `llm.pricing_table` was removed) and a failed retried model request is marked `failed`.

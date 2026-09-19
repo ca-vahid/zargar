@@ -60,7 +60,7 @@ async def build(date: str) -> dict:
     t0, t1 = _ms(session, 4, 0), _ms(session, 20, 0)
     url = _config.AppConfig().database_url.replace("postgresql+asyncpg://", "postgresql://")
     c = await asyncpg.connect(url)
-    await c.execute("set transaction read only")
+    await c.execute("set default_transaction_read_only = on")
     try:
         ex = [dict(r) for r in await c.fetch("""select symbol, side, qty, price, commission, ts from executions
             where portfolio_id=$1 and ts >= to_timestamp($2/1000.0) and ts < to_timestamp($3/1000.0) order by ts""", EM_BOOK, t0, t1)]
