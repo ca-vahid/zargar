@@ -63,6 +63,20 @@ async def _book(c, pid: str, date: str, label: str) -> dict:
 EXCEPTION_TYPES = ("BookHaltEngaged", "BookPaused", "TechniqueLossHalt", "DailyLossHalt", "TechniqueArmRefused", "OpsQuiesce",
                    "TechniquePlanRestored", "TechniquePlanError")
 QUIET = ("TechniquePlanRestored", "OpsQuiesce")            # counted, never listed one by one: a restart journals one per plan
+PROTECTIVE_WORDS = ("premium stop", "quote stop", "stop:", "flatten", "scratch", "loss halt", "halted for the day", "paused")
+PROTECTIVE_TYPES = ("BookHaltEngaged", "BookPaused", "TechniqueLossHalt", "DailyLossHalt")
+
+
+def classify(kind: str, why: str) -> str:
+    """An action the rules are SUPPOSED to take (a stop, a premium stop, a flatten, a loss halt, a book pause) is the policy
+    WORKING - never a fault. A fault is the machinery failing: a provider refusal, a failed or retried order, an unknown
+    outcome, a restart during trading."""
+    w = (why or "").lower()
+    if kind in PROTECTIVE_TYPES or any(t in w for t in PROTECTIVE_WORDS):
+        return "protective"
+    if kind == "TechniquePlanRestored":
+        return "restart"
+    return "fault"
 
 
 async def exceptions(c, date: str, books: list) -> dict:
@@ -82,8 +96,9 @@ async def exceptions(c, date: str, books: list) -> dict:
         key = r["type"] + ("" if mine else " (other book)")
         out["byType"][key] = out["byType"].get(key, 0) + 1
         if r["type"] not in QUIET and len(out["items"]) < 40:
+            why = str(p.get("reason") or p.get("error") or p.get("text") or p.get("label") or "")[:180]
             out["items"].append({"at": r["ts"].isoformat(), "type": r["type"], "book": (r["portfolio_id"] or p.get("portfolioId")),
-                                 "why": str(p.get("reason") or p.get("error") or p.get("text") or p.get("label") or "")[:180], "ours": mine})
+                                 "why": why, "ours": mine, "class": classify(r["type"], why)})
     rl = await c.fetch("select portfolio_id, payload from events where type='RiskCheckFailed' and ts >= $1 and ts < $2", a, b)
     hit = [r["portfolio_id"] for r in rl if any((x.get("name") == "order_rate" and not x.get("passed")) for x in ((_j(r["payload"]) or {}).get("checks") or []))]
     busiest = await c.fetchrow("select date_trunc('minute', created_at) m, count(*) n from orders where created_at >= $1 and created_at < $2 group by 1 order by 2 desc limit 1", a, b)
@@ -105,6 +120,10 @@ async def exceptions(c, date: str, books: list) -> dict:
                     reasons[str(why).split(":")[0]] = reasons.get(str(why).split(":")[0], 0) + 1
             out["recorder"][pid] = {"snapshots": len(snaps), "instances": len(per), "drops": sum(per.values())}
             out["unscorable"][pid] = reasons
+    out["byClass"] = _count(i["class"] for i in out["items"])
+    out["faults"] = [i for i in out["items"] if i["class"] == "fault"]
+    out["protectiveActions"] = [i for i in out["items"] if i["class"] == "protective"]
+    out["restartsDuringSession"] = int((out["byType"].get("TechniquePlanRestored") or 0) + (out["byType"].get("TechniquePlanRestored (other book)") or 0))
     out["anythingToReport"] = bool(out["items"] or out["rateLimit"]["orderRateRejections"] or any(v["drops"] for v in out["recorder"].values()))
     return out
 
@@ -188,7 +207,8 @@ def main() -> int:
         if a.exceptions:
             e = d["exceptions"]
             print("\n## Operational exceptions\n")
-            print(f"Anything to report: **{e['anythingToReport']}**. By type: {e['byType'] or 'none'}.")
+            print(f"Anything to report: **{e['anythingToReport']}**. By class: {e['byClass'] or 'none'}. By type: {e['byType'] or 'none'}.")
+            print(f"Expected protective actions: {len(e['protectiveActions'])} | FAULTS: {len(e['faults'])} | plan restores in the window: {e['restartsDuringSession']}")
             print(f"Shared order-rate window: {e['rateLimit']['orderRateRejections']} rejections ({e['rateLimit']['ours']} in an EM book); busiest minute "
                   f"{e['rateLimit']['busiestMinute']} with {e['rateLimit']['busiestMinuteOrders']} orders, cap {e['rateLimit']['capPerMinute']}.")
             print(f"Recorder: {e['recorder'] or 'no captures'}; unscorable reasons: {e['unscorable'] or 'none'}.")

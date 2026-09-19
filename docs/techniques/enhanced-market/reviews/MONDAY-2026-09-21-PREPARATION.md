@@ -87,4 +87,18 @@ recorder drops, unscorable captures and RTH restarts. Same command shape:
 | Trading P&L | net after fees, open exposure, drawdown, marked vs executable peaks and coverage |
 | Model cost | the baseline's estimate at the current price card, in its own section, never netted into P&L; the experiment makes no model calls |
 
+Two further separations (2026-09-19 direction), both at the top of the close report:
+
+- **Whole-bundle performance vs genuinely matched trades.** The book-level result IS the bundle's result, because admitting
+  different trades is part of the bundle. A MATCHED pair is a symbol both books actually ENTERED this session; only those
+  support like-for-like. A symbol both books armed but only one entered is listed apart, with the other book's refusal count
+  and how many of those were for missing data - it is a bundle difference, not a matched pair. Money that cannot be
+  attributed prints `unknown`, never 0.
+- **Expected protective actions vs faults.** A stop, a premium stop, a quote stop, a flatten, a scratch, a target exit, a
+  loss halt, a book pause and P-06 are the policy WORKING and are listed as such. Faults are the machinery failing: a
+  provider refusal (the 09-18 CBOE 429 that cost an entry is the reference case), a failed or retried order, an unknown
+  outcome, recorder drops, unscorable captures, an unreconciled ledger, order-rate rejections, restarts during the session.
+  The exception log is embedded in the session report AND written beside it (`<date>-exceptions-close.md`), so the report and
+  the log always arrive together.
+
 Rollback, unchanged: `POST /api/portfolios/07ef1e867cad4150bc81e072a8fd600a/pause`. Do not retune the bundle from one session.

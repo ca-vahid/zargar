@@ -163,6 +163,68 @@ def exit_policy(books: dict) -> dict:
             "note": "P-06 executes only in the experimental book; the baseline keeps the production ladder and records P-06 as an observation"}
 
 
+PROTECTIVE = {"stop": "the production stop", "premium_stop": "the premium stop", "quote_stop": "the quote stop watch",
+              "flatten": "the end-of-session flatten", "scratch": "the scratch rule", "runner_protect": "P-06 runner protection (experiment only)",
+              "tp1": "a target trim", "tp2": "a target exit", "tp3": "a target exit", "disarm": "a disarm"}
+
+
+def matched(books: dict) -> dict:
+    """GENUINELY MATCHED trades: a symbol BOTH books actually entered this session. Only these support a like-for-like
+    comparison. A symbol both books armed but only one entered is NOT matched - it is a bundle difference (the entry
+    policies disagreed), reported apart. Money that cannot be attributed stays `unknown`, never 0."""
+    b, x = (books.get("baseline") or {}).get("perSymbol") or {}, (books.get("experiment") or {}).get("perSymbol") or {}
+    rows, one_side = [], []
+    for sym in sorted(set(b) & set(x)):
+        fb, fx = int(b[sym].get("filled") or 0), int(x[sym].get("filled") or 0)
+        if fb and fx:
+            rows.append({"symbol": sym, "baseline": _leg(b[sym]), "experiment": _leg(x[sym]),
+                         "netDifference": (None if (b[sym].get("fills") == 0 or x[sym].get("fills") == 0)
+                                           else round(float(x[sym]["net"]) - float(b[sym]["net"]), 4)),
+                         "exitsDiffer": (b[sym].get("exits") or {}) != (x[sym].get("exits") or {})})
+        elif fb or fx:
+            one_side.append({"symbol": sym, "enteredBy": ("baseline" if fb else "experiment"),
+                             "otherBookRefusals": (x[sym] if fb else b[sym]).get("refused"),
+                             "otherBookMissingData": (x[sym] if fb else b[sym]).get("missingData")})
+    net_b = [r["baseline"]["net"] for r in rows if r["baseline"]["net"] is not None]
+    net_x = [r["experiment"]["net"] for r in rows if r["experiment"]["net"] is not None]
+    return {"matchedSymbols": len(rows), "rows": rows[:40],
+            "matchedNet": {"baseline": (round(sum(net_b), 4) if len(net_b) == len(rows) and rows else None),
+                           "experiment": (round(sum(net_x), 4) if len(net_x) == len(rows) and rows else None),
+                           "note": "sum over matched symbols only; None = at least one leg's money is unknown"},
+            "armedBothEnteredOne": one_side[:40], "armedBothEnteredOneCount": len(one_side),
+            "note": "matched = both books ENTERED the same symbol this session; everything else is whole-bundle difference"}
+
+
+def _leg(cell: dict) -> dict:
+    return {"filled": cell.get("filled"), "fired": cell.get("fired"), "exits": cell.get("exits") or {},
+            "net": (round(float(cell["net"]), 4) if cell.get("fills") else None), "fees": (cell.get("fees") if cell.get("fills") else None)}
+
+
+def protective_vs_faults(books: dict, rate: dict, exceptions: dict | None) -> dict:
+    """An exit or refusal the rules are SUPPOSED to produce is not a fault. Faults are things that went wrong with the
+    machinery. Both are reported, never mixed."""
+    prot: dict = {}
+    for who in ("baseline", "experiment"):
+        for kind, why in ((k, v) for k, v in PROTECTIVE.items()):
+            n = int(((books.get(who) or {}).get("activity") or {}).get("exitsByKind", {}).get(kind) or 0)
+            if n:
+                prot.setdefault(who, {})[kind] = {"count": n, "meaning": why}
+    faults = {"orderRateRejections": rate.get("orderRateRejections"), "byBook": rate.get("byBook")}
+    if exceptions:
+        faults.update({k: exceptions.get(k) for k in ("recorder", "unscorable")})
+        faults["events"] = [{k: i[k] for k in ("at", "type", "book", "why")} for i in (exceptions.get("faults") or [])][:20]
+        faults["planRestoresInWindow"] = exceptions.get("restartsDuringSession")
+        prot["journaled"] = [{k: i[k] for k in ("at", "type", "book", "why")} for i in (exceptions.get("protectiveActions") or [])][:20]
+    for who in ("baseline", "experiment"):
+        cap = (books.get(who) or {}).get("capture") or {}
+        faults.setdefault("captureStatus", {})[who] = cap.get("status")
+        faults.setdefault("reconciliation", {})[who] = (cap.get("reconciliation") or {}).get("status")
+    return {"expectedProtectiveActions": prot or "none this session",
+            "faults": faults,
+            "note": "a stop, a premium stop, a flatten, a target exit and P-06 are the policy working; a rejection, a drop, "
+                    "an unreconciled ledger or an unscorable capture is a fault"}
+
+
 def _count(it) -> dict:
     out: dict = {}
     for x in it:
@@ -195,12 +257,21 @@ async def build(date: str) -> dict:
         out["sharedRateLimit"] = {"orderRateRejections": len(rate), "byBook": _count(rate), "busiestMinute": (str(busiest["m"]) if busiest else None),
                                   "busiestMinuteOrders": (int(busiest["n"]) if busiest else 0), "capPerMinute": cap}
         out["cohorts"] = cohorts(out["books"])
+        out["matched"] = matched(out["books"])
         out["exitPolicy"] = exit_policy(out["books"])
+        from .em_experiment_check import exceptions as _exc          # the exception log rides WITH the session report, never apart
+        out["exceptionLog"] = await _exc(c, date, [base, str(xp.get("portfolioId") or "")])
+        out["protectiveVsFaults"] = protective_vs_faults(out["books"], out["sharedRateLimit"], out["exceptionLog"])
         out["modelCost"] = {"baseline": mc.summarize(mc.requests_from_runs(rows), table=(rates if isinstance(rates, dict) else {})),
                             "experiment": {"modelCalls": 0, "note": "deterministic preparation and promotion: zero model calls by construction"}}
     finally:
         await c.close()
     return out
+
+
+def num(v):
+    """Unknown stays unknown: a missing number is never printed as 0."""
+    return "unknown" if v is None else v
 
 
 def render(d: dict) -> str:
@@ -227,6 +298,26 @@ def render(d: dict) -> str:
             ("Capture unscorable reasons", ("capture", "coverage", "unscorableReasons")))
     for label, path in rows:
         L.append(f"| {label} | {g(b, *path)} | {g(x, *path)} |")
+    m = d.get("matched") or {}
+    L += ["", "## Two different questions, kept apart", "",
+          "**Whole-bundle performance** is the book-level result below: it includes the trades one book never had, because admitting "
+          "different trades IS part of the bundle. **Matched-trade comparison** is only the symbols both books actually entered.", "",
+          f"Matched symbols (both books ENTERED): **{m.get('matchedSymbols', 0)}**. Armed by both but entered by only one: "
+          f"{m.get('armedBothEnteredOneCount', 0)} (a bundle difference, not a matched pair).", ""]
+    if m.get("rows"):
+        L += ["| Symbol | Baseline filled / exits / net | Experiment filled / exits / net | Net difference | Exits differ |", "|---|---|---|---:|---|"]
+        for r in m["rows"]:
+            b1, x1 = r["baseline"], r["experiment"]
+            L.append(f"| {r['symbol']} | {b1['filled']} / {b1['exits'] or '-'} / {num(b1['net'])} | {x1['filled']} / {x1['exits'] or '-'} / {num(x1['net'])} | "
+                     f"{num(r['netDifference'])} | {'yes' if r['exitsDiffer'] else 'no'} |")
+        mn = m.get("matchedNet") or {}
+        L += ["", f"Matched-only net after fees: baseline {num(mn.get('baseline'))}, experiment {num(mn.get('experiment'))}. {mn.get('note')}", ""]
+    else:
+        L += ["No symbol was entered by both books this session, so there is no matched-trade comparison today - only the whole-bundle numbers below.", ""]
+    if m.get("armedBothEnteredOne"):
+        L += ["Armed by both, entered by one (the entry policies disagreed):", ""]
+        L += [f"- {r['symbol']}: entered by {r['enteredBy']}; the other book refused {r['otherBookRefusals']} time(s), of which {r['otherBookMissingData']} for missing data" for r in m["armedBothEnteredOne"][:20]]
+        L += [""]
     L += ["", "## Trades by cohort (trading money only - model cost is separate, below)", "",
           "| Cohort | Symbols | Book | Armed | Fired | Filled | Refused | of which missing data | Net after fees | Fees | Exits |", "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|"]
     for name, label in (("common", "Common symbols (both books armed)"), ("baselineOnly", "Baseline only"), ("experimentOnly", "Experiment only")):
@@ -251,6 +342,16 @@ def render(d: dict) -> str:
     L += ["", "## Model cost (kept apart from trading P&L, never netted into it)", "",
           f"Model cost of preparing the baseline: estimated {g(mcb, 'estimated', 'usd')} USD at the current price card (an estimate, not an invoice; never subtracted from trading results); "
               f"invoice-verified {g(mcb, 'invoiceVerified', 'usd')}; unknown requests {g(mcb, 'unknown', 'requests')}. Experiment: 0 model calls.", ""]
+    pf = d.get("protectiveVsFaults") or {}
+    L += ["", "## Expected protective actions (the policy working)", "", "```", json.dumps(pf.get("expectedProtectiveActions"), indent=1, default=str), "```", "",
+          "## Faults (the machinery not working)", "", "```", json.dumps(pf.get("faults"), indent=1, default=str), "```",
+          "", pf.get("note", ""), ""]
+    e = d.get("exceptionLog") or {}
+    L += ["", "## Exception log (same session, same window)", "",
+          f"Anything to report: **{e.get('anythingToReport')}**. By type: {e.get('byType') or 'none'}. "
+          f"Recorder: {e.get('recorder') or 'no captures'}. Unscorable reasons: {e.get('unscorable') or 'none'}.", ""]
+    L += ([f"- {i['at']} {i['type']} book={i['book']} ours={i['ours']} {i['why']}" for i in (e.get("items") or [])] or ["- no halt, pause, arm refusal or plan error in either EM book"])
+    L += [""]
     rl = d.get("sharedRateLimit") or {}
     L += ["## Shared order-rate window (all desks, one engine)", "",
           f"order_rate rejections this session: {rl.get('orderRateRejections')} {rl.get('byBook') or ''}; busiest submission minute {rl.get('busiestMinute')} with "
