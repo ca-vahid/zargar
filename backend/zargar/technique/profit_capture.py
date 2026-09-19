@@ -277,7 +277,8 @@ def reduce_session(snapshots: list, *, execution_net: float | None = None, trans
     snaps = sorted((s for s in snapshots or [] if s.get("version") == VERSION), key=lambda s: (int(s.get("capturedAt") or 0), int(s.get("seq") or 0)))
     out: dict[str, Any] = {"version": REDUCER_VERSION, "snapshots": len(snaps)}
     if not snaps:
-        out.update({"status": "no_snapshots", "note": "the recorder was off or the book was flat - nothing is inferred"})
+        out.update({"status": "no_snapshots", "note": "the recorder was off or the book was flat - nothing is inferred",
+                    "pairedExits": {"p02": summarize_paired(p02, []), "p06": summarize_paired(p06, [])}})     # the rows exist; their book context is unknown
         return out
     scor = [s for s in snaps if (s.get("book") or {}).get("scorable")]
     disp = [s for s in snaps if (s.get("book") or {}).get("displayedNet") is not None]

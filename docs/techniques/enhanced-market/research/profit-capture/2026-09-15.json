@@ -1,7 +1,7 @@
 {
  "date": "2026-09-15",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T01:06:12.800459+00:00",
+ "asOf": "2026-09-19T01:06:28.283406+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
@@ -61,7 +61,84 @@
   "version": "profit-capture-reducer-v1",
   "snapshots": 0,
   "status": "no_snapshots",
-  "note": "the recorder was off or the book was flat - nothing is inferred"
+  "note": "the recorder was off or the book was flat - nothing is inferred",
+  "pairedExits": {
+   "p02": {
+    "rows": [
+     {
+      "tradeInstance": "1197657a8e7e4adbbc888893f5fd6dfa",
+      "policy": "small-position-exit-v1",
+      "outcome": "unknown",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "542665ac5eaf480790f9906d6bc11d5a",
+      "policy": "small-position-exit-v1",
+      "outcome": "unknown",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "e093e91a944843ffa56c770162e0adf2",
+      "policy": "small-position-exit-v1",
+      "outcome": "unknown",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "5f9ecacaa5ae46f182824a4f9ad95f0c",
+      "policy": "small-position-exit-v1",
+      "outcome": "unknown",
+      "dollarDelta": null,
+      "bookContext": null
+     }
+    ],
+    "withBookContext": 0,
+    "total": 4
+   },
+   "p06": {
+    "rows": [
+     {
+      "tradeInstance": "1197657a8e7e4adbbc888893f5fd6dfa",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "542665ac5eaf480790f9906d6bc11d5a",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "e093e91a944843ffa56c770162e0adf2",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "5f9ecacaa5ae46f182824a4f9ad95f0c",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "93a5baff5c9c44f6a9149512c7d5c2a7",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     }
+    ],
+    "withBookContext": 0,
+    "total": 5
+   }
+  }
  },
  "disputedEvidence": [],
  "retrospective": "generated after the session; not knowledge that was available on the trading day"

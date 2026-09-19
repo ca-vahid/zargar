@@ -1,7 +1,7 @@
 {
  "date": "2026-09-18",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T01:06:14.633874+00:00",
+ "asOf": "2026-09-19T01:06:29.719406+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
@@ -56,7 +56,55 @@
   "version": "profit-capture-reducer-v1",
   "snapshots": 0,
   "status": "no_snapshots",
-  "note": "the recorder was off or the book was flat - nothing is inferred"
+  "note": "the recorder was off or the book was flat - nothing is inferred",
+  "pairedExits": {
+   "p02": {
+    "rows": [],
+    "withBookContext": 0,
+    "total": 0
+   },
+   "p06": {
+    "rows": [
+     {
+      "tradeInstance": "89a0621c595043efa1df26d1cc04bd1e",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "69d8d61cff8a43abb18efbddd2b653bb",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "c7eb04dee3e04a13bf45da8c301d75f8",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "108b944aa3e44645adba66f3ab25c427",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "2666757c4c9441de97984f86365b043b",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     }
+    ],
+    "withBookContext": 0,
+    "total": 5
+   }
+  }
  },
  "disputedEvidence": [],
  "retrospective": "generated after the session; not knowledge that was available on the trading day"

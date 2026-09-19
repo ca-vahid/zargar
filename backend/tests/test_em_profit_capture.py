@@ -270,3 +270,30 @@ async def test_the_recorder_writes_the_em_owned_table():
     assert len(rows) == 1 and rows[0].reason == "fill" and rows[0].causal_run_id == "run-1" and rows[0].payload["version"] == "book-snapshot-v1"
     assert rows[0].portfolio_id == "book" and rows[0].seq == rec["seq"] and rows[0].scorable is True
     await eng.dispose()
+
+
+# ---------------------------------------------------------- P-06 consumer: the sacrificed winner stays, fees reconcile
+def test_p06_consumer_keeps_the_sacrificed_winner_and_reconciles_actual_fees_into_the_book_join():
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    from zargar.tools.em_profitability import runner_protection
+    ny = ZoneInfo("America/New_York")
+    ms = lambda h, m, s=0: int(dt.datetime(2026, 9, 17, h, m, s, tzinfo=ny).timestamp() * 1000)          # noqa: E731
+    bar = lambda ts, o, h, l, c: {"ts": ts, "open": o, "high": h, "low": l, "close": c}                  # noqa: E731
+    ex = lambda oid, ts, q, px, fee: {"order_id": oid, "side": "SELL", "qty": q, "price": px, "commission": fee, "ts": ts}   # noqa: E731
+    bars = [bar(ms(9, 31), 23.6, 23.62, 23.3, 23.34), bar(ms(9, 32), 23.35, 23.6, 23.33, 23.55), bar(ms(9, 33), 23.54, 23.7, 23.5, 23.65)]
+    bars += [bar(ms(9, 34) + i * 60000, 23.4, 23.45, 22.6, 22.7) for i in range(30)]                     # the runner went on to WIN for production
+    exits = [{"kind": "tp1", "orderId": "o-tp1", "qty": 1}, {"kind": "tp2", "orderId": "o-tp2", "qty": 3}]
+    execs = [ex("o-tp1", ms(9, 32, 1), 1, 0.80, 1.04), ex("o-tp2", ms(9, 53, 26), 3, 1.60, 3.12)]        # production sold the runner at 1.60
+    sym, inst = "BMNR260925P00023000", "ENTRY-1"
+    obs = [{"rung": "tp1-reclaim", "tradeInstance": inst, "observedAt": ms(9, 33, 2), "disposition": "observed", "contract": {"symbol": sym, "sourceTs": ms(9, 33, 1), "bid": 0.78, "ask": 0.83},
+            "signal": {"barTs": ms(9, 32)}, "modeled": {"scorable": True, "bid": 0.78, "coveredQty": 3}}]
+    r = runner_protection("short", 23.3548, 23.5906, 23.7501, exits, execs, bars, ms(16, 0), observations=obs, filled_qty=4, multiplier=100.0, instrument="options",
+                          avg_fill=0.86, entry_fee_per_unit=1.04, fee_side=1.04, entry_order_id=inst, contract_symbol=sym, opened_ts=ms(9, 31), closed_ts=ms(9, 53, 26))
+    prod = 3 * ((1.60 - 0.86) * 100 - 1.04) - 3.12                                                      # actual fees: entry per unit + the real exit commission
+    assert r["outcome"] == "compared" and r["productionRealized"] == round(prod, 2) and r["dollarDelta"] < 0, "the alternative SACRIFICED a winner - the row stays in the comparison"
+    snap = _book([_pos(sym=sym, remaining=3, original=4, avg=0.86, realized=-6.0, fees=5.20, ti=inst)], {sym: {**_q(0.78, 0.83), "sourceTs": ms(9, 32, 59)}}, now_ms=ms(9, 33, 0), seq=7)   # captured AT the signal, never after it
+    joined = pc.summarize_paired([{"tradeInstance": inst, "policy": r["policy"], "signalTs": r["signalTs"], "outcome": r["outcome"], "dollarDelta": r["dollarDelta"]}], [snap])
+    ctx = joined["rows"][0]["bookContext"]
+    assert joined["withBookContext"] == 1 and ctx["seq"] == 7 and ctx["status"] == "covered" and joined["rows"][0]["dollarDelta"] == r["dollarDelta"]
+    assert ctx["netCovered"] == round(3 * ((0.78 - 0.86) * 100) - 3 * 1.04, 4), "the book's covered estimate uses the SAME bid and the modeled exit fee once"

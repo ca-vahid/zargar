@@ -1,7 +1,7 @@
 {
  "date": "2026-09-17",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T01:06:14.077515+00:00",
+ "asOf": "2026-09-19T01:06:29.249730+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
@@ -66,7 +66,70 @@
   "version": "profit-capture-reducer-v1",
   "snapshots": 0,
   "status": "no_snapshots",
-  "note": "the recorder was off or the book was flat - nothing is inferred"
+  "note": "the recorder was off or the book was flat - nothing is inferred",
+  "pairedExits": {
+   "p02": {
+    "rows": [
+     {
+      "tradeInstance": "e4d93581fe7648608b0b8b90dcc7efb9",
+      "policy": "small-position-exit-v1",
+      "outcome": "compared",
+      "dollarDelta": -109.0,
+      "bookContext": null
+     }
+    ],
+    "withBookContext": 0,
+    "total": 1
+   },
+   "p06": {
+    "rows": [
+     {
+      "tradeInstance": "12ba5005d91c478880aaee9654ea32dd",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "d9cff60b94e4484eaf358077c2e053fc",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "e4d93581fe7648608b0b8b90dcc7efb9",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "8beb33c9ab5f4d9e93799f226294e8f4",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "underlying_proxy_only",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "458420dc33a141bf977740a0e7dbcce2",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "underlying_proxy_only",
+      "dollarDelta": null,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "db5d720ec151490eb2a2899baed557e5",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "bookContext": null
+     }
+    ],
+    "withBookContext": 0,
+    "total": 6
+   }
+  }
  },
  "disputedEvidence": [
   "ORCL: the 09-17 simulated fill is questioned by the 09-17 review (E17-01 derived-quote producer); the execution ledger is reported as booked and flagged - no replacement price is invented"

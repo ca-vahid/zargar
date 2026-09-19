@@ -1,7 +1,7 @@
 {
  "date": "2026-09-16",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T01:06:13.468582+00:00",
+ "asOf": "2026-09-19T01:06:28.728674+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
@@ -56,7 +56,34 @@
   "version": "profit-capture-reducer-v1",
   "snapshots": 0,
   "status": "no_snapshots",
-  "note": "the recorder was off or the book was flat - nothing is inferred"
+  "note": "the recorder was off or the book was flat - nothing is inferred",
+  "pairedExits": {
+   "p02": {
+    "rows": [
+     {
+      "tradeInstance": "26b611045f784349a32aed0a711b8b51",
+      "policy": "small-position-exit-v1",
+      "outcome": "compared",
+      "dollarDelta": 61.03,
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "ce8a2052cbea44a892e4911d3e6aec18",
+      "policy": "small-position-exit-v1",
+      "outcome": "unknown",
+      "dollarDelta": null,
+      "bookContext": null
+     }
+    ],
+    "withBookContext": 0,
+    "total": 2
+   },
+   "p06": {
+    "rows": [],
+    "withBookContext": 0,
+    "total": 0
+   }
+  }
  },
  "disputedEvidence": [],
  "retrospective": "generated after the session; not knowledge that was available on the trading day"
