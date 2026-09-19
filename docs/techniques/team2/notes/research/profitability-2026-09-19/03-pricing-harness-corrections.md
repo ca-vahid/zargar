@@ -23,6 +23,7 @@ T = the read's decision time, the close of a 2m bar.
 | Contract SELECTION at T | close of the latest option minute that ENDED at or before T | at most 2 minutes old | the strike is not eligible; if none is, the entry is refused: `no_observed_contract_in_band` |
 | Entry EXECUTION after T | open of the first option minute with a print in [T, T+2 min) | 2 minutes | refused: `no_execution_print` |
 | Eligibility recheck at execution | the execution price must still be within [premium floor, target x 1.5 chase cap] (the live order is a limit at the cap) | — | refused: `refused_above_chase_cap` / `refused_below_floor` |
+| Lifecycle timing (limitation) | the read starts the position's clock at T even when the execution print is later; such entries are flagged (`execLagMin` > 0) and every arm comparison is repeated without them (`diffExcludingLaggedEntries`). 1 of about 7,500 arm entries | — | — |
 | Times carried | `observationTs`, `executionTs`, `observedPx`, `execPx`, `execLagMin` on every trade (`pricing` block) and every refusal (`pricingLog`) | — | — |
 | MANAGEMENT mark at a 2m close (premium stop, trim cue, add) | close of the latest option minute INSIDE that 2m bar | 2 minutes | UNKNOWN (NaN): no premium-based decision on that bar; counted |
 | DECISION EXIT (candle stop, premium stop, trim, flatten) at T | open of the first option minute with a print in [T, T+5 min) | 5 minutes | UNKNOWN: the trade is CENSORED and reported apart; never priced |

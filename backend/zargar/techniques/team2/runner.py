@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import datetime as dt
+import json
 import logging
 import time
 from types import SimpleNamespace
@@ -45,6 +46,7 @@ from .rules import apply_overrides, Team2Rules, rules_from_settings
 from .scenario import destination_check, target_is_ahead
 from .session import simulate_session
 from . import diagnostics as diag
+from . import selection_study as study
 
 log = logging.getLogger("zargar.techniques.team2")
 
@@ -264,7 +266,8 @@ class Team2Runner(PlanRunner):
         return {"executionRefused": list(plan.get("executionRefused") or []),
                 "decisionWatermark": self._decision_wm.get(ap.run_id),
                 "decisionLedger": diag.ledger_state(self._ledger_of(ap.run_id)),          # 2026-09-16: the close report's record
-                "diagnostics": self.__dict__.get("_diag", {}).get(ap.run_id)}
+                "diagnostics": self.__dict__.get("_diag", {}).get(ap.run_id),
+                "selectionStudy": self.__dict__.get("_study", {}).get(ap.run_id)}      # S1 collector (default off): pending observations survive a restart
 
     def restore_extras(self, ap: ArmedPlan, state: dict) -> None:
         for tid in (state or {}).get("executionRefused") or []:
@@ -279,6 +282,13 @@ class Team2Runner(PlanRunner):
         if isinstance(dg, dict) and isinstance(dg.get("attempts"), dict):
             pend = [dict(p, status=("pending" if p.get("status") == "inflight" else p.get("status"))) for p in (dg.get("pending") or [])]
             self.__dict__.setdefault("_diag", {})[ap.run_id] = {"attempts": dict(dg["attempts"]), "pending": pend}
+        st = (state or {}).get("selectionStudy")
+        if isinstance(st, dict) and isinstance(st.get("records"), dict):
+            for r_ in st["records"].values():
+                for row_ in r_.get("schedule") or []:
+                    if row_.get("status") == "inflight":
+                        row_["status"] = "pending"
+            self.__dict__.setdefault("_study", {})[ap.run_id] = {"records": dict(st["records"])}
 
     def _entry_time_refusal(self, ap: ArmedPlan, stage: str) -> str | None:
         """R2/E: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
@@ -905,6 +915,7 @@ class Team2Runner(PlanRunner):
                                                         "spot": spot, "selected": pick_symbol, "candidates": cands,
                                                         "listed": qres.get("listed"), "unexamined": qres.get("unexamined"),
                                                         "unpriced": qres.get("unpriced")})
+            self._study_open(ap, tid, rec, cands, spot, shadow=bool(shadow), refusal=refusal, now=now)
         except Exception:  # noqa: BLE001
             log.debug("team2 diagnostic (candidates) failed", exc_info=True)
 
@@ -1004,6 +1015,106 @@ class Team2Runner(PlanRunner):
                     task = asyncio.create_task(self._diag_observe(ap, p), name=f"team2-observe-{ap.symbol}-{p['attempt']}-{p['horizon']}")
                     self.__dict__.setdefault("_diag_tasks", set()).add(task)
                     task.add_done_callback(self.__dict__["_diag_tasks"].discard)
+        self._study_tick(now)
+
+    # ------------------------------------------------------------- selection study S1 (2026-09-19; DEFAULT OFF, order-free)
+    # `techniques.team2.selection_study` = "off" | "collect". Runs only inside the shadow-diagnostics path, after every decision
+    # of the fire has been taken; it reads the attempt record and one fresh quote per due observation and journals. It never
+    # returns a value to a decision path, never touches an order, a position, a plan's state machine or a setting.
+    def _study_on(self) -> bool:
+        try:
+            return str(self.rt("selection_study", "off") or "off").lower() == "collect"
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _study_of(self, run_id: str) -> dict:
+        return self.__dict__.setdefault("_study", {}).setdefault(run_id, {"records": {}})
+
+    def _study_pending(self) -> int:
+        return sum(1 for d in self.__dict__.get("_study", {}).values() for r in d["records"].values()
+                   if any(x.get("status") in ("pending", "inflight") for x in r.get("schedule") or []))
+
+    def _study_open(self, ap: ArmedPlan, tid: str, attempt: dict, cands: list[dict], spot: float, *, shadow: bool,
+                    refusal: str | None, now: int) -> None:
+        if not self._study_on():
+            return
+        try:
+            loc = attempt.get("entryLocation") or {}
+            signal_ts = int(loc.get("signalTs") or 0)
+            if not signal_ts:
+                return
+            setup_id = str(attempt.get("setup") or str(tid).split("#")[0])
+            oid = study.opportunity_id(str(ap.plan_for), ap.symbol, setup_id, signal_ts)
+            d = self._study_of(ap.run_id)
+            if oid in d["records"]:                       # a revision of the same opportunity: the FIRST record stands
+                return
+            bars = [b for b in self._bars.get(ap.run_id, []) if session_date(b.ts) == ap.plan_for]
+            targets = (attempt.get("decisionTime") or {}).get("targets") or []
+            exp = (ap.plan or {}).get("experiment") if isinstance(ap.plan, dict) else None
+            feats = study.features(signal_ts=signal_ts, direction=str(loc.get("direction") or ""), setup_id=setup_id,
+                                   confirmation_close_ts=loc.get("confirmationCloseTs"), atr=loc.get("atr"), bars_1m=bars,
+                                   target=(float(targets[0]) if targets else None), actionable_px=(float(spot) if spot else None))
+            rec = study.open_record(date=str(ap.plan_for), symbol=ap.symbol, setup_id=setup_id, signal_ts=signal_ts,
+                                    book={"portfolioId": ap.config.portfolio_id, "role": str((exp or {}).get("role") or "control"),
+                                          "label": (exp or {}).get("label")},
+                                    trigger=tid, direction=str(loc.get("direction") or ""), feats=feats,
+                                    selected=next((c for c in cands if c.get("selected")), None), shadow=shadow, refusal=refusal,
+                                    recorded_ts=now, pending_now=self._study_pending(),
+                                    inputs={"rulesHash": diag.rules_hash(self.rules_for(ap)), "bars": len(bars)})
+            d["records"][oid] = rec
+            self._diag_emit(ap, "selection_study_open", json.loads(json.dumps(rec, default=str)))            # journaled WHEN OBSERVATION BEGINS (coverage denominator)
+            if rec["status"] == "closed":
+                self._diag_emit(ap, "selection_study_close", json.loads(json.dumps(rec, default=str)))
+        except Exception:  # noqa: BLE001
+            log.debug("team2 selection study (open) failed", exc_info=True)
+
+    def _study_tick(self, now: int) -> None:
+        if not self._study_on():
+            return
+        for ap in list(self._armed.values()) + list(getattr(self, "_closing", {}).values()):
+            d = self.__dict__.get("_study", {}).get(ap.run_id)
+            if not d:
+                continue
+            for rec in d["records"].values():
+                for row in rec.get("schedule") or []:
+                    if row.get("status") != "pending" or int(row["dueTs"]) > now:
+                        continue
+                    if now > int(row["dueTs"]) + study.MAX_LATE_MS:
+                        study.observe(rec, int(row["horizonMin"]), now, None, reason="late: not taken within the window (restart or stall)")
+                        if rec["status"] == "closed":
+                            self._diag_emit(ap, "selection_study_close", json.loads(json.dumps(rec, default=str)))
+                        continue
+                    row["status"] = "inflight"
+                    task = asyncio.create_task(self._study_observe(ap, rec, int(row["horizonMin"])),
+                                               name=f"team2-study-{ap.symbol}-{row['horizonMin']}")
+                    self.__dict__.setdefault("_diag_tasks", set()).add(task)
+                    task.add_done_callback(self.__dict__["_diag_tasks"].discard)
+
+    async def _study_observe(self, ap: ArmedPlan, rec: dict, horizon_min: int) -> None:
+        sym = str((rec.get("entryQuote") or {}).get("contract") or "")
+        q, reason = None, None
+        try:
+            opts = getattr(self.engine, "options", None)
+            refresh = getattr(opts, "refresh_now", None) if opts is not None else None
+            if refresh is None:
+                reason = "options service unavailable"
+            else:
+                qq = await refresh(sym)                  # a NEW observation, never the quote the entry was priced on
+                if qq is None:
+                    reason = "no quote"
+                else:
+                    live = (opts.served_live(sym) if hasattr(opts, "served_live") else True)
+                    q = {"bid": getattr(qq, "bid", None), "ask": getattr(qq, "ask", None),
+                         "priced": str(getattr(qq, "source", "") or "") or ("opra" if live else "chain"),
+                         "quoteTs": (int(getattr(qq, "source_ts", 0) or 0) or None), "receivedTs": getattr(qq, "ts", None)}
+        except Exception as exc:  # noqa: BLE001
+            reason = f"quote service error: {str(exc)[:80]}"
+        try:
+            study.observe(rec, horizon_min, int(time.time() * 1000), q, reason=reason)
+            if rec["status"] == "closed":
+                self._diag_emit(ap, "selection_study_close", json.loads(json.dumps(rec, default=str)))
+        except Exception:  # noqa: BLE001
+            log.debug("team2 selection study (observe) failed", exc_info=True)
 
     async def _diag_observe(self, ap: ArmedPlan, p: dict) -> None:
         d = self._diag_of(ap.run_id)

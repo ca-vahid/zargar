@@ -24,9 +24,12 @@ Findings, in the order they matter:
 2. So when SPY offered the contact Control took at 10:22, C1 had no allowance left. C1 "missed" SPY because of its own earlier,
    unfilled admissions, not because of any difference in the 10:22 read.
 3. C1's QQQ trade is a second-order effect of the same thing: having skipped the SPY loss, it still had room under the two-loss cap.
-4. Consequence for the experiment: **the C1 book does not differ from Control by one factor in practice.** The zone rule changes
-   which contacts fire, which changes allowance consumption, occupancy and the loss counter for the rest of the day. Any C1-versus-Control
-   comparison must attribute admitted, displaced and downstream trades separately, as this table does. One day; no performance conclusion.
+4. Interpretation (corrected after review): **C1 still changes exactly ONE configuration factor**, the no-trade-zone rule. The
+   different allowance consumption, occupancy and loss count, and the later trades they allow or prevent, are DOWNSTREAM EFFECTS of
+   that one change. The experiment therefore measures the effect of the WHOLE POLICY "conjunction zone" on the book, which is a
+   valid one-factor comparison. What it does not isolate is the quality of the newly admitted entries alone: a C1-versus-Control
+   difference mixes admitted, displaced and downstream trades, and reading it as "the new entries are good/bad" needs the
+   attribution this table shows. One day; no performance conclusion.
 5. Whether a refused fire should spend the pullback allowance is a method question I am flagging, not changing.
 
 ## B. What the simplified book simulation reproduces, and what it does not

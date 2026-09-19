@@ -82,6 +82,11 @@ Second half of criterion 1, from the SIMPLIFIED book simulation (not decision-gr
 window): baseline 13,318; H1 11,799; H2 21,824; H3 11,591; H4 5,413; H5 12,276; E1 11,626; E2 5,703; X1 2,788; X2 2,138. Only H2's
 book finishes above the baseline's, and H2 fails the first half.
 
+Timing check (review amendment 3): the harness logs each entry's execution time, but the read's lifecycle (stops, trims, holds) still
+counts from the decision time. Entries executed a minute or more late are therefore flagged and every comparison is repeated
+without them. Across all 26 replay files there is exactly ONE such entry (arm H4, one-minute lag); excluding it moves H4's
+difference from +0.46 to +0.47 (and +0.43 to +0.45 at one tick). The baseline has none.
+
 Censored trades: none in any arm. Probability that the difference is at least +3 points (bootstrap share): at most 0.13 without
 slippage (H2) and 0.34 at one tick (H5).
 

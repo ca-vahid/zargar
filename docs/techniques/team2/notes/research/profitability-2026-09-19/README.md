@@ -12,7 +12,8 @@ the first package, the limitations, the blockers, the reproduction commands and 
 | 4 | Chronological opportunity and book attribution; the C1-versus-Control trace | `04-book-and-opportunity-attribution.md` |
 | 5 | Revised statistics and the nine variant verdicts | `05-statistics-and-variant-verdicts.md` |
 | 6 | Source-grounded author comparison | `06-author-comparison.md` |
-| 7 | Frozen prospective selection-study specification | `07-selection-study-spec.md` |
+| 7 | Frozen prospective selection-study specification (registration `s1-r2`, with the review team's four amendments) | `07-selection-study-spec.md` |
+| 9 | The default-off, order-free collector and its acceptance tests | `08-collector-package.md`, `backend/zargar/techniques/team2/selection_study.py`, `backend/tests/test_team2_selection_study.py` |
 | A | Method-fidelity matrix from the first pass (built from the capture index; page 6 supersedes it where they differ) | `appendix-A-method-fidelity-matrix.md` |
 
 Kept for the record and NOT current: `history-v1/` (the first package's documents), `harness/v1/` and `results/v1/` (its harness and

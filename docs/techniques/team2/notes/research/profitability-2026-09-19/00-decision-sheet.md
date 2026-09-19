@@ -4,6 +4,13 @@ Scope kept: research, harness, documents and tests only, in an isolated worktree
 paused, no sizing changed, no strategy activated, no product pricing replaced, nothing merged to the trading path, nothing deployed.
 C2 key levels were not run on or after 2026-09-14. Test-database lanes agreed with the Cartel desk (mine: `zargar_test_team2`).
 
+## Status after review (2026-09-19)
+
+The review team accepted the revised conclusions, with their limitations, as EXPLORATORY research, and directed the order-free
+study, not another trading variant. Their four amendments are incorporated in `07-selection-study-spec.md` (registration `s1-r2`)
+and the default-off, order-free collector is delivered in `08-collector-package.md`. No variant search, no trading-book change and
+no risk change was made.
+
 ## Decision supported by the evidence
 
 **INSUFFICIENT EVIDENCE of an after-cost edge for the automated Team2 method. No established after-cost edge; negative estimate under
@@ -23,7 +30,7 @@ sentences went beyond the measurement and are withdrawn; section "Corrections" l
 | 4 | The product replay's flat-volatility premium formula reports +21.8% per trade on trades that real prints put between about -4% and 0%. Earlier formula-scored Team2 sweeps, including the modelled columns of the accepted sizing and C1 sheets, are not reliable in level or sign | real prints vs formula, 280 trades |
 | 5 | No directional edge was DETECTED at the actionable price (favourable 49 to 54% at 4 to 120 minutes; mean move 0.00%, +/-0.05% at thirty minutes). A small edge cannot be excluded; option-return intervals are +/-13 points at thirty minutes | descriptive, examined before registration |
 | 6 | Nine registered single-factor variants failed their frozen criterion, before and after the harness correction; ranking unchanged; the holdout was never opened for an arm. H5 (a dearer contract) is the only one with an interval above zero, only at one tick, and for a cost-arithmetic reason | simulated; registrations committed before measurement |
-| 7 | On 2026-09-18 C1 missed SPY because two conjunction-admitted SPY fires, refused for occupancy at 10:14 and 10:16, spent the setup's two-pullback allowance; it then took QQQ because it had one loss where Control had two. C1 does not differ from Control by one factor in practice | journal; independently verifiable |
+| 7 | On 2026-09-18 C1 missed SPY because two conjunction-admitted SPY fires, refused for occupancy at 10:14 and 10:16, spent the setup's two-pullback allowance; it then took QQQ because it had one loss where Control had two. C1 changes one configuration factor; these are downstream effects of it, so the experiment measures the whole policy, not only the quality of the newly admitted entries | journal; independently verified by the review team |
 | 8 | No applicable experiment review level was reached on 2026-09-18 (Sizing $549 vs $800; C1 $816 vs $1,000; Control has none). `equity_points` is a 30-second mid-marked series, the monitor a 30-minute bid-marked one; neither is continuous | runtime records |
 | 9 | Against five documented author executions and one illustrated area, our read had the same scenario each time and held none of his trades; the visible causes are our target derivation, the pre-market no-trade zone, the engulfing filter, and exits plus the loss cap. Only ONE of his entries has a timestamp, NONE has a price, and his record has no priced loser | source images inspected directly (09-18 excepted) |
 
@@ -76,7 +83,7 @@ python $H/author_trace.py <DATA> <RUNDIR>/all_base_s0_proxy.json
 
 Cached inputs: `<DATA>` = `SPY_1m.json`, `QQQ_1m.json`, `IWM_1m.json`, `vix1d.csv`, `opt/` (3,385 contract-day files), about 80 MB, not in
 the repository; identities on page 2 and in `results/manifest_all_base_s0_proxy.json`. Output identities:
-`results/replay_file_identities.sha256`. **Independently verified by someone other than me: nothing yet.** Independently VERIFIABLE
+`results/replay_file_identities.sha256`. **Independently verified by the review team (2026-09-19): the eight pricing-boundary tests pass, and the C1 journal trace (10:14 and 10:16 occupancy refusals, allowance exhausted at 10:22). NOT independently reproduced: the 93-session results.** Independently VERIFIABLE
 without my harness: findings 1, 7 and 8 (runtime database and journal). Everything else is developer-reported.
 
 ## Acceptance checklist
@@ -88,4 +95,5 @@ without my harness: findings 1, 7 and 8 (runtime database and journal). Everythi
 5. Page 1 counts legs, round trips and opportunities separately and does not treat three books as three cases.
 6. Page 6 cites the image behind every row and labels each entry's evidence class; no chart arrow is treated as a fill.
 7. Page 7 fixes features, identity, primary outcome, quote validity, clustering, Holm correction, per-side minimums, deadline and the insufficient-evidence outcome, and states the schema limitation.
-8. `git diff main --stat` touches only: the package, `backend/zargar/techniques/team2/{session,rules}.py` (two default-off research knobs, unchanged in this pass), one test file, and documentation. No settings, migrations, frontend or version files.
+8. The collector package has its own checklist in `08-collector-package.md` (12 acceptance tests; default off; order-free).
+9. `git diff main --stat` touches only: the package, `backend/zargar/techniques/team2/{session,rules}.py` (two default-off research knobs), the collector (`selection_study.py`, its wiring in `runner.py`, one default in `settings_service.py`), two test files, and documentation. No settings, migrations, frontend or version files.

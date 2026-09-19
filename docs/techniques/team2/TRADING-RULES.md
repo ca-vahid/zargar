@@ -3690,3 +3690,21 @@ The review found that the first package's strongest sentences exceeded its measu
   monitor marks on the fresh bid and its high-water mark stayed at 10,000.
 - Next step on the table: the frozen order-free selection study (`notes/research/profitability-2026-09-19/07-selection-study-spec.md`). No trading arm.
 
+### 2026-09-19 (review verdict) - Conclusions accepted as exploratory; selection-study collector delivered DEFAULT OFF
+
+- Review team: the revised conclusions are accepted WITH THEIR LIMITATIONS as exploratory research; the direction is the order-free
+  study, not another trading variant. They independently verified the eight pricing-boundary tests and the C1 journal trace; the
+  93-session results are not independently reproduced.
+- **F133 interpretation corrected (review):** C1 changes ONE configuration factor. The different allowance consumption, occupancy,
+  loss count and later trades are downstream effects of that change. The experiment measures the whole policy's effect; it does not
+  isolate the quality of the newly admitted entries. The earlier sentence "C1 does not differ from Control by one factor" is withdrawn.
+- Four amendments incorporated in registration `s1-r2` (`notes/research/profitability-2026-09-19/07-selection-study-spec.md`):
+  book-independent opportunity identity (the contact bar's close time, never a per-book contact number); a pass requires a POSITIVE
+  improvement with its interval above zero, and one frozen rule chooses among several passers; entry-quote delay and every horizon
+  clock defined on the quote's SOURCE time; records journaled when observation BEGINS so crashes, disarms and unfinished follow-ups
+  stay in the coverage denominator.
+- Collector built: `techniques/team2/selection_study.py` + `_study_*` hooks in the runner's shadow-diagnostics path, switch
+  `techniques.team2.selection_study` = `off` (default) | `collect`. Order-free, never a decision input, not an experiment override.
+  12 acceptance tests (`tests/test_team2_selection_study.py`). NOT enabled and NOT deployed: that needs a reviewed deployment and one
+  setting change. No rule, sizing, protection, experiment book or product pricing changed; no variant search.
+

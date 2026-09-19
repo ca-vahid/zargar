@@ -60,6 +60,8 @@ v0.8.02: a quote is evidence only when live, sane and fresh by its own source ti
 > 95%: -7.9 to +0.8) at the books' fee, about zero with no fee, -7.6% at one tick per leg; the print proxy itself errs by about three
 > cents per leg against our fills. Nine preregistered variants failed their criterion. The product replay's premium formula reports
 > +22% on the same trades, so formula-scored sweep figures below are unreliable. Control / Sizing 0.5 / C1 were left untouched.
+> Next step, accepted by the review team: the ORDER-FREE selection study. Its collector is built and DEFAULT OFF
+> (`techniques.team2.selection_study`, `notes/research/profitability-2026-09-19/08-collector-package.md`); it is not enabled or deployed.
 
 **Where the desk stands.** Team2 trades its own Practice book (`Team2 Practice`, $10,000 start, sim fills on live NBBO)
 in `auto` mode since 2026-09-08 (auto on the shared Practice book from 2026-09-04). Live release **v0.7.94** (deployed

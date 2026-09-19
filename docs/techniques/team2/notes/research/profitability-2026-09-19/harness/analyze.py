@@ -19,7 +19,8 @@ def trades(path, a, b):
             if t.get("censored") or (isinstance(t["pnlPct"], float) and math.isnan(t["pnlPct"])):
                 cens += 1
                 continue
-            out.append({"date": r["date"], "symbol": r["symbol"], "pnl": float(t["pnlPct"]), "setup": t["setup"], "entryTs": t["entryTs"]})
+            out.append({"date": r["date"], "symbol": r["symbol"], "pnl": float(t["pnlPct"]), "setup": t["setup"], "entryTs": t["entryTs"],
+                        "lag": int(((t.get("pricing") or {}).get("execLagMin")) or 0)})
     return out, cens, sorted(days), d.get("meta", {})
 
 
@@ -92,7 +93,12 @@ def pair(base, arm, a, b, label):
             "diffCiDateClustered95": ci(diffs), "influentialDates": infl, "diffWithout3MostInfluentialDates": round(d_ex, 2), "pDiffAtLeast3": round(sum(x >= 3 for x in diffs) / len(diffs), 3),
             "commonEntries": len(common), "commonBaseMean": round(mb, 2), "commonArmMean": round(ma, 2),
             "entriesOnlyInArm": [len(only_a), round(st.mean(only_a), 2) if only_a else None],
-            "entriesOnlyInBase": [len(only_b), round(st.mean(only_b), 2) if only_b else None], "overrides": meta.get("overrides")}
+            "entriesOnlyInBase": [len(only_b), round(st.mean(only_b), 2) if only_b else None], "overrides": meta.get("overrides"),
+            # timing check: an entry executed a minute or more after its decision keeps the DECISION timestamp inside the read's
+            # lifecycle (stops, trims and holds are counted from T, not from the execution print), so it is flagged and the
+            # comparison is repeated without it
+            "laggedEntriesBase": sum(1 for t in TB if t["lag"] > 0), "laggedEntriesArm": sum(1 for t in TA if t["lag"] > 0),
+            "diffExcludingLaggedEntries": round(st.mean([t["pnl"] for t in TA if t["lag"] == 0]) - st.mean([t["pnl"] for t in TB if t["lag"] == 0]), 2)}
 
 
 if sys.argv[1] == "one":
