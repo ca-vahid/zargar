@@ -3784,3 +3784,14 @@ sealed artifact with later data drift stays valid (exit 0) and the drift is repo
 (pure, seven mutations) and `test_the_real_cli_verify_fails_on_an_edited_or_missing_payload_but_not_on_drift` (the real CLI on the
 desk's test database). Packet 89 passed, full Team2 + reviewer + `test_platform_phase3.py` 486 passed. Registration `s1-r4` and its
 hashes unchanged; no collector, study or trading change. Activation stays held.
+
+### 2026-09-19 - Selection study S1 (`s1-r4`) ACCEPTED; collector stays off pending deployment and activation approval
+
+Review verdict: the package is accepted with its documented limitations; no further development and no historical rerun are
+requested for this acceptance scope. It is ready for a SEPARATE merge and deployment approval with the collector OFF, and
+ACTIVATION remains a separate decision taken only after the deployed build, the plan restoration and the registration have been
+verified (`notes/research/profitability-2026-09-19/09-release-handoff.md` section 5). After activation the desk monitors counts,
+coverage and collector health ONLY, until the frozen endpoint (the close of the 60th counted session or of 2026-12-18). Trading
+books, risk settings, product pricing and C2's sealed window stay unchanged. Accepted state: PR #223 at `aa495b47` (registration
+`s1-r4`, hash `13b2bcc18bbbf5fa`; it also contains PR #224's event contract), selection packet 89 passed, full Team2 + reviewer +
+`test_platform_phase3.py` 486 passed. Nothing is enabled or deployed by this acceptance.

@@ -6,6 +6,10 @@ C2 key levels were not run on or after 2026-09-14. Test-database lanes agreed wi
 
 ## Status after review (2026-09-19)
 
+**Final: the selection-study package is ACCEPTED with its documented limitations (review team, 2026-09-19).** Awaiting a separate
+merge and deployment approval; the collector stays OFF and activation is a separate decision afterwards. The research conclusions
+below are unchanged and remain exploratory.
+
 The research conclusions were accepted as EXPLORATORY. The passive collector's corrections were accepted. The final integration pass
 is delivered in `09-release-handoff.md`: registration `s1-r4` (hash `13b2bcc18bbbf5fa`), a lifecycle and session accounting derived
 purely from durable records, the registered endpoint, the frozen and reproducible final sample, and one acceptance packet (78 tests;

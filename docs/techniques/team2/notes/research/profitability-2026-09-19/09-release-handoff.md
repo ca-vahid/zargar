@@ -1,5 +1,11 @@
 # 9. Selection study S1: release handoff (registration `s1-r4`)
 
+> **ACCEPTED by the review team (2026-09-19)**, with the documented limitations, for this acceptance scope: no further development
+> and no historical rerun. The package is ready for a SEPARATE merge and deployment approval, with the collector kept OFF.
+> ACTIVATION stays a separate decision, taken only after the deployed build, the plan restoration and the registration have been
+> verified (section 5). Once activated, monitor counts, coverage and collector health ONLY until the frozen endpoint (section 6).
+> Trading books, risk settings and C2 stay unchanged throughout.
+
 **Verdict: READY WITH STATED LIMITATIONS** (after the release-review corrections of 2026-09-19: the operator CLI's event-loop
 ownership, journal-order precedence before canonical hashing, an immutable first finalization, and artifact integrity, where the
 saved manifest and report are hashed before any comparison). The code is complete and passes its acceptance packet and the required suites on the

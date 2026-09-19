@@ -1,6 +1,7 @@
 # Team2 profitability study: acceptance package (correction and validation pass, 2026-09-19)
 
-**Read `00-decision-sheet.md` first.** It holds the decision, the accepted findings with their evidence class, every correction to
+**Read `00-decision-sheet.md` first.** The selection-study package (pages 7 to 9) is ACCEPTED (2026-09-19) and waiting for a
+separate merge, deployment and activation approval; the collector is OFF. It holds the decision, the accepted findings with their evidence class, every correction to
 the first package, the limitations, the blockers, the reproduction commands and the acceptance checklist.
 
 | # | Deliverable | File |
