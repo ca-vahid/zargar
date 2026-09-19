@@ -255,6 +255,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_feasibility_gate": "annotate",  # PROF-01: annotate (record the expression check beside the verdict) | downgrade (an unfittable TAKE becomes WATCH; thesis verdict kept) - a reviewed method decision flips it
     "techniques.tip.entry_cohort_delay_tolerance_seconds": 60.0,  # KF83-03: a delayed sample observed later than due + tolerance is LATE (diagnostic, never the delay variant's evidence)
     "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
+    "techniques.tip.analyst_max_pending_rules": 6,      # D4 (2026-09-19): pending/disputed rule PROPOSALS shown per run in a separate NON-operative channel (newest first; 0 = none). They never consume the operative budget below
     "techniques.tip.analyst_max_rules": 50,             # rulebook budget per run: CORE (pinned) rules always, then newest (KB-04)
     "techniques.tip.knowledge_maintenance_at": "17:25", # ET, EVERY day incl. weekends; runs the audit on rule_audit_day or as catch-up (KB-01)
     "techniques.tip.knowledge_audit_max_groups": 12,    # scope groups per maintenance run; the rest are deferred VISIBLY, least-recently-audited first (KB-04)

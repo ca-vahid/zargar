@@ -998,6 +998,9 @@ async def attach_tip_runner(engine) -> None:
     engine.techniques.setdefault("tip", engine.tip_runner)
     try:
         restored = await engine.tip_runner.restore()
+        # ECON-03: only a COMPLETED restore makes the armed set authoritative (the intake review gate reads it;
+        # a failed or in-flight restore leaves this False and the gate keeps reviewing)
+        engine.tip_runner.restore_complete = True
         if restored:
             log.info("tip runner restored %d armed plan(s)", restored)
     except Exception:  # pragma: no cover - restore must never block startup

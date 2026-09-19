@@ -63,3 +63,18 @@ No full public-feed coverage, exact author replication, broker-verified author r
 Current completion: [September 18 diagnostics and provider reconstruction](DIAGNOSTICS-2026-09-18.md).
 
 Data repair: [Verified provider intervals](VERIFIED-INTERVALS.md).
+
+### September 19 historical scope revision
+
+The user removed waiting for future market evidence from the implementation goal.
+See the [historical six-model evaluation](reviews/2026-09-19-historical-lab/README.md)
+and [revised acceptance audit](METHOD-LAB-ACCEPTANCE-AUDIT.md). Keep current
+execution settings: the historical sample does not establish a profitable
+challenger. The existing forward collector remains optional observation.
+
+### Profitability accountability and Monday action
+
+The historical study did not change trading behavior or prove profitability.
+See [the September 19 correction and concrete Monday action](MONDAY-ACTION-2026-09-21.md).
+The priority proposed change is an affordability-only Practice shares fallback
+within the existing $500 budget. It is not enabled merely by documenting it.
