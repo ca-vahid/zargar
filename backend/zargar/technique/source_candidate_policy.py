@@ -204,3 +204,52 @@ def table_row(c: dict, baseline: dict | None = None) -> dict:
             "targets": g.get("targets"), "disposition": c.get("disposition"), "reason": c.get("reason"), "firedTs": c.get("firedTs"),
             "outcomeProxy": (c.get("outcomeProxy") or {}).get("outcome"), "rProxy": (c.get("outcomeProxy") or {}).get("rMultiple"),
             "baseline": baseline, "orderFree": True, "origin": c.get("origin")}
+
+
+def evaluate_session(*, payloads: list, plans_by_symbol: dict, bars_by_symbol: dict, baseline_by_symbol: dict | None, session: str,
+                     upto_ts: int | None = None, thresholds_by_symbol: dict | None = None, profiles_by_symbol: dict | None = None,
+                     policy_by_run: dict | None = None, prev_close_by_symbol: dict | None = None) -> list:
+    """The ONE evaluator the forward loop and the replay tool share. Pure: scenarios (A) + saved plans + the policy records
+    (B) + closed bars -> candidates of both variants with their dispositions. `plans_by_symbol[sym]` = [{runId, createdAt,
+    trigger(origin), plan}], newest last; `baseline_by_symbol[sym]` = [{trigger, direction, status, ts, entry}] of the
+    BASELINE trackers (read-only). Missing bars = the candidate stays `waiting` with `barsCoverage: none` - never guessed."""
+    from . import source_scenarios as _ss
+    out = []
+    for payload in payloads or []:
+        for sc in payload.get("scenarios") or []:
+            sym = (sc.get("symbol") or {}).get("resolved")
+            plans = (plans_by_symbol or {}).get(sym) or []
+            best_plan, best_match = None, None
+            for p in plans:
+                m = _ss.match_plan(sc, payload, p.get("plan") or {}, plan_built_at=p.get("createdAt"), plan_origin=p.get("trigger"))
+                if best_match is None or (m["alignedTrigger"] and not best_match["alignedTrigger"]):
+                    best_plan, best_match = p, m
+            pol = (policy_by_run or {}).get((best_plan or {}).get("runId"))
+            cand = build_candidate(scenario=sc, payload=payload, match=best_match, plan=(best_plan or {}).get("plan"), policy_record=pol, session=session)
+            cand["planRunId"] = (best_plan or {}).get("runId"); cand["matchOverall"] = (best_match or {}).get("overall")
+            bars = (bars_by_symbol or {}).get(sym) or []
+            th = (thresholds_by_symbol or {}).get(sym); prof = (profiles_by_symbol or {}).get(sym); pc = (prev_close_by_symbol or {}).get(sym)
+            if cand["disposition"] == "waiting":
+                if bars:
+                    cand = evaluate(cand, bars, thresholds=th, profile=prof, prev_close=pc, upto_ts=upto_ts)
+                else:
+                    cand["barsCoverage"] = "none"
+            base = [b for b in ((baseline_by_symbol or {}).get(sym) or []) if b.get("direction") == sc["authorSupplied"].get("direction")]
+            cand["baseline"] = base
+            out.append(cand)
+            dead = next((b for b in sorted(base, key=lambda b: int(b.get("ts") or 0)) if b.get("status") in rq.TERMINAL_UNFIRED), None)
+            if sym and dead is not None and sc.get("disposition") == "candidate_source":
+                if bars:
+                    child = requalify(scenario=sc, payload=payload, baseline_trigger_state=dead, bars=bars, session=session, thresholds=th, upto_ts=upto_ts)
+                    if child.get("disposition") == "requalification_eligible":
+                        ev = evaluate({**child, "source": {}}, bars, thresholds=th, profile=prof, prev_close=None, upto_ts=upto_ts)
+                        child = {**child, **{k: ev[k] for k in ("disposition", "firedTs", "fillProxy", "outcomeProxy", "pricingGates", "reason", "barsConsumed") if k in ev}}
+                        if child["disposition"] == "requalification_eligible" and ev.get("disposition") == "requalification_eligible":
+                            child["disposition"] = "requalification_eligible"          # confirmed structure, break not (yet) triggered
+                else:
+                    child = {"version": rq.VERSION, "variant": "requalification", "candidateId": rq.child_id(sc["scenarioId"], session), "parentScenarioId": sc["scenarioId"],
+                             "origin": f"scenario:{sc['scenarioId']}", "orderFree": True, "symbol": sym, "direction": sc["authorSupplied"].get("direction"),
+                             "disposition": "waiting", "barsCoverage": "none", "reason": "no session bars - unknown, not assumed"}
+                child["baseline"] = base
+                out.append(child)
+    return out

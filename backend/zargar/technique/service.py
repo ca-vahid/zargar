@@ -2242,11 +2242,27 @@ class TechniqueService:
         if getattr(self, "_sheet_task", None) is None:
             self._sheet_task = asyncio.create_task(self._sheet_loop(), name="technique-sheet-auto")
         self.armer.start()
+        if getattr(self, "_source_cand_task", None) is None:      # integrated plan C: order-free forward evaluator, knob default OFF
+            self._source_cand_task = asyncio.create_task(self._source_candidates_loop(), name="em-source-candidates")
         with contextlib.suppress(Exception):
             self.engine.scheduler.register("em_option_liquidity", str(self.engine.settings.get("technique.universe.liquidity_at", "16:40")),
                                            lambda: self.refresh_option_liquidity())
         if self._restore_task is None:
             self._restore_task = asyncio.create_task(self._restore_armed(), name="technique-armer-restore")
+
+    async def _source_candidates_loop(self) -> None:
+        """Once a minute: the ORDER-FREE source-candidate evaluator. With the knob OFF (default) a pass is one settings read.
+        Never raises, never touches an armed plan, never fetches a chain, never places or arms anything."""
+        import time as _time
+        from .source_candidates_runtime import tick
+        while True:
+            await asyncio.sleep(60.0)
+            try:
+                await tick(self, int(_time.time() * 1000))
+            except asyncio.CancelledError:
+                raise
+            except Exception:                              # noqa: BLE001
+                log.exception("source-candidate pass failed")
 
     # ---------------------------------------------------------- C1: option-liquidity screen (2026-09-12)
     async def refresh_option_liquidity(self) -> dict:
@@ -2361,7 +2377,7 @@ class TechniqueService:
             log.exception("re-arming plans failed")
 
     async def stop(self) -> None:
-        names = ("_scan_task", "_outcome_task", "_sheet_task", "_restore_task", "_orphan_task")
+        names = ("_scan_task", "_outcome_task", "_sheet_task", "_restore_task", "_orphan_task", "_source_cand_task")
         tasks = {t for t in [*self._running.values(), *self._sweeps.values(),
                             *(getattr(self, name, None) for name in names)]
                  if t is not None and t is not asyncio.current_task()}

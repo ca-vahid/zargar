@@ -611,6 +611,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     # --- technique pipeline + chat ------------------------------------------------
     from .routes_technique import build_technique_routes
     build_technique_routes(app, eng, auth, config)
+    from .routes_em_review import build_em_review_routes
+    build_em_review_routes(app, eng, auth)     # EM integrated review (2026-09-18): read-only
 
     from .routes_options import build_options_routes
     build_options_routes(app, eng, auth, config)
