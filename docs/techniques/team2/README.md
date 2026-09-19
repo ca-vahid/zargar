@@ -55,10 +55,11 @@ v0.8.02: a quote is evidence only when live, sane and fresh by its own source ti
 
 ## Status (2026-09-16)
 
-> **2026-09-19 profitability study (read this first): `notes/research/profitability-2026-09-19/README.md`.** On real option prints the automated method
-> shows no after-cost edge (333 replayed trades, -3.8% per trade, interval -7.6 to +0.1; direction at the actionable price is a coin
-> flip), nine preregistered changes were rejected, and the replay's premium formula was found to turn that loss into a +22% gain, so
-> every earlier sweep figure below is unscored until re-run on real prints. Control / Sizing 0.5 / C1 were left untouched.
+> **2026-09-19 profitability study, corrected pass (read this first): `notes/research/profitability-2026-09-19/00-decision-sheet.md`.** Decision:
+> INSUFFICIENT EVIDENCE of an after-cost edge. Simulated on real option prints the baseline's mean is -3.7% per trade (date-clustered
+> 95%: -7.9 to +0.8) at the books' fee, about zero with no fee, -7.6% at one tick per leg; the print proxy itself errs by about three
+> cents per leg against our fills. Nine preregistered variants failed their criterion. The product replay's premium formula reports
+> +22% on the same trades, so formula-scored sweep figures below are unreliable. Control / Sizing 0.5 / C1 were left untouched.
 
 **Where the desk stands.** Team2 trades its own Practice book (`Team2 Practice`, $10,000 start, sim fills on live NBBO)
 in `auto` mode since 2026-09-08 (auto on the shared Practice book from 2026-09-04). Live release **v0.7.94** (deployed

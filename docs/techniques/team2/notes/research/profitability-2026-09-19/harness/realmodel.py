@@ -1,21 +1,39 @@
-"""OFFLINE RESEARCH ONLY. A PremiumModel whose marks are REAL option prints (Alpaca 1m trade bars, disk-cached), so the
-pure session read chooses strikes, trims, premium-stops and books P&L on real prices. No price is ever invented: a contract
-with no print in the allowed window is simply not eligible (pick) or carries its last real print (management).
+"""OFFLINE RESEARCH ONLY (v2, 2026-09-19 correction pass). A PremiumModel whose marks are REAL option TRADE PRINTS
+(Alpaca 1m option trade bars, disk-cached). These are prints, not quotes and not fills: every number produced with this
+model is a SIMULATED EXECUTION ON REAL PRINTS.
 
-Price conventions (validated against the desk's 16 actual fills: fill - minute open has median 0.00):
-  decision-time marks (entry, strike pick, stop/trim/flatten exits at a 2m close) = OPEN of the option minute that starts at
-      the decision time (first print after the decision); up to FWD minutes forward when that minute has no print.
-  target-touch exits (the session books them intrabar)       = VWAP of the option minute in which the underlying touched.
-  management marks at a 2m close (P1 / trim cues / adds)      = CLOSE of the bar's second minute, else the last earlier print.
+Frozen conventions (see 02-input-and-coverage-manifest.md, "Pricing conventions"):
+
+  T            = the read's decision time = the CLOSE of a 2m bar (a multiple of two minutes).
+  SELECTION    uses only prints that existed at T: for each ladder strike the CLOSE of the latest option minute that
+               ENDED at or before T, no older than SEL_AGE_MIN minutes. A strike with no such print is not eligible.
+  EXECUTION    (entry) happens after T: the OPEN of the first option minute with a print in [T, T+EXEC_WINDOW_MIN).
+               The order is a limit at the chase cap (target_premium x 1.5), so an execution print above the cap or
+               below the premium floor is NO FILL and the entry is refused (time-dependent eligibility). Observation
+               time, execution time and both prices are logged for every entry.
+  MANAGEMENT   mark at a 2m close = the CLOSE of the latest option minute inside that same 2m bar (age <= 2 minutes).
+               Otherwise the mark is UNKNOWN (NaN): the read takes no premium-based decision on that bar.
+  DECISION EXITS (candle stop, premium stop, trims, flatten) at T = the OPEN of the first option minute with a print
+               in [T, T+EXIT_WINDOW_MIN). None -> UNKNOWN (NaN): the trade is CENSORED, never priced at zero.
+  TARGET EXITS the read books a target inside the 2m bar that ends at T. Intraminute order is unknown, so three
+               scenarios are produced, never one "fill": `proxy` = VWAP of the option minute in which the underlying
+               first touched; `conservative` = a decision exit at T (the bar close); `optimistic` = the HIGH of the
+               touch minute. A touch minute without a print falls back to `conservative`.
+No price is ever invented, carried beyond its permitted age, or replaced by zero.
 """
-import json, sys, pathlib, datetime as dt
-import httpx
+import json, sys, math, pathlib, datetime as dt, time as _time
 from dataclasses import dataclass
 from zargar.techniques.team2 import premium as _p
 
 MIN = 60_000
+SEL_AGE_MIN = 2
+EXEC_WINDOW_MIN = 2
+EXIT_WINDOW_MIN = 5
 URL = "https://data.alpaca.markets/v1beta1/options/bars"
-CTX = {"symbol": None, "date": None, "data": None, "headers": None, "und": None, "http": None, "fetched": 0}
+NAN = float("nan")
+CTX = {"symbol": None, "date": None, "data": None, "headers": None, "und": None, "http": None, "fetched": 0,
+       "touch_mode": "proxy", "ladder": 14, "offline": False}
+LOG: list[dict] = []          # one row per entry attempt (selected or refused) and per unknown mark
 _mem: dict[str, dict] = {}
 
 
@@ -24,21 +42,25 @@ def occ(sym, date, call, strike):
     return f"{sym}{d:%y%m%d}{'C' if call else 'P'}{int(round(strike * 1000)):08d}"
 
 
-def _load(symbols: list[str]) -> None:
+def _index(rows):
+    return {int(dt.datetime.fromisoformat(r["t"].replace("Z", "+00:00")).timestamp() * 1000): r for r in rows}
+
+
+def _load(symbols):
     need = []
     for o in symbols:
         if o in _mem:
             continue
-        p = CTX["data"] / "opt" / f"{o}.json"
-        if p.exists():
+        p = CTX["data"] / "opt" / f"{o}.json" if CTX["data"] else None
+        if p is not None and p.exists():
             _mem[o] = _index(json.loads(p.read_text()))
         else:
             need.append(o)
     if not need:
         return
-    date = CTX["date"]
-    got = {o: [] for o in need}
-    token = None
+    if CTX["offline"]:
+        raise RuntimeError(f"offline run needs cached contracts: {need[:3]}... ({len(need)})")
+    date, got, token = CTX["date"], {o: [] for o in need}, None
     while True:
         q = {"symbols": ",".join(need), "timeframe": "1Min", "start": date + "T13:00:00Z", "end": date + "T21:00:00Z", "limit": 10000}
         if token:
@@ -46,8 +68,7 @@ def _load(symbols: list[str]) -> None:
         for attempt in range(6):
             r = CTX["http"].get(URL, params=q, headers=CTX["headers"])
             if r.status_code == 429:
-                import time
-                time.sleep(3 + 3 * attempt)
+                _time.sleep(3 + 3 * attempt)
                 continue
             break
         r.raise_for_status()
@@ -63,37 +84,47 @@ def _load(symbols: list[str]) -> None:
         CTX["fetched"] += 1
 
 
-def _index(rows):
-    return {int(dt.datetime.fromisoformat(r["t"].replace("Z", "+00:00")).timestamp() * 1000): r for r in rows}
-
-
-def decision_px(o: str, ts: int, fwd: int = 2):
+def observed_px(o, T, max_age_min=SEL_AGE_MIN):
+    """Latest print that EXISTED at T: close of an option minute that ended at or before T. -> (price, print_minute_ts) | (None, None)"""
     b = _mem[o]
-    t0 = (ts // MIN) * MIN
-    for k in range(fwd + 1):
+    t0 = (T // MIN) * MIN
+    for k in range(1, max_age_min + 1):
+        r = b.get(t0 - k * MIN)
+        if r:
+            return float(r["c"]), t0 - k * MIN
+    return None, None
+
+
+def exec_px(o, T, window_min):
+    """First print AFTER the decision: open of the first option minute with a print in [T, T+window). -> (price, ts) | (None, None)"""
+    b = _mem[o]
+    t0 = (T // MIN) * MIN
+    for k in range(window_min):
         r = b.get(t0 + k * MIN)
         if r:
-            return float(r["o"])
-    return None
+            return float(r["o"]), t0 + k * MIN
+    return None, None
 
 
-def last_px(o: str, ts_end: int, back: int = 5):
-    """The last real print at or before the END of the 2m bar (ts_end exclusive)."""
+def bar_mark(o, bar_open_ts):
+    """Management mark for the 2m bar [t, t+2m): the latest print INSIDE it. Older prints are not carried."""
     b = _mem[o]
-    t0 = (ts_end // MIN) * MIN - MIN
-    for k in range(back + 1):
-        r = b.get(t0 - k * MIN)
+    for t in (bar_open_ts + MIN, bar_open_ts):
+        r = b.get(t)
         if r:
             return float(r["c"])
     return None
 
 
-def touch_px(o: str, ts_end: int, target: float, long: bool):
+def touch_px(o, T, target, long, mode):
     u, b = CTX["und"], _mem[o]
-    for t0 in (ts_end - 2 * MIN, ts_end - MIN):
+    for t0 in (T - 2 * MIN, T - MIN):
         r = u.get(t0)
-        if r and ((r["h"] >= target) if long else (r["l"] <= target)) and b.get(t0):
-            return float(b[t0]["vw"])
+        if r and ((r["h"] >= target) if long else (r["l"] <= target)):
+            ob = b.get(t0)
+            if ob is None:
+                return None
+            return float(ob["h"] if mode == "optimistic" else ob["vw"])
     return None
 
 
@@ -103,39 +134,64 @@ class RealPremiumModel(_p.PremiumModel):
         o = occ(CTX["symbol"], CTX["date"], call, strike)
         _load([o])
         fr = sys._getframe(1)
-        name = fr.f_code.co_name
-        if name == "close_fraction":
+        if fr.f_code.co_name == "close_fraction":
             reason = str(fr.f_locals.get("reason") or "")
             px = None
-            if "touched" in reason:
-                px = touch_px(o, ts_ms, float(spot), call)
+            if "touched" in reason and CTX["touch_mode"] != "conservative":
+                px = touch_px(o, ts_ms, float(spot), call, CTX["touch_mode"])
             if px is None:
-                px = decision_px(o, ts_ms)
+                px, _ = exec_px(o, ts_ms, EXIT_WINDOW_MIN)
             if px is None:
-                px = last_px(o, ts_ms + MIN)
-            return px if px is not None else 0.0
-        # management mark: called with the 2m bar's OPEN ts; the bar ends 2 minutes later
-        px = last_px(o, ts_ms + 2 * MIN)
-        return px if px is not None else 0.0
+                LOG.append({"kind": "exit_unknown", "symbol": CTX["symbol"], "date": CTX["date"], "occ": o, "ts": ts_ms, "reason": reason[:60]})
+                return NAN
+            return px
+        px = bar_mark(o, ts_ms)                      # management: called with the 2m bar's OPEN ts
+        if px is None:
+            LOG.append({"kind": "mark_unknown", "symbol": CTX["symbol"], "date": CTX["date"], "occ": o, "ts": ts_ms})
+            return NAN
+        return px
+
+    def buy(self, mark):
+        return _p.Fill(premium=NAN, fee_per_contract=self.fee_per_contract) if isinstance(mark, float) and math.isnan(mark) else super().buy(mark)
+
+    def sell(self, mark):
+        return _p.Fill(premium=NAN, fee_per_contract=self.fee_per_contract) if isinstance(mark, float) and math.isnan(mark) else super().sell(mark)
 
     def pick_strike(self, spot, ts_ms, direction, *, target_premium, premium_floor, step=1.0, expiry=None,
                     max_steps=40, mode="closest", strikes=None):
         call = direction == "long"
         ladder = _p.otm_ladder(spot, call, step=step, strikes=strikes, max_steps=CTX.get("ladder", 14))
-        if CTX.get("itm_steps"):
-            first = ladder[0]
-            ladder = [first - (i + 1) * step if call else first + (i + 1) * step for i in range(CTX["itm_steps"])][::-1] + ladder
         _load([occ(CTX["symbol"], CTX["date"], call, k) for k in ladder])
-        cands = []
+        cap = target_premium * _p.MAX_OVER_TARGET
+        cands, unseen = [], 0
         for k in ladder:
-            m = decision_px(occ(CTX["symbol"], CTX["date"], call, k), ts_ms)
+            m, mts = observed_px(occ(CTX["symbol"], CTX["date"], call, k), ts_ms)
             if m is None:
+                unseen += 1
                 continue
-            if premium_floor <= m <= target_premium * _p.MAX_OVER_TARGET:
-                cands.append((k, m))
+            if premium_floor <= m <= cap:
+                cands.append((k, m, mts))
+        row = {"kind": "entry", "symbol": CTX["symbol"], "date": CTX["date"], "T": ts_ms, "direction": direction,
+               "ladder": len(ladder), "unobserved": unseen, "candidates": len(cands)}
         if not cands:
+            LOG.append({**row, "outcome": "no_observed_contract_in_band"})
             return None
-        return min(cands, key=lambda km: (abs(km[1] - target_premium), km[1]))
+        k, m, mts = min(cands, key=lambda x: (abs(x[1] - target_premium), x[1]))
+        o = occ(CTX["symbol"], CTX["date"], call, k)
+        px, xts = exec_px(o, ts_ms, EXEC_WINDOW_MIN)
+        row.update(strike=k, occ=o, observedPx=m, observationTs=mts, observedAgeMin=(ts_ms // MIN * MIN - mts) // MIN)
+        if px is None:
+            LOG.append({**row, "outcome": "no_execution_print"})
+            return None
+        row.update(execPx=px, executionTs=xts, execLagMin=(xts - ts_ms // MIN * MIN) // MIN)
+        if px > cap + 1e-9:
+            LOG.append({**row, "outcome": "refused_above_chase_cap"})
+            return None
+        if px < premium_floor - 1e-9:
+            LOG.append({**row, "outcome": "refused_below_floor"})
+            return None
+        LOG.append({**row, "outcome": "filled"})
+        return (k, px)
 
     def nearest_otm(self, spot, ts_ms, direction, *, step=1.0, expiry=None, strikes=None):
         call = direction == "long"
@@ -144,5 +200,5 @@ class RealPremiumModel(_p.PremiumModel):
             return None
         o = occ(CTX["symbol"], CTX["date"], call, first)
         _load([o])
-        m = decision_px(o, ts_ms)
+        m, _ = observed_px(o, ts_ms)
         return None if m is None else (first, m)

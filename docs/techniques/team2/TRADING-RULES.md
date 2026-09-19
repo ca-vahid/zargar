@@ -3654,3 +3654,39 @@ Package: `notes/research/profitability-2026-09-19/README.md`; registrations `not
 - Open decisions (owner / review team): sizing or a pause while the expectation is negative; re-scoring the accepted sheets on
   real prints; replacing the formula in the product replay; the order-free selection study S1 (`notes/research/profitability-2026-09-19/06-prospective-experiment-spec.md`).
 
+### 2026-09-19 (later) - Correction and validation pass on the profitability study: F128-F132 AMENDED
+
+The review found that the first package's strongest sentences exceeded its measurement. Corrected package:
+`notes/research/profitability-2026-09-19/00-decision-sheet.md`. The five findings above are kept for the record and READ AS AMENDED here:
+
+- **F128 amended.** Still true: the flat-IV premium formula reports +21.8% per trade on trades that real prints put between about
+  -4% and 0%, so formula-scored sweeps are unreliable in level and sign. Corrected: the replay on prints is SIMULATED EXECUTION ON
+  REAL PRINTS, not fills. Against 15 actual legs (6 opportunities, 4 days) the print proxy errs by about $0.03 per leg in absolute
+  terms (5% of the premium; tails $0.07 to $0.105) and looks about $0.02 per round trip pessimistic. "Median error $0.00" is withdrawn.
+- **F129 amended.** Withdrawn: "the entry carries no directional information" and "direction is a coin flip". Supported: no
+  directional edge was DETECTED at the actionable price (favourable 49-54% at 4-120 minutes, mean move 0.00% +/-0.05% at 30 minutes);
+  a small one cannot be excluded. Baseline mean -3.71% per trade, DATE-CLUSTERED 95% interval -7.92 to +0.75 (332 trades, 93
+  sessions, 222 setup opportunities) at the books' fee with no extra slippage; about zero with no fee or with every target sold at
+  the touch minute's high; -7.55% (-11.53 to -3.28) at one tick per leg. Conclusion: NO ESTABLISHED after-cost edge; negative
+  estimate under the books' fee plus any adverse slippage.
+- **F130 amended.** The nine arms FAILED THEIR PREREGISTERED CRITERION under the harness, before and after its correction (ranking
+  unchanged; holdout never opened). Not shown: that exits are irrelevant or that no filter exists. H5 (dearer contract) is the only
+  arm whose improvement has an interval above zero, at one tick only, for a cost-arithmetic reason.
+- **F131 amended.** Source images inspected directly. Five documented executions and one illustrated area: same scenario each time,
+  none of his trades held. Only ONE entry is timestamped (09-11 09:46), NONE is priced; 09-09 09:41 is a WATCH alert, so "preceded our
+  09:45 gate" is withdrawn; the 2026-07-14 row is removed. "His edge is selection" is a hypothesis.
+- **F132 amended.** Displaced trades were not better than taken ones (occupancy -10.0%, loss cap -5.4%, taken -0.6%; clustered
+  intervals overlap): weak evidence that the rules do not cost money, not proof that they help.
+- **F133 (2026-09-19) A fire the runner refuses for occupancy still spends the setup's two-pullback allowance.** Journal, 2026-09-18:
+  C1's conjunction zone admitted SPY `scenario_4` touches #1 and #2 at 10:14 and 10:16 while its IWM position was open; both were
+  refused (`max_concurrent_positions`) and recorded `fire_unfilled_live`; at 10:22 the contact Control bought was C1's "contact #3,
+  watch-only". C1 then took QQQ because it had one loss where Control had two. C1 therefore does not differ from Control by one factor
+  in practice. Flagged as a method question; nothing changed.
+- **Harness defects fixed in the research harness only** (never product code): contract selection on a post-decision print,
+  unavailable prices marked $0.00, unbounded price age, one target-touch "fill". Eight regressions
+  (`notes/research/profitability-2026-09-19/harness/test_pricing_boundaries.py`). Effect: 12 of 332 trades changed, mean -3.76% to -3.71%; no verdict changed.
+- **Monitor interpretation corrected.** Experiment review levels: Sizing $800, C1 $1,000, Control none. 2026-09-18 peak-to-trough on
+  the 30-second mid-marked `equity_points`: Sizing $549, C1 $816, Control $928; no applicable level was reached. The 30-minute
+  monitor marks on the fresh bid and its high-water mark stayed at 10,000.
+- Next step on the table: the frozen order-free selection study (`notes/research/profitability-2026-09-19/07-selection-study-spec.md`). No trading arm.
+
