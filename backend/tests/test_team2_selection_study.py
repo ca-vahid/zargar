@@ -484,9 +484,8 @@ async def _drive(monkeypatch, study_on: bool, quote_cache_fails: bool = False):
     runner.engine.settings = {"techniques.team2.selection_study": "collect" if study_on else "off"}
     res = td.read()
     await runner._fire_from_event(ap, res.events[0], runner._bars[ap.run_id][-1], res, halted=False, journal=True)
+    await runner.wait_fires()                                                      # the whole fire chain, deterministically
     await td.drain(runner)
-    for t_ in list(runner.__dict__.get("_fire_tasks", [])) if isinstance(runner.__dict__.get("_fire_tasks"), (set, list)) else []:
-        await t_
     await asyncio.sleep(0)
     provider_calls = list(opts.calls)
     if quote_cache_fails:

@@ -1,9 +1,23 @@
 # 7. Prospective selection study S1: frozen specification (order-free, default off)
 
-Status: registration `s1-r3` (2026-09-19). r2 added the review team's four amendments; r3 is the correction pass after their review
-of the first collector (quote evidence, lifecycle and capacity, point-in-time features, operational isolation) and freezes the
-analysis implementation. The collector is BUILT, DEFAULT OFF and NOT collecting (`08-collector-package.md`). Any later change to a
-definition below, or to the hash-pinned analysis file, is a new registration and restarts collection.
+Status: registration **`s1-r4`**, the FINAL pre-activation registration (2026-09-19). Registration hash `13b2bcc18bbbf5fa`,
+analysis sha256 `4022fccf7e06d9102d0c3048e0951be35a7a34541fcb46574b04ff4ac9f1aa48`. The collector is BUILT, DEFAULT OFF and NOT collecting. Frozen at activation: from the activation row on, a
+material change to any definition below, to the analysis file or to the lifecycle rules is a NEW registration; records of `s1-r4`
+are kept and never mixed with another registration's (every row carries `study` and `registrationHash`; rows of any other
+registration are counted and never analysed). History: r2 = the four review amendments; r3 = the collector corrections and the
+first frozen analysis; r4 = this integration pass (below). The machine-readable record is `selection_study.REGISTRATION`
+(`python -m zargar.tools.team2_selection_study registration`).
+
+### What changed from r3 to r4 (decided before any observation exists)
+
+- Holm family resolved: the family is ALL SIX primary tests, always. A feature that cannot be judged enters with p = 1, so dropping a
+  feature never loosens the others (r3's text said "across the judged features"; r2's said "the six primary tests": r4 takes the
+  stricter reading and freezes it).
+- Secondary outcomes: `R10` and `R30` at one tick worse on each side, reported descriptively per bucket, never tested. The underlying's
+  move at 30 minutes is dropped (it needed bars at analysis time and was never tested).
+- Every record carries `registrationHash`; the opening hash includes it.
+- Lifecycle, session accounting, endpoint, early stop and the frozen final sample are now specified exactly and implemented
+  (`selection_study_lifecycle.py`), replacing r3's "Collection, stopping and exclusions" text.
 
 ## Question
 
@@ -99,15 +113,16 @@ flag, which accepts ask-only rows and a five-second future tolerance, is not use
 ## Analysis (frozen AND implemented before collection)
 
 Implementation: `backend/zargar/techniques/team2/selection_study_analysis.py`, sha256
-`ad4b02111a79494ffdc1b71c5ff04e68e88f6c20c611851269814bb79adcb772`, pinned by `tests/test_team2_selection_analysis.py`. While
+`4022fccf7e06d9102d0c3048e0951be35a7a34541fcb46574b04ff4ac9f1aa48`, part of the registration and pinned by `tests/test_team2_selection_analysis.py`. While
 collection runs, the only permitted view is `python -m zargar.tools.team2_selection_study` (counts and coverage, never an outcome);
-`--final` is refused before the stop rule.
+`final` is refused before the endpoint.
 
 - Population: collapsed opportunities (one per identity), `c1Only` and excluded sessions set apart and counted; rows of an earlier
   registration are counted and never analysed.
 - Test per feature: `d = mean(R30 | favoured bucket) - mean(R30 | rest)`, date-clustered bootstrap (10,000 resamples of whole
   sessions, fixed seed), two-sided p from the bootstrap.
-- Multiple comparisons: Holm's step-down procedure across the judged features at a family level of 0.05. Secondary outcomes are never tested.
+- Multiple comparisons: Holm's step-down procedure across ALL SIX primary tests at a family level of 0.05; a feature that is not
+  judgeable enters the family with p = 1. Secondary outcomes are never tested.
 - A feature PASSES only if ALL hold: (i) Holm-adjusted p < 0.05; (ii) **the improvement is positive: `d > 0` and the lower end of its
   95% interval is above zero** (a favoured bucket that is significantly WORSE than the rest cannot pass, whatever its own mean);
   (iii) the favoured bucket's own mean R30 is above zero after costs; (iv) `d` stays positive with the three sessions most
@@ -122,15 +137,57 @@ collection runs, the only permitted view is `python -m zargar.tools.team2_select
   With 60 against 140 opportunities only differences of roughly 35 to 40 points can pass. A modest real effect will most likely end
   as `insufficient evidence`.
 
-## Collection, stopping and exclusions (frozen)
+## Lifecycle, session accounting and the endpoint (frozen; `selection_study_lifecycle.py`)
 
-- Start: the first full session after the package is accepted, the code is reviewed and the knob is set to `collect`. Sessions before
-  that, and every historical session, are excluded.
-- No interim look at outcomes by feature. Operational monitoring may look ONLY at counts and coverage.
-- Stop: at the close of the 60th collected session, or on 2026-12-18, whichever comes first. No early stop for a favourable result.
-  Early stop only if overall valid-outcome coverage is under 60% after 15 sessions (the instrument is broken: fix, re-register, restart).
-- Excluded sessions, decided without looking at outcomes: a session with an engine restart between 09:30 and 15:45 ET, a feed
-  outage recorded by `BarDeliveryHealth`, or an exchange early close. Excluded sessions are listed.
+The lifecycle is a PURE function of durable records, so it is the same before and after any restart and anyone can recompute it:
+the activation row, `SettingChanged` rows for `techniques.team2.selection_study`, `TechniquePlanRestored` times of Team2 plans (an
+engine restart restores every armed plan), SPY/QQQ/IWM regular-session 1m bars (provider alpaca), the NYSE calendar
+(`market_calendar`, America/New_York), the study's own rows and `selection_study_final` rows.
+
+States: `prepared` (no activation row of THIS registration) -> `collecting` -> `stopped_insufficient_coverage` or
+`ready_for_final_analysis` -> `finalized` (a `selection_study_final` row of this registration exists).
+
+Activation: `python -m zargar.tools.team2_selection_study activate --build <reviewed sha> --confirm <registrationHash>` journals ONE
+activation row (study, registration hash, analysis hash, the full registration, build, activation time, first eligible session).
+It does not switch anything on; the operator then sets the knob to `collect`.
+
+Session status, decided without looking at any return (first rule that applies wins):
+
+| Status | Rule | Advances the count | Its records in the sample |
+|---|---|---|---|
+| `disabled` | the collector was off for the whole regular session | no | no |
+| `partial` | on for only part of the session, or the study was activated during it | no | no |
+| `excluded` | on for the whole session, but a 13:00 early close; or an engine restart (a Team2 `TechniquePlanRestored`) between 09:30 and 15:45 ET; or a feed outage = three or more consecutive regular-session minutes without an alpaca 1m bar for SPY, QQQ or IWM | **no** | no |
+| `counted` | everything else, INCLUDING a session with zero opportunities | yes | yes |
+| `in_progress` / `not_started` | the session's close has not passed | not yet | not yet |
+| `after_endpoint` | after the endpoint or the early stop | no | no |
+
+(r3 named `BarDeliveryHealth` for outages; it has no objective outage field, so r4 defines the outage on the bars themselves.)
+
+- First eligible session: the first trading day whose 09:30 ET is at or after the activation time.
+- Endpoint: the CLOSE (16:00 ET) of the 60th counted session, or the close of the 2026-12-18 session, whichever comes first. A
+  session counts only when its close has passed: an opening record on the 60th morning cannot unlock the analysis.
+- Pending observations: every observation's window ends by 15:46:30 ET (the 30-minute clock cannot be due after 15:45), so at the
+  16:00 endpoint everything is resolved or `unknown`; an opening that never got its close stays `incomplete`. An observation whose
+  quote is after the endpoint is made invalid (`after endpoint`) in the final sample. Records with a signal at or after the endpoint,
+  and records of non-counted sessions, are outside the sample and counted by reason.
+- Early stop (coverage only): at the close of the 15th and every later counted session before the endpoint, if valid-outcome coverage
+  of the primary population so far is under 60%, the state becomes `stopped_insufficient_coverage` and no final analysis runs (fix,
+  re-register, restart). No early stop for any result. Stopping never touches a trading book, a rule or a setting: the operator
+  switches the collector off.
+- No interim look at outcomes by feature. The only view before the endpoint is `status`: lifecycle, session accounting, counts,
+  coverage and collector health.
+
+### The frozen final sample and its manifest
+
+`final --out <dir>` is refused unless the state is `ready_for_final_analysis` (or `finalized`). It builds the manifest (registration,
+analysis hash, activation, window `[activation, endpoint]` and its reason, the counted sessions, every non-counted session with its
+reasons, the identity and opening hash of every included row, the rows outside the sample by reason, the sha256 of the included rows,
+the registered fee and the analysis parameters), runs the frozen analysis, and writes both with their sha256. The window, exclusions,
+costs and registration are NOT parameters. `final --record` journals the two hashes (state `finalized`); `verify --out <dir>`
+recomputes and compares. The same durable inputs always give the same manifest and result hashes, in any input order and at any later
+time (tested).
+
 - Outcomes of the study: for each feature `pass`, `fail` or `insufficient evidence`; for the study `at least one pass` or `none`.
   `None` is a valid, reportable result and does not license a second round of features on the same data.
 

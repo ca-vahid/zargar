@@ -1,4 +1,4 @@
-"""Selection study S1 (registration `s1-r3`, 2026-09-19): an ORDER-FREE, DEFAULT-OFF, PASSIVE collector.
+"""Selection study S1 (registration `s1-r4`, 2026-09-19): an ORDER-FREE, DEFAULT-OFF, PASSIVE collector.
 
 Pure functions only. Nothing here reads a setting, touches an order, a portfolio, a proposal or a plan's decisions, and nothing
 here (or in the runner's `_study_*` hooks) asks a provider for anything: observations are READ from the quote cache the options
@@ -25,7 +25,7 @@ import json
 import math
 from zoneinfo import ZoneInfo
 
-STUDY = "s1-r3"
+STUDY = "s1-r4"
 ET = ZoneInfo("America/New_York")
 MIN_MS = 60_000
 HORIZONS_MIN = (10, 30)                 # 30 = PRIMARY, 10 = secondary (descriptive)
@@ -41,6 +41,30 @@ FLAG_RANGE_ATR, IMPULSE_MIN_ATR = 1.25, 1.5
 UNKNOWN = "unknown"
 FEATURES = ("flag", "levelOrigin", "wait", "first15", "scenario4", "room")
 FAVOURED = {"flag": "flag", "levelOrigin": "prior", "wait": "long", "first15": "first15", "scenario4": "scenario_4", "room": "mid"}
+
+
+# ------------------------------------------------------------------ the registration (frozen before activation)
+# Every value that defines the study. Its canonical hash is stamped on every record; the analysis file's own hash is part of it.
+# A material change to ANY entry is a new registration (new STUDY id); records of an older registration are kept and never mixed.
+ANALYSIS_SHA256 = "4022fccf7e06d9102d0c3048e0951be35a7a34541fcb46574b04ff4ac9f1aa48"           # sha256 of selection_study_analysis.py (LF line endings); pinned by the tests
+REGISTRATION = {
+    "study": STUDY,
+    "identity": "date|SYMBOL|setupId|signalTs (close time of the 2m contact bar); no per-book counter; first opening owns",
+    "features": {"flag": {"flagBars": FLAG_BARS, "impulseBars": IMPULSE_BARS, "flagRangeAtr": FLAG_RANGE_ATR, "impulseMinAtr": IMPULSE_MIN_ATR},
+                 "levelOrigin": "pm_break* -> pm; scenario_* -> prior; else unknown",
+                 "wait": "minutes from the confirming 15m close to the signal: short < 15 <= medium <= 60 < long",
+                 "first15": "signal in [09:45, 10:00) ET", "scenario4": "setup kind == scenario_4",
+                 "room": "abs(target - field-bound underlying price) / ATR: near < 1.5 <= mid < 3.0 <= far"},
+    "favoured": FAVOURED, "featureOrder": list(FEATURES),
+    "quoteEvidence": {"bidAsk": "finite, > 0, ask >= bid", "source": "opra", "maxQuoteAgeMs": MAX_QUOTE_AGE_MS, "futureToleranceMs": 0},
+    "timing": {"maxEntryDelayMs": MAX_ENTRY_DELAY_MS, "horizonsMin": list(HORIZONS_MIN), "primaryMin": PRIMARY_MIN,
+               "maxLateMs": MAX_LATE_MS, "clock": "entry quote SOURCE time", "lateAfterEt": "15:45"},
+    "outcome": {"primary": "R30 = (bid_30 - ask_0 - 2 fee) / (ask_0 + fee)", "feePerContract": 1.04, "winsorUpperPct": WINSOR_PCT,
+                "secondary": ["R10", "R30 at one tick worse on each side"], "secondaryTested": False},
+    "capacity": {"uniqueOpportunities": MAX_FOLLOWED},
+    "analysis": {"sha256": ANALYSIS_SHA256},
+}
+REGISTRATION_HASH = hashlib.sha256(json.dumps(REGISTRATION, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def opportunity_id(date: str, symbol: str, setup_id: str, signal_ts: int) -> str:
@@ -159,7 +183,7 @@ def flatten_ms(date: str) -> int:
 
 
 def _open_hash(rec: dict) -> str:
-    core = {k: rec.get(k) for k in ("study", "opportunityId", "book", "trigger", "features", "entryQuote", "recordedTs", "duplicateOf")}
+    core = {k: rec.get(k) for k in ("study", "registrationHash", "opportunityId", "book", "trigger", "features", "entryQuote", "recordedTs", "duplicateOf")}
     core["due"] = [s["dueTs"] for s in rec.get("schedule") or []]
     return hashlib.sha256(json.dumps(core, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
@@ -169,7 +193,7 @@ def open_record(*, date: str, symbol: str, setup_id: str, signal_ts: int, book: 
                 duplicate_of: dict | None = None, inputs: dict | None = None) -> dict:
     """The record written WHEN THE OBSERVATION BEGINS. `openHash` binds every later close to THIS immutable opening."""
     oid = opportunity_id(date, symbol, setup_id, signal_ts)
-    rec = {"study": STUDY, "opportunityId": oid, "date": date, "symbol": str(symbol).upper(), "setup": setup_id, "signalTs": int(signal_ts),
+    rec = {"study": STUDY, "registrationHash": REGISTRATION_HASH, "opportunityId": oid, "date": date, "symbol": str(symbol).upper(), "setup": setup_id, "signalTs": int(signal_ts),
            "trigger": trigger, "direction": direction, "book": book, "shadow": bool(shadow), "refusal": refusal,
            "features": feats, "recordedTs": int(recorded_ts), "inputs": inputs or {}, "observations": {}, "status": "open",
            "duplicateOf": duplicate_of, "schedule": []}
@@ -278,6 +302,7 @@ def outcome(rec: dict, fee_per_contract: float) -> dict:
             r = after_cost_return(e["ask"], o["bid"], fee_per_contract)
             if h == PRIMARY_MIN:
                 out["primary"], out["primaryRaw"] = min(r, WINSOR_PCT), r
+                out["secondary"]["30_oneTickWorse"] = after_cost_return(float(e["ask"]) + 0.01, float(o["bid"]) - 0.01, fee_per_contract)
             else:
                 out["secondary"][str(h)] = r
         elif h == PRIMARY_MIN:
@@ -294,6 +319,11 @@ def collapse(open_rows: list[dict], close_rows: list[dict]) -> list[dict]:
     by: dict[str, list[dict]] = {}
     for r in open_rows:
         by.setdefault(str(r.get("opportunityId")), []).append(r)
+    # a close whose OPENING row never reached the journal (the write failed, or the process died before it ran) still carries
+    # the full opening fields: it stands in as the opening, flagged, so the opportunity is never missing from the denominator
+    for c in close_rows:
+        if str(c.get("opportunityId")) not in by:
+            by[str(c.get("opportunityId"))] = [{**c, "status": "open", "observations": {}, "openingRecovered": True}]
     closes: dict[tuple, list[dict]] = {}
     for c in close_rows:
         closes.setdefault((str(c.get("opportunityId")), str(c.get("openHash"))), []).append(c)

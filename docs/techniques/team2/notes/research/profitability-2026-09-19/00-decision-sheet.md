@@ -6,12 +6,12 @@ C2 key levels were not run on or after 2026-09-14. Test-database lanes agreed wi
 
 ## Status after review (2026-09-19)
 
-The review team accepted the revised conclusions, with their limitations, as EXPLORATORY research and directed the order-free
-study. They then reviewed the first collector and HELD it: 12 supplied tests passed, 3 of their own probes failed, in four groups
-(quote validity, lifecycle and capacity, point-in-time features, operational isolation). **The collector stays OFF.** All four groups
-are corrected in one pass (registration `s1-r3`, `07-selection-study-spec.md`, `08-collector-package.md`): their probes are adopted
-verbatim and pass, the analysis is implemented and hash-frozen before collection, and the full Team2 suite was run (441 passed).
-The research conclusions below are unchanged. No strategy work, trading-book change or risk change was made.
+The research conclusions were accepted as EXPLORATORY. The passive collector's corrections were accepted. The final integration pass
+is delivered in `09-release-handoff.md`: registration `s1-r4` (hash `13b2bcc18bbbf5fa`), a lifecycle and session accounting derived
+purely from durable records, the registered endpoint, the frozen and reproducible final sample, and one acceptance packet (78 tests;
+full Team2 + reviewer + platform phase-3 suites 475 passed on the combined tree that includes PR #224). Verdict: ready with stated
+limitations. **The collector stays OFF** until acceptance and a separate deployment and activation approval. The research conclusions
+below are unchanged.
 
 ## Decision supported by the evidence
 

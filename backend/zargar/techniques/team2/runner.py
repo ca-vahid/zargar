@@ -267,7 +267,8 @@ class Team2Runner(PlanRunner):
                 "decisionWatermark": self._decision_wm.get(ap.run_id),
                 "decisionLedger": diag.ledger_state(self._ledger_of(ap.run_id)),          # 2026-09-16: the close report's record
                 "diagnostics": self.__dict__.get("_diag", {}).get(ap.run_id),
-                "selectionStudy": self.__dict__.get("_study", {}).get(ap.run_id)}      # S1 collector (default off): pending observations survive a restart
+                "selectionStudy": ({**self.__dict__["_study"][ap.run_id], "health": dict(self._study_health())}
+                                   if ap.run_id in self.__dict__.get("_study", {}) else None)}      # S1 collector (default off): pending observations survive a restart
 
     def restore_extras(self, ap: ArmedPlan, state: dict) -> None:
         for tid in (state or {}).get("executionRefused") or []:
@@ -286,6 +287,10 @@ class Team2Runner(PlanRunner):
         if isinstance(st, dict) and isinstance(st.get("records"), dict):
             recs_ = {k: dict(v, reconcile=int(time.time() * 1000)) for k, v in st["records"].items()}
             self.__dict__.setdefault("_study", {})[ap.run_id] = {"records": recs_, "closed": list(st.get("closed") or [])}
+            h_ = self._study_health()                                          # health counts survive the restart
+            for k_, v_ in (st.get("health") or {}).items():
+                if k_ in h_:
+                    h_[k_] = max(int(h_[k_]), int(v_ or 0))
 
     def _entry_time_refusal(self, ap: ArmedPlan, stage: str) -> str | None:
         """R2/E: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
@@ -1050,26 +1055,36 @@ class Team2Runner(PlanRunner):
     def _study_pending(self) -> int:
         return len(self._study_following())
 
+    def _study_health(self) -> dict:
+        """Process-wide collector health. It rides on every journaled study row (`studyHealth`) and in the persisted plan state,
+        so a failed write, a missing event loop or a failed quote read shows up in the coverage report afterwards."""
+        return self.__dict__.setdefault("_study_health_counts", {"journalWriteFailures": 0, "noEventLoop": 0, "quoteReadErrors": 0,
+                                                                 "tickErrors": 0, "openErrors": 0, "snapshotErrors": 0})
+
     def _study_emit(self, run_id: str, rec: dict, kind: str) -> None:
-        """Journal one study row without needing the ArmedPlan (a removed plan's records are closed through here too)."""
+        """Journal one study row. The write is an ASYNCHRONOUS, fire-and-forget task on the engine's loop (like every diagnostics
+        row); nothing waits for it and a failure is counted, never raised. Without a running loop no coroutine is created."""
+        health = self._study_health()
         journal = getattr(getattr(self, "engine", None), "journal", None)
         if journal is None:
             return
-        payload = json.loads(json.dumps(rec, default=str))
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            health["noEventLoop"] += 1
+            return
+        payload = {"runId": run_id, "kind": kind, **json.loads(json.dumps(rec, default=str)), "studyHealth": dict(health)}
 
         async def _write():
             try:
-                await journal.append(ev.TECHNIQUE_PLAN_DIAGNOSTIC, {"runId": run_id, "kind": kind, **payload},
-                                     aggregate_type="technique_run", aggregate_id=run_id,
+                await journal.append(ev.TECHNIQUE_PLAN_DIAGNOSTIC, payload, aggregate_type="technique_run", aggregate_id=run_id,
                                      portfolio_id=(rec.get("book") or {}).get("portfolioId"))
             except Exception:  # noqa: BLE001
-                log.debug("team2 selection study row not journaled (%s)", kind, exc_info=True)
-        try:
-            task = asyncio.create_task(_write(), name=f"team2-study-{kind}")
-            self.__dict__.setdefault("_diag_tasks", set()).add(task)
-            task.add_done_callback(self.__dict__["_diag_tasks"].discard)
-        except RuntimeError:
-            pass
+                health["journalWriteFailures"] += 1
+                log.warning("team2 selection study row not journaled (%s)", kind, exc_info=True)
+        task = loop.create_task(_write(), name=f"team2-study-{kind}")
+        self.__dict__.setdefault("_diag_tasks", set()).add(task)
+        task.add_done_callback(self.__dict__["_diag_tasks"].discard)
 
     def _study_close(self, run_id: str, oid: str, rec: dict) -> None:
         """Journal the close ONCE and drop the record from memory (its id stays, so a revision cannot reopen it)."""
@@ -1132,7 +1147,8 @@ class Team2Runner(PlanRunner):
                                           target=(float(target) if target is not None else None),
                                           actionable=self._study_actionable(ap, now), captured_ts=now)
         except Exception:  # noqa: BLE001
-            log.debug("team2 selection study (snapshot) failed", exc_info=True)
+            self._study_health()["snapshotErrors"] += 1
+            log.warning("team2 selection study (snapshot) failed", exc_info=True)
 
     def _study_open(self, ap: ArmedPlan, tid: str, attempt: dict, cands: list[dict], *, shadow: bool, refusal: str | None, now: int) -> None:
         if not self._study_on():
@@ -1171,7 +1187,8 @@ class Team2Runner(PlanRunner):
             else:
                 d["records"][oid] = rec
         except Exception:  # noqa: BLE001
-            log.debug("team2 selection study (open) failed", exc_info=True)
+            self._study_health()["openErrors"] += 1
+            log.warning("team2 selection study (open) failed", exc_info=True)
 
     def _study_tick(self, now: int) -> None:
         """Synchronous housekeeping + PASSIVE observation. Runs even when the switch is off while records remain, so a
@@ -1213,6 +1230,7 @@ class Team2Runner(PlanRunner):
                                      "quoteTs": (int(getattr(qq, "source_ts", 0) or 0) or None), "receivedTs": getattr(qq, "ts", None)}
                         except Exception:  # noqa: BLE001
                             q = None
+                            self._study_health()["quoteReadErrors"] += 1
                         if study.try_observe(rec, int(row["horizonMin"]), now, q) is None and now > int(row["dueTs"]) + study.MAX_LATE_MS:
                             _, last_why = study.quote_evidence(q, now)
                             study.observe(rec, int(row["horizonMin"]), now, q,
@@ -1222,7 +1240,8 @@ class Team2Runner(PlanRunner):
                 if not d.get("records") and run_id not in live:
                     store.pop(run_id, None)
         except Exception:  # noqa: BLE001
-            log.debug("team2 selection study (tick) failed", exc_info=True)
+            self._study_health()["tickErrors"] += 1
+            log.warning("team2 selection study (tick) failed", exc_info=True)
 
     async def _study_reconcile(self, session, ap: ArmedPlan) -> None:
         """After a restart: a close that was already journaled is never emitted twice from stale persisted state."""

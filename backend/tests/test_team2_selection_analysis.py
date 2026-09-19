@@ -1,4 +1,4 @@
-"""The FROZEN analysis of selection study S1 (`s1-r3`): written, tested and hash-pinned before any observation exists.
+"""The FROZEN analysis of selection study S1 (`s1-r4`): written, tested and hash-pinned before any observation exists.
 Synthetic journal rows only."""
 from __future__ import annotations
 
@@ -13,12 +13,9 @@ import pytest
 from zargar.marketstructure.sessions import ET
 from zargar.techniques.team2 import selection_study as ss
 from zargar.techniques.team2 import selection_study_analysis as an
-from zargar.tools import team2_selection_study as tool
 
 FEE = 1.04
 MIN = 60_000
-# Any edit to the analysis changes this hash: that is a NEW registration, reviewed before collection continues.
-FROZEN_ANALYSIS_SHA256 = "ad4b02111a79494ffdc1b71c5ff04e68e88f6c20c611851269814bb79adcb772"
 
 
 def _ts(day: dt.date, h, m, s=0):
@@ -48,6 +45,8 @@ def rows_for(day: dt.date, idx: int, ret_pct: float | None, *, feats, role="cont
         f = FEE / 100.0
         bid = (ret_pct / 100.0) * (0.60 + f) + 0.60 + 2 * f if ret_pct is not None else 0.7
         for h in ss.HORIZONS_MIN:
+            if not any(x["horizonMin"] == h and x["status"] == "pending" for x in rec["schedule"]):
+                continue                                                      # already resolved at the opening (late / capacity)
             due = q0 + h * MIN
             q = {"bid": bid, "ask": bid + 0.02, "source": "opra" if valid else "chain", "quoteTs": due + 100}
             ss.observe(rec, h, due + 200, q)
@@ -71,10 +70,15 @@ def dataset(fav_mean, rest_mean, *, feature="flag", value="flag", sessions=30, p
     return rows
 
 
-def test_the_analysis_file_is_frozen():
+def test_the_analysis_file_is_frozen_and_pinned_by_the_registration():
     p = pathlib.Path(an.__file__)
     got = hashlib.sha256(p.read_text(encoding="utf-8").replace("\r\n", "\n").encode()).hexdigest()
-    assert got == FROZEN_ANALYSIS_SHA256, f"selection_study_analysis.py changed: a new registration is required (sha256 {got})"
+    assert got == ss.ANALYSIS_SHA256, f"selection_study_analysis.py changed: a new registration is required (sha256 {got})"
+    assert ss.REGISTRATION["analysis"]["sha256"] == got and ss.REGISTRATION["study"] == ss.STUDY == "s1-r4"
+    reg = json.loads(json.dumps(ss.REGISTRATION, sort_keys=True))
+    assert hashlib.sha256(json.dumps(reg, sort_keys=True).encode()).hexdigest()[:16] == ss.REGISTRATION_HASH
+    assert reg["outcome"]["feePerContract"] == an.FEE_PER_CONTRACT == 1.04 and reg["outcome"]["winsorUpperPct"] == ss.WINSOR_PCT == 200.0
+    assert reg["featureOrder"] == list(an.FEATURE_ORDER) and reg["outcome"]["secondaryTested"] is False
 
 
 def test_holm_step_down_is_monotone_and_matches_known_values():
@@ -154,10 +158,51 @@ def test_several_passers_are_reduced_to_one_by_the_frozen_order():
     assert an.choose([t for t in tests if t["verdict"] != "pass"]) is None
 
 
-def test_the_tool_shows_coverage_only_until_the_stop_rule():
-    assert tool.may_finalise(59, dt.date(2026, 12, 17))[0] is False
-    assert tool.may_finalise(60, dt.date(2026, 10, 1))[0] is True and tool.may_finalise(12, dt.date(2026, 12, 18))[0] is True
-    view = tool.coverage_only(dataset(40.0, -5.0, sessions=4), FEE)
-    text = json.dumps(view)
-    assert view["view"].startswith("coverage only") and "primary" not in json.dumps(view["coverage"]) and "observations" not in text
-    assert view["coverage"]["flag"]["flag"] == {"opportunities": 12, "valid": 12, "reasons": {}, "coveragePct": 100.0}
+def test_the_holm_family_is_all_six_features_with_unjudgeable_ones_at_p_one():
+    tests = [{"feature": f, "judgeable": f == "flag", "p": (0.004 if f == "flag" else 0.0001)} for f in an.FEATURE_ORDER]
+    fam = an.family_pvalues(tests)
+    assert fam == {"flag": 0.004, "levelOrigin": 1.0, "wait": 1.0, "first15": 1.0, "scenario4": 1.0, "room": 1.0}
+    assert an.holm(fam)["flag"] == pytest.approx(0.024), "the family size stays six even when five features cannot be judged"
+
+
+def test_resampling_whole_sessions_keeps_within_session_dependence():
+    """Favoured returns share a strong SESSION effect: resampling sessions must give a much wider interval than resampling
+    observations as if they were independent."""
+    rng = random.Random(3)
+    rows, day = [], dt.date(2026, 10, 1)
+    for s_ in range(30):
+        d = day + dt.timedelta(days=s_)
+        shock = rng.gauss(0.0, 40.0)
+        for i in range(4):
+            rows += rows_for(d, i, 10.0 + shock + rng.gauss(0, 2.0), feats=_feats(flag="flag"))
+        for i in range(4, 9):
+            rows += rows_for(d, i, rng.gauss(0.0, 2.0), feats=_feats())
+    pop = an.population(rows)["primary"]
+    t = an.feature_test(pop, "flag", FEE, resamples=2000)
+    fav = [ss.outcome(r, FEE)["primary"] for r in pop if r["features"]["flag"]["value"] == "flag"]
+    rest = [ss.outcome(r, FEE)["primary"] for r in pop if r["features"]["flag"]["value"] != "flag"]
+    r2 = random.Random(5)
+    naive = sorted(sum(r2.choices(fav, k=len(fav))) / len(fav) - sum(r2.choices(rest, k=len(rest))) / len(rest) for _ in range(2000))
+    naive_w = naive[1949] - naive[50]
+    clustered_w = t["ci95"][1] - t["ci95"][0]
+    assert clustered_w > 1.6 * naive_w, (clustered_w, naive_w)
+
+
+def test_fees_winsorisation_and_descriptive_secondary_outcomes_match_the_registration():
+    r = rows_for(dt.date(2026, 10, 1), 0, 500.0, feats=_feats(flag="flag"))
+    o = ss.outcome(an.population(r)["primary"][0], FEE)
+    assert o["primary"] == ss.WINSOR_PCT and o["primaryRaw"] == pytest.approx(500.0)
+    assert set(o["secondary"]) == {"10", "30_oneTickWorse"} and o["secondary"]["30_oneTickWorse"] < o["primaryRaw"]
+    t = an.analyse(dataset(40.0, -5.0), resamples=300)["tests"][0]
+    assert set(t["secondaryDescriptive"]["fav"]) == {"10", "30_oneTickWorse"}, "secondary outcomes are reported, never tested"
+    import inspect
+    from zargar.techniques.team2 import selection_study_lifecycle as lc
+    assert list(inspect.signature(lc.finalise).parameters) == ["life", "study_rows"], "the final analysis takes no cost, window or exclusion argument"
+
+
+def test_rows_of_another_registration_hash_are_never_analysed():
+    d = dt.date(2026, 10, 1)
+    rows = rows_for(d, 0, 10.0, feats=_feats())
+    forged = [dict(r, registrationHash="0000000000000000") for r in rows_for(d, 1, 10.0, feats=_feats())]
+    pop = an.population(rows + forged)
+    assert len(pop["all"]) == 1 and pop["otherRegistrations"] == 2

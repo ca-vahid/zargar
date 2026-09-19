@@ -3728,3 +3728,17 @@ The review found that the first package's strongest sentences exceeded its measu
 - Results: reviewers' probes 3/3, collector 41, analysis 13, full Team2 suite 441 passed. Collector remains OFF; enabling still needs
   acceptance, PR #224, a coordinated deployment and one setting change. Research conclusions unchanged.
 
+### 2026-09-19 (final integration) - Selection study registration `s1-r4`: lifecycle, endpoint and frozen final sample; still OFF
+
+- Final pre-activation registration `s1-r4` (hash `13b2bcc18bbbf5fa`, analysis sha256 `4022fccf...aa48`), stamped on every row. Two
+  definitions resolved before any observation: the Holm family is ALL SIX primary tests (unjudgeable at p = 1), and the secondary
+  outcomes are R10 and R30 at one tick worse, descriptive only.
+- Lifecycle (`selection_study_lifecycle.py`) is a pure function of durable records: prepared -> collecting -> stopped for coverage /
+  ready for final analysis -> finalized. Only `counted` sessions advance the count and enter the sample; `excluded` (early close,
+  restart 09:30-15:45 ET, a 3-minute bar gap), `partial` and `disabled` sessions do not. Zero-opportunity sessions count. Endpoint:
+  close of the 60th counted session or of 2026-12-18, in ET. Early stop below 60% coverage from the 15th counted session.
+- Final analysis is refused before the endpoint; the manifest (window, counted and non-counted sessions, included row identities,
+  input hash, registration, analysis hash) and the result are hashed and reproduce exactly; `final --record` / `verify`.
+- Tests: 78 in the selection packet (incl. an end-to-end run through the real journal and persistence hooks with a mid-session restart
+  and a stale-state restart), full Team2 + reviewer + platform phase-3 475 passed, PR #224 merged into the tree and its contract check
+  passes. Verdict: ready with stated limitations (`09-release-handoff.md`). No trading book, rule, risk or C2 change; no variant search.

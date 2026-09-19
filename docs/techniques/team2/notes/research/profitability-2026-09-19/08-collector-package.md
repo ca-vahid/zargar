@@ -1,5 +1,9 @@
 # 8. The S1 collector and the frozen analysis: default-off, order-free, passive
 
+> Superseded for release purposes by `09-release-handoff.md` (registration `s1-r4`: lifecycle, endpoint, frozen final sample,
+> end-to-end tests). The collector design below is ACCEPTED and unchanged; r4 adds the registration hash to every row, a
+> health counter, no coroutine without a running loop, and recovery of an opening from its close.
+
 **The collector stays OFF.** Not enabled, not deployed, no setting changed. Turning it on needs (a) this code accepted and deployed
 through the coordinated restart, (b) PR #224 (the `TechniquePlanDiagnostic` event contract) merged, and (c)
 `techniques.team2.selection_study` set to `collect`. None of those is part of this package. Registration: `s1-r3`

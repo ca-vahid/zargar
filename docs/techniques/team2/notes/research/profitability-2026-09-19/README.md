@@ -12,7 +12,8 @@ the first package, the limitations, the blockers, the reproduction commands and 
 | 4 | Chronological opportunity and book attribution; the C1-versus-Control trace | `04-book-and-opportunity-attribution.md` |
 | 5 | Revised statistics and the nine variant verdicts | `05-statistics-and-variant-verdicts.md` |
 | 6 | Source-grounded author comparison | `06-author-comparison.md` |
-| 7 | Frozen prospective selection-study specification (registration `s1-r3`: the four amendments, the collector corrections, the frozen analysis) | `07-selection-study-spec.md` |
+| 7 | Frozen prospective selection-study specification (registration `s1-r4`, final before activation) | `07-selection-study-spec.md` |
+| 10 | **Release handoff: registration `s1-r4`, lifecycle, endpoint, frozen final sample, tests, deployment / activation / rollback, monitoring, verdict** | `09-release-handoff.md`, `backend/zargar/techniques/team2/selection_study_lifecycle.py`, `backend/tests/test_team2_selection_lifecycle.py`, `backend/tests/test_team2_selection_e2e.py` |
 | 9 | The default-off, order-free, passive collector, the frozen analysis, the regression packet and the suite results | `08-collector-package.md`, `backend/zargar/techniques/team2/selection_study.py`, `selection_study_analysis.py`, `backend/zargar/tools/team2_selection_study.py`, `backend/tests/test_team2_selection_study.py`, `test_codex_team2_collector_boundaries.py`, `test_team2_selection_analysis.py` |
 | A | Method-fidelity matrix from the first pass (built from the capture index; page 6 supersedes it where they differ) | `appendix-A-method-fidelity-matrix.md` |
 
