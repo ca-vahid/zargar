@@ -3772,3 +3772,15 @@ every trading setting are unchanged:
 Tests on the combined release tree: selection packet **87 passed** (incl. the reviewers' 3 release probes and 3 collector probes),
 full Team2 + reviewer + `test_platform_phase3.py` **484 passed**. Registration `s1-r4` and its hashes are unchanged
 (`13b2bcc18bbbf5fa`, analysis `4022fccf...`): the corrections touch the operator and finalization layers, not a study definition.
+
+### 2026-09-19 (release review, final check) - artifact integrity: the saved manifest and report are hashed before any comparison
+
+Accepted: the collector and the three earlier release fixes. One bounded gap remained: `verify` compared DECLARED hashes only, so an
+artifact whose saved manifest or report had been edited, or whose payloads were missing entirely, passed. Now `artifact_integrity`
+hashes the actual saved payloads first; every later comparison uses those computed hashes. An edited payload, an edited-and-rehashed
+payload (self-consistent but no longer the sealed artifact), a missing payload, a missing declared hash, a corrupt or absent file all
+FAIL verification (CLI exit 2). The seal itself is checked the same way. The distinction the reviewers asked for is kept: a VALID
+sealed artifact with later data drift stays valid (exit 0) and the drift is reported beside it. Tests: `test_artifact_integrity_hashes_the_saved_payloads`
+(pure, seven mutations) and `test_the_real_cli_verify_fails_on_an_edited_or_missing_payload_but_not_on_drift` (the real CLI on the
+desk's test database). Packet 89 passed, full Team2 + reviewer + `test_platform_phase3.py` 486 passed. Registration `s1-r4` and its
+hashes unchanged; no collector, study or trading change. Activation stays held.

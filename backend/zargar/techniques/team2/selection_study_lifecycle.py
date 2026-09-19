@@ -386,16 +386,41 @@ def resolve_final(life: dict, study_rows: list[dict], final_rows: list[dict]) ->
     return {"sealed": False, "artifact": fin, "drift": None}
 
 
+def artifact_integrity(recorded: dict) -> dict:
+    """Hash the ACTUAL saved payloads and compare them with their declared hashes. An edited or missing manifest or report fails
+    here, whatever the declared values say; the computed hashes are what every later comparison uses."""
+    problems, computed = [], {}
+    for key, hkey in (("manifest", "manifestSha256"), ("report", "resultSha256")):
+        payload, declared = recorded.get(key), recorded.get(hkey)
+        if not isinstance(payload, dict) or not payload:
+            problems.append(f"{key} payload is missing")
+        else:
+            computed[hkey] = sha(payload)
+        if not isinstance(declared, str) or not declared:
+            problems.append(f"declared {hkey} is missing")
+        elif hkey in computed and computed[hkey] != declared:
+            problems.append(f"the saved {key} does not hash to its declared {hkey}")
+    return {"intact": not problems, "problems": problems,
+            "manifestSha256": computed.get("manifestSha256"), "resultSha256": computed.get("resultSha256"),
+            "declaredManifestSha256": recorded.get("manifestSha256"), "declaredResultSha256": recorded.get("resultSha256")}
+
+
 def verify(recorded: dict, life: dict, study_rows: list[dict], final_rows: list[dict] | None = None) -> dict:
-    """Compare a recorded artifact with the seal (when there is one) and with a recomputation from today's records."""
+    """Verify a recorded artifact: (1) its own payloads must hash to their declared values, (2) it must BE the sealed artifact when
+    a seal exists, and (3) separately, whether a recomputation from today's records would differ (drift). A valid sealed result with
+    later drift stays valid; an edited or missing payload never does."""
     sealed = sealed_of(final_rows or [])
     again = finalise(life, study_rows)
-    out = {"matchesSeal": (None if sealed is None else (recorded.get("manifestSha256") == sealed["manifestSha256"]
-                                                        and recorded.get("resultSha256") == sealed["resultSha256"])),
+    rec = artifact_integrity(recorded)
+    out = {"recordedIntact": rec["intact"], "problems": rec["problems"], "recorded": rec,
+           "matchesSeal": (None if sealed is None else bool(rec["intact"] and sealed["intact"]
+                                                            and rec["manifestSha256"] == sealed["manifestSha256"]
+                                                            and rec["resultSha256"] == sealed["resultSha256"])),
            "sealIntact": None if sealed is None else sealed["intact"],
-           "manifestMatches": again["manifestSha256"] == recorded.get("manifestSha256"),
-           "resultMatches": again["resultSha256"] == recorded.get("resultSha256"),
+           "manifestMatches": bool(rec["intact"] and again["manifestSha256"] == rec["manifestSha256"]),
+           "resultMatches": bool(rec["intact"] and again["resultSha256"] == rec["resultSha256"]),
            "manifestSha256": again["manifestSha256"], "resultSha256": again["resultSha256"]}
+    out["valid"] = bool(rec["intact"] and (out["matchesSeal"] is not False))
     if sealed is not None:
         out["drift"] = drift(sealed, life, study_rows)
     return out

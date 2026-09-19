@@ -1,7 +1,8 @@
 # 9. Selection study S1: release handoff (registration `s1-r4`)
 
 **Verdict: READY WITH STATED LIMITATIONS** (after the release-review corrections of 2026-09-19: the operator CLI's event-loop
-ownership, journal-order precedence before canonical hashing, and an immutable first finalization). The code is complete and passes its acceptance packet and the required suites on the
+ownership, journal-order precedence before canonical hashing, an immutable first finalization, and artifact integrity, where the
+saved manifest and report are hashed before any comparison). The code is complete and passes its acceptance packet and the required suites on the
 combined release tree. The collector is OFF; nothing may start until the review team accepts this package and the owner separately
 approves deployment and activation. There is no code blocker. The remaining items are approvals and the limitations below.
 
@@ -51,8 +52,8 @@ python -m zargar.tools.team2_selection_study demo
 
 | Run | Result |
 |---|---|
-| Selection packet (collector 41, analysis 16, lifecycle 15, end-to-end 3, release 6, review probes 3+3), unawaited coroutines as errors | **87 passed** in 46 s |
-| Full Team2 + reviewer suites + `test_platform_phase3.py` (includes the event-contract check) | **484 passed** in 4 min 51 s |
+| Selection packet (collector 41, analysis 16, lifecycle 15, end-to-end 3, release 8, review probes 3+3), unawaited coroutines as errors | **89 passed** in 64 s |
+| Full Team2 + reviewer suites + `test_platform_phase3.py` (includes the event-contract check) | **486 passed** in 3 min 55 s |
 | `import zargar.api.app` | ok |
 | Not run | the platform chaos suite and other desks' suites: this package changes no shared execution code |
 
@@ -77,6 +78,8 @@ What the new cases cover (requested list):
 | **journal-order precedence**: conflicting later closes (worse AND better), shuffled transport | `test_the_first_journaled_close_wins_under_any_transport_order_and_price_never_decides` |
 | **multiple candidate openings** (a restart re-opening) | `test_the_first_journaled_opening_owns_and_a_later_opening_cannot_take_over` |
 | **the seal**: later duplicate, rows after the endpoint, a reclassifying backfill, a second conflicting final row, a tampered seal | `test_the_seal_is_the_first_recorded_final_and_later_data_only_shows_as_drift` |
+| **artifact integrity**: unchanged, edited report, edited manifest, edited and re-hashed, missing payloads, missing declared hash, tampered seal | `test_artifact_integrity_hashes_the_saved_payloads` |
+| **artifact integrity through the real CLI**: verify after sealing, after each kind of edit, with payloads removed, with a corrupt file, and with later drift on a valid artifact | `test_the_real_cli_verify_fails_on_an_edited_or_missing_payload_but_not_on_drift` |
 | the read-only tool never switches collection off | `test_status_tells_the_operator_to_switch_off_and_never_claims_to_do_it` |
 
 ## 4. Deterministic example (`python -m zargar.tools.team2_selection_study demo`)
@@ -116,7 +119,9 @@ Activation (a separate approval; outside market hours, after the close):
 Finalising (after the endpoint, when `status` says `ready_for_final_analysis`):
 1. `python -m zargar.tools.team2_selection_study final --out <dir> --record` writes `<dir>/final.json` and seals the result with ONE
    journal row. Every later `final` returns that sealed artifact and reports drift; a second `--record` is refused.
-2. `python -m zargar.tools.team2_selection_study verify --out <dir>` compares the file with the seal and with a recomputation.
+2. `python -m zargar.tools.team2_selection_study verify --out <dir>` hashes the saved manifest and report, compares them with
+   their declared hashes and with the seal, and reports any drift. It exits 2 if the artifact was edited, re-hashed, truncated or lost
+   its payloads; drift alone on a valid artifact exits 0.
 3. Switch `techniques.team2.selection_study` back to `off`.
 
 Every command reads its database from `ZARGAR_DATABASE_URL` (else `backend/.env`, i.e. the RUNTIME database). The CLI tests always

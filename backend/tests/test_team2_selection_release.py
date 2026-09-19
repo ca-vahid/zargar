@@ -153,6 +153,99 @@ async def test_the_real_cli_seals_the_first_final_and_later_rows_or_backfills_ne
         await eng.dispose()
 
 
+async def test_the_real_cli_verify_fails_on_an_edited_or_missing_payload_but_not_on_drift(fresh_db, tmp_path):
+    """The saved manifest and report are HASHED and compared with their declared hashes and with the seal. A valid sealed artifact
+    with later drift stays valid; an edited or missing payload does not."""
+    eng = make_engine(TEST_DB_URL)
+    sf = make_session_factory(eng)
+    try:
+        await _seed_completed_study(sf)
+        d = tmp_path / "d"
+        rc, _ = cli("final", "--out", str(d), "--record")
+        assert rc == 0
+        rc, v = cli("verify", "--out", str(d))
+        assert rc == 0 and v["valid"] is True and v["recordedIntact"] is True and v["matchesSeal"] is True and v["problems"] == []
+        good = json.loads((d / "final.json").read_text())
+
+        def save(artifact):
+            (d / "final.json").write_text(json.dumps(artifact, indent=1, sort_keys=True))
+
+        edited = copy.deepcopy(good)                                        # the REPORT is edited, the declared hashes are untouched
+        edited["report"]["studyOutcome"] = "at least one pass"
+        edited["report"]["featureCarriedForward"] = "flag"
+        save(edited)
+        rc, v = cli("verify", "--out", str(d))
+        assert rc == 2 and v["valid"] is False and v["recordedIntact"] is False
+        assert v["problems"] == ["the saved report does not hash to its declared resultSha256"] and v["matchesSeal"] is False
+
+        edited = copy.deepcopy(good)                                        # the MANIFEST is edited (a session moved into the sample)
+        edited["manifest"]["countedSessions"].append("2026-06-10")
+        save(edited)
+        rc, v = cli("verify", "--out", str(d))
+        assert rc == 2 and "the saved manifest does not hash to its declared manifestSha256" in v["problems"]
+
+        edited = copy.deepcopy(good)                                        # edited AND re-hashed: self-consistent, but not the seal
+        edited["report"]["studyOutcome"] = "at least one pass"
+        edited["resultSha256"] = lc.sha(edited["report"])
+        save(edited)
+        rc, v = cli("verify", "--out", str(d))
+        assert rc == 2 and v["recordedIntact"] is True and v["matchesSeal"] is False and v["valid"] is False
+
+        save({k: good[k] for k in ("manifestSha256", "resultSha256")})       # payloads MISSING, hashes still declared
+        rc, v = cli("verify", "--out", str(d))
+        assert rc == 2 and sorted(v["problems"]) == ["manifest payload is missing", "report payload is missing"]
+
+        save(good)                                                          # restored, and now a later backfill creates DRIFT
+        o = lc.session_bounds(GAP_DAY)[0]
+        async with sf() as s_:
+            await s_.execute(insert(BarRow), [{"symbol": "IWM", "tf": "1m", "ts": o + k * MIN, "open": 1, "high": 1, "low": 1, "close": 1,
+                                               "volume": 1, "source": "exchange", "provider": "alpaca"} for k in (30, 31, 32)])
+            await s_.commit()
+        rc, v = cli("verify", "--out", str(d))
+        assert rc == 0 and v["valid"] is True and v["matchesSeal"] is True, "a valid sealed result stays valid when later data drifts"
+        assert v["manifestMatches"] is False and v["drift"]["manifestWouldChange"] is True
+        (d / "final.json").write_text("not json")
+        rc, v = cli("verify", "--out", str(d))
+        assert rc == 2 and v["valid"] is False
+        rc, v = cli("verify", "--out", str(tmp_path / "missing"))
+        assert rc == 2 and "does not exist" in v["refused"]
+    finally:
+        await eng.dispose()
+
+
+def test_artifact_integrity_hashes_the_saved_payloads(tmp_path):
+    rows = _journaled(_study())
+    now = close_of(FULL[59])
+    fin = lc.finalise(life(rows, now=now), rows)
+    art = {k: fin[k] for k in ("manifest", "manifestSha256", "report", "resultSha256")}
+    lf = life(rows, now=now, finals=[dict(lc.seal_payload(fin), _eventId=1)])
+    ok = lc.verify(art, lf, rows, lf["sessions"] and [dict(lc.seal_payload(fin), _eventId=1)])
+    assert ok["recordedIntact"] and ok["matchesSeal"] and ok["valid"] and ok["recorded"]["manifestSha256"] == fin["manifestSha256"]
+    for mutate, problem in (
+        (lambda a: a["report"].__setitem__("studyOutcome", "at least one pass"), "the saved report does not hash to its declared resultSha256"),
+        (lambda a: a["manifest"].__setitem__("feePerContract", 0.0), "the saved manifest does not hash to its declared manifestSha256"),
+        (lambda a: a["manifest"]["selectedRecords"].pop(), "the saved manifest does not hash to its declared manifestSha256"),
+        (lambda a: a.pop("report"), "report payload is missing"),
+        (lambda a: a.pop("manifestSha256"), "declared manifestSha256 is missing"),
+        (lambda a: a.__setitem__("report", {}), "report payload is missing"),
+    ):
+        bad = copy.deepcopy(art)
+        mutate(bad)
+        v = lc.verify(bad, lf, rows, [dict(lc.seal_payload(fin), _eventId=1)])
+        assert v["recordedIntact"] is False and problem in v["problems"] and v["valid"] is False and v["matchesSeal"] is False
+    # a payload edited AND re-hashed is self-consistent but is not the sealed artifact
+    forged = copy.deepcopy(art)
+    forged["report"]["studyOutcome"] = "at least one pass"
+    forged["resultSha256"] = lc.sha(forged["report"])
+    v = lc.verify(forged, lf, rows, [dict(lc.seal_payload(fin), _eventId=1)])
+    assert v["recordedIntact"] is True and v["matchesSeal"] is False and v["valid"] is False
+    # and the seal itself is checked the same way
+    tampered_seal = [dict(lc.seal_payload(fin), _eventId=1)]
+    tampered_seal[0]["manifest"] = {**tampered_seal[0]["manifest"], "feePerContract": 0.0}
+    v = lc.verify(art, lf, rows, tampered_seal)
+    assert v["sealIntact"] is False and v["matchesSeal"] is False and v["recordedIntact"] is True
+
+
 # ------------------------------------------------------------------ journal-order precedence (pure)
 def _journaled(rows):
     return [dict(r, _eventId=i + 1) for i, r in enumerate(rows)]

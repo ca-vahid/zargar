@@ -203,7 +203,11 @@ existing `final.json` with different content is never overwritten, and the seale
 manifest and result must hash to the recorded values). A recomputation from today's records is reported beside it as DRIFT
 (`manifestWouldChange`, `resultWouldChange`, `sessionsReclassified`, records only in the seal or only in the recomputation), which is
 how a later historical bar backfill, a late in-window duplicate or any other later arrival becomes visible without being applied.
-`verify --out <dir>` compares a recorded artifact with the seal and with a recomputation, and updates nothing.
+`verify --out <dir>` HASHES the saved manifest and report and compares those computed hashes with the artifact's own declared
+hashes, then with the seal, and separately with a recomputation. An edited or missing payload FAILS verification (exit 2), and so
+does a payload that was edited and re-hashed to be self-consistent, because it is then no longer the sealed artifact. A file that is
+absent or not JSON fails the same way. Later data drift on a VALID sealed artifact is not a failure: it is reported beside it and the
+command still succeeds. Verification updates nothing.
 
 Before the first seal, eligibility is recomputed from the current records on every call, so a bar backfill in that period can change
 a session's classification. That is why the seal happens at the endpoint and freezes the classification with its reasons; after it,

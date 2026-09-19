@@ -182,8 +182,9 @@ def test_repeated_finalisation_is_identical_order_independent_and_verifiable():
     random.Random(1).shuffle(shuffled)
     b = lc.finalise(life(shuffled, now=close_of(FULL[59]) + 5_000_000), shuffled)
     assert a["manifestSha256"] == b["manifestSha256"] and a["resultSha256"] == b["resultSha256"]
-    assert lc.verify(a, r, rows) == {"matchesSeal": None, "sealIntact": None, "manifestMatches": True, "resultMatches": True,
-                                     "manifestSha256": a["manifestSha256"], "resultSha256": a["resultSha256"]}
+    v = lc.verify(a, r, rows)
+    assert (v["matchesSeal"], v["sealIntact"]) == (None, None) and v["recordedIntact"] and v["valid"]
+    assert v["manifestMatches"] and v["resultMatches"] and (v["manifestSha256"], v["resultSha256"]) == (a["manifestSha256"], a["resultSha256"])
     tampered = json.loads(json.dumps(rows))
     tampered[1]["observations"]["30"]["bid"] = 9.99
     v = lc.verify(a, r, tampered)

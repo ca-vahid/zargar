@@ -194,8 +194,11 @@ async def test_activation_collection_restart_completion_and_final_report(fresh_d
         facts = await tool.load_facts(sf, now + 1)
         life = tool.life_of(facts, now + 1)
         assert life["state"] == "finalized" and life["finalRecorded"]["resultSha256"] == fin["resultSha256"] and life["finalRecorded"]["intact"]
-        v = lc.verify(life["finalRecorded"], life, facts["rows"], facts["rows"])
-        assert v["resultMatches"] is True and v["matchesSeal"] is True and v["sealIntact"] is True
+        sealed = lc.sealed_of(facts["rows"])
+        v = lc.verify({k: sealed[k] for k in ("manifest", "manifestSha256", "report", "resultSha256")}, life, facts["rows"], facts["rows"])
+        assert v["valid"] and v["recordedIntact"] and v["matchesSeal"] and v["sealIntact"] and v["resultMatches"]
+        # the recorded HASHES alone are not an artifact: verification needs the payloads it can hash
+        assert lc.verify(life["finalRecorded"], life, facts["rows"], facts["rows"])["recordedIntact"] is False
         view = lc.coverage_view(life, facts["rows"])
         assert view["countedSessions"] == 60 and view["collectorHealth"].get("journalWriteFailures", 0) == 0
     finally:

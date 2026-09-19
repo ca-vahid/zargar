@@ -208,9 +208,19 @@ async def _amain(a) -> int:
                               "written": str(out / "final.json"), "diagnostics": fin["diagnostics"]}, indent=1))
             return 0
         if a.command == "verify":
-            rec = json.loads((out / "final.json").read_text())
-            print(json.dumps(lc.verify(rec, life, facts["rows"], facts["rows"]), indent=1))
-            return 0
+            target = out / "final.json"
+            if not target.exists():
+                print(json.dumps({"refused": f"{target} does not exist"}))
+                return 2
+            try:
+                rec = json.loads(target.read_text())
+            except json.JSONDecodeError as exc:
+                print(json.dumps({"recordedIntact": False, "problems": [f"{target} is not valid JSON: {exc}"], "valid": False}))
+                return 2
+            res = lc.verify(rec, life, facts["rows"], facts["rows"])
+            print(json.dumps(res, indent=1))
+            # an edited or missing payload FAILS; later drift on a valid sealed artifact does not
+            return 0 if res["valid"] else 2
         return 1
     finally:
         await eng.dispose()
