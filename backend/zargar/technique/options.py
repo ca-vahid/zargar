@@ -299,7 +299,7 @@ def near_money_rows(chain, spot: float, direction: str, n: int = 4) -> list:
 async def pick_for_setup(client, symbol: str, spot: float, direction: str,
                          *, today: dt.date | None = None, max_strike: float | None = None,
                          min_strike: float | None = None, avoid_0dte: bool = False,
-                         retry_wide: bool = True, max_spread_pct: float = 10.0) -> dict:
+                         retry_wide: bool = True, max_spread_pct: float = 10.0, near_money: bool = False) -> dict:
     """End-to-end: expirations → expiry choice → chain → contract. `client` is
     any provider exposing expirations()/chain() with normalized rows. Never
     raises for 'no contract'; returns a dict with `error` for hard failures."""
@@ -320,7 +320,8 @@ async def pick_for_setup(client, symbol: str, spot: float, direction: str,
         d["available"] = True
         d["chainSize"] = len(chain)
         d["provider"] = getattr(client, "name", "?")
-        d["nearMoney"] = near_money_rows(chain, spot, direction)     # vehicle-compare-v1 evidence: rows of the chain already in hand, no extra fetch
+        if near_money:                                   # OFF unless the first-sale record is on: the default pick does no extra work
+            d["nearMoney"] = near_money_rows(chain, spot, direction)     # vehicle-compare-v1 evidence: rows of the chain already in hand, no extra fetch
         # C1 (2026-09-12): a wide spread on the just-OTM strike is not the end - 8 of 9 fires died
         # there in the week of 09-08. Try the next strike further out and the next expiry, keep the
         # tightest spread, and say which one was taken.

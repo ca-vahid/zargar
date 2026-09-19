@@ -80,7 +80,10 @@ class PlanArmer(PlanRunner):
         half (T5.2 "reduced size")."""
         s = self.engine.settings
         mult, why = 1.0, []
-        if dt.datetime.now(ET).weekday() == 4:
+        # the WEEKDAY comes from the test-pinnable clock (production = real time): the reviewers' dispatch cases were
+        # sized x0.5 and skipped whenever the suite ran on a Friday (found 2026-09-18, a Friday evening)
+        from ..clock import now_ms as _clock_ms
+        if dt.datetime.fromtimestamp(_clock_ms() / 1000.0, ET).weekday() == 4:
             fm = float(s.get("technique.arm.friday_size_mult", 0.5) or 1.0)
             mult *= fm
             why.append(f"Friday x{fm:g}")
@@ -125,64 +128,95 @@ class PlanArmer(PlanRunner):
     def fire_policy_view(self, ap) -> dict:
         return {**super().fire_policy_view(ap), **self._em_policy_extras()}
 
-    # ---- first-sale-v1 (2026-09-18, integrated plan D): R2 measured where the position exits, at the FINAL quantity
+    # ---- first-sale-v2 (2026-09-19, IR-01 / IR-04): R2 at the gate target of the FINAL quantity, from the validated current
+    # executable underlying bound. DEFAULT OFF. observe = non-authoritative record; enforce = fail closed (refuse / defer).
     def first_sale_policy(self, ap) -> str:
-        raw = str(self.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "observe") or "off").strip().lower()
-        return raw if raw in ("off", "observe", "enforce") else "off"
+        from .first_sale import normalize_mode
+        return normalize_mode(self.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "off"))
 
-    def first_sale_record(self, ap, trade, qty, limit, mode):
-        from .first_sale import build_record
+    async def first_sale_prepare(self, ap) -> None:
+        """Resolve the policy-defining pin (`technique.rr_gate_target`) from the plan's FROZEN run config, once per plan,
+        bounded. Never a fresh read of the live legacy key. Unresolved stays unresolved (enforce then defers)."""
+        cache = self.__dict__.setdefault("_fs_pins", {})
+        if ap.run_id in cache:
+            return
+        try:
+            run = await asyncio.wait_for(self.load_plan(ap.run_id), timeout=2.0)
+            cfg = (run or {}).get("config") or {}
+            pin = (cfg.get("settings") or {}).get("technique.rr_gate_target")
+            cache[ap.run_id] = {"pin": str(pin or "auto"), "source": ("run_config" if cfg else "unresolved"),
+                                "planRrGateTarget": (cfg.get("thresholds") or {}).get("rr_gate_target")}
+        except Exception:                                  # noqa: BLE001 - unresolved is a value; enforce defers on it
+            cache[ap.run_id] = {"pin": "auto", "source": "unresolved", "planRrGateTarget": None}
+        if len(cache) > 500:
+            for k in list(cache)[:250]:
+                cache.pop(k, None)
+
+    def first_sale_record(self, ap, trade, qty, limit, mode, stage="order"):
+        from .first_sale import build_record, compare_vehicles
+        from .research_recorder import feed_identity, quote_evidence
         s = self.engine.settings
         trig = next((t for t in ((ap.plan or {}).get("triggers") or []) if t.get("id") == trade.trigger_id), {}) or {}
         uq = self.engine.quotes.get(ap.symbol)
-        observed = None
-        if uq is not None and float(getattr(uq, "last", 0) or 0) > 0:
-            observed = {"price": float(uq.last), "sourceTs": int(getattr(uq, "last_ts", 0) or getattr(uq, "source_ts", 0) or 0),
-                        "receivedTs": int(getattr(uq, "ts", 0) or 0), "source": getattr(uq, "source", "") or "feed"}
+        ue = quote_evidence(uq, symbol=ap.symbol, is_option=False, feed=feed_identity(self.engine))
         oq = None
         if trade.instrument == "options" and trade.order_symbol:
-            q = self.engine.quotes.get(trade.order_symbol)
-            if q is not None:
-                oq = {"bid": q.bid, "ask": q.ask, "bidSize": (q.bid_size or None), "askSize": (q.ask_size or None),
-                      "sourceTs": int(q.source_ts or q.quote_ts or 0), "source": q.source, "derived": bool(getattr(q, "derived", False))}
+            oq = quote_evidence(self.engine.quotes.get(trade.order_symbol), symbol=trade.order_symbol, is_option=True, feed=None)
+            if oq is not None:
+                oq["derived"] = bool(str(oq.get("source") or "").startswith("derived:") or oq.get("transform"))
         trk = (getattr(ap, "trackers", None) or {}).get(trade.trigger_id)
         th = getattr(trk, "thresholds", None)
         if th is None or not hasattr(th, "min_risk_reward"):
             th = self.technique.thresholds()
-        cfg_th = ((ap.plan or {}).get("thresholds") or {})
+        pin = (self.__dict__.get("_fs_pins") or {}).get(ap.run_id) or {"pin": "auto", "source": "unresolved", "planRrGateTarget": None}
         plan_gate = None
         if trig.get("riskReward") is not None:
-            plan_gate = {"targetIndex": cfg_th.get("rr_gate_target", getattr(th, "rr_gate_target", None)),
+            plan_gate = {"targetIndex": (pin.get("planRrGateTarget") if pin.get("planRrGateTarget") is not None else getattr(th, "rr_gate_target", None)),
                          "rr": trig.get("riskReward"), "rrTp3": trig.get("riskRewardTp3"), "min": getattr(th, "min_risk_reward", None)}
         fee = float(s.get("options.fee_per_contract", 0.99)) + float(s.get("sim.reg_fee_per_contract", 0.05))
-        rec = self._first_sale_build(build_record, ap, trade, trig, observed, qty, limit, s, th, oq, fee, plan_gate, mode)
-        try:                                              # order-free vehicle comparison on rows already in hand - never a gate
-            from .first_sale import compare_vehicles
-            vr = (getattr(trade, "timing", None) or {}).get("vehicleRows") or {}
-            cash = float(((self.engine.positions.portfolio(ap.config.portfolio_id) or {}).get("cash")) or 0.0)
-            sq = ({"ask": float(uq.ask or 0) or None, "last": float(uq.last or 0) or None, "askSize": (int(uq.ask_size or 0) or None)} if uq is not None else None)
-            if vr.get("rows"):
-                rec["vehicleComparison"] = {**compare_vehicles(
-                    setup={"symbol": ap.symbol, "direction": trade.direction, "entry": trade.entry, "stop": trade.stop, "targets": trade.targets,
-                           "singleExit": str(ap.config.single_contract_exit or "tp2")},
-                    contracts=vr["rows"], share_quote=sq, budget=float(s.get("risk.max_option_premium_notional", 1000.0) or 0.0),
-                    risk_budget=cash * float(ap.config.risk_pct or 0.0) / 100.0, fee_per_contract=fee,
-                    stock_commission=float(s.get("sim.stock_commission", 0.0)), allow_shares=(str(ap.config.entry_fallback or "") == "shares")),
-                    "rowsCapturedTs": vr.get("ts"), "riskBudgetBasis": "cash x risk_pct (approximation; the sizer uses equity)"}
-        except Exception:                                  # noqa: BLE001
-            pass
+        entry = trig.get("entry")
+        rec = build_record(stage=stage, symbol=ap.symbol, run_id=ap.run_id, trigger_id=trade.trigger_id, family=trade.kind,
+                           direction=trade.direction, session=ap.plan_for, plan_entry=(entry.get("price") if isinstance(entry, dict) else entry),
+                           runner_entry=trade.entry, stop=trade.stop, targets=trade.targets, underlier_evidence=ue, instrument=trade.instrument,
+                           qty=qty, multiplier=trade.multiplier, limit_price=limit, single_exit=str(ap.config.single_contract_exit or "tp2"),
+                           pinned_gate_target=pin["pin"], pin_source=pin["source"], min_rr=float(getattr(th, "min_risk_reward", 3.0)),
+                           contract=trade.contract, option_quote=oq, fee_per_contract=fee, stock_commission=float(s.get("sim.stock_commission", 0.0)),
+                           affordable_qty=qty, plan_gate=plan_gate, mode=mode, now_ms=now_ms(),
+                           max_underlier_age_ms=int(float(s.get("risk.stale_quote_seconds", 10) or 10) * 1000))
+        if stage == "order":
+            try:                                          # order-free vehicle comparison on rows already in hand - never a gate
+                vr = (getattr(trade, "timing", None) or {}).get("vehicleRows") or {}
+                if vr.get("rows"):
+                    cash = float(((self.engine.positions.portfolio(ap.config.portfolio_id) or {}).get("cash")) or 0.0)
+                    sq = ({"ask": (ue or {}).get("ask") or None, "last": (ue or {}).get("last") or None, "askSize": (ue or {}).get("askSize")} if ue else None)
+                    rec["vehicleComparison"] = {**compare_vehicles(
+                        setup={"symbol": ap.symbol, "direction": trade.direction, "entry": trade.entry, "stop": trade.stop, "targets": trade.targets,
+                               "singleExit": str(ap.config.single_contract_exit or "tp2")},
+                        contracts=vr["rows"], share_quote=sq, budget=float(s.get("risk.max_option_premium_notional", 1000.0) or 0.0),
+                        risk_budget=cash * float(ap.config.risk_pct or 0.0) / 100.0, fee_per_contract=fee,
+                        stock_commission=float(s.get("sim.stock_commission", 0.0)), allow_shares=(str(ap.config.entry_fallback or "") == "shares")),
+                        "rowsCapturedTs": vr.get("ts"), "riskBudgetBasis": "cash x risk_pct (approximation; the sizer uses equity)"}
+            except Exception:                              # noqa: BLE001
+                pass
         return rec
 
-    def _first_sale_build(self, build_record, ap, trade, trig, observed, qty, limit, s, th, oq, fee, plan_gate, mode):
-        return build_record(stage="order", symbol=ap.symbol, run_id=ap.run_id, trigger_id=trade.trigger_id, family=trade.kind,
-                            direction=trade.direction, session=ap.plan_for,
-                            plan_entry=((trig.get("entry") or {}).get("price") if isinstance(trig.get("entry"), dict) else trig.get("entry")), runner_entry=trade.entry,
-                            stop=trade.stop, targets=trade.targets, observed_underlier=observed, instrument=trade.instrument,
-                            qty=qty, multiplier=trade.multiplier, limit_price=limit, single_exit=str(ap.config.single_contract_exit or "tp2"),
-                            pinned_gate_target=str(s.get("technique.rr_gate_target", "auto") or "auto"),
-                            min_rr=float(getattr(th, "min_risk_reward", 3.0)), contract=trade.contract, option_quote=oq,
-                            fee_per_contract=fee, stock_commission=float(s.get("sim.stock_commission", 0.0)),
-                            affordable_qty=qty, plan_gate=plan_gate, mode=mode, now_ms=now_ms())
+    def first_sale_decide(self, rec, mode, error=None) -> dict:
+        from .first_sale import decide
+        return decide(rec, mode, error=error)
+
+    def first_sale_publish(self, ap, rec: dict) -> None:
+        """Research persistence of the record: bounded, never awaited by the entry (IR-04). The REFUSAL itself is journaled
+        on the established durable path by the runner (`_refuse_entry` / the order's own rejection)."""
+        r = self.__dict__.get("_fs_recorder")
+        if r is None:
+            from .research_recorder import BoundedRecorder
+            journal = self.engine.journal
+
+            async def write(item: dict) -> None:
+                await journal.append(ev.TECHNIQUE_FIRST_SALE, item["rec"], aggregate_type="technique_run", aggregate_id=item["runId"],
+                                     portfolio_id=item["portfolioId"])
+            r = self._fs_recorder = BoundedRecorder(write, name="em-first-sale", maxsize=128)
+        r.put({"rec": rec, "runId": ap.run_id, "portfolioId": ap.config.portfolio_id})
 
     def fire_evidence_mode(self, ap) -> str:
         raw = str(self.engine.settings.get("techniques.enhanced_market.fire_evidence_mode", "off") or "off").strip().lower()
@@ -396,7 +430,8 @@ class PlanArmer(PlanRunner):
         try:
             pick = await self.technique.option_pick(ap.symbol, "short" if trade.direction == "short" else "long",
                                                     spot=float(trade.last_price or trade.entry),
-                                                    max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte)
+                                                    max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte,
+                                                    near_money=(self.first_sale_policy(ap) in ("observe", "enforce")))
             pick = await self._repick_after_rate_limit(ap, trade, pick, max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte)
         except Exception as exc:
             trade.errors.append(f"option chain: {exc}")

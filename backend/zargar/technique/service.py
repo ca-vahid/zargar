@@ -2171,7 +2171,7 @@ class TechniqueService:
     # ------------------------------------------------------------ options
     async def option_pick(self, symbol: str, direction: str = "long", *, spot: float | None = None,
                           max_strike: float | None = None, min_strike: float | None = None,
-                          avoid_0dte: bool = False) -> dict:
+                          avoid_0dte: bool = False, near_money: bool = False) -> dict:
         client = self.options_provider()
         if spot is None:
             q = self.engine.quotes.get(symbol.upper())
@@ -2188,7 +2188,7 @@ class TechniqueService:
         from ..options.chain import cboe_priority
         with cboe_priority("entry"):                         # 2026-09-16: a live pick retries a 429 and is never held back
             out = await pick_for_setup(client, symbol, spot, direction, max_strike=max_strike,
-                                       min_strike=min_strike, avoid_0dte=avoid_0dte)
+                                       min_strike=min_strike, avoid_0dte=avoid_0dte, near_money=near_money)
         out["spot"] = spot
         return out
 

@@ -3327,7 +3327,7 @@ class PlanRunner(SessionListener):
         # (other desks unchanged). `observe` journals the record; only `enforce` may refuse - never an exit path.
         fs_why = await self._first_sale_check(ap, trade, qty, limit)
         if fs_why:
-            await self._refuse_entry(ap, trade, fs_why, stage="first_sale")
+            await self._refuse_entry(ap, trade, fs_why, stage="first_sale", detail=trade.timing.get("firstSale"))   # the durable refusal record
             return
         # R2: re-judged after sizing/pricing, immediately before the intent is written
         gate = await self._entry_gated(ap, trade, "order")
@@ -3431,6 +3431,11 @@ class PlanRunner(SessionListener):
         cfg = ap.config
 
         def guard() -> None:
+            # first-sale-v2 (IR-01): the admission is RE-DECIDED here - after every await and retry, on the final quantity
+            # and limit and the current validated evidence. Base hook = None; entry-only (exits never reach this guard).
+            fs = self.first_sale_final(ap, trade, qty, limit)
+            if fs:
+                raise RuntimeError(f"entry gate: {fs}")
             if contract is not None:
                 # FC-01 (closure review 2026-09-14): the CURRENT cached NBBO for the order symbol, judged by the
                 # technique's pure policy - never the captured warning list alone (a new OPRA print can widen
@@ -4020,47 +4025,101 @@ class PlanRunner(SessionListener):
             self._log(ap, "entry_gate_refused", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id, stage=stage)
         return why or None
 
-    async def _refuse_entry(self, ap: "ArmedPlan", trade: "Trade", why: str, *, stage: str) -> None:
+    async def _refuse_entry(self, ap: "ArmedPlan", trade: "Trade", why: str, *, stage: str, detail: dict | None = None) -> None:
         trade.status = "skipped"
         trade.reason = why
         with contextlib.suppress(Exception):
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "entry_gate_refused",
                 "stage": stage, "why": why, "ts": trade.fired_ts, "sourceTs": trade.fired_ts,
-                "decisionTs": int(time.time() * 1000)}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                "decisionTs": int(time.time() * 1000), **({"detail": detail} if detail else {})},
+                aggregate_type="technique_run", aggregate_id=ap.run_id)
         await self._persist(ap)
         self._publish(ap, "fired")
 
     def first_sale_policy(self, ap: "ArmedPlan") -> str:
-        """Hook: off | observe | enforce. Base = off, so a desk that does not opt in runs no first-sale code."""
+        """Hook: off | observe | enforce | invalid. Base = off, so a desk that does not opt in runs no first-sale code."""
         return "off"
 
-    def first_sale_record(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None, mode: str) -> dict | None:
+    async def first_sale_prepare(self, ap: "ArmedPlan") -> None:
+        """Hook: bounded preparation of frozen policy inputs (never on an exit path)."""
+        return None
+
+    def first_sale_record(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None, mode: str, stage: str = "order") -> dict | None:
         """Hook: the technique's pure first-sale record for the final quantity/price (no I/O, no awaits)."""
         return None
 
+    def first_sale_decide(self, rec: dict | None, mode: str, error: str | None = None) -> dict:
+        """Hook: the admission disposition {allow, disposition, reason}. Base = allow."""
+        return {"allow": True, "disposition": "off", "reason": None}
+
+    def first_sale_publish(self, ap: "ArmedPlan", rec: dict) -> None:
+        """Hook: NON-BLOCKING research persistence of the record (never awaited here)."""
+        return None
+
+    def _first_sale_eval(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None, mode: str, stage: str) -> tuple[dict | None, dict]:
+        """Synchronous: build + decide. FAIL CLOSED: under enforce / invalid a hook error is a deferral, never a pass."""
+        rec, err = None, None
+        try:
+            rec = self.first_sale_record(ap, trade, qty, limit, mode, stage)
+            if not isinstance(rec, dict):
+                rec, err = None, "no record"
+        except Exception as exc:                          # noqa: BLE001
+            rec, err = None, f"{type(exc).__name__}: {exc}"[:160]
+            log.warning("first-sale record failed for %s %s: %s", ap.symbol, trade.trigger_id, err)
+        try:
+            d = self.first_sale_decide(rec, mode, err)
+            if not isinstance(d, dict) or "allow" not in d:
+                raise TypeError("decision hook returned no disposition")
+        except Exception as exc:                          # noqa: BLE001
+            closed = mode in ("enforce", "invalid")
+            d = {"allow": not closed, "disposition": ("deferred_error" if closed else "observed_error"),
+                 "reason": (f"first-sale gate: decision failed ({type(exc).__name__}) - entry deferred, nothing sent" if closed else None)}
+        return rec, d
+
     async def _first_sale_check(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None) -> str | None:
-        """Entry-only. Returns a refusal reason under `enforce` when the record FAILS; `unknown` never refuses and a
-        hook error never blocks an entry (it is logged). Exits never pass through here."""
+        """Entry-only, after sizing and before the intent. off = one settings read and nothing else. observe = the record
+        is built and handed to a bounded recorder; the entry never waits for research persistence and is never refused.
+        enforce = FAIL CLOSED (a failed gate refuses; missing evidence, unknown geometry or an error defers). Exits never
+        pass through here. The authoritative recheck at final dispatch is `first_sale_final` inside `_entry_guard`."""
         try:
             mode = str(self.first_sale_policy(ap) or "off")
-            if mode not in ("observe", "enforce"):
-                return None
-            rec = self.first_sale_record(ap, trade, qty, limit, mode)
-            if not isinstance(rec, dict):
-                return None
-            trade.timing["firstSale"] = {"verdict": (rec.get("gate") or {}).get("verdict"), "rung": (rec.get("gate") or {}).get("rung"),
-                                         "r": (rec.get("gate") or {}).get("rRunnerEntry"), "mode": mode}
-            with contextlib.suppress(Exception):
-                await self.engine.journal.append(ev.TECHNIQUE_FIRST_SALE, rec, aggregate_type="technique_run",
-                                                 aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
-            if mode != "enforce":
-                return None
-            from ..technique.first_sale import refusal_reason
-            return refusal_reason(rec)
-        except Exception as exc:                      # a diagnostic must never take an entry down
-            log.warning("first-sale check failed for %s %s: %s", ap.symbol, trade.trigger_id, exc)
+        except Exception as exc:                          # noqa: BLE001 - only an opted-in technique overrides the hook
+            log.warning("first-sale policy unreadable for %s: %s", ap.symbol, exc)
+            return "first-sale gate: the policy could not be read - entry deferred, nothing sent"
+        if mode == "off":
             return None
+        if mode in ("observe", "enforce"):
+            with contextlib.suppress(Exception):
+                await self.first_sale_prepare(ap)         # bounded inside the hook; failure = unresolved pin (enforce defers)
+        rec, d = self._first_sale_eval(ap, trade, qty, limit, mode, "order")
+        g = (rec or {}).get("gate") or {}
+        trade.timing["firstSale"] = {"mode": mode, "disposition": d.get("disposition"), "verdict": g.get("verdict"), "rung": g.get("rung"),
+                                     "rAdmission": g.get("rAdmission"), "admissionEntry": g.get("admissionEntry"), "reason": d.get("reason")}
+        if rec is not None:
+            rec["disposition"] = d.get("disposition")
+            with contextlib.suppress(Exception):
+                self.first_sale_publish(ap, rec)          # put_nowait on a bounded recorder - never awaited
+        return None if d.get("allow") else str(d.get("reason") or "first-sale gate: entry refused")
+
+    def first_sale_final(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None) -> str | None:
+        """SYNCHRONOUS recheck inside the final entry guard (after every await and retry, immediately before the venue
+        submit): the decision is recomputed from the FINAL quantity / limit and the CURRENT validated evidence, so a
+        decision taken before a wait can never authorise a changed price. Authoritative only under enforce / invalid."""
+        try:
+            mode = str(self.first_sale_policy(ap) or "off")
+        except Exception:                                 # noqa: BLE001
+            return "first-sale gate: the policy could not be read at dispatch"
+        if mode not in ("enforce", "invalid"):
+            return None
+        rec, d = self._first_sale_eval(ap, trade, qty, limit, mode, "dispatch")
+        g = (rec or {}).get("gate") or {}
+        trade.timing["firstSaleDispatch"] = {"disposition": d.get("disposition"), "rAdmission": g.get("rAdmission"), "admissionEntry": g.get("admissionEntry")}
+        if rec is not None and not d.get("allow"):
+            rec["disposition"] = d.get("disposition")
+            with contextlib.suppress(Exception):
+                self.first_sale_publish(ap, rec)
+        return None if d.get("allow") else str(d.get("reason") or "first-sale gate: refused at dispatch")
 
     async def after_fire(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade",
                          judgement: "FireJudgement", bar: Bar) -> None:
