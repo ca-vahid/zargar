@@ -15,6 +15,16 @@ def make_feed(quotes: list, bars: list) -> AlpacaQuoteFeed:
     return AlpacaQuoteFeed(on_quote=quotes.append, key_id="k", secret="s", on_bars=bars.extend)
 
 
+@pytest.mark.parametrize('stamp,expected', [('2025-10-31T14:00:00Z',300),('2025-11-03T14:00:00Z',3),
+    ('2026-09-18T14:00:00Z',3),(None,0)])
+def test_sip_quote_size_cutover_uses_venue_time_without_touching_price_timestamps(stamp,expected):
+    quotes=[];feed=make_feed(quotes,[])
+    feed.handle({'T':'q','S':'AAPL','bp':100.,'ap':100.1,'bs':3,'as':5,'t':stamp})
+    assert quotes[-1].bid_size==expected
+    assert quotes[-1].quote_ts==(parse_rfc3339_ms(stamp) if stamp else 0)
+    assert feed.venue_snapshot('AAPL')['rawBidSize']==3
+
+
 def test_us_equity_routing_predicate():
     assert is_us_equity("AAPL") and is_us_equity("BRK-B" .replace("-", ""))  # plain tickers
     assert not is_us_equity("AAPL.TO") and not is_us_equity("SHOP.TO")
@@ -54,11 +64,11 @@ def test_trade_and_quote_messages_emit_with_context_merged():
     assert q.last == 314.47 and q.volume == 200
     assert q.prev_close == 309.5 and q.session == "regular"       # Yahoo context survives
     # NBBO update within the conflation window is throttled, then emits
-    f.handle({"T": "q", "S": "SNOW", "bp": 314.4, "ap": 314.5, "bs": 3, "as": 5})
+    f.handle({"T": "q", "S": "SNOW", "bp": 314.4, "ap": 314.5, "bs": 300, "as": 500,"t":"2026-08-25T14:00:00Z"})
     st = f._st("SNOW")
     assert st["bid"] == 314.4 and st["ask"] == 314.5 and st["bid_size"] == 300
     st["emit_ms"] = 0
-    f.handle({"T": "q", "S": "SNOW", "bp": 314.41, "ap": 314.51, "bs": 1, "as": 1})
+    f.handle({"T": "q", "S": "SNOW", "bp": 314.41, "ap": 314.51, "bs": 100, "as": 100,"t":"2026-08-25T14:00:01Z"})
     assert quotes[-1].bid == 314.41 and quotes[-1].ask == 314.51
 
 

@@ -7,6 +7,10 @@ The desk supports daily preparation, automatic Practice execution, separately pe
 
 ## Start here
 
+The [Method lab](METHOD-LAB.md) documents the separate prospective Practice
+experiments, receipt-timed economic models, trial review and rollback. It does
+not change automatic trading rules or establish profitability.
+
 1. Read [Automatic daily preparation](DAILY-PREPARATION.md) for account routing, settings, preparation, recovery and arming.
 2. Read [Post-ignition workflow](IGNITION.md) before selecting the optional Practice pilot. Its research watchlist does not itself trade.
 3. Use [Current capabilities and limits](DELIVERY-STATUS.md) to distinguish shipped behavior from open validation work.

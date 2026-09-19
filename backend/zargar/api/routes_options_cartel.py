@@ -49,6 +49,40 @@ def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
 
+    @app.get('/api/options-cartel/method-lab/trials/{trial_id}',dependencies=[auth])
+    async def method_lab_trial(trial_id: str,workspace: Workspace | None = None):
+        from sqlalchemy import select
+        from ..domain import now_ms
+        from ..models import TechniqueRun
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        from ..techniques.options_cartel.method_lab_review import trial_report
+        if (workspace or active_workspace(eng))!='practice':
+            raise HTTPException(400,'Method lab is Practice research only')
+        policy=read_policy(eng,'practice')
+        async with eng.sf() as s:
+            record=await s.scalar(select(TechniqueRun).where(TechniqueRun.id==trial_id,
+                TechniqueRun.technique=='options_cartel',TechniqueRun.mode=='lab_trial',
+                TechniqueRun.config['portfolioId'].as_string()==policy.portfolio_id,
+                TechniqueRun.config['workspace'].as_string()=='practice'))
+        if record is None: raise HTTPException(404,'Trial not found in this Practice book')
+        return await trial_report(eng,trial_id,now_ms())
+
+    @app.get('/api/options-cartel/method-lab',dependencies=[auth])
+    async def method_lab_status(workspace: Workspace | None = None,day: str | None = None):
+        import datetime as dt
+        from ..marketstructure.sessions import ET
+        from ..techniques.options_cartel import method_lab
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        if (workspace or active_workspace(eng))!='practice':
+            return {'workspace':'live','status':'practice_only','enabled':False,'rows':[],
+                    'researchOnly':True,'placesOrders':False,'activationAllowed':False}
+        selected=day or dt.datetime.now(ET).date().isoformat()
+        try:
+            if dt.date.fromisoformat(selected).isoformat()!=selected: raise ValueError('Invalid date')
+        except ValueError as exc:
+            raise HTTPException(400,'Invalid method-lab session; use YYYY-MM-DD') from exc
+        return await method_lab.status(eng,read_policy(eng,'practice'),selected)
+
     @app.get('/api/options-cartel/profitability-research', dependencies=[auth])
     async def profitability_research_status(workspace: Workspace | None = None, day: str | None = None):
         import datetime as dt

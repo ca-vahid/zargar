@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.20";
+export const APP_VERSION = "0.8.21";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.21",date:"2026-09-18",title:"Cartel method lab and accurate SIP liquidity",items:[
+    {tag:"new",text:"Practice Method lab compares breakout, reclaim and 30-minute pivot entries using frozen cohorts, recorded quotes and modeled option/share costs. Research does not place orders or change trading permissions."},
+    {tag:"improved",text:"Trial reviews retain missing evidence, show modeled fills and costs, and record daily reviews with Friday checkpoints. No automatic strategy promotion."},
+    {tag:"fixed",text:"Modern Alpaca SIP stock quote sizes are now treated as shares, removing obsolete 100x liquidity scaling. Option quote units are unchanged."},
+  ]},
   {version:"0.8.20",date:"2026-09-18",title:"Cartel: clearer opportunity reviews and timely recovery",items:[
     {tag:"fixed",text:"Daily review separates a stock not reaching its entry level from incomplete data and historical refusals. Current Armed coverage no longer repeats a resolved warning as a current hold."},
     {tag:"improved",text:"Verified Practice repairs retry every minute and preserve the next fresh candle confirmation without replaying closed signals. Trading limits and selection rules are unchanged."},
