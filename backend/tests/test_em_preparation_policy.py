@@ -231,3 +231,41 @@ async def test_the_decision_ledger_is_idempotent_and_a_changed_input_makes_a_new
         rows = (await s.execute(select(TechniquePrepDecision))).scalars().all()
     assert len(rows) == 2 and preview["inputKey"] == c["inputKey"], "a read-only preview writes nothing"
     await eng.dispose()
+
+
+@pytest.mark.usefixtures("fresh_db")
+async def test_no_cached_approval_survives_a_new_hold_a_correction_a_new_review_or_a_policy_change():
+    """IR-05: the cache key carries every input that can change eligibility. An ALLOWED decision is never reused once a
+    source hold, a corrected scenario, a different analyst review, another origin or a policy change arrives."""
+    from sqlalchemy import select
+    from tests.conftest import TEST_DB_URL
+    from zargar.db import make_engine, make_session_factory
+    from zargar.models import TechniquePrepDecision
+    from zargar.technique import prep_service as ps
+    eng = make_engine(TEST_DB_URL); sf = make_session_factory(eng)
+    settings = {"techniques.enhanced_market.preparation_policy": "deterministic"}
+    run = {"id": "run-1", "symbol": "META", "asOf": 1, "trigger": "ingest", "config": {"barsAssetId": "bars-1", "thresholds": {"min_risk_reward": 3.0}}, "llm": {"model": "m"},
+           "result": {"plan": FX["META"]["plan"], "analysis": None}}
+
+    async def get_run(rid):
+        return run
+    svc = SimpleNamespace(engine=SimpleNamespace(sf=sf, settings=SimpleNamespace(get=lambda k, d=None: settings.get(k, d))), get_run=get_run)
+    allowed = await ps.prep_decide(svc, "run-1", persist=True, origin="ingest", source_ids=["scn-1"])
+    assert allowed["disposition"] == "eligible"
+    assert (await ps.prep_decide(svc, "run-1", persist=True, origin="ingest", source_ids=["scn-1"])).get("reused") is True, "identical inputs reuse the decision"
+    held = await ps.prep_decide(svc, "run-1", persist=True, origin="ingest", source_ids=["scn-1"], source_hold=["conflict: evidence names MU"])
+    assert held.get("reused") is None and held["disposition"] == "held_for_resolution" and held["inputKey"] != allowed["inputKey"], "a NEW hold is a new decision - the cached approval is not reused"
+    corrected = await ps.prep_decide(svc, "run-1", persist=True, origin="ingest", source_ids=["scn-1-corrected"])
+    assert corrected.get("reused") is None and corrected["inputKey"] not in (allowed["inputKey"], held["inputKey"])
+    other_origin = await ps.prep_decide(svc, "run-1", persist=True, origin="preopen_replan", source_ids=["scn-1"])
+    assert other_origin.get("reused") is None and other_origin["inputKey"] != allowed["inputKey"]
+    settings["techniques.enhanced_market.preparation_policy"] = "baseline"
+    run["result"] = {**run["result"], "analysis": {"verdict": "setup", "noTradeReasons": []}}
+    base_setup = await ps.prep_decide(svc, "run-1", persist=True, origin="batch")
+    run["result"] = {**run["result"], "analysis": {"verdict": "no_setup", "noTradeReasons": ["k1 breakout @ 685.16 - the target is a manufactured pct-ladder (T4.4)"]}}
+    base_veto = await ps.prep_decide(svc, "run-1", persist=True, origin="batch")
+    assert base_setup["disposition"] == "eligible" and base_veto.get("reused") is None and base_veto["disposition"] == "refused", "a different analyst review is different evidence"
+    async with sf() as s:
+        rows = (await s.execute(select(TechniquePrepDecision))).scalars().all()
+    assert len(rows) == 6 and len({r.id for r in rows}) == 6
+    await eng.dispose()

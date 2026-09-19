@@ -99,7 +99,8 @@ def test_the_evaluator_is_causal_uses_its_own_tracker_and_keeps_the_outcome_apar
     assert early["disposition"] == "waiting" and early["barsConsumed"] == 6, "the 09:36 bar has not CLOSED at 09:36 - no same-close knowledge"
     done = scp.evaluate(c, MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 37))
     assert done["disposition"] == "triggered" and done["firedTs"] == ms(9, 36) and done["fillProxy"] == 100.9
-    assert done["pricingGates"]["contract"].startswith("unknown") and done["pricingGates"]["sizing"] == "unknown", "a triggered candidate is not an executable entry"
+    pg = done["pricingGates"]
+    assert pg["overall"] == "unknown" and {v["status"] for v in pg["gates"].values()} == {"unknown"} and pg["orderFree"] is True, "no evidence supplied = unknown, never a pass"
     assert done["outcomeProxy"]["evidenceClass"] == "underlying_walkforward_proxy"
     assert json.dumps(c, sort_keys=True) == before, "the candidate definition (and any baseline state) is never mutated"
     spike = MORNING + [bar(9, 37 + i, 101, 110, 100.9, 109) for i in range(5)]                       # a later target touch
@@ -203,3 +204,72 @@ def test_a_requalified_candidate_never_sees_bars_from_before_its_own_confirmatio
     out = scp.evaluate(child, gap_open + late, thresholds=T, profile=PROFILE, prev_close=99.5)
     assert out["disposition"] == "triggered" and out["firedTs"] == ms(9, 46) and "born after the open" in out["gapRule"], "the 09:30 gap belongs to the parent, not to a structure born at 09:40"
     assert out["barsConsumed"] == 6
+
+
+# ------------------------------------------------------------------------------ candidate-pricing-v1 (IR-05)
+def _evidence(at, *, underlier=100.92, bid=2.95, ask=3.00, size=20, equity=10_000.0, cash=9_000.0, contract=True, age=400):
+    ev = {"underlier": {"symbol": "X", "bid": underlier - 0.02, "ask": underlier, "last": underlier, "quoteTs": at - age, "lastTs": at - age, "receivedTs": at - 50,
+                        "source": "feed:HybridQuoteFeed", "halted": False},
+          "contract": None, "contractQuote": None, "equity": equity, "cash": cash}
+    if contract:
+        sym = "X260925C00101000"
+        ev["contract"] = {"symbol": sym, "strike": 101.0, "expiry": "2026-09-25", "optionType": "call", "delta": 0.45}
+        ev["contractQuote"] = {"symbol": sym, "bid": bid, "ask": ask, "last": ask, "bidSize": size, "askSize": size, "sizeUnit": "contracts", "source": "opra", "quoteTs": at - age, "receivedTs": at - 50}
+    return ev
+
+
+def _triggered():
+    c = _waiting()
+    c["geometry"] = {"entry": 100.0, "stop": 99.0, "targets": [101.5, 107.0, 110.0]}
+    c["trigger"]["targets"] = [{"price": 101.5}, {"price": 107.0}, {"price": 110.0}]
+    return c
+
+
+def test_complete_contemporaneous_evidence_produces_evaluated_gates_and_the_identical_case_without_it_stays_unknown():
+    at = ms(9, 37) + 5_000
+    done = scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 38),
+                        pricing_evidence=lambda c: {"evidence": _evidence(at), "atMs": at})
+    pg = done["pricingGates"]
+    assert done["disposition"] == "triggered" and pg["version"] == "candidate-pricing-v1" and pg["evaluatedAt"] == at and pg["orderFree"] is True
+    g = pg["gates"]
+    assert g["contract"]["status"] == "pass" and g["quote"]["status"] == "pass" and g["spread"] == {"status": "pass", "spreadPct": 1.68, "max": 10.0}
+    assert g["sizing"]["status"] == "pass" and g["sizing"]["contracts"] == 1 and g["budget"] == {"status": "pass", "premium": 300.0, "failed": [], "why": None}
+    assert g["noChase"]["status"] == "pass" and g["noChase"]["rung"] == "tp2-full" and g["noChase"]["boundBasis"] == "ask" and pg["overall"] == "feasible"
+    assert g["noChase"]["admissionEntry"] == 100.92, "the executable-price no-chase is judged at the CURRENT ask, not at the saved entry"
+    missing = scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 38))
+    assert missing["disposition"] == "triggered" and missing["pricingGates"]["overall"] == "unknown"
+    assert {v["status"] for v in missing["pricingGates"]["gates"].values()} == {"unknown"}
+    assert {k: done[k] for k in ("disposition", "firedTs", "fillProxy")} == {k: missing[k] for k in ("disposition", "firedTs", "fillProxy")}, "evidence never changes the trigger itself"
+
+
+def test_supplied_evidence_is_really_judged_wide_spread_run_away_budget_and_stale_inputs():
+    at = ms(9, 37) + 5_000
+
+    def run(**kw):
+        return scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 38),
+                            pricing_evidence=lambda c: {"evidence": _evidence(at, **kw), "atMs": at})["pricingGates"]
+    wide = run(bid=2.40, ask=3.00)
+    assert wide["gates"]["spread"]["status"] == "fail" and wide["overall"] == "infeasible"
+    ran = run(underlier=103.0)
+    assert ran["gates"]["noChase"]["status"] == "fail" and ran["gates"]["noChase"]["rAdmission"] < 3 and ran["overall"] == "infeasible", "the underlying ran: executable-price no-chase fails"
+    small = run(equity=2_000.0)
+    assert small["gates"]["sizing"]["status"] == "fail" and small["gates"]["sizing"]["contracts"] == 0 and small["gates"]["budget"]["status"] == "unknown"
+    poor = run(cash=100.0)
+    assert poor["gates"]["budget"]["status"] == "fail" and poor["gates"]["budget"]["failed"] == ["cash on hand"]
+    stale = run(age=20_000)
+    assert stale["gates"]["quote"]["status"] == "fail" and "stale_quote" in stale["gates"]["quote"]["problems"] and stale["gates"]["noChase"]["status"] == "unknown"
+    nocontract = run(contract=False)
+    assert nocontract["gates"]["contract"]["status"] == "unknown" and nocontract["gates"]["noChase"]["status"] == "unknown" and nocontract["overall"] == "unknown", "no contract = no quantity = unknown"
+    late = scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 50),
+                        pricing_evidence=lambda c: {"evidence": _evidence(ms(9, 45)), "atMs": ms(9, 45)})["pricingGates"]
+    assert late["overall"] == "unknown" and "not contemporaneous" in late["why"], "evidence gathered long after the trigger is never back-filled"
+
+
+def test_the_pricing_stage_cannot_arm_or_order_and_the_research_fetch_is_separately_configured():
+    import inspect
+    from zargar.settings_service import DEFAULTS
+    from zargar.technique import source_candidates_runtime as rt_mod
+    assert "orders.place" not in inspect.getsource(scp) and "arm_plan" not in inspect.getsource(scp) and "arm_plan" not in inspect.getsource(rt_mod)
+    assert DEFAULTS["techniques.enhanced_market.source_candidates_chain_fetch"] is False and DEFAULTS["techniques.enhanced_market.source_candidates_observe"] is False
+    g = inspect.getsource(rt_mod.gather_evidence)
+    assert 'cboe_priority("background")' in g and "wait_for" in g and "CHAIN_KNOB" in g

@@ -741,16 +741,17 @@ class MethodIngestService:
                     if scs:
                         row["sourceScenario"] = {"ids": [sc["scenarioId"] for sc in scs], "held": hold,
                                                  "match": [_ss.match_plan(sc, scen_payload, plan, plan_built_at=run.get("createdAt"), plan_origin="ingest")["overall"] for sc in scs]}
-                    with contextlib.suppress(Exception):
-                        veto = await _ps.superseded_model_veto(self.technique, sym, plan.get("planFor"))
-                        if veto:
-                            row["supersedesModelVeto"] = veto      # visible: this ingestion plan stands where the overnight model said no
+                    if scen_payload is not None:                  # only with `source_scenarios_observe` on: the default board check runs NO extra query (IR-04)
+                        with contextlib.suppress(Exception):
+                            veto = await _ps.superseded_model_veto(self.technique, sym, plan.get("planFor"))
+                            if veto:
+                                row["supersedesModelVeto"] = veto  # visible: this ingestion plan stands where the overnight model said no
                     row["owner"] = "ingestion-inline (baseline)" if prep["preparationPolicy"] == "baseline" else "em-preparation-policy"
                     if prep["preparationPolicy"] == "deterministic" and self._get("ingest.auto_arm", False):
                         # the PROPOSED policy: the same eligibility owner as the batch and the pre-open re-plan; one arm per candidate
                         try:
-                            sel = await _ps.prep_select(self.technique, [run.get("id")], persist=True) if not hold else None
-                            dec = (sel or {}).get("decisions", [{}])[0] if sel else await _ps.prep_decide(self.technique, run.get("id"), origin="ingest", persist=True, source_hold=hold)
+                            sel = await _ps.prep_select(self.technique, [run.get("id")], persist=True, origin="ingest", source_ids=[sc["scenarioId"] for sc in scs]) if not hold else None
+                            dec = (sel or {}).get("decisions", [{}])[0] if sel else await _ps.prep_decide(self.technique, run.get("id"), origin="ingest", persist=True, source_hold=hold, source_ids=[sc["scenarioId"] for sc in scs])
                             row["prepDecision"] = {k: dec.get(k) for k in ("disposition", "eligibleTriggers", "candidateKey", "explanation", "mode")}
                             if sel and sel["arm"] and await authorized():
                                 await self.technique.arm_plan(run.get("id"), {}, authorize=authorize_arm)

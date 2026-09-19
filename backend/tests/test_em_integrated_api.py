@@ -145,3 +145,37 @@ async def test_the_forward_candidate_pass_is_off_by_default_order_free_and_resta
     assert api["source"] == "forward" and {x["disposition"] for x in api["rows"]} <= set(scp.DISPOSITIONS) and all(x["orderFree"] for x in api["rows"])
     with pytest.raises(Exception):
         await eng.technique.arm_plan("sc1-does-not-exist", {})
+
+
+async def test_forward_pricing_evidence_is_gathered_once_at_the_trigger_frozen_and_never_backfilled(rig, monkeypatch):
+    """IR-05 through the runtime: a newly triggered candidate gets its pricing gates from CACHED evidence on the candidates'
+    own task; a later pass carries the stored evaluation forward untouched; an old trigger is never back-filled; the chain
+    read only happens behind its own knob (default off = contract gates unknown)."""
+    client, eng = rig
+    from zargar.domain import Quote
+    from zargar.technique import source_candidates_runtime as rt
+    fired = int(dt.datetime(2026, 9, 18, 14, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
+    now = fired + 60_000 + 20_000
+    cand = {"candidateId": "sc1-x", "variant": "source_continuation", "symbol": "AMD", "direction": "long", "disposition": "triggered", "firedTs": fired, "fillProxy": 552.0,
+            "session": DAY, "geometry": {"entry": 551.42, "stop": 548.0, "targets": [556.0, 570.0, 580.0]}, "trigger": {"id": "k1", "kind": "breakout"}}
+    eng.quotes.on_quote(Quote("AMD", bid=552.0, ask=552.05, last=552.02, ts=now, source="alpaca", quote_ts=now - 300, last_ts=now - 300))
+    calls = []
+
+    async def option_pick(*a, **kw):
+        calls.append(kw)
+        return {"available": False}
+    monkeypatch.setattr(eng.technique, "option_pick", option_pick)
+    await rt.attach_pricing(eng.technique, [cand], {}, now)
+    pg = cand["pricingGates"]
+    assert pg["evaluatedAt"] == now and pg["gates"]["noChase"]["status"] == "unknown" and pg["gates"]["contract"]["status"] == "unknown" and calls == [], "no chain read by default: the contract stays unknown"
+    assert pg["overall"] == "unknown" and pg["orderFree"] is True
+    later = dict(cand); later.pop("pricingGates")
+    await rt.attach_pricing(eng.technique, [later], {"sc1-x": {"pricingGates": pg}}, now + 600_000)
+    assert later["pricingGates"] is pg, "decided once at the trigger and carried forward - never recomputed on later evidence"
+    old = {**cand, "candidateId": "sc1-old"}; old.pop("pricingGates")
+    await rt.attach_pricing(eng.technique, [old], {}, now + 600_000)
+    assert old["pricingGates"]["overall"] == "unknown" and "nothing is back-filled" in old["pricingGates"]["why"] and old["pricingGates"]["evaluatedAt"] is None
+    await eng.settings.set(rt.CHAIN_KNOB, True)
+    fresh = {**cand, "candidateId": "sc1-new"}; fresh.pop("pricingGates")
+    await rt.attach_pricing(eng.technique, [fresh], {}, now)
+    assert len(calls) == 1 and fresh["pricingGates"]["gates"]["contract"]["status"] == "unknown", "the configured research read ran once (background priority) and found nothing: still unknown"

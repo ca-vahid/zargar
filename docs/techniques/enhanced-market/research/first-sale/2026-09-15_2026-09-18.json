@@ -5,7 +5,7 @@
    {
     "ts": "2026-09-15T13:33:23.592254+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789479203592,
@@ -24,6 +24,17 @@
        79.6262,
        80.005
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -66,17 +77,30 @@
      },
      "spreadCost": 8.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 78.49,
+      "admissionBasis": {
+       "runnerEntry": 78.49,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 3.86,
+      "rAdmissionRaw": 3.8598726114649864,
       "rPlanEntry": 3.86,
       "rRunnerEntry": 3.86,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.86,
@@ -89,7 +113,8 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 1.0,
-      "rRunnerEntry": 1.544
+      "rAdmission": 1.544,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -100,12 +125,14 @@
     },
     "heldSymbol": "NFLX260918C00079000",
     "actualNet": -60.32,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.8598726114649864,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T13:41:21.234324+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789479681234,
@@ -124,6 +151,17 @@
        428.4948,
        432.6597
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -143,17 +181,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 416.42,
+      "admissionBasis": {
+       "runnerEntry": 416.0,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 416.42
+      },
+      "rAdmission": 5.94,
+      "rAdmissionRaw": 5.939687648586335,
       "rPlanEntry": 7.199,
       "rRunnerEntry": 7.199,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 7.2,
@@ -166,23 +217,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 27.0,
-      "rRunnerEntry": 2.88
+      "rAdmission": 2.284,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 179.93,
-      "netOfFeesAndSpread": 179.93,
+      "grossAtFirstSale": 168.59,
+      "netOfFeesAndSpread": 168.59,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "WDC",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 7.199213517134097,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T13:42:23.508107+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789479743508,
@@ -201,6 +255,17 @@
        63.666,
        62.9674
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -245,17 +310,30 @@
      },
      "spreadCost": 18.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 65.7617,
+      "admissionBasis": {
+       "runnerEntry": 65.7617,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 6.374,
+      "rAdmissionRaw": 6.373783454987837,
       "rPlanEntry": 6.374,
       "rRunnerEntry": 6.374,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 8.5,
@@ -268,7 +346,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 1.0,
-      "rRunnerEntry": 6.374
+      "rAdmission": 6.374,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -279,12 +358,14 @@
     },
     "heldSymbol": "RKLB260925P00064000",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 6.373783454987837,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T13:45:21.522680+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789479921522,
@@ -303,6 +384,17 @@
        144.25,
        145.33
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -349,17 +441,30 @@
      },
      "spreadCost": 10.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 141.01,
+      "admissionBasis": {
+       "runnerEntry": 141.01,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 3.839,
+      "rAdmissionRaw": 3.8393174546747773,
       "rPlanEntry": 3.839,
       "rRunnerEntry": 3.839,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 5.12,
@@ -372,7 +477,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 1.0,
-      "rRunnerEntry": 3.839
+      "rAdmission": 3.839,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -383,12 +489,14 @@
     },
     "heldSymbol": "ORCL260918C00142000",
     "actualNet": -79.08,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.8393174546747773,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T14:02:21.319307+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789480941319,
@@ -407,6 +515,17 @@
        70.3071,
        70.7517
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -451,17 +570,30 @@
      },
      "spreadCost": 26.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 68.9734,
+      "admissionBasis": {
+       "runnerEntry": 68.9734,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 3.867,
+      "rAdmissionRaw": 3.866917947231153,
       "rPlanEntry": 3.867,
       "rRunnerEntry": 3.867,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 5.16,
@@ -474,7 +606,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 2.0,
-      "rRunnerEntry": 3.867
+      "rAdmission": 3.867,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -485,12 +618,14 @@
     },
     "heldSymbol": "CVNA260918C00070000",
     "actualNet": -74.16,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.866917947231153,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T14:07:16.622689+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789481236622,
@@ -509,6 +644,17 @@
        42.9076,
        43.2867
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -553,17 +699,30 @@
      },
      "spreadCost": 16.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 41.7701,
+      "admissionBasis": {
+       "runnerEntry": 41.7701,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 5.196,
+      "rAdmissionRaw": 5.1964367291001095,
       "rPlanEntry": 5.196,
       "rRunnerEntry": 5.196,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 6.93,
@@ -576,7 +735,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 2.0,
-      "rRunnerEntry": 5.196
+      "rAdmission": 5.196,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -587,12 +747,14 @@
     },
     "heldSymbol": "IREN260918C00042000",
     "actualNet": 2.84,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 5.1964367291001095,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T14:27:18.955309+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789482438955,
@@ -611,6 +773,17 @@
        335.0768,
        336.8108
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -630,17 +803,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 330.2,
+      "admissionBasis": {
+       "runnerEntry": 329.875,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 330.2
+      },
+      "rAdmission": 3.348,
+      "rAdmissionRaw": 3.3482576985413157,
       "rPlanEntry": 4.205,
       "rRunnerEntry": 4.205,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 4.21,
@@ -653,23 +839,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 30.0,
-      "rRunnerEntry": 1.682
+      "rAdmission": 1.241,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 83.23,
-      "netOfFeesAndSpread": 83.23,
+      "grossAtFirstSale": 73.48,
+      "netOfFeesAndSpread": 73.48,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "INTU",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 4.205044258518196,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T14:37:19.558888+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789483039558,
@@ -688,6 +877,17 @@
        429.2825,
        432.51
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -707,17 +907,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 420.02,
+      "admissionBasis": {
+       "runnerEntry": 419.6,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 420.02
+      },
+      "rAdmission": 4.96,
+      "rAdmissionRaw": 4.960285941223251,
       "rPlanEntry": 6.153,
       "rRunnerEntry": 6.153,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 6.15,
@@ -730,23 +943,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 29.0,
-      "rRunnerEntry": 2.461
+      "rAdmission": 1.884,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 149.76,
-      "netOfFeesAndSpread": 149.76,
+      "grossAtFirstSale": 137.58,
+      "netOfFeesAndSpread": 137.58,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "AMAT",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 6.153479504289746,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T14:49:17.270022+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789483757270,
@@ -765,6 +981,17 @@
        83.5307,
        84.0142
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -809,17 +1036,30 @@
      },
      "spreadCost": 7.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 82.08,
+      "admissionBasis": {
+       "runnerEntry": 82.08,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 3.535,
+      "rAdmissionRaw": 3.5348440545809283,
       "rPlanEntry": 3.535,
       "rRunnerEntry": 3.535,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 4.71,
@@ -832,7 +1072,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 1.0,
-      "rRunnerEntry": 3.535
+      "rAdmission": 3.535,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -843,12 +1084,14 @@
     },
     "heldSymbol": "CRWV260918C00082500",
     "actualNet": -9.58,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.5348440545809283,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T14:53:19.631822+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789483999631,
@@ -867,6 +1110,17 @@
        37.23,
        37.5133
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -911,17 +1165,30 @@
      },
      "spreadCost": 9.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 36.38,
+      "admissionBasis": {
+       "runnerEntry": 36.38,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 4.668,
+      "rAdmissionRaw": 4.667627677100438,
       "rPlanEntry": 4.668,
       "rRunnerEntry": 4.668,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 4.67,
@@ -934,7 +1201,8 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 1.0,
-      "rRunnerEntry": 1.867
+      "rAdmission": 1.867,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -945,12 +1213,14 @@
     },
     "heldSymbol": "SMCI260918C00036500",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 4.667627677100438,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-15T15:22:18.938931+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789485738938,
@@ -969,6 +1239,17 @@
        49.9813,
        49.595
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1011,17 +1292,30 @@
      },
      "spreadCost": 15.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 51.14,
+      "admissionBasis": {
+       "runnerEntry": 51.14,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 6.042,
+      "rAdmissionRaw": 6.042236996480319,
       "rPlanEntry": 6.042,
       "rRunnerEntry": 6.042,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 6.04,
@@ -1034,7 +1328,8 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 1.0,
-      "rRunnerEntry": 2.417
+      "rAdmission": 2.417,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -1045,11 +1340,13 @@
     },
     "heldSymbol": "DVN260925P00051000",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 6.042236996480319,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    }
   ],
   "executionNet": -220.3,
-  "asOf": "2026-09-19T01:05:57+00:00"
+  "asOf": "2026-09-19T02:35:52+00:00"
  },
  {
   "date": "2026-09-16",
@@ -1057,7 +1354,7 @@
    {
     "ts": "2026-09-16T13:31:02.242800+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789565462242,
@@ -1076,6 +1373,17 @@
        140.67,
        141.2267
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1095,17 +1403,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 139.14,
+      "admissionBasis": {
+       "runnerEntry": 139.0,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 139.14
+      },
+      "rAdmission": 2.499,
+      "rAdmissionRaw": 2.499041916167735,
       "rPlanEntry": 3.204,
       "rRunnerEntry": 3.204,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.2,
@@ -1118,23 +1439,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 11.0,
-      "rRunnerEntry": 1.282
+      "rAdmission": 0.899,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 9.8,
-      "netOfFeesAndSpread": 9.8,
+      "grossAtFirstSale": 8.26,
+      "netOfFeesAndSpread": 8.26,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "NOW",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.2038848920863536,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-16T13:32:01.900957+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789565521900,
@@ -1153,6 +1477,17 @@
        89.2955,
        90.794
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1197,17 +1532,30 @@
      },
      "spreadCost": 21.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 84.8,
+      "admissionBasis": {
+       "runnerEntry": 84.8,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 6.192,
+      "rAdmissionRaw": 6.192148760330596,
       "rPlanEntry": 6.192,
       "rRunnerEntry": 6.192,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 8.26,
@@ -1220,7 +1568,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 1.0,
-      "rRunnerEntry": 6.192
+      "rAdmission": 6.192,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -1231,12 +1580,14 @@
     },
     "heldSymbol": "CRCL260918C00086000",
     "actualNet": -94.11,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 6.192148760330596,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-16T13:34:01.598811+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789565641598,
@@ -1255,6 +1606,17 @@
        67.6964,
        68.0686
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1274,17 +1636,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 66.65,
+      "admissionBasis": {
+       "runnerEntry": 66.58,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 66.65
+      },
+      "rAdmission": 3.521,
+      "rAdmissionRaw": 3.5209729461404544,
       "rPlanEntry": 4.472,
       "rRunnerEntry": 4.472,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 4.47,
@@ -1297,23 +1672,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 22.0,
-      "rRunnerEntry": 1.789
+      "rAdmission": 1.304,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 13.1,
-      "netOfFeesAndSpread": 13.1,
+      "grossAtFirstSale": 11.56,
+      "netOfFeesAndSpread": 11.56,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "CVNA",
     "actualNet": -29.49,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 4.471613097026216,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-16T18:59:01.111125+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789585141111,
@@ -1332,6 +1710,17 @@
        83.5254,
        84.0142
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1376,17 +1765,30 @@
      },
      "spreadCost": 15.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 82.059,
+      "admissionBasis": {
+       "runnerEntry": 82.059,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 3.574,
+      "rAdmissionRaw": 3.573970265659358,
       "rPlanEntry": 3.574,
       "rRunnerEntry": 3.574,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 4.77,
@@ -1399,7 +1801,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 1.0,
-      "rRunnerEntry": 3.574
+      "rAdmission": 3.574,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -1410,12 +1813,14 @@
     },
     "heldSymbol": "CRWV260918C00082500",
     "actualNet": -51.11,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.573970265659358,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-16T19:15:01.106472+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789586101106,
@@ -1434,6 +1839,17 @@
        1544.1361,
        1555.8014
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1453,17 +1869,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 1510.65,
+      "admissionBasis": {
+       "runnerEntry": 1509.1401,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 1510.65
+      },
+      "rAdmission": 2.998,
+      "rAdmissionRaw": 2.9981208374557182,
       "rPlanEntry": 3.444,
       "rRunnerEntry": 3.444,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.44,
@@ -1476,22 +1905,25 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 1.0,
-      "rRunnerEntry": 1.377
+      "rAdmission": 1.139,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 18.66,
-      "netOfFeesAndSpread": 18.66,
+      "grossAtFirstSale": 17.15,
+      "netOfFeesAndSpread": 17.15,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "SNDK",
     "actualNet": 27.1582,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.443638376383716,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    }
   ],
   "executionNet": -147.5518,
-  "asOf": "2026-09-19T01:05:57+00:00"
+  "asOf": "2026-09-19T02:35:52+00:00"
  },
  {
   "date": "2026-09-17",
@@ -1499,7 +1931,7 @@
    {
     "ts": "2026-09-17T13:31:02.438288+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789651862438,
@@ -1518,6 +1950,17 @@
        23.1486,
        23.0012
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1563,17 +2006,30 @@
      },
      "spreadCost": 24.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 23.5906,
+      "admissionBasis": {
+       "runnerEntry": 23.5906,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 3.695,
+      "rAdmissionRaw": 3.6952978056425887,
       "rPlanEntry": 3.695,
       "rRunnerEntry": 3.695,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.69,
@@ -1586,7 +2042,8 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 1.0,
-      "rRunnerEntry": 1.478
+      "rAdmission": 1.478,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -1597,12 +2054,14 @@
     },
     "heldSymbol": "BMNR260925P00023000",
     "actualNet": -80.35,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.6952978056425887,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-17T13:32:01.931580+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789651921931,
@@ -1621,6 +2080,17 @@
        150.57,
        151.92
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1666,17 +2136,30 @@
      },
      "spreadCost": 19.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 146.52,
+      "admissionBasis": {
+       "runnerEntry": 146.52,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 5.528,
+      "rAdmissionRaw": 5.52825552825536,
       "rPlanEntry": 5.528,
       "rRunnerEntry": 5.528,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 7.37,
@@ -1689,7 +2172,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 1.0,
-      "rRunnerEntry": 5.528
+      "rAdmission": 5.528,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -1700,12 +2184,14 @@
     },
     "heldSymbol": "ORCL260918C00148000",
     "actualNet": 250.92,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 5.52825552825536,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-17T13:34:01.515049+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789652041515,
@@ -1724,6 +2210,17 @@
        266.7423,
        271.872
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1743,17 +2240,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 256.74,
+      "admissionBasis": {
+       "runnerEntry": 256.483,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 256.74
+      },
+      "rAdmission": 3.045,
+      "rAdmissionRaw": 3.0445454911271153,
       "rPlanEntry": 3.265,
       "rRunnerEntry": 3.265,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.27,
@@ -1766,23 +2276,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 6.0,
-      "rRunnerEntry": 1.088
+      "rAdmission": 0.98,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 30.78,
-      "netOfFeesAndSpread": 30.78,
+      "grossAtFirstSale": 29.24,
+      "netOfFeesAndSpread": 29.24,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "ARM",
     "actualNet": null,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.2650852923703657,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-17T13:59:02.033820+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789653542033,
@@ -1801,6 +2314,17 @@
        105.2865,
        105.7537
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1820,17 +2344,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 103.99,
+      "admissionBasis": {
+       "runnerEntry": 103.885,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 103.99
+      },
+      "rAdmission": 2.825,
+      "rAdmissionRaw": 2.824631646380551,
       "rPlanEntry": 3.598,
       "rRunnerEntry": 3.598,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.6,
@@ -1843,23 +2380,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 14.0,
-      "rRunnerEntry": 1.439
+      "rAdmission": 1.029,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 10.46,
-      "netOfFeesAndSpread": 10.46,
+      "grossAtFirstSale": 8.99,
+      "netOfFeesAndSpread": 8.99,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "SCHW",
     "actualNet": 34.5177,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.597805159799718,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-17T14:23:01.256964+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789654981256,
@@ -1878,6 +2418,17 @@
        301.6355,
        303.9956
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1897,17 +2448,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 294.85,
+      "admissionBasis": {
+       "runnerEntry": 294.5552,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 294.85
+      },
+      "rAdmission": 4.938,
+      "rAdmissionRaw": 4.93822894168458,
       "rPlanEntry": 6.062,
       "rRunnerEntry": 6.062,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 6.06,
@@ -1920,23 +2484,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 5.0,
-      "rRunnerEntry": 2.425
+      "rAdmission": 1.88,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 18.88,
-      "netOfFeesAndSpread": 18.88,
+      "grossAtFirstSale": 17.41,
+      "netOfFeesAndSpread": 17.41,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "COHR",
     "actualNet": -23.4328,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 6.062419727716332,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-17T14:54:02.196246+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789656842196,
@@ -1955,6 +2522,17 @@
        266.4285,
        269.08
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -1974,17 +2552,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 258.73,
+      "admissionBasis": {
+       "runnerEntry": 258.4742,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 258.73
+      },
+      "rAdmission": 3.136,
+      "rAdmissionRaw": 3.136078538314668,
       "rPlanEntry": 3.484,
       "rRunnerEntry": 3.484,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.48,
@@ -1997,23 +2588,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 6.0,
-      "rRunnerEntry": 1.393
+      "rAdmission": 1.208,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 25.45,
-      "netOfFeesAndSpread": 25.45,
+      "grossAtFirstSale": 23.92,
+      "netOfFeesAndSpread": 23.92,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "TXN",
     "actualNet": -12.7604,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.4835933650845754,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-17T17:08:01.642011+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789664881642,
@@ -2032,6 +2626,17 @@
        80.185,
        78.26
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -2076,17 +2681,30 @@
      },
      "spreadCost": 27.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 85.96,
+      "admissionBasis": {
+       "runnerEntry": 85.96,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 10.415,
+      "rAdmissionRaw": 10.415257676180154,
       "rPlanEntry": 10.415,
       "rRunnerEntry": 10.415,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 10.41,
@@ -2099,7 +2717,8 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 1.0,
-      "rRunnerEntry": 4.166
+      "rAdmission": 4.166,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -2110,11 +2729,13 @@
     },
     "heldSymbol": "CRCL260918P00085000",
     "actualNet": 53.76,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 10.415257676180154,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    }
   ],
   "executionNet": 222.6545,
-  "asOf": "2026-09-19T01:05:58+00:00"
+  "asOf": "2026-09-19T02:35:52+00:00"
  },
  {
   "date": "2026-09-18",
@@ -2122,7 +2743,7 @@
    {
     "ts": "2026-09-18T13:33:01.631976+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789738381631,
@@ -2141,6 +2762,17 @@
        373.1462,
        375.1514
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -2160,17 +2792,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 367.5,
+      "admissionBasis": {
+       "runnerEntry": 367.1305,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 367.5
+      },
+      "rAdmission": 3.47,
+      "rAdmissionRaw": 3.469707962996579,
       "rPlanEntry": 4.369,
       "rRunnerEntry": 4.369,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 4.37,
@@ -2183,23 +2828,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 4.0,
-      "rRunnerEntry": 1.748
+      "rAdmission": 1.287,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 12.83,
-      "netOfFeesAndSpread": 12.83,
+      "grossAtFirstSale": 11.36,
+      "netOfFeesAndSpread": 11.36,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "PANW",
     "actualNet": -63.6815,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 4.36939587078507,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-18T13:48:02.077635+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789739282077,
@@ -2218,6 +2866,17 @@
        371.5285,
        375.1514
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -2237,17 +2896,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 361.02,
+      "admissionBasis": {
+       "runnerEntry": 360.66,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 361.02
+      },
+      "rAdmission": 6.532,
+      "rAdmissionRaw": 6.532334858780609,
       "rPlanEntry": 8.036,
       "rRunnerEntry": 8.036,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 8.04,
@@ -2260,23 +2932,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 4.0,
-      "rRunnerEntry": 3.214
+      "rAdmission": 2.513,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 23.19,
-      "netOfFeesAndSpread": 23.19,
+      "grossAtFirstSale": 21.75,
+      "netOfFeesAndSpread": 21.75,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "PANW",
     "actualNet": -63.6815,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 8.036045028558593,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-18T13:55:06.756106+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789739706756,
@@ -2295,6 +2970,17 @@
        202.1112,
        203.85
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -2314,17 +3000,30 @@
      },
      "spreadCost": null,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 197.09,
+      "admissionBasis": {
+       "runnerEntry": 196.895,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": 197.09
+      },
+      "rAdmission": 5.731,
+      "rAdmissionRaw": 5.731242051716869,
       "rPlanEntry": 7.064,
       "rRunnerEntry": 7.064,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 7.06,
@@ -2337,23 +3036,26 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 8.0,
-      "rRunnerEntry": 2.826
+      "rAdmission": 2.193,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "linear_shares",
-      "grossAtFirstSale": 22.26,
-      "netOfFeesAndSpread": 22.26,
+      "grossAtFirstSale": 20.7,
+      "netOfFeesAndSpread": 20.7,
       "caveat": "underlying move x shares sold at the first rung"
      }
     },
     "heldSymbol": "FSLR",
     "actualNet": -47.225,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 7.064499746063997,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-18T17:38:03.007851+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789753083007,
@@ -2372,6 +3074,17 @@
        57.3989,
        56.91
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -2416,17 +3129,30 @@
      },
      "spreadCost": 12.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 2,
       "rung": "tp3",
       "rungBasis": "book_tp3",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 58.8655,
+      "admissionBasis": {
+       "runnerEntry": 58.8655,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 3.679,
+      "rAdmissionRaw": 3.6785176824679913,
       "rPlanEntry": 3.679,
       "rRunnerEntry": 3.679,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "pass",
-      "reason": null,
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.68,
@@ -2439,7 +3165,8 @@
       "rungIndex": 0,
       "rung": "tp1-ladder",
       "quantitySold": 1.0,
-      "rRunnerEntry": 1.471
+      "rAdmission": 1.471,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -2450,12 +3177,14 @@
     },
     "heldSymbol": "DRAM260921P00058000",
     "actualNet": -104.32,
-    "wouldRefuse": false
+    "rRunnerEntryRaw": 3.6785176824679913,
+    "belowMinAtRunnerEntry": false,
+    "v2Disposition": "deferred_missing_evidence"
    },
    {
     "ts": "2026-09-18T17:59:01.658066+00:00",
     "record": {
-     "version": "first-sale-v1",
+     "version": "first-sale-v2",
      "stage": "retrospective",
      "mode": "retrospective",
      "ts": 1789754341658,
@@ -2474,6 +3203,17 @@
        92.2471,
        90.3253
       ],
+      "evidence": null,
+      "validated": {
+       "status": "missing",
+       "price": null,
+       "basis": null,
+       "problems": [
+        "no_underlier_evidence"
+       ],
+       "source": null,
+       "ageMs": null
+      },
       "observed": null
      },
      "vehicle": {
@@ -2516,17 +3256,30 @@
      },
      "spreadCost": 15.0,
      "gate": {
-      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
       "rungIndex": 1,
       "rung": "tp2-full",
       "rungBasis": "single_contract_exit",
+      "pinSource": "run_config",
       "minRiskReward": 3.0,
+      "admissionEntry": 95.335,
+      "admissionBasis": {
+       "runnerEntry": 95.335,
+       "executableBound": null,
+       "boundBasis": null,
+       "shareLimit": null
+      },
+      "rAdmission": 1.316,
+      "rAdmissionRaw": 1.3162404092071551,
       "rPlanEntry": 2.417,
       "rRunnerEntry": 1.316,
       "rObservedUnderlier": null,
-      "observedProblem": "underlier_unobserved",
-      "verdict": "fail",
-      "reason": "first_sale_rr_below_min",
+      "observedProblem": "underlier_not_validated",
+      "missingEvidence": [
+       "underlier_missing"
+      ],
+      "verdict": "unknown",
+      "reason": "underlier_missing",
       "planTime": {
        "targetIndex": 2,
        "rr": 3.63,
@@ -2539,7 +3292,8 @@
       "rungIndex": 1,
       "rung": "tp2-full",
       "quantitySold": 1.0,
-      "rRunnerEntry": 1.316
+      "rAdmission": 1.316,
+      "note": "the first PRODUCTION sale - reported beside the gate target, never gated, never assumed to be the same rung"
      },
      "payoffProxy": {
       "kind": "delta_linear",
@@ -2550,10 +3304,12 @@
     },
     "heldSymbol": "SBUX261002P00095000",
     "actualNet": -84.1,
-    "wouldRefuse": true
+    "rRunnerEntryRaw": 1.3162404092071551,
+    "belowMinAtRunnerEntry": true,
+    "v2Disposition": "deferred_missing_evidence"
    }
   ],
   "executionNet": -299.3265,
-  "asOf": "2026-09-19T01:05:58+00:00"
+  "asOf": "2026-09-19T02:35:52+00:00"
  }
 ]

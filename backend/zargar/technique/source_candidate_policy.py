@@ -92,7 +92,7 @@ def build_candidate(*, scenario: dict, payload: dict, match: dict | None, plan: 
 
 
 def evaluate(candidate: dict, bars: list, *, thresholds: Thresholds | None = None, profile=None, prev_close: float | None = None,
-             upto_ts: int | None = None) -> dict:
+             upto_ts: int | None = None, pricing_evidence=None, pricing_rules: dict | None = None) -> dict:
     """Causal evaluation with the candidate's OWN tracker. Only bars CLOSED by `upto_ts` (default: all given) and
     before the source expiry are fed. The proxy outcome (what the underlying did afterwards) is reported apart and
     never feeds back into the disposition."""
@@ -130,8 +130,15 @@ def evaluate(candidate: dict, bars: list, *, thresholds: Thresholds | None = Non
     out["lastBarTs"] = int(bars[fed - 1].ts) if fed else None
     out["trackerEvents"] = list(tracker.events[-8:]); out["skipped"] = list(tracker.skipped[-6:])
     if tracker.status == "fired":
-        out.update({"disposition": "triggered", "firedTs": tracker.fired_ts, "firedWindow": tracker.fired_window, "fillProxy": tracker.fill_price,
-                    "pricingGates": pricing_gates(candidate, None)})
+        out.update({"disposition": "triggered", "firedTs": tracker.fired_ts, "firedWindow": tracker.fired_window, "fillProxy": tracker.fill_price})
+        # the evidence must be CONTEMPORANEOUS with the trigger (captured within 3 minutes of the confirming bar's close);
+        # anything later is not what an entry would have seen - it stays unknown
+        ev = pricing_evidence(out) if callable(pricing_evidence) else pricing_evidence
+        at = (ev or {}).get("atMs")
+        fresh = at is not None and 0 <= int(at) - (int(tracker.fired_ts) + 60_000) <= 180_000
+        out["pricingGates"] = pricing_gates(out, ((ev or {}).get("evidence") if fresh else None), now_ms=(at if fresh else None), rules=pricing_rules)
+        if ev and not fresh:
+            out["pricingGates"]["why"] = "evidence was not captured within 3 minutes of the trigger - not contemporaneous"
         scored = score_trigger(tracker, bars, thresholds=t)
         out["outcomeProxy"] = {**(scored.get("sim") or {}), "evidenceClass": "underlying_walkforward_proxy",
                                "note": "what the UNDERLYING did afterwards - not an option fill, not dollars; never feeds the disposition"}
@@ -143,13 +150,93 @@ def evaluate(candidate: dict, bars: list, *, thresholds: Thresholds | None = Non
     return out
 
 
-def pricing_gates(candidate: dict, quotes: dict | None) -> dict:
-    """The executable-pricing stage. Order-free research never fetches a chain: without a contemporaneous cached quote
-    the contract / spread / sizing / budget gates are UNKNOWN - they are not assumed to pass."""
-    q = (quotes or {}).get(candidate.get("symbol"))
-    return {"stage": "executable_pricing", "underlierQuote": ("present" if q else "unknown"),
-            "contract": "unknown (no chain fetch on the research path)", "spread": "unknown", "sizing": "unknown", "budget": "unknown",
-            "noChase": "applied by the tracker (completed-bar rules)", "note": "a triggered candidate is NOT an executable entry"}
+PRICING_VERSION = "candidate-pricing-v1"
+PRICING_DEFAULTS = {"riskPct": 2.0, "premiumStopPct": 50.0, "maxSpreadPct": 10.0, "maxPremiumNotional": 1000.0, "maxPremiumPct": 5.0,
+                    "maxContracts": 10, "minRiskReward": 3.0, "singleExit": "tp2", "feePerContract": 1.04, "maxQuoteAgeMs": 10_000,
+                    "fridayMult": 1.0}
+
+
+def pricing_gates(candidate: dict, evidence: dict | None, *, now_ms: int | None = None, rules: dict | None = None) -> dict:
+    """The EXECUTABLE-PRICING stage of a triggered candidate (`candidate-pricing-v1`, IR-05). ORDER-FREE: it evaluates the
+    frozen production rules on SUPPLIED contemporaneous evidence and never fetches, arms or orders anything.
+    `evidence` = {underlier: quote evidence, contract: {symbol, strike, expiry, delta, ...}, contractQuote: quote evidence,
+    equity, cash}. Every gate is `pass` | `fail` | `unknown`; missing evidence is UNKNOWN - never assumed to pass.
+      contract   a concrete contract was supplied for the candidate's side
+      quote      that contract's quote is validated venue evidence (the ED-04 validator: identity, source, venue time, size)
+      spread     (ask - bid) / mid within the production limit (T5.4, 10%)
+      sizing     the risk-budget sizer: equity x risk% / (ask x 100 x premium-stop share), a BOUND (0 contracts = fail)
+      budget     premium within the RiskGate caps (notional, % of equity) and the cash on hand
+      noChase    the first-sale admission at the validated CURRENT executable underlying bound (first-sale-v2)"""
+    from . import first_sale as _fs
+    from .profit_capture import quote_problems
+    r = {**PRICING_DEFAULTS, **(rules or {})}
+    ev = evidence or {}
+    trig, geo = candidate.get("trigger") or {}, candidate.get("geometry") or {}
+    out = {"version": PRICING_VERSION, "stage": "executable_pricing", "evaluatedAt": now_ms, "orderFree": True, "gates": {}, "rules": r,
+           "note": "a triggered candidate is NOT an executable entry; nothing here arms or orders"}
+    g = out["gates"]
+    if not ev or now_ms is None:
+        for k in ("contract", "quote", "spread", "sizing", "budget", "noChase"):
+            g[k] = {"status": "unknown", "why": "no contemporaneous evidence was supplied"}
+        out["overall"] = "unknown"
+        return out
+    contract, cq = ev.get("contract") or None, ev.get("contractQuote") or None
+    want = "put" if candidate.get("direction") == "short" else "call"
+    if not contract or not contract.get("symbol"):
+        g["contract"] = {"status": "unknown", "why": "no contract evidence (the research chain capture is off or returned nothing)"}
+    elif str(contract.get("optionType") or "").lower()[:1] not in ("", want[:1]):
+        g["contract"] = {"status": "fail", "why": f"the supplied contract is not a {want}", "symbol": contract.get("symbol")}
+    else:
+        g["contract"] = {"status": "pass", "symbol": contract.get("symbol"), "strike": contract.get("strike"), "expiry": contract.get("expiry"), "delta": contract.get("delta")}
+    ask = bid = None
+    if g["contract"]["status"] != "pass" or not cq:
+        for k in ("quote", "spread", "sizing", "budget"):
+            g[k] = {"status": "unknown", "why": ("no contract" if g["contract"]["status"] != "pass" else "no contract quote evidence")}
+    else:
+        probs = quote_problems(cq, symbol=str(contract["symbol"]), is_option=True, now_ms=int(now_ms), max_age_ms=int(r["maxQuoteAgeMs"]), side="ask")
+        g["quote"] = {"status": ("pass" if not probs else "fail"), "problems": probs, "source": cq.get("source"), "ageMs": (int(now_ms) - int(cq.get("quoteTs") or 0) if cq.get("quoteTs") else None)}
+        bid, ask = _fs._f(cq.get("bid")), _fs._f(cq.get("ask"))
+        if probs or not bid or not ask:
+            for k in ("spread", "sizing", "budget"):
+                g[k] = {"status": "unknown", "why": "the contract quote is not valid evidence"}
+        else:
+            spread = (ask - bid) / ((ask + bid) / 2.0) * 100.0
+            g["spread"] = {"status": ("pass" if spread <= float(r["maxSpreadPct"]) else "fail"), "spreadPct": round(spread, 2), "max": float(r["maxSpreadPct"])}
+            equity = _fs._f(ev.get("equity"))
+            if equity is None:
+                g["sizing"] = {"status": "unknown", "why": "book equity unknown"}
+                g["budget"] = {"status": "unknown", "why": "book equity unknown"}
+            else:
+                stop_share = float(r["premiumStopPct"]) / 100.0 if 0 < float(r["premiumStopPct"]) < 100 else 1.0
+                risk_per = ask * 100.0 * stop_share
+                n = int(equity * float(r["riskPct"]) / 100.0 * float(r["fridayMult"]) / max(risk_per, 1e-9))
+                n = min(n, int(r["maxContracts"]))
+                g["sizing"] = {"status": ("pass" if n >= 1 else "fail"), "contracts": n, "riskPerContract": round(risk_per, 2),
+                               "riskBudget": round(equity * float(r["riskPct"]) / 100.0 * float(r["fridayMult"]), 2),
+                               "why": (None if n >= 1 else "one contract risks more than the trade budget at its premium stop (the budget is a bound)")}
+                if n >= 1:
+                    prem = n * ask * 100.0
+                    cash = _fs._f(ev.get("cash"))
+                    fails = [w for ok, w in ((prem <= float(r["maxPremiumNotional"]), "premium notional cap"), (prem <= equity * float(r["maxPremiumPct"]) / 100.0, "premium % of equity cap"),
+                                             (cash is None or prem <= cash, "cash on hand")) if not ok]
+                    g["budget"] = {"status": ("unknown" if (cash is None and not fails) else ("pass" if not fails else "fail")), "premium": round(prem, 2), "failed": fails,
+                                   "why": ("cash unknown" if (cash is None and not fails) else None)}
+                else:
+                    g["budget"] = {"status": "unknown", "why": "no size to budget"}
+    qty = (g.get("sizing") or {}).get("contracts") if (g.get("sizing") or {}).get("status") == "pass" else None
+    rec = _fs.build_record(stage="candidate", symbol=str(candidate.get("symbol") or ""), run_id=str(candidate.get("planRunId") or ""), trigger_id=str(trig.get("id") or ""),
+                           family=str(trig.get("kind") or ""), direction=str(candidate.get("direction") or "long"), session=candidate.get("session"),
+                           plan_entry=geo.get("entry"), runner_entry=(candidate.get("fillProxy") if candidate.get("fillProxy") is not None else geo.get("entry")),
+                           stop=geo.get("stop"), targets=geo.get("targets") or [], underlier_evidence=ev.get("underlier"), instrument="options", qty=qty, multiplier=100.0,
+                           limit_price=ask, single_exit=str(r["singleExit"]), pinned_gate_target="auto", pin_source="run_config", min_rr=float(r["minRiskReward"]),
+                           contract=contract, option_quote=cq, fee_per_contract=float(r["feePerContract"]), stock_commission=0.0, affordable_qty=qty, plan_gate=None,
+                           mode="observe", now_ms=int(now_ms), max_underlier_age_ms=int(r["maxQuoteAgeMs"]))
+    gate = rec["gate"]
+    g["noChase"] = {"status": gate["verdict"], "rAdmission": gate["rAdmission"], "admissionEntry": gate["admissionEntry"], "rung": gate["rung"],
+                    "boundBasis": (gate["admissionBasis"] or {}).get("boundBasis"), "why": gate["reason"], "missing": gate["missingEvidence"]}
+    states = [v["status"] for v in g.values()]
+    out["overall"] = "infeasible" if "fail" in states else ("unknown" if "unknown" in states else "feasible")
+    return out
 
 
 def requalify(*, scenario: dict, payload: dict, baseline_trigger_state: dict, bars: list, session: str, thresholds: Thresholds | None = None,
@@ -209,12 +296,15 @@ def table_row(c: dict, baseline: dict | None = None) -> dict:
             "condition": (c.get("source") or {}).get("condition"), "sourceLevel": (c.get("source") or {}).get("level"), "entry": g.get("entry"), "stop": g.get("stop"),
             "targets": g.get("targets"), "disposition": c.get("disposition"), "reason": c.get("reason"), "firedTs": c.get("firedTs"),
             "outcomeProxy": (c.get("outcomeProxy") or {}).get("outcome"), "rProxy": (c.get("outcomeProxy") or {}).get("rMultiple"),
+            "pricing": ({"overall": (c.get("pricingGates") or {}).get("overall"),
+                         "gates": {k: v.get("status") for k, v in ((c.get("pricingGates") or {}).get("gates") or {}).items()}} if c.get("pricingGates") else None),
             "baseline": baseline, "orderFree": True, "origin": c.get("origin")}
 
 
 def evaluate_session(*, payloads: list, plans_by_symbol: dict, bars_by_symbol: dict, baseline_by_symbol: dict | None, session: str,
                      upto_ts: int | None = None, thresholds_by_symbol: dict | None = None, profiles_by_symbol: dict | None = None,
-                     policy_by_run: dict | None = None, prev_close_by_symbol: dict | None = None) -> list:
+                     policy_by_run: dict | None = None, prev_close_by_symbol: dict | None = None, pricing_evidence=None,
+                     pricing_rules: dict | None = None) -> list:
     """The ONE evaluator the forward loop and the replay tool share. Pure: scenarios (A) + saved plans + the policy records
     (B) + closed bars -> candidates of both variants with their dispositions. `plans_by_symbol[sym]` = [{runId, createdAt,
     trigger(origin), plan}], newest last; `baseline_by_symbol[sym]` = [{trigger, direction, status, ts, entry}] of the
@@ -237,7 +327,7 @@ def evaluate_session(*, payloads: list, plans_by_symbol: dict, bars_by_symbol: d
             th = (thresholds_by_symbol or {}).get(sym); prof = (profiles_by_symbol or {}).get(sym); pc = (prev_close_by_symbol or {}).get(sym)
             if cand["disposition"] == "waiting":
                 if bars:
-                    cand = evaluate(cand, bars, thresholds=th, profile=prof, prev_close=pc, upto_ts=upto_ts)
+                    cand = evaluate(cand, bars, thresholds=th, profile=prof, prev_close=pc, upto_ts=upto_ts, pricing_evidence=pricing_evidence, pricing_rules=pricing_rules)
                 else:
                     cand["barsCoverage"] = "none"
             base = [b for b in ((baseline_by_symbol or {}).get(sym) or []) if b.get("direction") == sc["authorSupplied"].get("direction")]
@@ -248,7 +338,7 @@ def evaluate_session(*, payloads: list, plans_by_symbol: dict, bars_by_symbol: d
                 if bars:
                     child = requalify(scenario=sc, payload=payload, baseline_trigger_state=dead, bars=bars, session=session, thresholds=th, upto_ts=upto_ts)
                     if child.get("disposition") == "requalification_eligible":
-                        ev = evaluate({**child, "source": {}}, bars, thresholds=th, profile=prof, prev_close=None, upto_ts=upto_ts)
+                        ev = evaluate({**child, "source": {}}, bars, thresholds=th, profile=prof, prev_close=None, upto_ts=upto_ts, pricing_evidence=pricing_evidence, pricing_rules=pricing_rules)
                         child = {**child, **{k: ev[k] for k in ("disposition", "firedTs", "fillProxy", "outcomeProxy", "pricingGates", "reason", "barsConsumed") if k in ev}}
                         if child["disposition"] == "requalification_eligible" and ev.get("disposition") == "requalification_eligible":
                             child["disposition"] = "requalification_eligible"          # confirmed structure, break not (yet) triggered

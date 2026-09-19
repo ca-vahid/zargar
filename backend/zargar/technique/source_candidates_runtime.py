@@ -9,6 +9,8 @@ could arm it (origin `scenario:*` - the runner refuses it). Reads: scenario arti
 plans, the `bars` table, the armer's BASELINE tracker states (read-only). No chain fetch, no model, no order."""
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import datetime as dt
 import hashlib
 import json
@@ -114,6 +116,82 @@ async def load_inputs(svc, session_day: str) -> dict:
             "thresholds": {k: v[0] for k, v in ctx.items()}, "profiles": {k: v[1] for k, v in ctx.items()}, "prevClose": {k: v[2] for k, v in ctx.items()}}
 
 
+CHAIN_KNOB = "techniques.enhanced_market.source_candidates_chain_fetch"
+EVIDENCE_WINDOW_MS = 180_000
+
+
+def pricing_rules(svc, now_ms: int) -> dict:
+    """The frozen production numbers the pricing stage evaluates (read once per pass from settings; never tuned here)."""
+    g = svc.engine.settings.get
+    friday = dt.datetime.fromtimestamp(now_ms / 1000.0, ET).weekday() == 4
+    return {"riskPct": float(g("technique.arm.risk_pct", 2.0) or 2.0), "premiumStopPct": float(g("techniques.enhanced_market.premium_stop_pct", g("technique.arm.premium_stop_pct", 50.0)) or 50.0),
+            "maxSpreadPct": 10.0, "maxPremiumNotional": float(g("risk.max_option_premium_notional", 1000.0) or 0.0), "maxPremiumPct": float(g("risk.max_option_premium_pct", 5.0) or 0.0),
+            "maxContracts": int(g("risk.max_option_contracts", 10) or 10), "minRiskReward": float(g("technique.min_risk_reward", 3.0) or 3.0),
+            "singleExit": str(g("technique.arm.single_contract_exit", "tp2") or "tp2"),
+            "feePerContract": float(g("options.fee_per_contract", 0.99) or 0.0) + float(g("sim.reg_fee_per_contract", 0.05) or 0.0),
+            "maxQuoteAgeMs": int(float(g("risk.stale_quote_seconds", 10) or 10) * 1000),
+            "fridayMult": (float(g("technique.arm.friday_size_mult", 0.5) or 1.0) if friday else 1.0)}
+
+
+async def gather_evidence(svc, cand: dict, now_ms: int) -> dict:
+    """CONTEMPORANEOUS evidence for one newly triggered candidate, on the candidates' own task (never an entry or exit
+    path). Cached quotes only by default; a contract is looked up ONLY when `source_candidates_chain_fetch` is on - one
+    BACKGROUND-priority chain read (it stands down during a provider cooldown and is never retried) plus one bounded NBBO
+    reprice. No model. Whatever is missing stays missing: the pricing stage reports it as unknown."""
+    from .research_recorder import feed_identity, quote_evidence
+    eng = svc.engine
+    sym = str(cand.get("symbol") or "")
+    ev: dict = {"underlier": quote_evidence(eng.quotes.get(sym), symbol=sym, is_option=False, feed=feed_identity(eng)), "contract": None, "contractQuote": None,
+                "equity": None, "cash": None, "chainFetch": bool(eng.settings.get(CHAIN_KNOB, False))}
+    pid = str(eng.settings.get("techniques.enhanced_market.default_portfolio", "") or eng.settings.get("technique.arm.default_portfolio", "") or "")
+    try:
+        if pid:
+            ev["equity"] = float(await asyncio.wait_for(eng.positions.equity(pid), timeout=2.0))
+            ev["cash"] = float((eng.positions.portfolio(pid) or {}).get("cash"))
+    except Exception:                                      # noqa: BLE001 - unknown stays unknown
+        pass
+    if ev["chainFetch"] and sym:
+        try:
+            from ..options.chain import cboe_priority
+            spot = (ev["underlier"] or {}).get("last") or (cand.get("geometry") or {}).get("entry")
+            tg = (cand.get("geometry") or {}).get("targets") or []
+            cap = float(tg[1] if len(tg) >= 2 else tg[0]) if tg else None
+            short = cand.get("direction") == "short"
+            with cboe_priority("background"):
+                pick = await asyncio.wait_for(svc.option_pick(sym, "short" if short else "long", spot=float(spot) if spot else None,
+                                                              max_strike=(None if short else cap), min_strike=(cap if short else None)), timeout=6.0)
+            if pick and pick.get("available") and pick.get("symbol"):
+                contract = {k: pick.get(k) for k in ("symbol", "strike", "expiry", "optionType", "delta", "dte", "openInterest", "bid", "ask")}
+                if getattr(eng, "options", None) is not None:
+                    with contextlib.suppress(Exception):
+                        await asyncio.wait_for(eng.options.reprice(contract), timeout=2.5)
+                ev["contract"] = contract
+                ev["contractQuote"] = quote_evidence(eng.quotes.get(contract["symbol"]), symbol=contract["symbol"], is_option=True, feed=None)
+        except Exception as exc:                           # noqa: BLE001
+            ev["chainError"] = f"{type(exc).__name__}: {exc}"[:160]
+    return ev
+
+
+async def attach_pricing(svc, cands: list, stored: dict, now_ms: int) -> None:
+    """Pricing gates are decided ONCE, at the trigger: a stored evaluation is carried forward untouched; a candidate that
+    triggered within the evidence window and has none yet is evaluated now; an older trigger with no evaluation stays
+    unknown (the evaluator was not watching at the time) - evidence is never back-filled."""
+    rules = None
+    for c in cands:
+        if c.get("disposition") != "triggered" or not c.get("firedTs"):
+            continue
+        prior = ((stored.get(str(c.get("candidateId"))) or {}).get("pricingGates")) or None
+        if prior and prior.get("evaluatedAt"):
+            c["pricingGates"] = prior
+            continue
+        age = int(now_ms) - (int(c["firedTs"]) + 60_000)
+        if 0 <= age <= EVIDENCE_WINDOW_MS:
+            rules = rules or pricing_rules(svc, now_ms)
+            c["pricingGates"] = scp.pricing_gates(c, await gather_evidence(svc, c, now_ms), now_ms=now_ms, rules=rules)
+        else:
+            c["pricingGates"] = {**scp.pricing_gates(c, None), "why": "the trigger was not observed within the evidence window - nothing is back-filled"}
+
+
 async def tick(svc, now_ms: int) -> dict:
     """One evaluation pass. Returns counts; never raises into the caller's loop."""
     if not bool(svc.engine.settings.get(KNOB, False)):
@@ -127,6 +205,9 @@ async def tick(svc, now_ms: int) -> dict:
                                  baseline_by_symbol=baseline_states(svc.armer), session=session_day, upto_ts=now_ms,
                                  thresholds_by_symbol=inp["thresholds"], profiles_by_symbol=inp["profiles"],
                                  prev_close_by_symbol=inp["prevClose"])[:MAX_CANDIDATES]
+    async with svc.engine.sf() as s:
+        rows = (await s.execute(select(TechniqueSourceCandidate).where(TechniqueSourceCandidate.session == session_day))).scalars().all()
+    await attach_pricing(svc, cands, {r.id: dict(r.payload or {}) for r in rows}, now_ms)
     changed = await persist(svc, session_day, cands, now_ms)
     return {"enabled": True, "rth": True, "candidates": len(cands), "changed": changed}
 
@@ -140,7 +221,8 @@ async def persist(svc, session_day: str, cands: list, now_ms: int) -> int:
         for c in cands:
             cid = str(c.get("candidateId"))
             slim = {k: v for k, v in c.items() if k not in ("trackerEvents",)}
-            sh = _h({k: slim.get(k) for k in ("disposition", "reason", "firedTs", "geometry", "structure")})   # never the bar counter: a quiet minute rewrites nothing
+            sh = _h({**{k: slim.get(k) for k in ("disposition", "reason", "firedTs", "geometry", "structure")}, "pricing": (slim.get("pricingGates") or {}).get("overall"),
+                     "pricedAt": (slim.get("pricingGates") or {}).get("evaluatedAt")})   # never the bar counter: a quiet minute rewrites nothing
             row = await s.get(TechniqueSourceCandidate, cid, with_for_update=True)
             if row is None:
                 s.add(TechniqueSourceCandidate(id=cid, session=session_day, symbol=str(c.get("symbol") or ""), scenario_id=str(c.get("scenarioId") or c.get("parentScenarioId") or ""),

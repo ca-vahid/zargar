@@ -51,41 +51,47 @@ async def build(date: str) -> dict:
         rec = fs.build_record(stage="retrospective", symbol=p.get("symbol"), run_id=e["rid"], trigger_id=p.get("trigger"), family=str(trig.get("kind") or ""),
                               direction=str(trig.get("direction") or ("short" if trig.get("kind") in ("reject", "breakdown") else "long")), session=date,
                               plan_entry=(trig.get("entry") or {}).get("price"), runner_entry=p.get("entry"), stop=p.get("stop"), targets=p.get("targets") or [],
-                              observed_underlier=None, instrument=inst, qty=p.get("qty"), multiplier=(100.0 if inst == "options" else 1.0), limit_price=p.get("limitPrice"),
-                              single_exit="tp2", pinned_gate_target=str((cfg.get("settings") or {}).get("technique.rr_gate_target") or "auto"),
+                              underlier_evidence=None, instrument=inst, qty=p.get("qty"), multiplier=(100.0 if inst == "options" else 1.0), limit_price=p.get("limitPrice"),
+                              single_exit="tp2", pinned_gate_target=str((cfg.get("settings") or {}).get("technique.rr_gate_target") or "auto"), pin_source=("run_config" if cfg else "unresolved"),
                               min_rr=float(th.get("min_risk_reward") or 3.0), contract=contract,
                               option_quote=({"bid": contract.get("bid"), "ask": contract.get("ask"), "source": contract.get("priced")} if contract else None),
                               fee_per_contract=1.04, stock_commission=0.0, affordable_qty=p.get("qty"),
                               plan_gate={"targetIndex": th.get("rr_gate_target"), "rr": trig.get("riskReward"), "rrTp3": trig.get("riskRewardTp3"), "min": th.get("min_risk_reward")},
                               mode="retrospective", now_ms=int(e["ts"].timestamp() * 1000))
         held = (contract or {}).get("symbol") or p.get("symbol")
+        g = rec["gate"]
+        raw, _prob = (fs.r_raw(direction=rec["direction"], entry=p.get("entry"), stop=p.get("stop"), target=rec["underlying"]["targets"][g["rungIndex"]])
+                      if g["rungIndex"] is not None else (None, None))
         rows.append({"ts": e["ts"].isoformat(), "record": rec, "heldSymbol": held, "actualNet": (net["bySymbol"].get(held) or {}).get("net"),
-                     "wouldRefuse": fs.refusal_reason(rec) is not None})
+                     "rRunnerEntryRaw": raw, "belowMinAtRunnerEntry": (raw is not None and raw < g["minRiskReward"]),
+                     "v2Disposition": fs.decide(rec, "enforce")["disposition"]})
     return {"date": date, "rows": rows, "executionNet": net["net"], "asOf": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
 
 
 def render(days: list) -> str:
-    L = ["# EM first-sale R at the final quantity - retrospective (`first-sale-v1`)", "",
-         f"Generated {days[0]['asOf']} from the immutable order-intent journal; retrospective, read-only. The live underlying at admission was not captured before this build: "
-         "`R on the live underlier` is unknown for every row below and is never inferred. `Actual net` is the execution ledger's result for the held symbol "
-         "(a symbol traded twice in one session shows the session total for that symbol).", "",
-         "| Session | Time (UTC) | Symbol | Trigger | Vehicle | Qty | Exit rung | R at that rung | Min | Plan-time R (rung) | Verdict | Enforce would refuse | Actual net |",
-         "|---|---|---|---|---|---:|---|---:|---:|---|---|---|---:|"]
-    tot = {"n": 0, "refuse": 0, "netRefused": 0.0, "netKept": 0.0}
+    L = ["# EM first-sale R at the final quantity - retrospective (`first-sale-v2`)", "",
+         f"Generated {days[0]['asOf']} from the immutable order-intent journal; retrospective, read-only. **The validated executable underlying price at admission was never "
+         "captured before this build**, so under `first-sale-v2` EVERY historical row is `unknown` for admission and `enforce` would have DEFERRED it - that column is the honest "
+         "answer, not a back-test. `R at the runner's entry` is the geometry-only number (unrounded): the exact admission number only if the underlying had not moved. "
+         "`Actual net` is the execution ledger's result for the held symbol.", "",
+         "| Session | Time (UTC) | Symbol | Trigger | Vehicle | Qty | Gate target | First production sale | R at the runner's entry | Min | Plan-time R (rung) | Below min at the runner's entry | v2 admission (no evidence captured) | Actual net |",
+         "|---|---|---|---|---|---:|---|---|---:|---:|---|---|---|---:|"]
+    n = below = 0
     for d in days:
         for r in d["rows"]:
-            g, v = r["record"]["gate"], r["record"]["vehicle"]
+            g, v, f = r["record"]["gate"], r["record"]["vehicle"], r["record"]["firstSale"]
             pt = g.get("planTime") or {}
-            tot["n"] += 1
-            if r["wouldRefuse"]:
-                tot["refuse"] += 1; tot["netRefused"] += float(r["actualNet"] or 0)
-            else:
-                tot["netKept"] += float(r["actualNet"] or 0)
-            L.append(f"| {d['date']} | {r['ts'][11:19]} | {r['record']['symbol']} | {r['record']['trigger']} | {v['instrument']} | {v['quantity']:g} | {g['rung']} | {g['rRunnerEntry']} | {g['minRiskReward']:g} | "
-                     f"{pt.get('rr')} (TP{(pt.get('targetIndex') or 0) + 1}) | {g['verdict']} | {'yes' if r['wouldRefuse'] else 'no'} | {r['actualNet'] if r['actualNet'] is not None else 'no fill or open'} |")
-    L += ["", f"Entries: {tot['n']}. `enforce` would have refused {tot['refuse']}; the refused entries' actual net sums to {tot['netRefused']:+.4f} and the kept entries' to {tot['netKept']:+.4f} "
-          "(execution ledger, after commissions; a symbol traded twice in a session is counted once per intent - read the per-row column, not this sum, for those).", "",
-          "This is FOUR sessions of fixtures. It shows what the documented rule would have done; it does not establish that enforcing it is profitable. Activation is a separate decision.", "",
+            n += 1
+            below += 1 if r["belowMinAtRunnerEntry"] else 0
+            raw = r["rRunnerEntryRaw"]
+            raw_s = f"{raw:.4f}" if raw is not None else "unknown"
+            L.append(f"| {d['date']} | {r['ts'][11:19]} | {r['record']['symbol']} | {r['record']['trigger']} | {v['instrument']} | {v['quantity']:g} | {g['rung']} | {f['rung']} | "
+                     f"{raw_s} | {g['minRiskReward']:g} | {pt.get('rr')} (TP{(pt.get('targetIndex') or 0) + 1}) | "
+                     f"{'yes' if r['belowMinAtRunnerEntry'] else 'no'} | {r['v2Disposition'].replace('_', ' ')} | {r['actualNet'] if r['actualNet'] is not None else 'no fill or open'} |")
+    L += ["", f"Entries: {n}. Below the minimum on the runner's entry alone: {below}. Admission under v2 is unknown for all {n} (no validated underlying evidence exists for them); "
+          "forward observation is the only way to learn how often the live executable bound changes the verdict.", "",
+          "Four sessions of fixtures. This shows what the geometry said; it does not establish that enforcing the gate is profitable, and one avoided loser is not a reason to enforce. "
+          "Observation first; enforcement is a separate decision.", "",
           "Reproduce: `python -m zargar.tools.em_first_sale report --dates " + ",".join(d["date"] for d in days) + "`."]
     return "\n".join(L) + "\n"
 

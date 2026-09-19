@@ -1835,9 +1835,9 @@ class TechniqueService:
         return effective(self.engine.settings.get)
 
     async def prep_decide(self, run_id: str, *, origin: str | None = None, persist: bool = False, run: dict | None = None,
-                          source_hold: list | None = None) -> dict:
+                          source_hold: list | None = None, source_ids: list | None = None) -> dict:
         from .prep_service import prep_decide
-        return await prep_decide(self, run_id, origin=origin, persist=persist, run=run, source_hold=source_hold)
+        return await prep_decide(self, run_id, origin=origin, persist=persist, run=run, source_hold=source_hold, source_ids=source_ids)
 
     async def prep_select(self, run_ids: list, *, persist: bool = False) -> dict:
         from .prep_service import prep_select

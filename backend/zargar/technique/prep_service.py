@@ -19,36 +19,50 @@ def _h(obj) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
-def input_key_for(run: dict, policy: dict) -> str:
+def input_key_for(run: dict, policy: dict, *, origin: str | None = None, source_hold: list | None = None, source_ids: list | None = None) -> str:
+    """The causal identity of ONE preparation decision (IR-05). Everything that can change eligibility is in the key, so a
+    cached decision can never outlive a new conflicting input:
+      bars / as-of / thresholds / dataset      the plan's own inputs
+      policy mode + version + grade floor + conditional-review mode
+      origin                                   the path's authority differs under `baseline` (model review vs ingestion inline)
+      analyst evidence                         the model review's verdict AND reasons (baseline selection depends on them)
+      source holds + scenario / correction ids a new hold or a corrected scenario is a new decision"""
     cfg = run.get("config") or {}
-    plan = (run.get("result") or {}).get("plan") or {}
-    reviewed = bool(((run.get("result") or {}).get("analysis") or {}).get("verdict"))
+    res = run.get("result") or {}
+    plan = res.get("plan") or {}
+    an = res.get("analysis") or {}
+    reviewed = bool(an.get("verdict"))
     llm = run.get("llm") or {}
+    analyst = _h({"verdict": an.get("verdict"), "reasons": an.get("noTradeReasons") or an.get("no_trade_reasons") or []}) if reviewed else "absent"
+    sources = sorted([str(x) for x in (cfg.get("sourceRevisionIds") or [])] + [f"scenario:{x}" for x in (source_ids or [])]
+                     + [f"hold:{x}" for x in (source_hold or [])])
     return pp.causal_input_key(
         symbol=run.get("symbol") or "", session=str(plan.get("planFor") or ""), as_of=run.get("asOf"),
-        bars_hash=str(cfg.get("barsAssetId") or cfg.get("barsHash") or ""), source_hashes=[str(x) for x in (cfg.get("sourceRevisionIds") or [])],
+        bars_hash=str(cfg.get("barsAssetId") or cfg.get("barsHash") or ""), source_hashes=sources,
         adjusted_data_id=str(cfg.get("datasetVersion") or ""), thresholds_hash=_h(cfg.get("thresholds") or {}),
-        grade_policy=f"{policy.get('gradeFloor')}|{policy.get('preparationPolicy')}|{policy.get('conditionalReviewFix')}",
+        grade_policy=f"{policy.get('gradeFloor')}|{policy.get('preparationPolicy')}|{policy.get('conditionalReviewFix')}|origin={origin}|analyst={analyst}",
+        policy_version=f"{pp.VERSION}+{pp.REVIEW_VERSION}",
         model=(llm.get("model") if reviewed else None), prompt_version=(str(cfg.get("promptVersion") or "") if reviewed else None),
         horizon=str(plan.get("horizon") or "session"))
 
 
 async def prep_decide(svc, run_id: str, *, origin: str | None = None, persist: bool = False, run: dict | None = None,
-                      source_hold: list | None = None) -> dict:
+                      source_hold: list | None = None, source_ids: list | None = None) -> dict:
     run = run or await svc.get_run(run_id)
     if run is None:
         raise KeyError(run_id)
     policy = pp.effective(svc.engine.settings.get)
     res = run.get("result") or {}
     plan = res.get("plan") or {}
-    key = input_key_for(run, policy)
+    origin = origin or ORIGIN_OF_TRIGGER.get(str(run.get("trigger") or ""), str(run.get("trigger") or "manual"))
+    key = input_key_for(run, policy, origin=origin, source_hold=source_hold, source_ids=source_ids)
     if persist:
         async with svc.engine.sf() as session:
             row = await session.get(TechniquePrepDecision, key)
             if row is not None and row.status == "done":
                 return {**dict(row.payload or {}), "reused": True}
     d = pp.decide(symbol=run.get("symbol") or "", plan=plan, analysis=res.get("analysis"), policy=policy,
-                  origin=origin or ORIGIN_OF_TRIGGER.get(str(run.get("trigger") or ""), str(run.get("trigger") or "manual")),
+                  origin=origin,
                   source_hold=source_hold, run_id=run.get("id"), input_key=key)
     d["policy"] = policy
     if persist:
@@ -65,12 +79,12 @@ async def prep_decide(svc, run_id: str, *, origin: str | None = None, persist: b
     return d
 
 
-async def prep_select(svc, run_ids: list, *, persist: bool = False) -> dict:
+async def prep_select(svc, run_ids: list, *, persist: bool = False, origin: str | None = None, source_ids: list | None = None) -> dict:
     """ONE arm list for a set of candidate runs from ANY path. Candidates already armed (by candidate key) are skipped."""
     decisions = []
     for rid in run_ids or []:
         try:
-            decisions.append(await prep_decide(svc, rid, persist=persist))
+            decisions.append(await prep_decide(svc, rid, persist=persist, origin=origin, source_ids=source_ids))
         except KeyError:
             decisions.append({"runId": rid, "disposition": "refused", "symbol": None, "candidateKey": None, "explanation": "run not found"})
     armed_keys = set()

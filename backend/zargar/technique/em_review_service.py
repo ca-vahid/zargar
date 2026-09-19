@@ -115,7 +115,13 @@ async def source_table(svc, date: str) -> dict:
                                 "oppositeValidAtSameLevel": m["oppositeValidAtSameLevel"], "triggers": m["triggers"],
                                 "prepDecision": {"mode": d["mode"], "disposition": d["disposition"], "modelReview": d["modelReview"], "eligibleTriggers": d["eligibleTriggers"],
                                                  "rescued": d["conditionalFix"]["rescued"]},
-                                "gateEvents": events.get(pl["runId"], [])})
+                                "gateEvents": events.get(pl["runId"], []),
+                                # computed on demand, read-only: where an ingestion plan stands although the overnight model review said no
+                                "supersedesModelVeto": (next(({"runId": o["runId"], "createdAt": o["createdAt"],
+                                                               "reasons": [str(x)[:200] for x in ((o.get("analysis") or {}).get("noTradeReasons") or [])[:3]]}
+                                                              for o in reversed(plans.get(sym) or [])
+                                                              if o["trigger"] in ("promote", "sheet") and (o.get("analysis") or {}).get("verdict") == "no_setup" and o["createdAt"] < pl["createdAt"]), None)
+                                                        if pl["trigger"] == "ingest" else None)})
             rows.append({"author": (p.get("author") or {}).get("displayName"), "noteId": (p.get("note") or {}).get("id"), "stored": p.get("stored"),
                          "usableAt": ss.usable_at(sc, p), "postedAt": (p.get("times") or {}).get("sourcePostedAt"), "scenario": sc, "plans": matches})
     avoid = [{"author": (p.get("author") or {}).get("displayName"), **v} for p in payloads for v in p.get("avoid") or []]
@@ -172,6 +178,9 @@ async def first_sale_rows(svc, date: str) -> dict:
         g, v = p.get("gate") or {}, p.get("vehicle") or {}
         rows.append({"ts": e.ts.isoformat(), "runId": p.get("runId"), "symbol": p.get("symbol"), "trigger": p.get("trigger"), "direction": p.get("direction"), "mode": p.get("mode"),
                      "instrument": v.get("instrument"), "quantity": v.get("quantity"), "rung": g.get("rung"), "rRunnerEntry": g.get("rRunnerEntry"),
+                     "rAdmission": g.get("rAdmission"), "admissionEntry": g.get("admissionEntry"), "boundBasis": (g.get("admissionBasis") or {}).get("boundBasis"),
+                     "disposition": p.get("disposition"), "stage": p.get("stage"), "firstProductionSale": (p.get("firstSale") or {}).get("rung"),
+                     "missingEvidence": g.get("missingEvidence"),
                      "rObservedUnderlier": g.get("rObservedUnderlier"), "min": g.get("minRiskReward"), "verdict": g.get("verdict"), "reason": g.get("reason"),
                      "planTime": g.get("planTime"), "differsFromPlanTime": g.get("differsFromPlanTime"), "payoffProxy": p.get("payoffProxy"), "fees": p.get("fees")})
     return {"date": date, "mode": svc.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "off"), "rows": rows}

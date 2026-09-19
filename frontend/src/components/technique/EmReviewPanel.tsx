@@ -104,13 +104,14 @@ function Candidates({ d }: { d: any }) {
   return (<>
     <div className="sub" style={{ marginBottom: 6 }}>Order-free research: a candidate never arms or orders. Source: {words(d.source)}.</div>
     <div className="tq-table-wrap"><table className="tq-table tq-wf">
-      <thead><tr><th>Author</th><th>Variant</th><th>Symbol</th><th>Side</th><th>Condition</th><th>Entry</th><th>Stop</th><th>Targets</th><th>Disposition</th><th>Why</th><th>Underlying proxy</th><th>Baseline</th></tr></thead>
+      <thead><tr><th>Author</th><th>Variant</th><th>Symbol</th><th>Side</th><th>Condition</th><th>Entry</th><th>Stop</th><th>Targets</th><th>Disposition</th><th>Why</th><th>Underlying proxy</th><th>Executable pricing</th><th>Baseline</th></tr></thead>
       <tbody>{d.rows.map((c: any) => <tr key={c.candidateId}>
         <td>{c.author ?? "—"}</td><td>{words(c.variant)}</td><td>{c.symbol ?? "unresolved"}</td><td>{c.direction}</td><td>{c.condition ?? "—"}</td>
         <td>{c.entry ?? "unknown"}</td><td>{c.stop ?? "unknown"}</td><td>{c.targets?.length ? c.targets.join(" / ") : "unknown"}</td>
         <td><span className={`status-pill ${pillFor(c.disposition)}`}>{words(c.disposition)}</span>{c.firedTs ? ` ${hhmm(c.firedTs)}` : ""}</td>
         <td title={c.reason ?? ""}>{(c.reason ?? "").slice(0, 70)}</td>
         <td>{c.outcomeProxy ? `${c.outcomeProxy} ${num(c.rProxy)}R (proxy)` : "—"}</td>
+        <td title={c.pricing ? Object.entries(c.pricing.gates ?? {}).map(([k, v]) => `${k}: ${v}`).join(" · ") : ""}>{c.pricing ? <span className={`status-pill ${c.pricing.overall === "feasible" ? "ok" : c.pricing.overall === "infeasible" ? "bad" : "wait"}`}>{c.pricing.overall}</span> : "—"}</td>
         <td>{(c.baseline ?? []).map((b: any) => `${b.trigger} ${words(b.status)}`).join(", ") || "—"}</td>
       </tr>)}</tbody>
     </table></div>
@@ -119,14 +120,15 @@ function Candidates({ d }: { d: any }) {
 
 function FirstSale({ d }: { d: any }) {
   return (<>
-    <div className="sub" style={{ marginBottom: 6 }}>R2 measured where the position exits, at the FINAL quantity. Mode: <b>{d.mode}</b> (observe records; only enforce refuses an entry).</div>
-    {!d.rows?.length ? <div className="sub">No first-sale record for {d.date} (none before the build that records them).</div> :
+    <div className="sub" style={{ marginBottom: 6 }}>R2 to the gate target of the FINAL quantity, from the worse of our entry and the validated live underlying bound (unrounded). Mode: <b>{d.mode}</b>. Off records nothing; observe records and never refuses; enforce refuses below the minimum and defers when evidence is missing.</div>
+    {!d.rows?.length ? <div className="sub">No first-sale record for {d.date} (the record is off by default).</div> :
       <div className="tq-table-wrap"><table className="tq-table tq-wf">
-        <thead><tr><th>Time</th><th>Symbol</th><th>Trigger</th><th>Vehicle</th><th>Qty</th><th>Exit rung</th><th>R at the exit</th><th>R on the live underlier</th><th>Min</th><th>Verdict</th><th>Plan time measured</th></tr></thead>
+        <thead><tr><th>Time</th><th>Stage</th><th>Symbol</th><th>Trigger</th><th>Vehicle</th><th>Qty</th><th>Gate target</th><th>First production sale</th><th>Admission price</th><th>R at admission</th><th>R at our entry</th><th>Min</th><th>Verdict</th><th>Disposition</th><th>Plan time measured</th></tr></thead>
         <tbody>{d.rows.map((r: any, i: number) => <tr key={i}>
-          <td>{hhmm(r.ts)}</td><td>{r.symbol}</td><td>{r.trigger}</td><td>{r.instrument}</td><td>{r.quantity ?? "unknown"}</td><td>{r.rung}</td>
-          <td>{num(r.rRunnerEntry, 3)}</td><td>{num(r.rObservedUnderlier, 3)}</td><td>{r.min}</td>
-          <td><span className={`status-pill ${pillFor(r.verdict)}`}>{r.verdict}</span></td>
+          <td>{hhmm(r.ts)}</td><td>{r.stage ?? "order"}</td><td>{r.symbol}</td><td>{r.trigger}</td><td>{r.instrument}</td><td>{r.quantity ?? "unknown"}</td><td>{r.rung}</td><td>{r.firstProductionSale ?? "—"}</td>
+          <td title={(r.missingEvidence ?? []).join("; ")}>{r.admissionEntry != null ? `${r.admissionEntry} (${r.boundBasis ?? "entry"})` : "unknown"}</td>
+          <td>{num(r.rAdmission, 3)}</td><td>{num(r.rRunnerEntry, 3)}</td><td>{r.min}</td>
+          <td><span className={`status-pill ${pillFor(r.verdict)}`}>{r.verdict}</span></td><td>{words(r.disposition)}</td>
           <td>{r.planTime ? `TP${(r.planTime.targetIndex ?? 0) + 1}: ${r.planTime.rr}R${r.differsFromPlanTime ? " (different rung)" : ""}` : "—"}</td>
         </tr>)}</tbody>
       </table></div>}
