@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import datetime as dt
+import json
 import logging
 import time
 from types import SimpleNamespace
@@ -45,6 +46,7 @@ from .rules import apply_overrides, Team2Rules, rules_from_settings
 from .scenario import destination_check, target_is_ahead
 from .session import simulate_session
 from . import diagnostics as diag
+from . import selection_study as study
 
 log = logging.getLogger("zargar.techniques.team2")
 
@@ -264,7 +266,9 @@ class Team2Runner(PlanRunner):
         return {"executionRefused": list(plan.get("executionRefused") or []),
                 "decisionWatermark": self._decision_wm.get(ap.run_id),
                 "decisionLedger": diag.ledger_state(self._ledger_of(ap.run_id)),          # 2026-09-16: the close report's record
-                "diagnostics": self.__dict__.get("_diag", {}).get(ap.run_id)}
+                "diagnostics": self.__dict__.get("_diag", {}).get(ap.run_id),
+                "selectionStudy": ({**self.__dict__["_study"][ap.run_id], "health": dict(self._study_health())}
+                                   if ap.run_id in self.__dict__.get("_study", {}) else None)}      # S1 collector (default off): pending observations survive a restart
 
     def restore_extras(self, ap: ArmedPlan, state: dict) -> None:
         for tid in (state or {}).get("executionRefused") or []:
@@ -279,6 +283,14 @@ class Team2Runner(PlanRunner):
         if isinstance(dg, dict) and isinstance(dg.get("attempts"), dict):
             pend = [dict(p, status=("pending" if p.get("status") == "inflight" else p.get("status"))) for p in (dg.get("pending") or [])]
             self.__dict__.setdefault("_diag", {})[ap.run_id] = {"attempts": dict(dg["attempts"]), "pending": pend}
+        st = (state or {}).get("selectionStudy")
+        if isinstance(st, dict) and isinstance(st.get("records"), dict):
+            recs_ = {k: dict(v, reconcile=int(time.time() * 1000)) for k, v in st["records"].items()}
+            self.__dict__.setdefault("_study", {})[ap.run_id] = {"records": recs_, "closed": list(st.get("closed") or [])}
+            h_ = self._study_health()                                          # health counts survive the restart
+            for k_, v_ in (st.get("health") or {}).items():
+                if k_ in h_:
+                    h_[k_] = max(int(h_[k_]), int(v_ or 0))
 
     def _entry_time_refusal(self, ap: ArmedPlan, stage: str) -> str | None:
         """R2/E: the wall clock at the order boundary — outside the plan's session or past the entry cutoff nothing new
@@ -827,6 +839,7 @@ class Team2Runner(PlanRunner):
             self._diag_emit(ap, "entry_location", {"trigger": trade.trigger_id, **loc})
             self._diag_emit(ap, "attempt", {"trigger": trade.trigger_id, **att})
             self._diag_emit(ap, "decision_time", rec["decisionTime"])
+            self._study_snapshot(ap, trade.trigger_id, loc, str(trade.setup_id), (trade.targets[0] if trade.targets else None))
         except Exception:  # noqa: BLE001
             log.debug("team2 diagnostic (signal) failed", exc_info=True)
 
@@ -905,6 +918,7 @@ class Team2Runner(PlanRunner):
                                                         "spot": spot, "selected": pick_symbol, "candidates": cands,
                                                         "listed": qres.get("listed"), "unexamined": qres.get("unexamined"),
                                                         "unpriced": qres.get("unpriced")})
+            self._study_open(ap, tid, rec, cands, shadow=bool(shadow), refusal=refusal, now=now)
         except Exception:  # noqa: BLE001
             log.debug("team2 diagnostic (candidates) failed", exc_info=True)
 
@@ -913,6 +927,14 @@ class Team2Runner(PlanRunner):
         would have made — so the review can see what the blocked contracts did. No trade, no verdict, no order."""
         if ap.config.mode != "auto" or not self._diag_on():
             return
+        if self._study_on():                                # S1: the point-in-time capture happens NOW, before the awaited quote walk
+            try:
+                setup0 = next((s_ for s_ in res.setups if s_["id"] == e.get("setup")), {})
+                loc0 = diag.entry_location(e, setup0, [b for b in self._bars.get(ap.run_id, []) if session_date(b.ts) == ap.plan_for],
+                                           confirm_tf_ms=int(self.rules_for(ap).confirm_tf_min) * 60_000)
+                self._study_snapshot(ap, tid, loc0, str(e.get("setup")), e.get("target"))
+            except Exception:  # noqa: BLE001
+                log.debug("team2 selection study (shadow snapshot) failed", exc_info=True)
 
         async def _run():
             try:
@@ -1004,6 +1026,244 @@ class Team2Runner(PlanRunner):
                     task = asyncio.create_task(self._diag_observe(ap, p), name=f"team2-observe-{ap.symbol}-{p['attempt']}-{p['horizon']}")
                     self.__dict__.setdefault("_diag_tasks", set()).add(task)
                     task.add_done_callback(self.__dict__["_diag_tasks"].discard)
+        self._study_tick(now)
+
+    # ------------------------------------------------------------- selection study S1 (registration s1-r3; DEFAULT OFF)
+    # `techniques.team2.selection_study` = "off" | "collect". ORDER-FREE and PASSIVE: every hook is SYNCHRONOUS, returns None,
+    # awaits nothing, starts no task, and asks no provider for anything - an observation is a READ of the quote cache the
+    # options service already refreshes for its tracked contracts. The collector never tracks or untracks a contract, never
+    # writes a trade, a plan's state machine, an order, a position or a setting. The snapshot hooks run at the signal, the
+    # opening hook runs inside `pick_contract` (BEFORE the later entry gates and the submission): all of them only read.
+    def _study_on(self) -> bool:
+        try:
+            return str(self.rt("selection_study", "off") or "off").lower() == "collect"
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _study_of(self, run_id: str) -> dict:
+        return self.__dict__.setdefault("_study", {}).setdefault(run_id, {"records": {}})
+
+    def _study_following(self) -> dict[str, str]:
+        """opportunityId -> run_id for every opportunity with a pending observation (the capacity unit: UNIQUE opportunities)."""
+        out: dict[str, str] = {}
+        for run_id, d in self.__dict__.get("_study", {}).items():
+            for oid, r in (d.get("records") or {}).items():
+                if study.pending(r) and not r.get("duplicateOf"):
+                    out.setdefault(oid, run_id)
+        return out
+
+    def _study_pending(self) -> int:
+        return len(self._study_following())
+
+    def _study_health(self) -> dict:
+        """Process-wide collector health. It rides on every journaled study row (`studyHealth`) and in the persisted plan state,
+        so a failed write, a missing event loop or a failed quote read shows up in the coverage report afterwards."""
+        return self.__dict__.setdefault("_study_health_counts", {"journalWriteFailures": 0, "noEventLoop": 0, "quoteReadErrors": 0,
+                                                                 "tickErrors": 0, "openErrors": 0, "snapshotErrors": 0})
+
+    def _study_emit(self, run_id: str, rec: dict, kind: str) -> None:
+        """Journal one study row. The write is an ASYNCHRONOUS, fire-and-forget task on the engine's loop (like every diagnostics
+        row); nothing waits for it and a failure is counted, never raised. Without a running loop no coroutine is created."""
+        health = self._study_health()
+        journal = getattr(getattr(self, "engine", None), "journal", None)
+        if journal is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            health["noEventLoop"] += 1
+            return
+        payload = {"runId": run_id, "kind": kind, **json.loads(json.dumps(rec, default=str)), "studyHealth": dict(health)}
+
+        async def _write():
+            try:
+                await journal.append(ev.TECHNIQUE_PLAN_DIAGNOSTIC, payload, aggregate_type="technique_run", aggregate_id=run_id,
+                                     portfolio_id=(rec.get("book") or {}).get("portfolioId"))
+            except Exception:  # noqa: BLE001
+                health["journalWriteFailures"] += 1
+                log.warning("team2 selection study row not journaled (%s)", kind, exc_info=True)
+        task = loop.create_task(_write(), name=f"team2-study-{kind}")
+        self.__dict__.setdefault("_diag_tasks", set()).add(task)
+        task.add_done_callback(self.__dict__["_diag_tasks"].discard)
+
+    def _study_close(self, run_id: str, oid: str, rec: dict) -> None:
+        """Journal the close ONCE and drop the record from memory (its id stays, so a revision cannot reopen it)."""
+        d = self._study_of(run_id)
+        if oid in (d.get("closed") or []):
+            d["records"].pop(oid, None)
+            return
+        self._study_emit(run_id, rec, "selection_study_close")
+        d.setdefault("closed", []).append(oid)
+        seen = self.__dict__.setdefault("_study_closed", set())           # survives the removal of the plan's store
+        seen.add((run_id, oid))
+        if len(seen) > 5000:
+            seen.clear()
+        d["records"].pop(oid, None)
+
+    def _study_actionable(self, ap: ArmedPlan, now: int) -> dict:
+        """The underlying price with evidence bound to the FIELD it comes from (last by `last_ts`, else the midpoint by
+        `quote_ts`/`source_ts`), read WITHOUT touching the runner's own `_last_actionable` record; else unknown with the reason."""
+        try:
+            quotes = getattr(getattr(self, "engine", None), "quotes", None)
+            q = quotes.get(ap.symbol) if quotes is not None and hasattr(quotes, "get") else None
+            if q is None:
+                return {"price": None, "why": "no quote"}
+            max_age = int(self.rt("stale_seconds", 180) or 180) * 1000
+
+            def fresh(ts_) -> bool:
+                try:
+                    t = int(ts_ or 0)
+                except (TypeError, ValueError):
+                    return False
+                return t > 0 and 0 <= now - t <= max_age
+            last, last_ts = float(getattr(q, "last", 0) or 0), getattr(q, "last_ts", 0)
+            if last > 0 and fresh(last_ts):
+                return {"price": last, "source": "last", "ts": int(last_ts)}
+            bid, ask = float(getattr(q, "bid", 0) or 0), float(getattr(q, "ask", 0) or 0)
+            qts = getattr(q, "quote_ts", 0) or getattr(q, "source_ts", 0)
+            if bid > 0 and ask > 0 and bid <= ask and fresh(qts):
+                return {"price": round((bid + ask) / 2, 4), "source": "mid", "ts": int(qts)}
+            return {"price": None, "why": "no fresh price evidence (stale or untimed last and quote)"}
+        except Exception as exc:  # noqa: BLE001
+            return {"price": None, "why": f"error: {str(exc)[:60]}"}
+
+    def _study_snapshot(self, ap: ArmedPlan, tid: str, loc: dict, setup_id: str, target) -> None:
+        """POINT-IN-TIME capture, called synchronously when the signal is created (live fire and shadow refusal alike), before
+        any awaited contract work: features + the hash of the exact bar values used. Stored on the attempt record; the FIRST
+        capture stands."""
+        if not self._study_on():
+            return
+        try:
+            rec = self._diag_attempt(ap, tid)
+            if rec.get("study"):
+                return
+            signal_ts = int((loc or {}).get("signalTs") or 0)
+            if not signal_ts:
+                return
+            now = int(time.time() * 1000)
+            bars = [b for b in self._bars.get(ap.run_id, []) if session_date(b.ts) == ap.plan_for]
+            rec["study"] = study.snapshot(signal_ts=signal_ts, direction=str(loc.get("direction") or ""), setup_id=setup_id,
+                                          confirmation_close_ts=loc.get("confirmationCloseTs"), atr=loc.get("atr"), bars_1m=bars,
+                                          target=(float(target) if target is not None else None),
+                                          actionable=self._study_actionable(ap, now), captured_ts=now)
+        except Exception:  # noqa: BLE001
+            self._study_health()["snapshotErrors"] += 1
+            log.warning("team2 selection study (snapshot) failed", exc_info=True)
+
+    def _study_open(self, ap: ArmedPlan, tid: str, attempt: dict, cands: list[dict], *, shadow: bool, refusal: str | None, now: int) -> None:
+        if not self._study_on():
+            return
+        try:
+            snap = attempt.get("study") or {}
+            loc = attempt.get("entryLocation") or {}
+            signal_ts = int(snap.get("signalTs") or loc.get("signalTs") or 0)
+            if not signal_ts:
+                return
+            setup_id = str(snap.get("setup") or attempt.get("setup") or str(tid).split("#")[0])
+            oid = study.opportunity_id(str(ap.plan_for), ap.symbol, setup_id, signal_ts)
+            d = self._study_of(ap.run_id)
+            if oid in d["records"] or oid in (d.get("closed") or []) or (ap.run_id, oid) in self.__dict__.get("_study_closed", ()):
+                return                                                    # a revision: the FIRST record stands, open or closed
+            following = self._study_following()
+            other = following.get(oid)
+            dup = None
+            if other is not None and other != ap.run_id:
+                orec = self._study_of(other)["records"].get(oid) or {}
+                dup = {"runId": other, "portfolioId": (orec.get("book") or {}).get("portfolioId"), "openHash": orec.get("openHash")}
+            exp = (ap.plan or {}).get("experiment") if isinstance(ap.plan, dict) else None
+            feats = snap.get("features") or study.unknown_features("not captured at the signal")
+            rec = study.open_record(date=str(ap.plan_for), symbol=ap.symbol, setup_id=setup_id, signal_ts=signal_ts,
+                                    book={"portfolioId": ap.config.portfolio_id, "role": str((exp or {}).get("role") or "control"),
+                                          "label": (exp or {}).get("label")},
+                                    trigger=tid, direction=str(snap.get("direction") or loc.get("direction") or ""), feats=feats,
+                                    selected=next((c for c in cands if c.get("selected")), None), shadow=shadow, refusal=refusal,
+                                    recorded_ts=now, followed_now=len(following), duplicate_of=dup,
+                                    inputs={"barsHash": snap.get("barsHash"), "bars": snap.get("bars"), "capturedTs": snap.get("capturedTs")})
+            self._study_emit(ap.run_id, rec, "selection_study_open")         # journaled WHEN OBSERVATION BEGINS
+            if rec["status"] == "closed":
+                if rec.get("schedule"):                                       # late / capacity: a real close row
+                    self._study_emit(ap.run_id, rec, "selection_study_close")
+                d.setdefault("closed", []).append(oid)
+            else:
+                d["records"][oid] = rec
+        except Exception:  # noqa: BLE001
+            self._study_health()["openErrors"] += 1
+            log.warning("team2 selection study (open) failed", exc_info=True)
+
+    def _study_tick(self, now: int) -> None:
+        """Synchronous housekeeping + PASSIVE observation. Runs even when the switch is off while records remain, so a
+        switch-off, a removed plan or the end of the session always CLOSES what was opened and frees its slot."""
+        store = self.__dict__.get("_study")
+        if not store:
+            return
+        try:
+            on = self._study_on()
+            live = {ap.run_id: ap for ap in list(self._armed.values()) + list(getattr(self, "_closing", {}).values())}
+            quotes = getattr(getattr(self, "engine", None), "quotes", None)
+            for run_id in list(store):
+                d = store[run_id]
+                for oid, rec in list((d.get("records") or {}).items()):
+                    if rec.get("reconcile"):
+                        if int(time.time() * 1000) - int(rec["reconcile"]) < 60_000:
+                            continue                                          # restored: wait (bounded) for the journal reconciliation
+                        rec.pop("reconcile", None)
+                    why = None
+                    if run_id not in live:
+                        why = "plan removed before the observation"
+                    elif not on:
+                        why = "collector switched off"
+                    elif now > study.flatten_ms(str(rec.get("date"))) + study.MAX_LATE_MS:
+                        why = "session ended"
+                    if why is not None:
+                        study.abandon(rec, why, now)
+                        self._study_close(run_id, oid, rec)
+                        continue
+                    sym = str((rec.get("entryQuote") or {}).get("contract") or "")
+                    for row in rec.get("schedule") or []:
+                        if row.get("status") != "pending" or int(row["dueTs"]) > now:
+                            continue
+                        q = None
+                        try:
+                            qq = quotes.get(sym) if quotes is not None and sym else None
+                            if qq is not None:                                # the quote's OWN provenance; nothing is inferred
+                                q = {"bid": getattr(qq, "bid", None), "ask": getattr(qq, "ask", None), "source": getattr(qq, "source", None),
+                                     "quoteTs": (int(getattr(qq, "source_ts", 0) or 0) or None), "receivedTs": getattr(qq, "ts", None)}
+                        except Exception:  # noqa: BLE001
+                            q = None
+                            self._study_health()["quoteReadErrors"] += 1
+                        if study.try_observe(rec, int(row["horizonMin"]), now, q) is None and now > int(row["dueTs"]) + study.MAX_LATE_MS:
+                            _, last_why = study.quote_evidence(q, now)
+                            study.observe(rec, int(row["horizonMin"]), now, q,
+                                          reason=f"no valid quote inside the window (last: {last_why or 'outside the window'})")
+                    if rec["status"] == "closed":
+                        self._study_close(run_id, oid, rec)
+                if not d.get("records") and run_id not in live:
+                    store.pop(run_id, None)
+        except Exception:  # noqa: BLE001
+            self._study_health()["tickErrors"] += 1
+            log.warning("team2 selection study (tick) failed", exc_info=True)
+
+    async def _study_reconcile(self, session, ap: ArmedPlan) -> None:
+        """After a restart: a close that was already journaled is never emitted twice from stale persisted state."""
+        d = self.__dict__.get("_study", {}).get(ap.run_id)
+        if not d:
+            return
+        try:
+            from sqlalchemy import select as _select
+            from ...models import Event
+            rows = (await session.execute(_select(Event).where(Event.aggregate_id == ap.run_id, Event.type == ev.TECHNIQUE_PLAN_DIAGNOSTIC)
+                                          .order_by(Event.id))).scalars().all()
+            done = {(str((r.payload or {}).get("opportunityId")), str((r.payload or {}).get("openHash")))
+                    for r in rows if (r.payload or {}).get("kind") == "selection_study_close"}
+            for oid, rec in list(d["records"].items()):
+                if (oid, str(rec.get("openHash"))) in done:
+                    d.setdefault("closed", []).append(oid)
+                    d["records"].pop(oid, None)
+        except Exception:  # noqa: BLE001
+            log.debug("team2 selection study (reconcile) failed", exc_info=True)
+        finally:
+            for rec in d["records"].values():
+                rec.pop("reconcile", None)
 
     async def _diag_observe(self, ap: ArmedPlan, p: dict) -> None:
         d = self._diag_of(ap.run_id)
@@ -1185,6 +1445,7 @@ class Team2Runner(PlanRunner):
             from ...models import Event
             async with self.engine.sf() as session:
                 for ap in list(self._armed.values()):
+                    await self._study_reconcile(session, ap)
                     rows = (await session.execute(_select(Event).where(Event.aggregate_id == ap.run_id, Event.type == ev.TECHNIQUE_PLAN_CONTRACT)
                                                   .order_by(Event.id))).scalars().all()
                     if rows:
