@@ -3708,3 +3708,23 @@ The review found that the first package's strongest sentences exceeded its measu
   12 acceptance tests (`tests/test_team2_selection_study.py`). NOT enabled and NOT deployed: that needs a reviewed deployment and one
   setting change. No rule, sizing, protection, experiment book or product pricing changed; no variant search.
 
+### 2026-09-19 (collector review) - First collector HELD by the review team; corrected in one pass (`s1-r3`); still OFF
+
+- Review of the first collector: 12 supplied tests passed, 3 of the reviewers' probes failed. Four groups: (R1) an entry without a bid
+  and a future-dated follow-up quote could pass; (R2) removed plans held collection slots forever and duplicate books used separate
+  slots; (R3) features were computed after the awaited contract work from possibly revised bars, and the room feature used the
+  picker's spot; (R4) a source-word search does not prove isolation, and the forced refresh went through a shared quote service.
+- Corrections (research collector only; no trading path decision changed): the study's own strict quote evidence at both ends
+  (positive finite bid and ask, not crossed, source exactly OPRA, source time never after collection, at most 30 s old); capacity on
+  UNIQUE opportunities with `duplicateOf` openings, every opened record closed (plan removed, switched off, session ended), closes
+  bound to the opening by `openHash`, restart reconciliation against journaled closes; a point-in-time capture at the signal with the
+  hash of the bars used, the room price bound to its own field time or unknown; the collector made PASSIVE (synchronous reads of the
+  quote cache, no provider request, no refresh, no tracking change, no task) with a real runner on/off comparison reaching the actual
+  order intent.
+- Lesson kept: the statement "the hook runs after every fire decision" was wrong; the opening runs inside `pick_contract`, before the
+  later entry gates and the submission. It only reads, and the on/off comparison shows identical decisions and order intents.
+- The analysis is implemented and hash-frozen before any observation exists (`selection_study_analysis.py`,
+  sha256 `ad4b0211...cb772`); the tool shows coverage only until the stop rule.
+- Results: reviewers' probes 3/3, collector 41, analysis 13, full Team2 suite 441 passed. Collector remains OFF; enabling still needs
+  acceptance, PR #224, a coordinated deployment and one setting change. Research conclusions unchanged.
+

@@ -6,10 +6,12 @@ C2 key levels were not run on or after 2026-09-14. Test-database lanes agreed wi
 
 ## Status after review (2026-09-19)
 
-The review team accepted the revised conclusions, with their limitations, as EXPLORATORY research, and directed the order-free
-study, not another trading variant. Their four amendments are incorporated in `07-selection-study-spec.md` (registration `s1-r2`)
-and the default-off, order-free collector is delivered in `08-collector-package.md`. No variant search, no trading-book change and
-no risk change was made.
+The review team accepted the revised conclusions, with their limitations, as EXPLORATORY research and directed the order-free
+study. They then reviewed the first collector and HELD it: 12 supplied tests passed, 3 of their own probes failed, in four groups
+(quote validity, lifecycle and capacity, point-in-time features, operational isolation). **The collector stays OFF.** All four groups
+are corrected in one pass (registration `s1-r3`, `07-selection-study-spec.md`, `08-collector-package.md`): their probes are adopted
+verbatim and pass, the analysis is implemented and hash-frozen before collection, and the full Team2 suite was run (441 passed).
+The research conclusions below are unchanged. No strategy work, trading-book change or risk change was made.
 
 ## Decision supported by the evidence
 
@@ -95,5 +97,5 @@ without my harness: findings 1, 7 and 8 (runtime database and journal). Everythi
 5. Page 1 counts legs, round trips and opportunities separately and does not treat three books as three cases.
 6. Page 6 cites the image behind every row and labels each entry's evidence class; no chart arrow is treated as a fill.
 7. Page 7 fixes features, identity, primary outcome, quote validity, clustering, Holm correction, per-side minimums, deadline and the insufficient-evidence outcome, and states the schema limitation.
-8. The collector package has its own checklist in `08-collector-package.md` (12 acceptance tests; default off; order-free).
-9. `git diff main --stat` touches only: the package, `backend/zargar/techniques/team2/{session,rules}.py` (two default-off research knobs), the collector (`selection_study.py`, its wiring in `runner.py`, one default in `settings_service.py`), two test files, and documentation. No settings, migrations, frontend or version files.
+8. The collector package: `08-collector-package.md` (57 collector, probe and analysis tests; full Team2 suite 441 passed; default off; order-free; passive).
+9. `git diff main --stat` touches only: the package, `backend/zargar/techniques/team2/{session,rules}.py` (two default-off research knobs), the collector (`selection_study.py`, `selection_study_analysis.py`, the read-only tool, the wiring in `runner.py`, one default in `settings_service.py`), four test files, and documentation. No settings, migrations, frontend or version files.
