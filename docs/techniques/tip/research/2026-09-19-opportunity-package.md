@@ -99,6 +99,23 @@ request, so none is faithfully replayable today; cases fill from reviews capture
 Window 2026-09-21 .. 09-25. No prospective evidence exists yet and none is claimed here. The report
 (`tip_review_gate_eval --prospective`, scorecard v3, dispositions) is produced after the fifth session.
 
+## 6b. Evaluation safeguards, revision 2 (2026-09-19, reviewer follow-up - evaluation only, nothing deployed needs it)
+
+- **Instructions, not labels.** `compare` judges target + every operative parameter. SBLK stop 30.58 -> 25.00 is now a
+  `disagree` with the field listed; a different sale fraction or an added hold cap likewise.
+- **No substituted evidence.** A read is served only for the exact tool + arguments the case recorded. A replay asking
+  for MSFT's quote no longer receives AAPL's; the evidence stays missing and the case is `inconclusive` - never a pass.
+- **One $35 ceiling for the whole suite.** `SuiteBudget`: durable write-ahead ledger shared by both models, all cases,
+  turns, retries and separate invocations; reservation = request chars / 3 + full output allowance, x 1.25; unknown
+  billing stays charged at the reservation; SDK retries disabled; a later run cannot raise the cap. Remaining
+  limitation, stated: the ceiling holds while no single attempt bills more than 1.25x its reservation (overruns are
+  recorded). Demonstrated in `tests/test_tip_review_frozen.py` (2 models x 6 cases x 2 turns, failing attempts, three
+  invocations, refusal before the call).
+- P1 observe, P3 unchanged, P4 research only, P5 pending, P6 unchanged. No paid evaluation and no production-model
+  change is approved.
+- **Durable owner of the 09-25 report:** `docs/techniques/tip/research/FIVE-SESSION-CHECKPOINT.md` (what to run, when it
+  is due, who owns it) + the Windows task `ZargarTipsFiveSession` that writes the raw outputs after the fifth session.
+
 ## 7. Rollout record (2026-09-19)
 
 - Merged as PR #235 (main `89682b8e`). Deployed through `deploy.ps1` + the `ZargarRestart` task on Saturday with the
