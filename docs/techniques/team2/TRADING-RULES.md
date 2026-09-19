@@ -3622,3 +3622,35 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 ### 2026-09-18 - C6 implementation and unattended Practice observation
 
 Canonical provider is Alpaca SIP for Team2 when canonical_provider=alpaca; no Yahoo fallback enters those plans. Twelve-session warm-up is frozen by content hash and reused live/replay/restore. The three-book comparison remains Control, size_full=0.5 only, and conjunction only. No C2/room/near-ITM change. Engine scheduler samples the already agreed $800/$1,000 drawdowns every thirty minutes and at close; breach pauses only that book with protective exits active. Missing marks remain unknown. User authorized completion, test, merge/deploy and next-session readiness while away; activation still requires measured C6 evidence and the receipt. See 2026-09-18-c6-release.md.
+
+### 2026-09-19 - Profitability study (order-free; nothing live changed)
+
+Package: `notes/research/profitability-2026-09-19/README.md`; registrations `notes/research/2026-09-19-profitability-preregistration.md`.
+
+- **F128 (2026-09-19) The replay's premium formula is wrong by sign, and F8's "12-45% optimistic" no longer stands.** On the same
+  280 replayed trades (93 sessions, SPY/QQQ/IWM, Alpaca SIP tape) flat-IV Black-Scholes says +21.8% per trade; REAL option prints
+  (Alpaca 1m option trade bars, validated on our 16 fills: median error $0.00) say -1.0% to -3.2%. It books target exits at the
+  target inside the bar, prices a target winner at +77% where the contract made +19%, and thinks the chosen strike costs $0.49
+  when it cost $1.35, so it walks strikes the live picker never would. EVERY earlier sweep number in this file, and the modelled
+  columns of the sizing and C1 sheets, was scored with it: treat them as unscored until re-run on real prints.
+- **F129 (2026-09-19) The entry carries no directional information at the price we can act on.** Baseline rules, real prints,
+  fees in: 333 trades, mean -3.76% (95% interval -7.6 to +0.1), win rate 31.5%, about zero before fees, -7.0% at one tick of
+  slippage per leg. Measured from the real underlying price at the decision minute the move is in our favour 50.5 / 50.9 / 48.4 /
+  51.6 / 54.1 / 49.8% of the time at 4 / 10 / 20 / 30 / 60 / 120 minutes. The "61% at ten minutes" seen from the read's own
+  entry line is the distance price travels between the EMA/level line and the close of the bounce bar we buy after.
+- **F130 (2026-09-19) Nine preregistered single-factor arms REJECTED on the training window (2026-05-07..08-14):** two-candle stop
+  (`stop_candles=2`, worse), target room 1.5 ATR (+1.3 points, inside noise), new-extreme trim, conjunction no-trade zone (C1's
+  rule: more trades, same negative expectancy), $1.20 contract, collision re-plan (`target_collision=replan`), no outright target
+  exit (worst), resting-limit brackets at +50% and +100%. The holdout 2026-08-17..09-11 was never opened for any arm.
+- **F131 (2026-09-19) Against the author's six documented trades in the window we had the same direction and scenario six times
+  and captured none of his winners** (target collision x2, pre-market no-trade zone, the 09:45 gate plus a multi-day level, no
+  flag entry, shaken out twice then capped). His contracts did what he said on real prints (+112% to +445%). His record holds
+  17 executions, all winners, and no priced loser: it cannot give a win rate.
+- **F132 (2026-09-19) The one-position rule and the two-loss cap protect the book:** trades they displaced averaged -10.3% and -5.8%
+  against -0.35% for the trades taken.
+- Code: `stop_candles` became a real knob (default 1) and `target_collision` was added (default `refuse`); both default to the live
+  behaviour (September replay hash identical before and after), neither is in `SETTINGS_MAP`, both were rejected and stay only
+  so the measurement can be reproduced. Tests `tests/test_team2_research_knobs.py`.
+- Open decisions (owner / review team): sizing or a pause while the expectation is negative; re-scoring the accepted sheets on
+  real prints; replacing the formula in the product replay; the order-free selection study S1 (`notes/research/profitability-2026-09-19/06-prospective-experiment-spec.md`).
+

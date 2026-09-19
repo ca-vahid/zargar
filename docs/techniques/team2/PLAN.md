@@ -333,6 +333,11 @@ and are now part of the plan; each carries the phase it belongs to.
 
 ## 3e. State of play and the change pipeline (2026-09-16)
 
+> 2026-09-19: the profitability study (`notes/research/profitability-2026-09-19/README.md`) found no after-cost edge on real option prints, rejected nine
+> preregistered arms and showed the sweep's premium formula to be wrong by sign. The change pipeline below is on hold behind four
+> decisions listed in that package (sizing or pause, re-scoring the accepted sheets, replacing the formula, the order-free
+> selection study S1). No trading arm is proposed.
+
 - **Running:** auto mode on `Team2 Practice` under live v0.7.94; cohort v2 (from 2026-09-11, v0.7.45+) is the
   evaluation set (first fills 2026-09-16: two QQQ stop-outs, −$480); cohort v1 is preserved as read evidence. The
   30-minute watch job tallies per plan: listing, warm-up identity, model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,

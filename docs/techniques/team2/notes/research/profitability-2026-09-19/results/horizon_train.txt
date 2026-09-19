@@ -1,0 +1,8 @@
+entries 283 window 2026-05-07..2026-08-14
++  4m: option net mean   -1.50% (se 1.67) median   -5.13% win  40.3% n=283 | underlying favourable  50.5% mean +0.0080%
++ 10m: option net mean   -4.37% (se 2.36) median   -9.50% win  41.0% n=283 | underlying favourable  50.9% mean +0.0003%
++ 20m: option net mean   -3.26% (se 3.92) median  -18.03% win  35.0% n=283 | underlying favourable  48.4% mean +0.0078%
++ 30m: option net mean   -3.25% (se 4.42) median  -19.10% win  38.5% n=283 | underlying favourable  51.6% mean +0.0032%
++ 60m: option net mean    0.05% (se 7.50) median  -29.71% win  34.3% n=280 | underlying favourable  54.1% mean +0.0008%
++120m: option net mean    3.08% (se 10.88) median  -49.63% win  30.2% n=268 | underlying favourable  49.8% mean -0.0101%
+best premium reachable within 120m of entry (MFE, a ceiling no rule can reach): median +58%, share >=+50%: 53%, >=+100%: 31%
