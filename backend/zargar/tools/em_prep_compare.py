@@ -186,6 +186,20 @@ async def build_day(date: str, *, allow_yahoo: bool, pricing: list) -> dict:
             "modelCost": mc.summarize(reqs, table=pricing), "deterministicModelCalls": 0}
 
 
+async def _runtime_rates() -> dict:
+    """The platform's `llm.rates` card from the settings table (read-only). Empty = cost unknown, never invented."""
+    c = await asyncpg.connect(abl._db_url())
+    try:
+        await c.execute("set transaction read only")
+        v = await c.fetchval("select value from settings where key = 'llm.rates'")
+        v = J(v)
+        return v if isinstance(v, dict) else {}
+    except Exception:                                      # noqa: BLE001
+        return {}
+    finally:
+        await c.close()
+
+
 def render(days: list, manifest: dict) -> str:
     L = ["# EM preparation comparison - baseline model vs deterministic vs frozen exception", "",
          f"`{VERSION}`, generated {manifest['generatedAt']} (retrospective, exploratory - Sep 15-18 are fixtures, not a validation sample). ZERO paid model calls. "
@@ -229,7 +243,8 @@ def render(days: list, manifest: dict) -> str:
             continue
         c = d["modelCost"]; t = c["tokens"]
         L.append(f"| {d['date']} | {c['requests']} | {c['requestsWithoutCompletion']} | {t['input']} | {t['output']} | {t['cacheRead']} | {t['cacheWrite']} | {c['estimated']['usd'] if c['estimated']['usd'] is not None else 'unknown'} | {c['unknown']['requests']} | {d['deterministicModelCalls']} |")
-    L += ["", "Cost is UNKNOWN wherever no dated price row is configured in `llm.pricing_table` - a price is never invented; invoice-verified, estimated, unknown and "
+    L += ["", "Prices come from the platform's ONE `llm.rates` setting (shared with the Tips cost tool); a model without a rate there is UNKNOWN - a price is never invented. "
+          "`llm.rates` carries no effective date, so an estimate is the CURRENT card applied to past tokens, not an invoice. Invoice-verified, estimated, unknown and "
           "subscription allocation are separate categories. One request row per saved run (per-pass rows exist from this build on: `result.modelRequests`).", "",
           "## Manifest", "", "```json", json.dumps(manifest, indent=1, default=str), "```", "",
           "Reproduce: `python -m zargar.tools.em_prep_compare --dates " + ",".join(d["date"] for d in days) + "` (read-only, zero model calls)."]
@@ -239,16 +254,16 @@ def render(days: list, manifest: dict) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dates", required=True); ap.add_argument("--no-yahoo", action="store_true"); ap.add_argument("--stdout", action="store_true")
-    ap.add_argument("--pricing", default=None, help="JSON file with llm.pricing_table rows (default: none = cost unknown)")
+    ap.add_argument("--pricing", default=None, help="JSON file with an llm.rates card or dated rows (default: the runtime's `llm.rates` setting, read-only)")
     a = ap.parse_args(argv)
-    pricing = json.load(open(a.pricing, encoding="utf-8")) if a.pricing else []
+    pricing = json.load(open(a.pricing, encoding="utf-8")) if a.pricing else asyncio.run(_runtime_rates())
     dates = [x.strip() for x in a.dates.split(",") if x.strip()]
     days = [asyncio.run(build_day(d, allow_yahoo=not a.no_yahoo, pricing=pricing)) for d in dates]
     slots = max(1, int(CAPACITY["maxGrossExposurePct"] // CAPACITY["maxPositionPct"]))
     manifest = {"version": VERSION, "generatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "policyVersion": pp.VERSION, "reviewVersion": pp.REVIEW_VERSION,
                 "replayVersion": abl.VERSION, "gradeFloor": "B", "exceptionFeatures": {"RR_TP3_MIN": abl.RR_TP3_MIN, "MIN_TOUCHES": abl.MIN_TOUCHES, "frozen": "2026-09-18"},
                 "capacity": {**CAPACITY, "slots": slots, "haltAtR": -(CAPACITY["dailyLossHaltPct"] / CAPACITY["riskPctPerEntry"])}, "sheets": {d["date"]: d.get("sheet") for d in days},
-                "pricingRows": len(pricing), "paidModelCalls": 0, "book": EM_BOOK}
+                "pricingSource": "llm.rates", "pricedModels": sorted(pricing) if isinstance(pricing, dict) else len(pricing), "paidModelCalls": 0, "book": EM_BOOK}
     md = render(days, manifest)
     os.makedirs(OUT_DIR, exist_ok=True)
     name = f"{dates[0]}_{dates[-1]}" if len(dates) > 1 else dates[0]

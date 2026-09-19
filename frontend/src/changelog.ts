@@ -19,7 +19,7 @@ export interface Release {
 export const CHANGELOG: Release[] = [
   {version:"0.8.21",date:"2026-09-18",title:"EM: source fidelity, one preparation owner and executable profit",items:[
     {tag:"new",text:"EM Validation has a read-only review panel: what each author actually said against every trigger we planned and the gate that decided, order-free source candidates, first-sale R at the final quantity, and realized, displayed and executable profit side by side."},
-    {tag:"fixed",text:"EM now measures reward to risk where a position really exits, at the quantity actually bought. The record is on by default in observe mode; refusing an entry on it is a separate setting that stays off."},
+    {tag:"fixed",text:"EM can measure reward to risk where a position really exits, at the quantity bought and the live underlying price. The check is built and switched off; observing it and enforcing it are separate settings."},
     {tag:"new",text:"Source ideas keep their author, direction, conditions and timing. A ticker the transcript does not support stays unresolved, a call strike is never a price target, and a correction never rewrites what the app knew on the day."},
     {tag:"new",text:"A rules-based preparation policy, a fresh-setup requalification study and the executable-profit recorder are built and switched off. Baseline Practice preparation and trading are unchanged."},
     {tag:"fixed",text:"EM research: a thin first quote no longer closes the runner-protection search."},

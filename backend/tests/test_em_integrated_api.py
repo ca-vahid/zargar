@@ -70,6 +70,7 @@ async def test_manifest_shows_every_new_knob_at_its_safe_default(rig):
     assert eff["preparation_policy"] == ("baseline", "baseline") and eff["conditional_review_fix"] == ("report", "report") and eff["prep_audit_quota_pct"] == (0.0, 0.0)
     assert eff["book_snapshot_observe"] == (False, False) and eff["source_scenarios_observe"] == (False, False) and eff["source_candidates_observe"] == (False, False)
     assert eff["first_sale_rr_gate"] == ("off", "off") and m["policy"]["preparationPolicyVersion"] == "em-prep-policy-v1"
+    assert m["modelPriceSource"]["setting"] == "llm.rates"
     assert m["observer"]["captured"] == 0, "the ED-04 recorder exists on the EM armer and has recorded nothing (OFF)"
 
 

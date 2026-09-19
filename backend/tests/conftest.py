@@ -71,3 +71,17 @@ async def wait_for(predicate, timeout: float = 8.0, interval: float = 0.05):
             return result
         await asyncio.sleep(interval)
     raise TimeoutError("condition not met in time")
+
+
+@pytest.fixture(autouse=True)
+def _em_dispatch_controlled_clock(request, monkeypatch):
+    """EM integrated review (2026-09-19): the reviewers' EM dispatch cases (`test_codex_em_final_dispatch_*`, adopted
+    unchanged) size ONE $3.00 contract against a 2% budget. EM halves its size on Fridays (`technique.arm.friday_size_mult`),
+    so on a Friday the sizer returned 0 contracts and the entry never reached the RiskGate - the cases failed for a
+    calendar reason, not for the behaviour they test. They now run on a CONTROLLED clock (a Wednesday, 10:00 ET) through
+    the test-pinnable `zargar.clock`. Only those modules are touched; an explicit ZARGAR_TEST_NOW still wins."""
+    import os
+    name = getattr(getattr(request, "module", None), "__name__", "") or ""
+    if "test_codex_em_final_dispatch" in name and not os.environ.get("ZARGAR_TEST_NOW"):
+        monkeypatch.setenv("ZARGAR_TEST_NOW", "2026-09-16T10:00:00-04:00")
+    yield

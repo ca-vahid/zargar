@@ -127,7 +127,7 @@ def test_audit_sampler_is_stable_and_zero_by_default():
 
 def test_defaults_are_baseline_and_em_namespaced_and_other_desks_are_untouched():
     from zargar.settings_service import DEFAULTS
-    assert DEFAULTS[pp.SETTING_MODE] == "baseline" and DEFAULTS[pp.SETTING_FIX] == "report" and DEFAULTS[pp.SETTING_AUDIT] == 0.0 and DEFAULTS["llm.pricing_table"] == []
+    assert DEFAULTS[pp.SETTING_MODE] == "baseline" and DEFAULTS[pp.SETTING_FIX] == "report" and DEFAULTS[pp.SETTING_AUDIT] == 0.0 and "llm.pricing_table" not in DEFAULTS and DEFAULTS["llm.rates"] == {}
     for k in ("preparation_policy", "prep_grade_floor", "conditional_review_fix", "prep_audit_quota_pct", "source_scenarios_observe", "source_candidates_observe"):
         assert [x for x in DEFAULTS if x.endswith("." + k)] == ["techniques.enhanced_market." + k]
     eff = pp.effective(lambda k, d=None: {"techniques.enhanced_market.preparation_policy": "bogus"}.get(k, d))
@@ -187,6 +187,10 @@ def test_costs_are_never_invented_and_the_four_kinds_stay_apart():
     priced = mc.summarize(reqs, table=table, invoices=[{"usd": 12.5}], subscription={"usd": 200, "basis": "flat plan"})
     assert priced["estimated"] == {"usd": 3.0, "requests": 1} and priced["invoiceVerified"]["usd"] == 12.5 and priced["subscriptionAllocation"]["usd"] == 200
     assert priced["unknown"]["requests"] == 1 and mc.price_row(table, "anthropic", "claude-opus-5", "2026-08-01") is None, "a price is never applied before its date"
+    card = {"claude-opus-5": {"in": 2.0, "out": 10.0, "cacheRead": 0.2, "cacheWrite": 2.5, "verifiedAt": "2026-09-17", "source": "list price"}}
+    via_card = mc.summarize(reqs, table=card)
+    assert via_card["estimated"] == {"usd": 3.0, "requests": 1} and via_card["unknown"]["requests"] == 1, "ONE price source: the platform llm.rates card (owner review)"
+    assert mc.summarize(reqs, table={"other-model": {"in": 1, "out": 1}})["estimated"]["usd"] is None
     runs = [{"id": "r1", "created_at": "2026-09-17", "status": "failed", "llm": {"model": "claude-opus-5"}, "usage": {}, "result": {"visionRequested": True}},
             {"id": "r2", "created_at": "2026-09-17", "status": "done", "llm": {"model": "claude-opus-5"}, "usage": {}, "result": {"modelRequests": [
                 {"pass": "entry", "status": "completed", "attempts": 2, "usage": {"input": 10, "output": 5}}, {"pass": "critic", "status": "failed", "attempts": 1, "usage": None}]}},
@@ -198,7 +202,7 @@ def test_costs_are_never_invented_and_the_four_kinds_stay_apart():
 def test_the_pipeline_keeps_a_request_ledger():
     from zargar.technique import vision
     src = inspect.getsource(vision.VisionPipeline._call)
-    assert '"status": "started"' in src and 'req_row["status"] = "failed"' in src and 'req_row["status"] = "completed"' in src and "unknownAttempts" in src
+    assert '"status": "started"' in src and src.count('req_row["status"] = "failed"') == 2 and 'req_row["status"] = "completed"' in src and "unknownAttempts" in src
     assert "modelRequests" in inspect.getsource(vision.PipelineResult.to_dict)
 
 

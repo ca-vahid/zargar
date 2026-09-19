@@ -163,8 +163,12 @@ class VisionPipeline:
                             f"{name} reply was cut off mid-JSON (output cap) — retrying once "
                             f"with a larger output budget")
             import dataclasses as _dc
-            msg, parsed = await attempt(_dc.replace(
-                self.cfg, max_tokens=min(32000, self.cfg.max_tokens * 2)))
+            try:
+                msg, parsed = await attempt(_dc.replace(
+                    self.cfg, max_tokens=min(32000, self.cfg.max_tokens * 2)))
+            except Exception as exc2:                  # owner review 2026-09-19: a failed RETRY is `failed`, never left in flight
+                req_row["status"] = "failed"; req_row["error"] = type(exc2).__name__
+                raise
         u = msg.usage
         usage = {"input": u.input_tokens, "output": u.output_tokens,
                  "cacheRead": getattr(u, "cache_read_input_tokens", 0) or 0,

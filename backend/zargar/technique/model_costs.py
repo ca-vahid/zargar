@@ -1,6 +1,6 @@
 """EM model-cost accounting (`model-costs-v1`, 2026-09-18; integrated plan workstream B). Pure.
 
-A DATED, CONFIGURABLE pricing table (`llm.pricing_table`, a list of rows) prices token usage. Four kinds of money are
+The platform's ONE model price setting (`llm.rates`, shared with the Tips cost tool) prices token usage. Four kinds of money are
 kept apart and never summed into one another: invoice-verified, estimated (tokens x a dated list price), unknown (no
 price configured, or a request whose completion never arrived) and a subscription allocation. Nothing here invents a
 price: with no matching row the cost is UNKNOWN and the tokens are still reported. An interrupted request is never free.
@@ -32,7 +32,16 @@ def _date(v) -> dt.date | None:
 
 
 def price_row(table, provider: str, model: str, at) -> dict | None:
-    """The row in force for (provider, model) on the date - the latest `from` not after it, inside any `to`."""
+    """The price in force. ONE source of truth (owner review 2026-09-19): the platform's `llm.rates` card
+    {"<model>": {"in", "out", "cacheRead", "cacheWrite", ...provenance}} - the same setting the Tips cost tool reads.
+    A list of DATED rows is also accepted (tests / a future dated migration of that same setting). No match = None."""
+    if isinstance(table, dict):
+        r = table.get(str(model or ""))
+        if not isinstance(r, dict) or r.get("in") is None or r.get("out") is None:
+            return None
+        return {"provider": provider, "model": model, "from": r.get("from") or r.get("asOf") or r.get("verifiedAt"), "inputPerMTok": r.get("in"),
+                "outputPerMTok": r.get("out"), "cacheReadPerMTok": r.get("cacheRead"), "cacheWritePerMTok": r.get("cacheWrite"),
+                "source": r.get("source") or "llm.rates", "verifiedAt": r.get("verifiedAt") or r.get("asOf"), "undated": not (r.get("from") or r.get("asOf") or r.get("verifiedAt"))}
     day = _date(at)
     best = None
     for r in table or []:
@@ -56,7 +65,8 @@ def estimate(usage: dict | None, *, provider: str, model: str, at, table) -> dic
         return {"status": "unknown", "why": "price row has no rate for " + ",".join(missing), "usd": None, "tokens": u}
     usd = sum(u[k] * float(row.get(_RATE[k]) or 0.0) for k in TOKEN_KEYS) / 1_000_000.0
     return {"status": "estimated", "usd": round(usd, 6), "tokens": u,
-            "basis": {"from": row.get("from"), "source": row.get("source"), "verifiedAt": row.get("verifiedAt")}}
+            "basis": {"from": row.get("from"), "source": row.get("source"), "verifiedAt": row.get("verifiedAt"),
+                      "caveat": ("llm.rates carries no effective date - an ESTIMATE at the current card, not an invoice" if row.get("undated") else None)}}
 
 
 def summarize(requests: list, *, table, invoices: list | None = None, subscription: dict | None = None) -> dict:
