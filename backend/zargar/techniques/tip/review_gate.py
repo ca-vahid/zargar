@@ -80,8 +80,12 @@ async def desk_items(eng, *, now: dt.datetime | None = None) -> tuple[list[dict]
     partial read)."""
     items: list[dict] = []
     errors: list[str] = []
+    # ECON-03 (2026-09-19): an ABSENT or NOT-YET-RESTORED component is an incomplete picture, never "nothing open".
+    # None does not mean empty: only a component that answered is authoritative, so a missing one keeps the review.
     mgr = getattr(eng, "position_manager", None)
-    if mgr is not None:
+    if mgr is None:
+        errors.append("positions: position manager absent")
+    else:
         try:
             for p in mgr.positions(status="open"):
                 if p.get("technique") != "tip":
@@ -91,7 +95,11 @@ async def desk_items(eng, *, now: dt.datetime | None = None) -> tuple[list[dict]
         except Exception as exc:                          # noqa: BLE001
             errors.append(f"positions: {type(exc).__name__}")
     runner = getattr(eng, "tip_runner", None)
-    if runner is not None:
+    if runner is None:
+        errors.append("plans: tip runner absent")
+    elif not getattr(runner, "restore_complete", False):
+        errors.append("plans: tip runner restore not complete")
+    else:
         try:
             for ap in list(getattr(runner, "_armed", {}).values()):
                 if getattr(ap, "status", "") not in ("armed", "paused"):

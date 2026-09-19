@@ -132,7 +132,8 @@ async def retrospective(c, since: str) -> dict:
         rows.append({"id": r["id"], "at": r["created_at"], "source": r["source"], "ctype": ctype, "tickers": tickers,
                      "keep": d["review"], "reason": d["reason"], "in": tin, "out": tout, "usd": usd,
                      "mgmt": [t for t in tools if t in MGMT], "notes": tools.count("save_note"),
-                     "missedTip": bool(op.get("missedTip"))})
+                     "missedTip": bool(op.get("missedTip")), "watch": bool(op.get("watch")),
+                     "mixed": len(set(tickers)) >= 2, "headline": (op.get("rationale") or "")[:140]})
     return {"rows": rows, "rate": rate}
 
 
@@ -151,6 +152,14 @@ def report_retro(res: dict, since: str) -> None:
     print(f"\n**False negatives (skipped reviews that called a management tool): {len(fn)}**")
     for x in fn:
         print(f"- {x['at']:%Y-%m-%d %H:%M} {x['source']} {x['ctype']} tickers={x['tickers']} tools={x['mgmt']}")
+    # ECON-03: management tools are not the only thing a review can be worth - these skipped classes need a HUMAN read
+    print("\nSkipped reviews by what else they carried (for human review - a tool count alone does not prove no value):")
+    print(f"- possible new entry flagged (missed-tip text): {sum(1 for x in skip if x['missedTip'])}")
+    print(f"- deferred action (non-empty watch list): {sum(1 for x in skip if x['watch'])}")
+    print(f"- mixed message (two or more tickers): {sum(1 for x in skip if x['mixed'])}")
+    print(f"- note written: {sum(1 for x in skip if x['notes'])} (historical receipt absence does not prove a note has no future value)")
+    for x in [x for x in skip if x["missedTip"] or x["watch"]][:12]:
+        print(f"  - {x['at']:%m-%d %H:%M} {x['source']} {x['tickers']} missedTip={x['missedTip']} watch={x['watch']} | {x['headline']}")
     print("\n| content type | reviews | est. cost | kept | management |")
     print("|---|---:|---:|---:|---:|")
     by = collections.defaultdict(list)
@@ -165,6 +174,9 @@ def report_retro(res: dict, since: str) -> None:
         by[x["source"]].append(x)
     for k, xs in sorted(by.items(), key=lambda kv: -usd(kv[1])):
         print(f"| {k} | {len(xs)} | ${usd(xs):,.2f} | {sum(1 for x in xs if x['keep'])} | {sum(1 for x in xs if x['mgmt'])} |")
+    print("\nAPPROXIMATE reconstruction: the desk state at each review is REBUILT from managed positions, arm/disarm "
+          "events and proposals - not the live state the gate will read; a plan whose arm or disarm event is missing, or a "
+          "signal-to-source join that is absent, is invisible here. Treat the zero as necessary, not sufficient.")
     print("\nLimits: desk state is rebuilt from positions, arm/disarm events and proposals; extracted tickers come "
           "from the intake run's own extract line (up to 8 listed). A missed-tip flag is advisory text no process "
           "consumes. Reviews before 2026-09-09 carry no usage and are excluded.")
@@ -177,16 +189,24 @@ async def prospective(c, since: str) -> None:
     ids = [J(e["payload"]).get("intakeRunId") for e in ev]
     runs = {r["id"]: J(r["opinion"]) for r in await c.fetch(
         "select id, opinion from tip_analyst_runs where id = any($1::varchar[])", [i for i in ids if i])}
-    cnt = collections.Counter(); fn = []; cost = collections.defaultdict(float)
+    cnt = collections.Counter(); fn = []; cost = collections.defaultdict(float); other = []; incomplete = 0
+    sessions = set()
     for e in ev:
         p = J(e["payload"]); op = runs.get(p.get("intakeRunId")) or {}
         tools = [t.get("tool") or t.get("name") for t in (op.get("toolsUsed") or [])]
         _i, _o, usd = usage_usd(op, rate)
         key = (p.get("mode"), p.get("decision"), bool(p.get("applied")))
         cnt[key] += 1; cost[key] += usd or 0.0
+        sessions.add((e["ts"].astimezone(_ET) - dt.timedelta(hours=4)).date())
+        incomplete += 1 if p.get("readErrors") else 0
         if p.get("decision") == "skip" and any(t in MGMT for t in tools):
             fn.append((e["ts"], p.get("source"), p.get("tickers"), [t for t in tools if t in MGMT]))
+        elif p.get("decision") == "skip" and (op.get("missedTip") or op.get("watch") or len(p.get("tickers") or []) >= 2):
+            other.append((e["ts"], p.get("source"), p.get("tickers"), bool(op.get("missedTip")), bool(op.get("watch")),
+                          (op.get("rationale") or "")[:140]))
     print(f"# Intake review gate - prospective decisions since {since}\n")
+    print(f"Coverage: {len(ev)} decision(s) over {len(sessions)} accounting session(s) ({', '.join(str(d) for d in sorted(sessions)) or 'none'}); "
+          f"{incomplete} decided with an incomplete desk read (always reviewed).\n")
     print("| mode | decision | skipped for real | messages | est. review cost |")
     print("|---|---|---|---:|---:|")
     for k, n in sorted(cnt.items()):
@@ -194,7 +214,13 @@ async def prospective(c, since: str) -> None:
     print(f"\n**False negatives (observe skip-decisions whose review managed something): {len(fn)}**")
     for f in fn:
         print(f"- {f[0]:%Y-%m-%d %H:%M} {f[1]} {f[2]} {f[3]}")
-    print("\nAcceptance for enforce: zero false negatives here AND in the retrospective replay.")
+    print(f"\nSkip-decisions that carried something else worth a human read (possible new entry, deferred action, mixed "
+          f"message): {len(other)}")
+    for o in other[:20]:
+        print(f"- {o[0]:%Y-%m-%d %H:%M} {o[1]} {o[2]} missedTip={o[3]} watch={o[4]} | {o[5]}")
+    print("\nThis is a REVIEW checkpoint, not an activation rule: zero management false negatives here AND in the retrospective "
+          "replay are necessary; a human also reads the list above (corrections, new entries, mixed messages, useful deferred "
+          "actions). A few clean sessions are not statistical proof that no harmful exclusion exists.")
 
 
 async def main() -> None:

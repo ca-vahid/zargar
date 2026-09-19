@@ -98,3 +98,54 @@ def test_entry_horizons_score_keeps_missing_missing():
     assert thin["p30"] is None and thin["pclose"] is None and thin["pnext"] is None and thin["missing"] is False
     assert eh.score(t0, 1.59, None)["missing"] is True
     assert eh.next_session(dt.date(2026, 9, 18)) == dt.date(2026, 9, 21)                # Friday -> Monday
+
+
+def test_entry_horizons_v2_calendar_windows_and_start_eligibility():
+    from zargar.tools import tip_entry_horizons as eh
+    ET = eh.ET
+    # early close (day after Thanksgiving 2026-11-27, 13:00 ET): the close window is 12:30-13:00, never 15:30
+    t0 = dt.datetime(2026, 11, 27, 10, 0, tzinfo=ET)
+    s = eh.score(t0, 1.0, [(dt.datetime(2026, 11, 27, 12, 45, tzinfo=ET), 1.2), (dt.datetime(2026, 11, 27, 15, 30, tzinfo=ET), 9.9)])
+    assert s["pclose"] == 1.2 and s["pcloseAt"].startswith("2026-11-27T12:45")
+    # next close = the final 30 minutes of the NEXT TRADING day (Monday 11-30), not Saturday and not a morning print
+    s2 = eh.score(t0, 1.0, [(dt.datetime(2026, 11, 30, 9, 31, tzinfo=ET), 0.5), (dt.datetime(2026, 11, 30, 15, 45, tzinfo=ET), 0.8)])
+    assert s2["pnext"] == 0.8
+    # a decision sampled outside the regular session has no executable start: nothing is scored
+    pre = eh.score(dt.datetime(2026, 9, 17, 9, 23, tzinfo=ET), 1.0, [(dt.datetime(2026, 9, 17, 15, 59, tzinfo=ET), 2.0)])
+    assert pre["inSession"] is False and pre["pclose"] is None
+    # starting-quote eligibility reuses the executable-evidence rule
+    sampled = dt.datetime(2026, 9, 17, 14, 45, 34, tzinfo=dt.timezone.utc)          # 10:45:34 ET
+    ms = int(sampled.timestamp() * 1000)
+    good = {"atDecision": {"ask": 1.59, "bid": 1.55, "source": "opra", "delayed": False, "sourceTs": ms - 2000}}
+    assert eh.start_eligibility(good, sampled) == (True, [])
+    for bad in ({"ask": 1.59, "bid": 1.55, "source": "chain", "delayed": True, "sourceTs": ms - 2000},      # delayed chain
+                {"ask": 1.59, "bid": 1.55, "source": "opra", "delayed": False, "sourceTs": ms - 120_000},  # stale
+                {"ask": 1.59, "bid": 1.70, "source": "opra", "delayed": False, "sourceTs": ms - 2000},     # crossed
+                {"ask": 1.59, "bid": 1.55, "source": "opra", "delayed": False}):                            # no source time
+        ok, why = eh.start_eligibility({"atDecision": bad}, sampled)
+        assert ok is False and why
+
+
+def test_render_prints_marked_and_realized_after_cost_separately_with_open_pnl():
+    """ECON-01: a day with open P&L - marked change (+39.04) and realized (-11.18) differ, and BOTH after-cost
+    figures are printed with the primary one labelled; the mark's actual timestamp is shown, not '16:00'."""
+    import collections
+    day = dt.date(2026, 9, 18)
+    mark_ts = int(dt.datetime(2026, 9, 19, 7, 59, tzinfo=UTC).timestamp() * 1000)          # 03:59 ET next day
+    prev_ts = int(dt.datetime(2026, 9, 18, 7, 59, tzinfo=UTC).timestamp() * 1000)
+    per = collections.defaultdict(lambda: {"usd": 0.0, "runs": 0, "in": 0, "out": 0, "unpricedRuns": 0, "unpricedIn": 0,
+                                           "partialRuns": 0, "unknownCalls": 0, "classes": collections.Counter()})
+    per[(day, "intake-review")]["usd"] = 81.61
+    res = {"version": sc.VERSION, "since": "2026-09-18", "until": "2026-09-18", "book": "B", "preIntervalExecutions": 40,
+           "trading": {"days": {day: {"net": -11.18, "fees": 4.16, "q_net": 0.0, "repair": 0.0}}, "repairs": [],
+                       "open_lots": [{"qty": 2, "px": 0.34, "symbol": "AAL261016C00014000", "fee_unit": 1.04, "ts": dt.datetime(2026, 9, 18, 14, tzinfo=UTC)}],
+                       "census": {"unallocated": [], "rows": [], "realizations": [], "execs": [], "orders": [], "ownerByOrder": {}},
+                       "questionedExecs": set()},
+           "marks": {"start": 10000.0, "close": {dt.date(2026, 9, 17): (8925.42, 6679.92, prev_ts), day: (8964.46, 6758.70, mark_ts)}},
+           "cash": {}, "model": {"per": per, "bySource": {}, "analystModelChanges": 0}, "shadows": [], "registry": {"fills": []}}
+    out = sc.render(res)
+    row = next(l for l in out.splitlines() if l.startswith("| 2026-09-18 |"))
+    assert "+39.04" in row and "**-42.57**" in row and "-92.79" in row          # 39.04 - 81.61 and -11.18 - 81.61
+    assert "09-19 03:59" in row and "MARKED after model cost (primary)" in out
+    assert "Interval baseline: 8,925.42 = the 2026-09-17 accounting-day mark" in out
+    assert "Equity identity:** not printed" in out                               # the report starts after inception
