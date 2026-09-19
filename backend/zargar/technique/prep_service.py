@@ -134,9 +134,12 @@ async def prep_arm(svc, run_id: str, *, arm, origin: str | None = None, source_h
         try:
             await holder.execute(text(f"set local lock_timeout = '{int(ARM_LOCK_TIMEOUT_S * 1000)}ms'"))
             await holder.execute(text("select pg_advisory_xact_lock(:k)"), {"k": lock})
-        except DBAPIError as exc:                          # the bounded wait ran out: another worker is still arming this candidate
+        except DBAPIError as exc:
             await holder.rollback()
-            return {"armed": False, "why": "arm_lock_timeout", "decision": d, "detail": f"{type(exc).__name__}"[:80]}
+            state = str(getattr(getattr(exc, "orig", None), "sqlstate", "") or getattr(getattr(exc, "orig", None), "pgcode", "") or "")
+            if state == "55P03" or "lock timeout" in str(exc).lower():   # lock_not_available: another worker is still arming this candidate
+                return {"armed": False, "why": "arm_lock_timeout", "decision": d, "detail": state or type(exc).__name__}
+            return {"armed": False, "why": "arm_lock_error", "decision": d, "detail": f"{state} {type(exc).__name__}".strip()[:80]}   # a database failure is not called contention; nothing is armed either way
         existing = await armed_candidate_in_db(svc, str(d.get("symbol") or ""), key)
         if existing:
             return {"armed": False, "why": ("already_armed" if existing == run_id else "duplicate_of_armed_candidate"), "armedRunId": existing, "decision": d}
