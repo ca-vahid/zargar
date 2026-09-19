@@ -1,0 +1,35 @@
+{
+ "symbolDays": {
+  "total": 279,
+  "ok": 279,
+  "byStatus": {
+   "ok": 279
+  },
+  "byClass": {
+   "traded": 176,
+   "no_trade_decision": 102,
+   "priced_refusal_only": 1
+  }
+ },
+ "entryAttemptOutcomes": {
+  "filled": 332,
+  "no_observed_contract_in_band": 13,
+  "no_execution_print": 2
+ },
+ "executionLagMinutes": {
+  "0": 332
+ },
+ "selectionPrintAgeMinutes": {
+  "1": 332
+ },
+ "unknownMarks": {
+  "mark_unknown": 1
+ },
+ "optionCache": {
+  "contracts": 3385,
+  "setSha256": "7e5e475cf8980483f09daf48eaae79f053ff4ca61b38187736b197a8f30ef614",
+  "contractsWithNoPrintsAllDay": 99,
+  "note": "a contract with no prints may be unlisted OR listed and untraded: prints cannot tell these apart"
+ }
+}
+short RTH sessions: []

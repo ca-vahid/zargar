@@ -1,0 +1,59 @@
+
+=== 2026-07-14 SPY  AUTHOR: SPY 624C @0.50, EMA13 pullbacks after PMH break, adds; exit n/f
+  OURS (SPY replay, real prints): scenario=3 dayType=normal trades=0
+    skip_no_trade_zone x1  first 10:34: entry 750.55 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowa
+    skip_last_entry x1  first 15:32: past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)
+     ('10:30', 'scenario', '15m body close above 748.94: scenario 3 (bounce PDL) → focus on calls (B1/C1)')
+
+=== 2026-09-01 IWM  AUTHOR: IWM 292P card +474%, sold 12:34; entry time n/f
+  his contract IWM260901P00292000: session prints low 0.19 / high 2.00 (entry time not documented)
+  OURS (IWM replay, real prints): scenario=4 dayType=gap_down trades=2
+    trade pm_break_down@09:30 short in 09:50 K291 @0.36 -> out 10:02 -24.5%  [2m close 291.65 through the EMA13 291.60 (S1 one-candle stop)]
+    trade pm_break_down@09:30 short in 10:04 K291 @0.27 -> out 10:08 -25.2%  [premium stop: -25% ≤ −25% (P1/D13)]
+    skip_loss_cap x1  first 10:10: 2 losing trades today (max 2) — done taking entries in this symbol for the session (D-3)
+    skip_last_entry x1  first 15:32: past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)
+     ('09:45', 'scenario', '15m body close below 292.70: scenario 4 (break PDL) → focus on puts (B1/C1)')
+
+=== 2026-09-03 SPY  AUTHOR: third attempt SPY 770C ~11:00, sold 11:19 'over 500%'; two earlier attempts stopped
+  his contract SPY260903C00770000: print at 11:00 = 0.56; best print until 11:19 = 2.38 at 11:19 (+325%); worst print before that best = 0.56 (+0%)
+  OURS (SPY replay, real prints): scenario=1 dayType=gap_up trades=0
+    skip_target_collision x5  first 09:56: pm_break_up@09:30: target 768.00 is the setup's own source level 768.00 — a breakout cannot use the level it j
+    skip_engulfing x2  first 10:56: touch #1: body 0.45 > 2.0× avg 0.21 — an engulfing lunge, not a drift (A6/F4)
+    skip_last_entry x1  first 15:32: past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)
+     ('09:45', 'scenario', '15m body close above 766.43: scenario 1 (break PDH) → focus on calls (B1/C1)')
+
+=== 2026-09-09 IWM  AUTHOR: IWM 293P at the 09:41 retest of 3-day support; +141.77%
+  his contract IWM260909P00293000: print at 09:41 = 0.49; best print until 15:45 = 2.67 at 15:45 (+445%); worst print before that best = 0.44 (-10%)
+  OURS (IWM replay, real prints): scenario=4 dayType=gap_down trades=2
+    trade scenario_4@09:30 short in 10:32 K292 @0.33 -> out 10:34 -1.1%  [target 292.49 (re-planned structural level (F72)) touched — sell at ta]
+    trade scenario_4@09:30 short in 10:42 K292 @0.47 -> out 11:04 +12.3%  [target 291.81 (re-planned structural level (F72)) touched — sell at ta]
+    skip_target_collision x16  first 11:32: pm_break_down@10:30: target 292.62 is the setup's own source level 292.62 — a breakout cannot use the level it
+    skip_no_trade_zone x1  first 09:56: entry 293.08 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowa
+    skip_target_behind x1  first 10:36: scenario_4@09:30: target 292.49 is above the current price 292.31 — no room left, the exit would trigger on th
+    skip_engulfing x1  first 13:32: touch #1: body 0.20 > 2.0× avg 0.05 — an engulfing lunge, not a drift (A6/F4)
+    skip_last_entry x1  first 15:32: past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)
+     ('09:45', 'scenario', '15m body close below 294.26: scenario 4 (break PDL) → focus on puts (B1/C1)')
+
+=== 2026-09-10 IWM  AUTHOR: IWM 288P ~14:00 after ~5h wait; +85/+100%
+  his contract IWM260910P00288000: print at 14:00 = 0.40; best print until 15:45 = 0.85 at 15:08 (+112%); worst print before that best = 0.32 (-20%)
+  OURS (IWM replay, real prints): scenario=4 dayType=gap_down trades=0
+    skip_target_collision x14  first 13:40: pm_break_down@10:00: target 287.83 is the setup's own source level 287.83 — a breakout cannot use the level it
+    skip_no_trade_zone x3  first 09:52: entry 288.41 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowa
+    skip_engulfing x2  first 14:04: touch #1: body 0.13 > 2.0× avg 0.05 — an engulfing lunge, not a drift (A6/F4)
+    skip_last_entry x1  first 15:32: past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)
+     ('09:45', 'scenario', '15m body close below 290.31: scenario 4 (break PDL) → focus on puts (B1/C1)')
+
+=== 2026-09-11 SPY  AUTHOR: SPY 768C at the 09:46 2m close; +50% trim, runners stopped; +$801
+  his contract SPY260911C00768000: print at 09:46 = 0.40; best print until 15:45 = 0.57 at 09:59 (+42%); worst print before that best = 0.28 (-30%)
+  OURS (SPY replay, real prints): scenario=1 dayType=gap_up trades=0
+    skip_no_trade_zone x1  first 09:46: entry 765.27 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowa
+    skip_last_entry x1  first 15:32: past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)
+     ('09:45', 'scenario', '15m body close above 760.11: scenario 1 (break PDH) → focus on calls (B1/C1)')
+
+=== 2026-09-18 IWM  AUTHOR: CHART ONLY (no execution): EMA13 pullback ~09:46-09:52; contract is OUR 283P for reference
+  his contract IWM260918P00283000: print at 09:48 = 0.34; best print until 15:45 = 0.72 at 10:05 (+112%); worst print before that best = 0.33 (-3%)
+  OURS (IWM replay, real prints): scenario=4 dayType=gap_down trades=1
+    trade pm_break_down@09:30 short in 10:12 K283 @0.48 -> out 10:20 -8.3%  [2m close 283.22 through the EMA13 283.15 (S1 one-candle stop)]
+    skip_engulfing x1  first 10:26: touch #2: body 0.24 > 2.0× avg 0.11 — an engulfing lunge, not a drift (A6/F4)
+    skip_last_entry x1  first 15:32: past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)
+     ('09:45', 'scenario', '15m body close below 285.21: scenario 4 (break PDL) → focus on puts (B1/C1)')

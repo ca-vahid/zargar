@@ -1,0 +1,81 @@
+
+=== 2026-09-01 IWM IWM260901P00292000
+  IMAGE: card only; no entry alert, time or price in the image
+  CARD: +474.14% at 12:34 ET
+  contract printed 1.55-1.65 in the card minute -> implied entry price 0.270 to 0.287 (if the card shows the whole position's open P&L)
+  minutes in which the contract traded inside that implied range before the card: 10:25, 10:28-10:32, 10:36-10:47, 10:49, 11:38, 11:43-11:46, 11:50-11:52, 11:59, 12:01-12:02 (showing the last 10 of 9 runs)
+  OUR READ (IWM): scenario=4 dayType=gap_down pmh=294.5 pml=291.77 targets={'above': 296.58, 'below': None}
+    09:45 scenario                 15m body close below 292.70: scenario 4 (break PDL) → focus on puts (B1/C1)
+    09:45 pm_break                 15m close below the pre-market low 291.77 → puts down to the next level (none on the plan) (L2.5/V7)
+    09:50 fire                     pm_break_down@09:30: touch #1 — EMA13 at 291.69 held (close 291.63) in a bear stack — buy put 291 ≈ $0.36 (T1/T2/V1); size full ×1 — early (before 10:00, P2) — strike fro
+    10:02 exit                     2m close 291.65 through the EMA13 291.60 (S1 one-candle stop)
+    10:04 pm_retest                pm_break_down@09:30: retest of the pre-market level 291.77 itself — the L2.6/L2.7 entry, small size (F20)
+    10:04 fire                     pm_break_down@09:30: touch #2 — level at 291.77 held (close 291.73) in a bear stack — buy put 291 ≈ $0.27 (T1/T2/V1); size small ×0.5 — target the low of day 291.23 (X3b)
+    10:08 exit                     premium stop: -25% ≤ −25% (P1/D13)
+    10:10 skip_loss_cap            2 losing trades today (max 2) — done taking entries in this symbol for the session (D-3)
+    TRADE pm_break_down@09:30 in 09:50 K291 observed 0.36 exec 0.36 -> out 10:02 -24.5% [2m close 291.65 through the EMA13 291.60 (S1 one-candle stop]
+    TRADE pm_break_down@09:30 in 10:04 K291 observed 0.27 exec 0.27 -> out 10:08 -25.2% [premium stop: -25% ≤ −25% (P1/D13)]
+
+=== 2026-09-03 SPY SPY260903C00770000
+  IMAGE: alert 'I'm taking SPY 770c' after 'Getting the 768.00 retest now' - message time not visible; earlier cards 771C +25.00% 09:52 and 770C +26.14% 10:24
+  CARD: +536.99% at 11:19 ET
+  contract printed 2.23-2.38 in the card minute -> implied entry price 0.350 to 0.374 (if the card shows the whole position's open P&L)
+  minutes in which the contract traded inside that implied range before the card: 10:07-10:13, 10:32-10:33, 10:35-10:38, 10:42-10:43, 10:47-10:48, 10:50-10:52, 10:54-10:57 (showing the last 10 of 7 runs)
+  OUR READ (SPY): scenario=1 dayType=gap_up pmh=768 pml=763.59 targets={'above': 767.995, 'below': 759.48}
+    09:45 scenario                 15m body close above 766.43: scenario 1 (break PDH) → focus on calls (B1/C1)
+    09:45 pm_break                 15m close above the pre-market high 768.00 → calls up to 768.00 — already behind the break, so this setup has no room (F76) (L2.5/V7)
+    09:56 skip_target_collision    pm_break_up@09:30: target 768.00 is the setup's own source level 768.00 — a breakout cannot use the level it just broke as its destination (source-target collision) — no 
+    10:06 same_pullback            pm_break_up@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    10:22 same_pullback            pm_break_up@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    10:26 same_pullback            pm_break_up@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    10:52 same_pullback            pm_break_up@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    10:56 skip_engulfing           touch #1: body 0.45 > 2.0× avg 0.21 — an engulfing lunge, not a drift (A6/F4)
+    10:58 same_pullback            pm_break_up@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+
+=== 2026-09-09 IWM IWM260909P00293000
+  IMAGE: 09:41 'I'm watching the 293p'; 'I'm getting IWM 293p' follows with no visible time
+  CARD: +141.77% at 10:19 ET
+  contract printed 1.04-1.15 in the card minute -> implied entry price 0.430 to 0.476 (if the card shows the whole position's open P&L)
+  minutes in which the contract traded inside that implied range before the card: 09:30-09:31, 09:36-09:38, 09:40, 09:45, 10:04-10:06 (showing the last 10 of 5 runs)
+  OUR READ (IWM): scenario=4 dayType=gap_down pmh=294.82 pml=292.62 targets={'above': 296.175, 'below': 292.62}
+    09:45 scenario                 15m body close below 294.26: scenario 4 (break PDL) → focus on puts (B1/C1)
+    09:56 skip_no_trade_zone       entry 293.08 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowance (D9)
+    09:58 same_pullback            scenario_4@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    10:04 same_pullback            scenario_4@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+
+=== 2026-09-10 IWM IWM260910P00288000
+  IMAGE: 'the 15 minute candle finally closed under our level. I'm watching those 288p now' then 'I'm taking IWM 288p' - no visible time; 14:12 'up 80%+ on these runners'
+  CARD: +85.37% at 14:10 ET
+  contract printed 0.68-0.76 in the card minute -> implied entry price 0.367 to 0.410 (if the card shows the whole position's open P&L)
+  minutes in which the contract traded inside that implied range before the card: 12:17-12:19, 12:25-12:28, 12:34, 12:38-12:45, 12:50-12:52, 13:30-13:35, 13:37-13:39, 13:44-13:45, 13:51-13:52, 13:57-14:01 (showing the last 10 of 13 runs)
+  OUR READ (IWM): scenario=4 dayType=gap_down pmh=291.74 pml=287.83 targets={'above': 296.04, 'below': 287.83}
+    09:45 scenario                 15m body close below 290.31: scenario 4 (break PDL) → focus on puts (B1/C1)
+    09:52 skip_no_trade_zone       entry 288.41 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowance (D9)
+    10:15 pm_break                 15m close below the pre-market low 287.83 → puts down to 287.83 — already behind the break, so this setup has no room (F76) (L2.5/V7)
+    10:16 skip_no_trade_zone       entry 288.05 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowance (D9)
+    10:18 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    11:32 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    11:42 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    12:20 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    12:42 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    13:06 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    13:12 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    13:40 pm_retest                pm_break_down@10:00: retest of the pre-market level 287.83 itself — the L2.6/L2.7 entry, small size (F20)
+    13:40 skip_target_collision    pm_break_down@10:00: target 287.83 is the setup's own source level 287.83 — a breakout cannot use the level it just broke as its destination (source-target collision) — n
+    13:42 pm_retest                pm_break_down@10:00: retest of the pre-market level 287.83 itself — the L2.6/L2.7 entry, small size (F20)
+    13:44 pm_retest                pm_break_down@10:00: retest of the pre-market level 287.83 itself — the L2.6/L2.7 entry, small size (F20)
+    13:48 pm_retest                pm_break_down@10:00: retest of the pre-market level 287.83 itself — the L2.6/L2.7 entry, small size (F20)
+    13:52 pm_retest                pm_break_down@10:00: retest of the pre-market level 287.83 itself — the L2.6/L2.7 entry, small size (F20)
+    13:54 pm_retest                pm_break_down@10:00: retest of the pre-market level 287.83 itself — the L2.6/L2.7 entry, small size (F20)
+    14:00 same_pullback            pm_break_down@10:00: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)
+    14:04 skip_engulfing           touch #1: body 0.13 > 2.0× avg 0.05 — an engulfing lunge, not a drift (A6/F4)
+
+=== 2026-09-11 SPY SPY260911C00768000
+  IMAGE: 09:46 'I'm taking SPY 768c' (timestamped alert); 10:00 'Up 50% get those trims' (alert text, not a card); day P&L +$801.66
+  CARD: +50.0% at 10:00 ET
+  contract printed 0.44-0.57 in the card minute -> implied entry price 0.293 to 0.380 (if the card shows the whole position's open P&L)
+  minutes in which the contract traded inside that implied range before the card: 09:30-09:33, 09:40, 09:44-09:45, 09:47-09:56 (showing the last 10 of 4 runs)
+  OUR READ (SPY): scenario=1 dayType=gap_up pmh=766.53 pml=758.17 targets={'above': 766.53, 'below': None}
+    09:45 scenario                 15m body close above 760.11: scenario 1 (break PDH) → focus on calls (B1/C1)
+    09:46 skip_no_trade_zone       entry 765.27 sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowance (D9)
+    09:56 same_pullback            scenario_1@09:30: still the same pullback — price has not closed 0.5 ATR off the EMA13 since the last contact (F62)

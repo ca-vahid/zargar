@@ -162,6 +162,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.max_signal_age_min": 3,        # R2 (2026-09-14): a fire older than this at decision time is stale — recorded, never sent
     "techniques.team2.experiments": {"enabled": False, "books": []},   # parallel Practice experiments (2026-09-15): [{portfolioId, label, overrides: {size_full | no_trade_zone}}]; OFF until the review team's GO
     "techniques.team2.diagnostics": True,          # 2026-09-16: shadow profitability measurements (entry location, contract alternatives at 2/5/10 min + exit, attempt context); never an order filter
+    "techniques.team2.selection_study": "off",       # S1 (2026-09-19): off | collect - an ORDER-FREE shadow collector (features + 10/30-minute quotes per opportunity); never a decision input
     "techniques.team2.no_trade_zone": "pm_range",    # C1 (2026-09-13, research): pm_range | conjunction — DISABLED pending the other team's approval
     "techniques.team2.pm_room_atr": 0.0,             # C1 obstacle rule, 0 = off (research)
     "techniques.team2.min_target_atr": 0.0,          # C3 minimum target room, 0 = off (research)

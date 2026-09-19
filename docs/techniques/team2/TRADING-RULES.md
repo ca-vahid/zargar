@@ -3622,3 +3622,123 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 ### 2026-09-18 - C6 implementation and unattended Practice observation
 
 Canonical provider is Alpaca SIP for Team2 when canonical_provider=alpaca; no Yahoo fallback enters those plans. Twelve-session warm-up is frozen by content hash and reused live/replay/restore. The three-book comparison remains Control, size_full=0.5 only, and conjunction only. No C2/room/near-ITM change. Engine scheduler samples the already agreed $800/$1,000 drawdowns every thirty minutes and at close; breach pauses only that book with protective exits active. Missing marks remain unknown. User authorized completion, test, merge/deploy and next-session readiness while away; activation still requires measured C6 evidence and the receipt. See 2026-09-18-c6-release.md.
+
+### 2026-09-19 - Profitability study (order-free; nothing live changed)
+
+Package: `notes/research/profitability-2026-09-19/README.md`; registrations `notes/research/2026-09-19-profitability-preregistration.md`.
+
+- **F128 (2026-09-19) The replay's premium formula is wrong by sign, and F8's "12-45% optimistic" no longer stands.** On the same
+  280 replayed trades (93 sessions, SPY/QQQ/IWM, Alpaca SIP tape) flat-IV Black-Scholes says +21.8% per trade; REAL option prints
+  (Alpaca 1m option trade bars, validated on our 16 fills: median error $0.00) say -1.0% to -3.2%. It books target exits at the
+  target inside the bar, prices a target winner at +77% where the contract made +19%, and thinks the chosen strike costs $0.49
+  when it cost $1.35, so it walks strikes the live picker never would. EVERY earlier sweep number in this file, and the modelled
+  columns of the sizing and C1 sheets, was scored with it: treat them as unscored until re-run on real prints.
+- **F129 (2026-09-19) The entry carries no directional information at the price we can act on.** Baseline rules, real prints,
+  fees in: 333 trades, mean -3.76% (95% interval -7.6 to +0.1), win rate 31.5%, about zero before fees, -7.0% at one tick of
+  slippage per leg. Measured from the real underlying price at the decision minute the move is in our favour 50.5 / 50.9 / 48.4 /
+  51.6 / 54.1 / 49.8% of the time at 4 / 10 / 20 / 30 / 60 / 120 minutes. The "61% at ten minutes" seen from the read's own
+  entry line is the distance price travels between the EMA/level line and the close of the bounce bar we buy after.
+- **F130 (2026-09-19) Nine preregistered single-factor arms REJECTED on the training window (2026-05-07..08-14):** two-candle stop
+  (`stop_candles=2`, worse), target room 1.5 ATR (+1.3 points, inside noise), new-extreme trim, conjunction no-trade zone (C1's
+  rule: more trades, same negative expectancy), $1.20 contract, collision re-plan (`target_collision=replan`), no outright target
+  exit (worst), resting-limit brackets at +50% and +100%. The holdout 2026-08-17..09-11 was never opened for any arm.
+- **F131 (2026-09-19) Against the author's six documented trades in the window we had the same direction and scenario six times
+  and captured none of his winners** (target collision x2, pre-market no-trade zone, the 09:45 gate plus a multi-day level, no
+  flag entry, shaken out twice then capped). His contracts did what he said on real prints (+112% to +445%). His record holds
+  17 executions, all winners, and no priced loser: it cannot give a win rate.
+- **F132 (2026-09-19) The one-position rule and the two-loss cap protect the book:** trades they displaced averaged -10.3% and -5.8%
+  against -0.35% for the trades taken.
+- Code: `stop_candles` became a real knob (default 1) and `target_collision` was added (default `refuse`); both default to the live
+  behaviour (September replay hash identical before and after), neither is in `SETTINGS_MAP`, both were rejected and stay only
+  so the measurement can be reproduced. Tests `tests/test_team2_research_knobs.py`.
+- Open decisions (owner / review team): sizing or a pause while the expectation is negative; re-scoring the accepted sheets on
+  real prints; replacing the formula in the product replay; the order-free selection study S1 (`notes/research/profitability-2026-09-19/06-prospective-experiment-spec.md`).
+
+### 2026-09-19 (later) - Correction and validation pass on the profitability study: F128-F132 AMENDED
+
+The review found that the first package's strongest sentences exceeded its measurement. Corrected package:
+`notes/research/profitability-2026-09-19/00-decision-sheet.md`. The five findings above are kept for the record and READ AS AMENDED here:
+
+- **F128 amended.** Still true: the flat-IV premium formula reports +21.8% per trade on trades that real prints put between about
+  -4% and 0%, so formula-scored sweeps are unreliable in level and sign. Corrected: the replay on prints is SIMULATED EXECUTION ON
+  REAL PRINTS, not fills. Against 15 actual legs (6 opportunities, 4 days) the print proxy errs by about $0.03 per leg in absolute
+  terms (5% of the premium; tails $0.07 to $0.105) and looks about $0.02 per round trip pessimistic. "Median error $0.00" is withdrawn.
+- **F129 amended.** Withdrawn: "the entry carries no directional information" and "direction is a coin flip". Supported: no
+  directional edge was DETECTED at the actionable price (favourable 49-54% at 4-120 minutes, mean move 0.00% +/-0.05% at 30 minutes);
+  a small one cannot be excluded. Baseline mean -3.71% per trade, DATE-CLUSTERED 95% interval -7.92 to +0.75 (332 trades, 93
+  sessions, 222 setup opportunities) at the books' fee with no extra slippage; about zero with no fee or with every target sold at
+  the touch minute's high; -7.55% (-11.53 to -3.28) at one tick per leg. Conclusion: NO ESTABLISHED after-cost edge; negative
+  estimate under the books' fee plus any adverse slippage.
+- **F130 amended.** The nine arms FAILED THEIR PREREGISTERED CRITERION under the harness, before and after its correction (ranking
+  unchanged; holdout never opened). Not shown: that exits are irrelevant or that no filter exists. H5 (dearer contract) is the only
+  arm whose improvement has an interval above zero, at one tick only, for a cost-arithmetic reason.
+- **F131 amended.** Source images inspected directly. Five documented executions and one illustrated area: same scenario each time,
+  none of his trades held. Only ONE entry is timestamped (09-11 09:46), NONE is priced; 09-09 09:41 is a WATCH alert, so "preceded our
+  09:45 gate" is withdrawn; the 2026-07-14 row is removed. "His edge is selection" is a hypothesis.
+- **F132 amended.** Displaced trades were not better than taken ones (occupancy -10.0%, loss cap -5.4%, taken -0.6%; clustered
+  intervals overlap): weak evidence that the rules do not cost money, not proof that they help.
+- **F133 (2026-09-19) A fire the runner refuses for occupancy still spends the setup's two-pullback allowance.** Journal, 2026-09-18:
+  C1's conjunction zone admitted SPY `scenario_4` touches #1 and #2 at 10:14 and 10:16 while its IWM position was open; both were
+  refused (`max_concurrent_positions`) and recorded `fire_unfilled_live`; at 10:22 the contact Control bought was C1's "contact #3,
+  watch-only". C1 then took QQQ because it had one loss where Control had two. C1 therefore does not differ from Control by one factor
+  in practice. Flagged as a method question; nothing changed.
+- **Harness defects fixed in the research harness only** (never product code): contract selection on a post-decision print,
+  unavailable prices marked $0.00, unbounded price age, one target-touch "fill". Eight regressions
+  (`notes/research/profitability-2026-09-19/harness/test_pricing_boundaries.py`). Effect: 12 of 332 trades changed, mean -3.76% to -3.71%; no verdict changed.
+- **Monitor interpretation corrected.** Experiment review levels: Sizing $800, C1 $1,000, Control none. 2026-09-18 peak-to-trough on
+  the 30-second mid-marked `equity_points`: Sizing $549, C1 $816, Control $928; no applicable level was reached. The 30-minute
+  monitor marks on the fresh bid and its high-water mark stayed at 10,000.
+- Next step on the table: the frozen order-free selection study (`notes/research/profitability-2026-09-19/07-selection-study-spec.md`). No trading arm.
+
+### 2026-09-19 (review verdict) - Conclusions accepted as exploratory; selection-study collector delivered DEFAULT OFF
+
+- Review team: the revised conclusions are accepted WITH THEIR LIMITATIONS as exploratory research; the direction is the order-free
+  study, not another trading variant. They independently verified the eight pricing-boundary tests and the C1 journal trace; the
+  93-session results are not independently reproduced.
+- **F133 interpretation corrected (review):** C1 changes ONE configuration factor. The different allowance consumption, occupancy,
+  loss count and later trades are downstream effects of that change. The experiment measures the whole policy's effect; it does not
+  isolate the quality of the newly admitted entries. The earlier sentence "C1 does not differ from Control by one factor" is withdrawn.
+- Four amendments incorporated in registration `s1-r2` (`notes/research/profitability-2026-09-19/07-selection-study-spec.md`):
+  book-independent opportunity identity (the contact bar's close time, never a per-book contact number); a pass requires a POSITIVE
+  improvement with its interval above zero, and one frozen rule chooses among several passers; entry-quote delay and every horizon
+  clock defined on the quote's SOURCE time; records journaled when observation BEGINS so crashes, disarms and unfinished follow-ups
+  stay in the coverage denominator.
+- Collector built: `techniques/team2/selection_study.py` + `_study_*` hooks in the runner's shadow-diagnostics path, switch
+  `techniques.team2.selection_study` = `off` (default) | `collect`. Order-free, never a decision input, not an experiment override.
+  12 acceptance tests (`tests/test_team2_selection_study.py`). NOT enabled and NOT deployed: that needs a reviewed deployment and one
+  setting change. No rule, sizing, protection, experiment book or product pricing changed; no variant search.
+
+### 2026-09-19 (collector review) - First collector HELD by the review team; corrected in one pass (`s1-r3`); still OFF
+
+- Review of the first collector: 12 supplied tests passed, 3 of the reviewers' probes failed. Four groups: (R1) an entry without a bid
+  and a future-dated follow-up quote could pass; (R2) removed plans held collection slots forever and duplicate books used separate
+  slots; (R3) features were computed after the awaited contract work from possibly revised bars, and the room feature used the
+  picker's spot; (R4) a source-word search does not prove isolation, and the forced refresh went through a shared quote service.
+- Corrections (research collector only; no trading path decision changed): the study's own strict quote evidence at both ends
+  (positive finite bid and ask, not crossed, source exactly OPRA, source time never after collection, at most 30 s old); capacity on
+  UNIQUE opportunities with `duplicateOf` openings, every opened record closed (plan removed, switched off, session ended), closes
+  bound to the opening by `openHash`, restart reconciliation against journaled closes; a point-in-time capture at the signal with the
+  hash of the bars used, the room price bound to its own field time or unknown; the collector made PASSIVE (synchronous reads of the
+  quote cache, no provider request, no refresh, no tracking change, no task) with a real runner on/off comparison reaching the actual
+  order intent.
+- Lesson kept: the statement "the hook runs after every fire decision" was wrong; the opening runs inside `pick_contract`, before the
+  later entry gates and the submission. It only reads, and the on/off comparison shows identical decisions and order intents.
+- The analysis is implemented and hash-frozen before any observation exists (`selection_study_analysis.py`,
+  sha256 `ad4b0211...cb772`); the tool shows coverage only until the stop rule.
+- Results: reviewers' probes 3/3, collector 41, analysis 13, full Team2 suite 441 passed. Collector remains OFF; enabling still needs
+  acceptance, PR #224, a coordinated deployment and one setting change. Research conclusions unchanged.
+
+### 2026-09-19 (final integration) - Selection study registration `s1-r4`: lifecycle, endpoint and frozen final sample; still OFF
+
+- Final pre-activation registration `s1-r4` (hash `13b2bcc18bbbf5fa`, analysis sha256 `4022fccf...aa48`), stamped on every row. Two
+  definitions resolved before any observation: the Holm family is ALL SIX primary tests (unjudgeable at p = 1), and the secondary
+  outcomes are R10 and R30 at one tick worse, descriptive only.
+- Lifecycle (`selection_study_lifecycle.py`) is a pure function of durable records: prepared -> collecting -> stopped for coverage /
+  ready for final analysis -> finalized. Only `counted` sessions advance the count and enter the sample; `excluded` (early close,
+  restart 09:30-15:45 ET, a 3-minute bar gap), `partial` and `disabled` sessions do not. Zero-opportunity sessions count. Endpoint:
+  close of the 60th counted session or of 2026-12-18, in ET. Early stop below 60% coverage from the 15th counted session.
+- Final analysis is refused before the endpoint; the manifest (window, counted and non-counted sessions, included row identities,
+  input hash, registration, analysis hash) and the result are hashed and reproduce exactly; `final --record` / `verify`.
+- Tests: 78 in the selection packet (incl. an end-to-end run through the real journal and persistence hooks with a mid-session restart
+  and a stale-state restart), full Team2 + reviewer + platform phase-3 475 passed, PR #224 merged into the tree and its contract check
+  passes. Verdict: ready with stated limitations (`09-release-handoff.md`). No trading book, rule, risk or C2 change; no variant search.
