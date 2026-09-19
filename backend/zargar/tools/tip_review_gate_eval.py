@@ -289,13 +289,17 @@ def report_model_plan(plan: dict, since: str) -> None:
         print(f"| {x['stratum']} | {x['history']} | {x['perDay']} | {x['quota']} | {x['capturedNow']} | {x['medianIn']:,} / {x['medianOut']:,} | "
               f"${x['cost']['claude-sonnet-5']:,.2f} | ${x['cost']['claude-haiku-4-5']:,.2f} | ${x['opusUsd']:,.2f} |")
     t = plan["totals"]
-    print(f"\n**Budget: ${plan['capUsd']:,.0f} hard ceiling** (`frozen.ReplayBudget`, checked before and charged after every attempt) = "
+    print(f"\n**Budget: ${plan['capUsd']:,.0f} hard ceiling** (`review_frozen.SuiteBudget`: ONE durable ledger across both models, every case, turn, retry and separate invocation; each attempt is reserved BEFORE it is sent at request chars / 3 input + the full max_tokens output x 1.25, settled from the provider's usage, and left charged at its reservation when billing is unknown; SDK retries disabled; the ceiling cannot be raised by a later run) = "
           f"Sonnet 5 ${t['claude-sonnet-5']:,.2f} + Haiku 4.5 ${t['claude-haiku-4-5']:,.2f}, one pass per model, including a "
           f"{int(round((MARGIN - 1) * 100))}% margin. No repeat passes inside this budget.")
     print(f"\nReplayable today: {plan['capturedReviews']} captured review(s) of {plan['historyReviews']} in history. A review before "
           "capture was switched on kept its tool results but not its request, so it cannot be replayed faithfully; the quotas fill "
           "from reviews captured prospectively. At the per-day rates above the rare case types (management, missed-entry, correction) "
           "set the calendar, not the budget.")
+    print("\nComparison (safeguards rev 2): the actual INSTRUCTION is compared - target, stop levels, targets, fractions, sale "
+          "fraction, hold cap; a changed level is a disagreement. A read is served only for the exact tool + arguments the case "
+          "recorded; anything else stays MISSING and makes the case INCONCLUSIVE - never an equivalence pass. Limitation that "
+          "remains: the ceiling holds while no single attempt bills more than 1.25x its reservation; an overrun is recorded.")
     print("\nAcceptance to even DISCUSS a change (not an activation rule): zero missed management actions, zero invalid replies on "
           "the management and correction cases, missed-entry flags matched, and every disagreement read by a human. One pass is "
           "not a measure of run-to-run variance.")
