@@ -1,6 +1,7 @@
 # 9. Selection study S1: release handoff (registration `s1-r4`)
 
-**Verdict: READY WITH STATED LIMITATIONS.** The code is complete and passes its acceptance packet and the required suites on the
+**Verdict: READY WITH STATED LIMITATIONS** (after the release-review corrections of 2026-09-19: the operator CLI's event-loop
+ownership, journal-order precedence before canonical hashing, and an immutable first finalization). The code is complete and passes its acceptance packet and the required suites on the
 combined release tree. The collector is OFF; nothing may start until the review team accepts this package and the owner separately
 approves deployment and activation. There is no code blocker. The remaining items are approvals and the limitations below.
 
@@ -9,6 +10,7 @@ approves deployment and activation. There is no code blocker. The remaining item
 | Item | Status |
 |---|---|
 | Release tree | branch `claude/trading-technique-research-56296a` (PR #223): the head commit that contains this file |
+| Release-review corrections | R1 CLI event loop, R2 first-close precedence, R3 immutable finalization: all three fixed here; the reviewers' three probes are adopted verbatim and pass |
 | PR #224 (`TechniquePlanDiagnostic` event contract) | **merged INTO this tree** (commit `024a4749`); the targeted contract check passes here. PR #224 itself is still open on GitHub and can be closed as superseded once #223 merges, or merged first: either order gives the same tree |
 | `main` | merged into the tree before testing (main at `d815ccaf`, PR #234) |
 | Runtime | v0.8.23 build `b6e272…` (EM desk). The tree reports 0.8.22 because the EM desk's 0.8.23 has not reached `main`; the deploy step merges main again, as for every desk |
@@ -49,9 +51,8 @@ python -m zargar.tools.team2_selection_study demo
 
 | Run | Result |
 |---|---|
-| Selection packet (collector 41, analysis 16, lifecycle 15, end-to-end 3, review probes 3), unawaited coroutines as errors | **78 passed** in 20 s |
-| Event-contract check on the combined tree | 1 passed |
-| Full Team2 + reviewer suites + `test_platform_phase3.py` | **475 passed** in 4 min 10 s |
+| Selection packet (collector 41, analysis 16, lifecycle 15, end-to-end 3, release 6, review probes 3+3), unawaited coroutines as errors | **87 passed** in 46 s |
+| Full Team2 + reviewer suites + `test_platform_phase3.py` (includes the event-contract check) | **484 passed** in 4 min 51 s |
 | `import zargar.api.app` | ok |
 | Not run | the platform chaos suite and other desks' suites: this package changes no shared execution code |
 
@@ -70,7 +71,13 @@ What the new cases cover (requested list):
 | end to end: activation -> collection -> restart -> completion -> final report | `test_activation_collection_restart_completion_and_final_report` (real journal, real `state_extras` / `restore_extras`, real reconciliation, the tool's own loader on the test database; mid-session restart excludes that day; a stale-state restart after the close is committed does not duplicate it; recorded and verified) |
 | journal-write failure; restart before an opening / after a closing commit | `test_a_lost_journal_write_is_visible_and_the_opportunity_stays_in_the_denominator` (lost opening -> recovered from the close; lost close -> `incomplete`; health survives restart) |
 | unawaited coroutine | `test_the_synchronous_hooks_create_no_coroutine_without_a_running_loop`; the packet runs with coroutine warnings as errors |
-| on/off runner comparison, provider calls, sizing, intents | `test_the_actual_runner_takes_identical_decisions_and_order_intents_with_the_collector_on_and_off` (now awaits the whole fire chain) |
+| on/off runner comparison, provider calls, sizing, intents | `test_the_actual_runner_takes_identical_decisions_and_order_intents_with_the_collector_on_and_off` (awaits the whole fire chain) |
+| **the real CLI**: status, wrong confirmation, activate, duplicate activation, `final` before the endpoint | `test_the_real_cli_status_activate_and_duplicate_activation_on_the_test_database` (subprocesses; exit codes, durable row counts, and no `Event loop is closed`, `never awaited` or traceback in stderr) |
+| **the real CLI**: seal, repeated `final --record`, later rows, a later bar backfill, refusing to overwrite | `test_the_real_cli_seals_the_first_final_and_later_rows_or_backfills_never_change_it` |
+| **journal-order precedence**: conflicting later closes (worse AND better), shuffled transport | `test_the_first_journaled_close_wins_under_any_transport_order_and_price_never_decides` |
+| **multiple candidate openings** (a restart re-opening) | `test_the_first_journaled_opening_owns_and_a_later_opening_cannot_take_over` |
+| **the seal**: later duplicate, rows after the endpoint, a reclassifying backfill, a second conflicting final row, a tampered seal | `test_the_seal_is_the_first_recorded_final_and_later_data_only_shows_as_drift` |
+| the read-only tool never switches collection off | `test_status_tells_the_operator_to_switch_off_and_never_claims_to_do_it` |
 
 ## 4. Deterministic example (`python -m zargar.tools.team2_selection_study demo`)
 
@@ -84,8 +91,8 @@ examined by two books; some 30-minute quotes missing. Output (identical on every
 | first eligible session | 2026-10-01 |
 | counted / excluded / disabled | 52 / 3 / 1 |
 | endpoint | deadline: close of the 2026-12-18 session (60 counted sessions were not reached) |
-| rows in the sample / outside it | 396 / 99 (`session not counted`) |
-| manifest sha256 | `c8fb90b01a72f6b82fb1a8e1d9941a10cbb2fc2044ef0bc0659683be20f93472` |
+| selected records / rows outside the window | 176 / 99 (`session not counted`) |
+| manifest sha256 | `bf518f290f1e27cc03e331112ee55f308bece64ece7b7e62b1837f112614c32e` |
 | result sha256 | `77d51538f8fca1ad4dc96ee8f4b1d05b7c2a4cfdc687a0b54ff6896baca75eaa` |
 | reproduced by a second run | yes |
 | verdicts | flag, wait, first15, room: insufficient evidence; levelOrigin, scenario4: fail; study outcome `none` |
@@ -105,6 +112,15 @@ Activation (a separate approval; outside market hours, after the close):
    (one journal row; refused if this registration is already activated).
 2. `PATCH /api/settings` `techniques.team2.selection_study` = `collect` (journaled as `SettingChanged`).
 3. `status` should report `collecting` with `firstEligibleSession` = the next trading day.
+
+Finalising (after the endpoint, when `status` says `ready_for_final_analysis`):
+1. `python -m zargar.tools.team2_selection_study final --out <dir> --record` writes `<dir>/final.json` and seals the result with ONE
+   journal row. Every later `final` returns that sealed artifact and reports drift; a second `--record` is refused.
+2. `python -m zargar.tools.team2_selection_study verify --out <dir>` compares the file with the seal and with a recomputation.
+3. Switch `techniques.team2.selection_study` back to `off`.
+
+Every command reads its database from `ZARGAR_DATABASE_URL` (else `backend/.env`, i.e. the RUNTIME database). The CLI tests always
+set it to the desk's test database, and a scoped `conftest` fixture enforces that for those modules.
 
 Rollback:
 - Stop collecting: `PATCH` the setting back to `off`. Open records are closed on the next quote-watch tick with `collector switched
@@ -135,8 +151,10 @@ Rollback:
 4. Restart detection uses Team2 `TechniquePlanRestored` rows. A restart while no Team2 plan is armed is not seen, but then nothing is being
    collected either.
 5. The outage rule reads the runtime `bars` table; if bar persistence itself fails the day is excluded (conservative, never inflating the count).
-6. The end-to-end test drives the real runner for two sessions and journals the other 58 sessions' rows synthetically; the lifecycle, loader and
-   final path are the real ones. The loader was exercised on the test database, never against the runtime database.
+6. The end-to-end and CLI tests drive the real runner for two sessions and journal the other sessions' rows synthetically; the lifecycle,
+   loader, CLI and final path are the real ones. They were exercised on the test database, never against the runtime database.
+8. Before the first seal, session eligibility is recomputed from the current records, so a bar backfill in that window can change a
+   session's classification. The seal at the endpoint freezes it; afterwards later data only shows as drift.
 7. Power: only differences of roughly 35 to 40 points of R30 can pass; `insufficient evidence` is a likely and valid outcome.
 
 ## 8. Backlog (optional, does not reopen acceptance)

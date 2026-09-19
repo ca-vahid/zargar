@@ -36,7 +36,8 @@ async def load_facts(sf, now_ms: int) -> dict:
     from ..models import BarRow, Event, TechniqueArmed
     async with sf() as session:
         diag_rows = (await session.execute(select(Event).where(Event.type == ev.TECHNIQUE_PLAN_DIAGNOSTIC).order_by(Event.id))).scalars().all()
-        rows = [dict(r.payload or {}) for r in diag_rows if str((r.payload or {}).get("kind", "")).startswith("selection_study_")]
+        rows = [{**dict(r.payload or {}), "_eventId": int(r.id)} for r in diag_rows      # the journal identity rides along
+                if str((r.payload or {}).get("kind", "")).startswith("selection_study_")]
         settings = (await session.execute(select(Event).where(Event.type == "SettingChanged").order_by(Event.id))).scalars().all()
         setting_events = [(int(r.ts.timestamp() * 1000), (r.payload or {}).get("new")) for r in settings if (r.payload or {}).get("key") == lc.SETTING_KEY]
         team2_runs = select(TechniqueArmed.run_id).where(TechniqueArmed.technique == "team2")
@@ -135,13 +136,86 @@ def demo() -> dict:
     again = lc.finalise(life_of(facts, now_ms), list(facts["rows"]))
     return {"state": life["state"], "firstEligibleSession": life["firstEligibleSession"], "countedSessions": life["countedSessions"],
             "statusCounts": life["statusCounts"], "nonCounted": [s for s in life["sessions"] if s["status"] not in ("counted", "after_endpoint")],
-            "endpoint": life["endpointReason"], "records": len(fin["manifest"]["records"]), "rowsOutsideSample": fin["manifest"]["rowsOutsideSample"],
+            "endpoint": life["endpointReason"], "records": len(fin["manifest"]["selectedRecords"]), "rowsOutsideSample": fin["diagnostics"]["rowsOutsideSample"],
             "manifestSha256": fin["manifestSha256"], "resultSha256": fin["resultSha256"], "reproduced": again["resultSha256"] == fin["resultSha256"],
             "studyOutcome": fin["report"]["studyOutcome"], "featureCarriedForward": fin["report"]["featureCarriedForward"],
             "verdicts": {t["feature"]: t["verdict"] for t in fin["report"]["tests"]}}
 
 
-# ------------------------------------------------------------------ CLI
+# ------------------------------------------------------------------ CLI: ONE event loop owns the engine from creation to disposal
+def _write_artifact(out: pathlib.Path, artifact: dict) -> str | None:
+    """Write final.json; an existing file with DIFFERENT content is never overwritten (returns the refusal)."""
+    out.mkdir(parents=True, exist_ok=True)
+    body = json.dumps(artifact, indent=1, sort_keys=True)
+    target = out / "final.json"
+    if target.exists() and target.read_text() != body:
+        return f"{target} exists with different content; not overwritten"
+    target.write_text(body)
+    return None
+
+
+async def _amain(a) -> int:
+    from ..config import get_config
+    from ..db import make_engine, make_session_factory
+    eng = make_engine(get_config().database_url)
+    try:
+        sf = make_session_factory(eng)
+        now_ms = int(time.time() * 1000)
+        facts = await load_facts(sf, now_ms)
+        life = life_of(facts, now_ms)
+        if a.command == "status":
+            print(json.dumps({"lifecycle": {k: v for k, v in life.items() if k != "sessions"}, **lc.coverage_view(life, facts["rows"])}, indent=1))
+            return 0
+        if a.command == "activate":
+            if a.confirm != ss.REGISTRATION_HASH or not a.build:
+                print(json.dumps({"refused": f"pass --build <reviewed build sha> and --confirm {ss.REGISTRATION_HASH}"}))
+                return 2
+            if lc.activation_of(facts["rows"]) is not None:
+                print(json.dumps({"refused": "this registration is already activated", "activation": life["activation"]}))
+                return 2
+            payload = activation_payload(a.build, now_ms)
+            await _append(sf, payload)
+            print(json.dumps({"activated": {k: payload[k] for k in ("study", "registrationHash", "analysisSha256", "build", "activatedAt", "firstEligibleSession")},
+                              "next": f"set {lc.SETTING_KEY} = collect (PATCH /api/settings); counting starts at the first full session after both"}, indent=1))
+            return 0
+        out = pathlib.Path(a.out or ".")
+        if a.command == "final":
+            sealed = lc.sealed_of(facts["rows"])
+            if sealed is None and life["state"] != "ready_for_final_analysis":
+                print(json.dumps({"refused": f"the study is {life['state']}; final analysis only after the endpoint",
+                                  "countedSessions": life["countedSessions"], "endpoint": life["endpointReason"]}))
+                return 2
+            if sealed is not None:
+                if a.record:
+                    print(json.dumps({"refused": "already sealed: the first recorded final is authoritative and is never replaced",
+                                      "manifestSha256": sealed["manifestSha256"], "resultSha256": sealed["resultSha256"]}))
+                    return 2
+                art = {k: sealed[k] for k in ("manifest", "manifestSha256", "report", "resultSha256")}
+                why = _write_artifact(out, art)
+                print(json.dumps({"sealed": True, "sealIntact": sealed["intact"], "manifestSha256": sealed["manifestSha256"],
+                                  "resultSha256": sealed["resultSha256"], "written": None if why else str(out / "final.json"), "refused": why,
+                                  "drift": lc.drift(sealed, life, facts["rows"])}, indent=1))
+                return 2 if why else 0
+            fin = lc.finalise(life, facts["rows"])
+            art = {k: fin[k] for k in ("manifest", "manifestSha256", "report", "resultSha256")}
+            why = _write_artifact(out, art)
+            if why:
+                print(json.dumps({"refused": why}))
+                return 2
+            if a.record:
+                await _append(sf, lc.seal_payload(fin))
+            print(json.dumps({"sealed": bool(a.record), "manifestSha256": fin["manifestSha256"], "resultSha256": fin["resultSha256"],
+                              "written": str(out / "final.json"), "diagnostics": fin["diagnostics"]}, indent=1))
+            return 0
+        if a.command == "verify":
+            rec = json.loads((out / "final.json").read_text())
+            print(json.dumps(lc.verify(rec, life, facts["rows"], facts["rows"]), indent=1))
+            return 0
+        return 1
+    finally:
+        await eng.dispose()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=["status", "registration", "activate", "final", "verify", "demo"])
@@ -156,51 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.command == "demo":
         print(json.dumps(demo(), indent=1))
         return 0
-    from ..config import get_config
-    from ..db import make_engine, make_session_factory
-    eng = make_engine(get_config().database_url)
-    sf = make_session_factory(eng)
-    now_ms = int(time.time() * 1000)
-    try:
-        facts = asyncio.run(load_facts(sf, now_ms))
-        life = life_of(facts, now_ms)
-        if a.command == "status":
-            print(json.dumps({"lifecycle": {k: v for k, v in life.items() if k != "sessions"}, **lc.coverage_view(life, facts["rows"])}, indent=1))
-            return 0
-        if a.command == "activate":
-            if a.confirm != ss.REGISTRATION_HASH or not a.build:
-                print(json.dumps({"refused": f"pass --build <reviewed build sha> and --confirm {ss.REGISTRATION_HASH}"}))
-                return 2
-            if lc.activation_of(facts["rows"]) is not None:
-                print(json.dumps({"refused": "this registration is already activated", "activation": life["activation"]}))
-                return 2
-            payload = activation_payload(a.build, now_ms)
-            asyncio.run(_append(sf, payload))
-            print(json.dumps({"activated": {k: payload[k] for k in ("study", "registrationHash", "analysisSha256", "build", "activatedAt", "firstEligibleSession")},
-                              "next": f"set {lc.SETTING_KEY} = collect (PATCH /api/settings); counting starts at the first full session after both"}, indent=1))
-            return 0
-        out = pathlib.Path(a.out or ".")
-        if a.command == "final":
-            if life["state"] not in ("ready_for_final_analysis", "finalized"):
-                print(json.dumps({"refused": f"the study is {life['state']}; final analysis only after the endpoint",
-                                  "countedSessions": life["countedSessions"], "endpoint": life["endpointReason"]}))
-                return 2
-            fin = lc.finalise(life, facts["rows"])
-            out.mkdir(parents=True, exist_ok=True)
-            (out / "final.json").write_text(json.dumps(fin, indent=1, sort_keys=True))
-            if a.record:
-                asyncio.run(_append(sf, {"kind": "selection_study_final", "study": ss.STUDY, "registrationHash": ss.REGISTRATION_HASH,
-                                         "manifestSha256": fin["manifestSha256"], "resultSha256": fin["resultSha256"]}))
-            print(json.dumps({"manifestSha256": fin["manifestSha256"], "resultSha256": fin["resultSha256"], "written": str(out / "final.json"),
-                              "recorded": bool(a.record)}, indent=1))
-            return 0
-        if a.command == "verify":
-            rec = json.loads((out / "final.json").read_text())
-            print(json.dumps(lc.verify(rec, life, facts["rows"]), indent=1))
-            return 0
-    finally:
-        asyncio.run(eng.dispose())
-    return 1
+    return asyncio.run(_amain(a))
 
 
 if __name__ == "__main__":

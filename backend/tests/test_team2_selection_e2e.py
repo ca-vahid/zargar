@@ -185,17 +185,17 @@ async def test_activation_collection_restart_completion_and_final_report(fresh_d
 
         # ---- the final report: frozen sample, reproducible, recorded, verified
         fin = lc.finalise(life, facts["rows"])
-        oids = {x["opportunityId"] for x in fin["manifest"]["records"]}
+        oids = {x["opportunityId"] for x in fin["manifest"]["selectedRecords"]}
         assert day2[0]["opportunityId"] in oids, "the runner-produced opportunity of a counted session is in the sample"
-        assert closes[0]["opportunityId"] not in oids and fin["manifest"]["rowsOutsideSample"]["session not counted"] >= 2
+        assert closes[0]["opportunityId"] not in oids and fin["diagnostics"]["rowsOutsideSample"]["session not counted"] >= 2
         again = lc.finalise(tool.life_of(await tool.load_facts(sf, now + 10 * DAY_MS), now + 10 * DAY_MS), (await tool.load_facts(sf, now))["rows"])
         assert again["manifestSha256"] == fin["manifestSha256"] and again["resultSha256"] == fin["resultSha256"]
-        await tool._append(sf, {"kind": "selection_study_final", "study": ss.STUDY, "registrationHash": ss.REGISTRATION_HASH,
-                                "manifestSha256": fin["manifestSha256"], "resultSha256": fin["resultSha256"]})
+        await tool._append(sf, lc.seal_payload(fin))
         facts = await tool.load_facts(sf, now + 1)
         life = tool.life_of(facts, now + 1)
-        assert life["state"] == "finalized" and life["finalRecorded"]["resultSha256"] == fin["resultSha256"]
-        assert lc.verify(life["finalRecorded"], life, facts["rows"])["resultMatches"] is True
+        assert life["state"] == "finalized" and life["finalRecorded"]["resultSha256"] == fin["resultSha256"] and life["finalRecorded"]["intact"]
+        v = lc.verify(life["finalRecorded"], life, facts["rows"], facts["rows"])
+        assert v["resultMatches"] is True and v["matchesSeal"] is True and v["sealIntact"] is True
         view = lc.coverage_view(life, facts["rows"])
         assert view["countedSessions"] == 60 and view["collectorHealth"].get("journalWriteFailures", 0) == 0
     finally:

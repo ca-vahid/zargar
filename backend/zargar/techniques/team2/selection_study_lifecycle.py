@@ -176,8 +176,8 @@ def lifecycle(*, activation_rows: list[dict], setting_events: list[tuple[int, ob
                                             f"after {n} counted sessions")
         if endpoint is None and stop is None and d == deadline:
             endpoint, reason = c, f"deadline: close of the {deadline.isoformat()} session"
-    finals = [r for r in (final_rows or []) if r.get("kind") == "selection_study_final" and r.get("study") == ss.STUDY
-              and r.get("registrationHash") == ss.REGISTRATION_HASH]
+    sealed = sealed_of(final_rows or [])
+    finals = [sealed] if sealed is not None else []
     if stop is not None:
         state = "stopped_insufficient_coverage"
     elif finals:
@@ -192,7 +192,10 @@ def lifecycle(*, activation_rows: list[dict], setting_events: list[tuple[int, ob
     return {**base, "state": state, "activation": {k: act.get(k) for k in ("activatedAt", "build", "registrationHash", "analysisSha256", "firstEligibleSession")},
             "firstEligibleSession": first_eligible, "sessions": sessions, "countedSessions": n, "countedDates": sorted(counted),
             "statusCounts": counts, "endpointMs": endpoint, "endpointReason": reason, "stopMs": stop, "stopReason": stop_reason,
-            "finalRecorded": finals[0] if finals else None}
+            "finalRecorded": ({k: sealed[k] for k in ("manifestSha256", "resultSha256", "intact", "eventId")} if sealed else None),
+            # the lifecycle is a READ: it never switches the collector off. When the study no longer uses new records and the
+            # collector is still on, the operator switches it off (`coverage_view` says so); trading books are never touched.
+            "collectorEnabledNow": bool(intervals and intervals[-1][1] >= int(now_ms))}
 
 
 def coverage_view(life: dict, study_rows: list[dict]) -> dict:
@@ -205,7 +208,12 @@ def coverage_view(life: dict, study_rows: list[dict]) -> dict:
     for r in study_rows:
         for k, v in (r.get("studyHealth") or {}).items():
             health[k] = max(int(health.get(k, 0)), int(v or 0))
-    return {"view": "coverage only (no outcome is shown)", "state": life["state"], "study": life["study"], "registrationHash": life["registrationHash"],
+    action = None
+    if life["state"] in ("stopped_insufficient_coverage", "ready_for_final_analysis", "finalized") and life.get("collectorEnabledNow"):
+        action = (f"the study is {life['state']} and the collector is still ON: switch {SETTING_KEY} to off (PATCH /api/settings). "
+                  "This tool never changes a setting; later records are outside the sample either way; no trading book is affected")
+    return {"view": "coverage only (no outcome is shown)", "operatorAction": action, "collectorEnabledNow": life.get("collectorEnabledNow"),
+            "state": life["state"], "study": life["study"], "registrationHash": life["registrationHash"],
             "countedSessions": life["countedSessions"], "targetSessions": life["targetSessions"], "deadline": life["deadline"],
             "statusCounts": life["statusCounts"], "nonCounted": [s for s in life["sessions"] if s["status"] not in ("counted",)],
             "opportunitiesInCountedSessions": opps, "validOutcomes": valid, "coveragePct": (round(100.0 * valid / opps, 1) if opps else None),
@@ -214,55 +222,180 @@ def coverage_view(life: dict, study_rows: list[dict]) -> dict:
             "byFeature": {f: ss.coverage(rows, f, an.FEE_PER_CONTRACT) for f in an.FEATURE_ORDER}}
 
 
+def _journal_order(rows: list[dict]) -> list[dict]:
+    """JOURNAL order: by `_eventId` (the loader's events.id) when present; rows without one keep their given order (stable).
+    The first-opening / first-close rules are decided in THIS order, before anything is canonicalised for hashing."""
+    return sorted(rows, key=lambda r: (r.get("_eventId") is None, int(r.get("_eventId") or 0)))
+
+
+_TRANSPORT = ("_eventId", "selectedOpening", "selectedClose", "openings", "ignoredCloses")   # identities and counts: listed, not hashed
+
+
+def _select(rows: list[dict]) -> list[dict]:
+    """The evidence the analysis sees, decided in JOURNAL order before any canonicalisation: every opening (they say which books
+    examined the opportunity) and, per opportunity, only the FIRST close that carries the owning opening's hash (the owner = the
+    first opening that is not a `duplicateOf`); an opportunity without any opening keeps its first close (recovered opening).
+    Later or foreign closes are dropped here and counted in the diagnostics, so they can never change the sample or its hashes."""
+    opens = [r for r in rows if r.get("kind") == "selection_study_open"]
+    owner: dict[str, str] = {}
+    for r in opens:
+        oid = str(r.get("opportunityId"))
+        if oid not in owner and not r.get("duplicateOf"):
+            owner[oid] = str(r.get("openHash"))
+    for r in opens:
+        owner.setdefault(str(r.get("opportunityId")), str(r.get("openHash")))
+    chosen: dict[str, dict] = {}
+    for r in rows:
+        if r.get("kind") != "selection_study_close":
+            continue
+        oid = str(r.get("opportunityId"))
+        if oid in chosen:
+            continue
+        if oid not in owner or str(r.get("openHash")) == owner[oid]:
+            chosen[oid] = r
+    keep = {id(c) for c in chosen.values()}
+    return [r for r in rows if r.get("kind") == "selection_study_open" or id(r) in keep]
+
+
+def _evidence(r: dict) -> dict:
+    """A selected row's content for hashing, without transport fields (the identities are listed separately)."""
+    return {k: v for k, v in r.items() if k not in _TRANSPORT}
+
+
 def final_sample(life: dict, study_rows: list[dict]) -> tuple[list[dict], dict]:
-    """The frozen sample and its manifest. Only rows of THIS registration, of COUNTED sessions, with a signal before the endpoint;
-    an observation whose quote is after the endpoint is made invalid ("after endpoint")."""
+    """The frozen sample and its manifest. Only rows of THIS registration, of COUNTED sessions, with a signal before the endpoint,
+    in JOURNAL order; an observation whose quote is after the endpoint is made invalid ("after endpoint"). The manifest hashes the
+    SELECTED evidence (one row per opportunity: first opening, first close bound to it) and lists the selected identities; nothing
+    outside the window enters it, so rows that arrive later outside the window cannot change it."""
     if life["state"] not in ("ready_for_final_analysis", "finalized"):
         raise ValueError(f"final analysis refused: study is {life['state']}")
     endpoint = int(life["endpointMs"])
     counted = set(life["countedDates"])
-    inc, outside = [], {}
-    for r in study_rows:
-        if r.get("kind") not in ("selection_study_open", "selection_study_close"):
+    inc = []
+    for r in _journal_order(study_rows):
+        if r.get("kind") not in ("selection_study_open", "selection_study_close") or not an.of_registration(r):
             continue
-        if not an.of_registration(r):
-            outside["other registration"] = outside.get("other registration", 0) + 1
-            continue
-        if r.get("date") not in counted:
-            outside["session not counted"] = outside.get("session not counted", 0) + 1
-            continue
-        if int(r.get("signalTs") or 0) >= endpoint:
-            outside["signal after the endpoint"] = outside.get("signal after the endpoint", 0) + 1
+        if r.get("date") not in counted or int(r.get("signalTs") or 0) >= endpoint:
             continue
         row = json.loads(_canon(r))
         for o in (row.get("observations") or {}).values():
             if o.get("valid") and int(o.get("quoteTs") or 0) > endpoint:
                 o["valid"], o["reason"] = False, "after endpoint"
         inc.append(row)
-    inc.sort(key=lambda r: (str(r.get("date")), str(r.get("opportunityId")), str(r.get("kind")), str(r.get("openHash")), _canon(r)))
+    inc = _select(inc)                                    # every opening + the ONE close bound to the owning opening, journal order
+    selected = an.population(inc)["all"]                  # collapse, then a canonical (date, signal, id) order
+    sessions = [s for s in life["sessions"] if s["status"] in ("counted", "excluded", "partial", "disabled")]
     manifest = {"study": ss.STUDY, "registrationHash": ss.REGISTRATION_HASH, "analysisSha256": ss.ANALYSIS_SHA256,
                 "activation": life["activation"], "window": {"fromMs": int(life["activation"]["activatedAt"]), "endpointMs": endpoint,
                                                              "endpointReason": life["endpointReason"]},
                 "countedSessions": life["countedDates"],
-                # sessions up to the endpoint only, so a later run (more `after_endpoint` days) reproduces the same manifest
-                "nonCountedSessions": [s for s in life["sessions"] if s["status"] in ("disabled", "partial", "excluded")],
-                "records": [{"kind": r["kind"], "opportunityId": r.get("opportunityId"), "openHash": r.get("openHash")} for r in inc],
-                "rowsOutsideSample": dict(sorted(outside.items())), "inputSha256": sha(inc), "feePerContract": an.FEE_PER_CONTRACT,
+                "sessionClassification": sessions,       # the eligibility decision, with its evidence (reasons), frozen here
+                "selectedRecords": [{"opportunityId": r.get("opportunityId"), "openHash": r.get("openHash"),
+                                     "openingEventId": r.get("selectedOpening"), "closeEventId": r.get("selectedClose"),
+                                     "complete": bool(r.get("complete")), "c1Only": bool(r.get("c1Only"))} for r in selected],
+                "selectedEvidenceSha256": sha([_evidence(r) for r in selected]), "feePerContract": an.FEE_PER_CONTRACT,
                 "analysisParameters": {"resamples": an.RESAMPLES, "seed": an.SEED, "familyAlpha": an.FAMILY_ALPHA}}
     return inc, manifest
 
 
+def outside_diagnostics(life: dict, study_rows: list[dict]) -> dict:
+    """Rows of this and other registrations that are NOT in the sample, by reason. Reported beside the manifest, never inside it."""
+    endpoint = int(life["endpointMs"]) if life.get("endpointMs") is not None else None
+    counted = set(life.get("countedDates") or [])
+    out: dict[str, int] = {}
+    for r in study_rows:
+        if r.get("kind") not in ("selection_study_open", "selection_study_close"):
+            continue
+        why = ("other registration" if not an.of_registration(r) else "session not counted" if r.get("date") not in counted
+               else "signal after the endpoint" if endpoint is not None and int(r.get("signalTs") or 0) >= endpoint else None)
+        if why:
+            out[why] = out.get(why, 0) + 1
+    return dict(sorted(out.items()))
+
+
+def _finite(x):
+    import math
+    if isinstance(x, float) and not math.isfinite(x):
+        return None
+    if isinstance(x, dict):
+        return {k: _finite(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_finite(v) for v in x]
+    return x
+
+
 def finalise(life: dict, study_rows: list[dict]) -> dict:
-    """Frozen final analysis: identical inputs give identical manifest, result and hashes. Costs, window, exclusions and the
-    registration are taken from the registration and the lifecycle; nothing is a parameter."""
+    """Frozen final analysis from the durable inputs: the same inputs give the same manifest, result and hashes, in any transport
+    order. Costs, window, exclusions and the registration come from the registration and the lifecycle; nothing is a parameter."""
     inc, manifest = final_sample(life, study_rows)
-    report = an.analyse(inc, an.FEE_PER_CONTRACT)
-    return {"manifest": manifest, "manifestSha256": sha(manifest), "report": report, "resultSha256": sha(report)}
+    report = _finite(an.analyse(inc, an.FEE_PER_CONTRACT))   # JSON-safe: a non-finite number becomes null before hashing
+    return {"manifest": manifest, "manifestSha256": sha(manifest), "report": report, "resultSha256": sha(report),
+            "diagnostics": {"rowsOutsideSample": outside_diagnostics(life, study_rows), **inside_diagnostics(life, study_rows)}}
 
 
-def verify(recorded: dict, life: dict, study_rows: list[dict]) -> dict:
-    """Recompute the final analysis and compare it with a recorded one."""
+def inside_diagnostics(life: dict, study_rows: list[dict]) -> dict:
+    """Counts about the in-window journal that are NOT evidence: closes that were not selected, recovered openings, repeated openings."""
+    endpoint, counted = int(life["endpointMs"]), set(life["countedDates"])
+    rows = [r for r in _journal_order(study_rows) if r.get("kind") in ("selection_study_open", "selection_study_close") and an.of_registration(r)
+            and r.get("date") in counted and int(r.get("signalTs") or 0) < endpoint]
+    pop = an.population(rows)
+    return {"closesNotSelected": pop["ignoredCloses"], "recoveredOpenings": pop["recoveredOpenings"],
+            "opportunitiesWithRepeatedOpenings": sum(1 for r in pop["all"] if int(r.get("openings") or 1) > 1)}
+
+
+def seal_payload(fin: dict) -> dict:
+    """The ONE journal row that seals the study: the full manifest and result with their hashes. The first such row wins forever."""
+    return {"kind": "selection_study_final", "study": ss.STUDY, "registrationHash": ss.REGISTRATION_HASH,
+            "manifestSha256": fin["manifestSha256"], "resultSha256": fin["resultSha256"], "manifest": fin["manifest"], "report": fin["report"]}
+
+
+def sealed_of(final_rows: list[dict]) -> dict | None:
+    """The FIRST final row of this registration (journal order), with an integrity check of its embedded manifest and result."""
+    for r in _journal_order(final_rows or []):
+        if r.get("kind") == "selection_study_final" and r.get("study") == ss.STUDY and r.get("registrationHash") == ss.REGISTRATION_HASH:
+            intact = (isinstance(r.get("manifest"), dict) and isinstance(r.get("report"), dict)
+                      and sha(r["manifest"]) == r.get("manifestSha256") and sha(r["report"]) == r.get("resultSha256"))
+            return {"manifest": r.get("manifest"), "manifestSha256": r.get("manifestSha256"), "report": r.get("report"),
+                    "resultSha256": r.get("resultSha256"), "intact": intact, "eventId": r.get("_eventId")}
+    return None
+
+
+def drift(sealed: dict, life: dict, study_rows: list[dict]) -> dict:
+    """What a recomputation from TODAY's records would give, compared with the seal. Reported, never applied."""
+    try:
+        again = finalise(life, study_rows)
+    except ValueError as exc:
+        return {"recomputable": False, "why": str(exc)}
+    sm, am = sealed.get("manifest") or {}, again["manifest"]
+    ss_, as_ = {s["date"]: s["status"] for s in sm.get("sessionClassification") or []}, {s["date"]: s["status"] for s in am["sessionClassification"]}
+    sr = {(x["opportunityId"], x["openHash"], x.get("closeEventId")) for x in sm.get("selectedRecords") or []}
+    ar = {(x["opportunityId"], x["openHash"], x.get("closeEventId")) for x in am["selectedRecords"]}
+    return {"recomputable": True, "manifestWouldChange": again["manifestSha256"] != sealed.get("manifestSha256"),
+            "resultWouldChange": again["resultSha256"] != sealed.get("resultSha256"),
+            "sessionsReclassified": sorted({d for d in set(ss_) | set(as_) if ss_.get(d) != as_.get(d)}),
+            "recordsOnlyInSeal": len(sr - ar), "recordsOnlyInRecomputation": len(ar - sr)}
+
+
+def resolve_final(life: dict, study_rows: list[dict], final_rows: list[dict]) -> dict:
+    """The authoritative final answer: the SEALED artifact when one exists (with drift reported beside it), else a computation
+    that is not yet sealed."""
+    sealed = sealed_of(final_rows)
+    if sealed is not None:
+        return {"sealed": True, "artifact": sealed, "drift": drift(sealed, life, study_rows)}
+    fin = finalise(life, study_rows)
+    return {"sealed": False, "artifact": fin, "drift": None}
+
+
+def verify(recorded: dict, life: dict, study_rows: list[dict], final_rows: list[dict] | None = None) -> dict:
+    """Compare a recorded artifact with the seal (when there is one) and with a recomputation from today's records."""
+    sealed = sealed_of(final_rows or [])
     again = finalise(life, study_rows)
-    return {"manifestMatches": again["manifestSha256"] == recorded.get("manifestSha256"),
-            "resultMatches": again["resultSha256"] == recorded.get("resultSha256"),
-            "manifestSha256": again["manifestSha256"], "resultSha256": again["resultSha256"]}
+    out = {"matchesSeal": (None if sealed is None else (recorded.get("manifestSha256") == sealed["manifestSha256"]
+                                                        and recorded.get("resultSha256") == sealed["resultSha256"])),
+           "sealIntact": None if sealed is None else sealed["intact"],
+           "manifestMatches": again["manifestSha256"] == recorded.get("manifestSha256"),
+           "resultMatches": again["resultSha256"] == recorded.get("resultSha256"),
+           "manifestSha256": again["manifestSha256"], "resultSha256": again["resultSha256"]}
+    if sealed is not None:
+        out["drift"] = drift(sealed, life, study_rows)
+    return out

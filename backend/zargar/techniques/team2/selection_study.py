@@ -336,6 +336,8 @@ def collapse(open_rows: list[dict], close_rows: list[dict]) -> list[dict]:
         ignored = sum(len(v) for (o, _h), v in closes.items() if o == oid) - (1 if fin else 0)
         roles = sorted({str((r.get("book") or {}).get("role")) for r in rows})
         merged = dict(src)
+        # the SELECTED evidence, by journal identity (`_eventId`, the loader's events.id) when the rows carry one
+        merged["selectedOpening"], merged["selectedClose"] = src.get("_eventId"), (fin.get("_eventId") if fin is not None else None)
         if fin is not None:
             merged["observations"], merged["status"] = fin.get("observations") or {}, "closed"
         complete = fin is not None or src.get("status") == "closed"

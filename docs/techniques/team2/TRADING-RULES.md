@@ -3742,3 +3742,33 @@ The review found that the first package's strongest sentences exceeded its measu
 - Tests: 78 in the selection packet (incl. an end-to-end run through the real journal and persistence hooks with a mid-session restart
   and a stale-state restart), full Team2 + reviewer + platform phase-3 475 passed, PR #224 merged into the tree and its contract check
   passes. Verdict: ready with stated limitations (`09-release-handoff.md`). No trading book, rule, risk or C2 change; no variant search.
+
+### 2026-09-19 (release review) - operator CLI, journal-order precedence and an immutable first finalization; still OFF
+
+Review of `1153ab95` reproduced the demo and 79 checks, and failed three release probes (adopted verbatim,
+`tests/test_codex_team2_release_boundaries.py`). All three fixed in one bounded correction; the accepted collector, the hypotheses and
+every trading setting are unchanged:
+
+- **R1 the documented activation command crashed.** The tool created one async engine and then used it from three separate
+  `asyncio.run` loops, so the pooled connection belonged to a closed loop. Now ONE loop owns creation, loading, any append and
+  disposal. Tested by running the actual commands as subprocesses against the desk's test database (status, wrong confirmation,
+  activate, duplicate activation, `final` before the endpoint, seal, repeated seal, verify), asserting exit codes, durable row counts
+  and stderr free of `Event loop is closed`, `never awaited` and tracebacks. A scoped conftest fixture points those subprocesses at
+  the test database, because the CLI otherwise reads `backend/.env`, the RUNTIME database.
+- **R2 sorting the final inputs could change which evidence wins.** Rows were sorted by content before collapse, so a later
+  conflicting close could sort ahead of the first journaled one (their reproduction turned +5% into -100.07%). Precedence is now
+  decided in journal order by `events.id`: the owner is the first non-duplicate opening, its close is the first close carrying that
+  opening's hash, every opening is kept (they carry `c1Only`), and later or foreign closes are dropped and counted as diagnostics.
+  Only the selected evidence is canonicalised for hashing. Price and payload order never decide.
+- **R3 the recorded final was not immutable.** Diagnostics about rows outside the window sat inside the hashed manifest, and each
+  call recomputed eligibility from the mutable bars table. The manifest now carries the session classification with its reasons and
+  the selected record identities; diagnostics are reported beside it; `final --record` seals the whole manifest and result in one
+  journal row; afterwards `final` returns the seal, a second `--record` is refused, an existing different `final.json` is never
+  overwritten, the seal's integrity is checked, and a recomputation is reported only as DRIFT (later backfill, late duplicate, later
+  rows). Before the first seal, eligibility is still recomputed from current records: a stated limitation.
+- Explicit operational distinction: the lifecycle is a READ. When the study is stopped/ready/finalized while the collector is still
+  on, `status` tells the operator to switch `techniques.team2.selection_study` off; no tool changes a setting and no book is paused.
+
+Tests on the combined release tree: selection packet **87 passed** (incl. the reviewers' 3 release probes and 3 collector probes),
+full Team2 + reviewer + `test_platform_phase3.py` **484 passed**. Registration `s1-r4` and its hashes are unchanged
+(`13b2bcc18bbbf5fa`, analysis `4022fccf...`): the corrections touch the operator and finalization layers, not a study definition.

@@ -178,18 +178,39 @@ Session status, decided without looking at any return (first rule that applies w
 - No interim look at outcomes by feature. The only view before the endpoint is `status`: lifecycle, session accounting, counts,
   coverage and collector health.
 
-### The frozen final sample and its manifest
+### The frozen final sample, journal-order precedence and the seal
 
-`final --out <dir>` is refused unless the state is `ready_for_final_analysis` (or `finalized`). It builds the manifest (registration,
-analysis hash, activation, window `[activation, endpoint]` and its reason, the counted sessions, every non-counted session with its
-reasons, the identity and opening hash of every included row, the rows outside the sample by reason, the sha256 of the included rows,
-the registered fee and the analysis parameters), runs the frozen analysis, and writes both with their sha256. The window, exclusions,
-costs and registration are NOT parameters. `final --record` journals the two hashes (state `finalized`); `verify --out <dir>`
-recomputes and compares. The same durable inputs always give the same manifest and result hashes, in any input order and at any later
-time (tested).
+Precedence is decided in JOURNAL ORDER (each row carries its `events.id` as `_eventId`), BEFORE anything is canonicalised for
+hashing, and never by price or payload order:
 
-- Outcomes of the study: for each feature `pass`, `fail` or `insufficient evidence`; for the study `at least one pass` or `none`.
-  `None` is a valid, reportable result and does not license a second round of features on the same data.
+- the OWNER of an opportunity is the first opening that is not a `duplicateOf`;
+- its close is the FIRST close carrying the owner's `openHash`; an opportunity with no opening keeps its first close (a recovered
+  opening, when the opening's journal write was lost);
+- every opening stays in the sample (openings record which books examined the opportunity, hence `c1Only`); later or foreign closes
+  are dropped and COUNTED in the diagnostics, so they can never change the sample or its hashes.
+
+`final --out <dir>` is refused unless the state is `ready_for_final_analysis`. It builds the manifest from the selected evidence:
+registration, analysis hash, activation, window `[activation, endpoint]` and its reason, the counted sessions, the FULL session
+classification with the reason for every non-counted session (the eligibility decision, frozen here), the identity of every selected
+record (`opportunityId`, `openHash`, opening and close event ids), the sha256 of the selected evidence, the registered fee and the
+analysis parameters. The window, exclusions, costs and registration are NOT parameters. Counts about rows outside the window, closes
+that were not selected, recovered openings and repeated openings are DIAGNOSTICS reported beside the manifest, never inside it, so
+later arrivals cannot change its hash.
+
+`final --record` journals ONE sealed row carrying the whole manifest and result with their hashes. **The first sealed row is
+authoritative for ever**: afterwards `final` returns the sealed artifact (never a recomputation), `final --record` is refused, an
+existing `final.json` with different content is never overwritten, and the sealed row's own integrity is checked (its embedded
+manifest and result must hash to the recorded values). A recomputation from today's records is reported beside it as DRIFT
+(`manifestWouldChange`, `resultWouldChange`, `sessionsReclassified`, records only in the seal or only in the recomputation), which is
+how a later historical bar backfill, a late in-window duplicate or any other later arrival becomes visible without being applied.
+`verify --out <dir>` compares a recorded artifact with the seal and with a recomputation, and updates nothing.
+
+Before the first seal, eligibility is recomputed from the current records on every call, so a bar backfill in that period can change
+a session's classification. That is why the seal happens at the endpoint and freezes the classification with its reasons; after it,
+no later data can redefine eligibility.
+
+The lifecycle is a READ. When the study is stopped, ready or finalized while the collector is still on, `status` says so and the
+OPERATOR switches `techniques.team2.selection_study` to `off`; the tool never changes a setting, and no trading book is ever paused.
 
 ## What a pass earns, and what it needs first
 

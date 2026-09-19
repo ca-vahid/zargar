@@ -71,3 +71,13 @@ async def wait_for(predicate, timeout: float = 8.0, interval: float = 0.05):
             return result
         await asyncio.sleep(interval)
     raise TimeoutError("condition not met in time")
+
+
+@pytest.fixture(autouse=True)
+def _team2_study_cli_uses_the_test_database(request, monkeypatch):
+    """Team2 selection-study CLI tests start the real operator tool in a SUBPROCESS, which reads ZARGAR_DATABASE_URL (and
+    otherwise backend/.env, i.e. the RUNTIME database). For those modules only, the subprocess inherits the test database."""
+    name = getattr(getattr(request, "module", None), "__name__", "") or ""
+    if "team2_selection" in name or "team2_release_boundaries" in name:
+        monkeypatch.setenv("ZARGAR_DATABASE_URL", TEST_DB_URL)
+    yield

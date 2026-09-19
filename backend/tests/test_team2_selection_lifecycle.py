@@ -161,8 +161,9 @@ def test_pending_observations_at_the_endpoint_and_post_endpoint_records_stay_out
     r = life(all_rows, now=close_of(d61) + 1)
     assert r["state"] == "ready_for_final_analysis" and r["endpointMs"] == endpoint
     inc, man = lc.final_sample(r, all_rows)
-    oids = {x["opportunityId"] for x in man["records"]}
-    assert after[0]["opportunityId"] not in oids and man["rowsOutsideSample"] == {"session not counted": 2}
+    oids = {x["opportunityId"] for x in man["selectedRecords"]}
+    assert after[0]["opportunityId"] not in oids and lc.outside_diagnostics(r, all_rows) == {"session not counted": 2}
+    assert "rowsOutsideSample" not in man, "diagnostics about rows outside the window are never inside the frozen manifest"
     assert unclosed[0]["opportunityId"] in oids and late[0]["opportunityId"] in oids
     fr = next(x for x in inc if x["opportunityId"] == forged[1]["opportunityId"] and x["kind"] == "selection_study_close")
     assert fr["observations"]["30"]["valid"] is False and fr["observations"]["30"]["reason"] == "after endpoint"
@@ -181,7 +182,8 @@ def test_repeated_finalisation_is_identical_order_independent_and_verifiable():
     random.Random(1).shuffle(shuffled)
     b = lc.finalise(life(shuffled, now=close_of(FULL[59]) + 5_000_000), shuffled)
     assert a["manifestSha256"] == b["manifestSha256"] and a["resultSha256"] == b["resultSha256"]
-    assert lc.verify(a, r, rows) == {"manifestMatches": True, "resultMatches": True, "manifestSha256": a["manifestSha256"], "resultSha256": a["resultSha256"]}
+    assert lc.verify(a, r, rows) == {"matchesSeal": None, "sealIntact": None, "manifestMatches": True, "resultMatches": True,
+                                     "manifestSha256": a["manifestSha256"], "resultSha256": a["resultSha256"]}
     tampered = json.loads(json.dumps(rows))
     tampered[1]["observations"]["30"]["bid"] = 9.99
     v = lc.verify(a, r, tampered)

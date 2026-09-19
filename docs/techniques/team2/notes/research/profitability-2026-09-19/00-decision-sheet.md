@@ -9,8 +9,8 @@ C2 key levels were not run on or after 2026-09-14. Test-database lanes agreed wi
 The research conclusions were accepted as EXPLORATORY. The passive collector's corrections were accepted. The final integration pass
 is delivered in `09-release-handoff.md`: registration `s1-r4` (hash `13b2bcc18bbbf5fa`), a lifecycle and session accounting derived
 purely from durable records, the registered endpoint, the frozen and reproducible final sample, and one acceptance packet (78 tests;
-full Team2 + reviewer + platform phase-3 suites 475 passed on the combined tree that includes PR #224). Verdict: ready with stated
-limitations. **The collector stays OFF** until acceptance and a separate deployment and activation approval. The research conclusions
+full Team2 + reviewer + platform phase-3 suites 475 passed on the combined tree that includes PR #224). Verdict: ready with stated limitations, after a further release review (operator CLI event loop, first-close precedence,
+immutable finalization) whose three probes are adopted and pass. **The collector stays OFF** until acceptance and a separate deployment and activation approval. The research conclusions
 below are unchanged.
 
 ## Decision supported by the evidence
