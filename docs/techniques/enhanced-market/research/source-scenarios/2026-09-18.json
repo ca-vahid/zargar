@@ -1,6 +1,6 @@
 {
  "date": "2026-09-18",
- "asOf": "2026-09-19T03:15:30+00:00",
+ "asOf": "2026-09-19T05:15:13+00:00",
  "versions": {
   "scenarios": "source-scenarios-v1",
   "matcher": "source-plan-match-v1",
@@ -8802,15 +8802,11 @@
    "direction": "long",
    "condition": "back test 687 and hold",
    "sourceLevel": 687.0,
-   "entry": 685.1633,
-   "stop": 663.1824,
-   "targets": [
-    698.8666,
-    712.5698,
-    726.2731
-   ],
-   "disposition": "refused",
-   "reason": "our gates rejected the aligned trigger: R2 reward:risk 1.87 to TP3 below 3.0; T4.3a/R1 the stop the chart justifies (663.18) is 3.2% away \u2014 beyond the 3.0% cap",
+   "entry": null,
+   "stop": null,
+   "targets": null,
+   "disposition": "held_for_missing_evidence",
+   "reason": "no app geometry: the saved plan has no trigger on the author's side at his level",
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,

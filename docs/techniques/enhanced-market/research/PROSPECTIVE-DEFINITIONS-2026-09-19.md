@@ -1,5 +1,7 @@
 # EM prospective definitions - frozen 2026-09-19 (supersedes the 2026-09-18 file)
 
+> SUPERSEDED 2026-09-19 by `PROSPECTIVE-DEFINITIONS-2026-09-19-R2.md` before any validation data was collected. Kept unchanged below as the record of what was frozen first.
+
 Why a new file: the candidate review (`reviews/2026-09-18-INTEGRATED-CANDIDATE-REVIEW.md`, IR-01..IR-05) found defects in three
 frozen versions BEFORE any validation data was collected. No collector had been switched on, so no sample is affected. The
 2026-09-18 file is kept unchanged as the record of what was frozen then; this file is what governs from now on. The evaluation

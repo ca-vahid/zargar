@@ -1,7 +1,7 @@
 {
  "date": "2026-09-17",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T02:50:24.707319+00:00",
+ "asOf": "2026-09-19T05:15:08.047432+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
@@ -43,7 +43,9 @@
    }
   },
   "openAtCutoff": [],
-  "fills": 14
+  "fills": 14,
+  "unknownInstrument": [],
+  "complete": true
  },
  "displayedSampledEquity": {
   "samples": 770,
@@ -63,9 +65,15 @@
   "basis": "persisted 30 s equity samples on the book's MARKS (option mid / share last) - displayed, not executable; samples can miss peaks"
  },
  "capture": {
-  "version": "profit-capture-reducer-v2",
+  "version": "profit-capture-reducer-v3",
   "snapshots": 0,
   "duplicatesIgnored": 0,
+  "scope": {
+   "portfolioId": null,
+   "session": null,
+   "policyVariants": 0,
+   "singlePolicy": true
+  },
   "status": "no_snapshots",
   "note": "the recorder was off or the book was flat - nothing is inferred",
   "pairedExits": {
@@ -76,6 +84,8 @@
       "policy": "small-position-exit-v1",
       "outcome": "compared",
       "dollarDelta": -109.0,
+      "identityVerified": false,
+      "comparisonClass": "dollars",
       "bookContext": null
      }
     ],
@@ -89,6 +99,8 @@
       "policy": "tp1-reclaim-runner-exit-v1",
       "outcome": "not_eligible",
       "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
       "bookContext": null
      },
      {
@@ -96,6 +108,8 @@
       "policy": "tp1-reclaim-runner-exit-v1",
       "outcome": "not_eligible",
       "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
       "bookContext": null
      },
      {
@@ -103,6 +117,8 @@
       "policy": "tp1-reclaim-runner-exit-v1",
       "outcome": "not_eligible",
       "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
       "bookContext": null
      },
      {
@@ -110,6 +126,8 @@
       "policy": "tp1-reclaim-runner-exit-v1",
       "outcome": "underlying_proxy_only",
       "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
       "bookContext": null
      },
      {
@@ -117,6 +135,8 @@
       "policy": "tp1-reclaim-runner-exit-v1",
       "outcome": "underlying_proxy_only",
       "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
       "bookContext": null
      },
      {
@@ -124,6 +144,8 @@
       "policy": "tp1-reclaim-runner-exit-v1",
       "outcome": "not_eligible",
       "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
       "bookContext": null
      }
     ],

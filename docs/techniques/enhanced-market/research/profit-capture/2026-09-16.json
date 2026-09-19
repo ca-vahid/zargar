@@ -1,7 +1,7 @@
 {
  "date": "2026-09-16",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T02:50:23.832843+00:00",
+ "asOf": "2026-09-19T05:15:06.478438+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
@@ -33,7 +33,9 @@
    }
   },
   "openAtCutoff": [],
-  "fills": 9
+  "fills": 9,
+  "unknownInstrument": [],
+  "complete": true
  },
  "displayedSampledEquity": {
   "samples": 761,
@@ -53,9 +55,15 @@
   "basis": "persisted 30 s equity samples on the book's MARKS (option mid / share last) - displayed, not executable; samples can miss peaks"
  },
  "capture": {
-  "version": "profit-capture-reducer-v2",
+  "version": "profit-capture-reducer-v3",
   "snapshots": 0,
   "duplicatesIgnored": 0,
+  "scope": {
+   "portfolioId": null,
+   "session": null,
+   "policyVariants": 0,
+   "singlePolicy": true
+  },
   "status": "no_snapshots",
   "note": "the recorder was off or the book was flat - nothing is inferred",
   "pairedExits": {
@@ -66,6 +74,8 @@
       "policy": "small-position-exit-v1",
       "outcome": "compared",
       "dollarDelta": 61.03,
+      "identityVerified": false,
+      "comparisonClass": "dollars",
       "bookContext": null
      },
      {
@@ -73,6 +83,8 @@
       "policy": "small-position-exit-v1",
       "outcome": "unknown",
       "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
       "bookContext": null
      }
     ],

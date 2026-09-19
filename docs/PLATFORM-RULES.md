@@ -2464,3 +2464,15 @@ Team2 desk review (2026-09-19, diff `f4ce6ad8..7002426d`, `planrunner.py` unchan
 passed on that tree. Their note, kept as a rule for any desk that later overrides the hook: a `first_sale_policy` override that RAISES
 refuses the entry ("policy could not be read") - fail-closed by design, so a bug there stops entries and never exits. The duplicate
 `entry_guard_predicate` definition in `planrunner.py` predates this work and is unchanged by it.
+
+### 2026-09-19 (EM desk, later) - one additive journal key on the shared runner; read-only use of shared tables
+
+`execution/planrunner.py`: the exit `TechniquePlanOrderResult` payload also carries `entryOrderId` (the trade's entry order). Additive, no control
+flow, every runner's exits carry it; the contract's required fields are unchanged. It is the durable exit-to-entry link a per-trade ledger needs;
+older events are linked by their run + trigger journal sequence. EM research reads (only with its own OFF-by-default knobs on): `executions` JOIN
+`orders.sec_type`, `events` of type `OrderFill` (its `ts` is the INGESTION time of a fill, `executedAt` the occurrence time) and
+`TechniquePlanOrderResult`, for one book and one session. The order-free candidate stage calls `RiskGate.evaluate` directly on a dry intent - the
+production verdict as evidence, no order row, no journal entry, no rate budget (`OrderManager.place` is never called). The EM preparation owner
+takes a Postgres advisory lock per candidate key for the duration of one arm, only under `preparation_policy = deterministic` (default baseline).
+Instrument multipliers for money maths must come from the order's security type checked against the OCC identity (`options.occ.contract_multiplier`),
+never from the symbol's length.

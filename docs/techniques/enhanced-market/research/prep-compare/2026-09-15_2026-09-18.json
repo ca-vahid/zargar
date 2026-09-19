@@ -1,7 +1,7 @@
 {
  "manifest": {
   "version": "prep-compare-v1",
-  "generatedAt": "2026-09-19T02:47:33+00:00",
+  "generatedAt": "2026-09-19T05:17:04+00:00",
   "policyVersion": "em-prep-policy-v1",
   "reviewVersion": "conditional-review-v1",
   "replayVersion": "prep-ablation-v3",
@@ -641,9 +641,12 @@
      }
     },
     "openAtCutoff": [],
-    "fills": 10
+    "fills": 10,
+    "unknownInstrument": [],
+    "complete": true
    },
    "disputedEvidence": [],
+   "baselineActualSensitivity": null,
    "modelCost": {
     "version": "model-costs-v1",
     "requests": 112,
@@ -1361,9 +1364,12 @@
      }
     },
     "openAtCutoff": [],
-    "fills": 9
+    "fills": 9,
+    "unknownInstrument": [],
+    "complete": true
    },
    "disputedEvidence": [],
+   "baselineActualSensitivity": null,
    "modelCost": {
     "version": "model-costs-v1",
     "requests": 110,
@@ -2100,11 +2106,56 @@
      }
     },
     "openAtCutoff": [],
-    "fills": 14
+    "fills": 14,
+    "unknownInstrument": [],
+    "complete": true
    },
    "disputedEvidence": [
     "ORCL: the 09-17 simulated fill is questioned by the 09-17 review (E17-01 derived-quote producer); the execution ledger is reported as booked and flagged - no replacement price is invented"
    ],
+   "baselineActualSensitivity": {
+    "class": "excludes_disputed_simulated_fills",
+    "excludedUnderlyings": [
+     "ORCL"
+    ],
+    "excludedFills": 2,
+    "result": {
+     "net": -28.2655,
+     "fees": 14.56,
+     "bySymbol": {
+      "BMNR260925P00023000": {
+       "net": -80.35,
+       "fees": 8.32,
+       "qty": 4.0
+      },
+      "COHR": {
+       "net": -23.4328,
+       "fees": 0.0,
+       "qty": 17.0
+      },
+      "CRCL260918P00085000": {
+       "net": 53.76,
+       "fees": 6.24,
+       "qty": 3.0
+      },
+      "SCHW": {
+       "net": 34.5177,
+       "fees": 0.0,
+       "qty": 47.0
+      },
+      "TXN": {
+       "net": -12.7604,
+       "fees": 0.0,
+       "qty": 19.0
+      }
+     },
+     "openAtCutoff": [],
+     "fills": 12,
+     "unknownInstrument": [],
+     "complete": true
+    },
+    "note": "the execution ledger stays as booked; this line only shows how much of the day rests on the disputed fills"
+   },
    "modelCost": {
     "version": "model-costs-v1",
     "requests": 111,
@@ -2595,9 +2646,12 @@
      }
     },
     "openAtCutoff": [],
-    "fills": 10
+    "fills": 10,
+    "unknownInstrument": [],
+    "complete": true
    },
    "disputedEvidence": [],
+   "baselineActualSensitivity": null,
    "modelCost": {
     "version": "model-costs-v1",
     "requests": 102,

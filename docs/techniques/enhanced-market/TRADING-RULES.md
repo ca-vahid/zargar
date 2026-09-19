@@ -1517,3 +1517,20 @@ The reviewers reproduced real defects in the first candidate; all five are corre
   running the unchanged cases under a pinned clock before and after the fix; not an after-hours effect.
 - **Activation order changes:** measurement first (ED-04 recorder, then first-sale OBSERVE). Enforcement is not recommended on the
   strength of one avoided loser.
+
+### 2026-09-19 (later) - revision-2 review R2-01 / R2-02 and the final-completion goal answered (`reviews/INTEGRATED-DELIVERY-RESPONSE-2026-09-18.md`, revision 3)
+
+The reviewers reproduced two more real defects and listed integration boundaries to prove through the actual callers. Nothing was deployed or activated.
+- **Two entries in one contract were one trade (R2-01).** The ledger grouped fills by symbol until flat and named the result after the first entry.
+  Now the trade instance is the ENTRY ORDER, bound by the runner's journaled order results (exits carry `entryOrderId`; older events are bound by
+  the run + trigger journal sequence). Unknown linkage is an error, never a guess. Aggregate cash can reconcile while attribution is wrong, so both
+  are tested with different prices and fees.
+- **Late fills.** The execution-time cursor could skip a fill that arrives late with an older time. Each capture now re-reads its bounded session;
+  the capture keeps what was known then, and the reducer marks it REVISED when the final executions disagree.
+- **"Feasible" was not feasible (R2-02).** A wrong-underlying, expired contract passed because only the quote symbol matched; the gate named
+  no-chase was the R calculation. `candidate-pricing-v2` binds the contract by OCC identity, judges a chase bound apart from R, and takes the
+  production RiskGate verdict, halt state, position slot and entry reservations as evidence. Anything missing = partial, never feasible.
+- **Causality.** Only the source revision current AS OF the evaluation is actionable; an idea is judged with the plan that existed at its birth; a
+  pivot is knowable at the close of its confirming bar (the old code used the bar's START time as the availability time - one minute early in the
+  record, although the same bars were fed); the first persisted geometry of a candidate or child is immutable.
+- **Method lesson:** "reconciles in aggregate" and "matches the quote symbol" are not proofs of identity. Identity has to be carried, not inferred.
