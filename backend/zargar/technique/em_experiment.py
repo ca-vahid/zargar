@@ -23,6 +23,7 @@ unchanged baseline. Everything here is BOOK-SCOPED: a policy is resolved for the
 The bundle's performance difference against the baseline cannot by itself say WHICH change caused it."""
 from __future__ import annotations
 
+import contextlib
 import copy
 import datetime as dt
 import hashlib
@@ -33,6 +34,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from .. import events as ev
 from ..models import TechniqueArmed, TechniqueRun, TechniqueSourceCandidate, TechniqueSweep, TechniqueWalkforward
 from . import preparation_policy as pp
 
@@ -174,7 +176,7 @@ async def _existing_run(svc, symbol: str, plan_for: str, tags: list) -> dict | N
 async def prepare(svc, plan_for: str, *, limit: int | None = None) -> dict:
     """Deterministic preparation of ONE session for the experimental book. Zero model calls. Idempotent."""
     from .prep_service import prep_arm
-    from .walkforward import session_bounds
+    from ..marketstructure.sessions import session_bounds
     get = svc.engine.settings.get
     c = config(get)
     out = {"planFor": plan_for, "experiment": stamp(get), "sheet": None, "rows": 0, "eligible": 0, "minted": 0, "reusedRuns": 0, "armed": 0, "alreadyArmed": 0,
@@ -410,13 +412,64 @@ def _book_plans(svc, pid: str) -> list:
     return [a for a in list(getattr(svc.armer, "_armed", {}).values()) if str(a.config.portfolio_id) == str(pid)]
 
 
+_PREPARED: set = set()            # (book, planFor) this process has already prepared or found prepared
+_PREPARING: dict = {}             # single flight
+
+
+async def _already_prepared(svc, pid: str, plan_for: str) -> bool:
+    async with svc.engine.sf() as s:
+        runs = (await s.execute(select(TechniqueRun.tags, TechniqueRun.result, TechniqueRun.config).where(
+            TechniqueRun.trigger == "experiment", TechniqueRun.technique == "enhanced_market").order_by(TechniqueRun.created_at.desc()).limit(400))).all()
+    return any(BOOK_TAG + pid in (tags or []) and str(((res or {}).get("plan") or {}).get("planFor") or "")[:10] == plan_for
+               and not str((cfg or {}).get("origin") or "").startswith(ORIGIN) and not (cfg or {}).get("copiedFromRun") for tags, res, cfg in runs)
+
+
+async def auto_prepare(svc, now_ms: int) -> str | None:
+    """The restart-safe daily preparation: once the NEXT session's sheet exists and this book has no prepared plan for it,
+    run `prepare` ONCE in the background (single flight; `prepare` itself is idempotent, so a crash mid-way is finished
+    by the next pass). Returns the session it started for, or None."""
+    import asyncio
+    from ..marketstructure import sessions as _sessions
+    c = config(svc.engine.settings.get)
+    if not c["enabled"]:
+        return None
+    pid, plan_for = c["portfolioId"], _sessions.next_session_date(int(now_ms))
+    key = (pid, plan_for)
+    if key in _PREPARED or key in _PREPARING:
+        return None
+    sw, _rows = await _sheet(svc, plan_for)
+    if sw is None:
+        return None
+    if await _already_prepared(svc, pid, plan_for):
+        _PREPARED.add(key)
+        return None
+
+    async def _run():
+        try:
+            out = await prepare(svc, plan_for)
+            log.info("experiment: prepared %s - eligible %s, minted %s, armed %s, errors %s", plan_for, out["eligible"], out["minted"], out["armed"], len(out["errors"]))
+            with contextlib.suppress(Exception):
+                await svc.engine.journal.append(ev.TECHNIQUE_EXPERIMENT_PREPARED, {k: out.get(k) for k in ("planFor", "sheet", "rows", "eligible", "minted", "reusedRuns", "armed",
+                                                                                                         "alreadyArmed", "skipped", "modelCalls", "experiment")} | {"errors": out["errors"][:10]},
+                                                 aggregate_type="portfolio", aggregate_id=pid, portfolio_id=pid)
+            if not out["errors"] or out["armed"] or out["alreadyArmed"]:
+                _PREPARED.add(key)
+        except Exception:                                     # noqa: BLE001
+            log.exception("experiment: preparation of %s failed", plan_for)
+        finally:
+            _PREPARING.pop(key, None)
+    _PREPARING[key] = asyncio.create_task(_run(), name="em-experiment-prepare")
+    return plan_for
+
+
 async def tick(svc, now_ms: int) -> dict:
     """One pass of the experiment's own loop (once a minute, never on a trading path)."""
     if not config(svc.engine.settings.get)["enabled"]:
         return {"enabled": False}
+    started = await auto_prepare(svc, now_ms)
     promoted = await promote_candidates(svc, now_ms)
-    return {"enabled": True, "promoted": len(promoted["promoted"]), "covered": len(promoted["covered"]), "expired": await expire_promoted(svc, now_ms),
-            "errors": promoted["errors"][:5]}
+    return {"enabled": True, "preparing": started, "promoted": len(promoted["promoted"]), "covered": len(promoted["covered"]),
+            "expired": await expire_promoted(svc, now_ms), "errors": promoted["errors"][:5]}
 
 
 async def status(svc) -> dict:

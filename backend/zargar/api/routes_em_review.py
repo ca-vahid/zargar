@@ -62,7 +62,7 @@ def build_em_review_routes(app, eng, auth) -> None:
         ONLY in the experimental sim book and refuses when the experiment is not enabled."""
         import time as _t
         from ..technique import em_experiment as xp
-        from ..technique.walkforward import next_session_date
+        from ..marketstructure.sessions import next_session_date
         day = _day(planFor) if planFor else next_session_date(int(_t.time() * 1000))
         return await xp.prepare(svc(), day, limit=(limit or None))
 

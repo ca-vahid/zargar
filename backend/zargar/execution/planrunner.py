@@ -3633,7 +3633,7 @@ class PlanRunner(SessionListener):
         qty = float(int(tr.remaining - tr.pending_exit_qty))
         if qty < 1:
             return False
-        tr.reclaim_exit = {"barTs": int(bar.ts), "close": float(bar.close), "tp1": tp1, "qty": qty, "rule": "tp1-reclaim-runner-exit-v1"}
+        # no extra trade field: the persisted `exits` list (kind `runner_protect`) IS the once-per-trade record and survives a restart
         await self._exit(ap, tr, "runner_protect", qty, journal=True,
                          reason=f"P-06 tp1-reclaim-runner-exit-v1: bar closed {bar.close:.4f} back through TP1 {tp1:.4f} after a confirmed TP1 fill")
         await self._persist(ap)

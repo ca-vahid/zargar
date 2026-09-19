@@ -280,8 +280,19 @@ async def test_preparation_is_deterministic_duplicate_safe_and_independent_of_th
     plan_for = sheet["params"]["planFor"]
     base = await rig.svc.promote(sheet["id"], "TEST", sheet["rows"][0]["session"], with_vision=False)
     await rig.svc.arm_plan(base["id"], {"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"]})          # the BASELINE arms its own run in its own book
-    first = await xp.prepare(rig.svc, plan_for)
+    # the restart-safe daily path: the experiment's own loop prepares the next session ONCE, in the background, single flight
+    from zargar.models import Event
+    from zargar.marketstructure import sessions as wf
+    monkeypatch.setattr(wf, "next_session_date", lambda now_ms: plan_for)
+    xp._PREPARED.clear(); xp._PREPARING.clear()
+    assert await xp.auto_prepare(rig.svc, 0) == plan_for and await xp.auto_prepare(rig.svc, 0) is None, "single flight"
+    await xp._PREPARING[(book["id"], plan_for)] if (book["id"], plan_for) in xp._PREPARING else None
+    await wait_for(lambda: (book["id"], plan_for) in xp._PREPARED, timeout=20)
+    async with rig.eng.sf() as s:
+        first = (await s.execute(select(Event).where(Event.type == "TechniqueExperimentPrepared"))).scalars().one().payload
     assert first["errors"] == [] and (first["rows"], first["eligible"], first["minted"], first["armed"], first["modelCalls"]) == (1, 1, 1, 1, 0), first
+    xp._PREPARED.clear()
+    assert await xp.auto_prepare(rig.svc, 0) is None and (book["id"], plan_for) in xp._PREPARED, "after a restart the loop finds the prepared session in the DATABASE and does nothing"
     again, third = await asyncio.gather(xp.prepare(rig.svc, plan_for), xp.prepare(rig.svc, plan_for))
     for r in (again, third):
         assert (r["minted"], r["armed"], r["alreadyArmed"], r["reusedRuns"]) == (0, 0, 1, 1), "a second / concurrent / post-restart preparation mints and arms NOTHING new"
@@ -291,6 +302,9 @@ async def test_preparation_is_deterministic_duplicate_safe_and_independent_of_th
     assert sorted((r.portfolio_id, r.run_id == base["id"]) for r in rows) == sorted([(rig.sim["id"], True), (book["id"], False)]), \
         "the same candidate is armed once PER BOOK: the baseline arm neither blocks nor is blocked"
     assert len(runs) == 1 and set(xp.run_tags(rig.eng.settings.get)) <= set(runs[0].tags) and not (runs[0].result or {}).get("passes"), "zero model passes"
+    via_api = (await rig.client.post("/api/technique/em/experiment/prepare", params={"planFor": plan_for})).json()
+    assert (via_api["minted"], via_api["armed"], via_api["alreadyArmed"]) == (0, 0, 1), "the route is the same idempotent owner"
+    assert (await rig.client.post("/api/technique/em/experiment/prepare")).status_code == 200, "with no date it resolves the next session itself"
     st = (await rig.client.get("/api/technique/em/experiment")).json()
     assert st["config"]["enabled"] and st["armedRows"] == 1 and st["book"]["kind"] == "sim" and st["stamp"]["policyVersions"]["runnerProtection"] == "tp1-reclaim-runner-exit-v1"
     await rig.eng.settings.set(xp.KEY, {"enabled": False}, journal=False)
