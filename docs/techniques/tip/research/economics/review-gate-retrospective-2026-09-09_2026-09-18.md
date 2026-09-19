@@ -4,8 +4,8 @@ Cost at llm.rates list price (an ESTIMATE, not an invoice); rate card present.
 
 | | reviews | est. cost | with a management tool | note only | missed-tip flag |
 |---|---:|---:|---:|---:|---:|
-| all (before) | 556 | $379.21 | 51 | 498 | 23 |
-| kept by the gate (after) | 370 | $257.38 | 51 | 313 | 20 |
+| all (before) | 557 | $379.92 | 51 | 499 | 23 |
+| kept by the gate (after) | 371 | $258.09 | 51 | 314 | 20 |
 | skipped by the gate | 186 | $121.83 | 0 | 185 | 3 |
 
 **False negatives (skipped reviews that called a management tool): 0**
@@ -31,15 +31,32 @@ Skipped reviews by what else they carried (for human review - a tool count alone
 | content type | reviews | est. cost | kept | management |
 |---|---:|---:|---:|---:|
 | trade_alert | 228 | $158.95 | 148 | 35 |
-| other | 232 | $154.33 | 154 | 11 |
+| other | 233 | $155.05 | 155 | 11 |
 | portfolio_update | 70 | $47.80 | 49 | 5 |
 | marketing | 16 | $10.34 | 11 | 0 |
 | newsletter_analysis | 10 | $7.78 | 8 | 0 |
 
+| content type | useful action | reviews | est. cost | of which the gate would skip |
+|---|---|---:|---:|---:|
+| other | note only | 216 | $142.55 | 78 ($50.99) |
+| trade_alert | note only | 176 | $115.95 | 77 ($49.78) |
+| portfolio_update | note only | 60 | $40.59 | 20 ($13.15) |
+| trade_alert | management (exit plan / close / disarm) | 35 | $30.56 | 0 ($0.00) |
+| trade_alert | possible missed entry flagged | 15 | $11.31 | 2 ($1.63) |
+| marketing | note only | 16 | $10.34 | 5 ($3.41) |
+| other | management (exit plan / close / disarm) | 11 | $8.87 | 0 ($0.00) |
+| newsletter_analysis | note only | 10 | $7.78 | 2 ($1.81) |
+| portfolio_update | management (exit plan / close / disarm) | 5 | $3.79 | 0 ($0.00) |
+| portfolio_update | possible missed entry flagged | 4 | $3.00 | 1 ($0.65) |
+| other | nothing | 4 | $1.85 | 0 ($0.00) |
+| other | possible missed entry flagged | 2 | $1.78 | 0 ($0.00) |
+| trade_alert | nothing | 2 | $1.13 | 1 ($0.41) |
+| portfolio_update | nothing | 1 | $0.42 | 0 ($0.00) |
+
 | source | reviews | est. cost | kept | management |
 |---|---:|---:|---:|---:|
 | 🌟｜muggzone-options | 242 | $164.81 | 170 | 19 |
-| 🌟｜tt | 62 | $43.88 | 44 | 1 |
+| 🌟｜tt | 63 | $44.59 | 45 | 1 |
 | 🌟｜ab | 61 | $43.24 | 51 | 13 |
 | 🌟｜eva | 58 | $38.28 | 48 | 5 |
 | 🌟｜giul-heatseeker | 52 | $33.44 | 9 | 1 |
