@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.23";
+export const APP_VERSION = "0.8.24";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.24",date:"2026-09-19",title:"EM Experimental: a second Practice book runs the integrated method",items:[
+    {tag:"new",text:"EM can run a dedicated experimental Practice book beside the unchanged EM Practice baseline. The experimental book prepares with rules only, enforces reward to risk at the real first sale, records executable profit, trades eligible source ideas and fresh setups, and protects a runner that closes back through its first target."},
+    {tag:"improved",text:"Every experimental policy is resolved for that one simulated book. The baseline book, other desks, live accounts and all risk limits are unchanged. Pausing the experimental book stops its new entries while open positions stay managed."},
+  ]},
   {version:"0.8.23",date:"2026-09-18",title:"EM: source fidelity, one preparation owner and executable profit",items:[
     {tag:"new",text:"EM Validation has a read-only review panel: what each author actually said against every trigger we planned and the gate that decided, order-free source candidates, first-sale R at the final quantity, and realized, displayed and executable profit side by side."},
     {tag:"fixed",text:"EM can measure reward to risk where a position really exits, at the quantity bought and the live underlying price. The check is built and switched off; observing it and enforcing it are separate settings."},

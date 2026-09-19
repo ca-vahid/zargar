@@ -2489,3 +2489,15 @@ production verdict as evidence, no order row, no journal entry, no rate budget (
 takes a Postgres advisory lock per candidate key for the duration of one arm, only under `preparation_policy = deterministic` (default baseline).
 Instrument multipliers for money maths must come from the order's security type checked against the OCC identity (`options.occ.contract_multiplier`),
 never from the symbol's length.
+
+### 2026-09-19 (EM desk) - five inert runner hooks for a book-scoped experiment (`em-experiment-v1`)
+
+`execution/planrunner.py` gained five hooks whose BASE value does nothing, so every other desk runs exactly as before: `order_tags(ap)` (tags added
+to an intent at the ONE submission choke point `_place_with_retry`), `arm_guard(run, cfg, portfolio)` (a reason to refuse a NEW arm, journaled as
+`TechniqueArmRefused`; never applied to a restore), `seed_from_ts(ap)` (an intraday-born plan replays no bar from before its birth and skips the
+opening-bar fetch), `extra_observation_books()` (books besides the default one where the order-free shadow observations run) and
+`runner_protection_policy(ap)` (`execute` turns the frozen P-06 rule into a reduce-only exit through `_exit`, reached ONLY when the production
+decision for the bar is None). EM overrides all five and resolves each FOR THE PLAN'S BOOK (`technique/em_experiment.py::book_policy`): the
+experimental book reads its overrides, the baseline book and everyone else read the technique-wide settings. Rule for any desk that runs two books
+with different policies: resolve by `ap.config.portfolio_id`, never flip a technique-wide key. Loss halts, cash, exposure and position caps were
+already per book; the per-technique day-notional cap is cross-book by design and is off (0) - a desk that turns it on shares it across its books.

@@ -1534,3 +1534,12 @@ The reviewers reproduced two more real defects and listed integration boundaries
   pivot is knowable at the close of its confirming bar (the old code used the bar's START time as the availability time - one minute early in the
   record, although the same bars were fed); the first persisted geometry of a candidate or child is immutable.
 - **Method lesson:** "reconciles in aggregate" and "matches the quote symbol" are not proofs of identity. Identity has to be carried, not inferred.
+
+### 2026-09-19 - EM Experimental launched as a second Practice book (`research/EXPERIMENT-DEFINITIONS-2026-09-19.md`)
+
+On the user's direction the integrated bundle runs ACTIVELY in its own sim book while EM Practice stays the unchanged baseline: deterministic preparation
+(conditional-review fix applied, grade floor B), first-sale enforcement, executable-profit capture, promotion of live source-continuation and requalified
+candidates into real simulated plans, and P-06 runner protection as an executed exit. Same sizing and risk limits in both books. It is ONE bundle: the
+difference between the books will not say which component caused it, and four sessions of history predict nothing about it. Questions it can answer after
+the declared horizon: after-cost dollars and drawdown of the bundle against the baseline; how often enforcement defers for missing evidence and what those
+entries did in the baseline; how much displayed profit was executable; whether source-conditioned plans add trades the preparation did not already arm.
