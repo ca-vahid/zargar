@@ -1,0 +1,7 @@
+entries 282, window 2026-05-07..2026-08-14; option return = print at the horizon vs the execution print, minus two commissions
++  4m option mean   -1.66% [ -5.56,  2.60] n=281 dates=60 unknown=1 | underlying favourable  50.0% mean signed move +0.0075% [-0.0091,+0.0264]
++ 10m option mean   -4.35% [ -9.45,  0.64] n=282 dates=60 unknown=0 | underlying favourable  50.7% mean signed move -0.0000% [-0.0253,+0.0258]
++ 20m option mean   -3.10% [-12.95,  8.79] n=282 dates=60 unknown=0 | underlying favourable  48.6% mean signed move +0.0077% [-0.0336,+0.0524]
++ 30m option mean   -3.06% [-14.90, 12.39] n=282 dates=60 unknown=0 | underlying favourable  51.4% mean signed move +0.0029% [-0.0465,+0.0557]
++ 60m option mean    0.29% [-21.65, 31.74] n=279 dates=60 unknown=3 | underlying favourable  53.9% mean signed move +0.0006% [-0.0797,+0.0893]
++120m option mean    3.16% [-27.53, 42.23] n=267 dates=60 unknown=15 | underlying favourable  50.0% mean signed move -0.0095% [-0.1125,+0.0897]

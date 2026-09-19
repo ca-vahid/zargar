@@ -57,7 +57,7 @@ class Team2Rules(MarketRules):
     early_flag_before_min: int = 10 * 60    # P2: fires before 10:00 tagged `early` (riskier, still taken)
 
     # --- S/X: stop and exits (premium terms per §7b; price cues per X1-X3)
-    stop_candles: int = 1                   # S2: one 2m candle close through the EMA/level — informational (always one)
+    stop_candles: int = 1                   # S2: consecutive 2m closes through the EMA/level before the candle stop fires (1 = since v0.1; 2 = RESEARCH arm H1, 2026-09-19)
     premium_stop_pct: float = 25.0          # D13/P1: hard cap on the premium loss (author ~20%)
     trim_1_pct: float = 50.0                # X1/V2: first trim at +50% premium
     trim_1_frac: float = 1.0 / 3.0
@@ -114,7 +114,7 @@ class Team2Rules(MarketRules):
     slippage_ticks: int = 1                 # pay the ask + 1 tick, sell the bid − 1 tick
     tick: float = 0.01
     target_identity_guard: bool = True      # 2026-09-17: a destination must be distinct from the setup's source level (off = the pre-09-17 behaviour)
-    target_identity_guard: bool = True      # 2026-09-17: a destination must be distinct from the setup's source level (off = the pre-09-17 behaviour)
+    target_collision: str = "refuse"        # RESEARCH arm E1 (2026-09-19): "refuse" (the 2026-09-17 rule) | "replan" (re-derive from the next structural level)
 
     def to_dict(self) -> dict:
         d = asdict(self)

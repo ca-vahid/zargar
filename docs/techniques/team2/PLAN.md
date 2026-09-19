@@ -333,6 +333,11 @@ and are now part of the plan; each carries the phase it belongs to.
 
 ## 3e. State of play and the change pipeline (2026-09-16)
 
+> 2026-09-19 (corrected pass): the profitability study (`notes/research/profitability-2026-09-19/00-decision-sheet.md`) found no ESTABLISHED after-cost edge
+> on simulated execution over real option prints, nine preregistered variants failed their criterion, and the sweep's premium formula
+> is unreliable in level and sign. No trading arm is proposed. On the table: the frozen order-free selection study (page 7 of the
+> package), re-scoring the accepted sheets on real prints, and the question raised by F133 (a refused fire spends the pullback allowance).
+
 - **Running:** auto mode on `Team2 Practice` under live v0.7.94; cohort v2 (from 2026-09-11, v0.7.45+) is the
   evaluation set (first fills 2026-09-16: two QQQ stop-outs, −$480); cohort v1 is preserved as read evidence. The
   30-minute watch job tallies per plan: listing, warm-up identity, model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,

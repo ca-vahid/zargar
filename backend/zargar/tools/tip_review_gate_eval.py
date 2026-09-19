@@ -255,7 +255,7 @@ def stratum(x: dict) -> str:
 
 
 def model_plan(res: dict, *, captured: set) -> dict:
-    """Stratified case quotas + a dollar ceiling. `captured` = review runs that carry an exact request manifest -
+    """Stratified case quotas + an estimate-based dollar guard. `captured` = review runs that carry an exact request manifest -
     ONLY those are replayable; the historical rows size the budget and show how rare the hard strata are."""
     rows = [r for r in res["rows"] if r["in"]]
     days = max(1, len({x["at"].date() for x in rows}))
@@ -289,13 +289,20 @@ def report_model_plan(plan: dict, since: str) -> None:
         print(f"| {x['stratum']} | {x['history']} | {x['perDay']} | {x['quota']} | {x['capturedNow']} | {x['medianIn']:,} / {x['medianOut']:,} | "
               f"${x['cost']['claude-sonnet-5']:,.2f} | ${x['cost']['claude-haiku-4-5']:,.2f} | ${x['opusUsd']:,.2f} |")
     t = plan["totals"]
-    print(f"\n**Budget: ${plan['capUsd']:,.0f} hard ceiling** (`frozen.ReplayBudget`, checked before and charged after every attempt) = "
+    print(f"\n**Budget: ${plan['capUsd']:,.0f} estimate-based spending guard, not a guaranteed maximum** - actual billing can "
+          f"exceed a reservation; the guard refuses the NEXT attempt once recorded spend plus the next reservation would pass "
+          f"${plan['capUsd']:,.0f}, so the final bill can end above it by at most one attempt's overrun, which is recorded "
+          f"(`review_frozen.SuiteBudget`: ONE durable ledger across both models, every case, turn, retry and separate invocation; each attempt is reserved BEFORE it is sent at request chars / 3 input + the full max_tokens output x 1.25, settled from the provider's usage, and left charged at its reservation when billing is unknown; SDK retries disabled; the guard cannot be raised by a later run) = "
           f"Sonnet 5 ${t['claude-sonnet-5']:,.2f} + Haiku 4.5 ${t['claude-haiku-4-5']:,.2f}, one pass per model, including a "
           f"{int(round((MARGIN - 1) * 100))}% margin. No repeat passes inside this budget.")
     print(f"\nReplayable today: {plan['capturedReviews']} captured review(s) of {plan['historyReviews']} in history. A review before "
           "capture was switched on kept its tool results but not its request, so it cannot be replayed faithfully; the quotas fill "
           "from reviews captured prospectively. At the per-day rates above the rare case types (management, missed-entry, correction) "
           "set the calendar, not the budget.")
+    print("\nComparison (safeguards rev 2): the actual INSTRUCTION is compared - target, stop levels, targets, fractions, sale "
+          "fraction, hold cap; a changed level is a disagreement. A read is served only for the exact tool + arguments the case "
+          "recorded; anything else stays MISSING and makes the case INCONCLUSIVE - never an equivalence pass. Limitation that "
+          "remains: the guard is estimate-based - reservations use request characters / 3 and list prices, not the provider's tokenizer or invoice; the total stays within the guard only while no single attempt bills more than 1.25x its reservation.")
     print("\nAcceptance to even DISCUSS a change (not an activation rule): zero missed management actions, zero invalid replies on "
           "the management and correction cases, missed-entry flags matched, and every disagreement read by a human. One pass is "
           "not a measure of run-to-run variance.")
