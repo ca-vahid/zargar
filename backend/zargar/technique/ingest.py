@@ -690,6 +690,25 @@ class MethodIngestService:
         armed = self._armed_em_symbols()
         rows: list[dict] = []
         stopped = False
+        # integrated plan A/B (2026-09-18): ONE eligibility owner + faithful scenarios. Baseline behaviour below is unchanged:
+        # the policy record and the scenarios are ADDED to the board rows; only `preparation_policy=deterministic` routes the
+        # arm decision through the shared owner, and only `source_scenarios_observe` builds/stores the scenarios artifact.
+        from . import preparation_policy as _pp
+        from . import prep_service as _ps
+        from . import source_scenarios as _ss
+        prep = _pp.effective(self.engine.settings.get)
+        scen_payload, scen_by_symbol = None, {}
+        if bool(self._get("techniques.enhanced_market.source_scenarios_observe", False)) and cur is not None:
+            try:
+                async with self.engine.sf() as session:
+                    src = await _ss.source_for_note(session, note_id, cur.id)
+                known = set(await self.technique.universe()) if hasattr(self.technique, "universe") else None
+                scen_payload = _ss.build_scenarios(src, known_symbols=known) if src else None
+                for sc in (scen_payload or {}).get("scenarios") or []:
+                    scen_by_symbol.setdefault(sc["authorSupplied"]["symbolAsExtracted"], []).append(sc)
+            except Exception:                              # noqa: BLE001 - order-free evidence must never break the board
+                log.exception("ingest: scenario build failed for %s", note_id[:8])
+                scen_payload, scen_by_symbol = None, {}
         try:
             for sym in symbols[:max_syms]:
                 if not await authorized():
@@ -714,8 +733,37 @@ class MethodIngestService:
                     row = {"symbol": sym, "status": "new", "runId": run.get("id"),
                            "grade": (best.get("assessment") or {}).get("grade"), "kind": best.get("kind"),
                            "level": best.get("levelPrice"), "riskReward": best.get("riskReward"),
-                           "note": (best.get("note") or best.get("summary") or "")[:120]}
-                    if self._get("ingest.auto_arm", False):
+                           "note": (best.get("note") or best.get("summary") or "")[:120],
+                           # the board's headline trigger is ONE of the plan's valid triggers - the full set rides along
+                           "validTriggers": [{"id": t.get("id"), "kind": t.get("kind"), "level": t.get("levelPrice")} for t in valid]}
+                    scs = scen_by_symbol.get(sym) or []
+                    hold = sorted({h for sc in scs for h in (sc.get("heldReasons") or [])}) if scs and all(sc["disposition"] != "candidate_source" for sc in scs) else []
+                    if scs:
+                        row["sourceScenario"] = {"ids": [sc["scenarioId"] for sc in scs], "held": hold,
+                                                 "match": [_ss.match_plan(sc, scen_payload, plan, plan_built_at=run.get("createdAt"), plan_origin="ingest")["overall"] for sc in scs]}
+                    with contextlib.suppress(Exception):
+                        veto = await _ps.superseded_model_veto(self.technique, sym, plan.get("planFor"))
+                        if veto:
+                            row["supersedesModelVeto"] = veto      # visible: this ingestion plan stands where the overnight model said no
+                    row["owner"] = "ingestion-inline (baseline)" if prep["preparationPolicy"] == "baseline" else "em-preparation-policy"
+                    if prep["preparationPolicy"] == "deterministic" and self._get("ingest.auto_arm", False):
+                        # the PROPOSED policy: the same eligibility owner as the batch and the pre-open re-plan; one arm per candidate
+                        try:
+                            sel = await _ps.prep_select(self.technique, [run.get("id")], persist=True) if not hold else None
+                            dec = (sel or {}).get("decisions", [{}])[0] if sel else await _ps.prep_decide(self.technique, run.get("id"), origin="ingest", persist=True, source_hold=hold)
+                            row["prepDecision"] = {k: dec.get(k) for k in ("disposition", "eligibleTriggers", "candidateKey", "explanation", "mode")}
+                            if sel and sel["arm"] and await authorized():
+                                await self.technique.arm_plan(run.get("id"), {}, authorize=authorize_arm)
+                                row["status"] = "armed"; row["autoArmed"] = True
+                            elif sel and not sel["arm"]:
+                                row["armSkipped"] = (sel["skipped"][0]["why"] if sel["skipped"] else "not eligible")
+                            elif hold:
+                                row["armSkipped"] = "source held for resolution: " + "; ".join(hold)[:160]
+                        except StaleWorker as exc:
+                            row["armSkipped"] = str(exc)[:200]; stopped = True
+                        except Exception as exc:               # noqa: BLE001
+                            row["armError"] = str(exc)[:200]
+                    elif self._get("ingest.auto_arm", False):
                         # 2026-09-04 (user decision): arm what passes OUR gates - the plan is
                         # ours (deterministic), the source only pointed at the symbol; the
                         # loss halt and the account come from the normal arm path. The run
@@ -756,10 +804,16 @@ class MethodIngestService:
             raise
         result = {"checkedAt": _now().isoformat(), "rows": rows,
                   "counts": {k: sum(1 for r in rows if r["status"] == k) for k in ("armed", "new", "rejected", "error")},
-                  "skipped": symbols[max_syms:], "revisionId": rev_id, "artifactId": (art.id if art is not None else None)}
+                  "skipped": symbols[max_syms:], "revisionId": rev_id, "artifactId": (art.id if art is not None else None),
+                  "policy": prep}
         async with self.engine.sf() as session:
             n = await session.get(TechniqueMethodNote, note_id, with_for_update=True)
             still = (not stopped) and await authorized()
+            if scen_payload is not None and cur is not None:
+                with contextlib.suppress(Exception):       # append-only, idempotent; never blocks the board's own checkpoint
+                    srow, _reused = await _ss.store_scenarios(session, note_id=note_id, revision_id=cur.id, payload=scen_payload)
+                    result["scenarios"] = {"artifactId": srow.id, "count": len(scen_payload["scenarios"]),
+                                           "held": sum(1 for sc in scen_payload["scenarios"] if sc["disposition"] != "candidate_source")}
             if job:
                 try:
                     await srcrev.checkpoint(session, job_id=job["id"], fence_token=job["fenceToken"], item_key="board_check",

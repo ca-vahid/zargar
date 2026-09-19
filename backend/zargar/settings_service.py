@@ -542,6 +542,13 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
     "techniques.enhanced_market.entry_fallback": "shares",   # C2 (2026-09-12): an untradeable option buys shares in Practice (longs only)
+    "techniques.enhanced_market.preparation_policy": "baseline",   # em-prep-policy-v1 (2026-09-18): baseline (the model's plan review selects - today's behaviour) | deterministic (rules + grade floor, ZERO model calls). Activation is a separate user decision
+    "techniques.enhanced_market.prep_grade_floor": "B",           # documented grade floor for deterministic eligibility (A < B < C)
+    "techniques.enhanced_market.conditional_review_fix": "report",  # conditional-review-v1: off | report (rescued triggers are LISTED, never armed) | apply. "the breakout has not happened yet" is not a veto of a conditional plan
+    "techniques.enhanced_market.prep_audit_quota_pct": 0.0,       # deterministic audit sampler quota (% of candidates); 0 = zero paid calls. Evidence only, never execution authority
+    "techniques.enhanced_market.source_scenarios_observe": False,  # source-scenarios-v1: build + store the append-only scenarios artifact during the board check (order-free). Default OFF
+    "techniques.enhanced_market.source_candidates_observe": False,  # source-conditioned continuation + requalification-v1 candidate producer (order-free; nothing arms). Default OFF
+    "llm.pricing_table": [],                                        # model-costs-v1: dated price rows [{provider, model, from, to, inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWritePerMTok, source, verifiedAt}]; empty = cost UNKNOWN (never invented)
     "techniques.enhanced_market.book_snapshot_observe": False,   # ED-04 book-snapshot-v1 (2026-09-18): EM-only executable-profit recorder, DEFAULT OFF; research evidence only, never read by an order/exit path; turning it on is a separate user decision
     "techniques.enhanced_market.book_snapshot_seconds": 30.0,    # ED-04 periodic cadence while the EM Practice book holds a position (event snapshots are taken regardless of the cadence)
     "techniques.enhanced_market.first_sale_rr_gate": "observe",   # first-sale-v1 (2026-09-18): off | observe | enforce. `observe` journals TechniqueFirstSale at the final quantity (SBUX 1.316R vs 3R); `enforce` refuses the ENTRY when R to the real exit rung is below technique.min_risk_reward - a separate activation decision

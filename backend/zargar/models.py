@@ -1113,6 +1113,28 @@ class TechniqueSourceJob(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TechniquePrepDecision(Base):
+    """em-prep-policy-v1 (2026-09-18): one preparation eligibility decision per CAUSAL INPUT key - the resume ledger of a
+    preparation batch (done work is reused, a changed input is a new row, only failed reads retry). Order-free: a row
+    here never arms anything by itself."""
+    __tablename__ = "technique_prep_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)               # causal input key
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market")
+    session: Mapped[str] = mapped_column(String(10), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    candidate_key: Mapped[str] = mapped_column(String(64), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    origin: Mapped[str] = mapped_column(String(24), default="batch")
+    mode: Mapped[str] = mapped_column(String(24), default="baseline")
+    status: Mapped[str] = mapped_column(String(16), default="done")             # done | failed
+    attempts: Mapped[int] = mapped_column(Integer, default=1)
+    disposition: Mapped[str] = mapped_column(String(32), default="")
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TechniqueBookSnapshot(Base):
     """ED-04 (`book-snapshot-v1`, 2026-09-18): APPEND-ONLY EM book observations - realized / displayed / covered
     executable, side by side. Written only by the EM recorder behind `techniques.enhanced_market.book_snapshot_observe`

@@ -673,7 +673,10 @@ class TechniqueService:
                 # charts during the open - 45 such runs rendered 4 charts each on the single render thread at 09:25 ET
                 # on 09-17. Charts stay eager for every run a model or a person reads; the UI's chart endpoint renders
                 # on demand for the rest.
-                render_charts = not (mode == "plan" and not with_vision and trigger == "preopen_replan")
+                # 2026-09-18 (integrated plan B): under the deterministic preparation policy NO deterministic plan read renders
+                # charts eagerly (batch, ingestion, re-plan) - nothing reads them; the chart endpoint renders on demand.
+                _det_prep = str(self.engine.settings.get("techniques.enhanced_market.preparation_policy", "baseline") or "baseline") == "deterministic"
+                render_charts = not (mode == "plan" and not with_vision and (trigger == "preopen_replan" or _det_prep))
                 if not render_charts:
                     await vp.note("data", "charts", "charts not rendered: deterministic pre-open re-plan, no model pass reads them "
                                   "(the UI renders on demand)", skipped=True)
@@ -1825,6 +1828,20 @@ class TechniqueService:
         elif liq is not None:
             config["optionTradeable"] = True
         return await self.armer.arm(run_id, config, authorize=authorize)
+
+    # --- em-prep-policy-v1 (2026-09-18): ONE preparation eligibility owner for batch, ingestion and the pre-open re-plan
+    def prep_policy(self) -> dict:
+        from .preparation_policy import effective
+        return effective(self.engine.settings.get)
+
+    async def prep_decide(self, run_id: str, *, origin: str | None = None, persist: bool = False, run: dict | None = None,
+                          source_hold: list | None = None) -> dict:
+        from .prep_service import prep_decide
+        return await prep_decide(self, run_id, origin=origin, persist=persist, run=run, source_hold=source_hold)
+
+    async def prep_select(self, run_ids: list, *, persist: bool = False) -> dict:
+        from .prep_service import prep_select
+        return await prep_select(self, run_ids, persist=persist)
 
     # --- the multi-technique armed hub -------------------------------------------
     # Every PlanRunner on the engine (EM's armer, the tip runner, future

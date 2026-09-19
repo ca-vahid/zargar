@@ -108,6 +108,23 @@ class PlanArmer(PlanRunner):
     def fire_review_policy(self, ap) -> str:
         return normalize_fire_mode(self.engine.settings.get("techniques.enhanced_market.fire_decision_mode", "deterministic"))
 
+    # ---- em-prep-policy-v1 (2026-09-18, integrated plan B): the effective PREPARATION policy rides every preflight and
+    # every armed snapshot beside the fire-decision policy - the two are distinct settings
+    def _em_policy_extras(self) -> dict:
+        from .preparation_policy import effective
+        try:
+            out = effective(self.engine.settings.get)
+        except Exception:                                  # noqa: BLE001
+            out = {"preparationPolicy": "baseline"}
+        out["firstSaleGate"] = self.first_sale_policy(None)
+        return out
+
+    def _preflight_policy(self) -> dict:
+        return {**super()._preflight_policy(), **self._em_policy_extras()}
+
+    def fire_policy_view(self, ap) -> dict:
+        return {**super().fire_policy_view(ap), **self._em_policy_extras()}
+
     # ---- first-sale-v1 (2026-09-18, integrated plan D): R2 measured where the position exits, at the FINAL quantity
     def first_sale_policy(self, ap) -> str:
         raw = str(self.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "observe") or "off").strip().lower()
@@ -454,8 +471,20 @@ class PlanArmer(PlanRunner):
         return {"rows": rows, "reference": prev, "gapPct": pct, "replan": replan}
 
     async def build_replacement_plan(self, ap: ArmedPlan, *, reference_price: float) -> dict | None:
-        return await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
-                                            primary_tf=str(ap.plan.get("triggerTf") or "1m"),
-                                            trigger="preopen_replan", plan=True, with_vision=False, wait=True,
-                                            parent_run_id=ap.run_id, reference_price=reference_price)
+        run = await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
+                                           primary_tf=str(ap.plan.get("triggerTf") or "1m"),
+                                           trigger="preopen_replan", plan=True, with_vision=False, wait=True,
+                                           parent_run_id=ap.run_id, reference_price=reference_price)
+        # em-prep-policy-v1: under the PROPOSED policy the re-plan is a candidate like any other and passes the SAME
+        # eligibility owner (baseline keeps today's behaviour: any valid trigger replaces the dead plan)
+        try:
+            from .preparation_policy import effective
+            if run and effective(self.engine.settings.get)["preparationPolicy"] == "deterministic":
+                d = await self.technique.prep_decide(run["id"], origin="preopen_replan", persist=True, run=run)
+                if d.get("disposition") != "eligible":
+                    self._log(ap, "preopen_replan_ineligible", f"re-plan {run['id'][:8]} is not eligible under the preparation policy: {d.get('explanation', '')[:200]}")
+                    return None
+        except Exception:                                  # noqa: BLE001 - the policy record must never break the pre-open path
+            log.exception("prep decision for the pre-open re-plan failed")
+        return run
 

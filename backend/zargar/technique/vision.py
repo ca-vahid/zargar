@@ -54,6 +54,9 @@ class PipelineResult:
     # pass ran, why a retry happened, what the critic changed, why the loop
     # stopped. Reviewers read this instead of inferring it from pass names.
     trace: list[dict] = field(default_factory=list)
+    # model-costs-v1 (2026-09-18): one row per model REQUEST (started -> completed | failed), retries counted - so an
+    # interrupted or retried request is never read as free just because no completed pass exists
+    requests: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -64,6 +67,7 @@ class PipelineResult:
             "error": self.error,
             "usage": self.total_usage,
             "trace": list(self.trace),
+            "modelRequests": list(self.requests),
         }
 
 
@@ -122,6 +126,9 @@ class VisionPipeline:
         """One model call. `prior` is earlier conversation to keep in context."""
         self._calls += 1
         t0 = time.time()
+        req_row = {"pass": name, "call": self._calls, "startedAt": int(t0 * 1000), "status": "started", "attempts": 1,
+                   "provider": "anthropic", "model": getattr(self.cfg, "model", None), "usage": None}
+        self.__dict__.setdefault("requests", []).append(req_row)
         await self._emit({"type": "pass_start", "pass": name, "call": self._calls})
         messages = list(prior or []) + [{"role": "user", "content": user_blocks}]
 
@@ -148,7 +155,10 @@ class VisionPipeline:
             # output then fails validation ("Invalid JSON: EOF..."). One retry
             # with double the output budget instead of killing the whole run.
             if "Invalid JSON" not in str(exc) and "validation error" not in str(exc):
+                req_row["status"] = "failed"; req_row["error"] = type(exc).__name__
                 raise
+            req_row["attempts"] = 2                      # the truncated first attempt was billed too - its usage is UNKNOWN
+            req_row["unknownAttempts"] = 1
             await self.note("loop", "retry_truncated",
                             f"{name} reply was cut off mid-JSON (output cap) — retrying once "
                             f"with a larger output budget")
@@ -159,6 +169,7 @@ class VisionPipeline:
         usage = {"input": u.input_tokens, "output": u.output_tokens,
                  "cacheRead": getattr(u, "cache_read_input_tokens", 0) or 0,
                  "cacheWrite": getattr(u, "cache_creation_input_tokens", 0) or 0}
+        req_row["status"] = "completed"; req_row["usage"] = dict(usage); req_row["seconds"] = round(time.time() - t0, 2)
         rec = PassRecord(name=name, request_blocks=user_blocks,
                          response_blocks=blocks_to_json(msg.content),
                          parsed=parsed, usage=usage, seconds=time.time() - t0)
@@ -173,7 +184,7 @@ class VisionPipeline:
         """Full pipeline with FACTS. `images` maps timeframe → PNG bytes, in
         the order they should be shown (context → primary)."""
         result = PipelineResult(analysis=None, grounding={"passed": False, "checks": []},
-                                trace=self.trace)
+                                trace=self.trace, requests=self.__dict__.setdefault("requests", []))
         tfs = list(images.keys())
         if not tfs:
             result.error = "no chart images"
