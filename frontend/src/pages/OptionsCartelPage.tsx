@@ -12,6 +12,7 @@ import { CartelPremiumReplayControls, CartelPremiumReplayResult } from "./Cartel
 import { CartelQuoteRecording } from "./CartelQuoteRecording";
 import { CartelIntradayResearch } from "./CartelIntradayResearch";
 import { CartelProfitabilityResearch } from "./CartelProfitabilityResearch";
+import { CartelMethodLab } from "./CartelMethodLab";
 import { CartelEvidenceResult } from "./CartelEvidenceResult";
 import { CartelSweepControls, CartelSweepResult } from "./CartelSweepControls";
 import { CartelScanControls, CartelScanResult } from "./CartelScanControls";
@@ -230,6 +231,7 @@ export function OptionsCartelPage() {
 
     {error && <ErrorState message={error} onRetry={detailMode ? () => setLoadRevision(n => n+1) : () => refresh().then(() => setError("")).catch(e => setError(String(e)))}/>}
     {!detailMode && tab === "validation" && <CartelProfitabilityResearch onSettings={() => setPageTab('settings')}/>}
+    {!detailMode && tab === "validation" && <CartelMethodLab/>}
     {!detailMode && tab === "validation" && <CartelSweepControls runs={runs.filter(r => r.mode === "replay")} busy={!!busy} onRun={async body => {
       setBusy("Comparing entry rules"); setError("");
       try { selectRun(await api.post<Run>(`${ROOT}/sweeps`, body)); await refresh(); }
@@ -252,6 +254,7 @@ export function OptionsCartelPage() {
       {tab === "settings" && <CartelScheduleControls />}
       {tab === "settings" && <CartelQuoteRecording/>}
       {tab === "settings" && <CartelProfitabilityResearch settings/>}
+      {tab === "settings" && <CartelMethodLab settings/>}
       {(tab === "plans" || tab === "settings") && <CartelIntradayResearch key={`intraday-${workspace}`} settings={tab==='settings'}/>}
       {tab === "validation" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}
         onSelect={setIndustrySnapshotId} onImported={async run => {selectRun(run); await refresh();}}/>}

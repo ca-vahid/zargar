@@ -269,11 +269,22 @@ def _tape(plan, minutes, as_of_ms):
 
 
 def _freeze_entry(plan, tape, signal, as_of_ms, costs, quantity, quantity_basis, instrument,
-                  entry_after, observed_at, signal_after):
+                  entry_after, observed_at, signal_after, shadow_spec=None, verified_intervals=None):
     at = signal.get('at')
     if not isinstance(at, int) or at > as_of_ms:
         raise ValueError('a causal saved signal timestamp is required')
-    actual = read_entry(plan, list(tape.values()), at, entry_after=signal_after).get('signal')
+    if shadow_spec is None:
+        knowledge_at=observed_at if verified_intervals and observed_at is not None else at
+        actual = read_entry(plan, [b for t,b in tape.items() if t<at], knowledge_at,
+            entry_after=signal_after,verified_intervals=verified_intervals).get('signal')
+    else:
+        from .shadow_entries import read_shadow_entry
+        decision_at=observed_at if observed_at is not None else at
+        if not at<=decision_at<=at+120000:
+            raise ValueError('shadow decision was not observed within its acceptance window')
+        actual=read_shadow_entry(shadow_spec,[b for t,b in tape.items() if t<at],decision_at,
+            entry_after=signal_after if signal_after is not None else shadow_spec.frozen_at,
+            verified_intervals=verified_intervals).get('signal')
     fields = ('id', 'at', 'direction', 'referencePrice', 'stop')
     if actual is None or any(actual.get(k) != signal.get(k) for k in fields):
         raise ValueError('signal does not match the frozen plan and causal minute evidence')
@@ -513,7 +524,8 @@ def _variant(plan, campaign, tape, daily, entry, as_of_ms, definition, costs, we
 def evaluate_exit_variants(plan: CartelPlan, campaign: ExitCampaign, minutes: list[Bar], daily: list[DailyBar], *,
         signal, quantity, as_of_ms, weak_environment=False, weak_environment_at=None, entry_after=None,
         costs=None, premium_input=None, quantity_basis='explicit_hypothetical', instrument='underlying_proxy',
-        observed_at=None, signal_after=None, entry_variant='baseline_v1', funding=None):
+        observed_at=None, signal_after=None, entry_variant='baseline_v1', funding=None,
+        shadow_spec=None, verified_intervals=None):
     if quantity is not None and (not isinstance(quantity, int) or isinstance(quantity, bool) or not 1 <= quantity <= 1_000_000):
         raise ValueError('explicit whole-unit quantity or unknown is required')
     if instrument not in ('underlying_proxy', 'shares'):
@@ -524,6 +536,14 @@ def evaluate_exit_variants(plan: CartelPlan, campaign: ExitCampaign, minutes: li
     if premium_input is not None and not isinstance(premium_input, PremiumReplayInput):
         premium_input = PremiumReplayInput.model_validate(premium_input)
     tape = _tape(plan, minutes, as_of_ms)
+    if shadow_spec is not None:
+        from .shadow_entries import ShadowEntrySpec
+        shadow_spec=ShadowEntrySpec.model_validate(shadow_spec)
+        if shadow_spec.symbol!=plan.symbol or plan.direction!='long' or tuple(plan.targets)!=tuple(shadow_spec.targets) \
+                or plan.created_at!=shadow_spec.frozen_at or plan.first_session!=shadow_spec.session \
+                or plan.last_session!=shadow_spec.session or entry_variant!='baseline_v1' \
+                or plan.trigger!=signal.get('trigger') or plan.invalidation!=signal.get('stop'):
+            raise ValueError('shadow valuation requires matching frozen symbol, direction and resistance')
     history, daily_evidence = _daily_history(plan, tape, daily, as_of_ms)
     if entry_variant not in ('baseline_v1', 'campaign_static_target_v1'):
         raise ValueError('unknown frozen entry comparison variant')
@@ -532,7 +552,7 @@ def evaluate_exit_variants(plan: CartelPlan, campaign: ExitCampaign, minutes: li
         entry, problem = None, 'Campaign-aware entry requires an allocated static target'
     else:
         entry, problem = _freeze_entry(read_plan, tape, signal, as_of_ms, costs, quantity, quantity_basis,
-            instrument, entry_after, observed_at, signal_after)
+            instrument, entry_after, observed_at, signal_after,shadow_spec,verified_intervals)
     output = {'version': VERSION, 'placesOrders': False, 'automaticPermissionChanged': False,
         'status': 'entry_unavailable' if problem else 'quantity_unknown' if quantity is None else 'evaluated',
         'entry': entry, 'targetDiagnostic': None, 'variants': [], 'definitions': [dict(d) for d in DEFINITIONS],
@@ -548,6 +568,8 @@ def evaluate_exit_variants(plan: CartelPlan, campaign: ExitCampaign, minutes: li
             'weakEnvironment': weak_environment, 'weakEnvironmentAt': weak_environment_at,
             'costs': costs.model_dump(mode='json'), 'quantityBasis': quantity_basis, 'instrument': instrument,
             'funding': funding,
+            'shadowSpec':shadow_spec.model_dump(mode='json') if shadow_spec else None,
+            'verifiedIntervals':verified_intervals or {},
             'premiumInput': premium_input.model_dump(mode='json') if premium_input else None})}
     if entry is None:
         return output

@@ -243,6 +243,8 @@ class CartelService:
                                  verdict=result["status"], parent=parent.id)
 
     async def runs(self, limit=50, symbol=None, mode=None, workspace=None):
+        from .method_lab import RECORD_MODES
+        research_modes=('profit_context','profit_watch','profit_quote',*RECORD_MODES)
         query = select(TechniqueRun).where(TechniqueRun.technique == TECHNIQUE)
         if symbol:
             query = query.where(TechniqueRun.symbol == symbol.upper())
@@ -250,10 +252,10 @@ class CartelService:
             query = query.where(TechniqueRun.mode == mode)
         else:
             # High-frequency observations have their own dated research view.
-            query = query.where(TechniqueRun.mode.not_in(('profit_context', 'profit_watch', 'profit_quote')))
+            query = query.where(TechniqueRun.mode.not_in(research_modes))
         if workspace is not None:
             scope = case(
-                (TechniqueRun.mode.in_(('profit_context', 'profit_watch', 'profit_quote')),
+                (TechniqueRun.mode.in_(research_modes),
                  TechniqueRun.config['workspace'].as_string()),
                 (TechniqueRun.mode == 'preparation', func.coalesce(TechniqueRun.config['workspace'].as_string(), 'practice')),
                 (func.jsonb_exists(TechniqueRun.config, 'preparation'), func.coalesce(TechniqueRun.config['preparation']['workspace'].as_string(), 'practice')),

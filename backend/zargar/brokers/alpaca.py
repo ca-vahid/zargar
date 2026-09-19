@@ -19,6 +19,7 @@ import contextlib
 import datetime as dt
 import json
 import logging
+import math
 from typing import Callable
 
 import websockets
@@ -26,9 +27,25 @@ import websockets
 from zoneinfo import ZoneInfo
 
 from ..domain import Bar, Quote, now_ms
+from .base import QuoteFeed
 
 _ET = ZoneInfo("America/New_York")
-from .base import QuoteFeed
+SIP_SIZE_SHARES_FROM = int(dt.datetime(2025,11,3,tzinfo=_ET).timestamp()*1000)
+
+
+def equity_quote_size(value, feed, quote_time):
+    """CTA/UTP changed to shares Nov 3 2025; IEX retains its existing path.
+
+    https://docs.alpaca.markets/us/v1.1/changelog/marketdata-bid-and-ask-size-display-change
+    Missing venue time cannot establish the unit schema. Never guess from receipt time.
+    """
+    if not quote_time or not isinstance(value,(int,float)) or isinstance(value,bool) or not math.isfinite(value) or value<0:
+        return 0,'unknown'
+    if feed=='sip' and quote_time>=SIP_SIZE_SHARES_FROM:
+        return int(value),'sip_shares_since_2025_11_03'
+    if feed in ('sip','iex'):
+        return int(value*100),'legacy_round_lots_converted_to_shares'
+    return 0,'unknown'
 
 log = logging.getLogger(__name__)
 
@@ -110,6 +127,17 @@ class AlpacaQuoteFeed(QuoteFeed):
     @property
     def symbols(self) -> set[str]:
         return set(self._symbols)
+
+    def venue_snapshot(self, symbol: str) -> dict | None:
+        """Read-only raw venue fields for attributed research; never cache overlays."""
+        state = self._state.get(symbol)
+        if state is None:
+            return None
+        return {"symbol": symbol, "provider": "alpaca", "feed": self._feed,
+                **{key: state.get(key) for key in
+                   ("bid", "ask", "bid_size", "ask_size", "quote_ts", "last", "last_ts")},
+                "rawBidSize":state.get('raw_bid_size'),"rawAskSize":state.get('raw_ask_size'),
+                "sizeBasis": state.get('quote_size_basis','unknown')}
 
     @property
     def connected(self) -> bool:
@@ -263,9 +291,10 @@ class AlpacaQuoteFeed(QuoteFeed):
             st = self._st(s)
             st["bid"] = float(m.get("bp") or 0)
             st["ask"] = float(m.get("ap") or 0)
-            st["bid_size"] = int((m.get("bs") or 0) * 100)     # round lots → shares
-            st["ask_size"] = int((m.get("as") or 0) * 100)
             st["quote_ts"] = venue_ms(m.get("t"))               # 0 when the message carries no venue time (r3)
+            st['raw_bid_size'],st['raw_ask_size']=m.get('bs'),m.get('as')
+            st['bid_size'],st['quote_size_basis']=equity_quote_size(m.get('bs'),self._feed,st['quote_ts'])
+            st['ask_size'],_=equity_quote_size(m.get('as'),self._feed,st['quote_ts'])
             self._emit(s, st)
         elif t == "t" and s:
             st = self._st(s)
