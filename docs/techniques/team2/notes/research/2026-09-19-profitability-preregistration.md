@@ -83,3 +83,22 @@ earn a PROSPECTIVE Practice experiment, never an adoption.
 
 Criteria: the same six as round 1, with criterion 2 (holdout) replaced by: "reported on the holdout for information, not as
 confirmation". No other arm or value.
+
+---
+
+## Round 3 (registered 2026-09-19, after rounds 1 and 2 failed on TRAIN and before any round-3 arm was run)
+
+Observation that prompted it (baseline entries, TRAIN, real prints, exit-free): the chosen contract prints at +50% or better within
+120 minutes on 53% of entries and at +100% on 31%, while the baseline wins 33% of trades: exits are judged on 2m closes and the
+whole position is sold at the first level. The author "sells into strength".
+
+Entries are the BASELINE's entries, unchanged (from the TRAIN baseline run). Only the exit differs. An entry made while the same
+symbol's bracket position is still open is dropped.
+
+| id | exit definition (real option 1m prints) |
+|----|------------------------------------------|
+| X1 | Resting limit sell of the whole position at entry x 1.50, filled at the limit when a later minute prints at least one tick above it. Premium stop: a 1m option close at or below entry x 0.70 sells at the next minute's open. Time stop: 60 minutes after entry, sell at that minute's open. Flatten 15:45. No candle stop, no target exit, no trims |
+| X2 | The same with the limit at entry x 2.00 |
+
+Costs, windows and criteria as round 2 (TRAIN only; can only earn a prospective experiment). Stress case: limit fills require two
+ticks above the limit and every market exit gives up one tick. No other bracket values.
