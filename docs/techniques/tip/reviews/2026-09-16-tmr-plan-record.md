@@ -701,3 +701,58 @@ illustrative only, never a priced number.
 cut or cancelled calls stay partial/unknown, records without a stamp stay unpriced, and list price is an estimate of
 the invoice.
 
+## End of session 2026-09-18 (16:06 ET) - results net of fees, funnel, opening-spread exit, first fully stamped cost day
+
+**Results, Tips Practice (net of matched fees from `executions.commission`, $1.04/contract/side; whole round trips unless noted):**
+
+| Position | Gross | Fees | **Net** | Note |
+|---|---:|---:|---:|---|
+| SMCI 260925C41 (entered 2026-09-16, exited 09:30:24) | -$61.02 | $2.08 | **-$63.10** | whole campaign; exit = premium-bleed rule on the opening bid (finding below) |
+| HOOD 260925C120 (09:44 -> 09:56) | +$54.00 | $2.08 | **+$51.92** | muggzone; analyst exit on the source's second trim |
+| **Total realised** | -$7.02 | $4.16 | **-$11.18** | no questioned fills today |
+
+Open overnight: AAL 261016C14 x2 (0.34, ab, entry fee $2.08 charged), ACHR 270115C7 x3 (0.48, options carry with the
+overnight acknowledgement, app-managed), SBLK 62 sh (31.91, venue GTC STP 30.58 x62 ACCEPTED). Equity 8,925.42 at the
+last persisted point before 04:00 ET (09-18 03:59) -> 8,974.38 at 16:36 ET (cash 6,758.70); the difference includes marks
+on the open positions, it is not realised P&L.
+
+**Funnel (signals created today, by source):** ab 11 (10 verification_failed, 1 proposed -> AAL executed); eva 16
+(3 failed, 1 parked [SPX], 7 shadow, 5 proposed -> all declined: one 09:21 morning level map fanned out into branches,
+appraised once, verdict skip inherited); jon-and-kian 5 (4 failed, 1 proposed -> watch/declined); muggzone-options 16
+(15 failed, 1 proposed -> HOOD executed); tt 15 (13 failed, 1 shadow, 1 proposed -> GOOGL 380C watch/declined).
+Verification failures were overwhelmingly `opens_position` (43 fatal) and `explicit_or_implied` (18) - chatter,
+trims/updates and non-actionable calls, not defects. Proposals: 9 created, 2 executed (auto), 7 declined by the analyst.
+Six declined cards were also REVIEW-GATED by geometry (enforce, pre-entry): META and ARM "no risk estimate: no stop";
+MU 980C ($2,475/unit), AMZN 257.5C ($252), SPY 745P ($206), GOOGL 380C ($395) "no quantity satisfies the $90 risk
+budget" - none reached an order. No TipExecutionIncident, TipFastStopDiagnostic, TipAutoPaused, ProposalRetried,
+TipAnalystRunFailed or HaltEngaged today. Plans: TSLA/AAL/T opened gapped through their levels (no chase, stay armed);
+the MU short branch was refused by the never-list; the analyst disarmed two stale eva plans (MSTR 115P skip-verdict still
+armed on day 12/15; MU 980C with no expiry). 10 multi-day Tips plans roll to Monday (T, AAOI, GOOGL, AMZN x2, DAL, PLTR,
+RKT, TSLA, AAL).
+
+**Execution cost on genuine entries (`TipFillVsQuote`, execcost-v1 on every proposal):** HOOD filled 1.61 vs limit 1.62
+(-0.04 vs ask, -0.01 vs mid); AAL filled 0.34 at the ask (+0.005 vs mid). Both from fresh OPRA quotes.
+
+**FINDING (for review, no policy change) - the premium-bleed exit judged the opening bid.** SMCI 41C was sold at
+09:30:24 by the shared `premium_bleed` rule (`execution/policies.py`: premium <= -35% while the underlying is within 3%
+of entry). The mark was the OPRA bid 0.98 one second after the open, against a 0.98/1.13 book (spread 0.15 = 14% of the
+1.055 mid): on the bid the contract was -38% (trigger), on the mid -33.6% (no trigger). The position's configured
+premium stop was 45%, so only the bleed branch fired. The rule did what it says on a fresh venue quote, but in the first
+seconds of the session the spread alone can decide it. Question for the reviewers/user (not changed today): should the
+bleed branch judge the mid, or wait for the opening minute / two distinct observations as the tick stop does?
+
+**Model operating cost - SEPARATE from trading P&L (`tip_llm_cost --since 2026-09-18`, at 16:40 ET, list price):**
+- **Priced:** $76.35 lower bound - intake 87 runs / 275 calls / 12.6M input = $67.41; appraise 11 runs / 33 calls /
+  1.67M input = $8.93. This is the first day every intake record carries its model, so intake is now priced.
+- **Unpriced:** 10 intake runs with no model stamp and no usage recorded (runs that ended before a provider call or
+  recorded nothing); retro, rule audit and digest run tonight and are not in this figure.
+- **Partial:** 0 cut or unknown-billed calls so far today.
+Stamping widened coverage; it does not make this the bill (tonight's jobs, list vs invoice). Intake is ~88% of today's
+priced spend: at ~46k input tokens per call, intake review is where cost lives - relevant to the recap/context-trim
+experiments (still OFF), not a change made today.
+
+**Hold study (holdstudy-v2):** 15:50 capture for 09-18 = sim carry 3, sim intraday_exit 2, shadow carry 3, all fresh;
+yesterday's 9 rows all got their next-open sample (fresh). **Tonight:** `tip_retro` (closed SMCI/HOOD + backlog 28),
+`tip_knowledge_maintenance` (propose-only), `tip_llm_stats` 17:40. **Deploys today (other desks):** 0.8.17 -> 0.8.18
+(11:11 ET) -> 0.8.19 `491d6ff` (12:14 ET), each receipt verified with full restoration (74/74 armed, 30/30 resting,
+6/6 managed); every build contains the Tips E17 commit e8aeb25. Gates unchanged; prompt caching off.
