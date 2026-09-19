@@ -20,7 +20,7 @@ from .service import CartelService, WireModel
 
 PREFIX = 'techniques.options_cartel.'
 JOB_NAMES = ('options_cartel_preopen_recovery', 'options_cartel_close_recovery', 'options_cartel_nightly_scan',
-             'options_cartel_nightly_preparation', 'options_cartel_morning_preparation')
+             'options_cartel_nightly_preparation', 'options_cartel_morning_preparation','options_cartel_method_lab_review')
 
 
 def stopping(engine):
@@ -120,6 +120,8 @@ def register_jobs(engine):
     from .preparation import submit_preparation
     engine.scheduler.register('options_cartel_nightly_preparation', '20:20', lambda: submit_preparation(engine, scheduled=True))
     engine.scheduler.register('options_cartel_morning_preparation', '08:45', lambda: submit_preparation(engine, scheduled=True))
+    from .method_lab_review import scheduled_review
+    engine.scheduler.register('options_cartel_method_lab_review','16:10',lambda: scheduled_review(engine))
 
 
 def unregister_jobs(engine):

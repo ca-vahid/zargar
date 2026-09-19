@@ -77,21 +77,23 @@ def weak_environment(saved_market, direction):
     return any(r['direction'] != direction for r in reads)
 
 
-def candidate_from_analysis(saved, policy, cohort, *, short=False):
+def candidate_from_analysis(saved, policy, cohort, *, short=False, direction=None):
     """Re-use immutable daily inputs; this function performs no I/O."""
     body = ResearchInput.model_validate(saved['config']['inputs'])
-    if short:
-        body = body.model_copy(update={'direction': 'short'})
-        screen = screen_listing(body.history, body.facts, body.indices, body.rules, body.as_of_ms, direction='short')
+    original_direction=body.direction
+    target_direction='short' if short else direction or body.direction
+    if short or target_direction!=body.direction:
+        body = body.model_copy(update={'direction': target_direction})
+        screen = screen_listing(body.history, body.facts, body.indices, body.rules, body.as_of_ms, direction=target_direction)
         analysis = analyze_setups(body.history, body.indices.get('SPY', []), screen, body.parameters,
-            body.as_of_ms, direction='short')
+            body.as_of_ms, direction=target_direction)
         saved = {**saved, 'config': {**saved['config'], 'inputs': body.model_dump(mode='json')},
             'result': {**saved['result'], 'screen': screen, 'analysis': analysis}}
     review = automatic_review(body.model_dump(mode='json'), saved['result']['analysis'], policy, research_only=True)
     if review is None:
         return None
     setup = next(c for c in saved['result']['analysis']['candidates'] if c['setup'] == review.setup)
-    return {'analysisId': saved['runId'], 'symbol': saved['symbol'], 'direction': body.direction,
+    return {'analysisId': saved['runId'], 'symbol': saved['symbol'], 'direction': body.direction,'sourceDirection':original_direction,
         'cohort': cohort, 'setup': review.setup, 'trigger': setup['trigger'], 'invalidation': setup['invalidation'],
         'targets': list(review.reviewed_targets), 'ranking': ranking_evidence(saved, review),
         'leaderEvidence': leader_evidence(saved), 'rules': body.rules.model_dump(mode='json'),
@@ -115,21 +117,26 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
     """Freeze the qualified denominator before the session, independent of arm slots."""
     from .research_economics import compare_rankings
     config = settings(engine)
-    if not config['enabled'] or policy.workspace != 'practice':
+    from . import method_lab
+    lab_enabled=method_lab.enabled(engine,policy)
+    if (not config['enabled'] and not lab_enabled) or policy.workspace != 'practice':
         return {'status': 'disabled', 'placesOrders': False}
     async with engine.sf() as session:
         prep = await session.get(TechniqueRun, prep_id)
         existing = await session.get(TechniqueRun, identity(prep_id, 'context'))
-    if existing:
+    async with engine.sf() as session:
+        lab_existing=await session.get(TechniqueRun,method_lab.identity(prep_id,'context')) if lab_enabled else None
+    if existing and (not lab_enabled or lab_existing):
         return {'status': 'frozen', 'contextId': existing.id, 'placesOrders': False}
     opens, _ = session_bounds(prep.config['session'])
     if clock() >= opens or prep.as_of >= opens:
         return {'status': 'pre_session_required', 'placesOrders': False}
     ids = list(dict.fromkeys(r['analysisId'] for r in result.get('rows', []) if r.get('analysisId')))
     candidates, errors = [], []
+    lab_candidates=[]
     groups = {g['industry']: g for g in result.get('leaderContext', {}).get('groups', [])}
     for offset in range(0, len(ids), 25):
-        if not settings(engine)['enabled'] or clock() >= opens:
+        if not (settings(engine)['enabled'] or method_lab.enabled(engine,policy)) or clock() >= opens:
             return {'status': 'pre_session_required', 'placesOrders': False}
         async with engine.sf() as session:
             rows = (await session.scalars(select(TechniqueRun).where(TechniqueRun.id.in_(ids[offset:offset+25]),
@@ -140,18 +147,27 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
         def evaluate_batch():
             found, failures = [], []
             for row in saved:
-                for cohort, short in [('primary', False), *([('bearish', True)] if config['bearishEnabled']
-                        and row['config']['inputs']['direction'] != 'short' else [])]:
+                cohorts=[('primary',False)] if config['enabled'] else []
+                if config['enabled'] and config['bearishEnabled'] and row['config']['inputs']['direction']!='short':
+                    cohorts.append(('bearish',True))
+                for cohort,short in cohorts:
                     try:
                         candidate = candidate_from_analysis(row, policy, cohort, short=short)
                         if candidate:
                             found.append(candidate)
                     except (KeyError, ValueError, TypeError) as exc:
                         failures.append({'symbol': row['symbol'], 'cohort': cohort, 'reason': str(exc)[:250]})
+                if lab_enabled:
+                    try:
+                        candidate=candidate_from_analysis(row,policy,'lab_long',direction='long')
+                        if candidate: found.append(candidate)
+                    except (KeyError,ValueError,TypeError) as exc:
+                        failures.append({'symbol':row['symbol'],'cohort':'lab_long','reason':str(exc)[:250]})
             return found, failures
 
         found, failures = await _study(evaluate_batch)
-        candidates.extend(found); errors.extend(failures)
+        candidates.extend(c for c in found if c['cohort']!='lab_long')
+        lab_candidates.extend(c for c in found if c['cohort']=='lab_long');errors.extend(failures)
         if report:
             await report(message=f'Freezing profitability research: {min(offset+25, len(ids))}/{len(ids)} saved analyses')
     rankings = {}
@@ -186,23 +202,40 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
     if clock() >= opens or settings(engine) != config or read_policy(engine, 'practice') != policy:
         return {'status': 'pre_session_required', 'placesOrders': False}
     key = identity(prep.id, 'context')
-    await _insert(engine, key, 'profit_context', prep, clock(), {
-        'phase': 'collecting', 'frozenAt': clock(), 'candidates': [by_id[cid] for cid in selected],
-        'rankings': rankings, 'errors': errors, 'market': result.get('market', {}),
-        'denominator': {'discovered': result.get('discovered', 0), 'evaluated': result.get('evaluated', 0),
-            'eligible': len(candidates), 'boundedLimit': config['candidateCap'], 'omitted': len(candidates)-len(selected),
-            'primaryEligible': sum(c['cohort']=='primary' for c in candidates),
-            'bearishEligible': sum(c['cohort']=='bearish' for c in candidates)},
-        'omittedIds': [c['id'] for c in candidates if c['id'] not in selected],
-        'protocol': {'version': VERSION, 'bearishVersion': BEARISH_VERSION, 'sourceRefs': [BEARISH_SOURCE],
-            'policySha256': digest(policy.model_dump(mode='json')), 'sourcePreparationId': prep.id,
-            'sourceAsOf': prep.as_of, 'settings': config, 'costs': None,
-            'weakEnvironmentDefinition': 'At least one index lacked strict directional daily 8/21/50 alignment, including Moderate mixed context. Missing references are unknown. Frozen before the session, never inferred from losses.',
-            'bearishDefinition': {'kind': 'engineering_structural_short_proxy', 'sourceEquivalent': False,
-                'sourceInspiration': BEARISH_SOURCE, 'stockRules': 'Existing frozen neutral listing gates; stock below its selected EMAs; directional structural checks.',
-                'sourceDifferences': 'Does not claim the March source scanner price/capitalization/relative-volume/negative-change thresholds. Those source-specific fields remain unverified.'},
-            'note': 'Source-inspired directional research and a theme-proxy ranking; no strategy promotion or trading authority.'}},
-        {'policy': policy.model_dump(mode='json')})
+    if config['enabled']:
+        await _insert(engine, key, 'profit_context', prep, clock(), {
+            'phase': 'collecting', 'frozenAt': clock(), 'candidates': [by_id[cid] for cid in selected],
+            'rankings': rankings, 'errors': errors, 'market': result.get('market', {}),
+            'denominator': {'discovered': result.get('discovered', 0), 'evaluated': result.get('evaluated', 0),
+                'eligible': len(candidates), 'boundedLimit': config['candidateCap'], 'omitted': len(candidates)-len(selected),
+                'primaryEligible': sum(c['cohort']=='primary' for c in candidates),
+                'bearishEligible': sum(c['cohort']=='bearish' for c in candidates)},
+            'omittedIds': [c['id'] for c in candidates if c['id'] not in selected],
+            'protocol': {'version': VERSION, 'bearishVersion': BEARISH_VERSION, 'sourceRefs': [BEARISH_SOURCE],
+                'policySha256': digest(policy.model_dump(mode='json')), 'sourcePreparationId': prep.id,
+                'sourceAsOf': prep.as_of, 'settings': config, 'costs': None,
+                'weakEnvironmentDefinition': 'At least one index lacked strict directional daily 8/21/50 alignment, including Moderate mixed context. Missing references are unknown. Frozen before the session, never inferred from losses.',
+                'bearishDefinition': {'kind': 'engineering_structural_short_proxy', 'sourceEquivalent': False,
+                    'sourceInspiration': BEARISH_SOURCE, 'stockRules': 'Existing frozen neutral listing gates; stock below its selected EMAs; directional structural checks.',
+                    'sourceDifferences': 'Does not claim the March source scanner price/capitalization/relative-volume/negative-change thresholds. Those source-specific fields remain unverified.'},
+                'note': 'Source-inspired directional research and a theme-proxy ranking; no strategy promotion or trading authority.'}},
+            {'policy': policy.model_dump(mode='json')})
+    if lab_enabled:
+        try:
+            for candidate in lab_candidates:
+                group=groups.get(candidate['leaderEvidence'].get('industry'),{})
+                median=group.get('medianRelativeStrength')
+                candidate['themeEvidence']={'strengthKnown':group.get('strengthKnown',0),
+                    'medianRelativeStrength':-median if median is not None and candidate.get('sourceDirection')=='short' else median,
+                    'basis':'Directional relative strength of the frozen evaluated industry cohort; an industry proxy, not a verified catalyst.'}
+            lab_result=await method_lab.freeze(engine,prep,policy,lab_candidates,clock=clock)
+            if not config['enabled']: return {**lab_result,'placesOrders':False}
+            engine._cartel_method_lab_freeze_error=None
+        except (ValueError,KeyError,TypeError) as exc:
+            # The optional lab must not erase an existing research snapshot.
+            engine._cartel_method_lab_freeze_error=f'{type(exc).__name__}: method-lab snapshot unavailable'
+            if not config['enabled']:
+                return {'status':'unavailable','reason':engine._cartel_method_lab_freeze_error,'placesOrders':False}
     return {'status': 'frozen', 'contextId': key, 'eligible': len(candidates), 'observedLimit': len(selected), 'placesOrders': False}
 
 

@@ -51,6 +51,12 @@ class CartelRuntime(CartelObserver):
         self._profitability_quote_task = None
         self._profitability_quote_last = 0
         self._profitability_targets = {}
+        self._method_lab_task = None
+        self._method_lab_last = 0
+        self._method_lab_started = None
+        self._method_lab_status = {'status':'disabled'}
+        self._method_lab_quote_task = None
+        self._method_lab_quote_last = 0
 
     async def arm(self, run_id, config=None):
         from sqlalchemy import text
@@ -427,6 +433,17 @@ class CartelRuntime(CartelObserver):
         await self._flush_drop_diagnostics()  # D4: bounded journal of bars refused for age
 
     async def on_quote_watch(self):
+        if not self.engine.settings.get('techniques.options_cartel.method_lab',False):
+            self._method_lab_started=None
+            for task in (self._method_lab_task,self._method_lab_quote_task):
+                if task is not None and not task.done(): task.cancel()
+        elif not self.stopping:
+            if self.clock()-self._method_lab_last>=30000 and (self._method_lab_task is None or self._method_lab_task.done()):
+                self._method_lab_last=self.clock()
+                self._method_lab_task=asyncio.create_task(self._observe_method_lab(),name='cartel-method-lab')
+            if self.clock()-self._method_lab_quote_last>=5000 and (self._method_lab_quote_task is None or self._method_lab_quote_task.done()):
+                self._method_lab_quote_last=self.clock()
+                self._method_lab_quote_task=asyncio.create_task(self._observe_method_lab(quotes=True),name='cartel-method-lab-quotes')
         if not self.stopping and self.clock()-self._intraday_research_last >= 60_000 and (self._intraday_research_task is None or self._intraday_research_task.done()):
             self._intraday_research_last = self.clock()
             self._intraday_research_task = asyncio.create_task(self._observe_intraday_research(), name='cartel-intraday-research')
@@ -507,6 +524,16 @@ class CartelRuntime(CartelObserver):
                 'reason': f'{type(exc).__name__}: profitability observation unavailable'}
             self._profitability_last = self.clock()+240_000
 
+    async def _observe_method_lab(self, *, quotes=False):
+        from .method_lab_observer import collect,capture_quotes
+        try:
+            async with asyncio.timeout(20 if quotes else 90):
+                await (capture_quotes(self) if quotes else collect(self))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # research never interrupts management or grants entry permission
+            self._method_lab_status={'status':'unavailable','reason':f'{type(exc).__name__}: method-lab observation unavailable'}
+
     async def _capture_profitability_quotes(self):
         from .profitability_research import capture_quotes
         try:
@@ -536,6 +563,10 @@ class CartelRuntime(CartelObserver):
 
     async def stop(self):
         self.stopping = True
+        for task in (self._method_lab_task,self._method_lab_quote_task):
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task,return_exceptions=True)
         if self._profitability_task is not None and not self._profitability_task.done():
             self._profitability_task.cancel()
             await asyncio.gather(self._profitability_task, return_exceptions=True)

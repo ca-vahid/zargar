@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.21";
+export const APP_VERSION = "0.8.23";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,12 +17,21 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.8.21",date:"2026-09-18",title:"EM: source fidelity, one preparation owner and executable profit",items:[
+  {version:"0.8.23",date:"2026-09-18",title:"EM: source fidelity, one preparation owner and executable profit",items:[
     {tag:"new",text:"EM Validation has a read-only review panel: what each author actually said against every trigger we planned and the gate that decided, order-free source candidates, first-sale R at the final quantity, and realized, displayed and executable profit side by side."},
     {tag:"fixed",text:"EM can measure reward to risk where a position really exits, at the quantity bought and the live underlying price. The check is built and switched off; observing it and enforcing it are separate settings."},
     {tag:"new",text:"Source ideas keep their author, direction, conditions and timing. A ticker the transcript does not support stays unresolved, a call strike is never a price target, and a correction never rewrites what the app knew on the day."},
     {tag:"new",text:"A rules-based preparation policy, a fresh-setup requalification study and the executable-profit recorder are built and switched off. Baseline Practice preparation and trading are unchanged."},
     {tag:"fixed",text:"EM research: a thin first quote no longer closes the runner-protection search."},
+    {tag:"fixed",text:"EM review panel: each trade keeps its own result even when two entries share one contract, late fills are shown as revisions, partial results say what is unknown, and model cost is shown as an estimate beside results."},
+  ]},
+  {version:"0.8.22",date:"2026-09-18",title:"Cartel trial readiness",items:[
+    {tag:"fixed",text:"A frozen trial now says awaiting sessions before its first market open, instead of reporting future observations as missing evidence."},
+  ]},
+  {version:"0.8.21",date:"2026-09-18",title:"Cartel method lab and accurate SIP liquidity",items:[
+    {tag:"new",text:"Practice Method lab compares breakout, reclaim and 30-minute pivot entries using frozen cohorts, recorded quotes and modeled option/share costs. Research does not place orders or change trading permissions."},
+    {tag:"improved",text:"Trial reviews retain missing evidence, show modeled fills and costs, and record daily reviews with Friday checkpoints. No automatic strategy promotion."},
+    {tag:"fixed",text:"Modern Alpaca SIP stock quote sizes are now treated as shares, removing obsolete 100x liquidity scaling. Option quote units are unchanged."},
   ]},
   {version:"0.8.20",date:"2026-09-18",title:"Cartel: clearer opportunity reviews and timely recovery",items:[
     {tag:"fixed",text:"Daily review separates a stock not reaching its entry level from incomplete data and historical refusals. Current Armed coverage no longer repeats a resolved warning as a current hold."},

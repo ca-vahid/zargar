@@ -125,6 +125,29 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### Cartel method-lab raw venue access and non-ordering receipts — development 2026-09-18
+
+`AlpacaQuoteFeed.venue_snapshot(symbol)` is an allowlisted read-only copy of raw
+venue fields for research attribution. It does not modify emissions, Quote
+per-field timestamps, Bar provider labeling, subscriptions or other desks'
+trading behavior. The Cartel lab rejects a configured-provider guess or cache
+overlay as proof of a fresh underlying SIP trade. New receipt records are
+Practice research only and cannot be armed. Their modeled fills are not orders
+or portfolio accounting, and review readiness never grants trading permission.
+
+### Equity SIP quote sizes are shares after November 3, 2025
+
+The prior equity adapter unconditionally multiplied `bs`/`as` by 100. Alpaca's
+[October 30, 2025 changelog](https://docs.alpaca.markets/us/v1.1/changelog/marketdata-bid-and-ask-size-display-change)
+states CTA/UTP sizes become shares on November 3. The correction is scoped to
+SIP messages dated on/after that day using venue time: size 3 now means 3 shares,
+not 300. Earlier SIP and the existing IEX conversion retain legacy behavior;
+unknown venue time or invalid size yields unknown depth (zero), not a date guess.
+Quote price-field timestamps and Bar provider behavior are unchanged. The OPRA
+option path and its contract units are separate. SimExecutor consumes equity
+depth, so new share fill-size limits may differ. Old executions/P&L are preserved;
+the bug alone does not prove any particular historical fill was invalid.
+
 ### Cartel Practice repair boundary and opportunity research — 2026-09-18
 
 The v0.8.20 Cartel-only repair path (enabled verified-interval Practice setting)
