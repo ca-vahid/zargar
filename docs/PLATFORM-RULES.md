@@ -2437,3 +2437,7 @@ controlled clock for the modules `test_codex_em_final_dispatch_*` only. Owner re
 the hook placement, the fill call sites or the additive tables/routes/defaults, with one standing condition - an attached observer's
 `snap` stays O(1) capture + `put_nowait`, no I/O, no locks (kept by test). Their two findings were applied: ONE model price source
 (`llm.rates`; the duplicate `llm.pricing_table` was removed) and a failed retried model request is marked `failed`.
+Team2 desk review (2026-09-19, diff `f4ce6ad8..7002426d`, `planrunner.py` unchanged since): no objection for `Team2Runner`; 367 Team2 cases
+passed on that tree. Their note, kept as a rule for any desk that later overrides the hook: a `first_sale_policy` override that RAISES
+refuses the entry ("policy could not be read") - fail-closed by design, so a bug there stops entries and never exits. The duplicate
+`entry_guard_predicate` definition in `planrunner.py` predates this work and is unchanged by it.

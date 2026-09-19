@@ -1,6 +1,6 @@
 {
  "date": "2026-09-18",
- "asOf": "2026-09-19T01:25:17+00:00",
+ "asOf": "2026-09-19T03:15:30+00:00",
  "versions": {
   "scenarios": "source-scenarios-v1",
   "matcher": "source-plan-match-v1",
@@ -8350,6 +8350,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:20d104253f8bcafaf0dedc1d"
@@ -8370,6 +8371,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:9bc35740bd9702ce478fc435"
@@ -8390,6 +8392,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:f321f2a52a5462756439e4a6"
@@ -8410,6 +8413,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "b5110a97bed14180b27ba4aa1a392d8e",
@@ -8441,6 +8445,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "b5110a97bed14180b27ba4aa1a392d8e",
@@ -8474,6 +8479,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:e5cf03ce432ba769878d4095"
@@ -8498,6 +8504,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:c75ad048428495359ad9b294"
@@ -8518,6 +8525,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "3ed6d5cd95e042c69636de5acde77a16",
@@ -8557,6 +8565,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "3ed6d5cd95e042c69636de5acde77a16",
@@ -8594,6 +8603,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "2c4bac9119d24e3e9af01c0c15f0fe91",
@@ -8623,6 +8633,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "2c4bac9119d24e3e9af01c0c15f0fe91",
@@ -8652,6 +8663,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:ab29125ece6b08c9667fe7b3"
@@ -8672,6 +8684,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:6dde81325aa06c1a9e7be1f1"
@@ -8692,6 +8705,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:0aafb02d558861d7fd43edf2"
@@ -8712,6 +8726,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:11f503d78c3ade121837bf80"
@@ -8732,6 +8747,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:1dfe689970a63ecc76f4545c"
@@ -8752,6 +8768,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:5fcf0904fd49fe39db5e880c"
@@ -8772,6 +8789,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:6b4b828a41fbc11d5bee1dd7"
@@ -8796,6 +8814,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "b5110a97bed14180b27ba4aa1a392d8e",
@@ -8825,6 +8844,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "b5110a97bed14180b27ba4aa1a392d8e",
@@ -8854,6 +8874,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:4d9960f4d6eb53ed16724b32"
@@ -8874,6 +8895,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:0762cf229aaadd68744e47f7"
@@ -8894,6 +8916,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:8d2ed0b18935ec7e9d6a615e"
@@ -8918,6 +8941,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "96f11590f3d04dcf94e8fc5c5901dc40",
@@ -8947,6 +8971,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "96f11590f3d04dcf94e8fc5c5901dc40",
@@ -8976,6 +9001,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "910dce0bd4954f77b1782a935c5d17e9",
@@ -9032,6 +9058,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "910dce0bd4954f77b1782a935c5d17e9",
@@ -9087,6 +9114,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:20d104253f8bcafaf0dedc1d"
@@ -9107,6 +9135,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:9bc35740bd9702ce478fc435"
@@ -9127,6 +9156,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:f321f2a52a5462756439e4a6"
@@ -9147,6 +9177,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "b5110a97bed14180b27ba4aa1a392d8e",
@@ -9178,6 +9209,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "b5110a97bed14180b27ba4aa1a392d8e",
@@ -9211,6 +9243,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:e5cf03ce432ba769878d4095"
@@ -9235,6 +9268,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:c75ad048428495359ad9b294"
@@ -9255,6 +9289,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "3ed6d5cd95e042c69636de5acde77a16",
@@ -9294,6 +9329,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "3ed6d5cd95e042c69636de5acde77a16",
@@ -9331,6 +9367,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "2c4bac9119d24e3e9af01c0c15f0fe91",
@@ -9360,6 +9397,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [
     {
      "runId": "2c4bac9119d24e3e9af01c0c15f0fe91",
@@ -9389,6 +9427,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:ab29125ece6b08c9667fe7b3"
@@ -9409,6 +9448,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:6dde81325aa06c1a9e7be1f1"
@@ -9429,6 +9469,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:0aafb02d558861d7fd43edf2"
@@ -9449,6 +9490,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:11f503d78c3ade121837bf80"
@@ -9469,6 +9511,7 @@
    "firedTs": null,
    "outcomeProxy": null,
    "rProxy": null,
+   "pricing": null,
    "baseline": [],
    "orderFree": true,
    "origin": "scenario:1dfe689970a63ecc76f4545c"

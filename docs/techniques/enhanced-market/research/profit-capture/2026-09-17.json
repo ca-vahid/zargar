@@ -1,7 +1,7 @@
 {
  "date": "2026-09-17",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T01:06:29.249730+00:00",
+ "asOf": "2026-09-19T02:50:24.707319+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
@@ -63,8 +63,9 @@
   "basis": "persisted 30 s equity samples on the book's MARKS (option mid / share last) - displayed, not executable; samples can miss peaks"
  },
  "capture": {
-  "version": "profit-capture-reducer-v1",
+  "version": "profit-capture-reducer-v2",
   "snapshots": 0,
+  "duplicatesIgnored": 0,
   "status": "no_snapshots",
   "note": "the recorder was off or the book was flat - nothing is inferred",
   "pairedExits": {
