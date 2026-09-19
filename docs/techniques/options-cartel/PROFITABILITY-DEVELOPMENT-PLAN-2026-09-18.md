@@ -1,7 +1,11 @@
 # Options Cartel profitability development plan
 
-Prepared September 18, 2026. Implementation authorized by the user; economic
-validation and activation gates remain. This document does not authorize Live trading.
+Prepared September 18, revised September 19, 2026 at the user's request.
+The implementation goal no longer requires future market sessions. Complete the
+historical evaluation, document evidence limits, and make justified adjustments.
+The existing forward collector can continue, but its minimum sample is not a
+completion dependency for this goal. This does not authorize Live trading or
+turn retrospective results into prospective evidence.
 
 ## Outcome and starting point
 
@@ -197,41 +201,33 @@ or new allocation becomes active merely because its simulation looks better.
 use of peak-trim return as weighted realized P&L. If neither vehicle is suitable,
 passing is a valid outcome.
 
-## Phase 5 — prospective Practice experiment and promotion
+## Phase 5 — historical evaluation and adjustment (revised September 19)
 
-Freeze a baseline and one challenger at a time. Selection, entry, vehicle and
-exit changes must first be measured independently; only then test a specified
-combination. Match session/candidate cohorts and account for correlated trades.
+Replace the future-session acceptance dependency with a reproducible historical
+study. Select past cohorts by pre-open availability, retain original long/short
+scope and preparation lineage, and report missing/prefiltered populations.
+Compare breakout, reclaim and 30-minute pivot with distinct 5m/15m baselines.
+Compare selection policies on the same denominator. Preserve the original version
+when adjusting a model; explain each change from observed failure causes.
 
-Start in non-ordering shadow mode. A proposed first checkpoint is at least 20
-trading sessions and 30 executable signals per compared variant, across more
-than one market condition. These are minimum review points, not statistical
-proof or an automatic pass. Sparse signals mean a longer observation period,
-not manufactured trades or moving thresholds.
+Historical bars fetched or corrected later are retrospective evidence. They may
+support structural diagnostics but cannot prove delivery latency or original
+entry permission. Missing minutes are not assumed no-trade minutes. Recorded
+option quotes must match the contract and time; otherwise option returns remain
+unknown. Explicitly costed share scenarios are permitted with assumptions, cash
+bounds, integer quantities and open-versus-closed outcome separation.
 
-Predeclare primary metrics: net dollars and net expectancy after costs; secondary
-metrics: drawdown, adverse/favorable excursion, exposure, turnover, fill rate,
-holding time, concentration and data/quote coverage. Report uncertainty with
-session-clustered comparisons and sensitivity to worse fills/costs. Preserve a
-held-out period; do not repeatedly tune on it. A result driven by one name/day
-does not establish general improvement.
+Completion requires code and focused tests, reproducible artifacts, a comparison
+report, identified gaps, and an evidence-backed keep/change/reject decision.
+An inconclusive economic finding is an acceptable honest result; it must not be
+presented as profitable. No minimum number of future sessions is required.
+If data is insufficient, describe exactly which historical inputs are missing
+and deliver the strongest supported conclusion without inventing them.
 
-Promotion requires an explicit review that covers:
-
-- No known look-ahead, attribution, quote, coverage or lifecycle defect.
-- Benefit persists under plausible transaction-cost stress and is not explained
-  only by higher exposure or a different opportunity denominator.
-- Drawdown and concentration fit predeclared tolerances; the comparison has enough
-  complete evidence to distinguish benefit from noise.
-- A limited Practice activation plan, rollback setting, ownership, and preserved
-  control records. Resolve economic tolerances in the experiment specification
-  before outcomes are inspected. Inconclusive results do not pass.
-
-For an order-capable Practice trial, avoid two real orders for the same experiment
-signal in the same book. Use non-ordering matched controls or a separately approved
-sim cohort with explicit attribution and account caps. Keep technique book routing
-and risk invariants; no shared-book fallback. Protective exits remain active on
-rollback. Live activation is outside this plan.
+The previously frozen forward trial remains a separate observational feature.
+Its data and protocol must not be rewritten or its thresholds silently lowered.
+Any order-capable activation still requires a distinct evidence-backed decision;
+this scope revision removes the wait, not the trading safeguards.
 
 ## Phase 6 — release, operating review and documentation
 
@@ -260,8 +256,8 @@ complexity without improving fidelity, evidence quality or a testable hypothesis
 | D | Undercut/reclaim evaluator and fixtures | A+B | Research only |
 | E | 30-minute pivot and 5m/15m comparison | A+B; review D findings | Research only |
 | F | Shares/options/pass and whole-unit exit comparison | B plus validated signals | Research only |
-| G | Prospective study and activation proposal | Accepted C-F components | None until approved trial |
-| H | Limited Practice release and operating review | G passes | Only the approved Practice variant |
+| G | Historical comparison and adjustment decision | Accepted C-F components | Research only |
+| H | Release justified changes and historical review report | G completed with explicit evidence limits | Preserve execution gates; no inferred activation |
 
 Each packet includes: problem, source/code difference, exact behavioral change,
 frozen inputs, acceptance tests, result limits, runtime scope and rollback. Prefer

@@ -80,13 +80,18 @@ The live smoke found future observation windows incorrectly labeled incomplete.
 v0.8.22 corrects this to awaiting_sessions before the first open, with zero
 future observation debt. After open, real missing evidence stays incomplete.
 
-## Current remaining work
+## Revised completion scope — September 19
 
-Collect prospective sessions and review the declared acceptance gates. Resolve
-provisional source statements without changing frozen protocols retrospectively.
-The seven-phase goal remains active; software delivery and validated profitability
-are separate outcomes. Signed-in visual inspection remains unverified (the local
-browser required login); the production build and authenticated API were checked.
+The user removed future-market evidence from this goal. Completion now requires
+historical evaluation and evidence-backed adjustments, including explicit
+inconclusive results where data cannot support economic claims. The forward
+collector and its frozen trial remain unchanged, but the 20-session/30-outcome
+threshold is no longer a dependency for completing this implementation goal.
+
+The historical tool `zargar.tools.cartel_historical_lab` evaluates saved pre-open
+analyses and retained native minutes without database writes or orders. Its report
+must keep modeled share results, unknown option returns and actual executions
+separate. See the revised development plan for acceptance.
 
 ## Release acceptance checkpoint
 
@@ -110,3 +115,14 @@ Cartel Practice. Baselines: BBY/CNH/NOW/NTNX/NVT ready; SAIC/ULTA/ASC partial.
 The trial API reports awaiting_sessions, zero incomplete pairs and no activation
 permission. This supersedes the earlier context as the current pre-open cohort;
 older immutable records remain available.
+
+## Historical completion — September 19 scope revision
+
+The revised historical evaluation is delivered in
+[the historical report](reviews/2026-09-19-historical-lab/README.md): 69 candidate-days,
+six models, 55 complete native history requests, equal-denominator ranking
+comparisons and explicit share/option evidence limits. Five focused tests pass.
+Quality remains the recommendation; no data-backed reason to activate a new
+entry model or relax gates was found. The source-code/operating implementation
+and historical review are delivered; optional forward observations are no longer
+a completion dependency. No profitability guarantee or positive edge is claimed.
