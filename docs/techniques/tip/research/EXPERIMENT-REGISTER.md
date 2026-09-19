@@ -103,6 +103,18 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Evaluation window:** step 1 = the bounded side-effect-free PILOT in `research/2026-09-17-prompt-cache-pilot-plan.md` (harness EXECUTABLE since 2026-09-17 late: `tip_frozen replay --cache on|off --budget-usd 8`, enforced ceiling incl. retries, per-attempt accounting, prefix ~5.3k vs header ~20.4k tokens measured on the bundle; dry run demonstrated at $0; warm-up counted, prefix hashes checked, judgments compared) - runs only on the user's approval; step 2 (a measured session) only if the pilot is favourable and approved. **Decision rule:** the user decides on measured hits, priced cost incl. warm-up, and latency; recap routing stays OFF and is a separate experiment.
 - **Status:** built, off; pilot plan awaiting approval (2026-09-17).
 
+## `review-gate` (opened 2026-09-19, OBSERVE)
+
+- **Hypothesis:** an intake review can only manage an item the desk holds, arms or proposes; skipping reviews of messages that reach none (and are not entry-shaped) removes about a third of review spend without losing a management action.
+- **Variants:** observe (live: `TipReviewGate` journaled, the review still runs); enforce (skip) - not enabled.
+- **Eligible setup:** every intake message on the review path (a discarded signal, or a no-ticker follow-up). **Unit:** one intake message. **Episode identity:** intake run id.
+- **Primary metric:** false negatives = skip-decisions whose review called `update_exit_plan` / `close_position` / `disarm_plan` (must be 0); secondary: skipped share and priced review cost (`llm.rates`, an estimate).
+- **Costs:** none in observe; enforce removes the skipped reviews' cost.
+- **Regime:** `techniques/tip/review_gate.py`, `signals/service._review_gate`, `tools/tip_review_gate_eval.py`; knob `techniques.tip.review_gate`.
+- **Alternatives tried:** the existing source-level open-items check (shadow signals never expire, so nearly every active source always passed it).
+- **Evaluation window:** retrospective 2026-09-09..18 on the same evidence: 186 of 556 reviews skipped, $121.83 of $379.21 (32%), 0 false negatives; prospective = 5 observe sessions (2026-09-21..25, `tip_review_gate_eval --prospective`). **Decision rule:** enforce only with 0 prospective false negatives AND the retrospective replay still at 0; the user approves the switch.
+- **Status:** built, observe (2026-09-19).
+
 ## `feasibility-annotate`
 
 - **Hypothesis:** annotating every TAKE with the expression's feasibility and payoff (without downgrading)

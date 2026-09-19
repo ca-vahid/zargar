@@ -108,6 +108,26 @@ EXPERIMENTS: dict[str, dict] = {
                              "decisionRule": "user decides on measured hits, priced cost incl. warm-up and latency; recap routing stays OFF (separate experiment)"},
         "status": "built, off",
     },
+    "review-gate": {
+        "hypothesis": "An intake review can only manage an item the desk holds, arms or proposes; skipping reviews of messages "
+                      "that reach none (and are not entry-shaped) removes ~1/3 of review spend without losing a management action.",
+        "variants": ["observe (live: decision journaled, review still runs)", "enforce (skip) - not enabled"],
+        "eligibleSetup": "every intake message that reaches the review path (a discarded signal, or a no-ticker follow-up)",
+        "unit": "one intake message",
+        "episodeIdentity": "intake run id",
+        "primaryMetric": "false negatives = skip-decisions whose review called update_exit_plan / close_position / disarm_plan "
+                         "(must be 0); secondary: skipped share and priced review cost (llm.rates, estimate)",
+        "costs": "none in observe (the review still runs); enforce removes the skipped reviews' cost",
+        "regime": {"module": "techniques/tip/review_gate.py + signals/service._review_gate + tools/tip_review_gate_eval.py",
+                   "knobs": ["techniques.tip.review_gate"]},
+        "alternativesTried": ["source-level open-items check (existing D1 gate): shadow signals never expire, so nearly every "
+                              "active source always passed it - no reduction"],
+        "evaluationWindow": {"opened": "2026-09-19 (retrospective 2026-09-09..18: 186/556 reviews skipped, $121.83, 0 false negatives)",
+                             "closes": "5 observe sessions (2026-09-21..25) - tip_review_gate_eval --prospective",
+                             "decisionRule": "enforce only with 0 prospective false negatives AND the retrospective replay still at 0; "
+                                             "the user approves the switch"},
+        "status": "built, observe",
+    },
     "feasibility-annotate": {
         "hypothesis": "Annotating every TAKE with the expression's feasibility and payoff (without downgrading) reduces "
                       "unfittable option purchases over time; downgrade mode is NOT enabled.",

@@ -34,15 +34,11 @@ def bucket(symbol: str, fill_date: dt.date | None) -> str:
     return "0-4dte" if d <= 4 else ("5-29dte" if d <= 29 else "30+dte")
 
 
-async def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
-    ap.add_argument("--since", default="2026-09-08")   # the Practice-book reset
-    ap.add_argument("--portfolio", default="",
-                    help="Tips Practice book id (default: techniques.tip.default_portfolio)")
-    a = ap.parse_args()
-    conn = await asyncpg.connect(a.db)
-    since = dt.datetime.fromisoformat(a.since).replace(tzinfo=dt.timezone.utc)
+async def build_census(conn, *, since_text: str, portfolio: str = "", kinds: tuple = ("sim",)) -> dict:
+    """The idea-level ledger (FIFO lots, dispositions, fees) as DATA - `main` prints it, the economic
+    scorecard (`tools/tip_scorecard.py`) reuses it, so there is ONE lot engine. Returns the rows plus the
+    dated realizations (one per sell matched to a lot) and the lots still open."""
+    since = dt.datetime.fromisoformat(since_text).replace(tzinfo=dt.timezone.utc)
 
     sigs = await conn.fetch(
         """SELECT id, source_name, status, created_at, extraction FROM signals
@@ -52,18 +48,18 @@ async def main() -> None:
            FROM proposals WHERE created_at >= $1""", since)
     orders = await conn.fetch(
         """SELECT o.id, o.signal_id, o.symbol, o.side, o.filled_qty, o.limit_price,
-                  o.avg_fill_price, o.status, o.portfolio_id
+                  o.avg_fill_price, o.status, o.portfolio_id, o.source
            FROM orders o JOIN portfolios pf ON pf.id = o.portfolio_id
-           WHERE o.created_at >= $1 AND pf.kind = 'sim' AND pf.archived IS NOT TRUE""", since)
+           WHERE o.created_at >= $1 AND pf.kind = ANY($2::text[]) AND pf.archived IS NOT TRUE""", since, list(kinds))
     execs = await conn.fetch(
         """SELECT e.id, e.order_id, e.portfolio_id, e.symbol, e.side, e.qty, e.price,
                   e.commission, e.ts
            FROM executions e JOIN portfolios pf ON pf.id = e.portfolio_id
-           WHERE e.ts >= $1 AND pf.kind = 'sim' AND pf.archived IS NOT TRUE""", since)
+           WHERE e.ts >= $1 AND pf.kind = ANY($2::text[]) AND pf.archived IS NOT TRUE""", since, list(kinds))
     # explicit Practice-book scope (C59-02): the intended book, never "every
     # sim portfolio" by accident. --portfolio wins; else the tips default
     # setting; else (offline/unknown) all active sim books, stated below.
-    pf_scope = str(getattr(a, "portfolio", "") or "")
+    pf_scope = str(portfolio or "")
     if not pf_scope:
         try:
             srow = await conn.fetchrow(
@@ -110,6 +106,18 @@ async def main() -> None:
     # consumes FIFO — erasing it before matching shifted its sale onto a
     # newer idea with no exception.
     owner_by_order = {o["id"]: o["signal_id"] for o in orders if o.get("signal_id")}
+    # an ARMED-plan fill carries no signal on the order; its plan's own order-result event names the run and
+    # the run names its signal (2026-09-19). Only a signal INSIDE this report resolves - anything else stays
+    # an explicit unknown-owner lot, never silently dropped.
+    sig_ids = {s["id"] for s in sigs}
+    plan_orders = set()
+    for r in await conn.fetch(
+            """SELECT e.payload->>'orderId' AS oid, r.config->>'signalId' AS sid FROM events e
+               JOIN technique_runs r ON r.id = e.payload->>'runId'
+               WHERE e.type = 'TechniquePlanOrderResult' AND e.ts >= $1 AND r.technique = 'tip'""", since):
+        if r["oid"] and r["sid"] in sig_ids and r["oid"] not in owner_by_order:
+            owner_by_order[r["oid"]] = r["sid"]
+            plan_orders.add(r["oid"])
     buys_by_idea: dict[str, list] = defaultdict(list)
     lots_by_key: dict[tuple, list] = defaultdict(list)
     unknown_owner_lots = 0
@@ -130,6 +138,7 @@ async def main() -> None:
     acct: dict[str, dict] = defaultdict(lambda: {
         "realized": 0.0, "sold": 0.0, "fees_alloc": 0.0})
     unallocated: list[dict] = []       # every sell quantity that found no lot (C59-02)
+    realizations: list[dict] = []      # dated: one row per (sell, lot) match - the scorecard buckets these by session
 
     def _oid(e) -> str:
         return str(e.get("id") or e.get("order_id") or "")
@@ -159,6 +168,12 @@ async def main() -> None:
                 acc_i = acct[lot["idea"]]
                 acc_i["realized"] += (take * (float(se["price"]) - lot["px"]) * lmult
                                       - take * sfee_unit - take * lot["fee_unit"])
+                realizations.append({
+                    "ts": se["ts"], "idea": lot["idea"], "book": key[0], "symbol": key[1], "qty": take,
+                    "gross": take * (float(se["price"]) - lot["px"]) * lmult,
+                    "fees": take * (sfee_unit + lot["fee_unit"]),
+                    "sellExec": _oid(se), "sellOrder": str(se.get("order_id") or ""),
+                    "buyExec": lot["exec_id"], "buyOrder": lot["order_id"]})
                 acc_i["fees_alloc"] += take * (sfee_unit + lot["fee_unit"])
                 acc_i["sold"] += take
                 lot["qty"] -= take
@@ -170,7 +185,6 @@ async def main() -> None:
                     "fee": sq * sfee_unit,
                     "reason": ("no recognized lot in window (opening inventory unknown)"
                                if not lots else "oversold beyond recognized lots")})
-    unallocated_sells = len(unallocated)
     open_by_idea: dict[str, dict] = defaultdict(lambda: {"cost": 0.0, "fees": 0.0, "qty": 0.0})
     for key, lots in lots_by_key.items():
         lmult = 100.0 if OCC.match(key[1]) else 1.0
@@ -194,6 +208,8 @@ async def main() -> None:
         buys = buys_by_idea.get(sid, [])
         first_buy = min(buys, key=lambda e: e["ts"]) if buys else None
         sym = (so[0]["symbol"] if so else (sp[0]["symbol"] if sp else "")) or ""
+        if not sym and first_buy is not None:           # an armed-plan fill: the idea's instrument is its first buy
+            sym = first_buy["symbol"]
         bought = sum(float(e["qty"]) for e in buys)
         a_i = acct.get(sid) or {"realized": 0.0, "sold": 0.0, "fees_alloc": 0.0}
         ob = open_by_idea.get(sid) or {"cost": 0.0, "fees": 0.0, "qty": 0.0}
@@ -235,7 +251,30 @@ async def main() -> None:
             "open_cost": ob["cost"],
             "fees": fees, "fees_alloc": fees_alloc, "unalloc_fees": unalloc_fees,
             "latency_s": lat_s, "slip": slip,
+            "id": sid, "symbol": sym, "created_at": s["created_at"], "status": s["status"],
         })
+    open_lots = [{**lot, "book": key[0], "symbol": key[1]} for key, lots in lots_by_key.items()
+                 for lot in lots if lot["qty"] > 1e-9]
+    return {"rows": rows, "acct": acct, "open_by_idea": open_by_idea, "unallocated": unallocated,
+            "unknown_owner_lots": unknown_owner_lots, "pf_scope": pf_scope, "since": since,
+            "realizations": realizations, "open_lots": open_lots, "execs": execs, "orders": orders,
+            "planOrders": plan_orders, "ownerByOrder": owner_by_order,
+            "signals": sigs, "proposals": props}
+
+
+async def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
+    ap.add_argument("--since", default="2026-09-08")   # the Practice-book reset
+    ap.add_argument("--portfolio", default="",
+                    help="Tips Practice book id (default: techniques.tip.default_portfolio)")
+    a = ap.parse_args()
+    conn = await asyncpg.connect(a.db)
+    d = await build_census(conn, since_text=a.since, portfolio=str(getattr(a, "portfolio", "") or ""))
+    rows, acct, open_by_idea = d["rows"], d["acct"], d["open_by_idea"]
+    unallocated, unknown_owner_lots, pf_scope, since = (d["unallocated"], d["unknown_owner_lots"],
+                                                        d["pf_scope"], d["since"])
+    unallocated_sells = len(unallocated)
 
     print(f"# Tips outcome table — ideas since {a.since} (generated {dt.date.today()})\n")
     print("Idea-level, Tips Practice book only; experiment rows excluded. Open marks are")
@@ -311,7 +350,10 @@ async def main() -> None:
     per = defaultdict(list)
     for r in runs:
         op = r["opinion"] if isinstance(r["opinion"], dict) else json.loads(r["opinion"] or "{}")
-        for i, v in enumerate((op.get("usage") or {}).get("inPerCall") or []):
+        usage = op.get("usage") or {}
+        if isinstance(usage, list):              # legacy per-call list (KB-08 rule audits): no inPerCall shape
+            usage = {"inPerCall": [int(c.get("inputTokens") or 0) for c in usage if isinstance(c, dict)]}
+        for i, v in enumerate(usage.get("inPerCall") or []):
             per[(r["kind"], i)].append(v)
     if per:
         print("## Analyst per-turn input tokens (median by turn index)\n")
