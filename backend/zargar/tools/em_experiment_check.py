@@ -60,6 +60,55 @@ async def _book(c, pid: str, date: str, label: str) -> dict:
             "perTechniqueLossHaltPct": None}
 
 
+EXCEPTION_TYPES = ("BookHaltEngaged", "BookPaused", "TechniqueLossHalt", "DailyLossHalt", "TechniqueArmRefused", "OpsQuiesce",
+                   "TechniquePlanRestored", "TechniquePlanError")
+QUIET = ("TechniquePlanRestored", "OpsQuiesce")            # counted, never listed one by one: a restart journals one per plan
+
+
+async def exceptions(c, date: str, books: list) -> dict:
+    """Operational exceptions of the session, for prompt reporting: anything that stopped, refused or degraded trading in
+    either EM book, plus the shared conditions that reach both. Facts only - no judgement, no action."""
+    d = dt.date.fromisoformat(date)
+    a = dt.datetime(d.year, d.month, d.day, 4, 0, tzinfo=NY)
+    b = a + dt.timedelta(hours=16)
+    ours = {str(x) for x in books if x}
+    rows = [dict(r) for r in await c.fetch("select type, ts, portfolio_id, payload from events where ts >= $1 and ts < $2 and type = any($3::text[]) order by ts", a, b, list(EXCEPTION_TYPES))]
+    out: dict = {"window": [a.isoformat(), b.isoformat()], "byType": {}, "items": [], "rateLimit": {}, "recorder": {}, "unscorable": {}}
+    for r in rows:
+        p = _j(r["payload"]) or {}
+        mine = (str(r["portfolio_id"] or "") in ours) or (str(p.get("portfolioId") or "") in ours)
+        if r["type"] in ("TechniquePlanError", "TechniquePlanAlert") and not mine:
+            continue                                        # another desk's plan noise is not an EM exception
+        key = r["type"] + ("" if mine else " (other book)")
+        out["byType"][key] = out["byType"].get(key, 0) + 1
+        if r["type"] not in QUIET and len(out["items"]) < 40:
+            out["items"].append({"at": r["ts"].isoformat(), "type": r["type"], "book": (r["portfolio_id"] or p.get("portfolioId")),
+                                 "why": str(p.get("reason") or p.get("error") or p.get("text") or p.get("label") or "")[:180], "ours": mine})
+    rl = await c.fetch("select portfolio_id, payload from events where type='RiskCheckFailed' and ts >= $1 and ts < $2", a, b)
+    hit = [r["portfolio_id"] for r in rl if any((x.get("name") == "order_rate" and not x.get("passed")) for x in ((_j(r["payload"]) or {}).get("checks") or []))]
+    busiest = await c.fetchrow("select date_trunc('minute', created_at) m, count(*) n from orders where created_at >= $1 and created_at < $2 group by 1 order by 2 desc limit 1", a, b)
+    out["rateLimit"] = {"orderRateRejections": len(hit), "byBook": _count(hit), "ours": sum(1 for x in hit if str(x) in ours),
+                        "busiestMinute": (str(busiest["m"]) if busiest else None), "busiestMinuteOrders": (int(busiest["n"]) if busiest else 0),
+                        "capPerMinute": _unwrap(await c.fetchval("select value from settings where key='risk.max_orders_per_minute'"))}
+    if await c.fetchval("select to_regclass('public.technique_book_snapshots') is not null"):
+        for pid in ours:
+            snaps = [_j(r["payload"]) for r in await c.fetch("select payload from technique_book_snapshots where portfolio_id=$1 and session=$2 order by captured_at", pid, date)]
+            if not snaps:
+                continue
+            per: dict = {}
+            reasons: dict = {}
+            for sn in snaps:
+                rec = sn.get("recorder") or {}
+                k = sn.get("recorderInstance")
+                per[k] = max(per.get(k, 0), int(rec.get("droppedQueueFull", 0)) + int(rec.get("droppedWriteFailed", 0)))
+                for why in (sn.get("book") or {}).get("unscorableReasons") or []:
+                    reasons[str(why).split(":")[0]] = reasons.get(str(why).split(":")[0], 0) + 1
+            out["recorder"][pid] = {"snapshots": len(snaps), "instances": len(per), "drops": sum(per.values())}
+            out["unscorable"][pid] = reasons
+    out["anythingToReport"] = bool(out["items"] or out["rateLimit"]["orderRateRejections"] or any(v["drops"] for v in out["recorder"].values()))
+    return out
+
+
 def _count(it) -> dict:
     out: dict = {}
     for x in it:
@@ -67,7 +116,7 @@ def _count(it) -> dict:
     return out
 
 
-async def build(date: str) -> dict:
+async def build(date: str, *, with_exceptions: bool = False) -> dict:
     from .em_prep_ablation import _db_url
     c = await asyncpg.connect(_db_url())
     await c.execute("set default_transaction_read_only = on")
@@ -85,6 +134,8 @@ async def build(date: str) -> dict:
                           "bookLossHaltPct": _unwrap(await c.fetchval("select value from settings where key='risk.daily_loss_halt_pct'"))},
                "books": [await _book(c, base_id, date, "baseline (EM Practice)"),
                          await _book(c, str(xp.get("portfolioId") or ""), date, "experiment (EM Experimental)")]}
+        if with_exceptions:
+            out["exceptions"] = await exceptions(c, date, [base_id, str(xp.get("portfolioId") or "")])
         stray = await c.fetchval("""select count(*) from technique_armed a join technique_runs r on r.id=a.run_id
                                     where a.portfolio_id <> $1 and r.tags::text like '%experiment:%' and a.status in ('armed','paused')""", str(xp.get("portfolioId") or ""))
         out["routing"] = {"taggedRunsArmedOutsideTheExperimentalBook": int(stray or 0),
@@ -127,9 +178,22 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=dt.datetime.now(NY).date().isoformat())
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--exceptions", action="store_true", help="operational exceptions of the session (halts, pauses, arm refusals, restarts, order-rate rejections, recorder drops)")
     a = ap.parse_args()
-    d = asyncio.run(build(a.date))
-    print(json.dumps(d, indent=1, default=str) if a.json else render(d))
+    d = asyncio.run(build(a.date, with_exceptions=a.exceptions))
+    if a.json:
+        print(json.dumps(d, indent=1, default=str))
+    else:
+        print(render(d))
+        if a.exceptions:
+            e = d["exceptions"]
+            print("\n## Operational exceptions\n")
+            print(f"Anything to report: **{e['anythingToReport']}**. By type: {e['byType'] or 'none'}.")
+            print(f"Shared order-rate window: {e['rateLimit']['orderRateRejections']} rejections ({e['rateLimit']['ours']} in an EM book); busiest minute "
+                  f"{e['rateLimit']['busiestMinute']} with {e['rateLimit']['busiestMinuteOrders']} orders, cap {e['rateLimit']['capPerMinute']}.")
+            print(f"Recorder: {e['recorder'] or 'no captures'}; unscorable reasons: {e['unscorable'] or 'none'}.")
+            for it in e["items"]:
+                print(f"- {it['at']} {it['type']} book={it['book']} ours={it['ours']} {it['why']}")
     return 0
 
 

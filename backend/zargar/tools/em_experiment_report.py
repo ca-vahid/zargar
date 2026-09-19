@@ -57,7 +57,7 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
     armed = [dict(r) for r in await c.fetch("select a.run_id, a.symbol, a.status, r.trigger, r.tags, r.config->'promotion' promo from technique_armed a join technique_runs r on r.id=a.run_id "
                                             "where a.technique='enhanced_market' and a.portfolio_id=$1 and a.plan_for=$2", pid, date)]
     run_ids = [r["run_id"] for r in armed]
-    ev = [dict(r) for r in await c.fetch("select type, payload from events where aggregate_id = any($1::text[]) and ts >= $2 and ts < $3 and type = any($4::text[])", run_ids, a, b,
+    ev = [dict(r) for r in await c.fetch("select type, payload, aggregate_id from events where aggregate_id = any($1::text[]) and ts >= $2 and ts < $3 and type = any($4::text[])", run_ids, a, b,
                                          ["TechniquePlanTriggerFired", "TechniquePlanTriggerSkipped", "TechniquePlanPositionOpened", "TechniquePlanError", "TechniquePlanExit"])] if run_ids else []
     counts: dict = {}
     refusals: dict = {}
@@ -75,13 +75,92 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
         if e["type"] == "TechniquePlanExit":
             exits[str(p.get("kind"))] = exits.get(str(p.get("kind")), 0) + 1
     promoted = [r for r in armed if _j(r["promo"])]
+    # per UNDERLYING: what this book armed, entered, exited and refused - the cohort split is built from these
+    per_symbol: dict = {}
+    for r in armed:
+        per_symbol.setdefault(str(r["symbol"]), {"armed": 0, "fired": 0, "filled": 0, "refused": 0, "missingData": 0, "exits": {}, "net": 0.0, "fees": 0.0, "fills": 0})["armed"] += 1
+    by_run = {r["run_id"]: str(r["symbol"]) for r in armed}
+    for e in ev:
+        sym = by_run.get(e.get("aggregate_id") or "")
+        if not sym or sym not in per_symbol:
+            continue
+        p = _j(e["payload"]) or {}
+        cell = per_symbol[sym]
+        if e["type"] == "TechniquePlanTriggerFired":
+            cell["fired"] += 1
+        elif e["type"] == "TechniquePlanPositionOpened":
+            cell["filled"] += 1
+        elif e["type"] == "TechniquePlanTriggerSkipped":
+            cell["refused"] += 1
+            disp = str(((p.get("detail") or {}) if isinstance(p.get("detail"), dict) else {}).get("disposition") or "")
+            if disp.startswith("deferred") or disp == "policy_error":
+                cell["missingData"] += 1
+        elif e["type"] == "TechniquePlanExit":
+            cell["exits"][str(p.get("kind"))] = cell["exits"].get(str(p.get("kind")), 0) + 1
+    for sym, row in (exe.get("bySymbol") or {}).items():                  # realized money, mapped from the traded symbol to its UNDERLYING
+        under = _underlying(sym)
+        cell = per_symbol.setdefault(under, {"armed": 0, "fired": 0, "filled": 0, "refused": 0, "missingData": 0, "exits": {}, "net": 0.0, "fees": 0.0, "fills": 0})
+        cell["net"] = round(cell["net"] + float(row.get("net") or 0), 4)
+        cell["fees"] = round(cell["fees"] + float(row.get("fees") or 0), 4)
+        cell["fills"] += 1
     return {"portfolioId": pid, "execution": exe, "openExposure": [{"symbol": p["symbol"], "qty": p["qty"], "avgCost": p["avg_cost"]} for p in pos], "equity": dd,
             "capture": {k: cap.get(k) for k in ("status", "snapshots", "coverage", "realizedNetFinal", "peakDisplayedNet", "peakExecutableNet", "givebackVsExecutablePeak", "reconciliation")},
             "plans": {"armed": len(armed), "byOrigin": _count(r["trigger"] for r in armed), "promoted": len(promoted),
                       "promotedByVariant": _count((_j(r["promo"]) or {}).get("variant") for r in promoted)},
             "activity": {"fired": counts.get("TechniquePlanTriggerFired", 0), "entriesFilled": counts.get("TechniquePlanPositionOpened", 0),
                          "refusedOrSkipped": counts.get("TechniquePlanTriggerSkipped", 0), "refusalsByStage": refusals, "missingDataRefusals": missing, "misses": counts.get("TechniquePlanError", 0), "exitsByKind": exits},
-            "questionableFills": DISPUTED.get(date, [])}
+            "questionableFills": DISPUTED.get(date, []), "perSymbol": per_symbol}
+
+
+def _underlying(symbol: str) -> str:
+    from ..options.occ import parse
+    o = parse(symbol)
+    return (o.underlying if o else str(symbol)).upper()
+
+
+def cohorts(books: dict) -> dict:
+    """Split the session by symbol class: symbols BOTH books armed, and each book's own. A difference inside the common
+    cohort is the closest thing to a like-for-like comparison; the other two cohorts are trades one book never had."""
+    b, x = (books.get("baseline") or {}).get("perSymbol") or {}, (books.get("experiment") or {}).get("perSymbol") or {}
+    both = sorted(set(b) & set(x))
+    out = {}
+    for name, syms, side in (("common", both, None), ("baselineOnly", sorted(set(b) - set(x)), "baseline"), ("experimentOnly", sorted(set(x) - set(b)), "experiment")):
+        cell = {"symbols": len(syms), "names": syms[:40]}
+        for label, src in (("baseline", b), ("experiment", x)):
+            if side and side != label:
+                cell[label] = None
+                continue
+            rows = [src[s] for s in syms if s in src]
+            cell[label] = {"armed": sum(r["armed"] for r in rows), "fired": sum(r["fired"] for r in rows), "filled": sum(r["filled"] for r in rows),
+                           "refused": sum(r["refused"] for r in rows), "missingDataRefusals": sum(r["missingData"] for r in rows),
+                           "netAfterFees": round(sum(r["net"] for r in rows), 4), "fees": round(sum(r["fees"] for r in rows), 4),
+                           "exits": _merge(r["exits"] for r in rows)}
+        out[name] = cell
+    return out
+
+
+def _merge(dicts) -> dict:
+    out: dict = {}
+    for d in dicts:
+        for k, v in (d or {}).items():
+            out[k] = out.get(k, 0) + v
+    return out
+
+
+def exit_policy(books: dict) -> dict:
+    """Where the two books EXITED differently on the same symbol. The experiment's P-06 (`runner_protect`) is the policy
+    difference by construction; everything else is the production ladder, which both books share."""
+    b, x = (books.get("baseline") or {}).get("perSymbol") or {}, (books.get("experiment") or {}).get("perSymbol") or {}
+    rows = []
+    for sym in sorted(set(b) & set(x)):
+        eb, ex = b[sym].get("exits") or {}, x[sym].get("exits") or {}
+        if eb != ex:
+            rows.append({"symbol": sym, "baselineExits": eb, "experimentExits": ex,
+                         "p06": int(ex.get("runner_protect") or 0), "sameKinds": sorted(set(eb) & set(ex))})
+    p06 = {"experiment": sum(int((v.get("exits") or {}).get("runner_protect") or 0) for v in x.values()),
+           "baseline": sum(int((v.get("exits") or {}).get("runner_protect") or 0) for v in b.values())}
+    return {"p06RunnerProtectExits": p06, "differingSymbols": rows,
+            "note": "P-06 executes only in the experimental book; the baseline keeps the production ladder and records P-06 as an observation"}
 
 
 def _count(it) -> dict:
@@ -115,6 +194,8 @@ async def build(date: str) -> dict:
         cap = _unwrap(await c.fetchval("select value from settings where key='risk.max_orders_per_minute'"))
         out["sharedRateLimit"] = {"orderRateRejections": len(rate), "byBook": _count(rate), "busiestMinute": (str(busiest["m"]) if busiest else None),
                                   "busiestMinuteOrders": (int(busiest["n"]) if busiest else 0), "capPerMinute": cap}
+        out["cohorts"] = cohorts(out["books"])
+        out["exitPolicy"] = exit_policy(out["books"])
         out["modelCost"] = {"baseline": mc.summarize(mc.requests_from_runs(rows), table=(rates if isinstance(rates, dict) else {})),
                             "experiment": {"modelCalls": 0, "note": "deterministic preparation and promotion: zero model calls by construction"}}
     finally:
@@ -146,8 +227,29 @@ def render(d: dict) -> str:
             ("Capture unscorable reasons", ("capture", "coverage", "unscorableReasons")))
     for label, path in rows:
         L.append(f"| {label} | {g(b, *path)} | {g(x, *path)} |")
+    L += ["", "## Trades by cohort (trading money only - model cost is separate, below)", "",
+          "| Cohort | Symbols | Book | Armed | Fired | Filled | Refused | of which missing data | Net after fees | Fees | Exits |", "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|"]
+    for name, label in (("common", "Common symbols (both books armed)"), ("baselineOnly", "Baseline only"), ("experimentOnly", "Experiment only")):
+        cell = (d.get("cohorts") or {}).get(name) or {}
+        for who in ("baseline", "experiment"):
+            v = cell.get(who)
+            if v is None:
+                continue
+            L.append(f"| {label} | {cell.get('symbols')} | {who} | {v['armed']} | {v['fired']} | {v['filled']} | {v['refused']} | {v['missingDataRefusals']} | "
+                     f"{v['netAfterFees']} | {v['fees']} | {v['exits'] or '-'} |")
+    ep = d.get("exitPolicy") or {}
+    L += ["", "## Exit-policy differences", "",
+          f"P-06 `runner_protect` exits: experiment {ep.get('p06RunnerProtectExits', {}).get('experiment')}, baseline {ep.get('p06RunnerProtectExits', {}).get('baseline')} "
+          f"({ep.get('note')}).", ""]
+    if ep.get("differingSymbols"):
+        L += ["| Symbol | Baseline exits | Experiment exits | P-06 exits |", "|---|---|---|---:|"]
+        L += [f"| {r['symbol']} | {r['baselineExits'] or '-'} | {r['experimentExits'] or '-'} | {r['p06']} |" for r in ep["differingSymbols"][:40]]
+    else:
+        L += ["No common symbol exited differently in the two books this session."]
+    L += [""]
     mcb = (d.get("modelCost") or {}).get("baseline") or {}
-    L += ["", f"Model cost of preparing the baseline: estimated {g(mcb, 'estimated', 'usd')} USD at the current price card (an estimate, not an invoice; never subtracted from trading results); "
+    L += ["", "## Model cost (kept apart from trading P&L, never netted into it)", "",
+          f"Model cost of preparing the baseline: estimated {g(mcb, 'estimated', 'usd')} USD at the current price card (an estimate, not an invoice; never subtracted from trading results); "
               f"invoice-verified {g(mcb, 'invoiceVerified', 'usd')}; unknown requests {g(mcb, 'unknown', 'requests')}. Experiment: 0 model calls.", ""]
     rl = d.get("sharedRateLimit") or {}
     L += ["## Shared order-rate window (all desks, one engine)", "",

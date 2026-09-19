@@ -68,4 +68,23 @@ python -m zargar.tools.em_experiment_check  --date 2026-09-21      # two-book st
 python -m zargar.tools.em_experiment_report report --date 2026-09-21   # side-by-side session comparison
 ```
 
+Operational exceptions are checked three times during the session as well (`ZargarEmChecksExc1/2/3` at 10:22, 12:41 and
+14:52 ET, phase `exceptions`): halts, pauses, technique loss halts, arm refusals, order-rate rejections in either EM book,
+recorder drops, unscorable captures and RTH restarts. Same command shape:
+`... -Phase exceptions -Date 2026-09-21`, or `python -m zargar.tools.em_experiment_check --date 2026-09-21 --exceptions`.
+
+## 5. What the close report separates (2026-09-19 direction)
+
+`em_experiment_report` now splits the session into cohorts so like is compared with like, and keeps money apart from cost:
+
+| Block | Content |
+|---|---|
+| Common symbols | the symbols BOTH books armed (37 at preparation): per book armed / fired / filled / refused / missing-data refusals / net after fees / fees / exits |
+| Experiment only | the 42 symbols only the rules-only policy admitted |
+| Baseline only | the 1 symbol only the model review admitted (DIS) |
+| Missing-data refusals | first-sale `deferred_missing_evidence` / `deferred_error` and `policy_error`, counted apart from rule-based refusals |
+| Exit-policy differences | every common symbol whose exit kinds differ, and every P-06 `runner_protect` exit (the experiment's only exit-policy difference; the baseline keeps the production ladder) |
+| Trading P&L | net after fees, open exposure, drawdown, marked vs executable peaks and coverage |
+| Model cost | the baseline's estimate at the current price card, in its own section, never netted into P&L; the experiment makes no model calls |
+
 Rollback, unchanged: `POST /api/portfolios/07ef1e867cad4150bc81e072a8fd600a/pause`. Do not retune the bundle from one session.
