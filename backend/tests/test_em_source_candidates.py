@@ -146,8 +146,9 @@ def test_no_reset_fresh_confirmed_structure_is_required_and_pivots_are_unavailab
     too_early = rq.build_child(parent=parent, bars=rq.bars_upto(STRUCT, ms(9, 45)), thresholds=T)     # the 09:42 pivot high confirms on the 09:45 bar, closed 09:46
     assert too_early["disposition"] == "waiting"
     ok = rq.build_child(parent=parent, bars=rq.bars_upto(STRUCT, ms(9, 46)), thresholds=T)
-    assert ok["structure"]["break"]["price"] == 219.7 and ok["structure"]["protect"]["price"] == 217.9 and ok["structure"]["confirmedTs"] == ms(9, 45)
-    assert ok["eligibleFromTs"] == ms(9, 45) and ok["geometry"]["entry"] == 219.7 and ok["geometry"]["entry"] != parent["oldEntry"]
+    assert ok["structure"]["break"]["price"] == 219.7 and ok["structure"]["protect"]["price"] == 217.9 and ok["structure"]["confirmedBarTs"] == ms(9, 45)
+    assert ok["structure"]["confirmedCloseTs"] == ms(9, 46) == ok["structure"]["confirmedTs"], "a bar-START timestamp is not its availability time: the pivot is knowable at the confirming bar's CLOSE"
+    assert ok["eligibleFromTs"] == ms(9, 46) and ok["parentState"]["invalidatedKnownAtTs"] == ok["parentState"]["invalidatedTs"] + 60_000 and ok["geometry"]["entry"] == 219.7 and ok["geometry"]["entry"] != parent["oldEntry"]
     assert ok["geometry"]["stop"] < 217.9 and "fresh pivot" in ok["geometry"]["stopProvenance"] and ok["confirmation"]["sameCloseFill"] is False
     assert json.dumps(parent, sort_keys=True) == snap, "the parent (and its tracker state) is read-only"
     assert ok["origin"] == "scenario:scn-nvda" and ok["orderFree"] is True
@@ -207,13 +208,23 @@ def test_a_requalified_candidate_never_sees_bars_from_before_its_own_confirmatio
 
 
 # ------------------------------------------------------------------------------ candidate-pricing-v1 (IR-05)
-def _evidence(at, *, underlier=100.92, bid=2.95, ask=3.00, size=20, equity=10_000.0, cash=9_000.0, contract=True, age=400):
+def _constraints(at, **kw):
+    ok = [{"name": n, "passed": True, "detail": ""} for n in ("kill_switch", "book_halt", "book_pause", "quote_fresh", "cash_available", "option_premium_cap",
+                                                              "max_position_notional", "max_gross_exposure", "daily_loss_limit")]
+    return {"atMs": at, "riskVerdict": {"passed": True, "qty": 1.0, "checks": ok}, "tradingHalted": False, "symbolOpenOrWorking": 0, "maxOpenTrades": 1,
+            "reservedPremium": 0.0, **kw}
+
+
+def _evidence(at, *, underlier=100.92, bid=2.95, ask=3.00, size=20, equity=10_000.0, cash=9_000.0, contract=True, age=400, constraints="ok", csym="X260925C00101000",
+              cmeta=None):
     ev = {"underlier": {"symbol": "X", "bid": underlier - 0.02, "ask": underlier, "last": underlier, "quoteTs": at - age, "lastTs": at - age, "receivedTs": at - 50,
                         "source": "feed:HybridQuoteFeed", "halted": False},
           "contract": None, "contractQuote": None, "equity": equity, "cash": cash}
+    if constraints is not None:
+        ev["constraints"] = _constraints(at) if constraints == "ok" else constraints
     if contract:
-        sym = "X260925C00101000"
-        ev["contract"] = {"symbol": sym, "strike": 101.0, "expiry": "2026-09-25", "optionType": "call", "delta": 0.45}
+        sym = csym
+        ev["contract"] = {"symbol": sym, "strike": 101.0, "expiry": "2026-09-25", "optionType": "call", "delta": 0.45, **(cmeta or {})}
         ev["contractQuote"] = {"symbol": sym, "bid": bid, "ask": ask, "last": ask, "bidSize": size, "askSize": size, "sizeUnit": "contracts", "source": "opra", "quoteTs": at - age, "receivedTs": at - 50}
     return ev
 
@@ -230,12 +241,15 @@ def test_complete_contemporaneous_evidence_produces_evaluated_gates_and_the_iden
     done = scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 38),
                         pricing_evidence=lambda c: {"evidence": _evidence(at), "atMs": at})
     pg = done["pricingGates"]
-    assert done["disposition"] == "triggered" and pg["version"] == "candidate-pricing-v1" and pg["evaluatedAt"] == at and pg["orderFree"] is True
+    assert done["disposition"] == "triggered" and pg["version"] == "candidate-pricing-v2" and pg["evaluatedAt"] == at and pg["orderFree"] is True
     g = pg["gates"]
     assert g["contract"]["status"] == "pass" and g["quote"]["status"] == "pass" and g["spread"] == {"status": "pass", "spreadPct": 1.68, "max": 10.0}
-    assert g["sizing"]["status"] == "pass" and g["sizing"]["contracts"] == 1 and g["budget"] == {"status": "pass", "premium": 300.0, "failed": [], "why": None}
-    assert g["noChase"]["status"] == "pass" and g["noChase"]["rung"] == "tp2-full" and g["noChase"]["boundBasis"] == "ask" and pg["overall"] == "feasible"
-    assert g["noChase"]["admissionEntry"] == 100.92, "the executable-price no-chase is judged at the CURRENT ask, not at the saved entry"
+    assert g["sizing"]["status"] == "pass" and g["sizing"]["contracts"] == 1 and g["budget"]["status"] == "pass" and g["budget"]["premium"] == 300.0 and g["budget"]["freeCash"] == 9000.0
+    assert g["firstSaleR"]["status"] == "pass" and g["firstSaleR"]["rung"] == "tp2-full" and g["firstSaleR"]["boundBasis"] == "ask" and g["firstSaleR"]["admissionEntry"] == 100.92
+    assert g["chase"]["status"] == "pass" and g["chase"]["version"] == "candidate-chase-v1" and g["chase"]["boundBasis"] == "ask" and g["chase"]["ranR"] < 0.25
+    assert g["portfolio"]["status"] == "pass" and "daily_loss_limit" in g["portfolio"]["riskChecks"]
+    assert pg["overall"] == "feasible" and pg["completeness"] == "complete" and pg["missing"] == [] and set(g) == set(scp.PRICING_GATES)
+    assert pg["productionEquivalent"] is False and len(pg["deliberateDifferences"]) == 2, "a research stage says where it differs from production"
     missing = scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 38))
     assert missing["disposition"] == "triggered" and missing["pricingGates"]["overall"] == "unknown"
     assert {v["status"] for v in missing["pricingGates"]["gates"].values()} == {"unknown"}
@@ -251,15 +265,15 @@ def test_supplied_evidence_is_really_judged_wide_spread_run_away_budget_and_stal
     wide = run(bid=2.40, ask=3.00)
     assert wide["gates"]["spread"]["status"] == "fail" and wide["overall"] == "infeasible"
     ran = run(underlier=103.0)
-    assert ran["gates"]["noChase"]["status"] == "fail" and ran["gates"]["noChase"]["rAdmission"] < 3 and ran["overall"] == "infeasible", "the underlying ran: executable-price no-chase fails"
+    assert ran["gates"]["firstSaleR"]["status"] == "fail" and ran["gates"]["firstSaleR"]["rAdmission"] < 3 and ran["gates"]["chase"]["status"] == "fail" and ran["overall"] == "infeasible"
     small = run(equity=2_000.0)
     assert small["gates"]["sizing"]["status"] == "fail" and small["gates"]["sizing"]["contracts"] == 0 and small["gates"]["budget"]["status"] == "unknown"
     poor = run(cash=100.0)
-    assert poor["gates"]["budget"]["status"] == "fail" and poor["gates"]["budget"]["failed"] == ["cash on hand"]
+    assert poor["gates"]["budget"]["status"] == "fail" and poor["gates"]["budget"]["failed"] == ["cash on hand net of existing entry reservations"]
     stale = run(age=20_000)
-    assert stale["gates"]["quote"]["status"] == "fail" and "stale_quote" in stale["gates"]["quote"]["problems"] and stale["gates"]["noChase"]["status"] == "unknown"
+    assert stale["gates"]["quote"]["status"] == "fail" and "stale_quote" in stale["gates"]["quote"]["problems"] and stale["gates"]["firstSaleR"]["status"] == "unknown" and stale["gates"]["chase"]["status"] == "unknown"
     nocontract = run(contract=False)
-    assert nocontract["gates"]["contract"]["status"] == "unknown" and nocontract["gates"]["noChase"]["status"] == "unknown" and nocontract["overall"] == "unknown", "no contract = no quantity = unknown"
+    assert nocontract["gates"]["contract"]["status"] == "unknown" and nocontract["gates"]["firstSaleR"]["status"] == "unknown" and nocontract["overall"] == "unknown" and nocontract["completeness"] == "partial", "no contract = no quantity = unknown"
     late = scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 50),
                         pricing_evidence=lambda c: {"evidence": _evidence(ms(9, 45)), "atMs": ms(9, 45)})["pricingGates"]
     assert late["overall"] == "unknown" and "not contemporaneous" in late["why"], "evidence gathered long after the trigger is never back-filled"
@@ -273,3 +287,126 @@ def test_the_pricing_stage_cannot_arm_or_order_and_the_research_fetch_is_separat
     assert DEFAULTS["techniques.enhanced_market.source_candidates_chain_fetch"] is False and DEFAULTS["techniques.enhanced_market.source_candidates_observe"] is False
     g = inspect.getsource(rt_mod.gather_evidence)
     assert 'cboe_priority("background")' in g and "wait_for" in g and "CHAIN_KNOB" in g
+
+
+
+# ------------------------------------------------------------------------------ candidate-pricing-v2 (R2-02)
+def _price(at=None, **kw):
+    at = at or (ms(9, 37) + 5_000)
+    return scp.evaluate(_triggered(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 38),
+                        pricing_evidence=lambda c: {"evidence": _evidence(at, **kw), "atMs": at})["pricingGates"]
+
+
+def test_r2_02_a_contract_is_bound_to_its_candidate_by_identity_wrong_underlying_expired_and_conflicts_fail():
+    """The reviewers' reproduction: underlying WRONG, expiry 2026-01-01, a fresh MATCHING quote, enough cash - was `feasible`."""
+    wrong = _price(csym="WRONG260101C00101000", cmeta={"expiry": "2026-01-01"})
+    why = wrong["gates"]["contract"]["why"]
+    assert wrong["gates"]["contract"]["status"] == "fail" and "wrong underlying" in why and "expired contract" in why and wrong["overall"] == "infeasible"
+    assert wrong["gates"]["quote"]["status"] == "unknown", "a matching quote symbol alone binds nothing: nothing downstream is evaluated on a foreign contract"
+    assert "wrong right" in _price(csym="X260925P00101000", cmeta={"optionType": "put"})["gates"]["contract"]["why"]
+    assert "conflicting metadata: optionType" in _price(cmeta={"optionType": "put"})["gates"]["contract"]["why"]
+    assert "conflicting metadata: expiry" in _price(cmeta={"expiry": "2026-10-02"})["gates"]["contract"]["why"]
+    assert "conflicting metadata: strike" in _price(cmeta={"strike": 105.0})["gates"]["contract"]["why"]
+    norm = _price(cmeta={"optionType": None})
+    assert norm["gates"]["contract"]["status"] == "pass" and norm["gates"]["contract"]["optionType"] == "call", "a missing right in the metadata is READ from the OCC identity, never assumed"
+    unk = _price(csym="X1260925C00101000")
+    assert unk["gates"]["contract"]["status"] == "unknown" and unk["overall"] == "unknown", "a non-standard symbol: right, expiry and multiplier are unknown"
+    zero = int(dt.datetime(2026, 9, 25, 10, 45, tzinfo=NY).timestamp() * 1000)
+    c = {**_triggered(), "disposition": "triggered", "firedTs": zero - 65_000, "fillProxy": 100.9}
+    assert "0DTE after the production cut-off" in scp.pricing_gates(c, _evidence(zero), now_ms=zero)["gates"]["contract"]["why"]
+
+
+def test_r2_02_adequate_r_never_substitutes_for_a_chase_pass():
+    """The reviewers' reproduction: entry 100, ask 105, distant targets -> R stays high. It was `noChase: pass`."""
+    at = ms(9, 37) + 5_000
+    c = {**_triggered(), "disposition": "triggered", "firedTs": ms(9, 36), "fillProxy": 100.0, "geometry": {"entry": 100.0, "stop": 99.0, "targets": [120.0, 150.0, 160.0]}}
+    pg = scp.pricing_gates(c, _evidence(at, underlier=105.0), now_ms=at)
+    assert pg["gates"]["firstSaleR"]["status"] == "pass" and pg["gates"]["firstSaleR"]["rAdmission"] >= 3, "R is still adequate at the run-away price"
+    assert pg["gates"]["chase"]["status"] == "fail" and pg["gates"]["chase"]["ranR"] == 5.0 and pg["overall"] == "infeasible", "and the chase gate fails all the same"
+    short = {**c, "direction": "short", "geometry": {"entry": 100.0, "stop": 101.0, "targets": [80.0, 60.0, 50.0]}}
+    ev = _evidence(at, underlier=95.0, csym="X260925P00099000", cmeta={"optionType": "put", "strike": 99.0})
+    assert scp.pricing_gates(short, ev, now_ms=at)["gates"]["chase"]["status"] == "fail", "mirrored for puts: the BID ran below the entry"
+    only_print = _evidence(at)
+    only_print["underlier"].update({"bid": None, "ask": None})
+    g = scp.pricing_gates(c, only_print, now_ms=at)["gates"]["chase"]
+    assert g["status"] == "unknown" and "not an executable quote" in g["why"], "a print is never called an executable quote"
+
+
+def test_r2_02_portfolio_constraints_decide_feasibility_and_missing_constraints_are_partial_never_feasible():
+    at = ms(9, 37) + 5_000
+    assert _price()["overall"] == "feasible"
+    none = _price(constraints=None)
+    assert none["gates"]["portfolio"]["status"] == "unknown" and none["overall"] == "unknown" and none["completeness"] == "partial" and none["missing"] == ["budget", "portfolio"]
+    loss = _constraints(at, riskVerdict={"passed": False, "qty": 1.0, "checks": [{"name": "daily_loss_limit", "passed": False, "detail": "daily P&L -3.20% breaches -3.0% halt"}]})
+    out = _price(constraints=loss)
+    assert out["gates"]["portfolio"]["status"] == "fail" and "daily_loss_limit" in out["gates"]["portfolio"]["why"] and out["overall"] == "infeasible", "an exhausted day budget"
+    full = _price(constraints=_constraints(at, symbolOpenOrWorking=1))
+    assert full["gates"]["portfolio"]["status"] == "fail" and "no open-position slot" in full["gates"]["portfolio"]["why"]
+    expo = _constraints(at, riskVerdict={"passed": False, "qty": 1.0, "checks": [{"name": "max_gross_exposure", "passed": False, "detail": "gross 104% > 100%"}]})
+    assert "max_gross_exposure" in _price(constraints=expo)["gates"]["portfolio"]["why"]
+    assert _price(constraints=_constraints(at, tradingHalted="book halted: daily loss"))["gates"]["portfolio"]["status"] == "fail"
+    res = _price(cash=400.0, constraints=_constraints(at, reservedPremium=250.0))
+    assert res["gates"]["budget"]["status"] == "fail" and res["gates"]["budget"]["freeCash"] == 150.0, "cash already promised to a working entry is not spendable twice"
+    old = _price(constraints=_constraints(at - 60_000))
+    assert old["gates"]["portfolio"]["status"] == "unknown" and "fresh snapshot" in old["gates"]["portfolio"]["missing"], "constraints are snapshotted causally, not reused"
+    other_qty = _price(constraints=_constraints(at, riskVerdict={"passed": True, "qty": 3.0, "checks": []}))
+    assert other_qty["gates"]["portfolio"]["status"] == "unknown", "a verdict for a different quantity is not evidence for this one"
+
+
+# ------------------------------------------------------------------------------ final-completion goal section 3 (pure boundaries)
+def test_the_plan_at_birth_is_used_never_the_latest_plan_of_the_symbol():
+    iso = lambda h, m: dt.datetime(2026, 9, 18, h, m, tzinfo=NY).isoformat()               # noqa: E731
+    overnight, ingest, replan = ({"runId": r, "createdAt": iso(*t)} for r, t in (("overnight", (8, 0)), ("ingest", (9, 22)), ("replan", (10, 15))))
+    usable = ms(9, 20)
+    assert scp.birth_plan([overnight, ingest, replan], usable, ms(11, 0))[0]["runId"] == "overnight", "the newest plan AT the source's usable time"
+    assert scp.birth_plan([ingest, replan], usable, ms(11, 0)) == (ingest, "the first plan built after the source became usable"), "a later same-session re-plan never reinterprets the idea"
+    assert scp.birth_plan([replan], usable, ms(9, 40)) == (None, "no saved plan existed yet"), "a plan built after the evaluation time does not exist yet"
+    assert scp.birth_plan([replan, overnight], None, None)[0]["runId"] == "overnight"
+
+
+def test_irregular_bars_are_held_and_a_missing_minute_inside_the_structure_window_holds_the_child():
+    assert rq.bars_integrity(STRUCT) == {**rq.bars_integrity(STRUCT), "ok": True, "missingMinutes": 0}
+    dup = STRUCT[:5] + [STRUCT[4]] + STRUCT[5:]
+    ooo = STRUCT[:5] + [STRUCT[6], STRUCT[5]] + STRUCT[7:]
+    for bad, key in ((dup, "duplicates"), (ooo, "outOfOrder")):
+        integ = rq.bars_integrity(bad)
+        assert integ["ok"] is False and integ[key] >= 1
+        held = rq.build_child(parent=_parent(), bars=bad, thresholds=T)
+        assert held["disposition"] == "held_for_missing_evidence" and "not a clean minute series" in held["reason"] and "trigger" not in held
+    ok = rq.build_child(parent=_parent(), bars=STRUCT, thresholds=T)
+    assert ok["disposition"] in ("requalification_eligible", "refused", "held_for_missing_evidence") and ok.get("structure")
+    lo, hi = ok["structure"]["protect"]["index"], ok["structure"]["confirmedIndex"]
+    holed = STRUCT[:lo + 1] + STRUCT[lo + 2:]                                              # one minute vanishes between the protecting pivot and its confirmation
+    child = rq.build_child(parent=_parent(), bars=holed, thresholds=T)
+    assert rq.bars_integrity(holed)["missingMinutes"] == 1
+    assert child["disposition"] == "held_for_missing_evidence" and "missing inside the structure window" in child["reason"], "pivots across a hole are not trusted"
+    assert hi > lo
+
+
+def test_a_shortened_session_and_a_holiday_use_the_exchange_calendar():
+    close, why = scp.source_expiry_ts("2026-11-27", "0dte")                                # the day after Thanksgiving closes at 13:00 ET
+    assert dt.datetime.fromtimestamp(close / 1000, NY).strftime("%H:%M") == "13:00" and why == "source-session-expiry-v1"
+    morning, _ = scp.source_expiry_ts("2026-11-27", None)
+    assert dt.datetime.fromtimestamp(morning / 1000, NY).strftime("%H:%M") == "11:30"
+    assert scp.source_expiry_ts("2026-11-26", "0dte")[0] is None and "not a trading session" in scp.source_expiry_ts("2026-11-26", "0dte")[1]
+    assert dt.datetime.fromtimestamp(scp.source_expiry_ts("2026-09-18", "0dte")[0] / 1000, NY).strftime("%H:%M") == "16:00"
+
+
+def test_one_child_per_branch_survives_a_source_edit_and_a_terminal_candidate_is_never_re_decided():
+    p = _parent(branchKey="br1-abc")
+    assert rq.build_child(parent=p, bars=STRUCT, thresholds=T, existing_children={"br1-abc"})["reason"] == "one_requalified_candidate_per_branch_per_session", (
+        "an edit makes new scenario ids - it does not make a second branch")
+    # a stored TRIGGERED candidate: a later pass replays the bars differently (a corrected bar) - the first observation stands
+    first = scp.evaluate(_waiting(), MORNING, thresholds=T, profile=PROFILE, prev_close=99.5, upto_ts=ms(9, 38))
+    assert first["disposition"] == "triggered"
+    stored = {**first, "definition": scp.definition_of(_waiting()), "pricingGates": {"overall": "unknown", "evaluatedAt": None}}
+    same = scp._resume(stored, MORNING, ctx=(T, PROFILE, 99.5), upto_ts=ms(9, 45), pricing_evidence=None, pricing_rules=None)
+    assert same["disposition"] == "triggered" and same["firedTs"] == first["firedTs"] and same["fillProxy"] == first["fillProxy"] and same["frozen"] == "terminal"
+    assert "replayDisagreement" not in same and same["pricingGates"] == stored["pricingGates"], "pricing decided at the trigger is never recomputed on later evidence"
+    quiet = [Bar("X", "1m", b.ts, 99.5, 99.6, 99.4, 99.5, 100_000) for b in MORNING]          # the same minutes, now WITHOUT the break
+    changed = scp._resume(stored, quiet, ctx=(T, PROFILE, 99.5), upto_ts=ms(9, 45), pricing_evidence=None, pricing_rules=None)
+    assert changed["disposition"] == "triggered" and changed["firedTs"] == first["firedTs"] and changed["replayDisagreement"]["replayFiredTs"] is None
+    # a born, not yet terminal candidate is continued from its FROZEN definition, not from a rebuilt one
+    waiting = {**_waiting(), "definition": scp.definition_of(_waiting()), "disposition": "waiting"}
+    cont = scp._resume(waiting, MORNING, ctx=(T, PROFILE, 99.5), upto_ts=ms(9, 38), pricing_evidence=None, pricing_rules=None)
+    assert cont["disposition"] == "triggered" and cont["definition"] == waiting["definition"] and cont["trigger"] == _waiting()["trigger"]

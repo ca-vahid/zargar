@@ -31,7 +31,7 @@ export function EmReviewPanel() {
     setBusy(true); setErr(null);
     try {
       const d = tab === "source" ? await api.emSourceTable(date) : tab === "candidates" ? await api.emCandidates(date)
-        : tab === "firstsale" ? await api.emFirstSale(date) : tab === "profit" ? await api.emProfitCapture(date) : await api.emManifest();
+        : tab === "firstsale" ? await api.emFirstSale(date) : tab === "profit" ? { ...(await api.emProfitCapture(date)), modelCost: await api.emModelCost(date).catch(() => null) } : await api.emManifest();
       setData((prev) => ({ ...prev, [tab]: d }));
     } catch (e: any) { setErr(e.message ?? String(e)); } finally { setBusy(false); }
   }, [tab, date]);
@@ -111,7 +111,7 @@ function Candidates({ d }: { d: any }) {
         <td><span className={`status-pill ${pillFor(c.disposition)}`}>{words(c.disposition)}</span>{c.firedTs ? ` ${hhmm(c.firedTs)}` : ""}</td>
         <td title={c.reason ?? ""}>{(c.reason ?? "").slice(0, 70)}</td>
         <td>{c.outcomeProxy ? `${c.outcomeProxy} ${num(c.rProxy)}R (proxy)` : "—"}</td>
-        <td title={c.pricing ? Object.entries(c.pricing.gates ?? {}).map(([k, v]) => `${k}: ${v}`).join(" · ") : ""}>{c.pricing ? <span className={`status-pill ${c.pricing.overall === "feasible" ? "ok" : c.pricing.overall === "infeasible" ? "bad" : "wait"}`}>{c.pricing.overall}</span> : "—"}</td>
+        <td title={c.pricing ? Object.entries(c.pricing.gates ?? {}).map(([k, v]) => `${k}: ${v}`).join(" · ") : ""}>{c.pricing ? <><span className={`status-pill ${c.pricing.overall === "feasible" && c.pricing.completeness === "complete" ? "ok" : c.pricing.overall === "infeasible" ? "bad" : "wait"}`}>{c.pricing.overall === "unknown" && c.pricing.completeness === "partial" ? "partial" : c.pricing.overall}</span>{(c.pricing.missing ?? []).length > 0 && <span className="sub"> unknown: {c.pricing.missing.join(", ")}</span>}</> : "—"}</td>
         <td>{(c.baseline ?? []).map((b: any) => `${b.trigger} ${words(b.status)}`).join(", ") || "—"}</td>
       </tr>)}</tbody>
     </table></div>
@@ -140,17 +140,24 @@ function Profit({ d }: { d: any }) {
   return (<>
     <div className="sub" style={{ marginBottom: 6 }}>{d.note} Recorder: <b>{d.recorderOn ? "on" : "off"}</b>.</div>
     <div className="tq-table-wrap"><table className="tq-table tq-wf tq-stat"><tbody>
-      <tr><td>Realized (execution ledger, after commissions)</td><td>{num(e.net, 4)}</td><td>{e.fills ?? 0} fills · fees {num(e.fees)}{e.openAtCutoff?.length ? ` · open: ${e.openAtCutoff.join(", ")}` : ""}</td></tr>
-      <tr><td>Peak displayed net (marks)</td><td>{c.peakDisplayedNet ? num(c.peakDisplayedNet.value) : "unknown"}</td><td>{c.peakDisplayedNet ? hhmm(c.peakDisplayedNet.at) : "no capture"}</td></tr>
-      <tr><td>Peak executable net (covered, scorable only)</td><td>{c.peakExecutableNet ? num(c.peakExecutableNet.value) : "unknown"}</td><td>{c.peakExecutableNet ? hhmm(c.peakExecutableNet.at) : "no scorable snapshot"}</td></tr>
+      {c.status === "error_mixed_scope" && <tr><td colSpan={3} style={{ color: "var(--bad)" }}>Snapshots of more than one book or session were found — nothing is reduced.</td></tr>}
+      <tr><td>Realized (execution ledger, after commissions)</td><td>{e.complete === false ? "unknown" : num(e.net, 4)}</td><td>{e.fills ?? 0} fills · fees {e.complete === false ? "unknown" : num(e.fees)}{e.openAtCutoff?.length ? ` · open: ${e.openAtCutoff.join(", ")}` : ""}{e.unknownInstrument?.length ? ` · instrument identity unknown: ${e.unknownInstrument.length}` : ""}</td></tr>
+      <tr><td>Peak displayed net (marks)</td><td>{c.peakDisplayedNet ? num(c.peakDisplayedNet.value) : "unknown"}</td><td>{c.peakDisplayedNet ? `${hhmm(c.peakDisplayedNet.at)} · a mark, not a price anyone paid` : "no capture"}</td></tr>
+      <tr><td>Peak executable net (covered, scorable only)</td><td>{c.peakExecutableNet ? num(c.peakExecutableNet.value) : "unknown"}</td><td>{c.peakExecutableNet ? `${hhmm(c.peakExecutableNet.at)} · hypothetical liquidation estimate — no sale occurred` : "no scorable snapshot"}</td></tr>
       <tr><td>Giveback vs the executable peak</td><td>{c.givebackVsExecutablePeak != null ? num(c.givebackVsExecutablePeak) : "unknown"}</td><td>hypothetical estimate, not a fill</td></tr>
-      <tr><td>Coverage</td><td>{c.coverage ? `${c.coverage.scorable}/${c.snapshots}` : "0"}</td><td>{c.coverage ? `drops ${c.coverage.recorderDrops} · gaps ${c.coverage.gaps.length} · ${Object.entries(c.coverage.unscorableReasons ?? {}).map(([k, v]) => `${words(k)} ${v}`).join(", ") || "all scorable"}` : words(c.status)}</td></tr>
-      <tr><td>Reconciliation to fills</td><td>{words(c.reconciliation?.status ?? "—")}</td><td>{c.reconciliation?.difference != null ? `difference ${num(c.reconciliation.difference, 4)}` : ""}</td></tr>
+      <tr><td>Coverage</td><td>{c.coverage ? `${c.coverage.scorable}/${c.snapshots}` : "0"}</td><td>{c.coverage ? `recorder starts ${c.coverage.recorderInstances ?? 1} · drops ${c.coverage.recorderDrops} · gaps ${c.coverage.gaps.length} · revised by late fills ${(c.coverage.revisedByLateExecutions ?? []).length} · ${Object.entries(c.coverage.unscorableReasons ?? {}).map(([k, v]) => `${words(k)} ${v}`).join(", ") || "all scorable"}` : words(c.status)}</td></tr>
+      <tr><td>Reconciliation to fills</td><td><span className={`status-pill ${c.reconciliation?.status === "ok" ? "ok" : String(c.reconciliation?.status ?? "").startsWith("error") ? "bad" : "wait"}`}>{words(c.reconciliation?.status ?? "not reconciled")}</span></td><td>{c.reconciliation?.difference != null ? `difference ${num(c.reconciliation.difference, 4)}` : ""}{(c.reconciliation?.comparisonsUnavailable ?? []).length ? ` · not compared: ${c.reconciliation.comparisonsUnavailable.join(", ")}` : ""}</td></tr>
     </tbody></table></div>
     {(c.attributionAtExecutablePeak ?? []).length > 0 && <div className="tq-table-wrap" style={{ marginTop: 8 }}><table className="tq-table tq-wf">
-      <thead><tr><th>Position</th><th>Net at the executable peak</th><th>Final net</th><th>Giveback</th><th>Fees after the peak</th></tr></thead>
-      <tbody>{c.attributionAtExecutablePeak.map((a: any) => <tr key={a.tradeInstance}><td>{a.symbol}</td><td>{num(a.netAtPeak)}</td><td>{num(a.finalNet)}</td><td>{num(a.giveback)}</td><td>{num(a.feesAfterPeak)}</td></tr>)}</tbody>
+      <thead><tr><th>Trade</th><th>Net at the executable peak</th><th>Final net</th><th>Giveback</th><th>Fees after the peak</th></tr></thead>
+      <tbody>{c.attributionAtExecutablePeak.map((a: any) => <tr key={a.tradeInstance}><td title={`entry order ${a.tradeInstance}`}>{a.symbol}{a.trigger ? ` · ${a.trigger}` : ""}</td><td>{num(a.netAtPeak)}</td><td>{num(a.finalNet)}</td><td>{num(a.giveback)}</td><td>{num(a.feesAfterPeak)}</td></tr>)}</tbody>
     </table></div>}
+    {d.modelCost && <div className="tq-table-wrap" style={{ marginTop: 8 }}><table className="tq-table tq-wf tq-stat"><tbody>
+      <tr><td>Model cost of preparing this session — invoice-verified</td><td>{num(d.modelCost.cost?.invoiceVerified?.usd)}</td><td>no invoice is recorded by the app</td></tr>
+      <tr><td>Estimated at the current price card</td><td>{num(d.modelCost.cost?.estimated?.usd)}</td><td>{d.modelCost.cost?.estimated?.requests ?? 0} requests · an estimate, not an invoice · never subtracted from trading results</td></tr>
+      <tr><td>Unknown cost</td><td>{d.modelCost.cost?.unknown?.requests ?? 0} requests</td><td>{Object.entries(d.modelCost.cost?.unknown?.why ?? {}).map(([k, v]) => `${words(k)} ${v}`).join(", ") || "none"}</td></tr>
+      <tr><td>Subscription allocation</td><td>{num(d.modelCost.cost?.subscriptionAllocation?.usd)}</td><td>none declared</td></tr>
+    </tbody></table></div>}
   </>);
 }
 

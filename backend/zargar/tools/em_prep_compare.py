@@ -143,8 +143,8 @@ async def build_day(date: str, *, allow_yahoo: bool, pricing: list) -> dict:
         if not sheet:
             return {"date": date, "status": "no_prepared_sheet"}
         session = dt.date.fromisoformat(date)
-        ex = [dict(r) for r in await c.fetch("""select symbol, side, qty, price, commission, ts from executions where portfolio_id=$1
-            and ts >= to_timestamp($2/1000.0) and ts < to_timestamp($3/1000.0) order by ts""", EM_BOOK, _ms(session, 4, 0), _ms(session, 20, 0))]
+        ex = [dict(r) for r in await c.fetch("""select e.symbol, e.side, e.qty, e.price, e.commission, e.ts, o.sec_type from executions e join orders o on o.id = e.order_id
+            where e.portfolio_id=$1 and e.ts >= to_timestamp($2/1000.0) and e.ts < to_timestamp($3/1000.0) order by e.ts""", EM_BOOK, _ms(session, 4, 0), _ms(session, 20, 0))]
     finally:
         await c.close()
     d = await abl.run(sheet, date, allow_yahoo=allow_yahoo)
@@ -183,6 +183,7 @@ async def build_day(date: str, *, allow_yahoo: bool, pricing: list) -> dict:
             "baselineLiveFunnel": {k: d["baselineFunnel"][k] for k in ("liveFired", "liveRefusedBeforeOrder", "liveOrders", "liveFilled", "replayFired", "replayFilled")},
             "baselineLiveRows": d["baselineFunnel"]["rows"],
             "baselineActual": execution_net(ex), "disputedEvidence": DISPUTED.get(date, []),
+            "baselineActualSensitivity": _sensitivity(ex, date),
             "modelCost": mc.summarize(reqs, table=pricing), "deterministicModelCalls": 0}
 
 
@@ -191,6 +192,24 @@ def unwrap_rates(v) -> dict:
     if isinstance(v, dict) and isinstance(v.get("v"), dict):
         v = v["v"]
     return v if isinstance(v, dict) else {}
+
+
+DISPUTED_UNDERLYINGS = {"2026-09-17": ("ORCL",)}
+
+
+def _sensitivity(ex: list, date: str) -> dict | None:
+    """SENSITIVITY CLASS, not a correction: the booked result with the doubtful simulated fills set aside. The ledger is not
+    rewritten and no replacement price is invented - both numbers are shown."""
+    names = DISPUTED_UNDERLYINGS.get(date)
+    if not names:
+        return None
+    from ..options.occ import parse
+    def under(sym):
+        o = parse(sym)
+        return (o.underlying if o else str(sym)).upper()
+    kept = [r for r in ex if under(r["symbol"]) not in names]
+    return {"class": "excludes_disputed_simulated_fills", "excludedUnderlyings": list(names), "excludedFills": len(ex) - len(kept), "result": execution_net(kept),
+            "note": "the execution ledger stays as booked; this line only shows how much of the day rests on the disputed fills"}
 
 
 async def _runtime_rates() -> dict:
@@ -236,6 +255,10 @@ def render(days: list, manifest: dict) -> str:
     for d in days:
         for x in d.get("disputedEvidence") or []:
             L += ["", f"> DISPUTED EVIDENCE {d['date']}: {x}"]
+        sens = d.get("baselineActualSensitivity")
+        if sens:
+            L += [f"> Sensitivity ({sens['class']}, {', '.join(sens['excludedUnderlyings'])}; {sens['excludedFills']} fills set aside): booked net "
+                  f"{(d.get('baselineActual') or {}).get('net')} vs {sens['result']['net']} without them. {sens['note']}."]
     L += ["", "## What the model rejected (kept in the comparison)", "", "| Session | Rejected plans | Replay fills | Avoided losers | Forgone winners | Proxy sum R | Only deterministic selects | Only the model selects | Conditional-fix rescued |",
           "|---|---:|---:|---:|---:|---:|---|---|---|"]
     for d in days:

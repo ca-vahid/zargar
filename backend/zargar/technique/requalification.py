@@ -43,10 +43,28 @@ def child_id(parent_scenario_id: str, session: str) -> str:
     return "rq1-" + _h([VERSION, parent_scenario_id, session])[:20]
 
 
+BAR_MS = 60_000
+
+
+def bars_integrity(bars: list) -> dict:
+    """Is this a clean 1-minute series? Duplicate, out-of-order or misaligned bars make pivots meaningless (`ok: False` =
+    hold, never guess). Missing minutes are listed (thin names have them); a structure window that spans one is held."""
+    ts = [int(b.ts) for b in bars or []]
+    dup = len(ts) - len(set(ts))
+    ooo = sum(1 for a, b in zip(ts, ts[1:]) if b < a)
+    mis = sum(1 for t in ts if t % BAR_MS)
+    gaps = [{"after": a, "before": b, "missing": (b - a) // BAR_MS - 1} for a, b in zip(ts, ts[1:]) if b - a > BAR_MS]
+    return {"ok": not (dup or ooo or mis), "bars": len(ts), "duplicates": dup, "outOfOrder": ooo, "misaligned": mis,
+            "missingMinutes": sum(g["missing"] for g in gaps), "gaps": gaps[:20]}
+
+
 def fresh_structure(bars: list, *, direction: str, invalidated_ts: int, window: int) -> dict | None:
-    """The first fresh (pivot, pivot) pair formed strictly after the invalidation, with its causal confirmation index.
-    `bars` = the session's closed 1m bars seen SO FAR (causal: the caller never passes future bars)."""
-    after = [i for i, b in enumerate(bars) if int(b.ts) > int(invalidated_ts)]
+    """The first fresh (pivot, pivot) pair formed strictly after the invalidation, with its causal confirmation.
+    `bars` = the session's CLOSED 1m bars seen so far (the caller never passes future or still-forming bars).
+    TIME SEMANTICS: a bar's `ts` is its START. `invalidated_ts` is the START of the bar on which the baseline tracker died;
+    that fact is knowable at its CLOSE (`ts + 60 s`), so only bars that START at or after that close are "after". A pivot
+    at index i is confirmed by bar i + window and becomes KNOWABLE when that bar CLOSES: `confirmedCloseTs`."""
+    after = [i for i, b in enumerate(bars) if int(b.ts) >= int(invalidated_ts) + BAR_MS]
     if not after:
         return None
     start = after[0]
@@ -61,7 +79,9 @@ def fresh_structure(bars: list, *, direction: str, invalidated_ts: int, window: 
                 if ok:
                     return {"protect": {"index": a.index, "ts": a.ts, "price": a.price, "kind": a.kind, "confirmedIndex": a.index + window},
                             "break": {"index": b.index, "ts": b.ts, "price": b.price, "kind": b.kind, "confirmedIndex": b.index + window},
-                            "formedTs": b.ts, "confirmedIndex": b.index + window, "confirmedTs": int(bars[b.index + window].ts)}
+                            "formedTs": b.ts, "confirmedIndex": b.index + window, "confirmedBarTs": int(bars[b.index + window].ts),
+                            "confirmedCloseTs": int(bars[b.index + window].ts) + BAR_MS,
+                            "confirmedTs": int(bars[b.index + window].ts) + BAR_MS}      # = the close: when the structure became knowable
     return None
 
 
@@ -73,9 +93,16 @@ def build_child(*, parent: dict, bars: list, thresholds: Thresholds | None = Non
     cid = child_id(parent["scenarioId"], parent["session"])
     base = {"version": VERSION, "childId": cid, "parentScenarioId": parent["scenarioId"], "origin": f"scenario:{parent['scenarioId']}", "orderFree": True,
             "symbol": parent.get("symbol"), "direction": parent.get("direction"), "session": parent.get("session"),
-            "parentState": {"status": parent.get("invalidatedStatus"), "invalidatedTs": parent.get("invalidatedTs"), "untouched": True}}
-    if cid in set(existing_children or []):
+            "branchKey": parent.get("branchKey"),
+            "parentState": {"status": parent.get("invalidatedStatus"), "invalidatedTs": parent.get("invalidatedTs"),
+                            "invalidatedKnownAtTs": (int(parent["invalidatedTs"]) + BAR_MS if parent.get("invalidatedTs") is not None else None),
+                            "timeBasis": "invalidatedTs = START of the invalidating bar; known at its close", "untouched": True}}
+    if cid in set(existing_children or []) or (parent.get("branchKey") and parent.get("branchKey") in set(existing_children or [])):
         return {**base, "disposition": "refused", "reason": "one_requalified_candidate_per_branch_per_session"}
+    integ = bars_integrity(bars)
+    if not integ["ok"]:
+        return {**base, "disposition": "held_for_missing_evidence", "barsIntegrity": integ,
+                "reason": f"bars are not a clean minute series (duplicates {integ['duplicates']}, out of order {integ['outOfOrder']}, misaligned {integ['misaligned']}) - pivots unknown"}
     if parent.get("invalidatedStatus") not in TERMINAL_UNFIRED:
         return {**base, "disposition": "refused", "reason": "parent_not_invalidated"}
     direction = "short" if parent.get("direction") == "short" else "long"
@@ -86,6 +113,10 @@ def build_child(*, parent: dict, bars: list, thresholds: Thresholds | None = Non
         expired = parent.get("expiresTs") and last_ts >= int(parent["expiresTs"])
         return {**base, "disposition": ("expired" if expired else "waiting"),
                 "reason": "no fresh confirmed pivot structure after the invalidation (a rebound through the old entry is not structure)"}
+    hole = [g for g in integ["gaps"] if g["after"] >= int(parent["invalidatedTs"]) and g["before"] <= int(st["confirmedBarTs"])]
+    if hole:
+        return {**base, "disposition": "held_for_missing_evidence", "structure": st, "barsIntegrity": integ,
+                "reason": f"{sum(g['missing'] for g in hole)} minute(s) are missing inside the structure window - the pivots cannot be trusted"}
     if parent.get("expiresTs") and int(st["confirmedTs"]) >= int(parent["expiresTs"]):
         return {**base, "disposition": "expired", "reason": "fresh structure confirmed only after the source expiry - the source horizon is not extended",
                 "structure": st}

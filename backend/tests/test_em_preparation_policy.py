@@ -2,6 +2,7 @@
 "Conditional planning", "Deterministic prep" and "Authority". Fixture = the REAL overnight model reviews of the 09-18
 session (NVDA / META / MRNA / MU / AMD promote runs, captured read-only). Pure + one Postgres case for the resume
 ledger. Zero model calls anywhere in this file."""
+import asyncio
 import copy
 import inspect
 import json
@@ -170,7 +171,7 @@ def test_the_ingestion_path_keeps_its_baseline_branch_and_routes_the_proposed_po
     from zargar.technique import arming, ingest
     src = inspect.getsource(ingest.MethodIngestService.board_check)
     assert src.index('prep["preparationPolicy"] == "deterministic"') < src.index('elif self._get("ingest.auto_arm", False):'), "baseline branch intact after the policy branch"
-    assert "prep_select" in src and "supersedesModelVeto" in src and "validTriggers" in src
+    assert "prep_arm" in src and "source_hold=(hold or None)" in src and "supersedesModelVeto" in src and "validTriggers" in src
     rp = inspect.getsource(arming.PlanArmer.build_replacement_plan)
     assert 'origin="preopen_replan"' in rp and "prep_decide" in rp
 
@@ -273,3 +274,117 @@ async def test_no_cached_approval_survives_a_new_hold_a_correction_a_new_review_
         rows = (await s.execute(select(TechniquePrepDecision))).scalars().all()
     assert len(rows) == 6 and len({r.id for r in rows}) == 6
     await eng.dispose()
+
+
+# ------------------------------------------------------------------ final-completion goal section 4: ownership, identity, races
+def _prep_rig(sf, settings, runs):
+    async def get_run(rid):
+        return runs.get(rid)
+    return SimpleNamespace(engine=SimpleNamespace(sf=sf, settings=SimpleNamespace(get=lambda k, d=None: settings.get(k, d))), get_run=get_run)
+
+
+def _run(rid, plan, **cfg):
+    return {"id": rid, "symbol": "META", "asOf": 1, "trigger": "promote", "technique": "enhanced_market", "llm": {},
+            "config": {"barsAssetId": "bars-1", "thresholds": {"min_risk_reward": 3.0}, **cfg}, "result": {"plan": plan, "analysis": None}}
+
+
+def test_the_effective_plan_geometry_and_reference_price_are_part_of_the_decision_identity():
+    from zargar.technique import prep_service as ps
+    plan = FX["META"]["plan"]
+    a = ps.input_key_for(_run("r1", plan), DET, origin="batch")
+    assert a == ps.input_key_for(_run("r2", copy.deepcopy(plan)), DET, origin="batch"), "the same inputs are the same decision, whichever run carries them"
+    moved = copy.deepcopy(plan); moved["referencePrice"] = float(plan.get("referencePrice") or plan.get("lastClose") or 100.0) + 1.0
+    assert ps.input_key_for(_run("r1", moved), DET, origin="batch") != a, "a pre-open re-plan on another reference price is another decision (same bars, same symbol, same session)"
+    regeo = copy.deepcopy(plan); t = next(x for x in regeo["triggers"] if x.get("valid"))
+    t["stop"] = {**t["stop"], "price": float(t["stop"]["price"]) - 0.01} if isinstance(t.get("stop"), dict) else float(t["stop"]) - 0.01
+    assert ps.input_key_for(_run("r1", regeo), DET, origin="batch") != a, "changed geometry never reuses an approval"
+
+
+@pytest.mark.usefixtures("fresh_db")
+async def test_two_concurrent_workers_arm_one_candidate_once_and_a_restart_after_the_commit_does_not_arm_again():
+    from sqlalchemy import select
+    from tests.conftest import TEST_DB_URL
+    from zargar.db import make_engine, make_session_factory
+    from zargar.models import TechniqueArmed, TechniquePrepDecision, TechniqueRun
+    from zargar.technique import prep_service as ps
+    eng = make_engine(TEST_DB_URL); sf = make_session_factory(eng)
+    plan = FX["META"]["plan"]
+    runs = {"run-batch": _run("run-batch", plan), "run-ingest": {**_run("run-ingest", copy.deepcopy(plan)), "trigger": "ingest"}}   # ONE candidate reached by two paths
+    async with sf() as s:
+        for r in runs.values():
+            s.add(TechniqueRun(id=r["id"], symbol="META", technique="enhanced_market", status="done", trigger=r["trigger"], config=r["config"], result=r["result"]))
+        await s.commit()
+    settings = {"techniques.enhanced_market.preparation_policy": "deterministic"}
+    workers = [_prep_rig(sf, settings, runs), _prep_rig(sf, settings, runs)]            # two processes share ONLY the database
+    armed_calls = []
+
+    def arm_for(rid):
+        async def arm():
+            await asyncio.sleep(0.15)                                                   # the arm takes time: the race window is real
+            async with sf() as s:
+                s.add(TechniqueArmed(run_id=rid, symbol="META", plan_for=str(plan.get("planFor") or "")[:10], portfolio_id="book", mode="auto", status="armed"))
+                await s.commit()
+            armed_calls.append(rid)
+            return {"runId": rid}
+        return arm
+    a, b = await asyncio.gather(ps.prep_arm(workers[0], "run-batch", arm=arm_for("run-batch"), origin="batch"),
+                                ps.prep_arm(workers[1], "run-ingest", arm=arm_for("run-ingest"), origin="ingest"))
+    assert sorted([a["armed"], b["armed"]]) == [False, True] and len(armed_calls) == 1, "in-memory read-then-arm is not a cross-worker guarantee; the database lock is"
+    loser = a if not a["armed"] else b
+    assert loser["why"] == "duplicate_of_armed_candidate" and loser["armedRunId"] == armed_calls[0]
+    # a restart AFTER the commit but BEFORE the acknowledgement: a fresh worker retries the same arm and finds the committed row
+    again = await ps.prep_arm(_prep_rig(sf, settings, runs), armed_calls[0], arm=arm_for(armed_calls[0]), origin="batch")
+    assert again == {**again, "armed": False, "why": "already_armed"} and len(armed_calls) == 1, "the stable arm identity (the run id) is never armed twice"
+    # the decision ledger under a unique-key race: both callers get the SAME decision, one row
+    fresh = {"run-x": _run("run-x", plan, barsAssetId="bars-race")}
+    d1, d2 = await asyncio.gather(*(ps.prep_decide(_prep_rig(sf, settings, fresh), "run-x", persist=True, origin="batch") for _ in range(2)))
+    async with sf() as s:
+        rows = (await s.execute(select(TechniquePrepDecision).where(TechniquePrepDecision.id == d1["inputKey"]))).scalars().all()
+    assert d1["inputKey"] == d2["inputKey"] and d1["decisionHash"] == d2["decisionHash"] and len(rows) == 1
+    held = await ps.prep_arm(_prep_rig(sf, settings, fresh), "run-x", arm=arm_for("run-x"), origin="ingest", source_hold=["conflict: evidence names MU"], source_ids=["scn-1"])
+    assert held["armed"] is False and held["why"] == "held_for_resolution" and "run-x" not in armed_calls, "a hold supplied by the REAL caller reaches the owner and stops the arm"
+    await eng.dispose()
+
+
+async def test_manual_and_batch_arms_pass_the_same_owner_under_the_proposed_policy_and_baseline_runs_none_of_it():
+    from zargar.technique import prep_service as ps
+    from zargar.technique.service import TechniqueService
+    plan = FX["META"]["plan"]
+    bad = copy.deepcopy(plan)
+    for t in bad["triggers"]:
+        t["valid"] = False
+    runs = {"good": _run("good", plan), "bad": _run("bad", bad)}
+    seen, armed = [], []
+
+    async def fake_prep_arm(svc, run_id, *, arm, run=None, **kw):
+        seen.append(run_id)
+        d = pp.decide(symbol="META", plan=run["result"]["plan"], analysis=None, policy=DET, origin="manual", run_id=run_id)
+        return {"armed": True, "why": None, "decision": d, "result": await arm()} if d["disposition"] == "eligible" else {"armed": False, "why": d["disposition"], "decision": d}
+
+    async def fake_decide(svc, run_id, **kw):
+        return {"disposition": "refused", "inputKey": "k-" + run_id}
+
+    async def arm(run_id, config, authorize=None):
+        armed.append((run_id, config.get("prepOverride")))
+        return {"runId": run_id}
+
+    async def get_run(rid):
+        return runs[rid]
+    mode = ["deterministic"]
+    svc = SimpleNamespace(prep_policy=lambda: {"preparationPolicy": mode[0]}, get_run=get_run, option_liquidity=lambda s: None, armer=SimpleNamespace(arm=arm),
+                          engine=SimpleNamespace(settings=SimpleNamespace(get=lambda k, d=None: d)))
+    svc.arm_plan = lambda rid, cfg=None, **kw: TechniqueService.arm_plan(svc, rid, cfg, **kw)
+    real = (ps.prep_arm, ps.prep_decide)
+    ps.prep_arm, ps.prep_decide = fake_prep_arm, fake_decide
+    try:
+        assert (await svc.arm_plan("good", {}))["runId"] == "good" and seen == ["good"] and armed == [("good", None)]
+        with pytest.raises(ValueError, match="preparation policy: not armed"):
+            await svc.arm_plan("bad", {})
+        assert armed == [("good", None)], "an ineligible plan is not armed through the manual door either"
+        await svc.arm_plan("bad", {"prepOverride": True})
+        assert armed[-1] == ("bad", {"by": "manual", "disposition": "refused", "inputKey": "k-bad"}), "a human override is explicit and recorded, never silent"
+        mode[0] = "baseline"; seen.clear()
+        await svc.arm_plan("bad", {})
+        assert seen == [] and armed[-1] == ("bad", None), "baseline: today's behaviour, the owner is not consulted"
+    finally:
+        ps.prep_arm, ps.prep_decide = real

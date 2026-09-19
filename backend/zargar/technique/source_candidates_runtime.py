@@ -18,9 +18,10 @@ import logging
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 from ..marketstructure.outcome import rows_to_bars
-from ..models import TechniqueRun, TechniqueSourceArtifact, TechniqueSourceCandidate
+from ..models import TechniqueRun, TechniqueSourceArtifact, TechniqueSourceCandidate, TechniqueSourceRevision
 from . import source_candidate_policy as scp
 
 log = logging.getLogger(__name__)
@@ -85,22 +86,52 @@ async def plan_context(svc, run: dict) -> tuple:
     return out
 
 
-async def load_inputs(svc, session_day: str) -> dict:
+async def authoritative_payloads(session, *, since: dt.datetime, as_of: dt.datetime) -> tuple[list, dict]:
+    """The scenario payloads that are AUTHORITATIVE as of `as_of`, one per source message:
+      - the message's CURRENT revision = the highest revision RECEIVED by `as_of` (an edit, a correction or a delete that
+        arrives later does not exist yet - so a replay after later revisions reproduces what was knowable then)
+      - a deleted (tombstoned) message has NO actionable scenario
+      - only artifacts OF that current revision count, the newest first (a reviewed correction supersedes its base); an older
+        revision's artifact is never independently actionable, even when the new revision has no scenarios yet
+    Returns (payloads, withdrawn) where withdrawn = {scenarioId: reason} for every scenario of a superseded or deleted
+    revision - the caller closes their FUTURE research eligibility and touches nothing else."""
+    arts = (await session.execute(select(TechniqueSourceArtifact).where(TechniqueSourceArtifact.kind == "scenarios", TechniqueSourceArtifact.completed_at >= since,
+                                                                        TechniqueSourceArtifact.completed_at <= as_of)
+                                  .order_by(TechniqueSourceArtifact.completed_at, TechniqueSourceArtifact.created_at))).scalars().all()
+    by_note: dict = {}
+    for art in arts:
+        by_note.setdefault(art.note_id, []).append(art)
+    payloads, withdrawn = [], {}
+    for note_id, mine in by_note.items():
+        cur = (await session.execute(select(TechniqueSourceRevision).where(TechniqueSourceRevision.note_id == note_id, TechniqueSourceRevision.received_at <= as_of)
+                                     .order_by(TechniqueSourceRevision.revision.desc()).limit(1))).scalars().first()
+        current = [x for x in mine if cur is not None and x.revision_id == cur.id and not cur.deleted]
+        chosen = current[-1] if current else None
+        why = ("source deleted" if (cur is not None and cur.deleted) else "superseded by a newer source revision" if cur is not None else "no revision on record")
+        for art in mine:
+            if art is chosen:
+                continue
+            for sc in (art.payload or {}).get("scenarios") or []:
+                withdrawn[str(sc.get("scenarioId"))] = (why if art.revision_id != getattr(cur, "id", None) or (cur is not None and cur.deleted) else "superseded by a reviewed correction")
+        if chosen is not None:
+            payloads.append(dict(chosen.payload or {}))
+            for sc in (chosen.payload or {}).get("scenarios") or []:
+                withdrawn.pop(str(sc.get("scenarioId")), None)
+    return payloads, withdrawn
+
+
+async def load_inputs(svc, session_day: str, as_of_ms: int | None = None) -> dict:
     day0 = dt.datetime.fromisoformat(session_day).replace(tzinfo=ET)
     o_ms, c_ms = int(day0.replace(hour=9, minute=30).timestamp() * 1000), int(day0.replace(hour=16).timestamp() * 1000)
+    as_of = dt.datetime.fromtimestamp(as_of_ms / 1000.0, dt.timezone.utc) if as_of_ms is not None else dt.datetime.now(dt.timezone.utc)
     async with svc.engine.sf() as s:
-        arts = (await s.execute(select(TechniqueSourceArtifact).where(TechniqueSourceArtifact.kind == "scenarios",
-                                                                      TechniqueSourceArtifact.completed_at >= day0.astimezone(dt.timezone.utc) - dt.timedelta(hours=6))
-                                .order_by(TechniqueSourceArtifact.completed_at))).scalars().all()
-        newest: dict = {}
-        for a in arts:                                     # newest artifact per revision wins (a correction supersedes its base)
-            newest[a.revision_id] = a
-        payloads = [dict(a.payload or {}) for a in newest.values()]
+        payloads, withdrawn = await authoritative_payloads(s, since=day0.astimezone(dt.timezone.utc) - dt.timedelta(hours=6), as_of=as_of)
         symbols = sorted({(sc.get("symbol") or {}).get("resolved") for p in payloads for sc in p.get("scenarios") or []} - {None})
         plans, bars = {}, {}
         for sym in symbols:
             runs = (await s.execute(select(TechniqueRun).where(TechniqueRun.symbol == sym, TechniqueRun.technique == "enhanced_market", TechniqueRun.status == "done",
-                                                               TechniqueRun.created_at >= day0.astimezone(dt.timezone.utc) - dt.timedelta(hours=20))
+                                                               TechniqueRun.created_at >= day0.astimezone(dt.timezone.utc) - dt.timedelta(hours=20),
+                                                               TechniqueRun.created_at <= as_of)
                                     .order_by(TechniqueRun.created_at))).scalars().all()
             plans[sym] = [{"runId": r.id, "symbol": sym, "createdAt": r.created_at.isoformat(), "trigger": r.trigger, "plan": (r.result or {}).get("plan") or {},
                            "config": r.config or {}}
@@ -108,12 +139,11 @@ async def load_inputs(svc, session_day: str) -> dict:
             rows = (await s.execute(text("select ts, open, high, low, close, volume from bars where symbol=:s and tf='1m' and ts >= :a and ts < :b order by ts"),
                                     {"s": sym, "a": o_ms, "b": c_ms})).mappings().all()
             bars[sym] = rows_to_bars(sym, "1m", [[r["ts"], r["open"], r["high"], r["low"], r["close"], r["volume"]] for r in rows])
-    ctx = {}
+    ctx_run = {}
     for sym, pls in plans.items():
-        if pls:
-            ctx[sym] = await plan_context(svc, pls[-1])
-    return {"payloads": payloads, "plans": plans, "bars": bars,
-            "thresholds": {k: v[0] for k, v in ctx.items()}, "profiles": {k: v[1] for k, v in ctx.items()}, "prevClose": {k: v[2] for k, v in ctx.items()}}
+        for pl in pls:                                     # EVERY saved plan keeps its OWN thresholds / profile / previous close (cached per immutable run)
+            ctx_run[pl["runId"]] = await plan_context(svc, pl)
+    return {"payloads": payloads, "withdrawn": withdrawn, "plans": plans, "bars": bars, "contextByRun": ctx_run}
 
 
 CHAIN_KNOB = "techniques.enhanced_market.source_candidates_chain_fetch"
@@ -130,10 +160,66 @@ def pricing_rules(svc, now_ms: int) -> dict:
             "singleExit": str(g("technique.arm.single_contract_exit", "tp2") or "tp2"),
             "feePerContract": float(g("options.fee_per_contract", 0.99) or 0.0) + float(g("sim.reg_fee_per_contract", 0.05) or 0.0),
             "maxQuoteAgeMs": int(float(g("risk.stale_quote_seconds", 10) or 10) * 1000),
-            "fridayMult": (float(g("technique.arm.friday_size_mult", 0.5) or 1.0) if friday else 1.0)}
+            "fridayMult": (float(g("technique.arm.friday_size_mult", 0.5) or 1.0) if friday else 1.0),
+            "avoid0dteAfterMin": _hhmm(g("technique.arm.avoid_0dte_after", "10:30"), 630)}
 
 
-async def gather_evidence(svc, cand: dict, now_ms: int) -> dict:
+def _hhmm(v, default: int) -> int:
+    try:
+        hh, mm = (int(x) for x in str(v).split(":"))
+        return hh * 60 + mm
+    except Exception:                                      # noqa: BLE001
+        return default
+
+
+async def portfolio_constraints(svc, cand: dict, contract: dict | None, contract_quote: dict | None, equity, rules: dict, now_ms: int) -> dict:
+    """The book's CURRENT constraints for this candidate, snapshotted at the evaluation - never an order, never a row:
+      riskVerdict          `RiskGate.evaluate` itself (the production function: kill switch, book halt / pause, daily-loss
+                           limit, exposure and position caps, premium caps, cash) on a DRY intent for the sized quantity.
+                           It reads caches only; `OrderManager.place` is never called, so no order, journal or budget entry exists
+      tradingHalted        `engine.trading_halted(book)` (all four halt scopes)
+      symbolOpenOrWorking  EM trades open or working on the candidate's underlying / maxOpenTrades (the per-plan slot rule)
+      reservedPremium      premium of EM entry orders still working (cash the book has not yet given up)
+    Anything that cannot be read is None: the pure stage reports it as unknown."""
+    eng = svc.engine
+    out = {"atMs": int(now_ms), "riskVerdict": None, "tradingHalted": None, "symbolOpenOrWorking": None, "maxOpenTrades": None, "reservedPremium": None}
+    pid = str(eng.settings.get("techniques.enhanced_market.default_portfolio", "") or eng.settings.get("technique.arm.default_portfolio", "") or "")
+    if not pid:
+        return out
+    with contextlib.suppress(Exception):
+        out["tradingHalted"] = eng.trading_halted(pid) or False
+    armer = getattr(svc, "armer", None)
+    with contextlib.suppress(Exception):
+        n, reserved = 0, 0.0
+        for ap in list(getattr(armer, "_armed", {}).values()):
+            if str(ap.config.portfolio_id) != pid:
+                continue
+            for tr in ap.trades.values():
+                live = str(getattr(tr, "status", "")) in ("open", "working", "pending", "submitting")
+                if live and ap.symbol == cand.get("symbol"):
+                    n += 1
+                if str(getattr(tr, "status", "")) in ("working", "pending", "submitting"):
+                    reserved += float(getattr(tr, "qty", 0) or 0) * float(getattr(tr, "limit_price", 0) or getattr(tr, "last_price", 0) or 0) * float(getattr(tr, "multiplier", 1.0) or 1.0)
+        out["symbolOpenOrWorking"], out["reservedPremium"] = n, round(reserved, 2)
+        out["maxOpenTrades"] = int(armer.rt("max_open_trades", 1) or 1)
+    ask = (contract_quote or {}).get("ask")
+    if contract and contract.get("symbol") and ask and equity is not None:
+        try:
+            from types import SimpleNamespace
+            from ..orders import OrderIntent
+            n = scp.size_contracts(equity=float(equity), ask=float(ask), rules=rules)["contracts"]
+            if n >= 1:
+                book = eng.positions.portfolio(pid) or {}
+                intent = OrderIntent(portfolio_id=pid, symbol=str(contract["symbol"]), sec_type="OPT", side="BUY", qty=float(n), order_type="LMT",
+                                     limit_price=round(float(ask), 2), dry_run=True, source="technique", technique_id="enhanced_market")
+                verdict = await asyncio.wait_for(eng.risk.evaluate(intent, SimpleNamespace(kind=book.get("kind"), cash=book.get("cash"))), timeout=2.0)
+                out["riskVerdict"] = {"passed": bool(verdict.passed), "qty": float(n), "checks": [c.to_dict() for c in verdict.checks]}
+        except Exception as exc:                           # noqa: BLE001 - unknown stays unknown
+            out["riskError"] = f"{type(exc).__name__}: {exc}"[:160]
+    return out
+
+
+async def gather_evidence(svc, cand: dict, now_ms: int, rules: dict | None = None) -> dict:
     """CONTEMPORANEOUS evidence for one newly triggered candidate, on the candidates' own task (never an entry or exit
     path). Cached quotes only by default; a contract is looked up ONLY when `source_candidates_chain_fetch` is on - one
     BACKGROUND-priority chain read (it stands down during a provider cooldown and is never retried) plus one bounded NBBO
@@ -169,6 +255,8 @@ async def gather_evidence(svc, cand: dict, now_ms: int) -> dict:
                 ev["contractQuote"] = quote_evidence(eng.quotes.get(contract["symbol"]), symbol=contract["symbol"], is_option=True, feed=None)
         except Exception as exc:                           # noqa: BLE001
             ev["chainError"] = f"{type(exc).__name__}: {exc}"[:160]
+    ev["constraints"] = await portfolio_constraints(svc, cand, ev.get("contract"), ev.get("contractQuote"), ev.get("equity"), rules or pricing_rules(svc, now_ms), now_ms)
+    ev["observedAtMs"] = int(now_ms)                       # evidence is evidence for ITS observation time - never for an earlier instant
     return ev
 
 
@@ -187,7 +275,8 @@ async def attach_pricing(svc, cands: list, stored: dict, now_ms: int) -> None:
         age = int(now_ms) - (int(c["firedTs"]) + 60_000)
         if 0 <= age <= EVIDENCE_WINDOW_MS:
             rules = rules or pricing_rules(svc, now_ms)
-            c["pricingGates"] = scp.pricing_gates(c, await gather_evidence(svc, c, now_ms), now_ms=now_ms, rules=rules)
+            c["pricingGates"] = scp.pricing_gates(c, await gather_evidence(svc, c, now_ms, rules), now_ms=now_ms, rules=rules)
+            c["pricingGates"]["observedAfterTriggerMs"] = age      # how long after the confirming close this evidence was observed
         else:
             c["pricingGates"] = {**scp.pricing_gates(c, None), "why": "the trigger was not observed within the evidence window - nothing is back-filled"}
 
@@ -200,16 +289,41 @@ async def tick(svc, now_ms: int) -> dict:
     if now.weekday() >= 5 or not ((9, 30) <= (now.hour, now.minute) < (16, 5)):
         return {"enabled": True, "rth": False}
     session_day = now.date().isoformat()
-    inp = await load_inputs(svc, session_day)
-    cands = scp.evaluate_session(payloads=inp["payloads"], plans_by_symbol=inp["plans"], bars_by_symbol=inp["bars"],
-                                 baseline_by_symbol=baseline_states(svc.armer), session=session_day, upto_ts=now_ms,
-                                 thresholds_by_symbol=inp["thresholds"], profiles_by_symbol=inp["profiles"],
-                                 prev_close_by_symbol=inp["prevClose"])[:MAX_CANDIDATES]
+    inp = await load_inputs(svc, session_day, as_of_ms=now_ms)
     async with svc.engine.sf() as s:
         rows = (await s.execute(select(TechniqueSourceCandidate).where(TechniqueSourceCandidate.session == session_day))).scalars().all()
-    await attach_pricing(svc, cands, {r.id: dict(r.payload or {}) for r in rows}, now_ms)
+    stored = {r.id: dict(r.payload or {}) for r in rows}
+    cands = scp.evaluate_session(payloads=inp["payloads"], plans_by_symbol=inp["plans"], bars_by_symbol=inp["bars"],
+                                 baseline_by_symbol=baseline_states(svc.armer), session=session_day, upto_ts=now_ms,
+                                 context_by_run=inp["contextByRun"], frozen=stored)[:MAX_CANDIDATES]
+    await attach_pricing(svc, cands, stored, now_ms)
     changed = await persist(svc, session_day, cands, now_ms)
-    return {"enabled": True, "rth": True, "candidates": len(cands), "changed": changed}
+    closed = await withdraw(svc, session_day, inp["withdrawn"], now_ms)
+    return {"enabled": True, "rth": True, "candidates": len(cands), "changed": changed, "withdrawn": closed}
+
+
+async def withdraw(svc, session_day: str, withdrawn: dict, now_ms: int) -> int:
+    """A source that was edited, corrected or deleted loses its FUTURE research eligibility: its candidates that are not yet
+    terminal become `source_withdrawn`. A terminal candidate (it triggered, was refused, expired...) is HISTORY and is kept
+    untouched. Nothing here reaches a production plan, position or order."""
+    if not withdrawn:
+        return 0
+    n = 0
+    now = dt.datetime.fromtimestamp(now_ms / 1000.0, dt.timezone.utc)
+    async with svc.engine.sf() as s:
+        rows = (await s.execute(select(TechniqueSourceCandidate).where(TechniqueSourceCandidate.session == session_day,
+                                                                       TechniqueSourceCandidate.scenario_id.in_(list(withdrawn))).with_for_update())).scalars().all()
+        for row in rows:
+            if row.disposition in scp.TERMINAL_DISPOSITIONS:
+                continue
+            p = dict(row.payload or {})
+            hist = list(p.get("history") or []) + [{"at": now_ms, "disposition": "source_withdrawn"}]
+            p.update({"disposition": "source_withdrawn", "reason": withdrawn.get(row.scenario_id), "withdrawnAt": now_ms, "history": hist})
+            row.payload, row.disposition, row.updated_at = p, "source_withdrawn", now
+            row.state_hash = _h({"withdrawn": now_ms, "id": row.id})
+            n += 1
+        await s.commit()
+    return n
 
 
 async def persist(svc, session_day: str, cands: list, now_ms: int) -> int:
@@ -225,11 +339,34 @@ async def persist(svc, session_day: str, cands: list, now_ms: int) -> int:
                      "pricedAt": (slim.get("pricingGates") or {}).get("evaluatedAt")})   # never the bar counter: a quiet minute rewrites nothing
             row = await s.get(TechniqueSourceCandidate, cid, with_for_update=True)
             if row is None:
-                s.add(TechniqueSourceCandidate(id=cid, session=session_day, symbol=str(c.get("symbol") or ""), scenario_id=str(c.get("scenarioId") or c.get("parentScenarioId") or ""),
-                                               variant=str(c.get("variant") or ""), disposition=str(c.get("disposition") or ""), state_hash=sh,
-                                               payload={**slim, "history": [{"at": now_ms, "disposition": c.get("disposition")}]}, created_at=now, updated_at=now))
-                changed += 1
-            elif row.state_hash != sh:
+                try:
+                    async with s.begin_nested():           # two workers may create the same candidate: the second insert is the SAME observation
+                        s.add(TechniqueSourceCandidate(id=cid, session=session_day, symbol=str(c.get("symbol") or ""), scenario_id=str(c.get("scenarioId") or c.get("parentScenarioId") or ""),
+                                                       variant=str(c.get("variant") or ""), disposition=str(c.get("disposition") or ""), state_hash=sh,
+                                                       payload={**slim, "history": [{"at": now_ms, "disposition": c.get("disposition")}]}, created_at=now, updated_at=now))
+                        await s.flush()
+                    changed += 1
+                    continue
+                except IntegrityError:
+                    row = await s.get(TechniqueSourceCandidate, cid, with_for_update=True)
+                    if row is None:
+                        raise
+            prior = dict(row.payload or {})
+            if row.disposition in scp.TERMINAL_DISPOSITIONS:
+                # a terminal candidate is never re-decided; only the after-the-fact outcome proxy may be re-scored
+                upd = {k: slim[k] for k in scp.OUTCOME_KEYS + ("replayDisagreement",) if k in slim and slim.get(k) != prior.get(k)}
+                if upd and slim.get("disposition") == row.disposition:
+                    row.payload, row.updated_at = {**prior, **upd}, now
+                    changed += 1
+                continue
+            if prior.get("definition") and (slim.get("definition") or {}).get("definitionHash") != (prior["definition"] or {}).get("definitionHash"):
+                # the FIRST definition stands: a later tick / restart / re-plan cannot move the stop, the targets or the entry
+                slim = {**slim, **{k: v for k, v in prior["definition"].items() if k != "definitionHash"}, "definition": prior["definition"],
+                        "reinterpretationIgnored": {"at": now_ms, "offeredHash": (slim.get("definition") or {}).get("definitionHash")}}
+                sh = _h({**{k: slim.get(k) for k in ("disposition", "reason", "firedTs", "geometry", "structure")}, "pricing": (slim.get("pricingGates") or {}).get("overall"),
+                         "pricedAt": (slim.get("pricingGates") or {}).get("evaluatedAt")})
+            offered = (slim.get("reinterpretationIgnored") or {}).get("offeredHash")
+            if row.state_hash != sh or (offered and (prior.get("reinterpretationIgnored") or {}).get("offeredHash") != offered):
                 hist = list((row.payload or {}).get("history") or [])
                 if not hist or hist[-1].get("disposition") != c.get("disposition"):
                     hist.append({"at": now_ms, "disposition": c.get("disposition")})

@@ -17,7 +17,7 @@ import json
 import os
 from zoneinfo import ZoneInfo
 
-from ..technique.profit_capture import reduce_session
+from ..technique.profit_capture import instrument_of, reduce_session
 
 NY = ZoneInfo("America/New_York")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -36,9 +36,13 @@ def execution_net(rows: list) -> dict:
     """Execution-backed session result from raw fills: sells - buys - commissions, per held symbol and in total. A symbol
     whose bought and sold quantities differ is OPEN at the cutoff and is excluded from the flat total (listed)."""
     per: dict[str, dict] = {}
+    unknown: list = []
     for r in rows:
         sym = r["symbol"]
-        m = 100.0 if len(sym) > 6 and any(ch.isdigit() for ch in sym) else 1.0
+        m, prob = instrument_of(sym, r.get("sec_type") or r.get("secType"))
+        if prob:                                              # unknown / conflicting instrument identity: never priced by the symbol's shape
+            unknown.append(prob)
+            continue
         p = per.setdefault(sym, {"buyQty": 0.0, "sellQty": 0.0, "cash": 0.0, "fees": 0.0, "multiplier": m})
         amt = float(r["qty"]) * float(r["price"]) * m
         if str(r["side"]).upper() == "BUY":
@@ -50,7 +54,8 @@ def execution_net(rows: list) -> dict:
     open_ = sorted(k for k in per if k not in flat)
     return {"net": round(sum(v["cash"] - v["fees"] for v in flat.values()), 4), "fees": round(sum(v["fees"] for v in flat.values()), 4),
             "bySymbol": {k: {"net": round(v["cash"] - v["fees"], 4), "fees": round(v["fees"], 4), "qty": v["buyQty"]} for k, v in sorted(flat.items())},
-            "openAtCutoff": open_, "fills": len(rows)}
+            "openAtCutoff": open_, "fills": len(rows), "unknownInstrument": sorted(set(unknown)),
+            "complete": not unknown}
 
 
 async def build(date: str) -> dict:
@@ -62,8 +67,9 @@ async def build(date: str) -> dict:
     c = await asyncpg.connect(url)
     await c.execute("set default_transaction_read_only = on")
     try:
-        ex = [dict(r) for r in await c.fetch("""select symbol, side, qty, price, commission, ts from executions
-            where portfolio_id=$1 and ts >= to_timestamp($2/1000.0) and ts < to_timestamp($3/1000.0) order by ts""", EM_BOOK, t0, t1)]
+        ex = [dict(r) for r in await c.fetch("""select e.id, e.order_id, e.symbol, e.side, e.qty, e.price, e.commission, e.ts, o.sec_type
+            from executions e join orders o on o.id = e.order_id
+            where e.portfolio_id=$1 and e.ts >= to_timestamp($2/1000.0) and e.ts < to_timestamp($3/1000.0) order by e.ts, e.id""", EM_BOOK, t0, t1)]
         eq = [dict(r) for r in await c.fetch("""select ts, equity, cash from equity_points where portfolio_id=$1 and ts >= $2 and ts < $3 order by ts""",
                                              EM_BOOK, _ms(session, 9, 30), _ms(session, 16, 0))]
         has_table = await c.fetchval("select to_regclass('public.technique_book_snapshots') is not null")
@@ -84,7 +90,10 @@ async def build(date: str) -> dict:
         p02 = [{"tradeInstance": t.get("entryOrderId"), "policy": "small-position-exit-v1", "signalTs": (t.get("p02") or {}).get("observedAt"),
                 "outcome": (t.get("p02") or {}).get("outcome"), "dollarDelta": (t.get("p02") or {}).get("delta")} for t in trades if t.get("p02")]
     exe = execution_net(ex)
-    red = reduce_session(snaps, execution_net=exe["net"], execution_fees=exe["fees"], p02=p02, p06=p06)
+    final = [{"id": r["id"], "orderId": r["order_id"], "symbol": r["symbol"], "secType": r["sec_type"], "side": r["side"], "qty": float(r["qty"]),
+              "price": float(r["price"]), "commission": float(r["commission"] or 0.0), "tsMs": int(r["ts"].timestamp() * 1000)} for r in ex]
+    red = reduce_session(snaps, execution_net=(exe["net"] if exe["complete"] else None), execution_fees=(exe["fees"] if exe["complete"] else None),
+                         p02=p02, p06=p06, final_executions=final)
     sampled = None
     if eq:
         hi = max(eq, key=lambda r: r["equity"]); first = eq[0]

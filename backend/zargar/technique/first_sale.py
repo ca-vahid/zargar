@@ -100,8 +100,12 @@ def validate_underlier(ev: dict | None, *, symbol: str, direction: str, now_ms: 
     {symbol, bid, ask, last, quoteTs, lastTs, receivedTs, source, halted}; `quoteTs` / `lastTs` are the VENUE times of
     those fields (never a receipt time). Policy (declared, per direction): the bound is the side that HURTS the trade -
     a long is judged at the ASK, a short (puts) at the BID - from a fresh, uncrossed, two-sided venue quote. When no such
-    quote exists but a fresh venue PRINT does, the print is the bound (basis `last`). Anything else is not evidence."""
-    out = {"status": "missing", "price": None, "basis": None, "problems": [], "source": None, "ageMs": None}
+    quote exists but a fresh venue PRINT does, the print is the bound (basis `last`). Anything else is not evidence.
+    PRINT FALLBACK (`underlier-print-fallback-v1`, declared and validated apart): a print is NOT an executable quote and
+    is never called one - `boundClass` says `venue_print_fallback`. It needs its OWN fresh venue print time (`lastTs`), a
+    named non-derived, non-delayed source and the symbol's identity. It can only make admission STRICTER than the runner's
+    entry (admission takes the worse of the two); the order-free candidate stage does not accept it for its chase bound."""
+    out = {"status": "missing", "price": None, "basis": None, "boundClass": None, "problems": [], "source": None, "ageMs": None}
     if not ev:
         out["problems"] = ["no_underlier_evidence"]
         return out
@@ -112,8 +116,8 @@ def validate_underlier(ev: dict | None, *, symbol: str, direction: str, now_ms: 
         probs.append("symbol_mismatch")
     if not src:
         probs.append("source_unknown")
-    elif src.startswith("derived:") or src == "chain":
-        probs.append("source_not_executable")
+    elif src.startswith("derived:") or src == "chain" or ev.get("delayed") or ev.get("transform"):
+        probs.append("source_not_executable")               # derived, transformed or delayed evidence is never an executable bound
     if ev.get("halted"):
         probs.append("halted")
     bid, ask, last = _f(ev.get("bid")), _f(ev.get("ask")), _f(ev.get("last"))
@@ -137,7 +141,9 @@ def validate_underlier(ev: dict | None, *, symbol: str, direction: str, now_ms: 
     if price is not None:
         out["ageMs"] = int(now_ms) - int(ts_used)
     if price is not None and not probs:
-        out.update({"status": "valid", "price": price, "basis": basis})
+        out.update({"status": "valid", "price": price, "basis": basis,
+                    "boundClass": ("executable_quote" if basis in ("bid", "ask") else "venue_print_fallback"),
+                    "policy": (None if basis in ("bid", "ask") else "underlier-print-fallback-v1")})
     else:
         out["status"] = "invalid" if probs else "missing"
     return out
@@ -248,7 +254,7 @@ def build_record(*, stage: str, symbol: str, run_id: str, trigger_id: str, famil
         "spreadCost": spread_cost,
         "gate": {"rule": "R2 is measured to the GATE TARGET of the final quantity, from the worse of the runner's entry and the validated current executable underlying bound; unrounded comparison (first-sale-v2)",
                  "rungIndex": g_idx, "rung": g_label, "rungBasis": g_basis, "pinSource": pin_source, "minRiskReward": float(min_rr),
-                 "admissionEntry": adm_entry, "admissionBasis": ({"runnerEntry": run_e, "executableBound": uv["price"], "boundBasis": uv["basis"],
+                 "admissionEntry": adm_entry, "admissionBasis": ({"runnerEntry": run_e, "executableBound": uv["price"], "boundBasis": uv["basis"], "boundClass": uv.get("boundClass"),
                                                                    "shareLimit": (lim if instrument == "shares" else None)}),
                  "rAdmission": disp(r_adm), "rAdmissionRaw": r_adm,
                  "rPlanEntry": disp(r_plan), "rRunnerEntry": disp(r_run), "rObservedUnderlier": disp(r_cur),

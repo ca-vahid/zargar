@@ -39,8 +39,24 @@ def _q(bid, ask, bsz=10, asz=10, age=500, source="opra", sym=SYM, unit="contract
             "quoteTs": now - age, "receivedTs": now - 100, **kw}
 
 
-def _ex(oid, sym, side, qty, px, fee, ts):
-    return {"orderId": oid, "symbol": sym, "side": side, "qty": qty, "price": px, "commission": fee, "tsMs": ts}
+def _ex(oid, sym, side, qty, px, fee, ts, entry="E1", st=None, obs=None):
+    return {"id": f"{oid}@{ts}", "orderId": oid, "symbol": sym, "secType": (st or ("OPT" if len(sym) > 10 else "STK")), "side": side, "qty": qty, "price": px,
+            "commission": fee, "tsMs": ts, "observedAtMs": obs, "_entry": entry}
+
+
+def _links(execs):
+    """The runner's journaled order results for these fills: a BUY is its own entry; a SELL names the entry it exits."""
+    evs = []
+    for i, e in enumerate(execs):
+        buy = e["side"] == "BUY"
+        inst = e["orderId"] if buy else e["_entry"]
+        evs.append({"seq": i + 1, "runId": "r1", "trigger": f"t-{inst}", "stage": ("entry" if buy else "exit:tp2"), "orderId": e["orderId"],
+                    "entryOrderId": (None if buy else e["_entry"])})
+    return pc.resolve_links(evs)
+
+
+def _led(execs, **kw):
+    return pc.build_ledger(execs, links=_links(execs), **kw)
 
 
 ENTRY = [_ex("E1", SYM, "BUY", 4, 1.00, 4.16, ms(9, 40))]
@@ -48,7 +64,7 @@ ENTRY = [_ex("E1", SYM, "BUY", 4, 1.00, 4.16, ms(9, 40))]
 
 def _book(positions, quotes, *, execs=ENTRY, now=NOW, **kw):
     base = dict(ids=IDS, seq=1, now_ms=now, reason="periodic", causal=None, cash=9000.0, positions=positions, quotes=quotes, fee_per_contract=1.04,
-                instance="obs-1", ledger=pc.build_ledger(execs, window=WINDOW, as_of_ms=now))
+                instance="obs-1", ledger=_led(execs, window=WINDOW, as_of_ms=now))
     return pc.capture_book(**{**base, **kw})
 
 
@@ -127,23 +143,23 @@ def test_the_ledger_is_executions_only_excludes_prior_sessions_and_keeps_per_tra
     ex = [_ex("OLD", "AAPL", "BUY", 10, 100.0, 0.0, ms(10, 0, day=16)), _ex("OLDX", "AAPL", "SELL", 10, 90.0, 0.0, ms(11, 0, day=16)),   # yesterday: excluded
           _ex("E1", SYM, "BUY", 4, 1.00, 4.16, ms(9, 40)), _ex("X1", SYM, "SELL", 1, 1.50, 1.04, ms(9, 50)), _ex("X2", SYM, "SELL", 3, 0.60, 3.12, ms(10, 5)),
           _ex("E2", "FSLR", "BUY", 25, 196.0, 0.0, ms(9, 45))]
-    mid = pc.build_ledger(ex, window=WINDOW, as_of_ms=ms(9, 55))
+    mid = _led(ex, window=WINDOW, as_of_ms=ms(9, 55))
     assert mid["status"] == "restored" and mid["executions"] == 3 and mid["openQty"] == {SYM: 3.0, "FSLR": 25.0}
     assert mid["openTrades"]["E1"]["realizedGross"] == 50.0 and mid["realizedNet"] == round(50.0 - 5.20, 4)
-    end = pc.build_ledger(ex, window=WINDOW)
+    end = _led(ex, window=WINDOW)
     c = end["closedTrades"][0]
     assert (c["tradeInstance"], c["gross"], c["fees"], c["net"], c["orders"]) == ("E1", -70.0, 8.32, -78.32, ["E1", "X1", "X2"])
     assert end["fees"] == 8.32 and end["realizedNet"] == -78.32 and end["openQty"] == {"FSLR": 25.0}
     assert end["cashFlow"] == round(-400 - 4.16 + 150 - 1.04 + 180 - 3.12 - 4900, 4)
-    bad = pc.build_ledger([_ex("X9", SYM, "SELL", 1, 1.0, 1.04, ms(9, 50))], window=WINDOW)
-    assert bad["status"] == "unreconciled" and bad["errors"] == [f"sell_without_session_buy:{SYM}"]
+    bad = _led([_ex("X9", SYM, "SELL", 1, 1.0, 1.04, ms(9, 50))], window=WINDOW)
+    assert bad["status"] == "unreconciled" and bad["errors"] == [f"carry_in_or_missing_entry:E1:{SYM}"], "an exit whose entry has no fill in this session is a carry-in: unscorable, never priced"
 
 
 def test_a_ledger_that_is_pending_wrong_or_inconsistent_with_the_held_quantity_is_never_scorable():
     pending = pc.capture_book(ids=IDS, seq=1, now_ms=NOW, reason="periodic", causal=None, cash=1.0, positions=[_pos()], quotes={SYM: _q(1.4, 1.5)}, fee_per_contract=1.04)
     assert pending["ledger"]["status"] == "pending" and pending["book"]["scorable"] is False and pending["book"]["realizedNet"] is None
     assert "ledger_pending" in pending["book"]["unscorableReasons"]
-    done = pc.finalize_book(pending, pc.build_ledger(ENTRY, window=WINDOW, as_of_ms=NOW))
+    done = pc.finalize_book(pending, _led(ENTRY, window=WINDOW, as_of_ms=NOW))
     assert done["book"]["scorable"] is True and done["book"]["realizedNet"] == -4.16
     lag = _book([_pos()], {SYM: _q(1.4, 1.5)}, execs=[])
     assert lag["book"]["scorable"] is False and any(r.startswith(f"ledger_position_mismatch:{SYM}") for r in lag["book"]["unscorableReasons"])
@@ -160,7 +176,7 @@ def _observer(enabled=True, write=None, inputs=None, maxsize=256, cadence=30.0, 
         written.append(rec)
 
     async def _fin(rec):
-        return pc.finalize_book(rec, pc.build_ledger(ENTRY, window=WINDOW, as_of_ms=rec["capturedAt"]))
+        return pc.finalize_book(rec, _led(ENTRY, window=WINDOW, as_of_ms=rec["capturedAt"]))
     o = pc.ProfitCaptureObserver(enabled=lambda: enabled, collect=inputs, write=(write or _w), clock_ms=lambda: clock[0], cadence_s=lambda: cadence,
                                  finalize=(_fin if finalize == "ledger" else finalize), maxsize=maxsize, retry_sleep_s=0.0, on_drop=lambda why, rec: drops.append(why))
     return o, written, drops, clock
@@ -290,6 +306,11 @@ def test_paired_exit_consumer_join_is_strict_on_trade_identity_and_time():
     ctx = [r["bookContext"] for r in out["rows"]]
     assert ctx[0]["seq"] == 2 and ctx[0]["status"] == "covered" and out["rows"][0]["dollarDelta"] == -12.0, "a sacrificed winner stays in the comparison"
     assert ctx[1] is None and ctx[2] is None and ctx[3] is None and out["withBookContext"] == 1
+    ver = [r["identityVerified"] for r in out["rows"]]
+    assert ver == [True, False, True, False], ("bound to a trade the EXECUTION LEDGER knows, inside its lifecycle: an unknown instance and a signal after the close are "
+                                               "unverified; a signal inside the trade's life but before any capture is verified and simply has no book context")
+    assert pc.summarize_paired([{"tradeInstance": "E1", "signalTs": ms(9, 39)}], snaps)["rows"][0]["identityVerified"] is False, "before the entry fill"
+    assert [r["comparisonClass"] for r in out["rows"]] == ["dollars", "proxy_only", "proxy_only", "proxy_only"], "a row without dollars is labelled proxy-only, never mixed in"
 
 
 # ------------------------------------------------- the ACTUAL runtime collector + Postgres storage (IR-03 acceptance)
@@ -312,16 +333,24 @@ def _armer(sf, plans, quotes):
 
 
 async def _seed(sf, rows, portfolio=False):
-    from zargar.models import Execution, Order, Portfolio
+    from zargar.models import Event, Execution, Order, Portfolio
     async with sf() as s:
         if portfolio:
             s.add(Portfolio(id="book", name="EM test", kind="sim", base_currency="USD", cash=10000.0))
             await s.flush()
-        for oid, sym, side, qty, px, fee, ts in rows:
+        for row in rows:
+            oid, sym, side, qty, px, fee, ts = row[:7]
+            entry = row[7] if len(row) > 7 else None          # the entry this exit belongs to, as the runner journals it; "-" = NO journaled link at all
+            at = dt.datetime.fromtimestamp(ts / 1000.0, dt.timezone.utc)
             s.add(Order(id=oid, portfolio_id="book", symbol=sym, sec_type=("OPT" if len(sym) > 6 else "STK"), side=side, qty=qty, order_type="MKT", status="FILLED"))
             await s.flush()
-            s.add(Execution(id="x-" + oid, order_id=oid, portfolio_id="book", symbol=sym, side=side, qty=qty, price=px, commission=fee,
-                            ts=dt.datetime.fromtimestamp(ts / 1000.0, dt.timezone.utc)))
+            s.add(Execution(id="x-" + oid, order_id=oid, portfolio_id="book", symbol=sym, side=side, qty=qty, price=px, commission=fee, ts=at))
+            s.add(Event(type="OrderFill", aggregate_type="order", aggregate_id=oid, portfolio_id="book", ts=at + dt.timedelta(milliseconds=150),
+                        payload={"qty": qty, "price": px, "commission": fee, "executionId": "x-" + oid, "executedAt": ts}))
+            if entry != "-":
+                s.add(Event(type="TechniquePlanOrderResult", aggregate_type="technique_run", aggregate_id="run-" + (entry or oid), portfolio_id="book", ts=at,
+                            payload={"runId": "run-" + (entry or oid), "symbol": sym, "trigger": "t1", "stage": ("entry" if side == "BUY" else "exit:stop"),
+                                     "orderId": oid, "entryOrderId": (entry if side == "SELL" else None), "status": "FILLED"}))
         await s.commit()
 
 
@@ -335,9 +364,9 @@ async def test_restart_disarm_prior_session_and_duplicate_writes_through_the_rea
     now = [ms(10, 30)]
     monkeypatch.setattr(rt.time, "time", lambda: now[0] / 1000.0)
     sbux, dram = "SBUX261002P00095000", "DRAM260921P00058000"
-    await _seed(sf, [("P1", "AAPL", "BUY", 10, 100.0, 0.0, ms(10, 0, day=16)), ("P2", "AAPL", "SELL", 10, 90.0, 0.0, ms(11, 0, day=16)),     # PRIOR session: -100, must not count
-                     ("A1", sbux, "BUY", 1, 1.05, 1.04, ms(9, 35)), ("A2", sbux, "SELL", 1, 0.23, 1.04, ms(9, 50)),                          # closed BEFORE the recorder started
-                     ("B1", "FSLR", "BUY", 25, 196.0, 0.0, ms(9, 40)), ("B2", "FSLR", "SELL", 25, 194.111, 0.0, ms(10, 5)),                 # closed, its plan already DISARMED
+    await _seed(sf, [("P1", "AAPL", "BUY", 10, 100.0, 0.0, ms(10, 0, day=16)), ("P2", "AAPL", "SELL", 10, 90.0, 0.0, ms(11, 0, day=16), "P1"),     # PRIOR session: -100, must not count
+                     ("A1", sbux, "BUY", 1, 1.05, 1.04, ms(9, 35)), ("A2", sbux, "SELL", 1, 0.23, 1.04, ms(9, 50), "A1"),                          # closed BEFORE the recorder started
+                     ("B1", "FSLR", "BUY", 25, 196.0, 0.0, ms(9, 40)), ("B2", "FSLR", "SELL", 25, 194.111, 0.0, ms(10, 5), "B1"),                 # closed, its plan already DISARMED
                      ("C1", dram, "BUY", 4, 0.48, 4.16, ms(10, 20))], portfolio=True)                                                       # still open
     oq = SimpleNamespace(symbol=dram, bid=0.50, ask=0.55, last=0.52, bid_size=8, ask_size=9, source="opra", raw_source="", transform="", delayed=False,
                          source_ts=now[0] - 400, quote_ts=0, last_ts=0, ts=now[0] - 50, session="", halted=False)
@@ -374,7 +403,7 @@ async def test_restart_disarm_prior_session_and_duplicate_writes_through_the_rea
     async with sf() as s:
         assert len((await s.execute(select(TechniqueBookSnapshot))).scalars().all()) == 2
     # --- the flat endpoint reconciles to executions, per trade, fees once
-    await _seed(sf, [("C2", dram, "SELL", 4, 0.24, 4.16, now[0] + 30_000)])
+    await _seed(sf, [("C2", dram, "SELL", 4, 0.24, 4.16, now[0] + 30_000, "C1")])
     armer._armed["c"].trades[0].remaining = 0
     CASH[0] += 4 * 0.24 * 100 - 4.16                       # the keeper's cash moves with the fill; a cash move the ledger cannot explain is an ERROR
     now[0] += 90_000
@@ -397,4 +426,158 @@ async def test_restart_disarm_prior_session_and_duplicate_writes_through_the_rea
     assert pc.reduce_session(payloads2, execution_net=total_net, execution_fees=total_fees, transfers=250.0)["reconciliation"]["status"] == "ok", "a declared transfer is excluded, never a gain"
     peak = final["attributionAtExecutablePeak"][0]
     assert peak["tradeInstance"] == "C1" and peak["finalNet"] == -104.32 and peak["basis"].startswith("executions")
+    await eng.dispose()
+
+
+# ------------------------------------------------------------------------ R2-01 / final-completion goal section 1 and 6
+def _ev(seq, stage, oid, entry=None, run="r1", trig="b1"):
+    return {"seq": seq, "runId": run, "trigger": trig, "stage": stage, "orderId": oid, "entryOrderId": entry}
+
+
+def test_r2_01_two_entries_in_one_contract_stay_two_trades_with_their_own_exits_and_fees():
+    """The reviewers' reproduction, with DIFFERENT prices and fees so a mistaken allocation cannot pass by accident."""
+    ex = [_ex("A", SYM, "BUY", 1, 1.00, 1.04, ms(9, 40)), _ex("B", SYM, "BUY", 2, 2.00, 2.50, ms(9, 41)),
+          _ex("XB1", SYM, "SELL", 1, 2.60, 1.10, ms(9, 50)),                     # a TRIM of B, interleaved before A's exit
+          _ex("XA", SYM, "SELL", 1, 3.00, 1.04, ms(9, 51)), _ex("XB2", SYM, "SELL", 1, 4.00, 1.20, ms(9, 55))]
+    links = pc.resolve_links([_ev(1, "entry", "A", trig="b1"), _ev(2, "entry", "B", trig="b2"), _ev(3, "exit:tp1", "XB1", "B", trig="b2"),
+                              _ev(4, "exit:tp2", "XA", "A", trig="b1"), _ev(5, "exit:tp2", "XB2", "B", trig="b2")])
+    led = pc.build_ledger(ex, window=WINDOW, links=links)
+    got = {c["tradeInstance"]: (c["trigger"], c["qty"], c["gross"], c["fees"], c["net"], c["orders"]) for c in led["closedTrades"]}
+    assert got == {"A": ("b1", 1.0, 200.0, 2.08, 197.92, ["A", "XA"]), "B": ("b2", 2.0, 260.0, 4.8, 255.2, ["B", "XB1", "XB2"])}, "two identities, never one merged lifecycle"
+    assert led["status"] == "restored" and led["realizedNet"] == round(197.92 + 255.2, 4) and led["fees"] == 6.88
+    assert led["cashFlow"] == round(-100 - 1.04 - 400 - 2.5 + 260 - 1.1 + 300 - 1.04 + 400 - 1.2, 4), "aggregate cash AND per-trade sums both reconcile"
+    mid = pc.build_ledger(ex, window=WINDOW, links=links, as_of_ms=ms(9, 50))
+    assert mid["openByInstance"] == {"A": 1.0, "B": 1.0} and mid["openQty"] == {SYM: 2.0} and mid["openTrades"]["B"]["realizedGross"] == 60.0
+    # the held quantities must agree TRADE BY TRADE: the same symbol total with the wrong owner is a mismatch
+    ok = pc.capture_book(ids=IDS, seq=1, now_ms=ms(9, 50) + 500, reason="periodic", causal=None, cash=1.0, fee_per_contract=1.04, instance="o",
+                         positions=[_pos(remaining=1, original=1, ti="A"), _pos(remaining=1, original=2, ti="B")], quotes={SYM: _q(2.5, 2.6, now=ms(9, 50) + 500)}, ledger=mid)
+    assert ok["book"]["scorable"] is True
+    wrong = pc.capture_book(ids=IDS, seq=1, now_ms=ms(9, 50) + 500, reason="periodic", causal=None, cash=1.0, fee_per_contract=1.04, instance="o",
+                            positions=[_pos(remaining=2, original=2, ti="A")], quotes={SYM: _q(2.5, 2.6, now=ms(9, 50) + 500)}, ledger=mid)
+    assert wrong["book"]["scorable"] is False and any(r.startswith("ledger_trade_mismatch:") for r in wrong["book"]["unscorableReasons"])
+
+
+def test_partial_fills_combine_refire_is_a_new_trade_and_unknown_linkage_is_never_guessed_from_the_symbol():
+    ex = [_ex("E1", SYM, "BUY", 1, 1.00, 1.0, ms(9, 40)), _ex("E1", SYM, "BUY", 2, 1.10, 2.0, ms(9, 40, 5)),          # ONE entry order, two partial fills
+          _ex("X1", SYM, "SELL", 3, 0.90, 3.0, ms(9, 45)),
+          _ex("E3", SYM, "BUY", 1, 0.80, 1.0, ms(10, 5)), _ex("X3", SYM, "SELL", 1, 1.50, 1.0, ms(10, 9))]            # the SAME trigger fires again later
+    evs = [_ev(1, "entry", "E1"), _ev(2, "exit:stop", "X1"), _ev(3, "entry", "E0-cancelled"), _ev(4, "entry", "E3"), _ev(5, "exit:tp2", "X3")]   # older events: no entryOrderId
+    for e in ex:
+        e["id"] = f"{e['orderId']}@{e['tsMs']}@{e['qty']}"
+    led = pc.build_ledger(ex, window=WINDOW, links=pc.resolve_links(evs))
+    got = {c["tradeInstance"]: (c["qty"], c["net"], c["linkBasis"]) for c in led["closedTrades"]}
+    assert got == {"E1": (3.0, round(270 - 320 - 6.0, 4), ["entry_order", "journal_sequence"]), "E3": (1.0, 68.0, ["entry_order", "journal_sequence"])}
+    assert "E0-cancelled" not in got and led["status"] == "restored", "a cancelled entry with no fill is no trade"
+    unl = pc.build_ledger(ex, window=WINDOW, links=pc.resolve_links(evs[:1]))
+    assert unl["status"] == "unreconciled" and "unlinked_execution:X1" in unl["errors"] and unl["closedTrades"] == [], "an exit with no durable link closes NOTHING by symbol"
+    assert unl["fees"] == 8.0 and unl["cashFlow"] is not None, "aggregate cash and fees are still exact"
+    assert pc.finalize_book(pc.capture_book(ids=IDS, seq=1, now_ms=ms(10, 10), reason="periodic", causal=None, cash=1.0, positions=[], quotes={}, fee_per_contract=1.04), unl)["book"]["scorable"] is False
+    over = pc.build_ledger([_ex("E1", SYM, "BUY", 1, 1.0, 1.0, ms(9, 40)), _ex("X1", SYM, "SELL", 2, 1.0, 1.0, ms(9, 45))], window=WINDOW,
+                           links=pc.resolve_links([_ev(1, "entry", "E1"), _ev(2, "exit:stop", "X1", "E1")]))
+    assert over["errors"] == ["exit_exceeds_entry:E1"]
+
+
+def test_the_money_multiplier_comes_from_instrument_identity_never_from_the_symbols_shape():
+    assert pc.instrument_of(SYM, "OPT") == (100.0, None) and pc.instrument_of("FSLR", "STK") == (1.0, None)
+    assert pc.instrument_of("BRK1260925C00400000", "OPT")[0] is None, "an adjusted / non-standard root does not parse: unknown, never an assumed 100"
+    assert pc.instrument_of("LONGNAME1", "OPT")[0] is None and pc.instrument_of("LONGNAME1", "STK") == (1.0, None), "the old heuristic priced this share symbol x100"
+    assert pc.instrument_of(SYM, "STK")[1].startswith("instrument_conflict") and pc.instrument_of("FSLR", None)[1].startswith("instrument_unknown")
+    e = _ex("E1", "LONGNAME1", "BUY", 10, 5.0, 0.0, ms(9, 40), st="STK")
+    assert pc.build_ledger([e], window=WINDOW, links=_links([e]))["cashFlow"] == -50.0
+    bad = _ex("E1", SYM, "BUY", 1, 1.0, 1.0, ms(9, 40), st="STK")
+    led = pc.build_ledger([bad], window=WINDOW, links=_links([bad]))
+    assert led["status"] == "unreconciled" and led["cashFlow"] is None and led["errors"][0].startswith("instrument_conflict")
+
+
+def test_a_late_arriving_older_fill_revises_with_provenance_and_the_earlier_capture_is_not_relabelled():
+    e1 = _ex("E1", SYM, "BUY", 4, 1.00, 4.16, ms(9, 40), obs=ms(9, 40) + 200)
+    late = _ex("X0", SYM, "SELL", 1, 0.50, 1.04, ms(9, 58), obs=ms(10, 1))            # occurred 09:58, became known 10:01
+    known_then, final = [e1], [e1, late]
+    s1 = _book([_pos()], {SYM: _q(1.60, 1.70)}, seq=1, execs=known_then)                                          # what the live observer knew at 10:00
+    s2 = _book([_pos(remaining=3)], {SYM: _q(1.20, 1.30, now=ms(10, 2))}, seq=2, now=ms(10, 2), execs=final)
+    assert s1["book"]["scorable"] is True and s1["ledger"]["executions"] == 1, "the capture records what was KNOWN then"
+    assert s2["ledger"]["lateObserved"] == [{"executionId": late["id"], "occurredAt": ms(9, 58), "observedAt": ms(10, 1)}], "occurrence time and observation time are kept apart"
+    live = pc.reduce_session([s1, s2])
+    assert live["peakExecutableNet"]["seq"] == 1
+    rec = pc.reduce_session([s1, s2], final_executions=final)
+    assert [r["seq"] for r in rec["coverage"]["revisedByLateExecutions"]] == [1] and rec["peakExecutableNet"]["seq"] == 2, "a revised capture cannot hold the executable peak"
+    assert pc.reduce_session([s1, s2], final_executions=final)["coverage"]["lateObservedExecutions"][0]["executionId"] == late["id"]
+
+
+def test_sessions_follow_the_exchange_calendar_holidays_early_closes_and_dst():
+    assert rt.session_supported("2026-09-17") and not rt.session_supported("2026-09-19") and not rt.session_supported("2026-11-26"), "a weekend / Thanksgiving is HELD"
+    assert pc.build_ledger([], window=WINDOW, session_supported=False)["status"] == "unsupported_session"
+    held = pc.finalize_book(pc.capture_book(ids=IDS, seq=1, now_ms=NOW, reason="periodic", causal=None, cash=1.0, positions=[], quotes={}, fee_per_contract=1.04),
+                            pc.build_ledger([], window=WINDOW, session_supported=False))
+    assert held["book"]["scorable"] is False and "ledger_unsupported_session" in held["book"]["unscorableReasons"]
+    lo, hi = rt.session_window("2026-11-02")                                     # the first session after DST ends: 04:00 EST = 09:00 UTC
+    assert dt.datetime.fromtimestamp(lo / 1000, dt.timezone.utc).hour == 9 and hi - lo == 16 * 3600 * 1000
+    early = int(dt.datetime(2026, 11, 27, 13, 30, tzinfo=NY).timestamp() * 1000)   # the day after Thanksgiving closes at 13:00
+    q = _q(1.4, 1.5, now=early)
+    assert "outside_regular_session" in pc.quote_problems(q, symbol=SYM, is_option=True, now_ms=early, max_age_ms=10_000, side="bid")
+    before = int(dt.datetime(2026, 11, 27, 12, 30, tzinfo=NY).timestamp() * 1000)
+    assert pc.quote_problems(_q(1.4, 1.5, now=before), symbol=SYM, is_option=True, now_ms=before, max_age_ms=10_000, side="bid") == []
+    pre = ms(9, 0)
+    assert "outside_regular_session" in pc.quote_problems(_q(1.4, 1.5, now=pre), symbol=SYM, is_option=True, now_ms=pre, max_age_ms=10_000, side="bid")
+
+
+def test_the_reducer_refuses_mixed_scope_sums_drops_across_instances_and_never_calls_a_partial_comparison_ok():
+    series = _series()
+    other_day = {**series[0], "ids": {**IDS, "session": "2026-09-16"}, "captureId": "d16"}
+    mixed = pc.reduce_session(series + [other_day])
+    assert mixed["status"] == "error_mixed_scope" and len(mixed["scopes"]) == 2 and "peakExecutableNet" not in mixed
+    assert pc.reduce_session(series + [{**series[0], "ids": {**IDS, "portfolioId": "other"}, "captureId": "b2"}])["status"] == "error_mixed_scope"
+    restart = {**series[1], "recorderInstance": "obs-2", "captureId": "r2", "seq": 1, "capturedAt": NOW + 45_000, "recorder": {"droppedQueueFull": 2, "droppedWriteFailed": 1}}
+    cov = pc.reduce_session(series + [restart])["coverage"]
+    assert cov["recorderDrops"] == 4 and cov["dropsByInstance"] == {"obs-1": 1, "obs-2": 3}, "a restarted counter is ADDED, not hidden behind a maximum"
+    pol = pc.reduce_session(series + [{**restart, "ids": {**IDS, "policy": {"firstSaleGate": "observe"}}}])["scope"]
+    assert pol["policyVariants"] == 2 and pol["singlePolicy"] is False
+    nocash = [{**s, "cash": None} for s in series]
+    part = pc.reduce_session(nocash, execution_net=71.68, execution_fees=8.32)["reconciliation"]
+    assert part["status"] == "partial_comparisons_unavailable" and part["comparisonsUnavailable"] == ["cash"] and part["cashMinusLedgerFlow"] is None
+    assert pc.reduce_session(series, execution_net=71.68, execution_fees=None)["reconciliation"]["comparisonsUnavailable"] == ["fees"]
+
+
+@pytest.mark.usefixtures("fresh_db")
+async def test_two_same_contract_entries_a_late_older_fill_and_an_unlinked_exit_through_the_real_reader_and_storage(monkeypatch):
+    from sqlalchemy import select
+    from tests.conftest import TEST_DB_URL
+    from zargar.db import make_engine, make_session_factory
+    from zargar.models import TechniqueBookSnapshot
+    eng = make_engine(TEST_DB_URL); sf = make_session_factory(eng)
+    now = [ms(10, 0)]
+    monkeypatch.setattr(rt.time, "time", lambda: now[0] / 1000.0)
+    dram = "DRAM260921P00058000"
+    await _seed(sf, [("A", dram, "BUY", 1, 0.40, 1.04, ms(9, 40)), ("B", dram, "BUY", 2, 0.60, 2.08, ms(9, 42))], portfolio=True)
+    oq = SimpleNamespace(symbol=dram, bid=0.70, ask=0.75, last=0.72, bid_size=8, ask_size=9, source="opra", raw_source="", transform="", delayed=False,
+                         source_ts=now[0] - 400, quote_ts=0, last_ts=0, ts=now[0] - 50, session="", halted=False)
+    plans = {"a": ("a", "DRAM", [_trade("A", dram, filled=1, remaining=1, avg=0.40)]), "b": ("b", "DRAM", [_trade("B", dram, filled=2, remaining=2, avg=0.60)])}
+    armer = _armer(sf, plans, {dram: oq})
+    obs = rt.build_observer(armer)
+    s1 = obs.snap("periodic"); await obs.wait_idle()
+    async with sf() as s:
+        p1 = (await s.execute(select(TechniqueBookSnapshot))).scalars().one().payload
+    assert p1["ledger"]["status"] == "restored" and p1["ledger"]["openByInstance"] == {"A": 1.0, "B": 2.0} and p1["book"]["scorable"] is True
+    # a fill that OCCURRED at 09:55 (before the first capture) is ingested only now - an execution-time cursor would skip it forever
+    await _seed(sf, [("XB", dram, "SELL", 1, 0.90, 1.04, ms(9, 55), "B")])
+    armer._armed["b"].trades[0].remaining = 1
+    now[0] += 60_000; oq.source_ts = now[0] - 300
+    obs.snap("periodic"); await obs.wait_idle()
+    async with sf() as s:
+        rows = (await s.execute(select(TechniqueBookSnapshot).order_by(TechniqueBookSnapshot.captured_at))).scalars().all()
+    p2 = rows[1].payload
+    assert p2["ledger"]["executions"] == 3 and p2["ledger"]["openByInstance"] == {"A": 1.0, "B": 1.0} and p2["ledger"]["openTrades"]["B"]["realizedGross"] == 30.0
+    ledger = rt.SessionLedger(sf)
+    final_rows, _links_db = await ledger.read("book", DAY)
+    red = pc.reduce_session([r.payload for r in rows], final_executions=final_rows)
+    assert [r["captureId"] for r in red["coverage"]["revisedByLateExecutions"]] == [s1["captureId"]], "the first capture is REVISED with provenance, not silently rewritten"
+    assert rows[0].payload["ledger"]["executions"] == 2, "the stored capture still says what the observer knew"
+    # an exit with NO journaled link: attribution unknown, the book unscorable - never assigned to A or B by symbol
+    await _seed(sf, [("XQ", dram, "SELL", 1, 0.95, 1.04, now[0] + 5_000, "-")])
+    now[0] += 60_000; oq.source_ts = now[0] - 300
+    obs.snap("periodic"); await obs.wait_idle()
+    async with sf() as s:
+        p3 = (await s.execute(select(TechniqueBookSnapshot).order_by(TechniqueBookSnapshot.captured_at))).scalars().all()[-1].payload
+    assert p3["ledger"]["status"] == "unreconciled" and "unlinked_execution:XQ" in p3["ledger"]["errors"] and p3["book"]["scorable"] is False
+    assert p3["ledger"]["openByInstance"] == {"A": 1.0, "B": 1.0}, "nothing was closed by guessing"
     await eng.dispose()

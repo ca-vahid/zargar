@@ -10,13 +10,14 @@ The write is idempotent by the record's `captureId`."""
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import time
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
-from .profit_capture import ProfitCaptureObserver, build_ledger, finalize_book
+from .profit_capture import ProfitCaptureObserver, build_ledger, finalize_book, resolve_links
 from .research_recorder import feed_identity, quote_evidence
 
 log = logging.getLogger(__name__)
@@ -29,8 +30,18 @@ def session_of(now_ms: int) -> str:
     return dt.datetime.fromtimestamp(now_ms / 1000.0, ET).date().isoformat()
 
 
+def session_supported(session: str) -> bool:
+    """The exchange calendar decides (holidays, weekends): a day that is not a trading session is HELD, never scored."""
+    from ..marketstructure.market_calendar import is_trading_day
+    try:
+        return bool(is_trading_day(session))
+    except Exception:                                     # noqa: BLE001
+        return False
+
+
 def session_window(session: str) -> tuple[int, int]:
-    """[04:00, 20:00) ET of the session day: every fill of THIS session, none of a prior one."""
+    """[04:00, 20:00) ET of the session day (zone-aware, so DST is exact): every fill of THIS session, none of a prior
+    one. A shortened session closes early INSIDE this window, so its fills are all included."""
     d = dt.date.fromisoformat(session)
     a = dt.datetime(d.year, d.month, d.day, 4, 0, tzinfo=ET)
     return int(a.timestamp() * 1000), int((a + dt.timedelta(hours=16)).timestamp() * 1000)
@@ -85,37 +96,49 @@ def collect_inputs(armer, now_ms: int) -> dict | None:
             "stock_fee": float(s.get("sim.stock_commission", 0.0) or 0.0)}
 
 
-class SessionLedger:
-    """The session's executions of ONE book, read on the recorder's task. A bounded incremental projection: only rows newer
-    than the last one seen are fetched after the first restore; the ledger for a record is rebuilt (pure) as of that
-    record's capture time. A failed read = `status: error` = unscorable, visibly - never a guess."""
+LEDGER_SQL = """select e.id, e.order_id, e.symbol, e.side, e.qty, e.price, e.commission, e.ts, o.sec_type,
+                       (select min(j.ts) from events j where j.type = 'OrderFill' and j.aggregate_id = e.order_id
+                                                         and j.payload->>'executionId' = e.id) as observed_at
+                from executions e join orders o on o.id = e.order_id
+                where e.portfolio_id = :p and e.ts >= :a and e.ts < :b order by e.ts, e.id"""
+LINKS_SQL = """select id, payload from events where type = 'TechniquePlanOrderResult' and portfolio_id = :p and ts >= :a and ts < :c order by id"""
 
-    def __init__(self, sf):
+
+class SessionLedger:
+    """The session's executions of ONE book, read on the recorder's task. BOUNDED EXPLICIT RECONCILIATION (R2-01): every
+    call re-reads the WHOLE session window of this one book (tens of rows) with the orders' security types, the journal's
+    ingestion time of each fill and the plan runner's order links. There is no execution-time cursor, so a fill that
+    arrives late with an OLDER occurrence time can never be skipped. The ledger for a record is rebuilt (pure) as of that
+    record's capture time; `readAt` says when it was read. A failed read = `status: error` = unscorable - never a guess."""
+
+    def __init__(self, sf, clock=None):
         self._sf = sf
-        self._session: str | None = None
-        self._pid: str | None = None
-        self._rows: list = []
-        self._seen: set = set()
+        self._clock = clock or (lambda: int(time.time() * 1000))
         self.restored = False
+        self.reads = 0
+
+    async def read(self, pid: str, session: str) -> tuple[list, dict]:
+        lo, hi = session_window(session)
+        a, b = (dt.datetime.fromtimestamp(x / 1000.0, dt.timezone.utc) for x in (lo, hi))
+        async with self._sf() as s:
+            got = (await s.execute(text(LEDGER_SQL), {"p": pid, "a": a, "b": b})).mappings().all()
+            evs = (await s.execute(text(LINKS_SQL), {"p": pid, "a": a - dt.timedelta(hours=1), "c": b + dt.timedelta(hours=1)})).mappings().all()
+        rows = [{"id": r["id"], "orderId": r["order_id"], "symbol": r["symbol"], "secType": r["sec_type"], "side": r["side"], "qty": float(r["qty"]),
+                 "price": float(r["price"]), "commission": float(r["commission"] or 0.0), "tsMs": int(r["ts"].timestamp() * 1000),
+                 "observedAtMs": (int(r["observed_at"].timestamp() * 1000) if r["observed_at"] is not None else None)} for r in got]
+        order_events = []
+        for e in evs:
+            p = e["payload"] if isinstance(e["payload"], dict) else json.loads(e["payload"] or "{}")
+            order_events.append({"seq": int(e["id"]), "runId": p.get("runId"), "trigger": p.get("trigger"), "stage": p.get("stage"),
+                                 "orderId": p.get("orderId"), "entryOrderId": p.get("entryOrderId")})
+        self.reads += 1
+        return rows, resolve_links(order_events)
 
     async def as_of(self, pid: str, session: str, as_of_ms: int) -> dict:
-        if (pid, session) != (self._pid, self._session):
-            self._pid, self._session, self._rows, self._seen, self.restored = pid, session, [], set(), False
-        lo, hi = session_window(session)
-        since = max([lo] + [int(r["tsMs"]) for r in self._rows]) if self._rows else lo
-        async with self._sf() as s:
-            got = (await s.execute(text("""select id, order_id, symbol, side, qty, price, commission, ts from executions
-                                           where portfolio_id = :p and ts >= :a and ts < :b order by ts"""),
-                                   {"p": pid, "a": dt.datetime.fromtimestamp(since / 1000.0, dt.timezone.utc),
-                                    "b": dt.datetime.fromtimestamp(hi / 1000.0, dt.timezone.utc)})).mappings().all()
-        for r in got:
-            if r["id"] in self._seen:
-                continue
-            self._seen.add(r["id"])
-            self._rows.append({"orderId": r["order_id"], "symbol": r["symbol"], "side": r["side"], "qty": float(r["qty"]), "price": float(r["price"]),
-                               "commission": float(r["commission"] or 0.0), "tsMs": int(r["ts"].timestamp() * 1000)})
+        rows, links = await self.read(pid, session)
         self.restored = True
-        return build_ledger(self._rows, window=(lo, hi), as_of_ms=as_of_ms)
+        return build_ledger(rows, window=session_window(session), as_of_ms=as_of_ms, links=links,
+                            session_supported=session_supported(session), read_at_ms=self._clock())
 
 
 def build_observer(armer) -> ProfitCaptureObserver:

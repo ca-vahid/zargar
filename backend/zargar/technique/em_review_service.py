@@ -184,6 +184,22 @@ async def first_sale_rows(svc, date: str) -> dict:
     return {"date": date, "mode": svc.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "off"), "rows": rows}
 
 
+async def model_cost(svc, date: str) -> dict:
+    """Model cost of PREPARING one session, from saved runs only (zero calls). Four kinds stay apart: invoice-verified (none
+    is recorded by the app), estimated at the CURRENT `llm.rates` card (not an invoice; the card carries no effective
+    date), unknown (no price / a request without a completion) and a subscription allocation (none declared)."""
+    from . import model_costs as mc
+    a, _b, _, _ = _bounds(date)
+    async with svc.engine.sf() as s:
+        runs = (await s.execute(select(TechniqueRun).where(TechniqueRun.technique == "enhanced_market", TechniqueRun.created_at >= a - dt.timedelta(hours=20),
+                                                           TechniqueRun.created_at <= a + dt.timedelta(hours=24)))).scalars().all()
+    rows = [{"id": r.id, "created_at": r.created_at.date().isoformat(), "status": r.status, "llm": r.llm or {}, "usage": getattr(r, "usage", None) or {}, "result": r.result or {}}
+            for r in runs if str(((r.result or {}).get("plan") or {}).get("planFor") or "")[:10] == date]
+    out = mc.summarize(mc.requests_from_runs(rows), table=(svc.engine.settings.get("llm.rates", {}) or {}))
+    return {"date": date, "runs": len(rows), "cost": out, "basis": "saved runs only - zero model calls; an ESTIMATE at the current llm.rates card is not an invoice",
+            "neverNetted": "model cost is shown beside trading results and is never subtracted from them as an audited expense"}
+
+
 async def profit_capture(svc, date: str) -> dict:
     from ..tools.em_profit_capture import execution_net
     a, b, _, _ = _bounds(date)
@@ -192,11 +208,14 @@ async def profit_capture(svc, date: str) -> dict:
     async with svc.engine.sf() as s:
         snaps = (await s.execute(select(TechniqueBookSnapshot).where(TechniqueBookSnapshot.session == date, TechniqueBookSnapshot.portfolio_id == pid)
                                  .order_by(TechniqueBookSnapshot.captured_at, TechniqueBookSnapshot.seq))).scalars().all()
-        ex = (await s.execute(text("select symbol, side, qty, price, commission from executions where portfolio_id=:p and ts >= :a and ts <= :b order by ts"),
-                              {"p": pid, "a": a, "b": b})).mappings().all()
+        ex = (await s.execute(text("""select e.symbol, e.side, e.qty, e.price, e.commission, o.sec_type from executions e join orders o on o.id = e.order_id
+                                      where e.portfolio_id=:p and e.ts >= :a and e.ts <= :b order by e.ts"""), {"p": pid, "a": a, "b": b})).mappings().all()
     exe = execution_net([dict(r) for r in ex])
     payloads = [dict(x.payload or {}) for x in snaps]
-    red = reduce_session(payloads, execution_net=exe["net"], execution_fees=exe["fees"])
+    from .profit_capture_runtime import SessionLedger
+    final, _ = await SessionLedger(svc.engine.sf).read(pid, date)      # the session's executions as known NOW: late arrivals REVISE earlier captures, visibly
+    red = reduce_session(payloads, execution_net=(exe["net"] if exe["complete"] else None), execution_fees=(exe["fees"] if exe["complete"] else None),
+                         final_executions=final)
     series = [{"at": p["capturedAt"], "seq": p["seq"], "reason": p["reason"], "realized": p["book"]["realizedNet"], "displayed": p["book"].get("displayedNet"),
                "executable": p["book"].get("executableTotalNet"), "scorable": p["book"]["scorable"], "why": p["book"].get("unscorableReasons")} for p in payloads][-600:]
     return {"date": date, "book": pid, "recorderOn": bool(s_get("techniques.enhanced_market.book_snapshot_observe", False)), "execution": exe, "capture": red, "series": series,

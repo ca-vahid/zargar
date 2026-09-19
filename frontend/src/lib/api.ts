@@ -232,6 +232,7 @@ export const api = {
   emSourceTable: (date: string) => request<any>("GET", `/api/technique/em/source-table?date=${encodeURIComponent(date)}`),
   emCandidates: (date: string) => request<any>("GET", `/api/technique/em/candidates?date=${encodeURIComponent(date)}`),
   emFirstSale: (date: string) => request<any>("GET", `/api/technique/em/first-sale?date=${encodeURIComponent(date)}`),
+  emModelCost: (date: string) => request<any>("GET", `/api/technique/em/model-cost?date=${encodeURIComponent(date)}`),
   emProfitCapture: (date: string) => request<any>("GET", `/api/technique/em/profit-capture?date=${encodeURIComponent(date)}`),
   techniqueArmed: (slim = false) => request<import("../types").ArmedPlan[]>("GET", `/api/technique/armed${slim ? "?slim=1" : ""}`),
   techniqueArmedSummary: () => request<import("../types").ArmedSummary>("GET", "/api/technique/armed/summary"),

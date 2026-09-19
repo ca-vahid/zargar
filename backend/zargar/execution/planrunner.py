@@ -3664,7 +3664,8 @@ class PlanRunner(SessionListener):
             self.register_order(rec["orderId"], (ap.run_id, tr.trigger_id))
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ORDER_RESULT, {
             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "stage": f"exit:{kind}",
-            "orderId": rec["orderId"], "status": rec["status"], "reason": result.get("rejectReason")},
+            "orderId": rec["orderId"], "entryOrderId": tr.entry_order_id,       # durable exit -> trade-instance link (R2-01)
+            "status": rec["status"], "reason": result.get("rejectReason")},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         if rec["status"] in ("REJECTED", "REJECTED_RISK"):
             rec["error"] = result.get("rejectReason")

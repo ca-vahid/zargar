@@ -34,8 +34,8 @@ async def build(date: str) -> dict:
         evs = await c.fetch("""select e.ts, e.aggregate_id rid, e.payload p, r.config cfg, r.result->'plan' plan from events e join technique_runs r on r.id = e.aggregate_id
             where e.type='TechniquePlanOrderIntent' and r.technique='enhanced_market' and e.portfolio_id=$1 and e.ts >= to_timestamp($2/1000.0) and e.ts < to_timestamp($3/1000.0) order by e.ts""",
                             EM_BOOK, _ms(d, 4, 0), _ms(d, 20, 0))
-        ex = [dict(r) for r in await c.fetch("""select symbol, side, qty, price, commission from executions where portfolio_id=$1 and ts >= to_timestamp($2/1000.0)
-            and ts < to_timestamp($3/1000.0)""", EM_BOOK, _ms(d, 4, 0), _ms(d, 20, 0))]
+        ex = [dict(r) for r in await c.fetch("""select e.symbol, e.side, e.qty, e.price, e.commission, o.sec_type from executions e join orders o on o.id = e.order_id
+            where e.portfolio_id=$1 and e.ts >= to_timestamp($2/1000.0) and e.ts < to_timestamp($3/1000.0)""", EM_BOOK, _ms(d, 4, 0), _ms(d, 20, 0))]
     finally:
         await c.close()
     net = execution_net(ex)

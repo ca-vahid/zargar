@@ -1,4 +1,5 @@
-"""ED-04 executable-profit capture (`book-snapshot-v2`, 2026-09-19; integrated plan workstream E, candidate review IR-02/IR-03).
+"""ED-04 executable-profit capture (`book-snapshot-v3`, 2026-09-19; integrated plan workstream E, candidate review IR-02/IR-03,
+revision-2 review R2-01: the ledger is per TRADE INSTANCE from durable order links, never merged by symbol).
 
 Three numbers that were conflated are kept apart for the EM Practice book at one instant:
   realized net        from the EXECUTION LEDGER of the session (fills and commissions) - never from in-memory trade state,
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import math
 import uuid
@@ -30,8 +32,8 @@ from typing import Any, Awaitable, Callable
 
 log = logging.getLogger(__name__)
 
-VERSION = "book-snapshot-v2"
-REDUCER_VERSION = "profit-capture-reducer-v2"
+VERSION = "book-snapshot-v3"
+REDUCER_VERSION = "profit-capture-reducer-v3"
 MAX_QUOTE_AGE_MS = 10_000
 MAX_SKEW_MS = 5_000
 ADMISSIBLE_OPTION_SOURCES = ("opra", "ibkr")
@@ -46,6 +48,17 @@ def _f(v) -> float | None:
     except (TypeError, ValueError):
         return None
     return x if math.isfinite(x) else None
+
+
+def _market_minute(ts_ms: int) -> bool:
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    from ..marketstructure.market_calendar import is_trading_day, session_close_minutes
+    try:
+        t = _dt.datetime.fromtimestamp(int(ts_ms) / 1000.0, ZoneInfo("America/New_York"))
+        return bool(is_trading_day(t.date())) and 9 * 60 + 30 <= t.hour * 60 + t.minute < int(session_close_minutes(t.date()))
+    except Exception:                                         # noqa: BLE001 - an unsupported date is HELD, not assumed regular
+        return False
 
 
 def mark_of(sec_type: str, quote: dict | None, avg_cost: float | None) -> tuple[float | None, str]:
@@ -91,6 +104,8 @@ def quote_problems(q: dict | None, *, symbol: str, is_option: bool, now_ms: int,
         out.append("venue_quote_time_in_future")
     sess = q.get("session")
     if sess not in (None, "", "regular"):
+        out.append("outside_regular_session")
+    elif ts > 0 and not _market_minute(ts):                 # the exchange calendar decides: holidays, weekends, early closes
         out.append("outside_regular_session")
     if q.get("halted"):
         out.append("halted")
@@ -238,6 +253,14 @@ def _close(rec: dict, ledger: dict | None) -> dict:
         for sym in sorted(set(open_qty) | set(held_qty)):
             if abs(open_qty.get(sym, 0.0) - held_qty.get(sym, 0.0)) > 1e-6:
                 reasons.append(f"ledger_position_mismatch:{sym}:ledger={open_qty.get(sym, 0.0):g}:held={held_qty.get(sym, 0.0):g}")
+        by_inst = {k: float(v) for k, v in (led.get("openByInstance") or {}).items()}
+        held_inst: dict = {}
+        for r in rec["positions"]:
+            if r["quantities"]["remaining"] > 0:
+                held_inst[str(r.get("tradeInstance") or "")] = held_inst.get(str(r.get("tradeInstance") or ""), 0.0) + r["quantities"]["remaining"]
+        for iid in sorted(set(by_inst) | set(held_inst)):                # the SAME contract held by two trades must agree trade by trade
+            if abs(by_inst.get(iid, 0.0) - held_inst.get(iid, 0.0)) > 1e-6:
+                reasons.append(f"ledger_trade_mismatch:{iid or 'unknown'}:ledger={by_inst.get(iid, 0.0):g}:held={held_inst.get(iid, 0.0):g}")
     scorable = not reasons
     realized = led.get("realizedNet") if led.get("status") == "restored" else None
     held = [r for r in rec["positions"] if r["quantities"]["remaining"] > 0]
@@ -248,7 +271,8 @@ def _close(rec: dict, ledger: dict | None) -> dict:
               "displayedNet": (round(realized + disp, 4) if (realized is not None and disp is not None) else None),
               "executableNetCovered": exe, "executableTotalNet": (round(realized + exe, 4) if (exe is not None and realized is not None) else None),
               "scorable": scorable, "unscorableReasons": reasons})
-    rec["ledger"] = {k: led.get(k) for k in ("status", "asOf", "executions", "realizedNet", "fees", "cashFlow", "openQty", "closedTrades", "openTrades", "errors", "window")}
+    rec["ledger"] = {k: led.get(k) for k in ("status", "asOf", "readAt", "executions", "executionSet", "realizedNet", "fees", "cashFlow", "openQty", "openByInstance",
+                                            "closedTrades", "openTrades", "lateObserved", "errors", "window")}
     return rec
 
 
@@ -258,53 +282,144 @@ def finalize_book(rec: dict, ledger: dict | None) -> dict:
 
 
 # ------------------------------------------------------------------------------------------------ execution ledger
-def build_ledger(executions: list, *, window: tuple, as_of_ms: int | None = None) -> dict:
-    """The session's realized result FROM EXECUTIONS ONLY. `executions` = [{orderId, symbol, side, qty, price, commission,
-    tsMs}] of ONE book; rows outside `window` (prior sessions) or after `as_of_ms` are excluded. Trades are FIFO round trips
-    per symbol: the BUY that opens a flat symbol names the trade instance (= the entry order id); SELLs close against it.
-    A SELL with no session BUY is an error (unreconciled), never silently priced."""
+LINK_STAGE_ENTRY = "entry"
+
+
+def instrument_of(symbol: str, sec_type: str | None) -> tuple[float | None, str | None]:
+    """AUTHORITATIVE money multiplier: the ORDER's security type checked against the symbol's OCC identity
+    (`options.occ.contract_multiplier`: the standard 100 only for a symbol that parses as a standard contract).
+    Missing or conflicting identity = (None, problem) - never a guess from the symbol's length."""
+    from ..options.occ import contract_multiplier
+    st = str(sec_type or "").upper()
+    occ_mult = contract_multiplier(symbol)
+    if st == "OPT":
+        return (float(occ_mult), None) if occ_mult else (None, f"instrument_conflict:{symbol}:OPT_without_standard_occ_identity")
+    if st in ("STK", "ETF"):
+        return (1.0, None) if occ_mult is None else (None, f"instrument_conflict:{symbol}:{st}_with_occ_identity")
+    return None, f"instrument_unknown:{symbol}:{st or 'no_sec_type'}"
+
+
+def resolve_links(order_events: list) -> dict:
+    """Durable order -> trade-instance linkage from the plan runner's journaled order results
+    (`TechniquePlanOrderResult`: {seq, runId, trigger, stage, orderId, entryOrderId?}). The trade instance IS the entry
+    order id. An exit is bound by its journaled `entryOrderId` when present (`basis: journaled_entry_order`); an older
+    event without it is bound to the latest entry of the SAME run and trigger journaled before it
+    (`basis: journal_sequence` - the runner holds one trade per trigger at a time). Anything else has NO link: the
+    ledger reports it as unknown attribution and never guesses from the symbol."""
+    out: dict = {}
+    last_entry: dict = {}
+    for e in sorted(order_events or [], key=lambda x: int(x.get("seq") or 0)):
+        oid = e.get("orderId")
+        if not oid:
+            continue
+        key = (str(e.get("runId") or ""), str(e.get("trigger") or ""))
+        stage = str(e.get("stage") or "")
+        if stage in (LINK_STAGE_ENTRY, "entry_reconciled"):
+            stage = LINK_STAGE_ENTRY
+            last_entry[key] = str(oid)
+            out[str(oid)] = {"instance": str(oid), "runId": key[0], "trigger": key[1], "stage": stage, "basis": "entry_order"}
+        elif stage.startswith("exit"):
+            inst, basis = (str(e["entryOrderId"]), "journaled_entry_order") if e.get("entryOrderId") else (last_entry.get(key), "journal_sequence")
+            if inst:
+                out[str(oid)] = {"instance": inst, "runId": key[0], "trigger": key[1], "stage": stage, "basis": basis}
+    return out
+
+
+def build_ledger(executions: list, *, window: tuple, as_of_ms: int | None = None, links: dict | None = None,
+                 session_supported: bool = True, read_at_ms: int | None = None) -> dict:
+    """The session's realized result FROM EXECUTIONS ONLY, per TRADE INSTANCE. `executions` = [{id, orderId, symbol, secType,
+    side, qty, price, commission, tsMs (occurrence), observedAtMs? (ingestion)}] of ONE book; `links` = `resolve_links`.
+    Rows outside `window` (prior sessions) or that occurred after `as_of_ms` are excluded. Partial fills of ONE entry order
+    combine; different entry orders NEVER merge, even in the same contract. An exit belongs to the instance its order is
+    linked to. Unlinked executions, an exit whose entry has no fill in the window (a carry-in), an exit beyond its entry's
+    quantity, a symbol conflict or an unknown instrument are ERRORS: the ledger is `unreconciled` and nothing is
+    attributed by symbol. Aggregate cash and fees are reported either way, so both can be verified independently."""
     lo, hi = int(window[0]), int(window[1])
     rows = sorted((e for e in executions or [] if lo <= int(e["tsMs"]) < hi and (as_of_ms is None or int(e["tsMs"]) <= int(as_of_ms))),
-                  key=lambda e: (int(e["tsMs"]), str(e.get("orderId")), str(e.get("side"))))
-    book: dict = {}
-    closed, errors = [], []
+                  key=lambda e: (int(e["tsMs"]), str(e.get("id") or ""), str(e.get("orderId")), str(e.get("side"))))
+    links = links or {}
+    inst: dict = {}
+    errors: list = []
     fees = cash = 0.0
+    cash_known = True
+    late = []
     for e in rows:
-        sym = str(e["symbol"])
-        m = 100.0 if (len(sym) > 6 and any(ch.isdigit() for ch in sym)) else 1.0
+        sym, oid = str(e["symbol"]), str(e.get("orderId"))
         qty, px, fee = float(e["qty"]), float(e["price"]), float(e.get("commission") or 0.0)
+        buy = str(e["side"]).upper() == "BUY"
         fees += fee
-        t = book.get(sym)
-        if str(e["side"]).upper() == "BUY":
-            cash -= qty * px * m + fee
+        m, prob = instrument_of(sym, e.get("secType"))
+        if prob:
+            errors.append(prob); cash_known = False
+            continue
+        cash += (-(qty * px * m) - fee) if buy else (qty * px * m - fee)
+        obs = e.get("observedAtMs")
+        if obs is not None and int(obs) - int(e["tsMs"]) > 60_000:
+            late.append({"executionId": e.get("id"), "occurredAt": int(e["tsMs"]), "observedAt": int(obs)})
+        ln = links.get(oid)
+        if ln is None:
+            errors.append(f"unlinked_execution:{oid}")
+            continue
+        iid = ln["instance"]
+        t = inst.get(iid)
+        if buy:
+            if ln["stage"] != LINK_STAGE_ENTRY:
+                errors.append(f"side_stage_conflict:{oid}:BUY_on_{ln['stage']}")
+                continue
             if t is None:
-                t = book[sym] = {"tradeInstance": str(e.get("orderId")), "symbol": sym, "multiplier": m, "bought": 0.0, "sold": 0.0, "cost": 0.0,
-                                 "proceeds": 0.0, "fees": 0.0, "openedTs": int(e["tsMs"]), "orders": []}
+                t = inst[iid] = {"tradeInstance": iid, "runId": ln.get("runId"), "trigger": ln.get("trigger"), "symbol": sym, "multiplier": m, "bought": 0.0,
+                                 "sold": 0.0, "cost": 0.0, "proceeds": 0.0, "fees": 0.0, "openedTs": int(e["tsMs"]), "lastTs": int(e["tsMs"]),
+                                 "orders": [], "linkBasis": set()}
+            elif t["symbol"] != sym:
+                errors.append(f"symbol_conflict:{iid}:{t['symbol']}!={sym}")
+                continue
             t["bought"] += qty; t["cost"] += qty * px * m; t["fees"] += fee
         else:
-            cash += qty * px * m - fee
-            if t is None or t["bought"] - t["sold"] + 1e-9 < qty:
-                errors.append(f"sell_without_session_buy:{sym}")
+            if ln["stage"] == LINK_STAGE_ENTRY:
+                errors.append(f"side_stage_conflict:{oid}:SELL_on_entry")
+                continue
+            if t is None:
+                errors.append(f"carry_in_or_missing_entry:{iid}:{sym}")
+                continue
+            if t["symbol"] != sym:
+                errors.append(f"symbol_conflict:{iid}:{t['symbol']}!={sym}")
+                continue
+            if t["bought"] - t["sold"] + 1e-9 < qty:
+                errors.append(f"exit_exceeds_entry:{iid}")
                 continue
             t["sold"] += qty; t["proceeds"] += qty * px * m; t["fees"] += fee
-        if str(e.get("orderId")) not in t["orders"]:
-            t["orders"].append(str(e.get("orderId")))
-        if t["bought"] - t["sold"] <= 1e-9:
-            closed.append({"tradeInstance": t["tradeInstance"], "symbol": sym, "qty": t["bought"], "gross": round(t["proceeds"] - t["cost"], 4),
-                           "fees": round(t["fees"], 4), "net": round(t["proceeds"] - t["cost"] - t["fees"], 4), "openedTs": t["openedTs"],
-                           "closedTs": int(e["tsMs"]), "orders": list(t["orders"])})
-            book.pop(sym)
-    open_trades = {}
-    realized_open = 0.0
-    for sym, t in book.items():
+        t["lastTs"] = int(e["tsMs"]); t["linkBasis"].add(ln.get("basis"))
+        if oid not in t["orders"]:
+            t["orders"].append(oid)
+    closed, open_trades = [], {}
+    realized = 0.0
+    for iid, t in inst.items():
         avg = t["cost"] / t["bought"] if t["bought"] else 0.0
         gross = t["proceeds"] - avg * t["sold"]
-        realized_open += gross - t["fees"]
-        open_trades[t["tradeInstance"]] = {"symbol": sym, "remaining": round(t["bought"] - t["sold"], 6), "avgCost": round(avg / t["multiplier"], 6),
-                                           "realizedGross": round(gross, 4), "fees": round(t["fees"], 4), "orders": list(t["orders"])}
-    return {"status": ("restored" if not errors else "unreconciled"), "asOf": as_of_ms, "window": [lo, hi], "executions": len(rows),
-            "realizedNet": round(sum(c["net"] for c in closed) + realized_open, 4), "fees": round(fees, 4), "cashFlow": round(cash, 4),
-            "openQty": {t["symbol"]: t["remaining"] for t in open_trades.values()}, "closedTrades": closed, "openTrades": open_trades, "errors": errors}
+        realized += gross - t["fees"]
+        common = {"tradeInstance": iid, "runId": t["runId"], "trigger": t["trigger"], "symbol": t["symbol"], "fees": round(t["fees"], 4),
+                  "orders": list(t["orders"]), "linkBasis": sorted(x for x in t["linkBasis"] if x)}
+        if t["bought"] - t["sold"] <= 1e-9:
+            closed.append({**common, "qty": t["bought"], "gross": round(gross, 4), "net": round(gross - t["fees"], 4), "openedTs": t["openedTs"], "closedTs": t["lastTs"]})
+        else:
+            open_trades[iid] = {**common, "remaining": round(t["bought"] - t["sold"], 6), "avgCost": round(avg / t["multiplier"], 6), "realizedGross": round(gross, 4)}
+    open_qty: dict = {}
+    for t in open_trades.values():
+        open_qty[t["symbol"]] = round(open_qty.get(t["symbol"], 0.0) + t["remaining"], 6)
+    status = "unsupported_session" if not session_supported else ("restored" if not errors else "unreconciled")
+    ids = sorted(str(e.get("id") or f"{e.get('orderId')}:{e['tsMs']}:{e['qty']}:{e['price']}") for e in rows)
+    return {"status": status, "asOf": as_of_ms, "readAt": read_at_ms, "window": [lo, hi], "executions": len(rows),
+            "executionSet": hashlib.sha256("|".join(ids).encode("utf-8")).hexdigest()[:24],
+            "realizedNet": round(realized, 4), "fees": round(fees, 4), "cashFlow": (round(cash, 4) if cash_known else None),
+            "openQty": open_qty, "openByInstance": {k: v["remaining"] for k, v in open_trades.items()},
+            "closedTrades": sorted(closed, key=lambda c: (c["closedTs"], c["tradeInstance"])), "openTrades": open_trades,
+            "lateObserved": late, "errors": errors}
+
+
+def execution_set(executions: list, *, window: tuple, as_of_ms: int) -> str:
+    """The identity of the executions a ledger as of `as_of_ms` SHOULD contain - the reducer compares it with what each
+    capture actually saw, so a fill discovered later REVISES with provenance instead of silently rewriting history."""
+    return build_ledger(executions, window=window, as_of_ms=as_of_ms, links={})["executionSet"]
 
 
 # ------------------------------------------------------------------------------------------------ bounded recorder
@@ -404,7 +519,8 @@ class ProfitCaptureObserver:
 
 # --------------------------------------------------------------------------------------------------- offline reducer
 def reduce_session(snapshots: list, *, execution_net: float | None = None, execution_fees: float | None = None,
-                   transfers: float = 0.0, p02: list | None = None, p06: list | None = None) -> dict:
+                   transfers: float | None = 0.0, p02: list | None = None, p06: list | None = None,
+                   final_executions: list | None = None) -> dict:
     """Offline. `snapshots` = records of ONE book/session in any order. `execution_net` / `execution_fees` = the
     execution-backed session result used to reconcile the flat endpoint; `transfers` = deposits/repairs, never trading
     gains. The EXECUTABLE peak uses only scorable snapshots. Recorder restarts (a new instance), missing sequence numbers
@@ -420,11 +536,29 @@ def reduce_session(snapshots: list, *, execution_net: float | None = None, execu
     duplicates = len(snaps) - len(uniq)
     snaps = uniq
     out: dict[str, Any] = {"version": REDUCER_VERSION, "snapshots": len(snaps), "duplicatesIgnored": duplicates}
+    scopes = sorted({(str((s.get("ids") or {}).get("portfolioId") or ""), str((s.get("ids") or {}).get("session") or "")) for s in snaps})
+    if len(scopes) > 1:                                       # one book, one session - a mixed input is refused, never blended
+        out.update({"status": "error_mixed_scope", "scopes": [{"portfolioId": a, "session": b} for a, b in scopes],
+                    "note": "snapshots of more than one book or session were supplied - nothing is reduced"})
+        return out
+    policies = {json.dumps((s.get("ids") or {}).get("policy"), sort_keys=True, default=str) for s in snaps}
+    out["scope"] = {"portfolioId": scopes[0][0] if scopes else None, "session": scopes[0][1] if scopes else None, "policyVariants": len(policies),
+                    "singlePolicy": len(policies) <= 1}
     if not snaps:
         out.update({"status": "no_snapshots", "note": "the recorder was off or the book was flat - nothing is inferred",
                     "pairedExits": {"p02": summarize_paired(p02, []), "p06": summarize_paired(p06, [])}})
         return out
-    scor = [s for s in snaps if (s.get("book") or {}).get("scorable")]
+    revisions = []
+    if final_executions is not None:                          # capture-as-of vs later reconciliation: a fill discovered later REVISES, with provenance
+        for s in snaps:
+            led = s.get("ledger") or {}
+            if led.get("executionSet") and led.get("window"):
+                want = execution_set(final_executions, window=tuple(led["window"]), as_of_ms=int(s["capturedAt"]))
+                if want != led["executionSet"]:
+                    revisions.append({"captureId": s.get("captureId"), "capturedAt": s["capturedAt"], "seq": s["seq"],
+                                      "why": "executions that occurred before this capture were not yet known to the observer (late arrival)"})
+    revised = {r["captureId"] for r in revisions}
+    scor = [s for s in snaps if (s.get("book") or {}).get("scorable") and s.get("captureId") not in revised]
     disp = [s for s in snaps if (s.get("book") or {}).get("displayedNet") is not None]
 
     def peak(rows, key):
@@ -441,7 +575,11 @@ def reduce_session(snapshots: list, *, execution_net: float | None = None, execu
             gaps.append({"at": b["capturedAt"], "kind": "recorder_restart", "from": a["seq"], "to": b["seq"]})
         elif int(b["seq"]) - int(a["seq"]) > 1:
             gaps.append({"at": b["capturedAt"], "kind": "missing_samples", "from": a["seq"], "to": b["seq"], "missing": int(b["seq"]) - int(a["seq"]) - 1})
-    drops = max(((s.get("recorder") or {}).get("droppedQueueFull", 0) + (s.get("recorder") or {}).get("droppedWriteFailed", 0)) for s in snaps)
+    per_inst: dict = {}                                       # drop counters restart with the observer: the session total is the SUM of each instance's maximum
+    for s in snaps:
+        k = s.get("recorderInstance")
+        per_inst[k] = max(per_inst.get(k, 0), int((s.get("recorder") or {}).get("droppedQueueFull", 0)) + int((s.get("recorder") or {}).get("droppedWriteFailed", 0)))
+    drops = sum(per_inst.values())
     unsc: dict[str, int] = {}
     for s in snaps:
         for r in (s.get("book") or {}).get("unscorableReasons") or []:
@@ -453,7 +591,8 @@ def reduce_session(snapshots: list, *, execution_net: float | None = None, execu
         "status": "ok", "first": snaps[0]["capturedAt"], "last": last["capturedAt"],
         "coverage": {"scorable": len(scor), "unscorable": len(snaps) - len(scor), "ratio": round(len(scor) / len(snaps), 4),
                      "unscorableReasons": unsc, "gaps": gaps, "recorderDrops": int(drops),
-                     "recorderInstances": len({s.get("recorderInstance") for s in snaps})},
+                     "recorderInstances": len({s.get("recorderInstance") for s in snaps}), "dropsByInstance": {str(k): v for k, v in per_inst.items()},
+                     "revisedByLateExecutions": revisions, "lateObservedExecutions": (last.get("ledger") or {}).get("lateObserved") or []},
         "realizedNetFinal": final_realized, "flatAtEnd": flat_end,
         "peakDisplayedNet": p_disp, "peakExecutableNet": p_exec, "displayedMinusExecutableAtExecPeak": None,
         "givebackVsExecutablePeak": (round(p_exec["value"] - final_realized, 4) if (p_exec and flat_end and final_realized is not None) else None),
@@ -470,7 +609,8 @@ def reduce_session(snapshots: list, *, execution_net: float | None = None, execu
             lt = open_at_peak.get(r.get("tradeInstance")) or {}
             at_peak = float(lt.get("realizedGross") or 0.0) - float(lt.get("fees") or 0.0) + (r["executable"]["netCovered"] or 0.0)
             fin = final_closed.get(r.get("tradeInstance"))
-            attr.append({"tradeInstance": r.get("tradeInstance"), "symbol": r.get("symbol"), "netAtPeak": round(at_peak, 4),
+            attr.append({"tradeInstance": r.get("tradeInstance"), "runId": (fin or lt).get("runId"), "trigger": (fin or lt).get("trigger"),
+                         "symbol": r.get("symbol"), "netAtPeak": round(at_peak, 4),
                          "finalNet": (fin["net"] if fin else None), "giveback": (round(at_peak - fin["net"], 4) if fin else None),
                          "feesAfterPeak": (round(fin["fees"] - float(lt.get("fees") or 0.0), 4) if fin else None),
                          "basis": ("executions (closed trade in the final ledger)" if fin else "unknown: the trade is not closed in the final ledger")})
@@ -479,16 +619,19 @@ def reduce_session(snapshots: list, *, execution_net: float | None = None, execu
     if execution_net is not None:
         if flat_end and final_realized is not None:
             diff = round(float(final_realized) - float(execution_net), 4)
-            fee_diff = (round(float((last.get("book") or {}).get("feesPaid") or 0.0) - float(execution_fees), 4) if execution_fees is not None else None)
+            fees_paid = (last.get("book") or {}).get("feesPaid")
+            fee_diff = (round(float(fees_paid) - float(execution_fees), 4) if (execution_fees is not None and fees_paid is not None) else None)
             trades_sum = round(sum(c["net"] for c in final_closed.values()), 4)
             cash0, cash1 = snaps[0].get("cash"), last.get("cash")
             flow0, flow1 = (snaps[0].get("book") or {}).get("ledgerCashFlow"), (last.get("book") or {}).get("ledgerCashFlow")
-            cash_diff = (round((cash1 - cash0) - (flow1 - flow0) - float(transfers), 4) if None not in (cash0, cash1, flow0, flow1) else None)
-            ok = abs(diff) <= 0.011 and (fee_diff is None or abs(fee_diff) <= 0.011) and abs(trades_sum - float(final_realized)) <= 0.011 \
-                and (cash_diff is None or abs(cash_diff) <= 0.011)
+            cash_diff = (round((cash1 - cash0) - (flow1 - flow0) - float(transfers), 4) if None not in (cash0, cash1, flow0, flow1, transfers) else None)
+            bad = abs(diff) > 0.011 or (fee_diff is not None and abs(fee_diff) > 0.011) or abs(trades_sum - float(final_realized)) > 0.011 \
+                or (cash_diff is not None and abs(cash_diff) > 0.011)
+            missing = [n for n, v in (("fees", fee_diff), ("cash", cash_diff)) if v is None]
             out["reconciliation"] = {"executionBackedNet": round(float(execution_net), 4), "snapshotRealizedNet": final_realized, "difference": diff,
                                      "feesDifference": fee_diff, "sumOfClosedTrades": trades_sum, "cashMinusLedgerFlow": cash_diff,
-                                     "transfersExcluded": round(float(transfers), 4), "status": ("ok" if ok else "error_unexplained_difference")}
+                                     "transfersExcluded": (round(float(transfers), 4) if transfers is not None else None), "comparisonsUnavailable": missing,
+                                     "status": ("error_unexplained_difference" if bad else ("partial_comparisons_unavailable" if missing else "ok"))}
         else:
             out["reconciliation"] = {"executionBackedNet": round(float(execution_net), 4), "status": "not_flat_at_last_snapshot",
                                      "note": "the endpoint is not flat or the ledger was never restored in the capture - not reconciled, not assumed"}
@@ -503,10 +646,19 @@ def summarize_paired(rows: list | None, snaps: list) -> dict | None:
     if rows is None:
         return None
     out = []
+    known: dict = {}                                          # trade instances VERIFIED by the execution ledger, with their lifecycle
+    for s in snaps:
+        led = s.get("ledger") or {}
+        for c in led.get("closedTrades") or []:
+            known[c["tradeInstance"]] = {"openedTs": c.get("openedTs"), "closedTs": c.get("closedTs")}
+        for k in (led.get("openTrades") or {}):
+            known.setdefault(k, {"openedTs": None, "closedTs": None})
     for r in rows:
         inst, at = r.get("tradeInstance") or r.get("entryOrderId"), int(r.get("signalTs") or r.get("observedAt") or 0)
         ctx = None
-        for s in reversed(snaps):
+        life = known.get(inst)
+        verified = life is not None and at > 0 and (life.get("openedTs") is None or at >= int(life["openedTs"])) and (life.get("closedTs") is None or at <= int(life["closedTs"]))
+        for s in (reversed(snaps) if verified else []):
             if int(s["capturedAt"]) <= at:
                 m = next((x for x in s["positions"] if x.get("tradeInstance") == inst and x["quantities"]["remaining"] > 0), None)
                 if m is not None:
@@ -515,5 +667,6 @@ def summarize_paired(rows: list | None, snaps: list) -> dict | None:
                            "bookScorable": s["book"]["scorable"]}
                 break
         out.append({"tradeInstance": inst, "policy": r.get("policy"), "outcome": r.get("outcome"), "dollarDelta": r.get("dollarDelta"),
+                    "identityVerified": bool(verified), "comparisonClass": r.get("comparisonClass") or ("dollars" if r.get("dollarDelta") is not None else "proxy_only"),
                     "bookContext": ctx})
     return {"rows": out, "withBookContext": sum(1 for x in out if x["bookContext"]), "total": len(out)}

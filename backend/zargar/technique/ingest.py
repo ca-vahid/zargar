@@ -750,16 +750,22 @@ class MethodIngestService:
                     if prep["preparationPolicy"] == "deterministic" and self._get("ingest.auto_arm", False):
                         # the PROPOSED policy: the same eligibility owner as the batch and the pre-open re-plan; one arm per candidate
                         try:
-                            sel = await _ps.prep_select(self.technique, [run.get("id")], persist=True, origin="ingest", source_ids=[sc["scenarioId"] for sc in scs]) if not hold else None
-                            dec = (sel or {}).get("decisions", [{}])[0] if sel else await _ps.prep_decide(self.technique, run.get("id"), origin="ingest", persist=True, source_hold=hold, source_ids=[sc["scenarioId"] for sc in scs])
+                            # ONE owner, ONE arm per candidate across workers and restarts (`prep_arm`): the hold and the scenario ids the
+                            # board check derived ride INTO the decision - a held source is refused by the owner, not by this caller
+                            async def _arm(_rid=run.get("id")):
+                                if not await authorized():
+                                    raise StaleWorker("lease or source no longer authorize this attempt (superseded)")
+                                return await self.technique.arm_plan(_rid, {}, authorize=authorize_arm, _prep_checked=True)
+                            out = await _ps.prep_arm(self.technique, run.get("id"), arm=_arm, origin="ingest", source_hold=(hold or None),
+                                                     source_ids=[sc["scenarioId"] for sc in scs])
+                            dec = out["decision"]
                             row["prepDecision"] = {k: dec.get(k) for k in ("disposition", "eligibleTriggers", "candidateKey", "explanation", "mode")}
-                            if sel and sel["arm"] and await authorized():
-                                await self.technique.arm_plan(run.get("id"), {}, authorize=authorize_arm)
+                            if out["armed"]:
                                 row["status"] = "armed"; row["autoArmed"] = True
-                            elif sel and not sel["arm"]:
-                                row["armSkipped"] = (sel["skipped"][0]["why"] if sel["skipped"] else "not eligible")
                             elif hold:
                                 row["armSkipped"] = "source held for resolution: " + "; ".join(hold)[:160]
+                            else:
+                                row["armSkipped"] = str(out.get("why") or "not eligible")
                         except StaleWorker as exc:
                             row["armSkipped"] = str(exc)[:200]; stopped = True
                         except Exception as exc:               # noqa: BLE001

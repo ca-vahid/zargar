@@ -1810,9 +1810,24 @@ class TechniqueService:
         return rd
 
     # ------------------------------------------------------------ arming (phase 2)
-    async def arm_plan(self, run_id: str, config: dict | None = None, *, authorize=None) -> dict:
-        # C1 (2026-09-12): route option-untradeable names before the runner sees the config
+    async def arm_plan(self, run_id: str, config: dict | None = None, *, authorize=None, _prep_checked: bool = False) -> dict:
         config = dict(config or {})
+        # em-prep-policy-v1: under the PROPOSED policy every arm - batch sheet, manual, API - passes the SAME eligibility owner
+        # and the same cross-worker single-arm guarantee. Baseline (the default) runs none of this. A human may still arm an
+        # ineligible plan, but only as an explicit, recorded override.
+        if not _prep_checked and self.prep_policy()["preparationPolicy"] == "deterministic":
+            run0 = await self.get_run(run_id)
+            if run0 is not None and str(run0.get("technique") or "enhanced_market") == "enhanced_market":
+                from .prep_service import prep_arm, prep_decide
+                if config.get("prepOverride"):
+                    d = await prep_decide(self, run_id, persist=True, run=run0)
+                    config["prepOverride"] = {"by": "manual", "disposition": d.get("disposition"), "inputKey": d.get("inputKey")}
+                else:
+                    out = await prep_arm(self, run_id, run=run0, arm=lambda: self.arm_plan(run_id, config, authorize=authorize, _prep_checked=True))
+                    if not out["armed"]:
+                        raise ValueError(f"preparation policy: not armed ({out['why']}): {(out['decision'].get('explanation') or '')[:200]}")
+                    return out["result"]
+        # C1 (2026-09-12): route option-untradeable names before the runner sees the config
         s = self.engine.settings
         policy = str(s.get("technique.universe.untradeable", "shares") or "shares")
         run = await self.get_run(run_id)

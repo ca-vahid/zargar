@@ -7,9 +7,10 @@ import datetime as dt
 import hashlib
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
-from ..models import TechniquePrepDecision, TechniqueRun
+from ..models import TechniqueArmed, TechniquePrepDecision, TechniqueRun
 from . import preparation_policy as pp
 
 ORIGIN_OF_TRIGGER = {"promote": "batch", "sheet": "batch", "ingest": "ingest", "preopen_replan": "preopen_replan"}
@@ -26,7 +27,9 @@ def input_key_for(run: dict, policy: dict, *, origin: str | None = None, source_
       policy mode + version + grade floor + conditional-review mode
       origin                                   the path's authority differs under `baseline` (model review vs ingestion inline)
       analyst evidence                         the model review's verdict AND reasons (baseline selection depends on them)
-      source holds + scenario / correction ids a new hold or a corrected scenario is a new decision"""
+      source holds + scenario / correction ids a new hold or a corrected scenario is a new decision
+      plan geometry + reference price          the EFFECTIVE plan: two plans on the same bars (a pre-open re-plan on another reference
+                                               price, a re-read under other rules) never share one approval"""
     cfg = run.get("config") or {}
     res = run.get("result") or {}
     plan = res.get("plan") or {}
@@ -34,8 +37,13 @@ def input_key_for(run: dict, policy: dict, *, origin: str | None = None, source_
     reviewed = bool(an.get("verdict"))
     llm = run.get("llm") or {}
     analyst = _h({"verdict": an.get("verdict"), "reasons": an.get("noTradeReasons") or an.get("no_trade_reasons") or []}) if reviewed else "absent"
+    geometry = _h({"ref": plan.get("referencePrice"), "lastClose": plan.get("lastClose"), "builtFromMs": plan.get("builtFromMs"),
+                   "triggers": [[t.get("id"), t.get("kind"), t.get("direction"), t.get("valid"), (t.get("entry") or {}).get("price"),
+                                 ((t.get("stop") or {}).get("price") if isinstance(t.get("stop"), dict) else t.get("stop")),
+                                 [x.get("price") if isinstance(x, dict) else x for x in t.get("targets") or []], (t.get("assessment") or {}).get("grade")]
+                                for t in plan.get("triggers") or []]})
     sources = sorted([str(x) for x in (cfg.get("sourceRevisionIds") or [])] + [f"scenario:{x}" for x in (source_ids or [])]
-                     + [f"hold:{x}" for x in (source_hold or [])])
+                     + [f"hold:{x}" for x in (source_hold or [])] + [f"plan:{geometry}"])
     return pp.causal_input_key(
         symbol=run.get("symbol") or "", session=str(plan.get("planFor") or ""), as_of=run.get("asOf"),
         bars_hash=str(cfg.get("barsAssetId") or cfg.get("barsHash") or ""), source_hashes=sources,
@@ -75,8 +83,55 @@ async def prep_decide(svc, run_id: str, *, origin: str | None = None, persist: b
                                                   disposition=d["disposition"], payload=d, created_at=now, updated_at=now))
             else:
                 row.status, row.attempts, row.payload, row.disposition, row.updated_at = "done", int(row.attempts or 0) + 1, d, d["disposition"], now
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:                         # another worker decided the SAME inputs first: one row, the same decision - idempotent
+                await session.rollback()
+                async with svc.engine.sf() as again:
+                    row = await again.get(TechniquePrepDecision, key)
+                if row is not None:
+                    return {**dict(row.payload or {}), "reused": True, "racedWith": "concurrent_decision"}
+                raise
     return d
+
+
+def _lock_id(candidate_key: str) -> int:
+    return int(hashlib.sha256(("em-prep-arm:" + str(candidate_key)).encode("utf-8")).hexdigest()[:15], 16)
+
+
+async def armed_candidate_in_db(svc, symbol: str, candidate_key: str) -> str | None:
+    """The run id of an ARMED / PAUSED EM plan in the DATABASE with this candidate key (never the process memory: another
+    worker, or this one before a restart, may have armed it)."""
+    async with svc.engine.sf() as session:
+        rows = (await session.execute(select(TechniqueArmed.run_id, TechniqueRun.result).join(TechniqueRun, TechniqueRun.id == TechniqueArmed.run_id)
+                                      .where(TechniqueArmed.symbol == symbol, TechniqueArmed.technique == "enhanced_market",
+                                             TechniqueArmed.status.in_(("armed", "paused"))))).all()
+    for rid, result in rows:
+        if pp.candidate_key(symbol, (result or {}).get("plan") or {}) == candidate_key:
+            return rid
+    return None
+
+
+async def prep_arm(svc, run_id: str, *, arm, origin: str | None = None, source_hold: list | None = None, source_ids: list | None = None,
+                   run: dict | None = None) -> dict:
+    """ONE arm per candidate ACROSS workers and restarts. The decision is made by the one owner (`prep_decide`); the arm runs
+    under a Postgres advisory lock on the candidate key, after re-checking the DATABASE for an armed plan with that key. A
+    second worker waits, then finds the first one's row and skips; a restart after the commit but before the acknowledgement
+    finds the committed row and skips. `arm` = the coroutine function that performs the arm (the existing stable arm
+    identity - the run id - is untouched). Returns {armed, why, decision, armedRunId?, result?}."""
+    d = await prep_decide(svc, run_id, origin=origin, persist=True, run=run, source_hold=source_hold, source_ids=source_ids)
+    if d.get("disposition") != "eligible":
+        return {"armed": False, "why": d.get("disposition") or "not_eligible", "decision": d}
+    key, lock = d["candidateKey"], _lock_id(d["candidateKey"])
+    async with svc.engine.sf() as holder:                  # the lock lives on THIS connection until it is released or the process dies
+        await holder.execute(text("select pg_advisory_lock(:k)"), {"k": lock})
+        try:
+            existing = await armed_candidate_in_db(svc, str(d.get("symbol") or ""), key)
+            if existing:
+                return {"armed": False, "why": ("already_armed" if existing == run_id else "duplicate_of_armed_candidate"), "armedRunId": existing, "decision": d}
+            return {"armed": True, "why": None, "decision": d, "result": await arm()}
+        finally:
+            await holder.execute(text("select pg_advisory_unlock(:k)"), {"k": lock})
 
 
 async def prep_select(svc, run_ids: list, *, persist: bool = False, origin: str | None = None, source_ids: list | None = None) -> dict:

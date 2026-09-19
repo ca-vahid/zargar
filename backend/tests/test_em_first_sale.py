@@ -7,6 +7,7 @@ re-decided at final dispatch; research persistence never holds an entry; the def
 through `_enter` -> OrderManager on the reviewers' dispatch rig (real Postgres, pinned weekday clock)."""
 import asyncio
 import inspect
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -432,3 +433,69 @@ def test_skhy_repick_is_off_by_default_bounded_to_one_attempt_and_never_chases(m
     assert asyncio.run(PlanArmer._repick_after_rate_limit(me, ap, trade, other)) == other and calls == [], "only a provider rate limit is retried"
     from zargar.settings_service import DEFAULTS
     assert DEFAULTS[KNOB] == 0.0
+
+
+# ------------------------------------------------------------------------------ final-completion goal section 5
+def test_malformed_nonfinite_derived_and_delayed_inputs_are_unknown_and_a_print_is_never_called_an_executable_quote():
+    for bad in (float("nan"), float("inf"), "abc", None):
+        r = _rec(stop=bad)
+        assert r["gate"]["verdict"] == "unknown" and fs.decide(r, "enforce")["allow"] is False and fs.decide(r, "observe")["allow"] is True, bad
+    nan_quote = {**_ev(95.355), "bid": float("nan"), "ask": float("inf"), "last": float("nan")}
+    assert _rec(underlier_evidence=nan_quote)["gate"]["verdict"] == "unknown"
+    for flag in ({"delayed": True}, {"transform": "mid-of-chain"}, {"source": "derived:synthetic"}, {"source": "chain"}):
+        r = _rec(underlier_evidence={**_ev(95.355), "bid": 95.335, **flag})
+        assert "source_not_executable" in r["underlying"]["validated"]["problems"] and r["gate"]["verdict"] == "unknown", flag
+        assert fs.decide(r, "enforce")["disposition"] == "deferred_missing_evidence"
+    quote = _rec()
+    assert quote["underlying"]["validated"]["boundClass"] == "executable_quote" and quote["gate"]["admissionBasis"]["boundClass"] == "executable_quote"
+    only_print = _rec(underlier_evidence={**_ev(95.335), "bid": None, "ask": None})
+    v = only_print["underlying"]["validated"]
+    assert v["basis"] == "last" and v["boundClass"] == "venue_print_fallback" and v["policy"] == "underlier-print-fallback-v1", "declared and labelled - never an executable quote"
+    stale_print = _rec(underlier_evidence={**_ev(95.335), "bid": None, "ask": None, "lastTs": SBUX["now_ms"] - 60_000})
+    assert stale_print["gate"]["verdict"] == "unknown", "the fallback is validated on its OWN venue print time"
+
+
+async def test_a_refusal_keeps_its_durable_attribution_when_the_research_recorder_drops_everything(dispatch_rig, monkeypatch):
+    from sqlalchemy import select
+    from zargar.models import Event
+    rig = await _rig(dispatch_rig, monkeypatch, "enforce", underlier=None)
+
+    def dead_recorder(*a, **kw):
+        raise RuntimeError("research recorder is down")
+    monkeypatch.setattr(rig.runner, "first_sale_publish", dead_recorder)
+    await rig.runner._enter(rig.ap, rig.trade, None, journal=True)
+    assert rig.submit.await_count == 0 and rig.trade.status == "skipped"
+    async with rig.engine.sf() as s:
+        skipped = (await s.execute(select(Event).where(Event.type == "TechniquePlanTriggerSkipped"))).scalars().all()
+        research = (await s.execute(select(Event).where(Event.type == "TechniqueFirstSale"))).scalars().all()
+    assert research == [] and len(skipped) == 1, "the research record is gone; the refusal is not"
+    d = skipped[0].payload
+    assert d["runId"] == rig.ap.run_id and d["trigger"] == rig.trade.trigger_id and d["stage"] == "first_sale" and d["detail"]["disposition"] == "deferred_missing_evidence"
+
+
+async def test_a_final_dispatch_refusal_is_durable_without_the_recorder_and_exits_never_meet_the_gate(dispatch_rig, monkeypatch):
+    import inspect
+    from sqlalchemy import select
+    from zargar.execution.planrunner import PlanRunner
+    from zargar.models import Event
+    rig = await _rig(dispatch_rig, monkeypatch, "enforce")
+    monkeypatch.setattr(rig.runner, "first_sale_publish", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("recorder down")))
+    original = rig.engine.risk.evaluate
+
+    async def risk(intent, portfolio):
+        verdict = await original(intent, portfolio)
+        rig.engine.quotes.on_quote(_live_quote(102.0))
+        return verdict
+    monkeypatch.setattr(rig.engine.risk, "evaluate", risk)
+    await rig.runner._enter(rig.ap, rig.trade, None, journal=True)
+    assert rig.submit.await_count == 0 and rig.trade.timing["firstSaleDispatch"]["disposition"] == "refused"
+    async with rig.engine.sf() as s:
+        evs = (await s.execute(select(Event).where(Event.aggregate_id == rig.ap.run_id))).scalars().all()
+    durable = [e for e in evs if e.type != "TechniqueFirstSale" and "first-sale" in json.dumps(e.payload).lower()]
+    assert durable, "the dispatch refusal is attributed to the run and trigger on the established journal path"
+    assert all((e.payload.get("runId") == rig.ap.run_id) for e in durable)
+    for name in ("_exit", "_flatten_trade", "on_quote_watch"):
+        fn = getattr(PlanRunner, name, None)
+        if fn is not None:
+            src = inspect.getsource(fn)
+            assert "_first_sale_check" not in src and "first_sale_final" not in src, f"{name}: no entry-quality gate may strand a protective exit"

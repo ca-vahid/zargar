@@ -51,6 +51,11 @@ def build_em_review_routes(app, eng, auth) -> None:
         from ..technique import em_review_service as rs
         return await rs.profit_capture(svc(), _day(date))
 
+    @app.get("/api/technique/em/model-cost", dependencies=[auth])
+    async def em_model_cost(date: str = ""):
+        from ..technique import em_review_service as rs
+        return await rs.model_cost(svc(), _day(date))
+
     @app.get("/api/technique/em/runs/{run_id}/prep-decision", dependencies=[auth])
     async def em_prep_decision(run_id: str):
         try:
