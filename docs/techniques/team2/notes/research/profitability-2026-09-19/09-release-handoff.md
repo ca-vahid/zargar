@@ -1,5 +1,7 @@
 # 9. Selection study S1: release handoff (registration `s1-r4`)
 
+> **DEPLOYED AND ACTIVATED on 2026-09-19** on the user's authorisation: see `10-deployment-and-activation-receipt.md`.
+>
 > **ACCEPTED by the review team (2026-09-19)**, with the documented limitations, for this acceptance scope: no further development
 > and no historical rerun. The package is ready for a SEPARATE merge and deployment approval, with the collector kept OFF.
 > ACTIVATION stays a separate decision, taken only after the deployed build, the plan restoration and the registration have been
