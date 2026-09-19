@@ -6,6 +6,7 @@ practice end-to-end through the risk gate to a simulated fill, derived
 open/close actions, the new option risk checks, expiry settlement, and the
 REST surface (no SnapTrade configured -> impact is 503, capabilities empty).
 """
+import asyncio
 import datetime as dt
 import json
 
@@ -332,14 +333,30 @@ async def test_option_order_practice_roundtrip(opt_engine):
             "option_premium_notional", "option_spread"} <= names
     assert dry["option"]["strike"] == 100.0 and dry["symbol"] == sym
 
-    # real practice order fills on the simulator against the chain quote
+    # real practice order: the delayed CBOE chain quote PRICES the dry run above, but since 2026-09-14
+    # (12491f2b) the simulator never fills from a delayed/`chain` quote - an option fill needs a venue
+    # identity (opra/ibkr) with a source time. The order therefore rests until a real-time quote arrives.
     r = await client.post("/api/orders", json={
         "portfolio_id": pid, "symbol": sym, "sec_type": "OPT", "side": "BUY",
         "qty": 2, "order_type": "MKT"})
     assert r.status_code == 200, r.text
     order = r.json()
     assert order["status"] == "SUBMITTED", order
-    await eng.options.refresh_tracked()   # re-publish the chain quote -> sim fill
+    await eng.options.refresh_tracked()   # the chain quote again: still delayed, still no fill
+    rows = await eng.orders.list_orders(pid)
+    assert next(o for o in rows if o["id"] == order["id"])["status"] != "FILLED"
+
+    def venue_quote():
+        # the production OPRA path (OptionsService live pass): the contract's overlay becomes the real-time
+        # NBBO FIRST, then the quote is published - a bare publish would be overlaid by the delayed chain
+        now = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+        eng.quotes.set_overlay(sym, bid=2.0, ask=2.1, bid_size=20, ask_size=20, source="opra", source_ts=now,
+                               anchor_last=2.05)
+        eng.quotes.on_quote(Quote(sym, bid=2.0, ask=2.1, last=2.05, bid_size=20, ask_size=20,
+                                  ts=now, source="opra", source_ts=now))
+    venue_quote()
+    await asyncio.sleep(0.2)              # past the sim's 120 ms latency: a quote AFTER it prices the fill
+    venue_quote()
 
     async def filled():
         rows = await eng.orders.list_orders(pid)
