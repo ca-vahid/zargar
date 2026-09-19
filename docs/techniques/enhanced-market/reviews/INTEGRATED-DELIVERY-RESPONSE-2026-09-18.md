@@ -1,5 +1,7 @@
 # EM integrated delivery - consolidated closure, REVISION 2 (2026-09-19)
 
+> SUPERSEDED where they conflict by `FINAL-COMPLETION-RESPONSE-2026-09-19.md` (final candidate `2d7f51bb`, 0.8.23): the revision-2 review found two more defects (R2-01, R2-02) in the candidate this document describes. Kept as the record of revisions 1 and 2.
+
 Answers `EM-INTEGRATED-DEVELOPMENT-PLAN-2026-09-18.md` (the contract) and `2026-09-18-INTEGRATED-CANDIDATE-REVIEW.md` (IR-01..IR-05, the
 outstanding acceptance requirements) as ONE corrected candidate. Owner: EM desk. Revision 1 of this document described candidate `0f0949b`;
 the reviewers reproduced real defects in it. Sections 0a to 0c are new and govern; sections 1 to 10 are revision 1, corrected in place where
