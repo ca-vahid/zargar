@@ -8,7 +8,7 @@ app was changed, no paid model call was made, and the runtime database was only 
 |---|---|
 | Tested candidate | **`0f0949b42854817ffa58d175f2ffaaa18ff26911`** on `claude/technique-review-trade-plan-fbb9ba`, version **0.8.21** (quartet + lockfile agree; `npm run build` and `check-release` green) |
 | Contains | runtime head `f4ce6ad8` (= origin/main `c40f1fd0`, v0.8.20) merged cleanly; frozen baseline at the start of work: `7f8e9e1` (v0.8.19) |
-| Live at the time of writing | v0.8.19 build `491d6ff` when this work began; the runtime checkout has since moved to `f4ce6ad8` (another desk). This delivery is NOT deployed |
+| Live at the time of writing | **v0.8.20 build `f4ce6ad`** (`/api/health`, ok), deployed by another desk during this work; it was v0.8.19 build `491d6ff` when the work began. The candidate contains `f4ce6ad8`. This delivery is NOT deployed |
 | Docs-only receipt | any commit after the tested SHA touches `docs/` only (exact diff: `git diff 0f0949b42854817ffa58d175f2ffaaa18ff26911..HEAD --stat`) |
 | Paid model calls | 0. Runtime DB: read-only transactions only. Test DBs: `zargar_test_em` (private); reviewer files on `zargar_test_codex` (see Tests) |
 
