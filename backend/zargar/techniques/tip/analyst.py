@@ -1170,7 +1170,11 @@ async def _source_history(eng, source: str | None, *, hours: float = 72,
                      for r in rows)
 
 
-async def _rules_text(eng, *, as_of=None, core_only: bool = False) -> tuple[str, int, dict | None]:
+PENDING_HEADER = ("PENDING RULE PROPOSALS - NOT operative policy (awaiting human review; listed so you do not re-propose "
+                  "them; never apply one as a rule):")
+
+
+async def _rules_text(eng, *, as_of=None, core_only: bool = False, stamp_supply: bool = False) -> tuple[str, int, dict | None]:
     """The analyst's own rulebook (tip_notes scope 'rule'), oldest first so the
     rulebook reads in the order it was written; starter rules until one exists.
     `as_of` (historical experiments) bounds the rulebook to event time.
@@ -1195,24 +1199,51 @@ async def _rules_text(eng, *, as_of=None, core_only: bool = False) -> tuple[str,
         budget = int(eng.settings.get("techniques.tip.analyst_max_rules", 50) or 50)
     except Exception:
         budget = 50
-    core = [r for r in rules if r.get("core")]
-    rest = [r for r in rules if not r.get("core")]          # newest first
+    # ECON-04 / D4 (2026-09-19): the rule budget belongs to OPERATIVE policy. A pending proposal (born or flagged
+    # `needs_human`) used to compete newest-first for the same 50 slots - 20 proposals displaced the 7 oldest operative
+    # rules on every run while being labelled non-operative. Operative rules now take the whole budget (core first,
+    # then newest); pending proposals travel in a SEPARATE non-operative channel with its own small cap, so the model
+    # still sees what is already proposed (and does not re-propose it) without spending operative capacity.
+    pending_all = [r for r in rules if r.get("needsHuman")]              # newest first
+    operative = [r for r in rules if not r.get("needsHuman")]
+    core = [r for r in operative if r.get("core")]
+    rest = [r for r in operative if not r.get("core")]                   # newest first
+    try:
+        pending_budget = max(0, int(eng.settings.get("techniques.tip.analyst_max_pending_rules", 6) or 0))
+    except Exception:
+        pending_budget = 6
     if core_only:
-        # INTRA-03 compact route: the CORE rules only (the newest few when nothing is pinned)
+        # INTRA-03 compact route: the CORE rules only (the newest few OPERATIVE rules when nothing is pinned)
         from . import recap as _recap
-        selected = _recap.compact_rules(rules)
+        selected = _recap.compact_rules(operative)
+        pending = []
     else:
         selected = core + rest[:max(0, budget - len(core))]
+        pending = pending_all[:pending_budget]
+    selected_ids = {str(r["id"]) for r in selected}
+    pending_ids = {str(r["id"]) for r in pending}
     selection = {"total": len(rules), "core": len(core),
-                 "recent": len(selected) - len(core), "omitted": len(rules) - len(selected),
-                 "order": ("core-only (compact route)" if core_only else "core-first, then newest"), "budget": budget}
-    rules = selected
-    ordered = list(reversed(rules))
-    lines = "\n".join(
-        ("- [PENDING REVIEW — proposed or disputed, NOT operative policy: do not apply it as a rule] "
-         if n.get("needsHuman") else "- ")
-        + f"{n['text']} ({(n['createdAt'] or '')[:10]})"
-        for n in ordered)
+                 "recent": len(selected) - len(core), "omitted": len(operative) - len(selected),
+                 "order": ("core-only (compact route)" if core_only
+                           else "operative: core-first, then newest; pending proposals in a separate capped channel"),
+                 "budget": budget, "operative": len(operative), "pendingTotal": len(pending_all),
+                 "pendingSupplied": len(pending), "pendingBudget": pending_budget,
+                 "omittedIds": [str(r["id"]) for r in operative if str(r["id"]) not in selected_ids],
+                 "pendingOmittedIds": [str(r["id"]) for r in pending_all if str(r["id"]) not in pending_ids]}
+    ordered_operative = list(reversed(selected))
+    ordered_pending = list(reversed(pending))
+    # the SNAPSHOT keeps its one chronological order (oldest first, operative and pending interleaved, each flagged):
+    # ids, revisions and the content hash stay comparable with earlier runs; only the rendered TEXT separates channels
+    supplied = selected_ids | pending_ids
+    ordered = [r for r in reversed(rules) if str(r["id"]) in supplied]
+    rules = ordered
+    lines = "\n".join(f"- {n['text']} ({(n['createdAt'] or '')[:10]})" for n in ordered_operative)
+    if ordered_pending:
+        lines += ("\n\n" + PENDING_HEADER + "\n" + "\n".join(
+            "- [PENDING REVIEW — proposed or disputed, NOT operative policy: do not apply it as a rule] "
+            + f"{n['text']} ({(n['createdAt'] or '')[:10]})" for n in ordered_pending))
+        if selection["pendingOmittedIds"]:
+            lines += f"\n- (+{len(selection['pendingOmittedIds'])} older pending proposal(s) not shown)"
     import hashlib
     canon = "\n".join(f"{n['id']}|{int(bool(n.get('needsHuman')))}|{n['text']}"
                       for n in ordered)
@@ -1227,6 +1258,11 @@ async def _rules_text(eng, *, as_of=None, core_only: bool = False) -> tuple[str,
                    "createdAt": n.get("createdAt")} for n in ordered],
     }
     _rules_text.last_snapshot = snapshot
+    # SUPPLY is measured apart from reliance (KB-08) - rules were never stamped, so every rule read "supplied 0".
+    # Live runs only: an as-of (historical / experiment) read must not keep knowledge alive.
+    if stamp_supply and as_of is None and ordered:
+        with contextlib.suppress(Exception):
+            await eng.signals_service.refresh_notes_cited([str(n["id"]) for n in ordered], used_ids=[])
     return lines, len(rules), snapshot
 
 
@@ -1888,7 +1924,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     notes_txt = "\n".join(
         f"- N{i + 1} [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
         for i, n in enumerate(notes)) or "(none yet)"
-    rules_txt, rules_n, snap = await _rules_text(eng, as_of=as_of_dt, core_only=compact)
+    rules_txt, rules_n, snap = await _rules_text(eng, as_of=as_of_dt, core_only=compact, stamp_supply=not experiment)
     if rules_n and snap:
         rec.step("note", f"Rulebook snapshot: {rules_n} rule(s), hash "
                          f"{snap['rulesHash']}.", **snap)
@@ -2297,7 +2333,7 @@ class IntakeRun:
             pass
         self.step("note", "Nothing tradable — reviewing the update against the desk's "
                           "own book (positions, open tips, notes).")
-        rules_txt, _rules_n, _snap = await _rules_text(eng)
+        rules_txt, _rules_n, _snap = await _rules_text(eng, stamp_supply=True)
         history_txt = await _source_history(eng, source)
         event_line = ""
         try:

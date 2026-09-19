@@ -66,8 +66,9 @@ def _svc(mode, *, positions=(), fail=False):
 
         async def execute(self, *a, **k):
             return NS(all=lambda: [])                  # no live proposals
+    # every component present and answering: only then is "nothing matched" an authoritative empty desk
     eng = NS(settings={"techniques.tip.review_gate": mode}, journal=journal, position_manager=Mgr(),
-             tip_runner=None, sf=lambda: _Session())
+             tip_runner=NS(_armed={}, restore_complete=True), sf=lambda: _Session())
     return NS(engine=eng), journal
 
 
@@ -130,3 +131,10 @@ async def test_a_failing_decision_never_blocks_the_review():
         assert await SignalsService._review_gate(svc, _intake(), CONTENT, OUT, DISCARD_MGMT, path="discarded") is True
     finally:
         rg.decide = orig
+
+
+async def test_a_runner_whose_restore_has_not_completed_keeps_the_review():
+    svc, journal = _svc("enforce")
+    svc.engine.tip_runner = NS(_armed={}, restore_complete=False)
+    assert await SignalsService._review_gate(svc, _intake(), CONTENT, OUT, DISCARD_MGMT, path="discarded") is True
+    assert journal.append.await_args.args[1]["readErrors"] == ["plans: tip runner restore not complete"]

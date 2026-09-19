@@ -33,7 +33,7 @@ import asyncpg
 from . import tip_outcomes
 from .tip_llm_cost import normalize_usage, price
 
-VERSION = "tips-scorecard-v1"
+VERSION = "tips-scorecard-v2"
 ET = dt.timezone(dt.timedelta(hours=-4))
 OCC = re.compile(r"^([A-Z.]{1,6})(\d{6})([CP])(\d{8})$")
 REGISTRY = os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "techniques", "tip", "research",
@@ -48,6 +48,10 @@ def J(v):
 def session_of(ts: dt.datetime) -> dt.date:
     """ET session date: anything before 04:00 ET belongs to the previous session (same anchor as dayStart)."""
     return (ts.astimezone(ET) - dt.timedelta(hours=4)).date()
+
+
+def _et(ts_ms) -> str:
+    return dt.datetime.fromtimestamp(int(ts_ms) / 1000, dt.timezone.utc).astimezone(ET).strftime("%m-%d %H:%M")
 
 
 def mult(symbol: str) -> float:
@@ -216,7 +220,11 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
         shadows.append({"book": pf["name"], "quarantined": bool(pf["quarantined"]), "kind": pf["book"],
                         "realizedNet": net, "closedMatches": len(sd["realizations"]),
                         "openLots": len(sd["open_lots"]), "unallocated": len(sd["unallocated"])})
+    since_d = dt.date.fromisoformat(since)
+    pre = await conn.fetchval("select count(*) from executions where portfolio_id = $1 and ts < $2", book,
+                              dt.datetime.combine(since_d, dt.time(4, 0), tzinfo=ET))
     return {"version": VERSION, "since": since, "until": until.isoformat(), "book": book, "trading": t, "marks": m,
+            "preIntervalExecutions": int(pre or 0),
             "cash": cash, "model": mc, "shadows": shadows, "registry": registry}
 
 
@@ -284,51 +292,71 @@ def render(res: dict) -> str:
     sessions = sorted(sd for sd in set(t["days"]) | set(m["close"]) | {k[0] for k in mc["per"]} if since <= sd <= until)
     L.append(f"# Tips economic scorecard ({VERSION}) - {res['since']} .. {res['until']}\n")
     L.append("Tips Practice book only in the trading columns; shadow research books are listed apart and never summed. "
-             "Realized = FIFO lots after ALLOCATED fees (the census engine). Marked change = persisted session-close "
-             "equity minus the previous close. Model cost = list-price ESTIMATE from `llm.rates` - not an invoice.\n")
-    L.append("| session | method realized net | fees in it | questioned net | repairs | close equity | marked change | open (MV - cost) | model cost (priced) | unpriced runs | partial runs | net after model cost |")
-    L.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
-    prev_eq = m["start"]; cum = collections.Counter()
+             "Realized = FIFO lots after ALLOCATED fees (the census engine; fees counted once, inside realized). "
+             "Model cost = list-price ESTIMATE from `llm.rates` - not an invoice.\n")
+    L.append("**Accounting day, not the market close:** a session runs 04:00 ET to 04:00 ET (the desk's day anchor). Its MARK is "
+             "the last persisted equity point inside that window - the actual timestamp is printed; it is normally hours "
+             "after 16:00 ET and includes any after-hours quote drift. Model runs are assigned to the same window "
+             "(`tip_llm_cost` uses the calendar day instead, so its daily totals differ by the 00:00-04:00 ET runs).\n")
+    L.append("**Primary metric = marked change after model cost.** Realized after model cost is printed beside it; they "
+             "differ whenever open positions are marked.\n")
+    prior = [sd for sd in m["close"] if sd < since]
+    if prior:
+        base_sd = max(prior); baseline = m["close"][base_sd][0]
+        base_label = f"the {base_sd} accounting-day mark ({_et(m['close'][base_sd][2])})"
+    else:
+        baseline = m["start"]; base_label = "the book's starting cash (report starts at inception)"
+    L.append(f"Interval baseline: {baseline:,.2f} = {base_label}.\n")
+    L.append("| session | mark at (ET) | mark equity | MARKED change | method realized net | fees in it | questioned net | repairs | "
+             "realized total | model cost (priced) | unpriced runs | partial runs | **MARKED after model cost (primary)** | realized after model cost |")
+    L.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+    prev_eq = baseline; cum = collections.Counter()
     for sd in sessions:
         dd = t["days"].get(sd) or {"net": 0.0, "fees": 0.0, "q_net": 0.0, "repair": 0.0}
         eq = m["close"].get(sd)
         chg = (eq[0] - prev_eq) if eq else None
-        mv_minus_cost = None
-        if eq:
-            open_cost = sum(l["qty"] * l["px"] * mult(l["symbol"]) for l in t["open_lots"]
-                            if session_of(l["ts"]) <= sd)          # approximate at that close (lots still open today)
-            mv_minus_cost = (eq[0] - eq[1]) - open_cost if sd == max(m["close"]) else None
         cost_rows = [v for (d, _st), v in mc["per"].items() if d == sd]
         usd = sum(v["usd"] for v in cost_rows)
         unp = sum(v["unpricedRuns"] for v in cost_rows)
         part = sum(v["partialRuns"] for v in cost_rows)
         trade_total = dd["net"] + dd["q_net"] + dd["repair"]
-        L.append(f"| {sd} | {dd['net']:+,.2f} | {dd['fees']:,.2f} | {dd['q_net']:+,.2f} | {dd['repair']:+,.2f} | "
-                 f"{(f'{eq[0]:,.2f}' if eq else '-')} | {(f'{chg:+,.2f}' if chg is not None else '-')} | "
-                 f"{(f'{mv_minus_cost:+,.2f}' if mv_minus_cost is not None else '')} | {usd:,.2f} | {unp} | {part} | "
-                 f"{trade_total - usd:+,.2f} |")
+        L.append(f"| {sd} | {(_et(eq[2]) if eq else '-')} | {(f'{eq[0]:,.2f}' if eq else '-')} | "
+                 f"{(f'{chg:+,.2f}' if chg is not None else '-')} | {dd['net']:+,.2f} | {dd['fees']:,.2f} | {dd['q_net']:+,.2f} | "
+                 f"{dd['repair']:+,.2f} | {trade_total:+,.2f} | {usd:,.2f} | {unp} | {part} | "
+                 f"{(f'**{chg - usd:+,.2f}**' if chg is not None else '-')} | {trade_total - usd:+,.2f} |")
         cum["net"] += dd["net"]; cum["fees"] += dd["fees"]; cum["q"] += dd["q_net"]; cum["rep"] += dd["repair"]
         cum["usd"] += usd; cum["unp"] += unp; cum["part"] += part
         if eq:
             prev_eq = eq[0]
-    last = m["close"].get(max(sd for sd in m["close"] if sd <= until)) if m["close"] else None
-    L.append(f"| **cumulative** | **{cum['net']:+,.2f}** | {cum['fees']:,.2f} | {cum['q']:+,.2f} | {cum['rep']:+,.2f} | "
-             f"{(f'{last[0]:,.2f}' if last else '-')} | **{((last[0] - m['start']) if last else 0):+,.2f}** | | "
-             f"**{cum['usd']:,.2f}** | {cum['unp']} | {cum['part']} | **{cum['net'] + cum['q'] + cum['rep'] - cum['usd']:+,.2f}** |")
+    in_range = [sd for sd in m["close"] if sd <= until]
+    last = m["close"].get(max(in_range)) if in_range else None
+    marked_cum = (last[0] - baseline) if last else 0.0
+    realized_cum = cum["net"] + cum["q"] + cum["rep"]
+    L.append(f"| **cumulative** | {(_et(last[2]) if last else '-')} | {(f'{last[0]:,.2f}' if last else '-')} | **{marked_cum:+,.2f}** | "
+             f"**{cum['net']:+,.2f}** | {cum['fees']:,.2f} | {cum['q']:+,.2f} | {cum['rep']:+,.2f} | {realized_cum:+,.2f} | "
+             f"**{cum['usd']:,.2f}** | {cum['unp']} | {cum['part']} | **{marked_cum - cum['usd']:+,.2f}** | {realized_cum - cum['usd']:+,.2f} |")
+    if last:
+        open_cost_now = sum(l["qty"] * l["px"] * mult(l["symbol"]) for l in t["open_lots"])
+        L.append(f"\nOpen positions at the last mark: market value minus cost {(last[0] - last[1]) - open_cost_now:+,.2f} "
+                 f"(lots still open: {len(t['open_lots'])}); this is why marked and realized differ.")
     # reconciliation
     L.append("\n## Reconciliation\n")
     worst = max((abs(v["diff"]) for v in res["cash"].values()), default=0.0)
     L.append(f"- **Cash from executions vs persisted cash** at every session close: largest difference ${worst:,.2f} "
              f"({'reconciles' if worst < 0.05 else 'DOES NOT reconcile - see rows'}).")
-    if last:
+    after_inception = int(res.get("preIntervalExecutions") or 0) > 0
+    if last and after_inception:
+        L.append("- **Equity identity:** not printed - this report starts after the book's inception, so lots opened before "
+                 "the interval are outside the ledger window. Run from the book's first session for the full identity.")
+    if last and not after_inception:
         open_cost = sum(l["qty"] * l["px"] * mult(l["symbol"]) for l in t["open_lots"])
         open_fees = sum(l["qty"] * l["fee_unit"] for l in t["open_lots"])
         realized_all = cum["net"] + cum["q"] + cum["rep"]
         unreal = (last[0] - last[1]) - open_cost
-        resid = last[0] - (m["start"] + realized_all + unreal - open_fees)
-        L.append(f"- **Equity identity at the last close:** start {m['start']:,.2f} + realized (method + questioned + "
+        resid = last[0] - (baseline + realized_all + unreal - open_fees)
+        L.append(f"- **Equity identity at the last mark:** baseline {baseline:,.2f} + realized (method + questioned + "
                  f"repairs) {realized_all:+,.2f} + open MV-cost {unreal:+,.2f} - entry fees on open lots {open_fees:,.2f} = "
-                 f"{m['start'] + realized_all + unreal - open_fees:,.2f} vs persisted {last[0]:,.2f} (residual {resid:+,.2f}).")
+                 f"{baseline + realized_all + unreal - open_fees:,.2f} vs persisted {last[0]:,.2f} (residual {resid:+,.2f}).")
     for r in t["repairs"]:
         L.append(f"- **Bookkeeping repair** {r['session']} {r['symbol']} x{r['qty']:g}: {r['net']:+,.2f} ({', '.join(r['tag'])}) - "
                  "reported apart; not a method result.")

@@ -112,7 +112,7 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Costs:** none in observe; enforce removes the skipped reviews' cost.
 - **Regime:** `techniques/tip/review_gate.py`, `signals/service._review_gate`, `tools/tip_review_gate_eval.py`; knob `techniques.tip.review_gate`.
 - **Alternatives tried:** the existing source-level open-items check (shadow signals never expire, so nearly every active source always passed it).
-- **Evaluation window:** retrospective 2026-09-09..18 on the same evidence: 186 of 556 reviews skipped, $121.83 of $379.21 (32%), 0 false negatives; prospective = 5 observe sessions (2026-09-21..25, `tip_review_gate_eval --prospective`). **Decision rule:** enforce only with 0 prospective false negatives AND the retrospective replay still at 0; the user approves the switch.
+- **Evaluation window:** retrospective 2026-09-09..18 on the same evidence: 186 of 556 reviews skipped, $121.83 of $379.21 (32%), 0 false negatives; prospective = 5 observe sessions (2026-09-21..25, `tip_review_gate_eval --prospective`). **Decision rule:** a REVIEW checkpoint, never an automatic switch - 0 management false negatives (prospective AND retrospective) are necessary, and a human reads the skipped corrections / new entries / mixed messages / deferred actions; sessions are counted after the actual deployment (0.8.23, 2026-09-19 12:47 ET; first observed session 2026-09-21); the user approves any switch. ECON-03 (2026-09-19): absent or unrestored desk components always review.
 - **Status:** built, observe (2026-09-19).
 
 ## `feasibility-annotate`

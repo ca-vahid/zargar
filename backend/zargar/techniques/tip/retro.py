@@ -171,7 +171,7 @@ async def retro_position(eng, row: dict, *, client=None) -> dict | None:
                  "sessionsHeld": sessions_held, **({"tip": tip} if tip else {})}))
         await session.commit()
     rec = _Recorder(eng, run_id)
-    rules_txt, rules_n, _snap = await _rules_text(eng)
+    rules_txt, rules_n, _snap = await _rules_text(eng, stamp_supply=True)
     pnl = float(st.get("realizedPnl") or 0)
     rec.step("start", f"Retro on closed position {str(row.get('id', ''))[:8]} "
              f"{row.get('symbol')} — realized {pnl:+.2f} over {sessions_held} session(s). "

@@ -1,0 +1,152 @@
+{
+  "manifest": "d5-ladder-trailing-consolidation",
+  "version": 1,
+  "preparedAt": "2026-09-19T17:05:26+00:00",
+  "status": "PROPOSAL - not applied; knowledge maintenance is propose-only",
+  "candidate": {
+    "scope": "rule",
+    "text": "RULE (adoption geometry - LADDER/TRAILING COHERENCE; CANDIDATE consolidated 2026-09-19 from 6 pending proposals, NOT operative until a human approves it): an exit policy must be internally reachable at the size actually held. (1) REACHABILITY - a trailing trigger (trailing.after_r) must be reachable by the ladder: it may not sit beyond the last target, and a ladder whose final rung exits 100% leaves nothing to trail. (2) INTEGER LADDER - fractions are judged on whole contracts: at 1-2 lots a multi-rung ladder collapses to the rungs that round to at least one contract; say which rung is the full exit and do not plan a runner that rounds to zero. (3) TRAIL SANITY - a structure trail may only tighten, and only after the trigger it names has been reached. (4) TIME BOX - a hold cap the policy states must be one the manager can enforce (sessions or DTE), not prose. Evidence: the dated cases cited by the source proposals (listed in the manifest with their ids and revisions). This text REPLACES nothing by itself.",
+    "textSha": "1a4cf60465ecb3fe",
+    "bornAs": "needs_human (pending review)"
+  },
+  "members": [
+    {
+      "id": "d8e38ea92db34d74adb5df0d78409a67",
+      "revisionNo": 1,
+      "createdAt": "2026-09-15T21:13:47.823138+00:00",
+      "textSha": "bc7c2352738164f5",
+      "chars": 1538,
+      "author": "analyst:3c027e7a",
+      "runId": "3c027e7abdae4a0c8542db3e983455bb",
+      "datedCasesCited": [],
+      "firstLine": "RULE refinement — adoption geometry, clause 3 (TARGET WIDTH), new LADDER/TRAILING COHERENCE clause: a policy's trailing trigger (trailing.after_r) must be REACHABLE by the ladder itself, and the stop must tighten at the first trim. If TP1 s"
+    },
+    {
+      "id": "907688c7968d407f848e7df48034afe7",
+      "revisionNo": 1,
+      "createdAt": "2026-09-17T21:10:47.539534+00:00",
+      "textSha": "6a1a06389e704b80",
+      "chars": 1886,
+      "author": "analyst:fddcb775",
+      "runId": "fddcb7759cf346f8b859bcff5e5bf946",
+      "datedCasesCited": [
+        "MSTR 9/04",
+        "ORCL 9/10",
+        "PURR 9/10"
+      ],
+      "firstLine": "RULE refinement — adoption geometry, LADDER/TRAILING COHERENCE clause (4th dated case; consolidates with MSTR 9/04, ORCL 9/10, PURR 9/10 rather than duplicating them) + a new PLANNED-RUNNER clause: a ladder whose fractions sum to 1.0 across"
+    },
+    {
+      "id": "d08fb7a08c254e14a12f2f102f7f2d20",
+      "revisionNo": 1,
+      "createdAt": "2026-09-17T21:12:35.126292+00:00",
+      "textSha": "574baa76f9d6bf7e",
+      "chars": 2596,
+      "author": "analyst:9d191d1f",
+      "runId": "9d191d1f29d24842a7b9229c83b3bf7d",
+      "datedCasesCited": [
+        "CCXI 9/09",
+        "MRVL 9/04",
+        "MSTR 9/04",
+        "MU 9/04",
+        "ORCL 9/10",
+        "PURR 9/10"
+      ],
+      "firstLine": "RULE refinement — adoption geometry, LADDER/TRAILING COHERENCE + TRAIL-SANITY + a new TIME-BOX ENFORCEMENT clause (5th dated case; consolidates with MSTR 9/04, ORCL 9/10, PURR 9/10, MRVL 9/04 and the MU 9/04 trail memo — do not duplicate th"
+    },
+    {
+      "id": "cf07b1bed1f043a689c911671f7b748c",
+      "revisionNo": 1,
+      "createdAt": "2026-09-18T21:10:43.934377+00:00",
+      "textSha": "85057eedb3f61235",
+      "chars": 1810,
+      "author": "analyst:ea060c5d",
+      "runId": "ea060c5d11e74c22bd7fc15ae2a92fdf",
+      "datedCasesCited": [
+        "MRVL 9/04",
+        "MSTR 9/04",
+        "ORCL 9/10",
+        "PURR 9/10",
+        "TSLA 9/03"
+      ],
+      "firstLine": "RULE refinement — adoption geometry, LADDER/TRAILING COHERENCE clause (6th dated case; consolidates with MSTR 9/04, ORCL 9/10, PURR 9/10, MRVL 9/04, TSLA 9/03 — do not duplicate them). New emphasis: a sub-1R ladder is not merely \"leaving tr"
+    },
+    {
+      "id": "8dfdf66af8cd4c7a9839a01db5d9959d",
+      "revisionNo": 1,
+      "createdAt": "2026-09-18T21:11:22.517197+00:00",
+      "textSha": "2da94cbbc8277ac1",
+      "chars": 2229,
+      "author": "analyst:54b61e6f",
+      "runId": "54b61e6f1f72476bb02f4b1517f6c16a",
+      "datedCasesCited": [
+        "MRVL 9/04",
+        "MSTR 9/04",
+        "MU 9/11",
+        "ORCL 9/10",
+        "PURR 9/10",
+        "TSLA 9/03"
+      ],
+      "firstLine": "RULE refinement — adoption geometry, LADDER/TRAILING COHERENCE clause (7th dated case; consolidates with MSTR 9/04, ORCL 9/10, PURR 9/10, MRVL 9/04, TSLA 9/03, MU 9/11 — do not duplicate them). New emphasis this record adds: when the ladder"
+    },
+    {
+      "id": "8909004664dc4031ba0ffeed32dc97c2",
+      "revisionNo": 1,
+      "createdAt": "2026-09-18T21:12:20.120033+00:00",
+      "textSha": "fea0cba168550602",
+      "chars": 1847,
+      "author": "analyst:2c8f5776",
+      "runId": "2c8f577607e6445197c870f8d82039cb",
+      "datedCasesCited": [
+        "AAPL 9/03",
+        "DAL 11/20",
+        "MRVL 9/04",
+        "TSLA 9/03"
+      ],
+      "firstLine": "RULE (new, sits with the LADDER/TRAILING COHERENCE family — the INTEGER-LADDER FEASIBILITY clause; consolidates the \"runner rounded away\" evidence from MRVL 9/04, TSLA 9/03, AAPL 9/03 rather than duplicating them): a multi-rung ladder is on"
+    }
+  ],
+  "supersessionMap": [
+    {
+      "sourceId": "d8e38ea92db34d74adb5df0d78409a67",
+      "atRevision": 1,
+      "sourceTextSha": "bc7c2352738164f5",
+      "supersededBy": "<candidate id, minted on apply>"
+    },
+    {
+      "sourceId": "907688c7968d407f848e7df48034afe7",
+      "atRevision": 1,
+      "sourceTextSha": "6a1a06389e704b80",
+      "supersededBy": "<candidate id, minted on apply>"
+    },
+    {
+      "sourceId": "d08fb7a08c254e14a12f2f102f7f2d20",
+      "atRevision": 1,
+      "sourceTextSha": "574baa76f9d6bf7e",
+      "supersededBy": "<candidate id, minted on apply>"
+    },
+    {
+      "sourceId": "cf07b1bed1f043a689c911671f7b748c",
+      "atRevision": 1,
+      "sourceTextSha": "85057eedb3f61235",
+      "supersededBy": "<candidate id, minted on apply>"
+    },
+    {
+      "sourceId": "8dfdf66af8cd4c7a9839a01db5d9959d",
+      "atRevision": 1,
+      "sourceTextSha": "2da94cbbc8277ac1",
+      "supersededBy": "<candidate id, minted on apply>"
+    },
+    {
+      "sourceId": "8909004664dc4031ba0ffeed32dc97c2",
+      "atRevision": 1,
+      "sourceTextSha": "fea0cba168550602",
+      "supersededBy": "<candidate id, minted on apply>"
+    }
+  ],
+  "applyPath": "human decision first. A DISPUTED/pending row is never superseded by any writer: each member must be resolved by a human (Knowledge tab) before the audited batch path (`apply_knowledge_batch`, revision-checked, receipt in `tip_knowledge_batches`) can supersede it at the recorded revision. Nothing is deleted; superseded rows stay with their revisions.",
+  "rollback": "supersede the candidate with `expired:rollback` and restore `superseded_by = NULL` on each member ONLY at its recorded revision (the same revision-transition rollback as the 2026-09-14 consolidation).",
+  "notPromoted": "approval of the candidate as OPERATIVE policy is a separate human decision; consolidation alone changes no operative rule.",
+  "expectedEffect": "fewer duplicate pending proposals (estimate only: about 11906 characters of pending text become one candidate); not a measured saving",
+  "manifestHash": "30c9891efc712b49"
+}
