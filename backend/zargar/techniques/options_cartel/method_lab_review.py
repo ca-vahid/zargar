@@ -135,6 +135,8 @@ def trial_observations(context,economics,ticks,protocol,cutoff):
     from ...marketstructure.sessions import ET,session_bounds
     from .lab_protocol import TrialObservation
     day=dt.date.fromisoformat(context.config['session']);opens,closes=session_bounds(day.isoformat())
+    if cutoff<opens:
+        return []  # a frozen future cohort owes no observation windows yet
     results={(r['candidateId'],r['variant']):r for r in economics['rows'] if 'candidateId' in r}
     market=context.result.get('market',{});directions=[market.get('indices',{}).get(s,{}).get('direction') for s in ('SPY','QQQ')]
     regime='unknown' if any(d not in ('long','short','mixed') for d in directions) else \
@@ -207,6 +209,9 @@ async def trial_report(engine,trial_id,cutoff):
         sessions.append({'session':day,'contextId':context.id,'observations':len(rows),
                          'completeObservations':sum(r.complete for r in rows),'economics':economics,'selectionComparisons':selections})
     review=trial_review(protocol,observations)
+    if cutoff<session_bounds(protocol.first_session.isoformat())[0]:
+        review={**review,'status':'awaiting_sessions','failures':[],
+                'note':'The trial is frozen before its first session; future observations are not missing data.'}
     return {'trialId':trial_id,'asOfMs':cutoff,'protocol':protocol.model_dump(mode='json'),
         'review':review,'sessions':sessions,'placesOrders':False,'activationAllowed':False,
         'basis':'Receipt-timed quote model; distinct from actual Practice account executions.'}

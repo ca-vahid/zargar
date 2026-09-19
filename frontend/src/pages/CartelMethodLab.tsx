@@ -94,7 +94,7 @@ export function CartelMethodLab({settings=false}:{settings?:boolean}) {
           <p className="muted">Receipt-timed quote models, not actual account profit. Unknown outcomes are excluded from dollar totals and remain visible in the review gate.</p>
           <p className="muted">Exits are evaluated when recorded minute bars arrive, then priced from fresh quotes. These models do not recreate every intraminute move or real broker execution.</p>
           {Object.entries(trial.review.metrics).map(([key,m])=><p key={key}>{label[key]??human(key)}: {m.closedTrades} closed modeled trades · net USD {num(m.netPnl)} · stressed net USD {num(m.stressNetPnl)} · drawdown bound {num(m.conservativeDrawdownPct)}%</p>)}
-          <p>{trial.review.failures.map(human).join(' · ')||'Ready for review; this does not activate trading.'}</p>
+          <p>{trial.review.status==='awaiting_sessions'?'The trial has not started. No observation windows are overdue.':trial.review.failures.map(human).join(' · ')||'Ready for review; this does not activate trading.'}</p>
           <details><summary>Selection comparisons · same breakout control</summary>{trial.sessions.map(s=><div key={s.session}><strong>{s.session}</strong>
             {Object.entries(s.selectionComparisons??{}).map(([ranker,r])=><p key={ranker}>{human(ranker)}: {r.selectedSymbols.join(', ')} · {r.covered}/{r.selectedCount} complete · {r.closedTrades} closed modeled trades · net USD {num(r.netPnl)}</p>)}
           </div>)}</details>
