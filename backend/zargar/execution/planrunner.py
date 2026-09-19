@@ -3302,6 +3302,12 @@ class PlanRunner(SessionListener):
         trade.qty = qty
         trade.limit_price = limit
         trade.timing["admissionTs"] = now_ms()
+        # first-sale-v1 (2026-09-18): the technique's first-sale record at the FINAL quantity/price. Base hook = off
+        # (other desks unchanged). `observe` journals the record; only `enforce` may refuse - never an exit path.
+        fs_why = await self._first_sale_check(ap, trade, qty, limit)
+        if fs_why:
+            await self._refuse_entry(ap, trade, fs_why, stage="first_sale")
+            return
         # R2: re-judged after sizing/pricing, immediately before the intent is written
         gate = await self._entry_gated(ap, trade, "order")
         if gate:
@@ -4000,6 +4006,37 @@ class PlanRunner(SessionListener):
                 "decisionTs": int(time.time() * 1000)}, aggregate_type="technique_run", aggregate_id=ap.run_id)
         await self._persist(ap)
         self._publish(ap, "fired")
+
+    def first_sale_policy(self, ap: "ArmedPlan") -> str:
+        """Hook: off | observe | enforce. Base = off, so a desk that does not opt in runs no first-sale code."""
+        return "off"
+
+    def first_sale_record(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None, mode: str) -> dict | None:
+        """Hook: the technique's pure first-sale record for the final quantity/price (no I/O, no awaits)."""
+        return None
+
+    async def _first_sale_check(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None) -> str | None:
+        """Entry-only. Returns a refusal reason under `enforce` when the record FAILS; `unknown` never refuses and a
+        hook error never blocks an entry (it is logged). Exits never pass through here."""
+        try:
+            mode = str(self.first_sale_policy(ap) or "off")
+            if mode not in ("observe", "enforce"):
+                return None
+            rec = self.first_sale_record(ap, trade, qty, limit, mode)
+            if not isinstance(rec, dict):
+                return None
+            trade.timing["firstSale"] = {"verdict": (rec.get("gate") or {}).get("verdict"), "rung": (rec.get("gate") or {}).get("rung"),
+                                         "r": (rec.get("gate") or {}).get("rRunnerEntry"), "mode": mode}
+            with contextlib.suppress(Exception):
+                await self.engine.journal.append(ev.TECHNIQUE_FIRST_SALE, rec, aggregate_type="technique_run",
+                                                 aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+            if mode != "enforce":
+                return None
+            from ..technique.first_sale import refusal_reason
+            return refusal_reason(rec)
+        except Exception as exc:                      # a diagnostic must never take an entry down
+            log.warning("first-sale check failed for %s %s: %s", ap.symbol, trade.trigger_id, exc)
+            return None
 
     async def after_fire(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade",
                          judgement: "FireJudgement", bar: Bar) -> None:

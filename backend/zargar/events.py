@@ -126,6 +126,7 @@ TECHNIQUE_SOURCE_REVISED = "TechniqueSourceRevised"
 TECHNIQUE_ENTRY_DECISION = "TechniqueEntryDecision"      # deterministic-entry-v1 (2026-09-15): the app-owned live entry decision, frozen
 TECHNIQUE_ENTRY_EVIDENCE = "TechniqueEntryEvidence"      # optional LATER model opinion over the frozen decision snapshot - evidence only
 TECHNIQUE_EXIT_SHADOW = "TechniqueExitShadow"            # order-free exit observation (shadow-exit-v1): a target rung seen on a fresh quote
+TECHNIQUE_FIRST_SALE = "TechniqueFirstSale"    # first-sale-v1 (2026-09-18): geometry/economics at the FINAL quantity; refuses only under `enforce`
 TECHNIQUE_TARGET_DISTANCE = "TechniqueTargetDistance"    # diagnostic only: distance in R to the quantity-dependent full-exit rung      # Delivery B: an accepted source edit/delete/restore (never touches positions)          # Delivery B: an order-free scenario candidate asked to arm
 TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs the walk-forward replay
 TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time

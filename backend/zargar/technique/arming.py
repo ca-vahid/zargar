@@ -105,6 +105,45 @@ class PlanArmer(PlanRunner):
     def fire_review_policy(self, ap) -> str:
         return normalize_fire_mode(self.engine.settings.get("techniques.enhanced_market.fire_decision_mode", "deterministic"))
 
+    # ---- first-sale-v1 (2026-09-18, integrated plan D): R2 measured where the position exits, at the FINAL quantity
+    def first_sale_policy(self, ap) -> str:
+        raw = str(self.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "observe") or "off").strip().lower()
+        return raw if raw in ("off", "observe", "enforce") else "off"
+
+    def first_sale_record(self, ap, trade, qty, limit, mode):
+        from .first_sale import build_record
+        s = self.engine.settings
+        trig = next((t for t in ((ap.plan or {}).get("triggers") or []) if t.get("id") == trade.trigger_id), {}) or {}
+        uq = self.engine.quotes.get(ap.symbol)
+        observed = None
+        if uq is not None and float(getattr(uq, "last", 0) or 0) > 0:
+            observed = {"price": float(uq.last), "sourceTs": int(getattr(uq, "last_ts", 0) or getattr(uq, "source_ts", 0) or 0),
+                        "receivedTs": int(getattr(uq, "ts", 0) or 0), "source": getattr(uq, "source", "") or "feed"}
+        oq = None
+        if trade.instrument == "options" and trade.order_symbol:
+            q = self.engine.quotes.get(trade.order_symbol)
+            if q is not None:
+                oq = {"bid": q.bid, "ask": q.ask, "bidSize": (q.bid_size or None), "askSize": (q.ask_size or None),
+                      "sourceTs": int(q.source_ts or q.quote_ts or 0), "source": q.source, "derived": bool(getattr(q, "derived", False))}
+        trk = (getattr(ap, "trackers", None) or {}).get(trade.trigger_id)
+        th = getattr(trk, "thresholds", None)
+        if th is None or not hasattr(th, "min_risk_reward"):
+            th = self.technique.thresholds()
+        cfg_th = ((ap.plan or {}).get("thresholds") or {})
+        plan_gate = None
+        if trig.get("riskReward") is not None:
+            plan_gate = {"targetIndex": cfg_th.get("rr_gate_target", getattr(th, "rr_gate_target", None)),
+                         "rr": trig.get("riskReward"), "rrTp3": trig.get("riskRewardTp3"), "min": getattr(th, "min_risk_reward", None)}
+        fee = float(s.get("options.fee_per_contract", 0.99)) + float(s.get("sim.reg_fee_per_contract", 0.05))
+        return build_record(stage="order", symbol=ap.symbol, run_id=ap.run_id, trigger_id=trade.trigger_id, family=trade.kind,
+                            direction=trade.direction, session=ap.plan_for, plan_entry=trig.get("entry"), runner_entry=trade.entry,
+                            stop=trade.stop, targets=trade.targets, observed_underlier=observed, instrument=trade.instrument,
+                            qty=qty, multiplier=trade.multiplier, limit_price=limit, single_exit=str(ap.config.single_contract_exit or "tp2"),
+                            pinned_gate_target=str(s.get("technique.rr_gate_target", "auto") or "auto"),
+                            min_rr=float(getattr(th, "min_risk_reward", 3.0)), contract=trade.contract, option_quote=oq,
+                            fee_per_contract=fee, stock_commission=float(s.get("sim.stock_commission", 0.0)),
+                            affordable_qty=qty, plan_gate=plan_gate, mode=mode, now_ms=now_ms())
+
     def fire_evidence_mode(self, ap) -> str:
         raw = str(self.engine.settings.get("techniques.enhanced_market.fire_evidence_mode", "off") or "off").strip().lower()
         return raw if raw in ("off", "after_close") else "off"

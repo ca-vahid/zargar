@@ -542,6 +542,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
     "techniques.enhanced_market.entry_fallback": "shares",   # C2 (2026-09-12): an untradeable option buys shares in Practice (longs only)
+    "techniques.enhanced_market.first_sale_rr_gate": "observe",   # first-sale-v1 (2026-09-18): off | observe | enforce. `observe` journals TechniqueFirstSale at the final quantity (SBUX 1.316R vs 3R); `enforce` refuses the ENTRY when R to the real exit rung is below technique.min_risk_reward - a separate activation decision
     "techniques.enhanced_market.fire_decision_mode": "deterministic",   # deterministic-entry-v1 (2026-09-15, user decision): the app's rules make the live entry decision; `legacy` = explicit rollback to the awaited critic
     "techniques.enhanced_market.fire_evidence_mode": "off",             # optional LATER model evidence over frozen decision snapshots: off | after_close (never trades)
     "techniques.enhanced_market.fire_evidence_max_calls": 40,           # after-close evidence command: paid calls per run (bound)
