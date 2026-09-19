@@ -243,12 +243,13 @@ export function CartelProfitabilityResearch({settings=false, onSettings}:{settin
           hint="Preparation and scheduled research collection supply the study. A date with no qualifying candidates is a valid result; missing evidence is not a zero-profit trade."/> : <>
           <h3>Candidate pool and ranking alternatives</h3>
           <p>Compare the current structural-target-R order with the leader-first research order within each cohort. Changing this view does not change the execution shortlist.</p>
-          {Object.entries(data.rankings).some(([,value]) => strings(value.baselineIds).length > 0) && <details><summary>Compare the two ranked shortlists</summary>
+          {Object.entries(data.rankings).some(([,value]) => strings(value.baselineIds).length > 0) && <details><summary>Compare research shortlists</summary>
             {Object.entries(data.rankings).map(([name,value]) => {
               const names = new Map(records(value.candidates).map(item => [item.id, item.symbol]));
               const namesFor = (ids:unknown) => strings(ids).map(id => names.get(id)).filter(item => typeof item === 'string').join(', ') || 'No ranked candidates';
               return <div key={name}><p><strong>{name === 'bearish' ? 'Bearish cohort' : 'Primary cohort'}</strong></p>
                 <p>Current target-R list: {namesFor(value.baselineIds)}</p><p>Leader-first list: {namesFor(value.leaderIds)}</p>
+                {Boolean(value.opportunityComparisons) && <><p>Nearest unbroken levels: {namesFor(record(value.opportunityComparisons).nearestUnbrokenIds)}</p><p>Liquidity-first list: {namesFor(record(value.opportunityComparisons).liquidFirstIds)}</p><p className="muted">Research comparisons only. Coverage, contract eligibility and entry checks still apply; these lists do not change automatic selection.</p></>}
                 <p>{strings(value.overlapIds).length} shared candidates. Both lists retain the same entry and evidence checks.</p>
               </div>;
             })}

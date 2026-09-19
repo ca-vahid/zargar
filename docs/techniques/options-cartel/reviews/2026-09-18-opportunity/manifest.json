@@ -1,0 +1,11 @@
+{
+  "files": {
+    "evidence.json": "005e746e79bf0a4f019c4bc52cbf3e1815c834d143ad535c72495fd67cdca81e",
+    "accounting.json": "d959705152f264fe869c079b46415917b3ac0a86ef37382a129fe4b16670b645"
+  },
+  "start": "2026-09-08",
+  "end": "2026-09-18",
+  "portfolio": "0b48ed48de2f4030b49942b52858356d",
+  "readOnly": true,
+  "activePolicyChanged": false
+}

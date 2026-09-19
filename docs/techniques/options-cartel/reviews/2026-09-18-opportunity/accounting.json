@@ -1,0 +1,164 @@
+[
+  {
+    "session": "2026-09-08",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  },
+  {
+    "session": "2026-09-09",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  },
+  {
+    "session": "2026-09-10",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  },
+  {
+    "session": "2026-09-11",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  },
+  {
+    "session": "2026-09-14",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": -59.050000000000004,
+      "realizedFees": 2.08,
+      "netRealized": -61.13,
+      "feesPaidToday": 2.08
+    },
+    "orderCount": 2,
+    "filledOrders": 2,
+    "entryOrders": 1,
+    "exitOrders": 1,
+    "closedCampaigns": 1,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 2
+  },
+  {
+    "session": "2026-09-15",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  },
+  {
+    "session": "2026-09-16",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  },
+  {
+    "session": "2026-09-17",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  },
+  {
+    "session": "2026-09-18",
+    "portfolioId": "0b48ed48de2f4030b49942b52858356d",
+    "totals": {
+      "grossRealized": 0,
+      "realizedFees": 0,
+      "netRealized": 0,
+      "feesPaidToday": 0
+    },
+    "orderCount": 0,
+    "filledOrders": 0,
+    "entryOrders": 0,
+    "exitOrders": 0,
+    "closedCampaigns": 0,
+    "openInstruments": 0,
+    "issues": [],
+    "missingFillEvidence": 0
+  }
+]
