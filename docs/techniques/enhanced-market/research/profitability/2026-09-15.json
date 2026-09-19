@@ -94,6 +94,31 @@
      "retained": "actual"
     }
    },
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 82.8537,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 1.757,
+    "heldBars": 141
+   },
    "confirmationPair": {
     "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
@@ -204,6 +229,31 @@
      "modeledExit": 1.04,
      "retained": "actual"
     }
+   },
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 69.6847,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 0.513,
+    "heldBars": 21
    },
    "confirmationPair": {
     "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
@@ -316,6 +366,31 @@
      "retained": "actual"
     }
    },
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 42.3767,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 2.398,
+    "heldBars": 34
+   },
    "confirmationPair": {
     "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
@@ -427,6 +502,31 @@
      "retained": "actual"
     }
    },
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 142.738,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 3.602,
+    "heldBars": 346
+   },
    "confirmationPair": {
     "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
@@ -522,6 +622,31 @@
     "known": true
    },
    "p02Eligible": false,
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 79.096,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 1.147,
+    "heldBars": 22
+   },
    "confirmationPair": {
     "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
     "windowBars": 10,
@@ -1429,6 +1554,59 @@
     "open": 0
    }
   },
+  "p06": [],
+  "neverTp1": [
+   {
+    "symbol": "CRWV",
+    "trigger": "b1",
+    "netRealized": -9.58,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 1.757,
+    "heldBars": 141
+   },
+   {
+    "symbol": "CVNA",
+    "trigger": "b2",
+    "netRealized": -74.16,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 0.513,
+    "heldBars": 21
+   },
+   {
+    "symbol": "IREN",
+    "trigger": "b1",
+    "netRealized": 2.84,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 2.398,
+    "heldBars": 34
+   },
+   {
+    "symbol": "ORCL",
+    "trigger": "b2",
+    "netRealized": -79.08,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 3.602,
+    "heldBars": 346
+   },
+   {
+    "symbol": "NFLX",
+    "trigger": "b1",
+    "netRealized": -60.32,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 1.147,
+    "heldBars": 22
+   }
+  ],
   "p02": [
    {
     "symbol": "CRWV",
@@ -1525,6 +1703,7 @@
     "flag": true,
     "delta": 0.5859,
     "payoffTp1": 83.35,
+    "edgeAtTp1": 53.19,
     "riskBudgetQty": 2,
     "riskBudgetBasis": "2% x equity 10,202; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": null
@@ -1542,6 +1721,7 @@
     "flag": false,
     "delta": -0.5551,
     "payoffTp1": 62.04,
+    "edgeAtTp1": 41.96,
     "riskBudgetQty": 1,
     "riskBudgetBasis": "2% x equity 10,762; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": "quote age 10.9s (max 10s)"
@@ -1559,6 +1739,7 @@
     "flag": false,
     "delta": 0.5694,
     "payoffTp1": 69.08,
+    "edgeAtTp1": 50.92,
     "riskBudgetQty": 2,
     "riskBudgetBasis": "2% x equity 10,175; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": null
@@ -1576,6 +1757,7 @@
     "flag": false,
     "delta": -0.4902,
     "payoffTp1": 90.88,
+    "edgeAtTp1": 69.64,
     "riskBudgetQty": 3,
     "riskBudgetBasis": "2% x equity 10,241; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": "quote age 14.5s (max 10s)"
@@ -1593,6 +1775,7 @@
     "flag": false,
     "delta": 0.5555,
     "payoffTp1": 75.54,
+    "edgeAtTp1": 60.3,
     "riskBudgetQty": 3,
     "riskBudgetBasis": "2% x equity 10,304; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": "quote age 12.6s (max 10s)"
@@ -1610,6 +1793,7 @@
     "flag": false,
     "delta": 0.6758,
     "payoffTp1": 163.81,
+    "edgeAtTp1": 147.49,
     "riskBudgetQty": 4,
     "riskBudgetBasis": "2% x equity 10,294; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": null
@@ -1627,6 +1811,7 @@
     "flag": false,
     "delta": 0.0,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": 1,
     "riskBudgetBasis": "2% x equity 10,318; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": null
@@ -1644,6 +1829,7 @@
     "flag": false,
     "delta": 0.5425,
     "payoffTp1": 41.97,
+    "edgeAtTp1": 32.89,
     "riskBudgetQty": 1,
     "riskBudgetBasis": "2% x equity 10,228; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": null
@@ -1661,6 +1847,7 @@
     "flag": false,
     "delta": null,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": null,
     "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
     "refusal": "resulting position $33,004 exceeds cap $25,000; resulting position 324.0% of equity exceeds 50.0%; gross exposure would be 330% of equity (max 100%)"
@@ -1678,6 +1865,7 @@
     "flag": false,
     "delta": -0.6136,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": 0,
     "riskBudgetBasis": "2% x equity 10,294; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": "contract skipped (loss budget: this entry risks ~$415 at its premium stop but only $412 of the $412 daily loss limit is left (F33))"
@@ -1695,6 +1883,7 @@
     "flag": false,
     "delta": -0.6576,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": 1,
     "riskBudgetBasis": "2% x equity 10,294; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": "contract skipped (T5.4 wide spread 13.0% on the NBBO (bid 3.6 / ask 4.1))"
@@ -1712,6 +1901,7 @@
     "flag": false,
     "delta": null,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": null,
     "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
     "refusal": "resulting position $40,751 exceeds cap $25,000; resulting position 399.0% of equity exceeds 50.0%; gross exposure would be 405% of equity (max 100%)"
@@ -1729,6 +1919,7 @@
     "flag": false,
     "delta": -0.4688,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": 0,
     "riskBudgetBasis": "2% x equity 10,154; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": "one contract at 4.90 risks more than the 2% trade budget at its premium stop - not sent (FIX-03: budget is a bound)"
@@ -1746,6 +1937,7 @@
     "flag": false,
     "delta": -0.5617,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": 0,
     "riskBudgetBasis": "2% x equity 10,294; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
     "refusal": "contract skipped (loss budget: this entry risks ~$2,230 at its premium stop but only $412 of the $412 daily loss limit is left (F33))"
@@ -1763,6 +1955,7 @@
     "flag": false,
     "delta": null,
     "payoffTp1": null,
+    "edgeAtTp1": null,
     "riskBudgetQty": null,
     "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
     "refusal": "resulting position $37,335 exceeds cap $25,000; resulting position 361.4% of equity exceeds 50.0%; gross exposure would be 365% of equity (max 100%)"
@@ -2129,7 +2322,7 @@
    }
   },
   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
-  "cohortsAddendum": "p04-p05-2026-09-17",
+  "cohortsAddendum": "p04-p05-2026-09-17; p06-2026-09-18",
   "unknown": {
    "p02WithoutObservation": 4,
    "refusedUnresolvedOrGap": 0,
@@ -2139,5 +2332,5 @@
    "roomAtActualEntry": "unknown for every fill (no underlying observation at dispatch is recorded)"
   }
  },
- "generatedAt": "2026-09-17T04:15:28.996587+00:00"
+ "generatedAt": "2026-09-19T01:06:11.288824+00:00"
 }

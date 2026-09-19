@@ -1,0 +1,1163 @@
+{
+ "version": "profitability-cohorts-v1",
+ "date": "2026-09-18",
+ "cutoff": "16:00",
+ "feePerContractSide": 1.04,
+ "trades": [
+  {
+   "runId": "4a75f7d4dbb447c9ab83252ce162b543",
+   "symbol": "DRAM",
+   "trigger": "r2",
+   "kind": "reject",
+   "direction": "short",
+   "cohort": null,
+   "firstTargetBasis": "next_support",
+   "firedAt": "13:37:00",
+   "confirmation": "observed_reclaim",
+   "sourceSymbolDirectionMatch": false,
+   "status": "closed",
+   "instrument": "options",
+   "intendedEntry": 58.8655,
+   "stop": 59.3971,
+   "targets": [
+    58.0833,
+    57.3989,
+    56.91
+   ],
+   "window": "midday",
+   "firedAtIso": "2026-09-18T13:37:00-04:00",
+   "sessionWindow": "midday",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "unknown_calendar",
+   "eventProvenance": "no calendar entry",
+   "eventRetrospective": null,
+   "firedTs": 1789753020000,
+   "level": 59.1016,
+   "tp2": 57.3989,
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "5165c26e8046140eea34aa4d8583ce16",
+   "decisionVerdict": "allow",
+   "fireDecisionMode": "deterministic",
+   "timing": {
+    "barTs": 1789753020000,
+    "policy": "deterministic",
+    "decidedTs": 1789753082384,
+    "barCloseTs": 1789753080000,
+    "decisionMs": 0.346,
+    "receivedTs": 1789753081216
+   },
+   "quoteRefresh": {
+    "ok": true,
+    "version": "entry-quote-refresh-v1",
+    "askAfter": 0.48,
+    "bidAfter": 0.45,
+    "timeoutS": 2.5,
+    "ageAfterS": 0.0,
+    "askBefore": 0.48,
+    "attempted": true,
+    "bidBefore": 0.45,
+    "elapsedMs": 408,
+    "ageBeforeS": 0.22
+   },
+   "roomPlannedR": 1.471,
+   "roomAtActualEntryR": null,
+   "roomBin": "1-3R",
+   "contract": {
+    "symbol": "DRAM260921P00058000",
+    "bid": 0.45,
+    "ask": 0.48,
+    "mid": 0.465,
+    "spreadPct": 6.45,
+    "delta": -0.3582,
+    "dte": 3
+   },
+   "riskBudgetQty": 8,
+   "riskBudgetBasis": "2% x equity 10,038; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
+   "filledQty": 4.0,
+   "avgFill": 0.48,
+   "multiplier": 100.0,
+   "closed": true,
+   "netRealized": -104.32,
+   "paidPremium": 192.0,
+   "entryFees": 4.16,
+   "fees": 8.32,
+   "entryOrderId": "89a0621c595043efa1df26d1cc04bd1e",
+   "openedTs": 1789753090396,
+   "closedTs": 1789760759911,
+   "exitKinds": [
+    "stop"
+   ],
+   "firstSaleDistanceR": 1.471,
+   "fullExitRung": "tp3-runner",
+   "friction": {
+    "concession": 12.0,
+    "fees": 8.32,
+    "total": 20.32,
+    "pctOfPremium": 0.1058,
+    "known": true
+   },
+   "p02Eligible": false,
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 58.0833,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 0.311,
+    "heldBars": 126
+   }
+  },
+  {
+   "runId": "8a79a6437cf24adfb5bc1671dc4dc9a1",
+   "symbol": "SBUX",
+   "trigger": "d1",
+   "kind": "breakdown",
+   "direction": "short",
+   "cohort": null,
+   "firstTargetBasis": "pct_ladder",
+   "firedAt": "13:58:00",
+   "confirmation": "observed_reclaim",
+   "sourceSymbolDirectionMatch": false,
+   "status": "closed",
+   "instrument": "options",
+   "intendedEntry": 95.335,
+   "stop": 97.681,
+   "targets": [
+    94.1689,
+    92.2471,
+    90.3253
+   ],
+   "window": "midday",
+   "firedAtIso": "2026-09-18T13:58:00-04:00",
+   "sessionWindow": "midday",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "unknown_calendar",
+   "eventProvenance": "no calendar entry",
+   "eventRetrospective": null,
+   "firedTs": 1789754280000,
+   "level": 96.0907,
+   "tp2": 92.2471,
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "6f46154823c34ccbd3cd303f9fd05814",
+   "decisionVerdict": "allow",
+   "fireDecisionMode": "deterministic",
+   "timing": {
+    "barTs": 1789754280000,
+    "policy": "deterministic",
+    "decidedTs": 1789754341188,
+    "barCloseTs": 1789754340000,
+    "decisionMs": 0.187,
+    "receivedTs": 1789754340488
+   },
+   "quoteRefresh": {
+    "ok": true,
+    "version": "entry-quote-refresh-v1",
+    "askAfter": 1.86,
+    "bidAfter": 1.71,
+    "timeoutS": 2.5,
+    "ageAfterS": 0.0,
+    "askBefore": 1.86,
+    "attempted": true,
+    "bidBefore": 1.71,
+    "elapsedMs": 350,
+    "ageBeforeS": 0.12
+   },
+   "roomPlannedR": 0.497,
+   "roomAtActualEntryR": null,
+   "roomBin": "<1R",
+   "contract": {
+    "symbol": "SBUX261002P00095000",
+    "bid": 1.71,
+    "ask": 1.86,
+    "mid": 1.785,
+    "spreadPct": 8.4,
+    "delta": -0.4276,
+    "dte": 14
+   },
+   "riskBudgetQty": 2,
+   "riskBudgetBasis": "2% x equity 10,022; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
+   "filledQty": 1.0,
+   "avgFill": 1.86,
+   "multiplier": 100.0,
+   "closed": true,
+   "netRealized": -84.1,
+   "paidPremium": 186.0,
+   "entryFees": 1.04,
+   "fees": 2.08,
+   "entryOrderId": "69d8d61cff8a43abb18efbddd2b653bb",
+   "openedTs": 1789754342101,
+   "closedTs": 1789761303211,
+   "exitKinds": [
+    "stop"
+   ],
+   "firstSaleDistanceR": 1.316,
+   "fullExitRung": "tp2-full",
+   "friction": {
+    "concession": 15.0,
+    "fees": 2.08,
+    "total": 17.08,
+    "pctOfPremium": 0.0918,
+    "known": true
+   },
+   "p02Eligible": false,
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 94.1689,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 0.096,
+    "heldBars": 115
+   }
+  },
+  {
+   "runId": "edfc80d6dec64f4491718fca9f3cd607",
+   "symbol": "PANW",
+   "trigger": "b2",
+   "kind": "bounce",
+   "direction": "long",
+   "cohort": "long_bounce_next_resistance",
+   "firstTargetBasis": "next_resistance",
+   "firedAt": "09:32:00",
+   "confirmation": "observed_reclaim",
+   "sourceSymbolDirectionMatch": false,
+   "status": "closed",
+   "instrument": "shares",
+   "intendedEntry": 367.1305,
+   "stop": 365.2948,
+   "targets": [
+    370.3389,
+    373.1462,
+    375.1514
+   ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-18T09:32:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "unknown_calendar",
+   "eventProvenance": "no calendar entry",
+   "eventRetrospective": null,
+   "firedTs": 1789738320000,
+   "level": 367.1305,
+   "tp2": 373.1462,
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "0b45d0400ce5a6c40beef71b780b83e5",
+   "decisionVerdict": "allow",
+   "fireDecisionMode": "deterministic",
+   "timing": {
+    "barTs": 1789738320000,
+    "policy": "deterministic",
+    "decidedTs": 1789738381533,
+    "barCloseTs": 1789738380000,
+    "decisionMs": 0.208,
+    "receivedTs": 1789738380638
+   },
+   "quoteRefresh": null,
+   "roomPlannedR": 1.748,
+   "roomAtActualEntryR": null,
+   "roomBin": "1-3R",
+   "contract": null,
+   "riskBudgetQty": null,
+   "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+   "filledQty": 13.0,
+   "avgFill": 367.03,
+   "multiplier": 1.0,
+   "closed": true,
+   "netRealized": -33.84,
+   "paidPremium": 4771.39,
+   "entryFees": 0.0,
+   "fees": 0.0,
+   "entryOrderId": "c7eb04dee3e04a13bf45da8c301d75f8",
+   "openedTs": 1789738689890,
+   "closedTs": 1789738865645,
+   "exitKinds": [
+    "stop"
+   ],
+   "firstSaleDistanceR": 1.748,
+   "fullExitRung": "tp3-runner",
+   "friction": {
+    "concession": null,
+    "fees": 0.0,
+    "total": null,
+    "pctOfPremium": null,
+    "known": false
+   },
+   "p02Eligible": false,
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 370.3389,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": -0.387,
+    "heldBars": 2
+   },
+   "confirmationPair": {
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
+    "outcome": "refused_r2",
+    "resultR": null,
+    "confirmTs": 1789738380000,
+    "entryTs": 1789738440000,
+    "entry": 368.735,
+    "riskPerUnit": 3.4402,
+    "rr": 1.28,
+    "barsWaited": 1
+   }
+  },
+  {
+   "runId": "edfc80d6dec64f4491718fca9f3cd607",
+   "symbol": "PANW",
+   "trigger": "b3",
+   "kind": "bounce",
+   "direction": "long",
+   "cohort": "long_bounce_next_resistance",
+   "firstTargetBasis": "next_resistance",
+   "firedAt": "09:47:00",
+   "confirmation": "observed_reclaim",
+   "sourceSymbolDirectionMatch": false,
+   "status": "closed",
+   "instrument": "shares",
+   "intendedEntry": 360.66,
+   "stop": 358.8567,
+   "targets": [
+    366.4566,
+    371.5285,
+    375.1514
+   ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-18T09:47:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "unknown_calendar",
+   "eventProvenance": "no calendar entry",
+   "eventRetrospective": null,
+   "firedTs": 1789739220000,
+   "level": 360.66,
+   "tp2": 371.5285,
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "2712c5bc0a442d7b394800af348ca8e7",
+   "decisionVerdict": "allow",
+   "fireDecisionMode": "deterministic",
+   "timing": {
+    "barTs": 1789739220000,
+    "policy": "deterministic",
+    "decidedTs": 1789739281934,
+    "barCloseTs": 1789739280000,
+    "decisionMs": 0.33,
+    "receivedTs": 1789739281071
+   },
+   "quoteRefresh": null,
+   "roomPlannedR": 3.214,
+   "roomAtActualEntryR": null,
+   "roomBin": ">=3R",
+   "contract": null,
+   "riskBudgetQty": null,
+   "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+   "filledQty": 14.0,
+   "avgFill": 360.56,
+   "multiplier": 1.0,
+   "closed": true,
+   "netRealized": -29.84,
+   "paidPremium": 5047.84,
+   "entryFees": 0.0,
+   "fees": 0.0,
+   "entryOrderId": "108b944aa3e44645adba66f3ab25c427",
+   "openedTs": 1789739708500,
+   "closedTs": 1789740300485,
+   "exitKinds": [
+    "stop"
+   ],
+   "firstSaleDistanceR": 3.214,
+   "fullExitRung": "tp3-runner",
+   "friction": {
+    "concession": null,
+    "fees": 0.0,
+    "total": null,
+    "pctOfPremium": null,
+    "known": false
+   },
+   "p02Eligible": false,
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 366.4566,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 0.549,
+    "heldBars": 9
+   },
+   "confirmationPair": {
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
+    "outcome": "refused_r2",
+    "resultR": null,
+    "confirmTs": 1789739280000,
+    "entryTs": 1789739340000,
+    "entry": 363.45,
+    "riskPerUnit": 4.5933,
+    "rr": 1.76,
+    "barsWaited": 1
+   }
+  },
+  {
+   "runId": "db9faf749a7d437ea6d378930ebb607b",
+   "symbol": "FSLR",
+   "trigger": "b2",
+   "kind": "bounce",
+   "direction": "long",
+   "cohort": "long_bounce_next_resistance",
+   "firstTargetBasis": "next_resistance",
+   "firedAt": "09:54:00",
+   "confirmation": "observed_reclaim",
+   "sourceSymbolDirectionMatch": false,
+   "status": "closed",
+   "instrument": "shares",
+   "intendedEntry": 196.895,
+   "stop": 195.9105,
+   "targets": [
+    199.677,
+    202.1112,
+    203.85
+   ],
+   "window": "prime_open",
+   "firedAtIso": "2026-09-18T09:54:00-04:00",
+   "sessionWindow": "prime_open",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "unknown_calendar",
+   "eventProvenance": "no calendar entry",
+   "eventRetrospective": null,
+   "firedTs": 1789739640000,
+   "level": 196.895,
+   "tp2": 202.1112,
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "8c5f655f6d19735b94a0e519ce50c49c",
+   "decisionVerdict": "allow",
+   "fireDecisionMode": "deterministic",
+   "timing": {
+    "barTs": 1789739640000,
+    "policy": "deterministic",
+    "decidedTs": 1789739704402,
+    "barCloseTs": 1789739700000,
+    "decisionMs": 0.432,
+    "receivedTs": 1789739700094
+   },
+   "quoteRefresh": null,
+   "roomPlannedR": 2.826,
+   "roomAtActualEntryR": null,
+   "roomBin": "1-3R",
+   "contract": null,
+   "riskBudgetQty": null,
+   "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+   "filledQty": 25.0,
+   "avgFill": 196.95,
+   "multiplier": 1.0,
+   "closed": true,
+   "netRealized": -47.22,
+   "paidPremium": 4923.75,
+   "entryFees": 0.0,
+   "fees": 0.0,
+   "entryOrderId": "2666757c4c9441de97984f86365b043b",
+   "openedTs": 1789739712643,
+   "closedTs": 1789740223137,
+   "exitKinds": [
+    "stop"
+   ],
+   "firstSaleDistanceR": 2.826,
+   "fullExitRung": "tp3-runner",
+   "friction": {
+    "concession": null,
+    "fees": 0.0,
+    "total": null,
+    "pctOfPremium": null,
+    "known": false
+   },
+   "p02Eligible": false,
+   "p06": {
+    "policy": "tp1-reclaim-runner-exit-v1",
+    "outcome": "not_eligible",
+    "why": "no TP1 trim order",
+    "tp1": 199.677,
+    "eligibleAt": null,
+    "tp1FilledQty": null,
+    "remainingAtSignal": null,
+    "reclaimTs": null,
+    "signalTs": null,
+    "modeledExitTs": null,
+    "modeledExitPx": null,
+    "modeledBasis": null,
+    "productionRunner": null,
+    "underlyingDeltaR": null,
+    "dollarDelta": null,
+    "alternativeRealized": null,
+    "productionRealized": null,
+    "observationsRejected": [],
+    "dollarScope": "options only - shares are proxy-only in this implementation"
+   },
+   "neverTp1": {
+    "mfeR": 0.767,
+    "heldBars": 7
+   },
+   "confirmationPair": {
+    "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
+    "windowBars": 10,
+    "minRr": 3.0,
+    "gatesNotEvaluated": [
+     "quote quality/freshness",
+     "premium sizing / quantity-dependent exit rung",
+     "never-chase cap",
+     "timing window",
+     "admission and daily-loss budgets"
+    ],
+    "outcome": "stop_first",
+    "resultR": -1.0,
+    "confirmTs": 1789739700000,
+    "entryTs": 1789739760000,
+    "entry": 196.88,
+    "riskPerUnit": 0.9695,
+    "rr": 5.4,
+    "barsWaited": 1
+   }
+  }
+ ],
+ "refused": [
+  {
+   "runId": "9885439318f44bec8c8916b2f91684d6",
+   "symbol": "SKHY",
+   "trigger": "r2",
+   "kind": "reject",
+   "direction": "short",
+   "cohort": null,
+   "firstTargetBasis": "next_support",
+   "firedAt": "15:21:00",
+   "confirmation": "observed_reclaim",
+   "sourceSymbolDirectionMatch": false,
+   "status": "failed",
+   "instrument": "options",
+   "intendedEntry": 189.7097,
+   "stop": 191.646,
+   "targets": [
+    186.3298,
+    183.3724,
+    181.26
+   ],
+   "window": "prime_close",
+   "firedAtIso": "2026-09-18T15:21:00-04:00",
+   "sessionWindow": "prime_close",
+   "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+   "eventPhase": "unknown_calendar",
+   "eventProvenance": "no calendar entry",
+   "eventRetrospective": null,
+   "firedTs": 1789759260000,
+   "level": 190.6925,
+   "tp2": 183.3724,
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "0dd4cf9a3b000fa2f9b250edb01e1834",
+   "decisionVerdict": "allow",
+   "fireDecisionMode": "deterministic",
+   "timing": {
+    "barTs": 1789759260000,
+    "policy": "deterministic",
+    "decidedTs": 1789759325425,
+    "barCloseTs": 1789759320000,
+    "decisionMs": 0.317,
+    "receivedTs": 1789759320995
+   },
+   "quoteRefresh": null,
+   "roomPlannedR": 1.746,
+   "roomAtActualEntryR": null,
+   "roomBin": "1-3R",
+   "contract": null,
+   "riskBudgetQty": null,
+   "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+   "refusal": "no option contract available - nothing sent",
+   "intendedQty": null,
+   "multiplier": 100.0,
+   "friction": null,
+   "underlyingProxy": "stop_first"
+  }
+ ],
+ "attempts": [
+  {
+   "runId": "9885439318f44bec8c8916b2f91684d6",
+   "symbol": "SKHY",
+   "trigger": "r2",
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "0dd4cf9a3b000fa2f9b250edb01e1834",
+   "disposition": "allowed"
+  },
+  {
+   "runId": "4a75f7d4dbb447c9ab83252ce162b543",
+   "symbol": "DRAM",
+   "trigger": "r2",
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "5165c26e8046140eea34aa4d8583ce16",
+   "disposition": "allowed"
+  },
+  {
+   "runId": "8a79a6437cf24adfb5bc1671dc4dc9a1",
+   "symbol": "SBUX",
+   "trigger": "d1",
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "6f46154823c34ccbd3cd303f9fd05814",
+   "disposition": "allowed"
+  },
+  {
+   "runId": "edfc80d6dec64f4491718fca9f3cd607",
+   "symbol": "PANW",
+   "trigger": "b2",
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "0b45d0400ce5a6c40beef71b780b83e5",
+   "disposition": "allowed"
+  },
+  {
+   "runId": "edfc80d6dec64f4491718fca9f3cd607",
+   "symbol": "PANW",
+   "trigger": "b3",
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "2712c5bc0a442d7b394800af348ca8e7",
+   "disposition": "allowed"
+  },
+  {
+   "runId": "db9faf749a7d437ea6d378930ebb607b",
+   "symbol": "FSLR",
+   "trigger": "b2",
+   "policyVersion": "deterministic-entry-v1",
+   "decisionId": "8c5f655f6d19735b94a0e519ce50c49c",
+   "disposition": "allowed"
+  }
+ ],
+ "sourceLedgerRows": 8,
+ "summary": {
+  "byPolicy": {
+   "deterministic-entry-v1": {
+    "attempts": 6,
+    "fills": 5,
+    "refused": 1,
+    "net": -299.32,
+    "open": 0,
+    "refreshOk": 2,
+    "refreshAttempted": 2
+   }
+  },
+  "baseline": {
+   "fills": 5,
+   "closed": 5,
+   "netRealized": -299.32,
+   "winners": 0,
+   "losers": 5,
+   "open": 0,
+   "openExposure": 0,
+   "largestWinner": -29.84,
+   "feesPaid": 10.4
+  },
+  "cohort": {
+   "fills": 3,
+   "closed": 3,
+   "netRealized": -110.9,
+   "winners": 0,
+   "losers": 3,
+   "open": 0,
+   "openExposure": 0,
+   "largestWinner": -29.84,
+   "feesPaid": 0
+  },
+  "removed": [
+   {
+    "symbol": "DRAM",
+    "trigger": "r2",
+    "kind": "reject",
+    "direction": "short",
+    "basis": "next_support",
+    "net": -104.32,
+    "closed": true
+   },
+   {
+    "symbol": "SBUX",
+    "trigger": "d1",
+    "kind": "breakdown",
+    "direction": "short",
+    "basis": "pct_ladder",
+    "net": -84.1,
+    "closed": true
+   }
+  ],
+  "missedWinnersCandidates": [],
+  "strata": {
+   "confirmation=observed_reclaim": {
+    "n": 3,
+    "net": -110.9,
+    "open": 0
+   },
+   "qty=13": {
+    "n": 1,
+    "net": -33.84,
+    "open": 0
+   },
+   "qty=14": {
+    "n": 1,
+    "net": -29.84,
+    "open": 0
+   },
+   "qty=25": {
+    "n": 1,
+    "net": -47.22,
+    "open": 0
+   },
+   "roomPlanned=1-3R": {
+    "n": 2,
+    "net": -81.06,
+    "open": 0
+   },
+   "roomPlanned=>=3R": {
+    "n": 1,
+    "net": -29.84,
+    "open": 0
+   },
+   "sourceSymbolDirectionMatch=False": {
+    "n": 3,
+    "net": -110.9,
+    "open": 0
+   }
+  },
+  "p06": [],
+  "neverTp1": [
+   {
+    "symbol": "DRAM",
+    "trigger": "r2",
+    "netRealized": -104.32,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 0.311,
+    "heldBars": 126
+   },
+   {
+    "symbol": "SBUX",
+    "trigger": "d1",
+    "netRealized": -84.1,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 0.096,
+    "heldBars": 115
+   },
+   {
+    "symbol": "PANW",
+    "trigger": "b2",
+    "netRealized": -33.84,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": -0.387,
+    "heldBars": 2
+   },
+   {
+    "symbol": "PANW",
+    "trigger": "b3",
+    "netRealized": -29.84,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 0.549,
+    "heldBars": 9
+   },
+   {
+    "symbol": "FSLR",
+    "trigger": "b2",
+    "netRealized": -47.22,
+    "exitKinds": [
+     "stop"
+    ],
+    "mfeR": 0.767,
+    "heldBars": 7
+   }
+  ],
+  "p02": [],
+  "p03": [
+   {
+    "symbol": "DRAM",
+    "trigger": "r2",
+    "filled": true,
+    "qty": 4.0,
+    "direction": "short",
+    "hurdlePct": 0.1058,
+    "hurdle": 20.32,
+    "hurdleWhy": null,
+    "firstSaleDistanceR": 1.471,
+    "flag": true,
+    "delta": -0.3582,
+    "payoffTp1": 112.07,
+    "edgeAtTp1": 91.75,
+    "riskBudgetQty": 8,
+    "riskBudgetBasis": "2% x equity 10,038; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
+    "refusal": null
+   },
+   {
+    "symbol": "SBUX",
+    "trigger": "d1",
+    "filled": true,
+    "qty": 1.0,
+    "direction": "short",
+    "hurdlePct": 0.0918,
+    "hurdle": 17.08,
+    "hurdleWhy": null,
+    "firstSaleDistanceR": 1.316,
+    "flag": true,
+    "delta": -0.4276,
+    "payoffTp1": 49.86,
+    "edgeAtTp1": 32.78,
+    "riskBudgetQty": 2,
+    "riskBudgetBasis": "2% x equity 10,022; premium stop 50%; equity_points at the fire; settings default premium_stop_pct=50",
+    "refusal": null
+   },
+   {
+    "symbol": "PANW",
+    "trigger": "b2",
+    "filled": true,
+    "qty": 13.0,
+    "direction": "long",
+    "hurdlePct": null,
+    "hurdle": null,
+    "hurdleWhy": "no contract quote captured at the intent",
+    "firstSaleDistanceR": 1.748,
+    "flag": false,
+    "delta": null,
+    "payoffTp1": null,
+    "edgeAtTp1": null,
+    "riskBudgetQty": null,
+    "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+    "refusal": null
+   },
+   {
+    "symbol": "PANW",
+    "trigger": "b3",
+    "filled": true,
+    "qty": 14.0,
+    "direction": "long",
+    "hurdlePct": null,
+    "hurdle": null,
+    "hurdleWhy": "no contract quote captured at the intent",
+    "firstSaleDistanceR": 3.214,
+    "flag": false,
+    "delta": null,
+    "payoffTp1": null,
+    "edgeAtTp1": null,
+    "riskBudgetQty": null,
+    "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+    "refusal": null
+   },
+   {
+    "symbol": "FSLR",
+    "trigger": "b2",
+    "filled": true,
+    "qty": 25.0,
+    "direction": "long",
+    "hurdlePct": null,
+    "hurdle": null,
+    "hurdleWhy": "no contract quote captured at the intent",
+    "firstSaleDistanceR": 2.826,
+    "flag": false,
+    "delta": null,
+    "payoffTp1": null,
+    "edgeAtTp1": null,
+    "riskBudgetQty": null,
+    "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+    "refusal": null
+   },
+   {
+    "symbol": "SKHY",
+    "trigger": "r2",
+    "filled": false,
+    "qty": null,
+    "direction": "short",
+    "hurdlePct": null,
+    "hurdle": null,
+    "hurdleWhy": "no contract quote captured at the intent",
+    "firstSaleDistanceR": null,
+    "flag": false,
+    "delta": null,
+    "payoffTp1": null,
+    "edgeAtTp1": null,
+    "riskBudgetQty": null,
+    "riskBudgetBasis": "unknown (equity, premium or premium-stop input missing)",
+    "refusal": "no option contract available - nothing sent"
+   }
+  ],
+  "p04": {
+   "confirmation=observed_reclaim": {
+    "fills": 3,
+    "net": -110.9,
+    "open": 0,
+    "winners": 0,
+    "losers": 3,
+    "rejected": 0,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   }
+  },
+  "p04Paired": {
+   "rows": [
+    {
+     "symbol": "PANW",
+     "trigger": "b2",
+     "instrument": "shares",
+     "baseline": {
+      "kind": "fill",
+      "net": -33.84,
+      "closed": true
+     },
+     "confirmation": {
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
+      "outcome": "refused_r2",
+      "resultR": null,
+      "confirmTs": 1789738380000,
+      "entryTs": 1789738440000,
+      "entry": 368.735,
+      "riskPerUnit": 3.4402,
+      "rr": 1.28,
+      "barsWaited": 1
+     },
+     "dollarsAtDelayedEntry": "shares: underlying R applies"
+    },
+    {
+     "symbol": "PANW",
+     "trigger": "b3",
+     "instrument": "shares",
+     "baseline": {
+      "kind": "fill",
+      "net": -29.84,
+      "closed": true
+     },
+     "confirmation": {
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
+      "outcome": "refused_r2",
+      "resultR": null,
+      "confirmTs": 1789739280000,
+      "entryTs": 1789739340000,
+      "entry": 363.45,
+      "riskPerUnit": 4.5933,
+      "rr": 1.76,
+      "barsWaited": 1
+     },
+     "dollarsAtDelayedEntry": "shares: underlying R applies"
+    },
+    {
+     "symbol": "FSLR",
+     "trigger": "b2",
+     "instrument": "shares",
+     "baseline": {
+      "kind": "fill",
+      "net": -47.22,
+      "closed": true
+     },
+     "confirmation": {
+      "policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open",
+      "windowBars": 10,
+      "minRr": 3.0,
+      "gatesNotEvaluated": [
+       "quote quality/freshness",
+       "premium sizing / quantity-dependent exit rung",
+       "never-chase cap",
+       "timing window",
+       "admission and daily-loss budgets"
+      ],
+      "outcome": "stop_first",
+      "resultR": -1.0,
+      "confirmTs": 1789739700000,
+      "entryTs": 1789739760000,
+      "entry": 196.88,
+      "riskPerUnit": 0.9695,
+      "rr": 5.4,
+      "barsWaited": 1
+     },
+     "dollarsAtDelayedEntry": "shares: underlying R applies"
+    }
+   ],
+   "outcomes": {
+    "refused_r2": 2,
+    "stop_first": 1
+   },
+   "resolvedR": {
+    "n": 1,
+    "sumR": -1.0
+   },
+   "baselineWinnersInSample": 0,
+   "baselineLosersInSample": 3,
+   "definition": "GEOMETRY-ONLY UNDERLYING PROXY: touch baseline vs first completed close beyond the level within 10 bars after the touch bar, entry at the next bar OPEN, geometry gates only (stop side, room, R2 >= 3.0 at the exit rung); quote quality, sizing/exit rung, chase, timing windows and admission budgets NOT evaluated; underlying TP1-touch vs stop-close from the entry bar; incomplete horizons pending; descriptive/exploratory until >= 30 paired rows"
+  },
+  "p05": {
+   "midday|unknown_calendar": {
+    "fills": 2,
+    "net": -188.42,
+    "open": 0,
+    "winners": 0,
+    "losers": 2,
+    "rejected": 0,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   },
+   "prime_close|unknown_calendar": {
+    "fills": 0,
+    "net": 0.0,
+    "open": 0,
+    "winners": 0,
+    "losers": 0,
+    "rejected": 1,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   },
+   "prime_open|unknown_calendar": {
+    "fills": 3,
+    "net": -110.9,
+    "open": 0,
+    "winners": 0,
+    "losers": 3,
+    "rejected": 0,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   }
+  },
+  "p05RunnerLabels": {
+   "runnerWindowLabel=midday": {
+    "fills": 2,
+    "net": -188.42,
+    "open": 0,
+    "winners": 0,
+    "losers": 2,
+    "rejected": 0,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   },
+   "runnerWindowLabel=prime_close": {
+    "fills": 0,
+    "net": 0.0,
+    "open": 0,
+    "winners": 0,
+    "losers": 0,
+    "rejected": 1,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   },
+   "runnerWindowLabel=prime_open": {
+    "fills": 3,
+    "net": -110.9,
+    "open": 0,
+    "winners": 0,
+    "losers": 3,
+    "rejected": 0,
+    "underlyingTp1FirstRefused": 0,
+    "unknownProxy": 0
+   }
+  },
+  "sessionClock": "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET",
+  "cohortsAddendum": "p04-p05-2026-09-17; p06-2026-09-18",
+  "unknown": {
+   "p02WithoutObservation": 0,
+   "refusedUnresolvedOrGap": 0,
+   "frictionUnknown": 4,
+   "payoffInPremiumTermsUnknown": 4,
+   "riskBudgetQtyUnknown": 4,
+   "roomAtActualEntry": "unknown for every fill (no underlying observation at dispatch is recorded)"
+  }
+ },
+ "generatedAt": "2026-09-19T01:06:12.266422+00:00"
+}

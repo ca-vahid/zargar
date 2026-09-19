@@ -155,8 +155,28 @@ class PlanArmer(PlanRunner):
             plan_gate = {"targetIndex": cfg_th.get("rr_gate_target", getattr(th, "rr_gate_target", None)),
                          "rr": trig.get("riskReward"), "rrTp3": trig.get("riskRewardTp3"), "min": getattr(th, "min_risk_reward", None)}
         fee = float(s.get("options.fee_per_contract", 0.99)) + float(s.get("sim.reg_fee_per_contract", 0.05))
+        rec = self._first_sale_build(build_record, ap, trade, trig, observed, qty, limit, s, th, oq, fee, plan_gate, mode)
+        try:                                              # order-free vehicle comparison on rows already in hand - never a gate
+            from .first_sale import compare_vehicles
+            vr = (getattr(trade, "timing", None) or {}).get("vehicleRows") or {}
+            cash = float(((self.engine.positions.portfolio(ap.config.portfolio_id) or {}).get("cash")) or 0.0)
+            sq = ({"ask": float(uq.ask or 0) or None, "last": float(uq.last or 0) or None, "askSize": (int(uq.ask_size or 0) or None)} if uq is not None else None)
+            if vr.get("rows"):
+                rec["vehicleComparison"] = {**compare_vehicles(
+                    setup={"symbol": ap.symbol, "direction": trade.direction, "entry": trade.entry, "stop": trade.stop, "targets": trade.targets,
+                           "singleExit": str(ap.config.single_contract_exit or "tp2")},
+                    contracts=vr["rows"], share_quote=sq, budget=float(s.get("risk.max_option_premium_notional", 1000.0) or 0.0),
+                    risk_budget=cash * float(ap.config.risk_pct or 0.0) / 100.0, fee_per_contract=fee,
+                    stock_commission=float(s.get("sim.stock_commission", 0.0)), allow_shares=(str(ap.config.entry_fallback or "") == "shares")),
+                    "rowsCapturedTs": vr.get("ts"), "riskBudgetBasis": "cash x risk_pct (approximation; the sizer uses equity)"}
+        except Exception:                                  # noqa: BLE001
+            pass
+        return rec
+
+    def _first_sale_build(self, build_record, ap, trade, trig, observed, qty, limit, s, th, oq, fee, plan_gate, mode):
         return build_record(stage="order", symbol=ap.symbol, run_id=ap.run_id, trigger_id=trade.trigger_id, family=trade.kind,
-                            direction=trade.direction, session=ap.plan_for, plan_entry=trig.get("entry"), runner_entry=trade.entry,
+                            direction=trade.direction, session=ap.plan_for,
+                            plan_entry=((trig.get("entry") or {}).get("price") if isinstance(trig.get("entry"), dict) else trig.get("entry")), runner_entry=trade.entry,
                             stop=trade.stop, targets=trade.targets, observed_underlier=observed, instrument=trade.instrument,
                             qty=qty, multiplier=trade.multiplier, limit_price=limit, single_exit=str(ap.config.single_contract_exit or "tp2"),
                             pinned_gate_target=str(s.get("technique.rr_gate_target", "auto") or "auto"),
@@ -377,6 +397,7 @@ class PlanArmer(PlanRunner):
             pick = await self.technique.option_pick(ap.symbol, "short" if trade.direction == "short" else "long",
                                                     spot=float(trade.last_price or trade.entry),
                                                     max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte)
+            pick = await self._repick_after_rate_limit(ap, trade, pick, max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte)
         except Exception as exc:
             trade.errors.append(f"option chain: {exc}")
             self._log(ap, "option_pick_failed", f"{trade.trigger_id}: option chain error {exc}", trigger=trade.trigger_id)
@@ -390,6 +411,8 @@ class PlanArmer(PlanRunner):
                                                     "bid", "ask", "mid", "spreadPct", "delta", "theta", "iv", "dte",
                                                     "is0dte", "openInterest", "volume", "warnings", "provider")}
         trade.order_symbol = pick["symbol"]
+        if pick.get("nearMoney"):
+            trade.timing["vehicleRows"] = {"ts": now_ms(), "rows": pick["nearMoney"]}    # first-sale-v1: contemporaneous alternatives (evidence only)
         # the chain's bid/ask picked the strike; the real-time NBBO prices the
         # trade (sizing, entry limit, caps) — never the delayed row
         with contextlib.suppress(Exception):
@@ -406,6 +429,34 @@ class PlanArmer(PlanRunner):
                   + (f"; warnings: {'; '.join(warns)}" if warns else ""),
                   trigger=trade.trigger_id, contract=trade.contract)
         return trade.contract
+
+    async def _repick_after_rate_limit(self, ap, trade, pick, **kw):
+        """SKHY 2026-09-18: the provider's 429 outlasted the client's ~1.8 s back-off and a fired put entry sent nothing.
+        ONE more pick after `techniques.enhanced_market.pick_retry_after_429_s` (default 0 = OFF, capped at 8 s) - never a
+        loop, never stale chain data. The entry is then only allowed if the underlying has NOT run away meanwhile (no-chase:
+        at most 0.25R beyond the entry in the trade's direction); every later check (NBBO reprice, spread, sizing, first
+        sale, final guard, RiskGate) still runs. The fire chain is off the bar loop, so the wait blocks nothing else."""
+        err = str((pick or {}).get("error") or "")
+        if (pick or {}).get("available") or "429" not in err:
+            return pick
+        try:
+            wait = min(8.0, float(self.engine.settings.get("techniques.enhanced_market.pick_retry_after_429_s", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            wait = 0.0
+        if wait <= 0:
+            return pick
+        self._log(ap, "option_pick_retry", f"{trade.trigger_id}: provider rate limit - one more pick in {wait:g}s", trigger=trade.trigger_id)
+        await asyncio.sleep(wait)
+        q = self.engine.quotes.get(ap.symbol)
+        last = float(q.last) if q is not None and q.last and q.last > 0 else None
+        risk = abs(float(trade.entry) - float(trade.stop)) if trade.stop is not None else 0.0
+        if last is None or risk <= 0:
+            return {**(pick or {}), "error": err + "; no re-pick: the underlying cannot be re-checked"}
+        ran = (float(trade.entry) - last) if trade.direction == "short" else (last - float(trade.entry))
+        if ran > 0.25 * risk:
+            return {**(pick or {}), "error": err + f"; no re-pick: the underlying moved {ran / risk:.2f}R past the entry during the provider outage (no chase)"}
+        trade.timing["pickRetryAfter429S"] = wait
+        return await self.technique.option_pick(ap.symbol, "short" if trade.direction == "short" else "long", spot=last, **kw)
 
     async def rejudge_contract(self, ap, trade, contract: dict) -> None:
         """EM's quality re-judgement on the fresh NBBO (DA-01): T5.4 spread and T5.3 IV, the same

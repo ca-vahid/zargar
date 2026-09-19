@@ -104,7 +104,12 @@ def evaluate(candidate: dict, bars: list, *, thresholds: Thresholds | None = Non
     usable = _ms(candidate.get("source", {}).get("usableAt")) if candidate.get("variant") == "source_continuation" else candidate.get("eligibleFromTs")
     exp = candidate.get("expiresTs")
     tracker = TriggerTracker(copy.deepcopy(trig), t, profile, True, True, prev_close)
-    fed = 0
+    born = int(candidate.get("eligibleFromTs") or 0) if candidate.get("variant") == "requalification" else 0
+    if born:
+        out["gapRule"] = "not applicable: the structure was born after the open (the tracker runs gap_unchecked, as production does for a late start); the parent's gap verdict stands"
+    if born:
+        bars = [b for b in bars if int(b.ts) > born]        # a requalified candidate never sees bars from before its own confirmation;
+    fed = 0                                                 # the tracker indexes its OWN bar list, so the slice is what it and the scorer get
     for i, b in enumerate(bars):
         closed = int(b.ts) + 60_000
         if upto_ts is not None and closed > int(upto_ts):
@@ -171,7 +176,7 @@ def exclusion_diagnostic(name: str, trigger: dict, bars: list, *, thresholds: Th
     if relax == "volume":
         over = {k: 0.0 for k in ("volume_spike_mult", "volume_floor_mult") if hasattr(t, k)}
         t = dataclasses.replace(t, **over) if over else t
-    tr = TriggerTracker({**copy.deepcopy(trigger), "valid": True}, t, (None if relax == "volume" else profile), True, True, prev_close)
+    tr = TriggerTracker({**copy.deepcopy(trigger), "valid": True}, t, profile, True, True, prev_close)
     for i, b in enumerate(bars):
         tr.on_bar(b, i)
         if tr.status in TriggerTracker.TERMINAL:

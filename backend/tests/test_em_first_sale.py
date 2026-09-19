@@ -162,15 +162,22 @@ def test_em_producer_freezes_the_live_inputs_without_inventing_the_underlier():
     oq = SimpleNamespace(bid=1.0, ask=1.05, bid_size=12, ask_size=0, source_ts=900, quote_ts=0, source="opra", derived=False)
     a = _armer({"technique.rr_gate_target": "auto"}, {"SBUX261002P00095000": oq})          # no underlying quote at all
     ap = SimpleNamespace(run_id="run1", symbol="SBUX", plan_for="2026-09-18", trackers={},
-                         plan={"triggers": [{"id": "d1", "entry": 96.0907, "riskReward": 3.63, "riskRewardTp3": 3.63}], "thresholds": {"rr_gate_target": 2}},
-                         config=SimpleNamespace(single_contract_exit="tp2", portfolio_id="book"))
+                         plan={"triggers": [{"id": "d1", "entry": {"price": 96.0907, "basis": "on_break"}, "riskReward": 3.63, "riskRewardTp3": 3.63}], "thresholds": {"rr_gate_target": 2}},
+                         config=SimpleNamespace(single_contract_exit="tp2", portfolio_id="book", risk_pct=2.0, entry_fallback="shares"))
     trade = SimpleNamespace(trigger_id="d1", kind="breakdown", direction="short", entry=95.335, stop=97.681, targets=[94.1689, 92.2471, 90.3253],
-                            instrument="options", order_symbol="SBUX261002P00095000", multiplier=100.0, contract={"symbol": "SBUX261002P00095000", "delta": -0.45})
+                            instrument="options", order_symbol="SBUX261002P00095000", multiplier=100.0, contract={"symbol": "SBUX261002P00095000", "delta": -0.45},
+                            timing={"vehicleRows": {"ts": 1, "rows": [{"symbol": "SBUX261002P00095000", "strike": 95, "delta": -0.45, "bid": 1.0, "ask": 1.05, "bidSize": 12, "askSize": 9, "openInterest": 183},
+                                                                      {"symbol": "SBUX261002P00094000", "strike": 94, "delta": None, "bid": 0.7, "ask": 0.8}]}})
+    a.engine.positions = SimpleNamespace(portfolio=lambda pid: {"cash": 9800.0})
+    a._first_sale_build = lambda *args: PlanArmer._first_sale_build(a, *args)
     rec = PlanArmer.first_sale_record(a, ap, trade, 1, 1.05, "observe")
     assert rec["version"] == "first-sale-v1" and rec["gate"]["rRunnerEntry"] == 1.316 and rec["gate"]["verdict"] == "fail"
     assert rec["underlying"]["observed"] is None and rec["underlying"]["planEntry"] == 96.0907
     assert rec["quote"]["askSize"] is None and rec["quote"]["source"] == "opra" and rec["gate"]["planTime"]["rr"] == 3.63
     assert rec["fees"]["roundTrip"] == 2.08
+    vc = rec["vehicleComparison"]
+    assert [r["status"] for r in vc["rows"]] == ["scored", "unknown", "not_permitted"], "picked row scored; no-delta row unknown; a short never gets a share vehicle"
+    assert vc["rows"][0]["affordableQty"] >= 1 and vc["rowsCapturedTs"] == 1 and "never gates" in vc["note"]
 
 
 # ------------------------------------------------------------------------------------------- vehicle comparison
@@ -190,3 +197,48 @@ def test_vehicle_comparison_keeps_unknowns_and_never_gates_on_friction_or_open_i
     longs = fs.compare_vehicles(setup={**setup, "direction": "long", "stop": 58.5, "targets": [60.3, 61, 62]}, contracts=[],
                                 share_quote={"ask": 59.21, "askSize": 300}, budget=2000, risk_budget=100, fee_per_contract=1.04)["rows"]
     assert longs[0]["vehicle"] == "shares" and longs[0]["affordableQty"] == 33 and longs[0]["status"] == "scored"
+
+
+# ------------------------------------------------------------------------- SKHY: one bounded re-pick after a provider 429
+def _repick_rig(settings, last, picks):
+    calls = []
+
+    async def option_pick(sym, direction, **kw):
+        calls.append(kw)
+        return picks.pop(0)
+    logs = []
+    me = SimpleNamespace(engine=SimpleNamespace(settings=SimpleNamespace(get=lambda k, d=None: settings.get(k, d)),
+                                                quotes=SimpleNamespace(get=lambda s: (SimpleNamespace(last=last) if last else None))),
+                         technique=SimpleNamespace(option_pick=option_pick), _log=lambda ap, what, text, **kw: logs.append(what))
+    trade = SimpleNamespace(trigger_id="r2", direction="short", entry=100.0, stop=101.0, timing={})
+    return me, trade, calls, logs
+
+
+RATE_LIMITED = {"available": False, "error": "CBOE HTTP 429 (rate limited; 2 retries)"}
+KNOB = "techniques.enhanced_market.pick_retry_after_429_s"
+
+
+def test_skhy_repick_is_off_by_default_bounded_to_one_attempt_and_never_chases(monkeypatch):
+    import zargar.technique.arming as arming
+    slept = []
+
+    async def fake_sleep(s):
+        slept.append(s)
+    monkeypatch.setattr(arming.asyncio, "sleep", fake_sleep)
+    ap = SimpleNamespace(symbol="SKHY")
+    me, trade, calls, _ = _repick_rig({}, 99.9, [])
+    assert asyncio.run(PlanArmer._repick_after_rate_limit(me, ap, trade, dict(RATE_LIMITED))) == RATE_LIMITED and calls == [] and slept == [], "OFF by default: baseline unchanged"
+    me, trade, calls, logs = _repick_rig({KNOB: 60}, 99.9, [{"available": True, "symbol": "SKHY260925P00100000"}])
+    out = asyncio.run(PlanArmer._repick_after_rate_limit(me, ap, trade, dict(RATE_LIMITED)))
+    assert out["available"] and len(calls) == 1 and slept == [8.0] and trade.timing["pickRetryAfter429S"] == 8.0, "ONE retry, the wait capped at 8 s"
+    assert calls[0]["spot"] == 99.9, "the re-pick prices off the CURRENT underlying"
+    me, trade, calls, _ = _repick_rig({KNOB: 4}, 99.5, [{"available": True}])                  # a short that already fell 0.5R past its entry
+    out = asyncio.run(PlanArmer._repick_after_rate_limit(me, ap, trade, dict(RATE_LIMITED)))
+    assert not out.get("available") and "no chase" in out["error"] and calls == []
+    me, trade, calls, _ = _repick_rig({KNOB: 4}, None, [{"available": True}])
+    assert "cannot be re-checked" in asyncio.run(PlanArmer._repick_after_rate_limit(me, ap, trade, dict(RATE_LIMITED)))["error"] and calls == []
+    me, trade, calls, _ = _repick_rig({KNOB: 4}, 99.9, [])
+    other = {"available": False, "error": "no contract just OTM"}
+    assert asyncio.run(PlanArmer._repick_after_rate_limit(me, ap, trade, other)) == other and calls == [], "only a provider rate limit is retried"
+    from zargar.settings_service import DEFAULTS
+    assert DEFAULTS[KNOB] == 0.0

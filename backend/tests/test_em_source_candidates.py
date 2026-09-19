@@ -192,3 +192,14 @@ def test_exclusion_diagnostics_report_cost_and_benefit_and_change_nothing():
     as_is = scp.exclusion_diagnostic("MU volume skip", TRIG, quiet_break, thresholds=T, profile=PROFILE, prev_close=99.5)
     assert as_is["status"] != "fired", "the production volume rule still excludes it"
     assert "HINDSIGHT" in as_is["label"] and T.volume_spike_mult > 0, "the production thresholds object is untouched"
+
+
+def test_a_requalified_candidate_never_sees_bars_from_before_its_own_confirmation():
+    child = {"version": rq.VERSION, "variant": "requalification", "candidateId": "rq1-x", "origin": "scenario:s1", "orderFree": True, "symbol": "X", "direction": "long",
+             "disposition": "requalification_eligible", "eligibleFromTs": ms(9, 40), "expiresTs": ms(11, 30), "source": {}, "trigger": copy.deepcopy(TRIG)}
+    gap_open = [bar(9, 30, 103.0, 103.5, 102.8, 103.2)] + [bar(9, 31 + i, 103.0, 103.2, 102.9, 103.0) for i in range(9)]      # an opening print far through the level
+    late = [Bar("X", "1m", ms(9, 41) + i * 60000, *v) for i, v in enumerate([(99.6, 99.8, 99.5, 99.7, 100_000), (99.7, 99.9, 99.6, 99.8, 100_000), (99.8, 100.4, 99.8, 100.3, 400_000),
+                                                                             (100.3, 100.6, 100.2, 100.5, 300_000), (100.5, 100.9, 100.4, 100.8, 300_000), (100.8, 101.0, 100.7, 100.9, 100_000)])]
+    out = scp.evaluate(child, gap_open + late, thresholds=T, profile=PROFILE, prev_close=99.5)
+    assert out["disposition"] == "triggered" and out["firedTs"] == ms(9, 46) and "born after the open" in out["gapRule"], "the 09:30 gap belongs to the parent, not to a structure born at 09:40"
+    assert out["barsConsumed"] == 6

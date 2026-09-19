@@ -1,0 +1,2559 @@
+[
+ {
+  "date": "2026-09-15",
+  "rows": [
+   {
+    "ts": "2026-09-15T13:33:23.592254+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789479203592,
+     "runId": "dbb177a5621246b49782cee7b33d680e",
+     "symbol": "NFLX",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 78.49,
+      "runnerEntry": 78.49,
+      "stop": 78.0975,
+      "targets": [
+       79.096,
+       79.6262,
+       80.005
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 4.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 0.88,
+      "affordableQuantity": 4.0,
+      "contract": {
+       "symbol": "NFLX260918C00079000",
+       "display": "NFLX 18 Sep 26 79 C",
+       "expiry": "2026-09-18",
+       "strike": 79.0,
+       "optionType": "call",
+       "dte": 3,
+       "delta": 0.6758,
+       "openInterest": 9603,
+       "volume": 10043,
+       "spreadPct": 2.3,
+       "priced": "opra",
+       "warnings": []
+      }
+     },
+     "quote": {
+      "bid": 0.86,
+      "ask": 0.88,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 8.32,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 8.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.86,
+      "rRunnerEntry": 3.86,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.86,
+       "rrTp3": 3.86,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 1.544
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 40.95,
+      "netOfFeesAndSpread": 24.63,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "NFLX260918C00079000",
+    "actualNet": -60.32,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T13:41:21.234324+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789479681234,
+     "runId": "068b5b4e70ae414d9acbdae902444917",
+     "symbol": "WDC",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 416.0,
+      "runnerEntry": 416.0,
+      "stop": 413.6859,
+      "targets": [
+       422.6639,
+       428.4948,
+       432.6597
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 89.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 416.42,
+      "affordableQuantity": 89.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 7.199,
+      "rRunnerEntry": 7.199,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 7.2,
+       "rrTp3": 7.2,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 27.0,
+      "rRunnerEntry": 2.88
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 179.93,
+      "netOfFeesAndSpread": 179.93,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "WDC",
+    "actualNet": null,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T13:42:23.508107+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789479743508,
+     "runId": "78c61a2e31fc4a458c6eba907a80955d",
+     "symbol": "RKLB",
+     "trigger": "r2",
+     "family": "reject",
+     "direction": "short",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 65.7617,
+      "runnerEntry": 65.7617,
+      "stop": 66.0905,
+      "targets": [
+       64.644,
+       63.666,
+       62.9674
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 1.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 2.62,
+      "affordableQuantity": 1.0,
+      "contract": {
+       "symbol": "RKLB260925P00064000",
+       "display": "RKLB 25 Sep 26 64 P",
+       "expiry": "2026-09-25",
+       "strike": 64.0,
+       "optionType": "put",
+       "dte": 10,
+       "delta": -0.5551,
+       "openInterest": 206,
+       "volume": 23,
+       "spreadPct": 7.11,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 0.68 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 2.44,
+      "ask": 2.62,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 2.08,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 18.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 6.374,
+      "rRunnerEntry": 6.374,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 8.5,
+       "rrTp3": 8.5,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 6.374
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 116.33,
+      "netOfFeesAndSpread": 96.25,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "RKLB260925P00064000",
+    "actualNet": null,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T13:45:21.522680+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789479921522,
+     "runId": "c10b8af37f87418f8ae739ec58393e16",
+     "symbol": "ORCL",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 141.01,
+      "runnerEntry": 141.01,
+      "stop": 140.1661,
+      "targets": [
+       142.738,
+       144.25,
+       145.33
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 1.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 2.96,
+      "affordableQuantity": 1.0,
+      "contract": {
+       "symbol": "ORCL260918C00142000",
+       "display": "ORCL 18 Sep 26 142 C",
+       "expiry": "2026-09-18",
+       "strike": 142.0,
+       "optionType": "call",
+       "dte": 3,
+       "delta": 0.0,
+       "openInterest": 391,
+       "volume": 0,
+       "spreadPct": 3.44,
+       "priced": "opra",
+       "warnings": [
+        "T5.4 low volume today 0",
+        "T5.4 low delta 0.00",
+        "T5.3 elevated IV 0.61 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 2.86,
+      "ask": 2.96,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 2.08,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 10.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.839,
+      "rRunnerEntry": 3.839,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 5.12,
+       "rrTp3": 5.12,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 3.839
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 0.0,
+      "netOfFeesAndSpread": -12.08,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "ORCL260918C00142000",
+    "actualNet": -79.08,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T14:02:21.319307+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789480941319,
+     "runId": "7235623e26534a2b8426fbb2df49622b",
+     "symbol": "CVNA",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 68.9734,
+      "runnerEntry": 68.9734,
+      "stop": 68.6285,
+      "targets": [
+       69.6847,
+       70.3071,
+       70.7517
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 2.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 1.49,
+      "affordableQuantity": 2.0,
+      "contract": {
+       "symbol": "CVNA260918C00070000",
+       "display": "CVNA 18 Sep 26 70 C",
+       "expiry": "2026-09-18",
+       "strike": 70.0,
+       "optionType": "call",
+       "dte": 3,
+       "delta": 0.5859,
+       "openInterest": 7434,
+       "volume": 248,
+       "spreadPct": 9.12,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 0.69 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 1.36,
+      "ask": 1.49,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 4.16,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 26.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.867,
+      "rRunnerEntry": 3.867,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 5.16,
+       "rrTp3": 5.16,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 2.0,
+      "rRunnerEntry": 3.867
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 156.28,
+      "netOfFeesAndSpread": 126.12,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "CVNA260918C00070000",
+    "actualNet": -74.16,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T14:07:16.622689+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789481236622,
+     "runId": "0944a47ec51f40c79bafe7874b7f9efc",
+     "symbol": "IREN",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 41.7701,
+      "runnerEntry": 41.7701,
+      "stop": 41.5512,
+      "targets": [
+       42.3767,
+       42.9076,
+       43.2867
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 2.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 1.47,
+      "affordableQuantity": 2.0,
+      "contract": {
+       "symbol": "IREN260918C00042000",
+       "display": "IREN 18 Sep 26 42 C",
+       "expiry": "2026-09-18",
+       "strike": 42.0,
+       "optionType": "call",
+       "dte": 3,
+       "delta": 0.5694,
+       "openInterest": 3858,
+       "volume": 246,
+       "spreadPct": 5.59,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 0.95 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 1.39,
+      "ask": 1.47,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 4.16,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 16.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 5.196,
+      "rRunnerEntry": 5.196,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 6.93,
+       "rrTp3": 6.93,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 2.0,
+      "rRunnerEntry": 5.196
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 129.54,
+      "netOfFeesAndSpread": 109.38,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "IREN260918C00042000",
+    "actualNet": 2.84,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T14:27:18.955309+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789482438955,
+     "runId": "edb74fd374164122a06d290b949c2641",
+     "symbol": "INTU",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 329.875,
+      "runnerEntry": 329.875,
+      "stop": 328.2256,
+      "targets": [
+       332.6493,
+       335.0768,
+       336.8108
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 100.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 330.2,
+      "affordableQuantity": 100.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 4.205,
+      "rRunnerEntry": 4.205,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 4.21,
+       "rrTp3": 4.21,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 30.0,
+      "rRunnerEntry": 1.682
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 83.23,
+      "netOfFeesAndSpread": 83.23,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "INTU",
+    "actualNet": null,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T14:37:19.558888+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789483039558,
+     "runId": "5690944153b44fd3806dd765e1f95225",
+     "symbol": "AMAT",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 419.6,
+      "runnerEntry": 419.6,
+      "stop": 417.502,
+      "targets": [
+       424.764,
+       429.2825,
+       432.51
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 97.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 420.02,
+      "affordableQuantity": 97.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 6.153,
+      "rRunnerEntry": 6.153,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 6.15,
+       "rrTp3": 6.15,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 29.0,
+      "rRunnerEntry": 2.461
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 149.76,
+      "netOfFeesAndSpread": 149.76,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "AMAT",
+    "actualNet": null,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T14:49:17.270022+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789483757270,
+     "runId": "c025576bb49c4c378e23d36b50b5c465",
+     "symbol": "CRWV",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 82.08,
+      "runnerEntry": 82.08,
+      "stop": 81.6696,
+      "targets": [
+       82.8537,
+       83.5307,
+       84.0142
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 1.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 2.42,
+      "affordableQuantity": 1.0,
+      "contract": {
+       "symbol": "CRWV260918C00082500",
+       "display": "CRWV 18 Sep 26 82.5 C",
+       "expiry": "2026-09-18",
+       "strike": 82.5,
+       "optionType": "call",
+       "dte": 3,
+       "delta": 0.5425,
+       "openInterest": 1806,
+       "volume": 24,
+       "spreadPct": 2.94,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 0.82 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 2.35,
+      "ask": 2.42,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 2.08,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 7.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.535,
+      "rRunnerEntry": 3.535,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 4.71,
+       "rrTp3": 4.71,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 3.535
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 78.7,
+      "netOfFeesAndSpread": 69.62,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "CRWV260918C00082500",
+    "actualNet": -9.58,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T14:53:19.631822+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789483999631,
+     "runId": "6343e9ccbcd4461a956ce125bca5fb01",
+     "symbol": "SMCI",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 36.38,
+      "runnerEntry": 36.38,
+      "stop": 36.1372,
+      "targets": [
+       36.8333,
+       37.23,
+       37.5133
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 3.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 1.07,
+      "affordableQuantity": 3.0,
+      "contract": {
+       "symbol": "SMCI260918C00036500",
+       "display": "SMCI 18 Sep 26 36.5 C",
+       "expiry": "2026-09-18",
+       "strike": 36.5,
+       "optionType": "call",
+       "dte": 3,
+       "delta": 0.5555,
+       "openInterest": 1027,
+       "volume": 181,
+       "spreadPct": 2.84,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 0.79 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 1.04,
+      "ask": 1.07,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 6.24,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 9.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 4.668,
+      "rRunnerEntry": 4.668,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 4.67,
+       "rrTp3": 4.67,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 1.867
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 25.18,
+      "netOfFeesAndSpread": 9.94,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "SMCI260918C00036500",
+    "actualNet": null,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-15T15:22:18.938931+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789485738938,
+     "runId": "590dab678e5a4b5b8104d509dc15a900",
+     "symbol": "DVN",
+     "trigger": "r2",
+     "family": "reject",
+     "direction": "short",
+     "session": "2026-09-15",
+     "underlying": {
+      "planEntry": 51.14,
+      "runnerEntry": 51.14,
+      "stop": 51.3957,
+      "targets": [
+       50.522,
+       49.9813,
+       49.595
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 3.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 1.19,
+      "affordableQuantity": 3.0,
+      "contract": {
+       "symbol": "DVN260925P00051000",
+       "display": "DVN 25 Sep 26 51 P",
+       "expiry": "2026-09-25",
+       "strike": 51.0,
+       "optionType": "put",
+       "dte": 10,
+       "delta": -0.4902,
+       "openInterest": 147,
+       "volume": 15,
+       "spreadPct": 4.29,
+       "priced": "opra",
+       "warnings": []
+      }
+     },
+     "quote": {
+      "bid": 1.14,
+      "ask": 1.19,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 6.24,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 15.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 6.042,
+      "rRunnerEntry": 6.042,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 6.04,
+       "rrTp3": 6.04,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 2.417
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 30.29,
+      "netOfFeesAndSpread": 9.05,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "DVN260925P00051000",
+    "actualNet": null,
+    "wouldRefuse": false
+   }
+  ],
+  "executionNet": -220.3,
+  "asOf": "2026-09-19T01:05:57+00:00"
+ },
+ {
+  "date": "2026-09-16",
+  "rows": [
+   {
+    "ts": "2026-09-16T13:31:02.242800+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789565462242,
+     "runId": "b4ae44bbe37b49c4a30fcfeb3455fab6",
+     "symbol": "NOW",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-16",
+     "underlying": {
+      "planEntry": 139.0,
+      "runnerEntry": 139.0,
+      "stop": 138.305,
+      "targets": [
+       139.8907,
+       140.67,
+       141.2267
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 36.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 139.14,
+      "affordableQuantity": 36.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.204,
+      "rRunnerEntry": 3.204,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.2,
+       "rrTp3": 3.2,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 11.0,
+      "rRunnerEntry": 1.282
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 9.8,
+      "netOfFeesAndSpread": 9.8,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "NOW",
+    "actualNet": null,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-16T13:32:01.900957+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789565521900,
+     "runId": "c2950739a8c04b67ad631a20b5f07d8c",
+     "symbol": "CRCL",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-16",
+     "underlying": {
+      "planEntry": 84.8,
+      "runnerEntry": 84.8,
+      "stop": 84.074,
+      "targets": [
+       87.1976,
+       89.2955,
+       90.794
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 1.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 2.56,
+      "affordableQuantity": 1.0,
+      "contract": {
+       "symbol": "CRCL260918C00086000",
+       "display": "CRCL 18 Sep 26 86 C",
+       "expiry": "2026-09-18",
+       "strike": 86.0,
+       "optionType": "call",
+       "dte": 2,
+       "delta": 0.5411,
+       "openInterest": 544,
+       "volume": 712,
+       "spreadPct": 8.55,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 1.04 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 2.35,
+      "ask": 2.56,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 2.08,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 21.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 6.192,
+      "rRunnerEntry": 6.192,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 8.26,
+       "rrTp3": 8.26,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 6.192
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 243.25,
+      "netOfFeesAndSpread": 220.17,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "CRCL260918C00086000",
+    "actualNet": -94.11,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-16T13:34:01.598811+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789565641598,
+     "runId": "cfd88d3ac0804103b1b81b6609aa4cb4",
+     "symbol": "CVNA",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-16",
+     "underlying": {
+      "planEntry": 66.58,
+      "runnerEntry": 66.58,
+      "stop": 66.2471,
+      "targets": [
+       67.1754,
+       67.6964,
+       68.0686
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 75.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 66.65,
+      "affordableQuantity": 75.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 4.472,
+      "rRunnerEntry": 4.472,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 4.47,
+       "rrTp3": 4.47,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 22.0,
+      "rRunnerEntry": 1.789
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 13.1,
+      "netOfFeesAndSpread": 13.1,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "CVNA",
+    "actualNet": -29.49,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-16T18:59:01.111125+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789585141111,
+     "runId": "cc5267a599994d43997606a8d93d5c1f",
+     "symbol": "CRWV",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-16",
+     "underlying": {
+      "planEntry": 82.059,
+      "runnerEntry": 82.059,
+      "stop": 81.6487,
+      "targets": [
+       82.8411,
+       83.5254,
+       84.0142
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 1.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 2.09,
+      "affordableQuantity": 1.0,
+      "contract": {
+       "symbol": "CRWV260918C00082500",
+       "display": "CRWV 18 Sep 26 82.5 C",
+       "expiry": "2026-09-18",
+       "strike": 82.5,
+       "optionType": "call",
+       "dte": 2,
+       "delta": 0.576,
+       "openInterest": 2813,
+       "volume": 1424,
+       "spreadPct": 7.44,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 0.86 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 1.94,
+      "ask": 2.09,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 2.08,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 15.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.574,
+      "rRunnerEntry": 3.574,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 4.77,
+       "rrTp3": 4.77,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 3.574
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 84.46,
+      "netOfFeesAndSpread": 67.38,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "CRWV260918C00082500",
+    "actualNet": -51.11,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-16T19:15:01.106472+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789586101106,
+     "runId": "198c7c429fb14390a89554d34089499f",
+     "symbol": "SNDK",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-16",
+     "underlying": {
+      "planEntry": 1509.1401,
+      "runnerEntry": 1509.1401,
+      "stop": 1495.5901,
+      "targets": [
+       1527.8046,
+       1544.1361,
+       1555.8014
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 3.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 1510.65,
+      "affordableQuantity": 3.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.444,
+      "rRunnerEntry": 3.444,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.44,
+       "rrTp3": 3.44,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 1.377
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 18.66,
+      "netOfFeesAndSpread": 18.66,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "SNDK",
+    "actualNet": 27.1582,
+    "wouldRefuse": false
+   }
+  ],
+  "executionNet": -147.5518,
+  "asOf": "2026-09-19T01:05:57+00:00"
+ },
+ {
+  "date": "2026-09-17",
+  "rows": [
+   {
+    "ts": "2026-09-17T13:31:02.438288+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789651862438,
+     "runId": "1ee58b23f996492f97ed3896c1b93fd4",
+     "symbol": "BMNR",
+     "trigger": "r1",
+     "family": "reject",
+     "direction": "short",
+     "session": "2026-09-17",
+     "underlying": {
+      "planEntry": 23.5906,
+      "runnerEntry": 23.5906,
+      "stop": 23.7501,
+      "targets": [
+       23.3548,
+       23.1486,
+       23.0012
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 4.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 0.86,
+      "affordableQuantity": 4.0,
+      "contract": {
+       "symbol": "BMNR260925P00023000",
+       "display": "BMNR 25 Sep 26 23 P",
+       "expiry": "2026-09-25",
+       "strike": 23.0,
+       "optionType": "put",
+       "dte": 8,
+       "delta": -0.5011,
+       "openInterest": 1419,
+       "volume": 1052,
+       "spreadPct": 7.23,
+       "priced": "opra",
+       "warnings": [
+        "T5.1 strike 23 is beyond the plan's target cap 23.1486 \u2014 payoff at target is poor",
+        "T5.3 elevated IV 0.76 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 0.8,
+      "ask": 0.86,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 8.32,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 24.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.695,
+      "rRunnerEntry": 3.695,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.69,
+       "rrTp3": 3.69,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 1.478
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 11.82,
+      "netOfFeesAndSpread": -20.5,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "BMNR260925P00023000",
+    "actualNet": -80.35,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-17T13:32:01.931580+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789651921931,
+     "runId": "4d4e6035e65c4ea2925dd785d1d25567",
+     "symbol": "ORCL",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-17",
+     "underlying": {
+      "planEntry": 146.52,
+      "runnerEntry": 146.52,
+      "stop": 145.7874,
+      "targets": [
+       148.68,
+       150.57,
+       151.92
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 1.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 2.29,
+      "affordableQuantity": 1.0,
+      "contract": {
+       "symbol": "ORCL260918C00148000",
+       "display": "ORCL 18 Sep 26 148 C",
+       "expiry": "2026-09-18",
+       "strike": 148.0,
+       "optionType": "call",
+       "dte": 1,
+       "delta": 0.2472,
+       "openInterest": 1636,
+       "volume": 2940,
+       "spreadPct": 8.66,
+       "priced": "opra",
+       "warnings": [
+        "T5.4 low delta 0.25",
+        "T5.3 elevated IV 0.72 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 2.1,
+      "ask": 2.29,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 2.08,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 19.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 5.528,
+      "rRunnerEntry": 5.528,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 7.37,
+       "rrTp3": 7.37,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 5.528
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 100.12,
+      "netOfFeesAndSpread": 79.04,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "ORCL260918C00148000",
+    "actualNet": 250.92,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-17T13:34:01.515049+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789652041515,
+     "runId": "bb1bd06b11874d9ba0e8cb11126406a6",
+     "symbol": "ARM",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-17",
+     "underlying": {
+      "planEntry": 256.483,
+      "runnerEntry": 256.483,
+      "stop": 251.7698,
+      "targets": [
+       261.6127,
+       266.7423,
+       271.872
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 19.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 256.74,
+      "affordableQuantity": 19.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.265,
+      "rRunnerEntry": 3.265,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.27,
+       "rrTp3": 3.27,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 6.0,
+      "rRunnerEntry": 1.088
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 30.78,
+      "netOfFeesAndSpread": 30.78,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "ARM",
+    "actualNet": null,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-17T13:59:02.033820+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789653542033,
+     "runId": "fc6f47416c3b431ba5ede0a9721714c8",
+     "symbol": "SCHW",
+     "trigger": "b1",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-17",
+     "underlying": {
+      "planEntry": 103.885,
+      "runnerEntry": 103.885,
+      "stop": 103.3656,
+      "targets": [
+       104.6325,
+       105.2865,
+       105.7537
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 47.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 103.99,
+      "affordableQuantity": 47.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.598,
+      "rRunnerEntry": 3.598,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.6,
+       "rrTp3": 3.6,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 14.0,
+      "rRunnerEntry": 1.439
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 10.46,
+      "netOfFeesAndSpread": 10.46,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "SCHW",
+    "actualNet": 34.5177,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-17T14:23:01.256964+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789654981256,
+     "runId": "6ba0b29732504a3cb0406f550b4b1535",
+     "symbol": "COHR",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-17",
+     "underlying": {
+      "planEntry": 294.5552,
+      "runnerEntry": 294.5552,
+      "stop": 292.998,
+      "targets": [
+       298.3314,
+       301.6355,
+       303.9956
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 17.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 294.85,
+      "affordableQuantity": 17.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 6.062,
+      "rRunnerEntry": 6.062,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 6.06,
+       "rrTp3": 6.06,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 5.0,
+      "rRunnerEntry": 2.425
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 18.88,
+      "netOfFeesAndSpread": 18.88,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "COHR",
+    "actualNet": -23.4328,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-17T14:54:02.196246+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789656842196,
+     "runId": "5c505d422204450f863b48271b1b68b0",
+     "symbol": "TXN",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-17",
+     "underlying": {
+      "planEntry": 258.4742,
+      "runnerEntry": 258.4742,
+      "stop": 255.4297,
+      "targets": [
+       262.7165,
+       266.4285,
+       269.08
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 19.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 258.73,
+      "affordableQuantity": 19.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.484,
+      "rRunnerEntry": 3.484,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.48,
+       "rrTp3": 3.48,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 6.0,
+      "rRunnerEntry": 1.393
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 25.45,
+      "netOfFeesAndSpread": 25.45,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "TXN",
+    "actualNet": -12.7604,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-17T17:08:01.642011+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789664881642,
+     "runId": "9e0a4185779641149cb10011a5cc74a8",
+     "symbol": "CRCL",
+     "trigger": "r2",
+     "family": "reject",
+     "direction": "short",
+     "session": "2026-09-17",
+     "underlying": {
+      "planEntry": 85.96,
+      "runnerEntry": 85.96,
+      "stop": 86.6993,
+      "targets": [
+       82.88,
+       80.185,
+       78.26
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 3.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 1.3,
+      "affordableQuantity": 3.0,
+      "contract": {
+       "symbol": "CRCL260918P00085000",
+       "display": "CRCL 18 Sep 26 85 P",
+       "expiry": "2026-09-18",
+       "strike": 85.0,
+       "optionType": "put",
+       "dte": 1,
+       "delta": -0.523,
+       "openInterest": 5406,
+       "volume": 203,
+       "spreadPct": 7.17,
+       "priced": "opra",
+       "warnings": [
+        "T5.3 elevated IV 0.86 on the NBBO mid \u2014 IV-crush risk"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 1.21,
+      "ask": 1.3,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 6.24,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 27.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 10.415,
+      "rRunnerEntry": 10.415,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 10.41,
+       "rrTp3": 10.41,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 4.166
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 161.08,
+      "netOfFeesAndSpread": 127.84,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "CRCL260918P00085000",
+    "actualNet": 53.76,
+    "wouldRefuse": false
+   }
+  ],
+  "executionNet": 222.6545,
+  "asOf": "2026-09-19T01:05:58+00:00"
+ },
+ {
+  "date": "2026-09-18",
+  "rows": [
+   {
+    "ts": "2026-09-18T13:33:01.631976+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789738381631,
+     "runId": "edfc80d6dec64f4491718fca9f3cd607",
+     "symbol": "PANW",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-18",
+     "underlying": {
+      "planEntry": 367.1305,
+      "runnerEntry": 367.1305,
+      "stop": 365.2948,
+      "targets": [
+       370.3389,
+       373.1462,
+       375.1514
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 13.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 367.5,
+      "affordableQuantity": 13.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 4.369,
+      "rRunnerEntry": 4.369,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 4.37,
+       "rrTp3": 4.37,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 4.0,
+      "rRunnerEntry": 1.748
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 12.83,
+      "netOfFeesAndSpread": 12.83,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "PANW",
+    "actualNet": -63.6815,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-18T13:48:02.077635+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789739282077,
+     "runId": "edfc80d6dec64f4491718fca9f3cd607",
+     "symbol": "PANW",
+     "trigger": "b3",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-18",
+     "underlying": {
+      "planEntry": 360.66,
+      "runnerEntry": 360.66,
+      "stop": 358.8567,
+      "targets": [
+       366.4566,
+       371.5285,
+       375.1514
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 14.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 361.02,
+      "affordableQuantity": 14.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 8.036,
+      "rRunnerEntry": 8.036,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 8.04,
+       "rrTp3": 8.04,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 4.0,
+      "rRunnerEntry": 3.214
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 23.19,
+      "netOfFeesAndSpread": 23.19,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "PANW",
+    "actualNet": -63.6815,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-18T13:55:06.756106+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789739706756,
+     "runId": "db9faf749a7d437ea6d378930ebb607b",
+     "symbol": "FSLR",
+     "trigger": "b2",
+     "family": "bounce",
+     "direction": "long",
+     "session": "2026-09-18",
+     "underlying": {
+      "planEntry": 196.895,
+      "runnerEntry": 196.895,
+      "stop": 195.9105,
+      "targets": [
+       199.677,
+       202.1112,
+       203.85
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "shares",
+      "quantity": 25.0,
+      "quantityKnown": true,
+      "multiplier": 1.0,
+      "limitPrice": 197.09,
+      "affordableQuantity": 25.0,
+      "contract": null
+     },
+     "quote": null,
+     "fees": {
+      "roundTrip": 0.0,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": null,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 7.064,
+      "rRunnerEntry": 7.064,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 7.06,
+       "rrTp3": 7.06,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 8.0,
+      "rRunnerEntry": 2.826
+     },
+     "payoffProxy": {
+      "kind": "linear_shares",
+      "grossAtFirstSale": 22.26,
+      "netOfFeesAndSpread": 22.26,
+      "caveat": "underlying move x shares sold at the first rung"
+     }
+    },
+    "heldSymbol": "FSLR",
+    "actualNet": -47.225,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-18T17:38:03.007851+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789753083007,
+     "runId": "4a75f7d4dbb447c9ab83252ce162b543",
+     "symbol": "DRAM",
+     "trigger": "r2",
+     "family": "reject",
+     "direction": "short",
+     "session": "2026-09-18",
+     "underlying": {
+      "planEntry": 58.8655,
+      "runnerEntry": 58.8655,
+      "stop": 59.3971,
+      "targets": [
+       58.0833,
+       57.3989,
+       56.91
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 4.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 0.48,
+      "affordableQuantity": 4.0,
+      "contract": {
+       "symbol": "DRAM260921P00058000",
+       "display": "DRAM 21 Sep 26 58 P",
+       "expiry": "2026-09-21",
+       "strike": 58.0,
+       "optionType": "put",
+       "dte": 3,
+       "delta": -0.3582,
+       "openInterest": 88,
+       "volume": 250,
+       "spreadPct": 6.45,
+       "priced": "opra",
+       "warnings": [
+        "T5.4 thin open interest 88"
+       ]
+      }
+     },
+     "quote": {
+      "bid": 0.45,
+      "ask": 0.48,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 8.32,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 12.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 2,
+      "rung": "tp3",
+      "rungBasis": "book_tp3",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 3.679,
+      "rRunnerEntry": 3.679,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "pass",
+      "reason": null,
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.68,
+       "rrTp3": 3.68,
+       "min": 3.0
+      },
+      "differsFromPlanTime": false
+     },
+     "firstSale": {
+      "rungIndex": 0,
+      "rung": "tp1-ladder",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 1.471
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 28.02,
+      "netOfFeesAndSpread": 7.7,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "DRAM260921P00058000",
+    "actualNet": -104.32,
+    "wouldRefuse": false
+   },
+   {
+    "ts": "2026-09-18T17:59:01.658066+00:00",
+    "record": {
+     "version": "first-sale-v1",
+     "stage": "retrospective",
+     "mode": "retrospective",
+     "ts": 1789754341658,
+     "runId": "8a79a6437cf24adfb5bc1671dc4dc9a1",
+     "symbol": "SBUX",
+     "trigger": "d1",
+     "family": "breakdown",
+     "direction": "short",
+     "session": "2026-09-18",
+     "underlying": {
+      "planEntry": 96.0907,
+      "runnerEntry": 95.335,
+      "stop": 97.681,
+      "targets": [
+       94.1689,
+       92.2471,
+       90.3253
+      ],
+      "observed": null
+     },
+     "vehicle": {
+      "instrument": "options",
+      "quantity": 1.0,
+      "quantityKnown": true,
+      "multiplier": 100.0,
+      "limitPrice": 1.86,
+      "affordableQuantity": 1.0,
+      "contract": {
+       "symbol": "SBUX261002P00095000",
+       "display": "SBUX 02 Oct 26 95 P",
+       "expiry": "2026-10-02",
+       "strike": 95.0,
+       "optionType": "put",
+       "dte": 14,
+       "delta": -0.4276,
+       "openInterest": 183,
+       "volume": 56,
+       "spreadPct": 8.4,
+       "priced": "opra",
+       "warnings": []
+      }
+     },
+     "quote": {
+      "bid": 1.71,
+      "ask": 1.86,
+      "bidSize": null,
+      "askSize": null,
+      "sourceTs": null,
+      "ageMs": null,
+      "source": "opra",
+      "derived": false,
+      "twoSided": true
+     },
+     "fees": {
+      "roundTrip": 2.08,
+      "perContract": 1.04,
+      "stockFlat": 0.0
+     },
+     "spreadCost": 15.0,
+     "gate": {
+      "rule": "R2 measured where the position exits, at the FINAL quantity (first-sale-v1)",
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "rungBasis": "single_contract_exit",
+      "minRiskReward": 3.0,
+      "rPlanEntry": 2.417,
+      "rRunnerEntry": 1.316,
+      "rObservedUnderlier": null,
+      "observedProblem": "underlier_unobserved",
+      "verdict": "fail",
+      "reason": "first_sale_rr_below_min",
+      "planTime": {
+       "targetIndex": 2,
+       "rr": 3.63,
+       "rrTp3": 3.63,
+       "min": 3.0
+      },
+      "differsFromPlanTime": true
+     },
+     "firstSale": {
+      "rungIndex": 1,
+      "rung": "tp2-full",
+      "quantitySold": 1.0,
+      "rRunnerEntry": 1.316
+     },
+     "payoffProxy": {
+      "kind": "delta_linear",
+      "grossAtFirstSale": 132.04,
+      "netOfFeesAndSpread": 114.96,
+      "caveat": "delta proxy at entry: no gamma/theta/IV path - not a payoff guarantee"
+     }
+    },
+    "heldSymbol": "SBUX261002P00095000",
+    "actualNet": -84.1,
+    "wouldRefuse": true
+   }
+  ],
+  "executionNet": -299.3265,
+  "asOf": "2026-09-19T01:05:58+00:00"
+ }
+]

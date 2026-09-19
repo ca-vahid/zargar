@@ -1,0 +1,75 @@
+{
+ "date": "2026-09-17",
+ "book": "045d8c35b3f149628ea001ae90a58edb",
+ "asOf": "2026-09-19T01:06:14.077515+00:00",
+ "engineBuildAtSession": null,
+ "recorder": {
+  "tablePresent": false,
+  "snapshots": 0
+ },
+ "execution": {
+  "net": 222.6545,
+  "fees": 16.64,
+  "bySymbol": {
+   "BMNR260925P00023000": {
+    "net": -80.35,
+    "fees": 8.32,
+    "qty": 4.0
+   },
+   "COHR": {
+    "net": -23.4328,
+    "fees": 0.0,
+    "qty": 17.0
+   },
+   "CRCL260918P00085000": {
+    "net": 53.76,
+    "fees": 6.24,
+    "qty": 3.0
+   },
+   "ORCL260918C00148000": {
+    "net": 250.92,
+    "fees": 2.08,
+    "qty": 1.0
+   },
+   "SCHW": {
+    "net": 34.5177,
+    "fees": 0.0,
+    "qty": 47.0
+   },
+   "TXN": {
+    "net": -12.7604,
+    "fees": 0.0,
+    "qty": 19.0
+   }
+  },
+  "openAtCutoff": [],
+  "fills": 14
+ },
+ "displayedSampledEquity": {
+  "samples": 770,
+  "first": {
+   "ts": 1789651819433,
+   "equity": 9926.275199999993
+  },
+  "peak": {
+   "ts": 1789668103647,
+   "equity": 10310.55979999999
+  },
+  "last": {
+   "ts": 1789675170817,
+   "equity": 10148.929699999988
+  },
+  "peakMinusFirst": 384.2846,
+  "basis": "persisted 30 s equity samples on the book's MARKS (option mid / share last) - displayed, not executable; samples can miss peaks"
+ },
+ "capture": {
+  "version": "profit-capture-reducer-v1",
+  "snapshots": 0,
+  "status": "no_snapshots",
+  "note": "the recorder was off or the book was flat - nothing is inferred"
+ },
+ "disputedEvidence": [
+  "ORCL: the 09-17 simulated fill is questioned by the 09-17 review (E17-01 derived-quote producer); the execution ledger is reported as booked and flagged - no replacement price is invented"
+ ],
+ "retrospective": "generated after the session; not knowledge that was available on the trading day"
+}

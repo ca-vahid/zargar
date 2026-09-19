@@ -1,33 +1,38 @@
 {
- "date": "2026-09-18",
+ "date": "2026-09-15",
  "book": "045d8c35b3f149628ea001ae90a58edb",
- "asOf": "2026-09-19T01:06:14.633874+00:00",
+ "asOf": "2026-09-19T01:06:12.800459+00:00",
  "engineBuildAtSession": null,
  "recorder": {
   "tablePresent": false,
   "snapshots": 0
  },
  "execution": {
-  "net": -299.3265,
-  "fees": 10.4,
+  "net": -220.3,
+  "fees": 20.8,
   "bySymbol": {
-   "DRAM260921P00058000": {
-    "net": -104.32,
+   "CRWV260918C00082500": {
+    "net": -9.58,
+    "fees": 2.08,
+    "qty": 1.0
+   },
+   "CVNA260918C00070000": {
+    "net": -74.16,
+    "fees": 4.16,
+    "qty": 2.0
+   },
+   "IREN260918C00042000": {
+    "net": 2.84,
+    "fees": 4.16,
+    "qty": 2.0
+   },
+   "NFLX260918C00079000": {
+    "net": -60.32,
     "fees": 8.32,
     "qty": 4.0
    },
-   "FSLR": {
-    "net": -47.225,
-    "fees": 0.0,
-    "qty": 25.0
-   },
-   "PANW": {
-    "net": -63.6815,
-    "fees": 0.0,
-    "qty": 27.0
-   },
-   "SBUX261002P00095000": {
-    "net": -84.1,
+   "ORCL260918C00142000": {
+    "net": -79.08,
     "fees": 2.08,
     "qty": 1.0
    }
@@ -36,20 +41,20 @@
   "fills": 10
  },
  "displayedSampledEquity": {
-  "samples": 769,
+  "samples": 776,
   "first": {
-   "ts": 1789738209623,
-   "equity": 10148.929699999988
+   "ts": 1789479026600,
+   "equity": 10294.126999999999
   },
   "peak": {
-   "ts": 1789738209623,
-   "equity": 10148.929699999988
+   "ts": 1789479323069,
+   "equity": 10761.966999999999
   },
   "last": {
-   "ts": 1789761586522,
-   "equity": 9849.603199999987
+   "ts": 1789502377372,
+   "equity": 10073.826999999996
   },
-  "peakMinusFirst": 0.0,
+  "peakMinusFirst": 467.84,
   "basis": "persisted 30 s equity samples on the book's MARKS (option mid / share last) - displayed, not executable; samples can miss peaks"
  },
  "capture": {
