@@ -61,7 +61,7 @@ def compare_vehicles(spec, signal, minutes, daily, campaign, *, as_of_ms, observ
             else:
                 out['shares']={'status':'unaffordable','quantity':0,'netPnl':None}
     option=option_observation or {};qty=funding.get('quantity')
-    if option.get('status')!='observed' or type(qty) is not int or qty<1:
+    if option.get('status')!='observed' or option.get('timely') is not True or type(qty) is not int or qty<1:
         out['gaps'].append('eligible_option_and_quantity_unavailable')
     elif premium_input is None:
         out['gaps'].append('option_quote_path_unavailable')

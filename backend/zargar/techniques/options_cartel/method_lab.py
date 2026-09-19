@@ -71,6 +71,7 @@ def freeze_candidates(candidates, *, at, day, cap=50):
         row={k:candidate[k] for k in ('analysisId','symbol','direction','setup','trigger','invalidation',
                                       'targets','ranking','leaderEvidence','rules','entryPolicy','exitCampaign','sourceAt')}
         row.update(id=identity(day,candidate['analysisId']),labFeatures=feature,definitions=definitions,
+            themeEvidence=candidate.get('themeEvidence',{}),
             previousClose=history[-1].close,priorSession=history[-1].session.isoformat(),
             dailyInputHash=digest([b.model_dump(mode='json') for b in history]))
         found.append(row)
@@ -83,13 +84,17 @@ def freeze_candidates(candidates, *, at, day, cap=50):
     near=sorted(found,key=lambda c:((c['trigger']/c['previousClose']-1)<0,
         (c['trigger']/c['previousClose']-1) if c['trigger']>=c['previousClose'] else float('inf'),c['symbol']))
     liquid=sorted(found,key=lambda c:(-(c['leaderEvidence'].get('dailyDollarVolume') or 0),c['symbol']))
-    orders=[ids,[c['id'] for c in near],[c['id'] for c in liquid],compression_order(found)]
+    known=lambda c:c['themeEvidence'].get('strengthKnown',0)>=3 and c['themeEvidence'].get('medianRelativeStrength') is not None
+    leaders=sorted(found,key=lambda c:(not known(c),-c['themeEvidence']['medianRelativeStrength'] if known(c) else 0,
+        -(c['leaderEvidence'].get('directionalRelativeStrength') or 0),
+        -(c['leaderEvidence'].get('volumeVsPrior20') or 0),-(c['leaderEvidence'].get('dailyDollarVolume') or 0),c['symbol']))
+    orders=[ids,[c['id'] for c in near],[c['id'] for c in liquid],compression_order(found),[c['id'] for c in leaders]]
     selected=[]
     for i in range(max(map(len,orders),default=0)):
         for order in orders:
             if i<len(order) and order[i] not in selected and len(selected)<cap: selected.append(order[i])
     return {'candidates':found,'observedIds':selected,'omittedIds':[cid for cid in ids if cid not in selected],
-            'excluded':excluded,'rankings':{'quality':orders[0],'nearest':orders[1],'liquidity':orders[2],'compression':orders[3]},
+            'excluded':excluded,'rankings':{'quality':orders[0],'nearest':orders[1],'liquidity':orders[2],'compression':orders[3],'leadership':orders[4]},
             'populationHash':digest(found),'variants':list(VARIANTS)}
 
 
@@ -219,9 +224,10 @@ async def status(engine,policy,day):
         signals=(await s.scalars(select(TechniqueRun).where(TechniqueRun.parent_run_id==context.id,
             TechniqueRun.mode=='lab_signal').order_by(TechniqueRun.as_of))).all()
         quotes=(await s.scalars(select(TechniqueRun).where(TechniqueRun.parent_run_id.in_([r.id for r in signals]),
-            TechniqueRun.mode=='lab_quote',TechniqueRun.result['purpose'].as_string()=='entry_selection'))).all()
+            TechniqueRun.mode=='lab_quote',TechniqueRun.result['purpose'].as_string().in_(('entry_selection','entry_attempt_result')))
+            .order_by(TechniqueRun.as_of))).all()
     latest={r.result['candidateId']:r for r in baselines};reads={}
-    selected_quotes={q.parent_run_id:q.result['observation'] for q in quotes}
+    selected_quotes={q.parent_run_id:q.result['observation'] for q in quotes if q.result['purpose']=='entry_selection'}
     for tick in reversed(ticks):
         for row in tick.result['rows']:
             earlier=reads.get(row['candidateId'],{});models={**earlier.get('models',{}),**row.get('models',{})}
@@ -231,7 +237,7 @@ async def status(engine,policy,day):
         lastObservedAt=ticks[0].as_of if ticks else None,trial=source.get('trial'),rankings=source['rankings'],
         denominator={'eligible':len(source['candidates']),'observedLimit':len(source['observedIds']),
                      'omitted':len(source['omittedIds']),'excluded':len(source['excluded'])},
-        signalCount=len(signals),pricedSignals=sum(q.result['observation'].get('status')=='observed'
+        signalCount=len(signals),pricedSignals=sum(q.result['purpose']=='entry_selection' and q.result['observation'].get('status')=='observed'
             and q.result['observation'].get('timely') is True for q in quotes),
         signals=[{'id':r.id,**{k:r.result.get(k) for k in ('symbol','variant','signal','observedAt','market')}} for r in signals])
     for candidate in source['candidates']:
@@ -242,7 +248,10 @@ async def status(engine,policy,day):
             variant=signal.result['variant'];selection=selected_quotes.get(signal.id)
             models[variant]={**models.get(variant,{}),'status':'recorded_research_confirmation',
                 'signal':signal.result['signal'],'captureStatus':'captured_prospectively',
-                'quoteStatus':selection['status'] if selection else 'pending_observation'}
+                'quoteStatus':selection['status'] if selection else 'pending_observation',
+                'quoteAttempts':[{'at':q.as_of,'attempt':q.result.get('attempt'),
+                    **{k:q.result['observation'].get(k) for k in ('status','reason','selectionErrors','underlyingFailures')}}
+                    for q in quotes if q.parent_run_id==signal.id and q.result['purpose']=='entry_attempt_result']}
         out['rows'].append({**{k:candidate[k] for k in ('id','symbol','labFeatures','definitions','ranking')},
             'observed':candidate['id'] in source['observedIds'],
             'baselineStatus':baseline.result['status'] if baseline else 'pending',

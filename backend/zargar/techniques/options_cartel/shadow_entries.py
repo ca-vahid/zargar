@@ -129,14 +129,14 @@ def read_shadow_entry(spec: ShadowEntrySpec, bars: list[Bar], now: int, *, entry
             continue
         before=previous if previous is not None else candle['open']
         previous=candle['close']
+        if spec.model=='undercut_reclaim' and (spec.support-candle['low'])/spec.support*100>spec.max_undercut_pct:
+            event(end,'undercut_too_deep');return result('invalidated')
         if start<after:
             anchor=pivot=None
             continue
         ready=False;level=spec.support
         if spec.model=='undercut_reclaim':
             if candle['low']<spec.support:
-                if (spec.support-candle['low'])/spec.support*100>spec.max_undercut_pct:
-                    event(end,'undercut_too_deep');return result('invalidated')
                 if anchor is None:
                     anchor={'at':start,'low':candle['low']}
                     event(end,'undercut_observed',support=spec.support)

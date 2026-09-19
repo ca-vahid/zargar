@@ -15,8 +15,9 @@ from . import test_options_cartel_profitability_research as prior
 research=prior.research
 
 
-def candidate():
+def candidate(symbol=None):
     row=prior.candidate();row['entryPolicy']=EntryPolicy().model_dump(mode='json')
+    if symbol: row['symbol']=symbol
     day=previous_trading_day(dt.date.fromisoformat(prior.DAY));days=[]
     for _ in range(25):days.append(day);day=previous_trading_day(day)
     row['daily']=[{'symbol':row['symbol'],'session':d.isoformat(),'open':100,'high':102,
@@ -71,3 +72,20 @@ async def test_frozen_records_are_immutable_and_never_become_orders_or_arms(rese
     service=CartelService(rig.engine)
     assert not await service.runs(mode='lab_context',workspace='live')
     assert not any(r['mode'].startswith('lab_') for r in await service.runs(workspace='practice'))
+
+
+async def test_lab_freezes_independently_when_older_profitability_collection_is_off(research,monkeypatch):
+    from zargar.techniques.options_cartel.profitability_research import freeze_preparation
+    rig=research;rig.engine.settings[SETTING]=True;rig.engine.settings[prior.SETTING]=False
+    rig.engine.positions=SimpleNamespace(portfolio=lambda _: {'kind':'sim'},equity=AsyncMock(return_value=10000))
+    c=candidate('TESTA')
+    async with rig.sf() as s,s.begin():
+        s.add(TechniqueRun(id=c['analysisId'],technique='options_cartel',symbol='TESTA',mode='analysis',
+            status='done',as_of=rig.prep.as_of,config={'inputs':{'direction':'long'}},result={}))
+    monkeypatch.setattr('zargar.techniques.options_cartel.profitability_research.candidate_from_analysis',
+        lambda saved,policy,cohort,**kw:{**c,'cohort':cohort})
+    result=await freeze_preparation(rig.engine,rig.prep.id,rig.policy,{'rows':[{'analysisId':c['analysisId']}]},clock=lambda:prior.OPEN-60000)
+    assert result['status']=='frozen'
+    async with rig.sf() as s:
+        assert await s.scalar(select(func.count()).select_from(TechniqueRun).where(TechniqueRun.mode=='lab_context'))==1
+        assert await s.scalar(select(func.count()).select_from(TechniqueRun).where(TechniqueRun.mode=='profit_context'))==0

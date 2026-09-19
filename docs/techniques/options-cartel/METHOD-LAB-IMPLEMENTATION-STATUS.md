@@ -37,33 +37,38 @@ next focused run before release. No test has touched the runtime database.
 
 ## Remaining implementation and acceptance
 
-Continuation checkpoint: quote selection now has persisted attempt starts/results,
-bounded retries, a hard acceptance deadline and explicit terminal missing-evidence
-records. Provider work runs after signal capture, so slow chains do not postpone
-other models' signal timestamps. UI projection preserves captured confirmations
-and their final quote disposition. A stored-evidence reconciliation module joins
-entry tapes, baselines, funding and quote/price receipts, validates the frozen daily
-hash, and keeps descriptive modeled schedules outside the trial score until
-receipt-timed exits are reconciled. Focused runs passed 34 tests, then 8 after
-capture-integrity refinements; these overlap earlier suites.
+Receipt-accounting checkpoint: the forward model now uses price/quote receipt
+ordering, displayed-size consumption, integer partial fills, separate option/share
+fee rules, and known stop/EMA decisions. A stored DB-path regression verifies
+separate option/share results and no orders. Trial reconciliation retains missing
+pairs, and selection reports keep the same breakout control. The UI exposes
+modeled fills and quote attempts. Carry-over observations continue without a new
+daily cohort. Daily 16:10 ET reviews include a Friday weekly marker.
 
-1. Wire stored signals/quote paths/price receipts through economic valuation and
-   the paired multi-session trial review, including held campaigns across dates.
-   Do not promote a modeled next-open schedule as a contemporaneous fill.
-2. Reconcile quote capture capacity/deadlines, missing quote reasons and exit
-   displayed-size evidence. An option quote observation is not an executed trade.
-3. Add UI results for complete versus missing economic observations and the
-   review gate; distinguish the primary challenger from diagnostic models.
-4. Complete lifecycle regressions: mid-flight stop/disable, late quotes,
-   restart/deduplication, incomplete baseline retry, foreign/Live scope and
-   overlapping modeled positions. Inspect the final causal path end to end.
-5. Finish source-example calibration where original dated evidence can be
-   obtained. Provisional interpretations remain explicitly experimental.
-6. Prepare a versioned release with docs, focused tests, build and rollback;
-   preserve runtime-only changes and coordinate deployment/restore with Team2.
-7. Freeze the first prospective trial before its first session and collect real
-   evidence. Economic improvement, sufficient sample and an activation verdict
-   cannot be certified from implementation tests or the current short history.
+Source-backed shared correction: modern Alpaca CTA/UTP sizes are shares, effective
+November 3, 2025; the old unconditional x100 conversion overstated equity depth.
+Date/feed-scoped normalization and regression coverage are implemented. OPRA
+option units and price-field timestamps are unaffected. Method-lab preparation
+also works when the older profitability-research switch is off. Committed terminal
+invalidations survive later data revisions.
 
-Active goal remains the complete seven-phase plan. This status is a checkpoint,
-not a redefinition of completion or a claim that the trial has passed.
+## Current remaining work
+
+1. Complete final lifecycle and source acceptance, including disabling an in-flight
+   observation, bounded scheduled review, and first-cohort readiness.
+2. Close user-facing documentation and release metadata; resolve current-main and
+   runtime-only changes without altering another team's work.
+3. Merge and deploy through the guarded path, verify exact build/restoration and
+   enable only non-ordering Practice collection. Freeze a fresh trial before its
+   first session; do not retrofit old records into a prospective cohort.
+4. Collect future sessions. The declared minimum sample, economic improvement,
+   drawdown/exposure checks and an activation verdict remain unproven. The source
+   matrix keeps mirrored statements provisional and numerical choices experimental.
+
+The seven-phase goal remains active. Built software, deployment readiness and
+validated profitability are separate outcomes. This checkpoint does not narrow
+that objective or claim that a trial has passed.
+
+## Release acceptance checkpoint
+
+v0.8.21 metadata and production UI build pass. The final focused backend run passed 119 tests in 202.39 seconds, including lifecycle, receipt accounting, trial reconciliation, workspace separation, existing Cartel behavior and the equity SIP size cutoff. Ruff F and diff checks pass. No profitability verdict or trading activation follows from these checks.

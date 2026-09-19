@@ -33,11 +33,17 @@ async def capture_prices(runtime,context,symbols):
         rows=(await s.scalars(select(BarRow).where(BarRow.tf=='1m',BarRow.provider=='alpaca',
             BarRow.symbol.in_(symbols),BarRow.ts>=start,BarRow.ts<end).order_by(BarRow.symbol,BarRow.ts))).all()
     data=[{'symbol':b.symbol,'bar':[b.ts,b.open,b.high,b.low,b.close,b.volume,b.source]} for b in rows]
+    if runtime.stopping or not lab.enabled(runtime.engine,read_policy(runtime.engine,'practice')): return
+    proofs={}
+    for row in getattr(runtime,'rows',{}).values():
+        if row.get('portfolioId')==context.config['portfolioId'] and row.get('symbol') in symbols:
+            proofs.setdefault(row['symbol'],{}).update(row.get('state',{}).get('verifiedIntervals',{}))
     from .shadow_entries import digest
-    key=lab.identity(context.id,'price_receipt',end,digest(data))
+    key=lab.identity(context.id,'price_receipt',end,digest([data,proofs]))
     await lab.insert_record(runtime.engine,key=key,mode='lab_prices',at=runtime.clock(),parent=context.id,
         config=context.config,result={'observedAt':runtime.clock(),'provider':'alpaca','start':start,'end':end,
-            'symbols':symbols,'bars':data,'note':'Receipt time is availability to this collector, not a claim of earlier live delivery.'})
+            'symbols':symbols,'bars':data,'verifiedIntervals':proofs,
+            'note':'Receipt time is availability to this collector, not a claim of earlier live delivery.'})
 
 
 async def context_for(engine,policy,day):
@@ -107,8 +113,16 @@ async def collect(runtime):
             TechniqueArmed.portfolio_id==policy.portfolio_id,TechniqueArmed.plan_for==day.isoformat()))).all()
         prior=(await s.scalars(select(TechniqueRun).where(TechniqueRun.mode=='lab_signal',
             TechniqueRun.parent_run_id==context.id))).all()
+        old_ticks=(await s.scalars(select(TechniqueRun).where(TechniqueRun.mode=='lab_tick',
+            TechniqueRun.parent_run_id==context.id).order_by(TechniqueRun.as_of))).all()
     baseline_map={r.result['candidateId']:r for r in baselines}
     consumed={(r.result['candidateId'],r.result['variant']) for r in prior}
+    terminal={}
+    for tick in old_ticks:
+        for item in tick.result['rows']:
+            for variant,read in item.get('models',{}).items():
+                if read.get('status') in ('invalidated','expired_setup'):
+                    terminal.setdefault((item['candidateId'],variant),{**read,'terminalRecordId':tick.id})
     proofs={}
     for arm in arms: proofs.setdefault(arm.symbol,{}).update(arm.state.get('verifiedIntervals',{}))
     bars=[Bar(b.symbol,b.tf,b.ts,b.open,b.high,b.low,b.close,b.volume,source=b.source) for b in stored]
@@ -126,6 +140,9 @@ async def collect(runtime):
             observed_at=runtime.clock()
             models=await _study(read_models,{**candidate,'session':day.isoformat()},baseline.result,tape,
                 raw_proofs,boundary,observed_at,runtime._method_lab_started)
+            for variant in models:
+                if (candidate['id'],variant) in terminal:
+                    models[variant]=terminal[(candidate['id'],variant)]
             row.update(status='observed',models=models,baselineId=baseline.id,observedAt=observed_at)
             for variant,result in models.items():
                 signal=result.get('signal')
@@ -140,7 +157,11 @@ async def collect(runtime):
                     'decisionBars':[pack(b) for b in tape],'verifiedIntervals':raw_proofs,
                     'baselineId':baseline.id,'contextId':context.id,'market':market,
                     'sourceStatus':'mirrored_unverified' if variant.startswith(('undercut','pivot')) else 'author_archive_engineering_thresholds',
-                    'trial':context.result.get('trial')}
+                    'trial':context.result.get('trial'),
+                    'entryBounds':{'trigger':signal.get('trigger',(result.get('plan') or {}).get('trigger')),
+                        'stop':signal['stop'],'firstTarget':signal['targets'][0],
+                        'invalidation':signal['stop'] if variant.startswith(('undercut','pivot')) else candidate['invalidation'],
+                        'maxChaseR':candidate['entryPolicy']['max_chase_r'],'minTargetR':candidate['entryPolicy']['min_target_r']}}
                 await lab.insert_record(engine,key=signal_id,mode='lab_signal',at=decision_at,
                     parent=context.id,config=context.config,result=payload)
                 consumed.add((candidate['id'],variant));result['signalRecordId']=signal_id
@@ -190,6 +211,17 @@ async def pending_quotes(runtime,context,policy):
                     or type((observation.get('funding') or {}).get('quantity')) is not int
                     or observation['funding']['quantity']<1):
                 observation={**observation,'status':'incomplete_observation','reason':'Selected contract, fresh quote and funded quantity are required.'}
+            if observation.get('funding'):
+                from .lab_market_quotes import underlying_snapshot,entry_geometry,share_observation
+                underlying=underlying_snapshot(engine,row.result['symbol'],runtime.clock)
+                reasons=entry_geometry(underlying,row.result['entryBounds'])
+                observation={**observation,'underlyingEvidence':underlying,'underlyingFailures':reasons}
+                if reasons and observation.get('status')=='observed': observation['status']='underlying_entry_refused'
+                shares=share_observation(underlying,observation['funding'],row.result['entryBounds'])
+                shares['timely']=0<=runtime.clock()-signal['at']<=120000
+                if shares['status']=='observed' and shares['timely'] and not runtime.stopping and lab.enabled(engine,policy):
+                    await lab.insert_record(engine,key=lab.identity(row.id,'share_entry_quote'),mode='lab_quote',at=runtime.clock(),
+                        parent=row.id,config=context.config,result={'purpose':'share_entry_selection','signalId':row.id,'observation':shares})
             observation['timely']=0<=runtime.clock()-signal['at']<=120000
             if runtime.stopping or not lab.enabled(engine,policy): return
             await lab.insert_record(engine,key=lab.identity(key,'result'),mode='lab_quote',at=runtime.clock(),
@@ -208,18 +240,42 @@ async def capture_quotes(runtime):
     async with engine.sf() as s:
         selections=(await s.scalars(select(TechniqueRun).where(TechniqueRun.mode=='lab_quote',
             TechniqueRun.config['portfolioId'].as_string()==policy.portfolio_id,
-            TechniqueRun.result['purpose'].as_string()=='entry_selection',TechniqueRun.as_of>=now-30*86400000)
+            TechniqueRun.result['purpose'].as_string().in_(('entry_selection','share_entry_selection')),TechniqueRun.as_of>=now-90*86400000)
             .order_by(TechniqueRun.as_of.desc()).limit(100))).all()
-    tracked=getattr(runtime,'_method_lab_contracts',set())
+    tracked=getattr(runtime,'_method_lab_contracts',set());carry=set();carry_config=None;carry_parent=None
     for selection in selections:
         if runtime.stopping or not lab.enabled(engine,policy): return
         observation=selection.result['observation'];chosen=observation.get('selected')
         if not observation.get('timely') or observation.get('status')!='observed' or not chosen: continue
         contract=chosen['symbol']
+        if selection.result['purpose']=='share_entry_selection':
+            from .lab_market_quotes import underlying_snapshot
+            from .receipt_economics import usable_quote
+            snapshot=underlying_snapshot(engine,contract,runtime.clock);raw=snapshot.get('raw') or {}
+            quote={'contract':contract,'source':'alpaca_sip','observedAt':runtime.clock(),'sourceAt':raw.get('quote_ts'),
+                'bid':raw.get('bid'),'ask':raw.get('ask'),'bidSize':raw.get('bid_size'),'askSize':raw.get('ask_size'),'status':'observed'}
+            if not usable_quote(quote,runtime.clock(),instrument='shares'): quote['status']='unavailable'
+            carry.add(contract);carry_config=selection.config;carry_parent=selection.parent_run_id
+            from .shadow_entries import digest
+            await lab.insert_record(engine,key=lab.identity(selection.parent_run_id,'share_mark',digest(quote)),mode='lab_quote',at=runtime.clock(),
+                parent=selection.parent_run_id,config=selection.config,result={'purpose':'share_mark','signalId':selection.parent_run_id,'quote':quote})
+            continue
+        from ...options.occ import parse
+        option=parse(contract)
+        if option is None or option.expiry<day: continue
+        carry.add(option.underlying);carry_config=selection.config;carry_parent=selection.parent_run_id
         if contract not in tracked:
             await asyncio.wait_for(engine.options.track(contract),5);tracked.add(contract)
+        if runtime.stopping or not lab.enabled(engine,policy): return
         quote=snapshot_quote(engine,contract,runtime.clock)
         key=lab.identity(selection.parent_run_id,'mark',quote.get('sourceAt'),quote.get('evidenceSha256'))
         await lab.insert_record(engine,key=key,mode='lab_quote',at=runtime.clock(),parent=selection.parent_run_id,
             config=selection.config,result={'purpose':'mark','signalId':selection.parent_run_id,'quote':quote})
     runtime._method_lab_contracts=tracked
+    if carry and now-getattr(runtime,'_method_lab_carry_price_at',0)>=30000:
+        runtime._method_lab_carry_price_at=now
+        watched=getattr(runtime,'_method_lab_watched',set())
+        for symbol in sorted(carry-watched):
+            await engine.feed.watch(symbol);watched.add(symbol)
+        runtime._method_lab_watched=watched
+        await capture_prices(runtime,SimpleNamespace(id=carry_parent,config={**carry_config,'session':day.isoformat()}),sorted(carry))

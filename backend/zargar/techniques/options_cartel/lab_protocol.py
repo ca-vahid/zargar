@@ -23,6 +23,7 @@ class TrialProtocol(BaseModel):
     first_session: dt.date
     policy_hash: str = Field(min_length=64,max_length=64)
     model_version: Literal['cartel-shadow-entries-v1']='cartel-shadow-entries-v1'
+    exit_model: Literal['receipt_minute_close_v1']='receipt_minute_close_v1'
     control: Literal['breakout_5m_v1']='breakout_5m_v1'
     challenger: Literal['undercut_reclaim_5m_v1','pivot_30m_5m_v1']='undercut_reclaim_5m_v1'
     initial_capital: float = Field(gt=0)

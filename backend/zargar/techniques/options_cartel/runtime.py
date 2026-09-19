@@ -435,6 +435,8 @@ class CartelRuntime(CartelObserver):
     async def on_quote_watch(self):
         if not self.engine.settings.get('techniques.options_cartel.method_lab',False):
             self._method_lab_started=None
+            for task in (self._method_lab_task,self._method_lab_quote_task):
+                if task is not None and not task.done(): task.cancel()
         elif not self.stopping:
             if self.clock()-self._method_lab_last>=30000 and (self._method_lab_task is None or self._method_lab_task.done()):
                 self._method_lab_last=self.clock()

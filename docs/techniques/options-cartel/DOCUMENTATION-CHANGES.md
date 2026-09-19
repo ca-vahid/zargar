@@ -1,5 +1,14 @@
 # Cartel documentation changes
 
+## 2026-09-18 — method lab implementation
+
+- Added source-to-code confidence matrix, user guide and implementation status.
+- Added frozen research cohorts, new shadow entry models, receipt-timed option
+  and share valuation, explicit unknowns, paired review and daily/weekly checkpoints.
+- Kept modeled results separate from actual portfolio P&L and trading permission.
+- Verified Alpaca's November 3, 2025 SIP quote-size change; corrected the old
+  x100 scaling for modern equity messages without changing OPRA contract units.
+
 ## 2026-09-18 — opportunity audit and v0.8.20 recovery/reporting
 
 - Added a reproducible read-only candidate/distance/trigger audit with September

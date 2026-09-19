@@ -49,6 +49,24 @@ def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
 
+    @app.get('/api/options-cartel/method-lab/trials/{trial_id}',dependencies=[auth])
+    async def method_lab_trial(trial_id: str,workspace: Workspace | None = None):
+        from sqlalchemy import select
+        from ..domain import now_ms
+        from ..models import TechniqueRun
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        from ..techniques.options_cartel.method_lab_review import trial_report
+        if (workspace or active_workspace(eng))!='practice':
+            raise HTTPException(400,'Method lab is Practice research only')
+        policy=read_policy(eng,'practice')
+        async with eng.sf() as s:
+            record=await s.scalar(select(TechniqueRun).where(TechniqueRun.id==trial_id,
+                TechniqueRun.technique=='options_cartel',TechniqueRun.mode=='lab_trial',
+                TechniqueRun.config['portfolioId'].as_string()==policy.portfolio_id,
+                TechniqueRun.config['workspace'].as_string()=='practice'))
+        if record is None: raise HTTPException(404,'Trial not found in this Practice book')
+        return await trial_report(eng,trial_id,now_ms())
+
     @app.get('/api/options-cartel/method-lab',dependencies=[auth])
     async def method_lab_status(workspace: Workspace | None = None,day: str | None = None):
         import datetime as dt

@@ -83,8 +83,16 @@ contract and bounded shadow collection now have implementation and focused tests
 The original trading-plan schema does not accept these new model types. The
 method lab remains disabled by default while integration is being completed.
 
-Still required before completion: frozen real-source example fixtures, full
-quote/cost-outcome reconciliation and trial-report integration, full lifecycle
-acceptance, release/rollout verification and prospective economic evidence.
+Receipt-timed quote/cost reconciliation and paired trial reporting are now
+implemented, including separate shares/options/pass results. Their fixed
+`receipt_minute_close_v1` exit cadence is a modeling assumption, not tick-for-tick
+execution replication. Alpaca's dated share-size schema change is independently
+documented in METHOD-LAB.md and PLATFORM-RULES.md.
+
+Still required before full economic acceptance: source-example calibration where
+original dated evidence is obtainable, verified release/rollout and prospective
+economic evidence. A read-only smoke over the September 18 preparation's 13 saved
+non-filtered analyses produced 13 long candidates and 13 definitions of each new
+entry model; this tests mechanics, not historical profitability or complete-universe coverage.
 Unverified original post context stays
 an explicit open source task; it does not gain verified status through a green test.
