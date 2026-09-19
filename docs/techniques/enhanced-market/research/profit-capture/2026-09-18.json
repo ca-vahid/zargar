@@ -1,0 +1,63 @@
+{
+ "date": "2026-09-18",
+ "book": "045d8c35b3f149628ea001ae90a58edb",
+ "asOf": "2026-09-19T00:24:15.529831+00:00",
+ "engineBuildAtSession": null,
+ "recorder": {
+  "tablePresent": false,
+  "snapshots": 0
+ },
+ "execution": {
+  "net": -299.3265,
+  "fees": 10.4,
+  "bySymbol": {
+   "DRAM260921P00058000": {
+    "net": -104.32,
+    "fees": 8.32,
+    "qty": 4.0
+   },
+   "FSLR": {
+    "net": -47.225,
+    "fees": 0.0,
+    "qty": 25.0
+   },
+   "PANW": {
+    "net": -63.6815,
+    "fees": 0.0,
+    "qty": 27.0
+   },
+   "SBUX261002P00095000": {
+    "net": -84.1,
+    "fees": 2.08,
+    "qty": 1.0
+   }
+  },
+  "openAtCutoff": [],
+  "fills": 10
+ },
+ "displayedSampledEquity": {
+  "samples": 769,
+  "first": {
+   "ts": 1789738209623,
+   "equity": 10148.929699999988
+  },
+  "peak": {
+   "ts": 1789738209623,
+   "equity": 10148.929699999988
+  },
+  "last": {
+   "ts": 1789761586522,
+   "equity": 9849.603199999987
+  },
+  "peakMinusFirst": 0.0,
+  "basis": "persisted 30 s equity samples on the book's MARKS (option mid / share last) - displayed, not executable; samples can miss peaks"
+ },
+ "capture": {
+  "version": "profit-capture-reducer-v1",
+  "snapshots": 0,
+  "status": "no_snapshots",
+  "note": "the recorder was off or the book was flat - nothing is inferred"
+ },
+ "disputedEvidence": [],
+ "retrospective": "generated after the session; not knowledge that was available on the trading day"
+}
