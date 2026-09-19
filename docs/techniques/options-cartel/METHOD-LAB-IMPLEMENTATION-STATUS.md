@@ -126,3 +126,11 @@ Quality remains the recommendation; no data-backed reason to activate a new
 entry model or relax gates was found. The source-code/operating implementation
 and historical review are delivered; optional forward observations are no longer
 a completion dependency. No profitability guarantee or positive edge is claimed.
+
+## Accountability correction — September 19
+
+Completing the historical packet did not improve automatic trading behavior or
+solve profitability. The user requires actionable progress toward Monday, not
+more research infrastructure alone. The prior completion wording applies only
+to the delivered packet. See [Monday action](MONDAY-ACTION-2026-09-21.md) for the
+verified affordability constraint and the proposed bounded shares integration.
