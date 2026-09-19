@@ -250,7 +250,7 @@ class YahooQuoteFeed(QuoteFeed):
             op = o[i] if i < len(o) and o[i] is not None else c[i]
             hi = h[i] if i < len(h) and h[i] is not None else c[i]
             lo = l[i] if i < len(l) and l[i] is not None else c[i]
-            out.append(Bar(symbol=symbol.upper(), tf="1m", ts=bar_ms, source="exchange",
+            out.append(Bar(symbol=symbol.upper(), tf="1m", ts=bar_ms, source="exchange", provider="yahoo",
                            open=float(op), high=float(hi), low=float(lo), close=float(c[i]), volume=int(v[i])))
         return out[-30:]
 
@@ -376,7 +376,7 @@ def parse_bars(symbol: str, tf: str, data: dict) -> list[Bar]:
         h = highs[i] if i < len(highs) and highs[i] is not None else max(o, c)
         lo = lows[i] if i < len(lows) and lows[i] is not None else min(o, c)
         v = volumes[i] if i < len(volumes) and volumes[i] is not None else 0
-        out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000, source="exchange",
+        out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000, source="exchange", provider="yahoo",
                        open=float(o), high=float(h), low=float(lo), close=float(c),
                        volume=int(v)))
     return out

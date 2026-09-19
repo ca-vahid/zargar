@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.14";
+export const APP_VERSION = "0.8.19";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,8 +17,27 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.8.14",date:"2026-09-18",title:"EM research: a thin first quote no longer closes the runner-protection search",items:[
-    {tag:"fixed",text:"EM research observer (order-free, under the already-on shadow knob): when the first contract quote after a runner-protection signal shows SOME depth but less than the whole remainder, it is now recorded as raw evidence and the search for a fully covered quote stays open - before, that partial sample consumed the observation and a later full-depth quote could no longer supply the result. The P-02 small-position observation keeps its own quantity rule. No exit is placed from any of this."},
+  {version:"0.8.19",date:"2026-09-18",title:"Cartel: verify provider-omitted intervals",items:[
+    {tag:"fixed",text:"Practice can distinguish provider-omitted price intervals from lost data using complete trade-feed evidence. No candles are invented, unresolved gaps still block, and repaired history cannot trigger a late entry."},
+    {tag:"new",text:"Cartel Settings exposes the Practice-only verification switch; Armed shows verified interval counts. Exact proof evidence is saved with decisions."},
+  ]},
+  {version:"0.8.18",date:"2026-09-18",title:"Cartel: reject malformed minute updates",items:[
+    {tag:"fixed",text:"Cartel rejects misaligned or wrong-symbol minute updates before they reach entry evaluation. Valid updates continue normally; incomplete and unverified candles still block entries."},
+  ]},
+  {version:"0.8.17",date:"2026-09-18",title:"Team2: retain experiment review state",items:[
+    {tag:"fixed",text:"Practice experiment starting equity and sampled high-water marks can be saved and restored through the settings service. Trading rules are unchanged."},
+  ]},
+  {version:"0.8.16",date:"2026-09-18",title:"Team2: consistent inputs for Practice comparisons",items:[
+    {tag:"fixed",text:"Bars retain their data provider, and Yahoo updates cannot replace Alpaca bars. Team2 can use Alpaca-only history and preserve each plan's indicator warm-up through restarts and replay."},
+    {tag:"new",text:"Practice experiment books get scheduled half-hour equity reviews with persistent book pauses at their agreed review thresholds. Activation still requires verified data and a readiness receipt."},
+  ]},
+  {version:"0.8.15",date:"2026-09-18",title:"Cartel: faster preparation and clearer progress",items:[
+    {tag:"improved",text:"Cartel checks and arms its shortlist before optional research finishes. Plans shows stage timings and separates shortlist readiness from research completion."},
+    {tag:"new",text:"History request spacing offers a Fast option with automatic slowdown on provider throttling. Scan coverage, data source and trading checks stay unchanged."},
+  ]},
+  {version:"0.8.14",date:"2026-09-18",title:"Options Cartel: explain missed entries",items:[
+    {tag:"improved",text:"Cartel records partial candle evidence, delayed-bar counts and the dollar cost of option spreads to explain missed entries. Trading thresholds and account protections are unchanged."},
+    {tag:"new",text:"Offline Cartel method comparisons now distinguish original preparation, later recovery and unavailable evidence. Experimental setup and volume rules remain inactive."},
   ]},
   {version:"0.8.13",date:"2026-09-18",title:"EM research: the runner-protection observation seeks a real quote",items:[
     {tag:"improved",text:"EM research observer (behind the already-on shadow knob, order-free): after a confirmed TP1 trim, the bar that closes back through the saved first target now records the signal once and keeps looking for the first fresh, adequately covered contract quote on later quotes - a stale or thin first sample is raw evidence and no longer ends the search. The offline reducer walks fills and completed bars in time order, validates every observation strictly (trade, contract, signal, chronology, coverage, lifetime, cutoff) and reports proxy-only until an observation passes. No exit is placed from any of this; nothing else changes."},

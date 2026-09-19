@@ -25,6 +25,12 @@ Practice settings use `techniques.options_cartel.preparation`; Live uses `techni
 
 ## What a run does
 
+Performance controls and measurements: [Preparation performance](PREPARATION-PERFORMANCE.md).
+Executable shortlist checks now finish before optional profitability research. Plans
+shows that boundary and per-stage timing; already armed plans are monitored while
+research finishes. Fast history spacing keeps provider concurrency/retry protection
+and automatically slows down when the provider returns 429.
+
 Discovery retrieves the supported TradingView primary US stock/DR universe and reviewed ETFs, then captures industry context and validates SPY/QQQ completed-session history. If benchmark freshness is inadequate, the executable scan stops early in `waiting_for_benchmark`; it does not spend a full market scan pretending stale data is a market opinion.
 
 With fresh data but blocked/mixed market alignment, the configured research direction can still be evaluated. Resulting research records cannot become executable merely because alignment later changes: fresh preparation is required. Strict alignment requires both indices on the selected side of all selected EMAs. Moderate Practice permits bullish alignment when one index is above 8/21/50 and both are above 50; bearish alignment remains strict. Missing data never passes either mode.

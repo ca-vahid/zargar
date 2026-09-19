@@ -34,6 +34,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.options_cartel.record_option_quotes": False,
     "techniques.options_cartel.intraday_research": True,  # non-executing Practice observations only
     "techniques.options_cartel.reselect_wide_contract": True,  # bounded spread-only alternative, automatic Practice only
+    "techniques.options_cartel.verified_intervals": False,  # Practice only: verified SIP non-emission evidence, not synthetic candles
     "techniques.options_cartel.profitability_research": True,  # prospective Practice studies, never orders
     "techniques.options_cartel.profitability_research.candidate_cap": 50,
     "techniques.options_cartel.profitability_research.bearish_enabled": True,
@@ -120,6 +121,8 @@ DEFAULTS: dict[str, Any] = {
     "verification.require_actionable": True,
     # --- tip technique (docs/techniques/tip/PLAN.md; per-source overrides in .sources) ---
     # --- Team2 technique (2026-09-03; docs/techniques/team2/PLAN.md D1-D14) --------------------------
+    "techniques.team2.canonical_provider": "",  # C6: opt in after verified Alpaca backfill
+    "techniques.team2.experiment_observation": {},  # persistent sampled equity/high-water state
     "techniques.team2.enabled": True,
     "techniques.team2.default_portfolio": "",    # Team2's own Practice book (2026-09-08); empty = trading.default_portfolio
     "techniques.options_cartel.default_portfolio": "",   # Options Cartel's own Practice book (2026-09-08)

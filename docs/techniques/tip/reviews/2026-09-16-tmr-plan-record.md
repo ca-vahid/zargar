@@ -643,3 +643,61 @@ multi-turn loops re-send is the larger part (follow-on question, not this pilot)
 
 **Unchanged:** `techniques.tip.prompt_cache` OFF; no trading-policy change; no production timeout change; recap off;
 feasibility annotate; knowledge propose-only; risk limits unchanged. Paid pilot calls wait for the user's go.
+
+## E17 CLOSED (2026-09-17 23:08 ET) - deployment receipt, user decisions, what the desk looks at next
+
+**Deployed through the coordinated door, on the user's direct instruction:** runtime checkout fast-forwarded from
+1150fed to **e14f9fb** (= 1150fed + origin/main e8aeb25 / PR #209; the only conflict was `changelog.ts`, where the
+runtime side had lost the "Review round 2" item - resolved by keeping both items; check-release 0.8.13 green, build rc 0,
+import smoke ok, 17 focused tests green on the merged tree). `deploy.ps1 -TargetCommit e14f9fb… -Expect 0.8.13` at
+20:05:52 PT (ff-only, artifact build, handoff written; its inner restart refused the elevated assistant shell exactly as
+on the 18:49 PT release), then the `ZargarRestart` task at 20:06:16 PT consumed the handoff; receipt `phase=verified`,
+`healthyVersion=0.8.13`, completed 20:07:55 PT (`logs/restart-20260917-200617.log`,
+`logs/restart-inventory-20260917-200552.json`). **Verified after:** `/api/health` v0.8.13 build
+e14f9fb142105e25bf6016a912d18eb4224502f0 (contains e8aeb25 by ancestry), started, techniqueRunning 0; restoration by id
+54/54 against the pre-restart inventory (enhanced_market 39, team2 3, tip 12; none missing, none extra); resting GTC stops
+ACCEPTED incl. **SBLK STP 30.58 x62** for the Tips book (ACHR 7C, SMCI 41C, SBLK 62 sh open, `venueStopQty` 62); one
+engine on :8420 plus the Discord gateway and EM ingest helper pairs; Tips intake liveness `live`. Gates unchanged
+(`allow_live_auto` off, `trading.mode` unchanged, recap off, feasibility annotate, knowledge propose-only,
+`prompt_cache` False).
+
+**Not this desk:** the 19:55 PT restart (46c50eb -> 1150fed, Team2 PR #204 merged into the runtime branch) was the
+`ZargarRestart` task started directly by another session (task LastRunTime 19:55:26, result 0; receipt caller
+`restart.ps1`, restoration reported 54/54 in its log).
+
+**User decisions closing the review:** paid cache pilot SKIPPED for now (small expected benefit at the measured ~5.3k-token
+prefix; the $8 ceiling's pre-call check is estimate-based and its ledger is per invocation - both recorded in the pilot
+plan and the register), production caching stays OFF; no further feature work, trading-policy changes or broad test runs
+for E17; attention returns to trading results and actual operating costs.
+
+**Where the numbers stand (2026-09-17, Tips Practice) - SUPERSEDED by the net correction below (the +$189.07 figure is before option fees):** closed today MRNA +$115.00 (10:04 ET) + MRNA +$94.10 (11:04 ET) +
+ORCL -$20.03 (11:04 ET) = **+$189.07 realised** (the first MRNA tranche keeps its evidence-quality qualification from the
+quote audit); equity 8,925.42 at 23:01 ET, cash 6,679.92, three open positions above. Model cost today (list price,
+`tip_llm_cost --since 2026-09-17`): appraise $11.83 + retro $2.77 = **$14.60 priced lower bound**; intake (89 runs / 256
+calls / 10.4M input), rule_audit (2 runs / 53 calls, 17 cut) and digest stay unpriced because their records pre-date model
+stamping (stage rollups show every one of those calls was `claude-opus-5`, which would put the day near $70 at list -
+illustrative, not a priced figure). From the build now live, intake, digest and rule-audit records carry the model, so
+tomorrow's report prices the whole desk without inference.
+
+## Correction (review team, 2026-09-17 late) - today's realised result is NET of matched option fees
+
+The +$189.07 above was the managed-position realised P&L BEFORE matched option fees. Fees from the execution records:
+$1.04 per contract per side on the two closed option round trips (MRNA 165C 1+1, ORCL 160C 1+1) = **$4.16**; the MRNA
+share exits carried no commission.
+
+| Closed 2026-09-17 | Gross | Matched fees | **Net** | Note |
+|---|---:|---:|---:|---|
+| MRNA 260918C165 (option) | +$115.00 | $2.08 | **+$112.92** | QUESTIONED - keep the evidence-quality flag (quote audit `2026-09-17-mrna-quote-audit.md`) |
+| MRNA shares | +$94.10 | $0.00 | **+$94.10** | |
+| ORCL 260925C160 (option) | -$20.03 | $2.08 | **-$22.11** | |
+| **Total** | +$189.07 | $4.16 | **+$184.91** | |
+| **Excluding the questioned MRNA option** | | | **+$71.99** | |
+
+Model costs stay SEPARATE from trading P&L: **$14.60 is the priced lower bound**; the ~$70 all-Opus-5 figure is
+illustrative only, never a priced number.
+
+**Cost reporting from 2026-09-18 on:** report priced, unpriced and partial usage as three explicit lines. Model stamping
+(intake, digest, rule-audit, live since build e14f9fb) widens what CAN be priced; it does not make the bill complete -
+cut or cancelled calls stay partial/unknown, records without a stamp stay unpriced, and list price is an estimate of
+the invoice.
+

@@ -390,7 +390,10 @@ export function OptionsCartelPage() {
             <tbody>{visibleArmed.map(a => <tr key={a.runId}>
               <td><SymIcon sym={a.symbol} size={18}/> <CartelRunLink id={a.runId} onOpen={open}>{a.symbol}</CartelRunLink></td>
               <td><span className={`status-pill ${a.status === "armed" ? "ok" : "wait"}`}>{label(a.status)}</span></td>
-              <td>{a.config?.mode || a.mode}</td><td>{a.portfolio?.name || "—"}</td><td className="cartel-wrap">{a.summary || "Waiting for entry conditions"}</td>
+              <td>{a.config?.mode || a.mode}</td><td>{a.portfolio?.name || "—"}</td><td className="cartel-wrap">{a.summary || "Waiting for entry conditions"}
+                {a.barDrops?.count > 0 && <p className="muted">{a.barDrops.count} minute updates arrived too late to evaluate ({a.barDrops.session}); {a.barDrops.duplicates || 0} repeat deliveries. These updates cannot create historical entries.</p>}
+                {a.observationHealth?.verifiedNonemissionMinutes > 0 && <p className="muted">Provider verified {a.observationHealth.verifiedNonemissionMinutes} minutes with no eligible price update. These are not missing candles.</p>}
+              </td>
               <td><div className="cartel-actions"><button className="link-btn" onClick={() => openArmedPlan(a.runId)}>Monitor</button>
                 <button className="ghost-btn" disabled={!!busy || a.status === "closing"} onClick={() => alertAction(a.runId, a.status === "paused" ? "resume" : "pause")}>{a.status === "paused" ? "Resume" : "Pause"}</button>
                 <button className="ghost-btn" disabled={!!busy} onClick={() => alertAction(a.runId,"disarm")}>Disarm</button>

@@ -1,0 +1,595 @@
+{
+ "bars": {
+  "barTradeCountSum": 31395,
+  "barVolumeSum": 563019,
+  "complete": true,
+  "completedAt": "2026-09-18T01:36:00.997523Z",
+  "error": null,
+  "minutesAbsent": 17,
+  "minutesWithBar": 373,
+  "pages": 1,
+  "paginationComplete": true,
+  "request": {
+   "adjustment": "raw",
+   "end": "2026-09-17T20:00:00Z",
+   "feed": "sip",
+   "start": "2026-09-17T13:30:00Z",
+   "timeframe": "1Min"
+  },
+  "responseSha256": [
+   "9d426405ecfed8acf4a49666e272406d3f054b03bace91420a6416b3600efb32"
+  ]
+ },
+ "boundaryDropsTotal": 0,
+ "completedAt": "2026-09-18T01:36:02.527014Z",
+ "feed": "sip",
+ "note": "Interval boundaries enforced locally as [start, end) because the provider's end parameter is inclusive. Conditions are reported, not interpreted: whether a condition excludes a trade from the provider's minute bar is the provider's documented rule. A trades_without_bar minute is never an exchange bar; verified_no_trades would be a distinct source label carrying its verification time. Unprobed absent minutes are unknown.",
+ "probeSharesWithoutBar": 5428,
+ "probeSummary": {
+  "trades_without_bar": 17,
+  "unknown": 0
+ },
+ "probes": [
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 55,
+    "4": 11,
+    "F": 2,
+    "I": 55
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "11:44",
+   "minuteStartMs": 1789659840000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T15:45:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T15:44:00Z"
+   },
+   "responseSha256": [
+    "6f04d23d8352c08fc0caa618fdb1a85519da9425eda787f371df0bfb0fc7350a"
+   ],
+   "returnedTrades": 55,
+   "sharesTraded": 311,
+   "sizeMax": 39,
+   "sizeMin": 1,
+   "trades": 55,
+   "tradesInsideBoundary": 55,
+   "tradesUnder100Shares": 55,
+   "tradesWithOddLotCondition": 55,
+   "verifiedAt": "2026-09-18T01:36:01.087170Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 32,
+    "4": 2,
+    "I": 32
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "11:55",
+   "minuteStartMs": 1789660500000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T15:56:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T15:55:00Z"
+   },
+   "responseSha256": [
+    "3c85746c6d75467d59ba01c701110933323d13624f29c63d0a9e40217093735c"
+   ],
+   "returnedTrades": 32,
+   "sharesTraded": 206,
+   "sizeMax": 36,
+   "sizeMin": 1,
+   "trades": 32,
+   "tradesInsideBoundary": 32,
+   "tradesUnder100Shares": 32,
+   "tradesWithOddLotCondition": 32,
+   "verifiedAt": "2026-09-18T01:36:01.168576Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 64,
+    "4": 2,
+    "F": 10,
+    "I": 64
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "12:02",
+   "minuteStartMs": 1789660920000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T16:03:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T16:02:00Z"
+   },
+   "responseSha256": [
+    "b2467407782272ac6d2dbdbd7c320d7632ca646a2ac509705c332450763d19f5"
+   ],
+   "returnedTrades": 64,
+   "sharesTraded": 894,
+   "sizeMax": 38,
+   "sizeMin": 1,
+   "trades": 64,
+   "tradesInsideBoundary": 64,
+   "tradesUnder100Shares": 64,
+   "tradesWithOddLotCondition": 64,
+   "verifiedAt": "2026-09-18T01:36:01.259033Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 51,
+    "F": 5,
+    "I": 51
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "12:03",
+   "minuteStartMs": 1789660980000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T16:04:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T16:03:00Z"
+   },
+   "responseSha256": [
+    "e0141fe4952c3f2c0241978243a9786c9abd13b9d05a337f3e909db346bf20f4"
+   ],
+   "returnedTrades": 51,
+   "sharesTraded": 660,
+   "sizeMax": 38,
+   "sizeMin": 1,
+   "trades": 51,
+   "tradesInsideBoundary": 51,
+   "tradesUnder100Shares": 51,
+   "tradesWithOddLotCondition": 51,
+   "verifiedAt": "2026-09-18T01:36:01.347708Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 28,
+    "4": 2,
+    "B": 1,
+    "I": 27
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "12:13",
+   "minuteStartMs": 1789661580000,
+   "oddLotConditionOnEveryTrade": false,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T16:14:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T16:13:00Z"
+   },
+   "responseSha256": [
+    "0d16122aa1e86ad9f718997cfcf507db4d225544654a20a7528fcd29afc0596f"
+   ],
+   "returnedTrades": 28,
+   "sharesTraded": 136,
+   "sizeMax": 40,
+   "sizeMin": 1,
+   "trades": 28,
+   "tradesInsideBoundary": 28,
+   "tradesUnder100Shares": 28,
+   "tradesWithOddLotCondition": 27,
+   "verifiedAt": "2026-09-18T01:36:01.435821Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 20,
+    "4": 4,
+    "I": 20
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "12:17",
+   "minuteStartMs": 1789661820000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T16:18:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T16:17:00Z"
+   },
+   "responseSha256": [
+    "63c20d08b3e2af75ac4a405ac2b2cc9e16b07cd96c623943979e1fef195b00c3"
+   ],
+   "returnedTrades": 20,
+   "sharesTraded": 124,
+   "sizeMax": 32,
+   "sizeMin": 1,
+   "trades": 20,
+   "tradesInsideBoundary": 20,
+   "tradesUnder100Shares": 20,
+   "tradesWithOddLotCondition": 20,
+   "verifiedAt": "2026-09-18T01:36:01.525221Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 27,
+    "I": 27
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "12:28",
+   "minuteStartMs": 1789662480000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T16:29:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T16:28:00Z"
+   },
+   "responseSha256": [
+    "c4e19fc013cb1bd6497ff344c6a0af9bd852d5ad27b823f52cfbb4782f6f859f"
+   ],
+   "returnedTrades": 27,
+   "sharesTraded": 138,
+   "sizeMax": 34,
+   "sizeMin": 1,
+   "trades": 27,
+   "tradesInsideBoundary": 27,
+   "tradesUnder100Shares": 27,
+   "tradesWithOddLotCondition": 27,
+   "verifiedAt": "2026-09-18T01:36:01.611136Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 26,
+    "4": 1,
+    "F": 1,
+    "I": 26
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "12:36",
+   "minuteStartMs": 1789662960000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T16:37:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T16:36:00Z"
+   },
+   "responseSha256": [
+    "07ef02dad9cc716e72c86d2e6dd21c4625605f38ed5af0d35ea9766a41dbf40f"
+   ],
+   "returnedTrades": 26,
+   "sharesTraded": 129,
+   "sizeMax": 25,
+   "sizeMin": 1,
+   "trades": 26,
+   "tradesInsideBoundary": 26,
+   "tradesUnder100Shares": 26,
+   "tradesWithOddLotCondition": 26,
+   "verifiedAt": "2026-09-18T01:36:01.708995Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 18,
+    "4": 2,
+    "I": 18
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "12:43",
+   "minuteStartMs": 1789663380000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T16:44:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T16:43:00Z"
+   },
+   "responseSha256": [
+    "d0f12d841aab12ce6d806b2a2093bc5e4889fd959adf93777722bc2d0a2d10eb"
+   ],
+   "returnedTrades": 18,
+   "sharesTraded": 121,
+   "sizeMax": 36,
+   "sizeMin": 1,
+   "trades": 18,
+   "tradesInsideBoundary": 18,
+   "tradesUnder100Shares": 18,
+   "tradesWithOddLotCondition": 18,
+   "verifiedAt": "2026-09-18T01:36:01.817222Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 51,
+    "4": 4,
+    "B": 1,
+    "F": 5,
+    "I": 50
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "13:23",
+   "minuteStartMs": 1789665780000,
+   "oddLotConditionOnEveryTrade": false,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T17:24:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T17:23:00Z"
+   },
+   "responseSha256": [
+    "6dfab804ac16a0a91d28e070fb29098389f44e343245de50090a69151b3a83ea"
+   ],
+   "returnedTrades": 51,
+   "sharesTraded": 354,
+   "sizeMax": 40,
+   "sizeMin": 1,
+   "trades": 51,
+   "tradesInsideBoundary": 51,
+   "tradesUnder100Shares": 51,
+   "tradesWithOddLotCondition": 50,
+   "verifiedAt": "2026-09-18T01:36:01.900565Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 42,
+    "4": 2,
+    "F": 11,
+    "I": 42
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "13:24",
+   "minuteStartMs": 1789665840000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T17:25:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T17:24:00Z"
+   },
+   "responseSha256": [
+    "428c6a940c9f19f8c407c1ac8312d96a7df72675c1d9b927710754e214ef5fb9"
+   ],
+   "returnedTrades": 42,
+   "sharesTraded": 205,
+   "sizeMax": 32,
+   "sizeMin": 1,
+   "trades": 42,
+   "tradesInsideBoundary": 42,
+   "tradesUnder100Shares": 42,
+   "tradesWithOddLotCondition": 42,
+   "verifiedAt": "2026-09-18T01:36:01.983801Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 43,
+    "F": 3,
+    "I": 43
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "13:28",
+   "minuteStartMs": 1789666080000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T17:29:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T17:28:00Z"
+   },
+   "responseSha256": [
+    "4f5b8fdd72765d8c8d5431f8de47e8569955a4fc7c0f0ae73db56acecfd266e4"
+   ],
+   "returnedTrades": 43,
+   "sharesTraded": 270,
+   "sizeMax": 38,
+   "sizeMin": 1,
+   "trades": 43,
+   "tradesInsideBoundary": 43,
+   "tradesUnder100Shares": 43,
+   "tradesWithOddLotCondition": 43,
+   "verifiedAt": "2026-09-18T01:36:02.068507Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 45,
+    "4": 7,
+    "F": 3,
+    "I": 45
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "13:49",
+   "minuteStartMs": 1789667340000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T17:50:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T17:49:00Z"
+   },
+   "responseSha256": [
+    "2e8a41b25009c133a6b4c297b96adf619ed4f4c42c7c45c47859a4cce5dd17d1"
+   ],
+   "returnedTrades": 45,
+   "sharesTraded": 388,
+   "sizeMax": 38,
+   "sizeMin": 1,
+   "trades": 45,
+   "tradesInsideBoundary": 45,
+   "tradesUnder100Shares": 45,
+   "tradesWithOddLotCondition": 45,
+   "verifiedAt": "2026-09-18T01:36:02.153631Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 68,
+    "4": 3,
+    "F": 8,
+    "I": 68
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "13:51",
+   "minuteStartMs": 1789667460000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T17:52:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T17:51:00Z"
+   },
+   "responseSha256": [
+    "eec30b16db62bca1db256069d7dc1fc0062de1b390b00fa9e6f8df921469b408"
+   ],
+   "returnedTrades": 68,
+   "sharesTraded": 570,
+   "sizeMax": 34,
+   "sizeMin": 1,
+   "trades": 68,
+   "tradesInsideBoundary": 68,
+   "tradesUnder100Shares": 68,
+   "tradesWithOddLotCondition": 68,
+   "verifiedAt": "2026-09-18T01:36:02.238912Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 33,
+    "4": 4,
+    "F": 2,
+    "I": 33
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "14:03",
+   "minuteStartMs": 1789668180000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T18:04:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T18:03:00Z"
+   },
+   "responseSha256": [
+    "2f8c03bef5e68fd29c503c7862dc73c4c9221d82ff21f307edfdf816a947e4aa"
+   ],
+   "returnedTrades": 33,
+   "sharesTraded": 157,
+   "sizeMax": 27,
+   "sizeMin": 1,
+   "trades": 33,
+   "tradesInsideBoundary": 33,
+   "tradesUnder100Shares": 33,
+   "tradesWithOddLotCondition": 33,
+   "verifiedAt": "2026-09-18T01:36:02.351351Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 56,
+    "4": 7,
+    "F": 11,
+    "I": 56
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "14:53",
+   "minuteStartMs": 1789671180000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T18:54:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T18:53:00Z"
+   },
+   "responseSha256": [
+    "30bee608b0b66757d7977ae80418e66850bf21a4d284486f63fc2ef373bf89d1"
+   ],
+   "returnedTrades": 56,
+   "sharesTraded": 310,
+   "sizeMax": 20,
+   "sizeMin": 1,
+   "trades": 56,
+   "tradesInsideBoundary": 56,
+   "tradesUnder100Shares": 56,
+   "tradesWithOddLotCondition": 56,
+   "verifiedAt": "2026-09-18T01:36:02.436966Z"
+  },
+  {
+   "class": "trades_without_bar",
+   "conditions": {
+    " ": 58,
+    "4": 1,
+    "F": 1,
+    "I": 58
+   },
+   "droppedAtBoundary": 0,
+   "error": null,
+   "minute": "15:42",
+   "minuteStartMs": 1789674120000,
+   "oddLotConditionOnEveryTrade": true,
+   "pages": 1,
+   "paginationComplete": true,
+   "request": {
+    "end": "2026-09-17T19:43:00Z",
+    "feed": "sip",
+    "start": "2026-09-17T19:42:00Z"
+   },
+   "responseSha256": [
+    "33a8c17cf3c1bf6e99d3a704b6dc7bcd69511a9da7f791fbc810b0a974479b68"
+   ],
+   "returnedTrades": 58,
+   "sharesTraded": 455,
+   "sizeMax": 32,
+   "sizeMin": 1,
+   "trades": 58,
+   "tradesInsideBoundary": 58,
+   "tradesUnder100Shares": 58,
+   "tradesWithOddLotCondition": 58,
+   "verifiedAt": "2026-09-18T01:36:02.526992Z"
+  }
+ ],
+ "session": "2026-09-17",
+ "sessionMinutes": 390,
+ "startedAt": "2026-09-18T01:36:00.190669Z",
+ "symbol": "PWR",
+ "toolVersion": "cartel_evidence.alpaca-minutes/2",
+ "unprobedAbsentMinutes": []
+}

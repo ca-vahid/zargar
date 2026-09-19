@@ -157,6 +157,25 @@ class Execution(Base):
     ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class CartelDecisionContext(Base):
+    """Content-addressed, append-only Cartel decision inputs; never a live tape."""
+    __tablename__ = "cartel_decision_contexts"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSONVariant)
+
+
+class CartelDecisionBundle(Base):
+    """One immutable observation occurrence, not an overwriteable bucket projection."""
+    __tablename__ = "cartel_decision_bundles"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    bucket_end: Mapped[int] = mapped_column(BigInteger, index=True)
+    observed_at: Mapped[int] = mapped_column(BigInteger)
+    context_id: Mapped[str] = mapped_column(ForeignKey("cartel_decision_contexts.id"))
+    payload: Mapped[dict] = mapped_column(JSONVariant)
+
+
 class CartelPreparationAttempt(Base):
     """Append-only candidate recovery/selection evidence, independent of UI projections."""
     __tablename__ = "cartel_preparation_attempts"
@@ -207,6 +226,14 @@ class BarRow(Base):
     volume: Mapped[int] = mapped_column(BigInteger, default=0)
     # F75 (2026-09-09): where the row came from — exchange | sampled | sim | unknown (legacy rows)
     source: Mapped[str] = mapped_column(String(12), default="unknown")
+    provider: Mapped[str] = mapped_column(String(16), default="")
+
+
+class Team2TapeSnapshot(Base):
+    """Content-addressed immutable warm-up/archive inputs; no trading outcomes."""
+    __tablename__ = "team2_tape_snapshots"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
 
 
 class BarQuarantineRow(Base):
@@ -226,6 +253,7 @@ class BarQuarantineRow(Base):
     close: Mapped[float] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(BigInteger, default=0)
     source: Mapped[str] = mapped_column(String(12), default="unknown")
+    provider: Mapped[str] = mapped_column(String(16), default="")
     reason: Mapped[str] = mapped_column(String(40))
     batch: Mapped[str] = mapped_column(String(32))
     note: Mapped[str] = mapped_column(String(200), default="")

@@ -19,7 +19,34 @@ from .plans import CartelPlan
 MINUTE = 60_000
 
 
-def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_after: int | None = None) -> dict:
+def bucket_diagnostics(day_bars: dict[int, "Bar"], start: int, end: int, opens: int, plan: CartelPlan) -> dict:
+    """What is known about a confirmation bucket, with the fields that are NOT computed named.
+
+    D3 (2026-09-18): a data refusal (missing or untrusted minutes) used to record nothing, so
+    whether it hid a valid entry could not be judged afterwards. This is descriptive only:
+    partial high/low/last close/volume of the present minutes, which minutes are missing or
+    untrusted, the slot baseline, and a content hash of the present minutes so a later replay can
+    prove whether it saw the same inputs. Crossing, close location, volume ratio and the session
+    extreme are deliberately not derived from an incomplete bucket.
+    """
+    import hashlib
+    import json
+
+    present = [day_bars[ts] for ts in range(start, end, MINUTE) if ts in day_bars]
+    missing = [ts for ts in range(start, end, MINUTE) if ts not in day_bars]
+    untrusted = [b.ts for b in present if not trusted(b, simulation=plan.entry.allow_simulated_bars)] if plan.entry.require_exchange_bars else []
+    rows = [[b.ts, b.open, b.high, b.low, b.close, b.volume, b.source or "unknown"] for b in present]
+    known = {"minutesPresent": len(present), "minutesMissing": missing, "minutesUntrusted": untrusted,
+             "slotBaseline": plan.volume_baseline.get((start - opens) // (plan.entry.timeframe_minutes * MINUTE)),
+             "bucketInputHash": hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest(),
+             "notComputed": ["crossing", "closeLocation", "volumeRatio", "sessionExtreme"]}
+    if present:
+        known.update(partialHigh=max(b.high for b in present), partialLow=min(b.low for b in present),
+                     lastKnownClose=present[-1].close, partialVolume=sum(b.volume for b in present))
+    return known
+
+
+def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_after: int | None = None, verified_intervals=None) -> dict:
     """An observation cutoff suppresses missed entries, never prior invalidations.
 
     Live recovery supplies its durable resume timestamp. Historical replay leaves
@@ -32,6 +59,8 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
 
     if as_of_ms < plan.created_at:
         return result("not_created")
+    from .nonemission import minute_set
+    verified = minute_set(verified_intervals, plan.symbol, as_of_ms)
     days: dict[dt.date, dict[int, Bar]] = defaultdict(dict)
     for bar in minutes:
         if bar.ts + MINUTE > as_of_ms:
@@ -44,6 +73,8 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             continue
         if bar.symbol != plan.symbol or bar.tf != "1m" or bar.ts % MINUTE:
             raise ValueError("entry read requires symbol-matched, minute-aligned 1m bars")
+        if bar.ts in verified and not trusted(bar, simulation=plan.entry.allow_simulated_bars):
+            continue  # sampled prices are not provider prices for a suppressed interval
         values = (bar.open, bar.high, bar.low, bar.close, bar.volume)
         if not all(math.isfinite(v) for v in values) or min(values[:4]) <= 0 or bar.volume < 0:
             raise ValueError("invalid entry candle values")
@@ -67,15 +98,21 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             if end > min(closes, as_of_ms):
                 continue
             expected = list(range(start, end, MINUTE))
-            if not all(ts in day_bars for ts in expected):
+            if not all(ts in day_bars or ts in verified for ts in expected):
                 missing = True
                 previous_close = None
                 broke_at = None
                 gap_at = None
                 trace.append({"at": end, "rule": "DATA", "decision": "missing_bucket",
-                              "reason": "Incomplete confirmation bucket; no crossing inferred across a data gap."})
+                              "reason": "Incomplete confirmation bucket; no crossing inferred across a data gap.",
+                              "known": bucket_diagnostics(day_bars, start, end, opens, plan)})
                 continue
-            bucket = [day_bars[ts] for ts in expected]
+            bucket = [day_bars[ts] for ts in expected if ts in day_bars]
+            if not bucket:
+                previous_close = broke_at = gap_at = None
+                trace.append({'at':end,'rule':'DATA','decision':'no_price_observations',
+                              'reason':'Verified interval has no emitted price bars; no candle or crossing inferred.'})
+                continue
             high, low = max(b.high for b in bucket), min(b.low for b in bucket)
             close, opening = bucket[-1].close, bucket[0].open
             before = previous_close if previous_close is not None else opening
@@ -83,7 +120,8 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             if plan.entry.require_exchange_bars and not all(trusted(b, simulation=plan.entry.allow_simulated_bars) for b in bucket):
                 previous_close = broke_at = gap_at = None
                 trace.append({'at': end, 'rule': 'DATA', 'decision': 'untrusted_confirmation',
-                              'reason': 'Confirmation contains sampled or unknown bars; recover verified data before a new entry.'})
+                              'reason': 'Confirmation contains sampled or unknown bars; recover verified data before a new entry.',
+                              'known': bucket_diagnostics(day_bars, start, end, opens, plan)})
                 continue
             if start < plan.created_at:
                 continue  # an old/partly elapsed bucket cannot become a newly armed entry
@@ -148,10 +186,10 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                 stop = low if sign == 1 else high
             elif plan.entry.stop_mode == "session_extreme":
                 session_minutes = list(range(opens, end, MINUTE))
-                if not all(ts in day_bars and (not plan.entry.require_exchange_bars or trusted(day_bars[ts], simulation=plan.entry.allow_simulated_bars)) for ts in session_minutes):
+                if not all(ts in verified or (ts in day_bars and (not plan.entry.require_exchange_bars or trusted(day_bars[ts], simulation=plan.entry.allow_simulated_bars))) for ts in session_minutes):
                     reasons.append("Cannot determine the session extreme with missing minutes since the open.")
                 else:
-                    seen = [day_bars[ts] for ts in session_minutes]
+                    seen = [day_bars[ts] for ts in session_minutes if ts in day_bars]
                     stop = min(b.low for b in seen) if sign == 1 else max(b.high for b in seen)
             if (close - stop) * sign <= 0:
                 reasons.append("No positive entry-to-stop risk.")
@@ -161,6 +199,7 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                 reasons.append(f"First target offers {target_r:.3f}R from confirmation; requires {plan.entry.min_target_r:g}R.")
             if reasons:
                 trace.append({"at": end, "rule": "M4/M3", "decision": "watch_only", "reason": " ".join(reasons),
+                              "bucketInputHash": bucket_diagnostics(day_bars, start, end, opens, plan)["bucketInputHash"],
                               "measurements": {"close": close, "trigger": plan.trigger, "volume": volume,
                                   "baselineVolume": baseline, "requiredVolumeMultiple": plan.entry.volume_multiple,
                                   "volumeRatio": volume/baseline if baseline else None,
@@ -168,7 +207,8 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                 continue
             event_id = f"{plan.id}:entry:{end}"
             trace.append({"at": end, "rule": "M4", "decision": "triggered",
-                          "reason": "Planned level confirmed by a complete closed candle and relative volume."})
+                          "reason": "Planned level confirmed by a complete closed candle and relative volume.",
+                          "bucketInputHash": bucket_diagnostics(day_bars, start, end, opens, plan)["bucketInputHash"]})
             return result("triggered", {"id": event_id, "at": end, "direction": plan.direction,
                                         "referencePrice": close, "stop": stop, "risk": abs(close-stop),
                                         "targets": list(plan.targets), "volume": volume,

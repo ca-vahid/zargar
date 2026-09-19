@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import datetime as dt
+import functools
 import hashlib
 import json
 import math
@@ -31,6 +33,18 @@ from .quality import ranking_evidence
 from .screen import screen_listing
 from .service import ResearchInput
 from .setups import analyze_setups
+
+# D4 (2026-09-18): one worker for the collector's CPU-bound studies. This bounds *concurrent*
+# study work to a single thread and keeps it off the event loop; it does not make research
+# fully bounded: a study already running when its awaiting task times out keeps running to
+# completion (thread work cannot be cancelled), and queued studies wait behind it. Callers keep
+# their existing timeout/retry lifecycle; the queue depth per tick is the candidate count.
+_STUDY_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix='cartel-research-study')
+
+
+async def _study(fn, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_STUDY_EXECUTOR, functools.partial(fn, *args, **kwargs))
 
 SETTING = 'techniques.options_cartel.profitability_research'
 VERSION = 'cartel-profitability-v1'
@@ -136,7 +150,7 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
                         failures.append({'symbol': row['symbol'], 'cohort': cohort, 'reason': str(exc)[:250]})
             return found, failures
 
-        found, failures = await asyncio.to_thread(evaluate_batch)
+        found, failures = await _study(evaluate_batch)
         candidates.extend(found); errors.extend(failures)
         if report:
             await report(message=f'Freezing profitability research: {min(offset+25, len(ids))}/{len(ids)} saved analyses')
@@ -474,6 +488,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
         previous.result.get('markets', {}).get(d) if previous else None) for d in ('long', 'short')}
     observations = []
     for candidate in context.result['candidates']:
+        await asyncio.sleep(0)  # D4 (2026-09-18): yield between candidates so research never monopolises the loop
         market = markets[candidate['direction']]
         tape = [b for b in bars if b.symbol==candidate['symbol']]
         item = {'id': candidate['id'], 'symbol': candidate['symbol'], 'direction': candidate['direction'],
@@ -488,7 +503,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
             # Separate diagnostic cohort: market eligibility is recorded, not bypassed for trading.
             diagnostic_after = max(candidate['baselineReadyAt'], runtime._profitability_started)
             try:
-                study = entry_policy_study(plan, tape, as_of_ms=boundary, entry_after=diagnostic_after)
+                study = await _study(entry_policy_study, plan, tape, as_of_ms=boundary, entry_after=diagnostic_after)
                 observed_at = runtime.clock()
                 study.update(observedAt=observed_at, marketEligible=market['sustained'])
                 saved_signals = dict(candidate.get('entryPolicySignals') or {})
@@ -524,7 +539,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
                 try:
                     if {b.ts for b in tape} != set(range(opens, boundary, 60000)):
                         raise ValueError('Current-session minute context is incomplete')
-                    comparison = compare_entry_variants(plan, ExitCampaign.model_validate(candidate['exitCampaign']),
+                    comparison = await _study(compare_entry_variants, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
                         tape, as_of_ms=boundary, signal_after=after)
                     decision_at = runtime.clock()
                     read = comparison['baseline']
@@ -562,7 +577,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
                     evaluation = sorted([*frozen.values(), *[b for b in tape if b.ts not in frozen]], key=lambda b: b.ts)
                     item['evaluationBars'] = [pack(b) for b in evaluation]
                     premium = await _premium_evidence(engine, context, candidate, boundary)
-                    item['experiments'] = await asyncio.to_thread(evaluate_exit_variants, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
+                    item['experiments'] = await _study(evaluate_exit_variants, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
                         evaluation, [DailyBar.model_validate(b) for b in candidate['daily']], signal=item['entry'],
                         quantity=quantity, as_of_ms=boundary, costs=None,
                         entry_after=max(candidate.get('entryObservedAt', item.get('observedAt', runtime.clock())), option.get('observedAt', 0)),
@@ -572,7 +587,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
                         weak_environment_at=context.result['frozenAt'],
                         premium_input=premium)
                     if option.get('affordabilityOnly') and option.get('timely') and funding.get('cashCapUsd', 0)>0:
-                        item['sharesComparison'] = await asyncio.to_thread(shares_vs_skip, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
+                        item['sharesComparison'] = await _study(shares_vs_skip, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
                             evaluation, [DailyBar.model_validate(b) for b in candidate['daily']], signal=item['entry'],
                             as_of_ms=boundary, cash_budget=funding['cashCapUsd'], option_failures=['affordability'],
                             other_checks_passed=True, entry_after=max(candidate.get('entryObservedAt', item.get('observedAt', runtime.clock())), option['observedAt']),
@@ -590,7 +605,7 @@ async def collect(runtime, *, fetch=fetch_window, quote_observer=None):
                     evaluation = sorted([*frozen.values(), *[b for b in tape if b.ts not in frozen]], key=lambda b: b.ts)
                     item['campaignEvaluationBars'] = [pack(b) for b in evaluation]
                     premium = await _premium_evidence(engine, context, candidate, boundary, campaign=True)
-                    item['campaignExperiments'] = await asyncio.to_thread(evaluate_exit_variants, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
+                    item['campaignExperiments'] = await _study(evaluate_exit_variants, plan, ExitCampaign.model_validate(candidate['exitCampaign']),
                         evaluation, [DailyBar.model_validate(b) for b in candidate['daily']], signal=candidate['campaignEntry'],
                         quantity=funding.get('quantity'), as_of_ms=boundary, costs=None,
                         entry_after=candidate['campaignEntryObservedAt'], signal_after=candidate.get('studyEntryAfter'),

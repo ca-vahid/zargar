@@ -125,7 +125,7 @@ def _parse(symbol: str, tf: str, data: dict) -> list[Bar]:
             continue
         if i >= len(vols) or vols[i] is None:
             continue                                 # R5/F79: a minute without volume is provisional, not a bar
-        out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000, source="exchange",
+        out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000, source="exchange", provider="yahoo",
                        open=float(o), high=float(h), low=float(lo), close=float(c),
                        volume=int(vols[i])))
     return out
@@ -178,7 +178,7 @@ async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
         data = r.json()
         for row in data.get("bars") or []:
             from ..brokers.alpaca import parse_rfc3339_ms
-            bars.append(Bar(symbol=symbol.upper(), tf=tf, ts=parse_rfc3339_ms(str(row["t"])), source="exchange",
+            bars.append(Bar(symbol=symbol.upper(), tf=tf, ts=parse_rfc3339_ms(str(row["t"])), source="exchange", provider="alpaca",
                             open=float(row["o"]), high=float(row["h"]), low=float(row["l"]),
                             close=float(row["c"]), volume=int(row.get("v") or 0)))
         token = data.get("next_page_token")
@@ -210,6 +210,7 @@ async def fetch_window_ex(
     client: httpx.AsyncClient | None = None,
     session: str = "rth",
     refresh: bool = False,
+    on_rate_limit=None,
 ) -> tuple[list[Bar], str | None]:
     """`fetch_window` plus WHICH provider answered ("alpaca" | "yahoo" | None when nothing did) —
     a repair that zeroes history may only do so on a venue response it can name (review R5)."""
@@ -267,6 +268,8 @@ async def fetch_window_ex(
                 async with _sem:
                     from ..brokers.yahoo import yahoo_symbol
                     resp = await http.get(CHART_URL.format(symbol=yahoo_symbol(symbol)), params=params)
+                if resp.status_code == 429 and on_rate_limit is not None:
+                    on_rate_limit(pause if pause is not None else _RETRY_PAUSES[-1])
                 if resp.status_code != 429 or pause is None:
                     break
                 log.info("yahoo 429 for %s %s — retry %d in %.0fs", symbol, tf, attempt + 1, pause)

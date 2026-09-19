@@ -1,0 +1,79 @@
+{
+ "arguments": {
+  "end": "2026-09-17",
+  "experimental_min_r": 1.5,
+  "market_basis": "strict",
+  "portfolio": "0b48ed48de2f4030b49942b52858356d",
+  "start": "2026-09-08",
+  "workspace": "practice"
+ },
+ "artifacts": {
+  "frozen-replay-strict.json": "3b6d6ee855dfc0a290fd4a07d78334547255de9cad1a25b192313a286cc5db7c",
+  "frozen-replay-strict.md": "e898e09745690447fd93532bdbb4507b6552217da30f58b260826e67297e6ac5"
+ },
+ "codeVersion": "0.8.11",
+ "databaseUrlRedacted": "127.0.0.1:5433/zargar",
+ "generatedAt": "2026-09-18T02:46:34+00:00",
+ "note": "Re-running the command against the same database reproduces the markdown and compact JSON byte-for-byte except generatedAt.",
+ "originalRuns": {
+  "2026-09-08": "4f312571eca34cbabc50d042d690a40e",
+  "2026-09-09": "02b8a8bb114f44b08517a5ee1436cc8b",
+  "2026-09-10": "33e2a50888434b1a92d3e5c17732994c",
+  "2026-09-11": "a973b3a438314f61b4975b3ec087650b",
+  "2026-09-14": "98bd007f09694c778c1fe53e84b9fb5a",
+  "2026-09-15": "072d5e98556646d29f30bffc1fc8d1e4",
+  "2026-09-16": "ed6d9da2da1d4f06981ad43b6d0edfe5",
+  "2026-09-17": "cee03dd791ce404ab322378626339849"
+ },
+ "populations": {
+  "2026-09-08": {
+   "cited": 58,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 0,
+   "total": 58
+  },
+  "2026-09-09": {
+   "cited": 3080,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 0,
+   "total": 3080
+  },
+  "2026-09-10": {
+   "cited": 3081,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 0,
+   "total": 3081
+  },
+  "2026-09-11": {
+   "cited": 3077,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 2554,
+   "total": 3077
+  },
+  "2026-09-14": {
+   "cited": 3075,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 0,
+   "total": 3075
+  },
+  "2026-09-15": {
+   "cited": 3070,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 2013,
+   "total": 3070
+  },
+  "2026-09-16": {
+   "cited": 3062,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 0,
+   "total": 3062
+  },
+  "2026-09-17": {
+   "cited": 3056,
+   "parentedButUncited": 0,
+   "reusedFromEarlierRun": 0,
+   "total": 3056
+  }
+ },
+ "tool": "zargar.tools.cartel_lane_a_eval"
+}

@@ -220,14 +220,25 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
         on_started(service._view(record, detail=True))
 
     last_persisted = 0.
+    phase_started = time.monotonic()
+    timed_phase = 'discovering'
+    result['phaseDurationsMs'] = {}
     checkpoint_lock = asyncio.Lock()
     async def _checkpoint(phase, *, terminal=False, error=None, force=False):
-        nonlocal last_persisted
+        nonlocal last_persisted, phase_started, timed_phase
+        tick = time.monotonic()
+        if phase != timed_phase or terminal:
+            durations = result['phaseDurationsMs']
+            durations[timed_phase] = durations.get(timed_phase, 0) + round((tick-phase_started)*1000)
+            timed_phase, phase_started = phase, tick
         result['userCancelled'] = run_id in getattr(engine, '_cartel_cancelled_runs', set())
         result['phase'] = 'cancelled' if result['userCancelled'] else phase
         result['updatedAt'] = clock()
         result['cacheHits'] = history_reader.cache_hits
         result['historyRequests'] = history_reader.requests
+        result['historyPacingMs'] = round(history_reader.pacing_seconds*1000)
+        result['historyRateLimitRetries'] = history_reader.rate_limit_retries
+        result['effectiveHistoryIntervalSeconds'] = history_reader.effective_interval
         result['historyProvider'] = 'Alpaca SIP provider-day' if history_reader.native_batch else 'Existing daily provider'
         result['nativeDailyBatch'] = history_reader.native_batch
         result['activeHistoryRequests'] = history_reader.active_requests
@@ -481,15 +492,7 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
             # Check a bounded reserve beyond the final arm count, in quality order.
             result['candidateCheckLimit'] = policy.focus_count * 5
             result['leaderContext'] = summarize_leaders(result['rows'], universe, at)
-            # Research owns a separate capped denominator; it never changes the
-            # executable shortlist, arming decisions or account risk policy.
-            from .profitability_research import freeze_preparation
-            try:
-                result['profitabilityResearch'] = await freeze_preparation(engine, run_id, policy, result,
-                    clock=clock, report=report)
-            except Exception as exc:  # noqa: BLE001 - optional research cannot alter execution eligibility
-                result['profitabilityResearch'] = {'status': 'unavailable', 'placesOrders': False,
-                    'reason': f'{type(exc).__name__}: profitability research preparation unavailable'}
+            result['researchStatus'] = 'pending'
             result['candidatesChecked'] = 0
             for saved_id, review in pool:
                 if not market_blocked and result['candidatesChecked'] >= result['candidateCheckLimit']:
@@ -589,6 +592,19 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                     result['rows'].append(blocked)
                     await record_attempt(engine, run_id, portfolio_id, blocked, clock(), policy=policy)
                 await checkpoint('preparing_plans')
+        result['shortlistReadyAt'] = clock()
+        result['message'] = 'Shortlist checked; finishing optional profitability research'
+        await checkpoint('research', force=True)
+        # Research owns a separate capped denominator; it never changes the
+        # executable shortlist, arming decisions or account risk policy.
+        from .profitability_research import freeze_preparation
+        try:
+            result['profitabilityResearch'] = await freeze_preparation(engine, run_id, policy, result,
+                clock=clock, report=report)
+        except Exception as exc:  # noqa: BLE001 - optional research cannot alter execution eligibility
+            result['profitabilityResearch'] = {'status': 'unavailable', 'placesOrders': False,
+                'reason': f'{type(exc).__name__}: profitability research preparation unavailable'}
+        result['researchStatus'] = result.get('profitabilityResearch', {}).get('status', 'unavailable')
         result['coverageComplete'] = result.get('notEvaluated', 0) == 0 and result['dataErrors'] == 0
         result['currentSymbol'] = None
         if result['marketDataErrors']:
@@ -630,7 +646,8 @@ async def preparation_status(engine, workspace=None):
         latest['result']['armed'] = sum(r['status'] == 'armed' for r in latest['result'].get('shortlist', []))
     refresh = getattr(getattr(engine, 'cartel_observer', None), 'preparation_quote_status', {})
     contracts = {a.config.get('execution', {}).get('contract_symbol') for a in arms}
-    return {'wideContractReselection': policy.workspace == 'practice' and bool(engine.settings.get('techniques.options_cartel.reselect_wide_contract', True)),
+    return {'verifiedIntervals': policy.workspace == 'practice' and bool(engine.settings.get('techniques.options_cartel.verified_intervals', False)),
+            'wideContractReselection': policy.workspace == 'practice' and bool(engine.settings.get('techniques.options_cartel.reselect_wide_contract', True)),
             'configuration': policy.model_dump(mode='json', by_alias=True), 'latest': latest, 'liveAutoAllowed': bool(engine.settings.get('techniques.options_cartel.allow_live_auto', False)),
             'canResume': bool(row and resumable(row, policy, now_ms())), 'serverNow': now_ms(),
             'quoteRefresh': {**refresh, 'errors': {k: v for k, v in refresh.get('errors', {}).items() if k in contracts}},

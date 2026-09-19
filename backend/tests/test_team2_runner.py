@@ -20,18 +20,22 @@ from .test_team2_session import DAY, PREV, prev_day_bars, trend_day
 
 @pytest.fixture
 async def rig(fresh_db, monkeypatch):
-    config = make_test_config(anthropic_api_key="")
-    eng = Engine(config)
-    await eng.start()
-    await eng.settings.set("execution.arm_expired_plans", True, journal=False)   # synthetic days are in the past
-    await eng.settings.set("techniques.team2.symbols", ["SPY"], journal=False)
-    await eng.settings.set("techniques.team2.mode", "alert", journal=False)
     # no network: the 09:25 completion and the day-one warm-up fetch Yahoo when nothing is banked
     import zargar.marketstructure.history as hist
     async def _no_fetch(*a, **k):
         return []
     monkeypatch.setattr(hist, "fetch_extended_session", _no_fetch)
     monkeypatch.setattr(hist, "fetch_window", _no_fetch)
+    # Install isolation BEFORE startup: evening scheduler jobs otherwise fetch real history
+    # before the test's synthetic tape is banked, making hashes and levels nondeterministic.
+    from zargar.scheduler import Scheduler
+    monkeypatch.setattr(Scheduler, "start", lambda self: None)
+    config = make_test_config(anthropic_api_key="")
+    eng = Engine(config)
+    await eng.start()
+    await eng.settings.set("execution.arm_expired_plans", True, journal=False)   # synthetic days are in the past
+    await eng.settings.set("techniques.team2.symbols", ["SPY"], journal=False)
+    await eng.settings.set("techniques.team2.mode", "alert", journal=False)
     # F51: the read's IV snapshot asks the chain provider for today's ATM IV — never the network in tests.
     # The synthetic days are modelled at sigma 0.20 (the VIX-less fallback); `test_team2_integrity`
     # proves the chain path with a fake chain of its own.

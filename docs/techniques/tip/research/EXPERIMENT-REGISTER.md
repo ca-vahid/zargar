@@ -92,7 +92,7 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
   criteria before shadow. **Decision rule:** narration is research, never permission (PLATFORM-RULES 19).
 - **Status:** observing.
 
-## `prompt-cache` (opened 2026-09-17, NOT enabled)
+## `prompt-cache` (opened 2026-09-17, NOT enabled; paid pilot SKIPPED by user decision 2026-09-17 late - expected benefit small at the measured ~5.3k-token prefix, ceiling caveats: estimate-based pre-check, per-invocation ledger)
 
 - **Hypothesis:** caching the identical stable prefix (system prompt + schema + tool definitions) reduces repeated-input cost and latency without changing any judgment (the dynamic header with quotes/positions stays uncached).
 - **Variants:** off (live); on (`techniques.tip.prompt_cache` True) - not enabled.

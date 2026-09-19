@@ -101,12 +101,12 @@ def premarket_extrema(today_bars_1m: list[Bar], date: str) -> dict:
     pre = sorted([b for b in today_bars_1m if session_date(b.ts) == date and bar_session(b.ts) == "pre"], key=lambda b: b.ts)
     h = hashlib.sha1()
     for b in pre:
-        h.update(f"{b.ts}|{b.open}|{b.high}|{b.low}|{b.close}|{b.volume}|{getattr(b, 'source', '') or ''}\n".encode())
+        h.update(f"{b.ts}|{b.open}|{b.high}|{b.low}|{b.close}|{b.volume}|{getattr(b, 'source', '') or ''}|{b.provider}\n".encode())
     def ident(b: Bar | None) -> dict | None:
         if b is None:
             return None
         return {"ts": int(b.ts), "open": float(b.open), "high": float(b.high), "low": float(b.low), "close": float(b.close),
-                "volume": int(b.volume or 0), "source": getattr(b, "source", "") or ""}
+                "volume": int(b.volume or 0), "source": getattr(b, "source", "") or "", "provider": b.provider}
     hi = max(pre, key=lambda b: b.high) if pre else None
     lo = min(pre, key=lambda b: b.low) if pre else None
     return {"pmh": ({"value": float(hi.high), "bar": ident(hi)} if hi else None),
