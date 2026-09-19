@@ -81,7 +81,9 @@ calibration or profitable fills.
 Pre-session candidate freezing, distinct 5m/15m baselines, an append-only trial
 contract and bounded shadow collection now have implementation and focused tests.
 The original trading-plan schema does not accept these new model types. The
-method lab remains disabled by default while integration is being completed.
+method lab remains disabled by default for other installations. Non-ordering
+Practice collection was explicitly enabled on the verified v0.8.21 runtime and
+preserved in v0.8.22; see METHOD-LAB-IMPLEMENTATION-STATUS.md.
 
 Receipt-timed quote/cost reconciliation and paired trial reporting are now
 implemented, including separate shares/options/pass results. Their fixed
@@ -90,9 +92,17 @@ execution replication. Alpaca's dated share-size schema change is independently
 documented in METHOD-LAB.md and PLATFORM-RULES.md.
 
 Still required before full economic acceptance: source-example calibration where
-original dated evidence is obtainable, verified release/rollout and prospective
-economic evidence. A read-only smoke over the September 18 preparation's 13 saved
+original dated evidence is obtainable, signed-in visual review and prospective
+economic evidence. Release/restoration is verified in the implementation status. A read-only smoke over the September 18 preparation's 13 saved
 non-filtered analyses produced 13 long candidates and 13 definitions of each new
 entry model; this tests mechanics, not historical profitability or complete-universe coverage.
 Unverified original post context stays
 an explicit open source task; it does not gain verified status through a green test.
+
+
+September 18 post-release recheck: the S02 archive remains retrievable and shows
+June 27 in its header. Reclaim/pivot searches still expose author-attributed mirror
+text, without independently recovered original dated posts. No evidence-class
+upgrade is justified. The archived S02 examples identify FLEX and AMKR, but a
+text example alone supplies neither complete decision-time bars nor executable
+option quotes. It is not a calibrated fill fixture or an audited return.

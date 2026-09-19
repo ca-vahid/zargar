@@ -1,8 +1,9 @@
 # Method lab implementation status
 
-September 18, 2026. Development branch: `codex/cartel-method-lab` in the owned
-`.cache/cartel-method-lab` checkout. Runtime remains on the previously verified
-v0.8.20 release. This branch has not been merged, deployed or activated.
+Status verified September 18, 2026 at 22:04 PT. Runtime v0.8.22 is deployed,
+build `4801aa3061e95583dfcbc37b6a01c88f37188275`. Practice research collection
+is enabled. The new entry models cannot place orders; profitability acceptance
+and any future order-capable activation remain outstanding.
 
 ## Built in the current development pass
 
@@ -30,12 +31,12 @@ v0.8.20 release. This branch has not been merged, deployed or activated.
 
 ## Verification so far
 
-The combined focused run passed 77 tests covering new mechanics, existing Cartel
-runtime, economics and profitability collection. Production frontend build and
-Ruff F passed. Further targeted changes made during causal review require the
-next focused run before release. No test has touched the runtime database.
+The release acceptance passed 119 focused tests plus the production UI build.
+The v0.8.22 report correction passed seven focused tests and the production build.
+Tests used only the isolated Codex test database. Runtime API verification is
+separate from these tests; signed-in visual inspection remains outstanding.
 
-## Remaining implementation and acceptance
+## Implemented accounting and collection
 
 Receipt-accounting checkpoint: the forward model now uses price/quote receipt
 ordering, displayed-size consumption, integer partial fills, separate option/share
@@ -90,3 +91,22 @@ browser required login); the production build and authenticated API were checked
 ## Release acceptance checkpoint
 
 v0.8.21 metadata and production UI build pass. The final focused backend run passed 119 tests in 202.39 seconds, including lifecycle, receipt accounting, trial reconciliation, workspace separation, existing Cartel behavior and the equity SIP size cutoff. Ruff F and diff checks pass. No profitability verdict or trading activation follows from these checks.
+
+## v0.8.22 closure and current cohort
+
+PR227 merged; guarded deployment receipt is verified for build
+`4801aa3061e95583dfcbc37b6a01c88f37188275`, artifact manifest
+`6BF54AB6A3DA37CAEDE1817312FCBD3338A110AD804DB2688A582772ECED7A5B`.
+Restoration verified 22/22 arms, 6/6 managed positions and 28/28 resting orders.
+The engine is unquiesced with zero failed handlers, bus drops and loop stalls at
+the post-release check. Team2's nine-arm roster, configurations and tracked
+observation fields match the prior fingerprints. Unrelated Tips PR226 was not
+included in this runtime release.
+
+A later completed preparation `e456be7eccc24f1aad2a72c90b5fd66c` produced current
+context `2531f316b46687518d93137f624f2ee2`. It retains the same trial ID/hash and
+eight-name cohort. BBY, CNH and NOW remain auto/armed for September 21 in Options
+Cartel Practice. Baselines: BBY/CNH/NOW/NTNX/NVT ready; SAIC/ULTA/ASC partial.
+The trial API reports awaiting_sessions, zero incomplete pairs and no activation
+permission. This supersedes the earlier context as the current pre-open cohort;
+older immutable records remain available.
