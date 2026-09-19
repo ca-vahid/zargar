@@ -2351,6 +2351,14 @@ class IntakeRun:
                   f"RECENT MESSAGES FROM THIS SOURCE (mirror, newest first):\n{history_txt}")
         system = REVIEW_SYSTEM + json.dumps(ReviewOpinion.model_json_schema(),
                                             separators=(",", ":"))
+        if bool(s.get("techniques.tip.review_capture_context", False)):
+            # 2026-09-19 (model-cost research): keep the EXACT review request so a cheaper model can be judged on the
+            # same input later (review_frozen.py). Observation only - the request below is unchanged.
+            with contextlib.suppress(Exception):
+                from .review_frozen import review_manifest
+                self.rec.step("context", "Review request captured for frozen evaluation.",
+                              reviewManifest=review_manifest(header=header, system=system, model=model,
+                                                             max_tools=max_tools, source=source))
         tools_used: list[dict] = []
         tool_ctx = {"ticker": (outcomes[0].get("ticker") if outcomes else ""),
                     "source": source, "signal_id": None, "run_id": self.id,

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.22";
+export const APP_VERSION = "0.8.25";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.25",date:"2026-09-19",title:"Tips: opportunity tracking and a faster cold-ticker path",items:[
+    {tag:"fixed",text:"A tip parked only because its symbol had no quote yet is re-checked on the first real quote (up to 60 s) instead of waiting for the 15-minute sweep. The same verification, plan and risk checks apply."},
+    {tag:"new",text:"Reports: every actionable idea gets one disposition (filled, declined, risk-infeasible, late, analysis failed, approval expired, order unfilled) with avoidable misses apart; the scorecard shows how closed positions ended, winners and losers together; review cost is split by message type and what the review did."},
+    {tag:"improved",text:"A reviewed rule consolidation can be applied as a pending proposal: duplicates are retired reversibly and the merged rule stays non-operative until approved. A cheaper-model evaluation of intake reviews is prepared with a $35 ceiling; no paid run and no model change."},
+  ]},
   {version:"0.8.22",date:"2026-09-18",title:"Cartel trial readiness",items:[
     {tag:"fixed",text:"A frozen trial now says awaiting sessions before its first market open, instead of reporting future observations as missing evidence."},
   ]},

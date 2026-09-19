@@ -812,7 +812,11 @@ class SignalService:
         scope = self.normalize_scope(scope)
         def _f(o, k, default=None):
             return getattr(o, k, None) if not isinstance(o, dict) else o.get(k, default)
+        # D5 (2026-09-19): a merge may be born PENDING (`pending: true`) - the consolidated text stays a non-operative
+        # proposal (needs_human) until a human approves it. Absent/false keeps every existing payload hash unchanged.
+        pending_texts = {(_f(m, "new_rule") or "").strip() for m in merges if _f(m, "pending")}
         canon = json.dumps({"scope": scope, "mode": mode,
+                            **({"pendingMerges": sorted(pending_texts)} if pending_texts else {}),
                             "merges": [[list(_f(m, "supersedes") or []), (_f(m, "new_rule") or "").strip()] for m in merges],
                             "expires": [_f(e, "id") for e in expires],
                             "contradictions": [list(_f(c, "ids") or []) for c in contradictions]},
@@ -914,6 +918,7 @@ class SignalService:
                 for ids, new_rule in kept_merges:
                     new = TipNote(id=new_id(), scope=scope, text=new_rule, author=author[:80],
                                   run_id=run_id, revised_at=now, revision_no=1,
+                                  needs_human=(new_rule.strip() in pending_texts),   # D5: born pending = non-operative
                                   valid_until=(now + dt.timedelta(days=ttl)) if ttl else None)
                     session.add(new)
                     for nid in ids:
@@ -2616,6 +2621,11 @@ class SignalService:
                                                      "quantity", "rationale")},
                         aggregate_type="signal", aggregate_id=row.id)
                     eng.bus.publish(topics.SIGNALS, signal_dict(row))
+            # cold-park fast path (2026-09-19): a tip parked ONLY because its ticker had no quote yet used to wait for
+            # the 15-minute recovery sweep (SBLK 5 min, RKT 13 min after a TAKE). Now that the appraisal is on the
+            # record, re-run the SAME recovery path as soon as the quote is warm - nothing else changes.
+            if status == "parked" and experiment is None:
+                self._spawn_cold_park_recheck(row.id, row.ticker, verification)
             # ---- lane decision (ARM-PLAN P1): a take that says at_level ARMS a
             # plan waiting for the analyst's price instead of proposing at market
             armed = None
@@ -3350,7 +3360,61 @@ class SignalService:
             await asyncio.sleep(max(60, int(self.engine.settings.get(
                 "signals.recovery_interval_seconds", 900))))
 
+    @staticmethod
+    def cold_only_park(verification: dict | None) -> bool:
+        """True when the ONLY failed check is `ticker_resolves` (no quote yet) - the one park a warm quote cures."""
+        failed = [c for c in ((verification or {}).get("checks") or []) if not c.get("passed")]
+        return bool(failed) and all(c.get("name") == "ticker_resolves" for c in failed)
+
+    def _spawn_cold_park_recheck(self, signal_id: str, ticker: str, verification: dict | None) -> None:
+        if not self.cold_only_park(verification):
+            return
+        try:
+            wait_s = float(self.engine.settings.get("signals.cold_park_recheck_seconds", 60) or 0)
+        except Exception:
+            wait_s = 60.0
+        if wait_s <= 0:
+            return
+        tasks = self.__dict__.setdefault("_cold_park_tasks", set())
+        t = asyncio.create_task(self._cold_park_recheck(signal_id, ticker, wait_s), name=f"cold-park-{signal_id[:8]}")
+        tasks.add(t)
+        t.add_done_callback(tasks.discard)
+
+    async def _cold_park_recheck(self, signal_id: str, ticker: str, wait_s: float) -> bool:
+        """Wait (bounded) for a REAL quote, then run the ordinary recovery sweep once. The sweep re-verifies on the
+        fresh quote and applies every existing gate (conviction, fail-closed no-verdict, unattended practice only,
+        geometry, RiskGate at the order); if the quote never warms the regular sweep still owns the signal."""
+        eng = self.engine
+        sym = str(ticker or "").upper()
+        with contextlib.suppress(Exception):
+            await eng.ensure_symbol(sym)
+        waited = 0.0
+        while waited < wait_s:
+            q = eng.quotes.get(sym)
+            if q is not None and float(getattr(q, "last", 0) or 0) > 0:
+                break
+            await asyncio.sleep(1.0)
+            waited += 1.0
+        else:
+            return False
+        with contextlib.suppress(Exception):
+            await eng.journal.append(ev.SIGNAL_COLD_PARK_RECHECK, {"signalId": signal_id, "ticker": sym, "waitedS": round(waited, 1)},
+                                     aggregate_type="signal", aggregate_id=signal_id)
+        try:
+            await self.recovery_sweep()
+        except Exception:
+            log.exception("cold-park recheck sweep failed for %s", sym)
+            return False
+        return True
+
     async def recovery_sweep(self) -> dict:
+        """One sweep at a time (2026-09-19): the cold-park fast path and the periodic loop share this entry, so a
+        lock keeps two sweeps from promoting the same park twice."""
+        lock = self.__dict__.setdefault("_recovery_lock", asyncio.Lock())
+        async with lock:
+            return await self._recovery_sweep_locked()
+
+    async def _recovery_sweep_locked(self) -> dict:
         """POST-SOAK 4.1 + 4.3: every drop is either correct or retried.
         (a) A tip parked on a COLD QUOTE (`ticker_resolves`) re-verifies once
         the feed warms — same session, not tomorrow's shadow arm. Promotion

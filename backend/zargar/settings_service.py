@@ -228,6 +228,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_model": "",      # empty = the extraction model
     "techniques.tip.analyst_notes_max": 12,  # shared-knowledge notes handed to each run
     "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our positions
+    "signals.cold_park_recheck_seconds": 60,  # 2026-09-19: a tip parked ONLY for a cold ticker re-runs the recovery path as soon as its quote is warm, waiting at most this long (0 = off: the periodic sweep only)
     "techniques.tip.review_gate": "observe",  # review-gate-v1 (2026-09-19): off | observe (journal TipReviewGate, still review) | enforce (skip a message that cannot reach a held/armed/proposed item). Unknown value = observe
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
     "techniques.tip.max_contracts_per_tip": 25,  # hard cap on option qty per proposal — budget sizing on lotto premium is nonsense (277 × $0.09, 2026-08-31)
@@ -239,6 +240,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.prompt_cache": False,             # E17-03: cache the stable prefix (system + schema + tools); validate hits before claiming savings
     "llm.rates": {},                                  # E17-03: {"<model>": {"in": $/Mtok, "out": $/Mtok, "cacheRead": $/Mtok, "cacheWrite": $/Mtok}}; empty = usage reported UNPRICED   # E17-02: seconds of the 120 s run kept for the final answer / one repair
     # KFIN-09 (2026-09-14) experiments - ALL inert by default
+    "techniques.tip.review_capture_context": False,   # 2026-09-19: stamp the exact INTAKE REVIEW request on its run so a cheaper model can be evaluated on the same input (review_frozen.py); observation only, ~100 KB per review
     "techniques.tip.frozen_capture_context": False,   # stamp the exact context manifest (header components) on each analyst run's start step so a frozen bundle can be captured verbatim
     "techniques.tip.frozen_variants": "current,core_only",   # knowledge variants a frozen replay runs (current | core_only | no_knowledge)
     "techniques.tip.entry_cohort_enabled": False,     # record EVERY eligible open/add idea (skips, declines, blocked cards, shadows, parks, failures) with its decision-time quote

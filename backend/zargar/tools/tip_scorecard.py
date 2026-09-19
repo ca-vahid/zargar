@@ -33,7 +33,7 @@ import asyncpg
 from . import tip_outcomes
 from .tip_llm_cost import normalize_usage, price
 
-VERSION = "tips-scorecard-v2"
+VERSION = "tips-scorecard-v3"
 ET = dt.timezone(dt.timedelta(hours=-4))
 OCC = re.compile(r"^([A-Z.]{1,6})(\d{6})([CP])(\d{8})$")
 REGISTRY = os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "techniques", "tip", "research",
@@ -204,6 +204,57 @@ async def model_cost(conn, since: dt.datetime, until: dt.date, rates: dict) -> d
     return {"per": per, "bySource": by_source, "analystModelChanges": int(cfg_changes or 0)}
 
 
+async def exits(conn, *, book: str, since: str, until: dt.date, q_exec: set) -> list[dict]:
+    """How every CLOSED managed tip position ended - winners and losers together: net of fees from its own entry-order
+    executions and its sells, the final exit kind, whether it crossed a night, and the option's DTE at exit."""
+    since_dt = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=ET)
+    rows = []
+    for p in await conn.fetch("""select id, symbol, legs, state, created_at from managed_positions
+                                 where portfolio_id = $1 and technique = 'tip' and status = 'closed' and created_at >= $2
+                                 order by created_at""", book, since_dt):
+        legs = J(p["legs"]) if not isinstance(p["legs"], list) else p["legs"]
+        leg = legs[0] if legs else {}
+        sym = leg.get("symbol") or p["symbol"]
+        closed_ms = int(J(p["state"]).get("closedMs") or 0)
+        if not closed_ms:
+            continue
+        closed = dt.datetime.fromtimestamp(closed_ms / 1000, dt.timezone.utc)
+        if session_of(closed) > until:
+            continue
+        entry_orders = [l.get("entryOrderId") for l in legs if l.get("entryOrderId")]
+        ex = list(await conn.fetch("select id, side, qty, price, commission, ts from executions where order_id = any($1::varchar[])", entry_orders))
+        ex += list(await conn.fetch("""select id, side, qty, price, commission, ts from executions where portfolio_id = $1 and symbol = $2
+                                       and side = 'SELL' and ts >= $3 and ts <= $4""", book, sym, p["created_at"],
+                                    closed + dt.timedelta(seconds=5)))
+        # sells are matched only up to the quantity this position BOUGHT (chronological): an oversell by a venue stop
+        # (RKT 2026-09-15) is a bookkeeping repair reported apart, never part of the trade's result
+        bought = sum(float(e["qty"]) for e in ex if e["side"] == "BUY")
+        net = -sum(float(e["qty"]) * float(e["price"]) * mult(sym) + float(e["commission"] or 0) for e in ex if e["side"] == "BUY")
+        left = bought
+        for e in sorted((e for e in ex if e["side"] == "SELL"), key=lambda e: e["ts"]):
+            take = min(float(e["qty"]), left)
+            if take <= 1e-9:
+                break
+            net += take * float(e["price"]) * mult(sym) - float(e["commission"] or 0) * (take / float(e["qty"]))
+            left -= take
+        last = await conn.fetchrow("""select ts, payload from events where type = 'ManagedPositionExit' and payload->>'positionId' = $1
+                                      order by ts desc limit 1""", p["id"])
+        kind = (J(last["payload"]).get("kind") if last else None) or "?"
+        lt = last["ts"].astimezone(ET) if last else closed.astimezone(ET)
+        first_seconds = (lt.hour, lt.minute) <= (9, 30)
+        m = OCC.match(sym)
+        dte = (dt.datetime.strptime(m.group(2), "%y%m%d").date() - lt.date()).days if m else None
+        cls = ("questioned" if any(e["id"] in q_exec for e in ex) else
+               "premium/stop exit in the first seconds of a session" if first_seconds and kind in ("premium_stop", "stop") else
+               "analyst mirrored the source's exit" if kind == "close" else
+               "underlying stop" if kind == "stop" else
+               "premium stop or bleed (in session)" if kind == "premium_stop" else
+               "target / premium target" if kind in ("trim", "premium_trim") else kind)
+        rows.append({"symbol": sym, "class": cls, "net": net, "dteAtExit": dte, "exitAt": lt.strftime("%m-%d %H:%M"),
+                     "heldOvernight": closed.astimezone(ET).date() > p["created_at"].astimezone(ET).date()})
+    return rows
+
+
 async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
     registry = load_registry()
     rates_raw = J(await conn.fetchval("select value from settings where key='llm.rates'"))
@@ -213,6 +264,8 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
     cash = await cash_check(conn, book, m["close"], m["start"])
     since_dt = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=ET)
     mc = await model_cost(conn, since_dt, until, rates)
+    ex_rows = await exits(conn, book=book, since=since, until=until, q_exec=t["questionedExecs"])
+    disp = await tip_outcomes.build_dispositions(conn, since_text=since, portfolio=book, census=t["census"])
     shadows = []
     for pf in await conn.fetch("select id, name, quarantined, book from portfolios where kind='shadow' and archived is not true order by name"):
         sd = await tip_outcomes.build_census(conn, since_text=since, portfolio=pf["id"], kinds=("shadow",))
@@ -224,7 +277,7 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
     pre = await conn.fetchval("select count(*) from executions where portfolio_id = $1 and ts < $2", book,
                               dt.datetime.combine(since_d, dt.time(4, 0), tzinfo=ET))
     return {"version": VERSION, "since": since, "until": until.isoformat(), "book": book, "trading": t, "marks": m,
-            "preIntervalExecutions": int(pre or 0),
+            "preIntervalExecutions": int(pre or 0), "exits": ex_rows, "dispositions": disp,
             "cash": cash, "model": mc, "shadows": shadows, "registry": registry}
 
 
@@ -397,6 +450,35 @@ def render(res: dict) -> str:
     L.append("|---|---:|")
     for src, usd in srcs.most_common():
         L.append(f"| {src} | {usd:,.2f} |")
+    # opportunity dispositions + avoidable misses (the census' disposition ledger)
+    disp = res.get("dispositions") or []
+    if disp:
+        cnt = collections.Counter(r["disposition"] for r in disp)
+        av = [r for r in disp if r["avoidable"]]
+        L.append("\n## Opportunity dispositions (every actionable idea has one; `tip_outcomes --dispositions` lists them)\n")
+        L.append(f"{len(disp)} actionable ideas, {sum(1 for r in disp if r['verdict'] == 'take')} analyst TAKES: "
+                 + ", ".join(f"{k} {cnt[k]}" for k in tip_outcomes.DISPOSITIONS if cnt.get(k)) + ".")
+        L.append(f"\n**Avoidable misses (the desk's own processing): {len(av)}** - "
+                 + (", ".join(f"{k} {v}" for k, v in collections.Counter(r['avoidable'] for r in av).most_common()) or "none")
+                 + ". An avoidable miss is an opportunity, never a forgone profit: no outcome is assigned to a trade that did not happen.")
+        by_day = collections.Counter(session_of(r["at"]["signal"]) for r in av)
+        if by_day:
+            L.append("By session: " + ", ".join(f"{d} {n}" for d, n in sorted(by_day.items())) + ".")
+    # how closed positions ended - winners and losers together
+    ex_rows = res.get("exits") or []
+    if ex_rows:
+        L.append("\n## How closed positions ended (net of fees; winners and losers together)\n")
+        L.append("| exit | positions | net | winners | losers | held overnight | DTE at exit (options) |")
+        L.append("|---|---:|---:|---:|---:|---:|---|")
+        by = collections.defaultdict(list)
+        for r in ex_rows:
+            by[r["class"]].append(r)
+        for k, g in sorted(by.items(), key=lambda kv: sum(x["net"] for x in kv[1])):
+            dtes = sorted(x["dteAtExit"] for x in g if x["dteAtExit"] is not None)
+            L.append(f"| {k} | {len(g)} | {sum(x['net'] for x in g):+,.2f} | {sum(1 for x in g if x['net'] > 0)} | "
+                     f"{sum(1 for x in g if x['net'] <= 0)} | {sum(1 for x in g if x['heldOvernight'])} | {', '.join(map(str, dtes)) or '-'} |")
+        L.append("\nWhole-trade results by how the position ENDED; 'held overnight' marks a trade that crossed a night - it is not "
+                 "overnight-only P&L. A bookkeeping repair is excluded here (see Reconciliation).")
     # source x setup x entry style
     L.append("\n## Source x setup x entry style - FILLED Practice ideas (method results; questioned apart)\n")
     L.append("| source | setup | entry | filled ideas | completed | partial | net realized | fees | wins (avg) | losses (avg) | max drawdown | open at cost | questioned net |")
