@@ -21,6 +21,7 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"A tip parked only because its symbol had no quote yet is re-checked on the first real quote (up to 60 s) instead of waiting for the 15-minute sweep. The same verification, plan and risk checks apply."},
     {tag:"new",text:"Reports: every actionable idea gets one disposition (filled, declined, risk-infeasible, late, analysis failed, approval expired, order unfilled) with avoidable misses apart; the scorecard shows how closed positions ended, winners and losers together; review cost is split by message type and what the review did."},
     {tag:"improved",text:"A reviewed rule consolidation can be applied as a pending proposal: duplicates are retired reversibly and the merged rule stays non-operative until approved. A cheaper-model evaluation of intake reviews is prepared with a $35 ceiling; no paid run and no model change."},
+  ]},
   {version:"0.8.23",date:"2026-09-18",title:"EM: source fidelity, one preparation owner and executable profit",items:[
     {tag:"new",text:"EM Validation has a read-only review panel: what each author actually said against every trigger we planned and the gate that decided, order-free source candidates, first-sale R at the final quantity, and realized, displayed and executable profit side by side."},
     {tag:"fixed",text:"EM can measure reward to risk where a position really exits, at the quantity bought and the live underlying price. The check is built and switched off; observing it and enforcing it are separate settings."},
