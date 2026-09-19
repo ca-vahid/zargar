@@ -22,7 +22,8 @@ KNOBS = ("techniques.enhanced_market.preparation_policy", "techniques.enhanced_m
          "techniques.enhanced_market.source_candidates_observe", "techniques.enhanced_market.first_sale_rr_gate",
          "techniques.enhanced_market.book_snapshot_observe", "techniques.enhanced_market.book_snapshot_seconds",
          "techniques.enhanced_market.fire_decision_mode", "techniques.enhanced_market.fire_evidence_mode",
-         "techniques.enhanced_market.shadow_exit_observe", "techniques.enhanced_market.shadow_p02_candidate", "ingest.auto_arm", "techniques.enhanced_market.source_candidates_chain_fetch", "techniques.enhanced_market.pick_retry_after_429_s")
+         "techniques.enhanced_market.shadow_exit_observe", "techniques.enhanced_market.shadow_p02_candidate", "ingest.auto_arm", "techniques.enhanced_market.source_candidates_chain_fetch", "techniques.enhanced_market.pick_retry_after_429_s",
+         "techniques.enhanced_market.experiment")
 
 
 def _bounds(date: str) -> tuple[dt.datetime, dt.datetime, int, int]:

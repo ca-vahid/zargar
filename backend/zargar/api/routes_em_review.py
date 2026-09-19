@@ -51,6 +51,21 @@ def build_em_review_routes(app, eng, auth) -> None:
         from ..technique import em_review_service as rs
         return await rs.profit_capture(svc(), _day(date))
 
+    @app.get("/api/technique/em/experiment", dependencies=[auth])
+    async def em_experiment_status():
+        from ..technique import em_experiment as xp
+        return await xp.status(svc())
+
+    @app.post("/api/technique/em/experiment/prepare", dependencies=[auth])
+    async def em_experiment_prepare(planFor: str = "", limit: int = 0):
+        """Deterministic preparation of ONE session for the experimental Practice book (zero model calls; idempotent). It arms
+        ONLY in the experimental sim book and refuses when the experiment is not enabled."""
+        import time as _t
+        from ..technique import em_experiment as xp
+        from ..technique.walkforward import next_session_date
+        day = _day(planFor) if planFor else next_session_date(int(_t.time() * 1000))
+        return await xp.prepare(svc(), day, limit=(limit or None))
+
     @app.get("/api/technique/em/model-cost", dependencies=[auth])
     async def em_model_cost(date: str = ""):
         from ..technique import em_review_service as rs

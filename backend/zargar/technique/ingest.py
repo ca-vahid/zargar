@@ -698,7 +698,10 @@ class MethodIngestService:
         from . import source_scenarios as _ss
         prep = _pp.effective(self.engine.settings.get)
         scen_payload, scen_by_symbol = None, {}
-        if bool(self._get("techniques.enhanced_market.source_scenarios_observe", False)) and cur is not None:
+        from . import em_experiment as _xp
+        _xpc = _xp.config(self.engine.settings.get)
+        # the experiment needs the (order-free) scenarios artifact too; the baseline arm decision below never reads it
+        if (bool(self._get("techniques.enhanced_market.source_scenarios_observe", False)) or _xpc["enabled"]) and cur is not None:
             try:
                 async with self.engine.sf() as session:
                     src = await _ss.source_for_note(session, note_id, cur.id)
@@ -793,6 +796,16 @@ class MethodIngestService:
                                 stopped = True
                             except Exception as exc:           # noqa: BLE001
                                 row["armError"] = str(exc)[:200]
+                    if _xpc["enabled"] and not stopped:
+                        # em-experiment-v1: the SAME board plan, as a separately identified run, through the SAME owner under the
+                        # experimental book's policy - never the baseline run id, never the baseline book, never its outcome
+                        try:
+                            row["experiment"] = await _xp.arm_ingest_run(self.technique, run, source_hold=(hold or None),
+                                                                         source_ids=[sc["scenarioId"] for sc in scs], authorized=authorized)
+                        except StaleWorker as exc:
+                            row["experiment"] = {"armed": False, "why": str(exc)[:200]}
+                        except Exception as exc:               # noqa: BLE001 - the experiment never breaks the baseline board
+                            row["experiment"] = {"armed": False, "why": f"{type(exc).__name__}: {exc}"[:200]}
                     rows.append(row)
                     if stopped:
                         break

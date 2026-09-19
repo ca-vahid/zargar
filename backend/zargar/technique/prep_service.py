@@ -48,18 +48,21 @@ def input_key_for(run: dict, policy: dict, *, origin: str | None = None, source_
         symbol=run.get("symbol") or "", session=str(plan.get("planFor") or ""), as_of=run.get("asOf"),
         bars_hash=str(cfg.get("barsAssetId") or cfg.get("barsHash") or ""), source_hashes=sources,
         adjusted_data_id=str(cfg.get("datasetVersion") or ""), thresholds_hash=_h(cfg.get("thresholds") or {}),
-        grade_policy=f"{policy.get('gradeFloor')}|{policy.get('preparationPolicy')}|{policy.get('conditionalReviewFix')}|origin={origin}|analyst={analyst}",
+        grade_policy=f"{policy.get('gradeFloor')}|{policy.get('preparationPolicy')}|{policy.get('conditionalReviewFix')}|origin={origin}|analyst={analyst}"
+                     + (f"|experiment={(policy.get('experiment') or {}).get('bundleHash')}@{(policy.get('experiment') or {}).get('portfolioId')}" if policy.get("experiment") else ""),
         policy_version=f"{pp.VERSION}+{pp.REVIEW_VERSION}",
         model=(llm.get("model") if reviewed else None), prompt_version=(str(cfg.get("promptVersion") or "") if reviewed else None),
         horizon=str(plan.get("horizon") or "session"))
 
 
 async def prep_decide(svc, run_id: str, *, origin: str | None = None, persist: bool = False, run: dict | None = None,
-                      source_hold: list | None = None, source_ids: list | None = None) -> dict:
+                      source_hold: list | None = None, source_ids: list | None = None, policy: dict | None = None) -> dict:
+    """`policy` = the effective policy of the BOOK the decision is for (the experiment resolves it per book); default =
+    the technique-wide policy. The policy's mode, fix, floor and experiment identity are part of the decision key."""
     run = run or await svc.get_run(run_id)
     if run is None:
         raise KeyError(run_id)
-    policy = pp.effective(svc.engine.settings.get)
+    policy = policy or pp.effective(svc.engine.settings.get)
     res = run.get("result") or {}
     plan = res.get("plan") or {}
     origin = origin or ORIGIN_OF_TRIGGER.get(str(run.get("trigger") or ""), str(run.get("trigger") or "manual"))
@@ -102,13 +105,16 @@ def _lock_id(candidate_key: str) -> int:
     return int(hashlib.sha256(("em-prep-arm:" + str(candidate_key)).encode("utf-8")).hexdigest()[:15], 16)
 
 
-async def armed_candidate_in_db(svc, symbol: str, candidate_key: str) -> str | None:
+async def armed_candidate_in_db(svc, symbol: str, candidate_key: str, portfolio_id: str | None = None) -> str | None:
     """The run id of an ARMED / PAUSED EM plan in the DATABASE with this candidate key (never the process memory: another
-    worker, or this one before a restart, may have armed it)."""
+    worker, or this one before a restart, may have armed it). With `portfolio_id` the check is for THAT book only: the
+    same candidate armed in the baseline book never blocks, and is never blocked by, the experimental book."""
     async with svc.engine.sf() as session:
-        rows = (await session.execute(select(TechniqueArmed.run_id, TechniqueRun.result).join(TechniqueRun, TechniqueRun.id == TechniqueArmed.run_id)
-                                      .where(TechniqueArmed.symbol == symbol, TechniqueArmed.technique == "enhanced_market",
-                                             TechniqueArmed.status.in_(("armed", "paused"))))).all()
+        q = select(TechniqueArmed.run_id, TechniqueRun.result).join(TechniqueRun, TechniqueRun.id == TechniqueArmed.run_id) \
+            .where(TechniqueArmed.symbol == symbol, TechniqueArmed.technique == "enhanced_market", TechniqueArmed.status.in_(("armed", "paused")))
+        if portfolio_id:
+            q = q.where(TechniqueArmed.portfolio_id == str(portfolio_id))
+        rows = (await session.execute(q)).all()
     for rid, result in rows:
         if pp.candidate_key(symbol, (result or {}).get("plan") or {}) == candidate_key:
             return rid
@@ -116,7 +122,7 @@ async def armed_candidate_in_db(svc, symbol: str, candidate_key: str) -> str | N
 
 
 async def prep_arm(svc, run_id: str, *, arm, origin: str | None = None, source_hold: list | None = None, source_ids: list | None = None,
-                   run: dict | None = None) -> dict:
+                   run: dict | None = None, policy: dict | None = None, portfolio_id: str | None = None) -> dict:
     """ONE arm per candidate ACROSS workers and restarts. The decision is made by the one owner (`prep_decide`); the arm runs
     under a Postgres advisory lock on the candidate key, after re-checking the DATABASE for an armed plan with that key. A
     second worker waits, then finds the first one's row and skips; a restart after the commit but before the acknowledgement
@@ -126,10 +132,10 @@ async def prep_arm(svc, run_id: str, *, arm, origin: str | None = None, source_h
     transaction, so it is released by the rollback that ALWAYS ends that session - a cancelled task, a failed release or the
     pool's reset-on-return can never leave a pooled connection holding it. The wait is bounded by `SET LOCAL lock_timeout`;
     a worker that cannot get the lock in time arms nothing and says so."""
-    d = await prep_decide(svc, run_id, origin=origin, persist=True, run=run, source_hold=source_hold, source_ids=source_ids)
+    d = await prep_decide(svc, run_id, origin=origin, persist=True, run=run, source_hold=source_hold, source_ids=source_ids, policy=policy)
     if d.get("disposition") != "eligible":
         return {"armed": False, "why": d.get("disposition") or "not_eligible", "decision": d}
-    key, lock = d["candidateKey"], _lock_id(d["candidateKey"])
+    key, lock = d["candidateKey"], _lock_id(f"{d['candidateKey']}@{portfolio_id or ''}")
     async with svc.engine.sf() as holder:                  # the lock lives in THIS session's transaction and dies with it (commit, rollback, cancel, pool reset)
         try:
             await holder.execute(text(f"set local lock_timeout = '{int(ARM_LOCK_TIMEOUT_S * 1000)}ms'"))
@@ -140,7 +146,7 @@ async def prep_arm(svc, run_id: str, *, arm, origin: str | None = None, source_h
             if state == "55P03" or "lock timeout" in str(exc).lower():   # lock_not_available: another worker is still arming this candidate
                 return {"armed": False, "why": "arm_lock_timeout", "decision": d, "detail": state or type(exc).__name__}
             return {"armed": False, "why": "arm_lock_error", "decision": d, "detail": f"{state} {type(exc).__name__}".strip()[:80]}   # a database failure is not called contention; nothing is armed either way
-        existing = await armed_candidate_in_db(svc, str(d.get("symbol") or ""), key)
+        existing = await armed_candidate_in_db(svc, str(d.get("symbol") or ""), key, portfolio_id)
         if existing:
             return {"armed": False, "why": ("already_armed" if existing == run_id else "duplicate_of_armed_candidate"), "armedRunId": existing, "decision": d}
         return {"armed": True, "why": None, "decision": d, "result": await arm()}

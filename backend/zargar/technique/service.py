@@ -2278,6 +2278,13 @@ class TechniqueService:
                 raise
             except Exception:                              # noqa: BLE001
                 log.exception("source-candidate pass failed")
+            try:                                           # em-experiment-v1: promotion boundary + horizon sweep (one settings read when off)
+                from .em_experiment import tick as _xp_tick
+                await _xp_tick(self, int(_time.time() * 1000))
+            except asyncio.CancelledError:
+                raise
+            except Exception:                              # noqa: BLE001
+                log.exception("experiment pass failed")
 
     # ---------------------------------------------------------- C1: option-liquidity screen (2026-09-12)
     async def refresh_option_liquidity(self) -> dict:

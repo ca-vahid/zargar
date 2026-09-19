@@ -604,7 +604,11 @@ class PlanRunner(SessionListener):
         if not bool(self.rt("shadow_exit_observe", True)):
             return False
         book = str(self.rt("default_portfolio", "") or "")
-        return (not book) or str(ap.config.portfolio_id) == book   # configured desks: their default (Practice) book only
+        if (not book) or str(ap.config.portfolio_id) == book:    # configured desks: their default (Practice) book...
+            return True
+        with contextlib.suppress(Exception):                     # ...plus the books the technique explicitly names (base = none)
+            return str(ap.config.portfolio_id) in {str(x) for x in (self.extra_observation_books() or [])}
+        return False
 
     def _shadow_capture(self, ap: ArmedPlan, open_trades: list, q, now_ms: int, excess: float) -> list[dict]:
         """shadow-exit-v1 CAPTURE (pure, no I/O, no awaits): for each open trade, if THIS fresh underlying observation
@@ -1305,6 +1309,12 @@ class PlanRunner(SessionListener):
         explicit_pid = (bool(config.portfolio_id) if isinstance(config, ArmConfig)
                         else bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
         portfolio = self.validate_config(cfg, explicit_portfolio=explicit_pid)
+        refusal = None if restored else self.arm_guard(run, cfg, portfolio)   # hook: a technique's book-scoped boundary (base = none); NEW arms only
+        if refusal:
+            await self.engine.journal.append(ev.TECHNIQUE_ARM_REFUSED, {
+                "runId": run_id, "symbol": str(run.get("symbol") or ""), "origin": str(((run.get("config") or {}).get("origin")) or ""),
+                "reason": str(refusal)[:300], "restored": bool(restored)}, aggregate_type="technique_run", aggregate_id=run_id)
+            raise ValueError(f"run {run_id[:8]}: {refusal}")
         symbol = run["symbol"]
         # tip-scoped override first (ARM-GAPS E1); the legacy EM name stays the
         # fallback so existing EM configs keep working unchanged
@@ -1371,7 +1381,13 @@ class PlanRunner(SessionListener):
         try:
             todays = [b for b in self.engine.bars.bars(symbol, "1m", limit=2000, include_forming=False)
                       if session_date(b.ts) == ap.plan_for]
-            todays = await self._complete_opening_bars(ap, todays)
+            born = None
+            with contextlib.suppress(Exception):
+                born = self.seed_from_ts(ap)                # hook: a plan BORN intraday never replays bars from before its birth
+            if born:
+                todays = [b for b in todays if int(b.ts) >= int(born)]
+            else:
+                todays = await self._complete_opening_bars(ap, todays)
             for b in todays:
                 # Events from replayed history carry the bar's time, not "now" —
                 # a 13:03 restart must not relabel the 09:41 refusals.
@@ -3471,6 +3487,10 @@ class PlanRunner(SessionListener):
         order; only a confirmed zero-fill is a failure."""
         from ..orders import SubmitUncertain
         cfg = ap.config
+        with contextlib.suppress(Exception):                # hook: experiment / policy identity on the ORDER row (base = none)
+            extra = [str(x)[:60] for x in (self.order_tags(ap) or [])]
+            if extra:
+                intent.tags = [*list(getattr(intent, "tags", None) or []), *[x for x in extra if x not in (intent.tags or [])]]
         attempt = 0
         money_entry = stage == "entry" and cfg.mode in ("proposal", "auto")
 
@@ -3562,6 +3582,8 @@ class PlanRunner(SessionListener):
                              scratch_only_far_tp1=bool(getattr(self.rules(), "scratch_only_far_tp1", False)),
                              far_tp1_r=float(getattr(self.rules(), "far_tp1_r", 3.0)))
         self._shadow_enqueue(ap, self._reclaim_signal(ap, tr, bar))      # P-06 signal + first sample; never awaited here
+        if decision is None and await self._runner_protect(ap, tr, bar):
+            return
         if decision is None:
             # a single-contract position may need to advance its trim counter without an order -
             # but NEVER while an exit is working/unresolved (DA-02, 2026-09-14): a pending or later
@@ -3586,6 +3608,36 @@ class PlanRunner(SessionListener):
         tr.trims_done = decision.new_trims_done
         if decision.qty >= 1:
             await self._exit(ap, tr, decision.kind, decision.qty, journal=True, reason=decision.reason)
+
+    async def _runner_protect(self, ap: ArmedPlan, tr: Trade, bar: Bar) -> bool:
+        """P-06 `tp1-reclaim-runner-exit-v1` as an EXECUTED exit, only where the technique's hook says so for THIS plan's book
+        (base = off; EM = its experimental Practice book). Frozen rule: after a CONFIRMED TP1 fill, the first completed bar
+        that closes back through the saved TP1 exits the WHOLE remainder. Precedence: it is reached only when the production
+        decision for this bar is None - a stop, a flatten, a scratch or a target exit always goes first - and never while an
+        exit is working (pending quantity is never sold twice). Reduce-only through the normal exit path and RiskGate."""
+        try:
+            if self.runner_protection_policy(ap) != "execute":
+                return False
+            if tr.status != "open" or tr.remaining <= 0 or tr.pending_exit_qty > 1e-9:
+                return False
+            if not any(x.get("kind") == "tp1" and float(x.get("filledQty") or 0) > 0 for x in tr.exits):
+                return False
+            if any(x.get("kind") == "runner_protect" for x in tr.exits):
+                return False                                  # once per trade; a failed exit is the watchdog's to retry
+            tp1 = float(tr.targets[0]) if tr.targets else None
+            if not tp1_reclaim_signal(tr.direction, tp1, bar.close):
+                return False
+        except Exception:                                     # noqa: BLE001 - a policy fault never blocks the production path
+            log.exception("runner protection check failed")
+            return False
+        qty = float(int(tr.remaining - tr.pending_exit_qty))
+        if qty < 1:
+            return False
+        tr.reclaim_exit = {"barTs": int(bar.ts), "close": float(bar.close), "tp1": tp1, "qty": qty, "rule": "tp1-reclaim-runner-exit-v1"}
+        await self._exit(ap, tr, "runner_protect", qty, journal=True,
+                         reason=f"P-06 tp1-reclaim-runner-exit-v1: bar closed {bar.close:.4f} back through TP1 {tp1:.4f} after a confirmed TP1 fill")
+        await self._persist(ap)
+        return True
 
     def _reclaim_signal(self, ap: ArmedPlan, tr: Trade, bar: Bar) -> list[dict]:
         """P-06 (re-review 2026-09-17): on the first completed bar whose close is back through the saved TP1 after a
@@ -4142,6 +4194,27 @@ class PlanRunner(SessionListener):
         base runner manages targets on closed bars (`_manage`); a technique whose read judges the target
         intrabar (Team2 F50) overrides this so the book sells on the print. Exit-only by construction."""
         return None
+
+    def order_tags(self, ap: "ArmedPlan") -> list:
+        """Hook: tags stamped on every order of this plan (entry, exit, retry) - e.g. an experiment identity. Base: none."""
+        return []
+
+    def arm_guard(self, run: dict, cfg: "ArmConfig", portfolio: dict) -> str | None:
+        """Hook: a reason to REFUSE this arm (journaled), or None. Base: none. A technique uses it for a book-scoped
+        boundary - e.g. an experimental plan may arm only in its experimental book."""
+        return None
+
+    def seed_from_ts(self, ap: "ArmedPlan") -> int | None:
+        """Hook: the first bar START time an intraday-born plan may see. Base: None = the whole session from 09:30."""
+        return None
+
+    def extra_observation_books(self) -> list:
+        """Hook: books besides the default one where this technique's order-free shadow observations run. Base: none."""
+        return []
+
+    def runner_protection_policy(self, ap: "ArmedPlan") -> str:
+        """Hook: `execute` makes the frozen P-06 runner protection a real reduce-only exit for THIS plan. Base: `off`."""
+        return "off"
 
     async def entry_limit_cap(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> float | None:
         """The most an auto entry may pay for the contract (ARM-GAPS C1) —

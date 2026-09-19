@@ -283,7 +283,9 @@ async def attach_pricing(svc, cands: list, stored: dict, now_ms: int) -> None:
 
 async def tick(svc, now_ms: int) -> dict:
     """One evaluation pass. Returns counts; never raises into the caller's loop."""
-    if not bool(svc.engine.settings.get(KNOB, False)):
+    from .em_experiment import config as _xp
+    xp = _xp(svc.engine.settings.get)
+    if not (bool(svc.engine.settings.get(KNOB, False)) or (xp["enabled"] and xp["overrides"].get("source_candidates_execute"))):
         return {"enabled": False}
     now = dt.datetime.fromtimestamp(now_ms / 1000.0, ET)
     if now.weekday() >= 5 or not ((9, 30) <= (now.hour, now.minute) < (16, 5)):

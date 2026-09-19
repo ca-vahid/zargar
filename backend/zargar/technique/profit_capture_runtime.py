@@ -51,12 +51,12 @@ def book_id(settings) -> str:
     return str(settings.get("techniques.enhanced_market.default_portfolio", "") or settings.get("technique.arm.default_portfolio", "") or "")
 
 
-def collect_inputs(armer, now_ms: int) -> dict | None:
+def collect_inputs(armer, now_ms: int, pid: str | None = None) -> dict | None:
     """Positions HELD NOW in the EM Practice book by plans of THIS session (a plan of a prior session still in memory is
     not this session's trade; were it still held it would surface as a ledger/position mismatch - unscorable, visibly).
     Realized results are NOT collected here: they come from executions (`SessionLedger`)."""
     s = armer.engine.settings
-    pid = book_id(s)
+    pid = str(pid or book_id(s))
     if not pid:
         return None
     session = session_of(now_ms)
@@ -141,7 +141,60 @@ class SessionLedger:
                             session_supported=session_supported(session), read_at_ms=self._clock())
 
 
-def build_observer(armer) -> ProfitCaptureObserver:
+class BookObservers:
+    """One `ProfitCaptureObserver` per EM book that may be captured: the technique's default (baseline) book under the
+    technique-wide knob, and the experimental book under ITS override. Books never share a recorder, a sequence, a ledger
+    or a capture id. `snap` stays synchronous and cheap; an event snapshot goes only to the book of the plan that caused it."""
+
+    def __init__(self, armer):
+        self._armer = armer
+        self._obs: dict = {}
+
+    def books(self) -> list:
+        from .em_experiment import config
+        s = self._armer.engine.settings
+        out = [book_id(s)]
+        c = config(s.get)
+        if c["enabled"]:
+            out.append(c["portfolioId"])
+        return [p for i, p in enumerate(out) if p and p not in out[:i]]
+
+    def observer(self, pid: str) -> ProfitCaptureObserver:
+        if pid not in self._obs:
+            self._obs[pid] = build_observer(self._armer, pid)
+        return self._obs[pid]
+
+    def snap(self, reason: str, causal: dict | None = None):
+        only = None
+        rid = (causal or {}).get("runId")
+        if rid:
+            ap = getattr(self._armer, "_armed", {}).get(rid)
+            only = str(ap.config.portfolio_id) if ap is not None else None
+        last = None
+        for pid in self.books():
+            if only and pid != only:
+                continue
+            last = self.observer(pid).snap(reason, causal) or last
+        return last
+
+    @property
+    def stats(self) -> dict:
+        keys = ("captured", "written", "droppedQueueFull", "droppedWriteFailed", "captureErrors", "retries", "finalizeErrors")
+        out = {k: sum(int(o.stats.get(k, 0)) for o in self._obs.values()) for k in keys}
+        out["byBook"] = {pid: dict(o.stats) for pid, o in self._obs.items()}
+        return out
+
+    async def wait_idle(self) -> None:
+        for o in list(self._obs.values()):
+            await o.wait_idle()
+
+
+def build_book_observers(armer) -> BookObservers:
+    return BookObservers(armer)
+
+
+def build_observer(armer, pid: str | None = None) -> ProfitCaptureObserver:
+    from .em_experiment import book_policy
     clock = lambda: int(time.time() * 1000)               # noqa: E731
     ledger = SessionLedger(armer.engine.sf)
 
@@ -173,7 +226,7 @@ def build_observer(armer) -> ProfitCaptureObserver:
         log.warning("EM book snapshot dropped (%s) seq=%s reason=%s", why, rec.get("seq"), rec.get("reason"))
 
     return ProfitCaptureObserver(
-        enabled=lambda: bool(armer.engine.settings.get(KNOB, False)),
-        collect=lambda: collect_inputs(armer, clock()),
+        enabled=lambda: bool(book_policy(armer.engine.settings.get, (pid or book_id(armer.engine.settings)), "book_snapshot_observe", False)),
+        collect=lambda: collect_inputs(armer, clock(), pid),
         write=write, finalize=finalize, clock_ms=clock,
         cadence_s=lambda: float(armer.engine.settings.get(CADENCE, 30.0) or 30.0), on_drop=on_drop)

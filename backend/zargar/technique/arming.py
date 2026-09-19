@@ -46,8 +46,8 @@ class PlanArmer(PlanRunner):
         super().__init__(engine, name="technique-armer")
         self.technique = technique
         # ED-04 (book-snapshot-v1): EM-owned bounded recorder, DEFAULT OFF; the runner's `_book_snap` is a no-op without it
-        from .profit_capture_runtime import build_observer
-        self._book_observer = build_observer(self)
+        from .profit_capture_runtime import build_book_observers
+        self._book_observer = build_book_observers(self)      # one recorder per EM book (baseline knob / experiment override)
 
     # ================================================================ hooks — the EM opinions
     TECHNIQUE_ID = TECHNIQUE_ID
@@ -131,8 +131,32 @@ class PlanArmer(PlanRunner):
     # ---- first-sale-v2 (2026-09-19, IR-01 / IR-04): R2 at the gate target of the FINAL quantity, from the validated current
     # executable underlying bound. DEFAULT OFF. observe = non-authoritative record; enforce = fail closed (refuse / defer).
     def first_sale_policy(self, ap) -> str:
+        from .em_experiment import book_policy
         from .first_sale import normalize_mode
-        return normalize_mode(self.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "off"))
+        pid = getattr(getattr(ap, "config", None), "portfolio_id", None)
+        return normalize_mode(book_policy(self.engine.settings.get, pid, "first_sale_rr_gate", "off"))
+
+    # ---- em-experiment-v1 (2026-09-19): the experimental Practice book. Every hook resolves FOR THE PLAN'S BOOK.
+    def arm_guard(self, run, cfg, portfolio):
+        from .em_experiment import arm_refusal
+        return arm_refusal(self.engine.settings.get, run, cfg.portfolio_id, portfolio)
+
+    def order_tags(self, ap) -> list:
+        from .em_experiment import is_book, run_tags
+        return run_tags(self.engine.settings.get) if is_book(self.engine.settings.get, ap.config.portfolio_id) else []
+
+    def seed_from_ts(self, ap):
+        born = (ap.plan or {}).get("eligibleFromTs") if (ap.plan or {}).get("promotion") else None
+        return int(born) if born else None
+
+    def extra_observation_books(self) -> list:
+        from .em_experiment import config
+        c = config(self.engine.settings.get)
+        return [c["portfolioId"]] if c["enabled"] else []
+
+    def runner_protection_policy(self, ap) -> str:
+        from .em_experiment import book_policy
+        return str(book_policy(self.engine.settings.get, ap.config.portfolio_id, "runner_protection", "off") or "off")
 
     async def first_sale_prepare(self, ap) -> None:
         """Resolve the policy-defining pin (`technique.rr_gate_target`) from the plan's FROZEN run config, once per plan,
@@ -557,16 +581,22 @@ class PlanArmer(PlanRunner):
         return {"rows": rows, "reference": prev, "gapPct": pct, "replan": replan}
 
     async def build_replacement_plan(self, ap: ArmedPlan, *, reference_price: float) -> dict | None:
+        from .em_experiment import is_book, prep_policy, run_tags
+        get = self.engine.settings.get
+        in_experiment = is_book(get, ap.config.portfolio_id)
         run = await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
                                            primary_tf=str(ap.plan.get("triggerTf") or "1m"),
                                            trigger="preopen_replan", plan=True, with_vision=False, wait=True,
-                                           parent_run_id=ap.run_id, reference_price=reference_price)
+                                           parent_run_id=ap.run_id, reference_price=reference_price,
+                                           tags=(run_tags(get) if in_experiment else None))   # a replacement stays in ITS book
         # em-prep-policy-v1: under the PROPOSED policy the re-plan is a candidate like any other and passes the SAME
         # eligibility owner (baseline keeps today's behaviour: any valid trigger replaces the dead plan)
         try:
             from .preparation_policy import effective
-            if run and effective(self.engine.settings.get)["preparationPolicy"] == "deterministic":
-                d = await self.technique.prep_decide(run["id"], origin="preopen_replan", persist=True, run=run)
+            book_pol = prep_policy(get, ap.config.portfolio_id)      # the policy of THIS plan's book (baseline book: the technique-wide one)
+            if run and book_pol["preparationPolicy"] == "deterministic":
+                from .prep_service import prep_decide as _pd
+                d = await _pd(self.technique, run["id"], origin="preopen_replan", persist=True, run=run, policy=book_pol)
                 if d.get("disposition") != "eligible":
                     self._log(ap, "preopen_replan_ineligible", f"re-plan {run['id'][:8]} is not eligible under the preparation policy: {d.get('explanation', '')[:200]}")
                     return None
