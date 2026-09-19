@@ -43,10 +43,22 @@ try {
                            issuedBy=('deploy.ps1:' + $PID); expiresAt=[DateTimeOffset]::UtcNow.AddMinutes(10).ToString('o') }
     $handoff | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $deployRoot 'logs/deployment-pending.json') -Encoding ASCII
     $env:ZARGAR_DEPLOY_CALLER = 'deploy.ps1'
-    & (Join-Path $PSScriptRoot 'restart.ps1') -Expect $Expect
-    if ($LASTEXITCODE -ne 0) { throw "Guarded restart returned $LASTEXITCODE; inspect restart logs." }
-    $final = Read-ZargarReceipt $deployRoot
-    if ($null -eq $final -or $final.phase -ne 'verified') { throw 'Restart returned 0 but the receipt is not verified; inspect restart logs.' }
+    if (Get-ZargarElevation) {
+      # 2026-09-19: an elevated shell must never stop the engine it cannot restart. The handoff above is written;
+      # release the lease (the task's restart.ps1 takes it, and would otherwise wait on us) and let the
+      # Limited ZargarRestart task consume the handoff, then wait for THIS target's terminal receipt.
+      Write-Host '> Elevated shell: handing the restart to the ZargarRestart task (it verifies the handoff and restarts)'
+      Exit-ZargarDeployment $deployMutex
+      Start-ScheduledTask -TaskName 'ZargarRestart'
+      $final = Wait-ZargarReceipt $deployRoot $TargetCommit 480
+      if ($null -eq $final) { throw 'The ZargarRestart task did not report a terminal receipt within 8 minutes; check logs/restart-*.log and /api/health now.' }
+      if ($final.phase -ne 'verified') { throw ('The ZargarRestart task ended ' + $final.phase + ': ' + $final.detail) }
+    } else {
+      & (Join-Path $PSScriptRoot 'restart.ps1') -Expect $Expect
+      if ($LASTEXITCODE -ne 0) { throw "Guarded restart returned $LASTEXITCODE; inspect restart logs." }
+      $final = Read-ZargarReceipt $deployRoot
+      if ($null -eq $final -or $final.phase -ne 'verified') { throw 'Restart returned 0 but the receipt is not verified; inspect restart logs.' }
+    }
   } finally { Pop-Location }
 } catch {
   # terminal phase on the record, then the failure propagates (exit code stays non-zero)

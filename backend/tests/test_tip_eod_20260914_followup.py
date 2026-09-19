@@ -36,8 +36,14 @@ async def test_liveness_distinguishes_a_live_pipe_from_a_stuck_one(app_client, t
     _status(tmp_path, at=now - dt.timedelta(minutes=10), frame=now - dt.timedelta(minutes=10))
     v = await il.liveness(eng, base=tmp_path, now=now)
     assert v["ok"] is False and any("hung or gone" in r for r in v["reasons"])
-    # (5) pending envelopes never hide behind a live socket
+    # (5) pending envelopes never hide behind a live socket - but one sighting is a claim in flight, not a stall
+    # (bd7bf658, 2026-09-18: "envelopes briefly in flight are not a stall"): it WARNS, and only a pending count that
+    # persists through PENDING_STALL_SAMPLES consecutive monitor samples is a stall
     _status(tmp_path, at=now, frame=now, pending=3)
+    eng._tip_intake_pending_streak = 0
+    v = await il.liveness(eng, base=tmp_path, now=now)
+    assert v["ok"] is True and any("in flight" in w for w in v["warnings"])
+    eng._tip_intake_pending_streak = il.PENDING_STALL_SAMPLES
     v = await il.liveness(eng, base=tmp_path, now=now)
     assert v["ok"] is False and any("pending delivery" in r for r in v["reasons"])
     # the API route exists (reads the runtime cwd; here there is no file -> unknown, still 200)
