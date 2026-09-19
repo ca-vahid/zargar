@@ -44,6 +44,45 @@ def baseline_states(armer) -> dict:
     return out
 
 
+_CTX_CACHE: dict = {}          # run id -> (thresholds, profile, prev_close); a run is immutable, so is its context
+
+
+async def plan_context(svc, run: dict) -> tuple:
+    """(thresholds, volume profile, prev close) a saved plan was built with - from the run's own config and saved bars
+    snapshot. Cached per run id (runs never change). Any failure = (None, None, None): volume stays unknown, never guessed."""
+    rid = run.get("runId")
+    if rid in _CTX_CACHE:
+        return _CTX_CACHE[rid]
+    out = (None, None, None)
+    try:
+        import dataclasses
+        import gzip
+        from ..models import ChatAsset
+        from .rulebook import DEFAULT_THRESHOLDS
+        from .walkforward import build_profile, plan_window
+        cfg, plan = run.get("config") or {}, run.get("plan") or {}
+        names = {f.name for f in dataclasses.fields(DEFAULT_THRESHOLDS)}
+        th = dataclasses.replace(DEFAULT_THRESHOLDS, **{k: (tuple(v) if isinstance(v, list) else v) for k, v in (cfg.get("thresholds") or {}).items() if k in names})
+        prof = None
+        aid = cfg.get("barsAssetId")
+        if aid:
+            async with svc.engine.sf() as s:
+                asset = await s.get(ChatAsset, aid)
+            if asset is not None and asset.data:
+                snap = json.loads(gzip.decompress(asset.data).decode("utf-8"))
+                ttf = plan.get("triggerTf") or "1m"
+                by_tf = {tf: rows_to_bars(run.get("symbol") or "", tf, rows) for tf, rows in (snap.get("bars") or {}).items()}
+                built = int(plan.get("builtFromMs") or 0) or None
+                prof = build_profile(((plan_window(by_tf, built) if built else by_tf).get(ttf)) or [])
+        out = (th, prof, float(plan.get("referencePrice") or plan.get("lastClose") or 0) or None)
+    except Exception:                                      # noqa: BLE001
+        log.exception("source candidates: plan context failed for %s", rid)
+    if len(_CTX_CACHE) > 400:
+        _CTX_CACHE.clear()
+    _CTX_CACHE[rid] = out
+    return out
+
+
 async def load_inputs(svc, session_day: str) -> dict:
     day0 = dt.datetime.fromisoformat(session_day).replace(tzinfo=ET)
     o_ms, c_ms = int(day0.replace(hour=9, minute=30).timestamp() * 1000), int(day0.replace(hour=16).timestamp() * 1000)
@@ -61,12 +100,18 @@ async def load_inputs(svc, session_day: str) -> dict:
             runs = (await s.execute(select(TechniqueRun).where(TechniqueRun.symbol == sym, TechniqueRun.technique == "enhanced_market", TechniqueRun.status == "done",
                                                                TechniqueRun.created_at >= day0.astimezone(dt.timezone.utc) - dt.timedelta(hours=20))
                                     .order_by(TechniqueRun.created_at))).scalars().all()
-            plans[sym] = [{"runId": r.id, "createdAt": r.created_at.isoformat(), "trigger": r.trigger, "plan": (r.result or {}).get("plan") or {}}
+            plans[sym] = [{"runId": r.id, "symbol": sym, "createdAt": r.created_at.isoformat(), "trigger": r.trigger, "plan": (r.result or {}).get("plan") or {},
+                           "config": r.config or {}}
                           for r in runs if str(((r.result or {}).get("plan") or {}).get("planFor") or "")[:10] == session_day]
             rows = (await s.execute(text("select ts, open, high, low, close, volume from bars where symbol=:s and tf='1m' and ts >= :a and ts < :b order by ts"),
                                     {"s": sym, "a": o_ms, "b": c_ms})).mappings().all()
             bars[sym] = rows_to_bars(sym, "1m", [[r["ts"], r["open"], r["high"], r["low"], r["close"], r["volume"]] for r in rows])
-    return {"payloads": payloads, "plans": plans, "bars": bars}
+    ctx = {}
+    for sym, pls in plans.items():
+        if pls:
+            ctx[sym] = await plan_context(svc, pls[-1])
+    return {"payloads": payloads, "plans": plans, "bars": bars,
+            "thresholds": {k: v[0] for k, v in ctx.items()}, "profiles": {k: v[1] for k, v in ctx.items()}, "prevClose": {k: v[2] for k, v in ctx.items()}}
 
 
 async def tick(svc, now_ms: int) -> dict:
@@ -79,7 +124,9 @@ async def tick(svc, now_ms: int) -> dict:
     session_day = now.date().isoformat()
     inp = await load_inputs(svc, session_day)
     cands = scp.evaluate_session(payloads=inp["payloads"], plans_by_symbol=inp["plans"], bars_by_symbol=inp["bars"],
-                                 baseline_by_symbol=baseline_states(svc.armer), session=session_day, upto_ts=now_ms)[:MAX_CANDIDATES]
+                                 baseline_by_symbol=baseline_states(svc.armer), session=session_day, upto_ts=now_ms,
+                                 thresholds_by_symbol=inp["thresholds"], profiles_by_symbol=inp["profiles"],
+                                 prev_close_by_symbol=inp["prevClose"])[:MAX_CANDIDATES]
     changed = await persist(svc, session_day, cands, now_ms)
     return {"enabled": True, "rth": True, "candidates": len(cands), "changed": changed}
 

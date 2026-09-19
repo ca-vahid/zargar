@@ -184,6 +184,7 @@ def exclusion_diagnostic(name: str, trigger: dict, bars: list, *, thresholds: Th
     sc = score_trigger(tr, bars, thresholds=t)
     sim = sc.get("sim") or {}
     return {"exclusion": name, "relaxed": relax, "status": sc.get("status"), "firedTs": sc.get("firedTs"), "outcome": sim.get("outcome"), "rMultiple": sim.get("rMultiple"),
+            "stillSkippedBy": [x.get("reason") for x in (sc.get("skipped") or [])[-3:]],
             "benefitOfExclusion": (abs(sim["rMultiple"]) if (sim.get("rMultiple") or 0) < 0 else 0.0) if sim else None,
             "costOfExclusion": (sim["rMultiple"] if (sim.get("rMultiple") or 0) > 0 else 0.0) if sim else None,
             "label": "HINDSIGHT diagnostic on the underlying; a single path; never grounds for loosening the production gate"}

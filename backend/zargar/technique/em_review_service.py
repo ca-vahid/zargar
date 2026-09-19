@@ -75,8 +75,9 @@ async def _plans(svc, date: str, symbols: list) -> dict:
         for sym in symbols:
             runs = (await s.execute(select(TechniqueRun).where(TechniqueRun.symbol == sym, TechniqueRun.technique == "enhanced_market", TechniqueRun.status == "done",
                                                                TechniqueRun.created_at >= a - dt.timedelta(hours=20)).order_by(TechniqueRun.created_at))).scalars().all()
-            out[sym] = [{"runId": r.id, "createdAt": r.created_at.isoformat(), "trigger": r.trigger, "plan": (r.result or {}).get("plan") or {},
-                         "analysis": (r.result or {}).get("analysis")} for r in runs if str(((r.result or {}).get("plan") or {}).get("planFor") or "")[:10] == date]
+            out[sym] = [{"runId": r.id, "symbol": sym, "createdAt": r.created_at.isoformat(), "trigger": r.trigger, "plan": (r.result or {}).get("plan") or {},
+                         "config": r.config or {}, "analysis": (r.result or {}).get("analysis")}
+                        for r in runs if str(((r.result or {}).get("plan") or {}).get("planFor") or "")[:10] == date]
     return out
 
 
@@ -152,8 +153,12 @@ async def candidates(svc, date: str) -> dict:
                     baseline.setdefault(sym, []).append({"runId": pl["runId"], "trigger": e.get("trigger"), "status": e["reason"],
                                                          "direction": t.get("direction") or ("short" if t.get("kind") in ("reject", "breakdown") else "long"),
                                                          "ts": int(dt.datetime.fromisoformat(e["ts"]).timestamp() * 1000), "entry": (t.get("entry") or {}).get("price")})
-    cands = scp.evaluate_session(payloads=payloads, plans_by_symbol=plans, bars_by_symbol=bars, baseline_by_symbol=baseline, session=date)
-    return {"date": date, "source": "replay_preview (not stored; volume profile unavailable here - break families stay unconfirmed without a baseline)",
+    from .source_candidates_runtime import plan_context
+    ctx = {sym: await plan_context(svc, pls[-1]) for sym, pls in plans.items() if pls}
+    cands = scp.evaluate_session(payloads=payloads, plans_by_symbol=plans, bars_by_symbol=bars, baseline_by_symbol=baseline, session=date,
+                                 thresholds_by_symbol={k: v[0] for k, v in ctx.items()}, profiles_by_symbol={k: v[1] for k, v in ctx.items()},
+                                 prev_close_by_symbol={k: v[2] for k, v in ctx.items()})
+    return {"date": date, "source": "replay_preview (not stored; each candidate is judged with its plan's own saved thresholds and volume profile)",
             "rows": [scp.table_row(c, baseline=c.get("baseline")) for c in cands]}
 
 
