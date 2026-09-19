@@ -58,3 +58,41 @@ async def test_restart_after_confirmation_does_not_capture_historical_signal(res
     async with rig.sf() as s:
         assert await s.scalar(select(func.count()).select_from(TechniqueRun).where(TechniqueRun.mode=='lab_signal'))==0
     rig.engine.feed.watch.assert_awaited()
+
+
+async def test_failed_quote_is_retried_after_restart_but_never_after_deadline(research,monkeypatch):
+    from zargar.techniques.options_cartel.method_lab_observer import pending_quotes
+    rig=research;context=await prepared(rig)
+    runtime=SimpleNamespace(engine=rig.engine,clock=lambda:prior.OPEN-500,stopping=False)
+    await collect(runtime)
+    runtime.clock=lambda:prior.OPEN+5*60000+20000
+    observe=AsyncMock(side_effect=[TimeoutError(),{'status':'observed','observedAt':runtime.clock()+20000,
+        'selected':{'symbol':'TEST0261016C00100000'},'quote':{'status':'observed'},'funding':{'quantity':1}}])
+    monkeypatch.setattr('zargar.techniques.options_cartel.method_lab_observer.observe_contract',observe)
+    await collect(runtime)
+    # A fresh owner sees durable attempts rather than forgetting the failure.
+    restarted=SimpleNamespace(engine=rig.engine,clock=lambda:prior.OPEN+5*60000+40000,stopping=False)
+    await pending_quotes(restarted,context,rig.policy)
+    await pending_quotes(restarted,context,rig.policy)
+    assert observe.await_count==2
+    async with rig.sf() as s:
+        saved=(await s.scalars(select(TechniqueRun).where(TechniqueRun.mode=='lab_quote'))).all()
+        assert sum(r.result.get('purpose')=='entry_attempt' for r in saved)==2
+        final=[r for r in saved if r.result.get('purpose')=='entry_selection']
+        assert len(final)==1 and final[0].result['observation']['timely']
+    view=await lab.status(rig.engine,rig.policy,prior.DAY)
+    assert view['rows'][0]['models']['undercut_reclaim_5m_v1']['quoteStatus']=='observed'
+
+
+async def test_expired_quote_window_records_missing_evidence_without_provider_call(research,monkeypatch):
+    from zargar.techniques.options_cartel.method_lab_observer import pending_quotes
+    rig=research;context=await prepared(rig)
+    await lab.insert_record(rig.engine,key='unpriced-signal',mode='lab_signal',at=prior.OPEN+300000,
+        parent=context.id,config=context.config,result={'variant':'breakout_5m_v1','symbol':'TEST0','signal':{'at':prior.OPEN+300000}})
+    observe=AsyncMock();monkeypatch.setattr('zargar.techniques.options_cartel.method_lab_observer.observe_contract',observe)
+    runtime=SimpleNamespace(engine=rig.engine,clock=lambda:prior.OPEN+420001,stopping=False)
+    await pending_quotes(runtime,context,rig.policy)
+    observe.assert_not_awaited()
+    async with rig.sf() as s:
+        result=await s.get(TechniqueRun,lab.identity('unpriced-signal','entry_quote'))
+        assert result.result['observation']['status']=='deadline_missed'

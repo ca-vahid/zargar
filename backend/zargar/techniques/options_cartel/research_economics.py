@@ -274,7 +274,9 @@ def _freeze_entry(plan, tape, signal, as_of_ms, costs, quantity, quantity_basis,
     if not isinstance(at, int) or at > as_of_ms:
         raise ValueError('a causal saved signal timestamp is required')
     if shadow_spec is None:
-        actual = read_entry(plan, list(tape.values()), at, entry_after=signal_after).get('signal')
+        knowledge_at=observed_at if verified_intervals and observed_at is not None else at
+        actual = read_entry(plan, [b for t,b in tape.items() if t<at], knowledge_at,
+            entry_after=signal_after,verified_intervals=verified_intervals).get('signal')
     else:
         from .shadow_entries import read_shadow_entry
         decision_at=observed_at if observed_at is not None else at

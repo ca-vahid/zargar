@@ -37,6 +37,16 @@ next focused run before release. No test has touched the runtime database.
 
 ## Remaining implementation and acceptance
 
+Continuation checkpoint: quote selection now has persisted attempt starts/results,
+bounded retries, a hard acceptance deadline and explicit terminal missing-evidence
+records. Provider work runs after signal capture, so slow chains do not postpone
+other models' signal timestamps. UI projection preserves captured confirmations
+and their final quote disposition. A stored-evidence reconciliation module joins
+entry tapes, baselines, funding and quote/price receipts, validates the frozen daily
+hash, and keeps descriptive modeled schedules outside the trial score until
+receipt-timed exits are reconciled. Focused runs passed 34 tests, then 8 after
+capture-integrity refinements; these overlap earlier suites.
+
 1. Wire stored signals/quote paths/price receipts through economic valuation and
    the paired multi-session trial review, including held campaigns across dates.
    Do not promote a modeled next-open schedule as a contemporaneous fill.

@@ -96,7 +96,9 @@ async def collect(runtime):
     key=lab.identity(context.id,'tick',boundary)
     async with engine.sf() as s:
         existing=await s.get(TechniqueRun,key)
-        if existing: return
+        if existing:
+            await pending_quotes(runtime,context,policy)
+            return
         baselines=(await s.scalars(select(TechniqueRun).where(TechniqueRun.mode=='lab_baseline',
             TechniqueRun.parent_run_id==context.id,TechniqueRun.as_of<opens).order_by(TechniqueRun.as_of))).all()
         stored=(await s.scalars(select(BarRow).where(BarRow.tf=='1m',BarRow.provider=='alpaca',
@@ -113,7 +115,7 @@ async def collect(runtime):
     from .intraday_research import market_observation
     # Current rolling 15m context is diagnostic, never a replacement for live permissions.
     market=market_observation(context.result['market'],bars,boundary,runtime.clock())
-    rows=[];quote_requests=0
+    rows=[]
     for candidate in candidates:
         if runtime.stopping or not lab.enabled(engine,policy) or read_policy(engine,'practice')!=policy: return
         baseline=baseline_map.get(candidate['id'])
@@ -142,24 +144,59 @@ async def collect(runtime):
                 await lab.insert_record(engine,key=signal_id,mode='lab_signal',at=decision_at,
                     parent=context.id,config=context.config,result=payload)
                 consumed.add((candidate['id'],variant));result['signalRecordId']=signal_id
-                if quote_requests>=2:
-                    result['quoteStatus']='capacity_not_observed';continue
-                quote_requests+=1
-                try:
-                    async with asyncio.timeout(20):
-                        option=await observe_contract(engine,SimpleNamespace(id=signal_id,symbol=candidate['symbol'],direction='long'),policy,runtime.clock)
-                except (ValueError,OSError,TimeoutError,httpx.HTTPError) as exc:
-                    option={'status':'unavailable','observedAt':runtime.clock(),'reason':type(exc).__name__}
-                option['timely']=0<=runtime.clock()-signal['at']<=120000
-                await lab.insert_record(engine,key=lab.identity(signal_id,'entry_quote'),mode='lab_quote',at=runtime.clock(),
-                    parent=signal_id,config=context.config,result={'purpose':'entry_selection','signalId':signal_id,'observation':option})
-                result['quoteStatus']=option['status'] if option['timely'] else 'late'
+                result['quoteStatus']='pending_observation'
         rows.append(row)
     await lab.insert_record(engine,key=key,mode='lab_tick',at=runtime.clock(),parent=context.id,
         config=context.config,result={'boundary':boundary,'rows':rows,'market':market,
             'collectorStartedAt':runtime._method_lab_started,'provider':'alpaca',
             'note':'Data was available when this snapshot was read; a repaired historical signal cannot become a prospective entry.'})
+    await pending_quotes(runtime,context,policy)
     runtime._method_lab_status={'status':'collecting','session':day.isoformat(),'boundary':boundary,'candidates':len(rows)}
+
+
+async def pending_quotes(runtime,context,policy):
+    """Durable bounded attempts; capacity/HTTP failures do not disappear on restart."""
+    engine=runtime.engine
+    if runtime.stopping or not lab.enabled(engine,policy): return
+    async with engine.sf() as s:
+        signals=(await s.scalars(select(TechniqueRun).where(TechniqueRun.mode=='lab_signal',
+            TechniqueRun.parent_run_id==context.id).order_by(TechniqueRun.as_of))).all()
+        observations=(await s.scalars(select(TechniqueRun).where(TechniqueRun.mode=='lab_quote',
+            TechniqueRun.parent_run_id.in_([r.id for r in signals])))).all()
+    finished={r.parent_run_id for r in observations if r.result.get('purpose')=='entry_selection'}
+    attempts={r.id:[q for q in observations if q.parent_run_id==r.id and q.result.get('purpose')=='entry_attempt'] for r in signals}
+    priority={'breakout_5m_v1':0,'undercut_reclaim_5m_v1':1,'pivot_30m_5m_v1':2,'breakout_15m_v1':3}
+    due=sorted((r for r in signals if r.id not in finished),key=lambda r:(len(attempts[r.id]),r.as_of,priority.get(r.result['variant'],9),r.id))
+    requests=0
+    for row in due:
+        if runtime.stopping or not lab.enabled(engine,policy) or read_policy(engine,'practice')!=policy: return
+        now=runtime.clock();signal=row.result['signal'];prior=attempts[row.id]
+        if now-signal['at']>120000 or len(prior)>=3:
+            observation={'status':'deadline_missed' if now-signal['at']>120000 else 'attempt_limit',
+                         'observedAt':now,'timely':False,'reason':'No timely eligible quote was captured; no fill or zero-return outcome inferred.'}
+        else:
+            if requests>=2 or prior and now-max(p.as_of for p in prior)<15000: continue
+            requests+=1;attempt=len(prior)+1
+            key=lab.identity(row.id,'attempt',attempt)
+            await lab.insert_record(engine,key=key,mode='lab_quote',at=now,parent=row.id,config=context.config,
+                result={'purpose':'entry_attempt','signalId':row.id,'attempt':attempt,'status':'started'})
+            try:
+                async with asyncio.timeout(20):
+                    observation=await observe_contract(engine,SimpleNamespace(id=row.id,symbol=row.result['symbol'],direction='long'),policy,runtime.clock)
+            except (ValueError,OSError,TimeoutError,httpx.HTTPError) as exc:
+                observation={'status':'unavailable','observedAt':runtime.clock(),'reason':type(exc).__name__}
+            if observation.get('status')=='observed' and (not observation.get('selected')
+                    or (observation.get('quote') or {}).get('status')!='observed'
+                    or type((observation.get('funding') or {}).get('quantity')) is not int
+                    or observation['funding']['quantity']<1):
+                observation={**observation,'status':'incomplete_observation','reason':'Selected contract, fresh quote and funded quantity are required.'}
+            observation['timely']=0<=runtime.clock()-signal['at']<=120000
+            if runtime.stopping or not lab.enabled(engine,policy): return
+            await lab.insert_record(engine,key=lab.identity(key,'result'),mode='lab_quote',at=runtime.clock(),
+                parent=row.id,config=context.config,result={'purpose':'entry_attempt_result','signalId':row.id,'attempt':attempt,'observation':observation})
+            if observation.get('status')!='observed' and observation['timely']: continue
+        await lab.insert_record(engine,key=lab.identity(row.id,'entry_quote'),mode='lab_quote',at=runtime.clock(),
+            parent=row.id,config=context.config,result={'purpose':'entry_selection','signalId':row.id,'observation':observation})
 
 
 async def capture_quotes(runtime):

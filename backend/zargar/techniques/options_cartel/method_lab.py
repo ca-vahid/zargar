@@ -221,6 +221,7 @@ async def status(engine,policy,day):
         quotes=(await s.scalars(select(TechniqueRun).where(TechniqueRun.parent_run_id.in_([r.id for r in signals]),
             TechniqueRun.mode=='lab_quote',TechniqueRun.result['purpose'].as_string()=='entry_selection'))).all()
     latest={r.result['candidateId']:r for r in baselines};reads={}
+    selected_quotes={q.parent_run_id:q.result['observation'] for q in quotes}
     for tick in reversed(ticks):
         for row in tick.result['rows']:
             earlier=reads.get(row['candidateId'],{});models={**earlier.get('models',{}),**row.get('models',{})}
@@ -235,9 +236,16 @@ async def status(engine,policy,day):
         signals=[{'id':r.id,**{k:r.result.get(k) for k in ('symbol','variant','signal','observedAt','market')}} for r in signals])
     for candidate in source['candidates']:
         baseline=latest.get(candidate['id'])
+        models=dict(reads.get(candidate['id'],{}).get('models',{}))
+        for signal in signals:
+            if signal.result['candidateId']!=candidate['id']: continue
+            variant=signal.result['variant'];selection=selected_quotes.get(signal.id)
+            models[variant]={**models.get(variant,{}),'status':'recorded_research_confirmation',
+                'signal':signal.result['signal'],'captureStatus':'captured_prospectively',
+                'quoteStatus':selection['status'] if selection else 'pending_observation'}
         out['rows'].append({**{k:candidate[k] for k in ('id','symbol','labFeatures','definitions','ranking')},
             'observed':candidate['id'] in source['observedIds'],
             'baselineStatus':baseline.result['status'] if baseline else 'pending',
             'baselineReason':baseline.result.get('reason') if baseline else None,
-            'models':reads.get(candidate['id'],{}).get('models',{})})
+            'models':models})
     return out

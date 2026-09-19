@@ -22,14 +22,18 @@ def valuation_plan(spec: ShadowEntrySpec, signal):
 
 def compare_vehicles(spec, signal, minutes, daily, campaign, *, as_of_ms, observed_at,
                      signal_after, funding, option_observation=None, premium_input=None,
-                     verified_intervals=None, share_slippage_bps=2):
-    spec=ShadowEntrySpec.model_validate(spec);plan=valuation_plan(spec,signal)
+                     verified_intervals=None, share_slippage_bps=2,control_plan=None):
+    if control_plan is not None:
+        if spec is not None: raise ValueError('choose one frozen entry model')
+        plan=CartelPlan.model_validate(control_plan)
+    else:
+        spec=ShadowEntrySpec.model_validate(spec);plan=valuation_plan(spec,signal)
     campaign=ExitCampaign.model_validate(campaign)
     out={'version':'cartel-lab-vehicles-v1','placesOrders':False,'activationAllowed':False,
          'pass':{'netPnl':0,'capitalUsed':0,'basis':'No-trade counterfactual'},
          'shares':None,'options':None,'gaps':[],
          'basis':'Research using next observable underlying open, recorded option asks/bids and frozen fees; not actual executions.'}
-    if any(r.kind=='target' and r.target not in spec.targets for r in campaign.rungs):
+    if any(r.kind=='target' and r.target not in plan.targets for r in campaign.rungs):
         raise ValueError('shadow exits must retain the pre-open resistance levels')
     numeric=lambda v:isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
     fields=('cashCapUsd','asOfMs','usdToAccountFx')
