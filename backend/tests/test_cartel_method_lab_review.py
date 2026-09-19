@@ -9,6 +9,16 @@ from .test_cartel_method_lab_observer import prepared
 research=prior.research
 
 
+async def test_future_trial_has_no_overdue_observations(research):
+    from zargar.techniques.options_cartel.method_lab_review import trial_report
+    context=await prepared(research)
+    result=await trial_report(research.engine,context.result['trial']['id'],prior.OPEN-1)
+    assert result['review']['status']=='awaiting_sessions'
+    assert result['review']['incompletePairs']==0
+    assert result['review']['failures']==[]
+    assert result['activationAllowed'] is False
+
+
 async def test_missing_quotes_stay_unknown_in_reconciled_report(research,monkeypatch):
     rig=research;context=await prepared(rig)
     runtime=SimpleNamespace(engine=rig.engine,clock=lambda:prior.OPEN-500,stopping=False)
