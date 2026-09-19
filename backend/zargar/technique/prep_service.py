@@ -8,7 +8,7 @@ import hashlib
 import json
 
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from ..models import TechniqueArmed, TechniquePrepDecision, TechniqueRun
 from . import preparation_policy as pp
@@ -95,6 +95,9 @@ async def prep_decide(svc, run_id: str, *, origin: str | None = None, persist: b
     return d
 
 
+ARM_LOCK_TIMEOUT_S = 20.0
+
+
 def _lock_id(candidate_key: str) -> int:
     return int(hashlib.sha256(("em-prep-arm:" + str(candidate_key)).encode("utf-8")).hexdigest()[:15], 16)
 
@@ -118,20 +121,26 @@ async def prep_arm(svc, run_id: str, *, arm, origin: str | None = None, source_h
     under a Postgres advisory lock on the candidate key, after re-checking the DATABASE for an armed plan with that key. A
     second worker waits, then finds the first one's row and skips; a restart after the commit but before the acknowledgement
     finds the committed row and skips. `arm` = the coroutine function that performs the arm (the existing stable arm
-    identity - the run id - is untouched). Returns {armed, why, decision, armedRunId?, result?}."""
+    identity - the run id - is untouched). Returns {armed, why, decision, armedRunId?, result?}.
+    LOCK SAFETY (owner review 2026-09-19): the lock is TRANSACTION-scoped (`pg_advisory_xact_lock`) on the holder session's open
+    transaction, so it is released by the rollback that ALWAYS ends that session - a cancelled task, a failed release or the
+    pool's reset-on-return can never leave a pooled connection holding it. The wait is bounded by `SET LOCAL lock_timeout`;
+    a worker that cannot get the lock in time arms nothing and says so."""
     d = await prep_decide(svc, run_id, origin=origin, persist=True, run=run, source_hold=source_hold, source_ids=source_ids)
     if d.get("disposition") != "eligible":
         return {"armed": False, "why": d.get("disposition") or "not_eligible", "decision": d}
     key, lock = d["candidateKey"], _lock_id(d["candidateKey"])
-    async with svc.engine.sf() as holder:                  # the lock lives on THIS connection until it is released or the process dies
-        await holder.execute(text("select pg_advisory_lock(:k)"), {"k": lock})
+    async with svc.engine.sf() as holder:                  # the lock lives in THIS session's transaction and dies with it (commit, rollback, cancel, pool reset)
         try:
-            existing = await armed_candidate_in_db(svc, str(d.get("symbol") or ""), key)
-            if existing:
-                return {"armed": False, "why": ("already_armed" if existing == run_id else "duplicate_of_armed_candidate"), "armedRunId": existing, "decision": d}
-            return {"armed": True, "why": None, "decision": d, "result": await arm()}
-        finally:
-            await holder.execute(text("select pg_advisory_unlock(:k)"), {"k": lock})
+            await holder.execute(text(f"set local lock_timeout = '{int(ARM_LOCK_TIMEOUT_S * 1000)}ms'"))
+            await holder.execute(text("select pg_advisory_xact_lock(:k)"), {"k": lock})
+        except DBAPIError as exc:                          # the bounded wait ran out: another worker is still arming this candidate
+            await holder.rollback()
+            return {"armed": False, "why": "arm_lock_timeout", "decision": d, "detail": f"{type(exc).__name__}"[:80]}
+        existing = await armed_candidate_in_db(svc, str(d.get("symbol") or ""), key)
+        if existing:
+            return {"armed": False, "why": ("already_armed" if existing == run_id else "duplicate_of_armed_candidate"), "armedRunId": existing, "decision": d}
+        return {"armed": True, "why": None, "decision": d, "result": await arm()}
 
 
 async def prep_select(svc, run_ids: list, *, persist: bool = False, origin: str | None = None, source_ids: list | None = None) -> dict:

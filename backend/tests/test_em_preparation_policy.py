@@ -388,3 +388,45 @@ async def test_manual_and_batch_arms_pass_the_same_owner_under_the_proposed_poli
         assert seen == [] and armed[-1] == ("bad", None), "baseline: today's behaviour, the owner is not consulted"
     finally:
         ps.prep_arm, ps.prep_decide = real
+
+
+@pytest.mark.usefixtures("fresh_db")
+async def test_a_cancelled_arm_never_leaves_the_candidate_locked_and_a_waiting_worker_is_bounded(monkeypatch):
+    """Owner review (Tips / platform, 2026-09-19): a session-level advisory lock on a pooled connection could outlive a cancelled
+    task. The lock is transaction-scoped now: cancel the task DURING arm(), then a second prep_arm for the same key completes."""
+    from tests.conftest import TEST_DB_URL
+    from zargar.db import make_engine, make_session_factory
+    from zargar.models import TechniqueArmed, TechniqueRun
+    from zargar.technique import prep_service as ps
+    eng = make_engine(TEST_DB_URL); sf = make_session_factory(eng)
+    plan = FX["META"]["plan"]
+    runs = {"run-1": _run("run-1", plan)}
+    async with sf() as s:
+        s.add(TechniqueRun(id="run-1", symbol="META", technique="enhanced_market", status="done", trigger="promote", config=runs["run-1"]["config"], result=runs["run-1"]["result"]))
+        await s.commit()
+    settings = {"techniques.enhanced_market.preparation_policy": "deterministic"}
+    started, armed = asyncio.Event(), []
+
+    async def hanging_arm():
+        started.set()
+        await asyncio.sleep(3600)
+
+    async def good_arm():
+        async with sf() as s:
+            s.add(TechniqueArmed(run_id="run-1", symbol="META", plan_for=str(plan.get("planFor") or "")[:10], portfolio_id="book", mode="auto", status="armed"))
+            await s.commit()
+        armed.append("run-1")
+        return {"runId": "run-1"}
+    task = asyncio.create_task(ps.prep_arm(_prep_rig(sf, settings, runs), "run-1", arm=hanging_arm, origin="batch"))
+    await asyncio.wait_for(started.wait(), timeout=10)
+    monkeypatch.setattr(ps, "ARM_LOCK_TIMEOUT_S", 0.3)
+    waiting = await ps.prep_arm(_prep_rig(sf, settings, runs), "run-1", arm=good_arm, origin="batch")
+    assert waiting["armed"] is False and waiting["why"] == "arm_lock_timeout" and armed == [], "the wait for another worker's arm is BOUNDED, and nothing is armed blind"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    monkeypatch.setattr(ps, "ARM_LOCK_TIMEOUT_S", 5.0)
+    after = await asyncio.wait_for(ps.prep_arm(_prep_rig(sf, settings, runs), "run-1", arm=good_arm, origin="batch"), timeout=10)
+    assert after["armed"] is True and armed == ["run-1"], "the cancelled task released the lock with its transaction - no pooled connection keeps it"
+    await eng.dispose()
+

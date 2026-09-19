@@ -353,7 +353,8 @@ def pricing_gates(candidate: dict, evidence: dict | None, *, now_ms: int | None 
         if c.get("symbolOpenOrWorking") is not None and c.get("maxOpenTrades") is not None and int(c["symbolOpenOrWorking"]) >= max(1, int(c["maxOpenTrades"])):
             fails.append(f"no open-position slot: the symbol already holds {int(c['symbolOpenOrWorking'])} (max {int(c['maxOpenTrades'])})")
         status = "fail" if fails else ("unknown" if (missing or stale) else "pass")
-        g["portfolio"] = {"status": status, "failed": fails, "missing": missing + (["fresh snapshot"] if stale else []), "snapshotAt": c.get("atMs"),
+        g["portfolio"] = {"status": status, "label": "risk-gate verdict - NOT a full order preflight (client / phone-entry stamps and the broker preview are not part of it)",
+                          "failed": fails, "missing": missing + (["fresh snapshot"] if stale else []), "snapshotAt": c.get("atMs"),
                           "riskChecks": [x.get("name") for x in rv.get("checks") or []],
                           "why": ("; ".join(fails) or ("constraints missing or not contemporaneous" if status == "unknown" else None))}
     states = {k: g[k]["status"] for k in PRICING_GATES}
