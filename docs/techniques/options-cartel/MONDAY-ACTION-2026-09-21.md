@@ -46,7 +46,16 @@ contract; its extra 5m retrospective confirmation is a different issue. BOX
 September 15 was under a mixed-market read. Neither is evidence that lifting
 premium affordability alone would have admitted those trades.
 
-## Priority implementation: affordability-only shares fallback
+## Updated user direction — September 19
+
+The user subsequently authorized removing the Practice funding constraint.
+The [capital-expanded experiment](CAPITAL-EXPERIMENT-2026-09-19.md) is now the
+chosen immediate action: a separate $1m sim book, $25k purchase budget and 20
+focus slots. It supersedes keeping $500 and implementing shares fallback first.
+The fallback proposal below remains an unimplemented alternative, not the active
+experiment. Earlier keep-budget recommendations below describe the prior decision.
+
+## Alternative proposal: affordability-only shares fallback
 
 **Proposal, not implemented or enabled by this document.** Keep options preferred;
 allow explicitly configured Practice-only long-share fallback when a complete

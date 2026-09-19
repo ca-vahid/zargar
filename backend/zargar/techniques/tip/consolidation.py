@@ -70,7 +70,9 @@ def canonical_payload(*, resolve, batches: list[dict], evidence: list[dict]) -> 
         kind = "merge" if b.get("merge") else ("expire" if b.get("expire") else "empty")
         if kind == "merge":
             body = {"supersedes": sorted(str(x) for x in (b["merge"].get("supersedes") or [])),
-                    "textSha": _sha(str(b["merge"].get("new_rule") or ""))}
+                    "textSha": _sha(str(b["merge"].get("new_rule") or "")),
+                    # D5: a PENDING merge is part of the reviewed identity; absent keeps older manifest hashes stable
+                    **({"pending": True} if b["merge"].get("pending") else {})}
         elif kind == "expire":
             body = {"ids": sorted(str(x) for x in (b["expire"].get("ids") or [])),
                     "reasonSha": _sha(str(b["expire"].get("reason") or ""))}
@@ -361,7 +363,8 @@ async def apply_consolidation(eng, *, manifest_hash: str, resolve: list | None =
         if b.get("merge"):
             applied = await svc.apply_knowledge_batch(
                 scope=b.get("scope") or "rule",
-                merges=[{"supersedes": list(ids), "new_rule": b["merge"]["new_rule"]}],
+                merges=[{"supersedes": list(ids), "new_rule": b["merge"]["new_rule"],
+                         "pending": bool(b["merge"].get("pending"))}],
                 expires=[], contradictions=[], author=b.get("author") or "consolidation",
                 run_id=f"{WRAPPER_SCOPE}:{computed[:12]}", live_ids=set(ids), batch_id=bid,
                 expected_revisions=exp_rev, mode="apply", releases=rel_here or None)
