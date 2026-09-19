@@ -49,6 +49,22 @@ def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
 
+    @app.get('/api/options-cartel/method-lab',dependencies=[auth])
+    async def method_lab_status(workspace: Workspace | None = None,day: str | None = None):
+        import datetime as dt
+        from ..marketstructure.sessions import ET
+        from ..techniques.options_cartel import method_lab
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        if (workspace or active_workspace(eng))!='practice':
+            return {'workspace':'live','status':'practice_only','enabled':False,'rows':[],
+                    'researchOnly':True,'placesOrders':False,'activationAllowed':False}
+        selected=day or dt.datetime.now(ET).date().isoformat()
+        try:
+            if dt.date.fromisoformat(selected).isoformat()!=selected: raise ValueError('Invalid date')
+        except ValueError as exc:
+            raise HTTPException(400,'Invalid method-lab session; use YYYY-MM-DD') from exc
+        return await method_lab.status(eng,read_policy(eng,'practice'),selected)
+
     @app.get('/api/options-cartel/profitability-research', dependencies=[auth])
     async def profitability_research_status(workspace: Workspace | None = None, day: str | None = None):
         import datetime as dt

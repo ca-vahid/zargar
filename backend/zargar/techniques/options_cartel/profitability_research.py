@@ -77,14 +77,15 @@ def weak_environment(saved_market, direction):
     return any(r['direction'] != direction for r in reads)
 
 
-def candidate_from_analysis(saved, policy, cohort, *, short=False):
+def candidate_from_analysis(saved, policy, cohort, *, short=False, direction=None):
     """Re-use immutable daily inputs; this function performs no I/O."""
     body = ResearchInput.model_validate(saved['config']['inputs'])
-    if short:
-        body = body.model_copy(update={'direction': 'short'})
-        screen = screen_listing(body.history, body.facts, body.indices, body.rules, body.as_of_ms, direction='short')
+    target_direction='short' if short else direction or body.direction
+    if short or target_direction!=body.direction:
+        body = body.model_copy(update={'direction': target_direction})
+        screen = screen_listing(body.history, body.facts, body.indices, body.rules, body.as_of_ms, direction=target_direction)
         analysis = analyze_setups(body.history, body.indices.get('SPY', []), screen, body.parameters,
-            body.as_of_ms, direction='short')
+            body.as_of_ms, direction=target_direction)
         saved = {**saved, 'config': {**saved['config'], 'inputs': body.model_dump(mode='json')},
             'result': {**saved['result'], 'screen': screen, 'analysis': analysis}}
     review = automatic_review(body.model_dump(mode='json'), saved['result']['analysis'], policy, research_only=True)
@@ -127,6 +128,9 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
         return {'status': 'pre_session_required', 'placesOrders': False}
     ids = list(dict.fromkeys(r['analysisId'] for r in result.get('rows', []) if r.get('analysisId')))
     candidates, errors = [], []
+    from . import method_lab
+    lab_enabled=method_lab.enabled(engine,policy)
+    lab_candidates=[]
     groups = {g['industry']: g for g in result.get('leaderContext', {}).get('groups', [])}
     for offset in range(0, len(ids), 25):
         if not settings(engine)['enabled'] or clock() >= opens:
@@ -148,10 +152,17 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
                             found.append(candidate)
                     except (KeyError, ValueError, TypeError) as exc:
                         failures.append({'symbol': row['symbol'], 'cohort': cohort, 'reason': str(exc)[:250]})
+                if lab_enabled:
+                    try:
+                        candidate=candidate_from_analysis(row,policy,'lab_long',direction='long')
+                        if candidate: found.append(candidate)
+                    except (KeyError,ValueError,TypeError) as exc:
+                        failures.append({'symbol':row['symbol'],'cohort':'lab_long','reason':str(exc)[:250]})
             return found, failures
 
         found, failures = await _study(evaluate_batch)
-        candidates.extend(found); errors.extend(failures)
+        candidates.extend(c for c in found if c['cohort']!='lab_long')
+        lab_candidates.extend(c for c in found if c['cohort']=='lab_long');errors.extend(failures)
         if report:
             await report(message=f'Freezing profitability research: {min(offset+25, len(ids))}/{len(ids)} saved analyses')
     rankings = {}
@@ -203,6 +214,13 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
                 'sourceDifferences': 'Does not claim the March source scanner price/capitalization/relative-volume/negative-change thresholds. Those source-specific fields remain unverified.'},
             'note': 'Source-inspired directional research and a theme-proxy ranking; no strategy promotion or trading authority.'}},
         {'policy': policy.model_dump(mode='json')})
+    if lab_enabled:
+        try:
+            await method_lab.freeze(engine,prep,policy,lab_candidates,clock=clock)
+            engine._cartel_method_lab_freeze_error=None
+        except (ValueError,KeyError,TypeError) as exc:
+            # The optional lab must not erase an existing research snapshot.
+            engine._cartel_method_lab_freeze_error=f'{type(exc).__name__}: method-lab snapshot unavailable'
     return {'status': 'frozen', 'contextId': key, 'eligible': len(candidates), 'observedLimit': len(selected), 'placesOrders': False}
 
 
