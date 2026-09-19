@@ -98,3 +98,18 @@ request, so none is faithfully replayable today; cases fill from reviews capture
 
 Window 2026-09-21 .. 09-25. No prospective evidence exists yet and none is claimed here. The report
 (`tip_review_gate_eval --prospective`, scorecard v3, dispositions) is produced after the fifth session.
+
+## 7. Rollout record (2026-09-19)
+
+- Merged as PR #235 (main `89682b8e`). Deployed through `deploy.ps1` + the `ZargarRestart` task on Saturday with the
+  market closed: receipt `phase=verified`, running build `923e28d2` (runtime line + main), version 0.8.25.
+- After the restart: 6 open managed tip positions, 28 resting orders, SBLK venue stop 30.58 x 62 ACCEPTED - identical
+  to before. Intake liveness `live`. `trading.mode` practice; live-auto gates, `recap_route`, the feasibility gate,
+  knowledge propose-only and `review_gate` (observe) unchanged.
+- D5 applied through `POST /api/tip/knowledge/consolidate` (payload hash `5afdc8923878cba0`, batch
+  `d5-ladder-trailing-30c9891efc712b49`): the six duplicate proposals were superseded at their reviewed revision inside
+  one transaction and never became operative; the consolidated rule `19777467` was born `needs_human` and stays
+  non-operative until a human approves it (P5). Rollback: the receipt in `tip_knowledge_batches` lists every
+  superseded id and revision.
+- `techniques.tip.review_capture_context` switched ON via the journaled settings API (observation only) so the
+  cheaper-model evaluation cases accumulate during 09-21 .. 09-25. No paid run was made.
