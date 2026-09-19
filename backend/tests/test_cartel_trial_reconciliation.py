@@ -21,6 +21,7 @@ def fixture():
 
 def test_complete_nonentries_are_zero_but_missing_windows_remain_unknown():
     p,context,ticks=fixture()
+    assert trial_observations(context,{'rows':[]},[],p,OPEN-1)==[]
     rows=trial_observations(context,{'rows':[]},ticks,p,CLOSE)
     assert all(r.complete and r.disposition=='no_signal' for r in rows)
     missing=trial_observations(context,{'rows':[]},ticks[1:],p,CLOSE)
