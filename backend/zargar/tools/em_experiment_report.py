@@ -62,12 +62,16 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
     counts: dict = {}
     refusals: dict = {}
     exits: dict = {}
+    missing: dict = {}
     for e in ev:
         counts[e["type"]] = counts.get(e["type"], 0) + 1
         p = _j(e["payload"]) or {}
         if e["type"] == "TechniquePlanTriggerSkipped":
             k = str(p.get("stage") or p.get("reason") or "skipped")
             refusals[k] = refusals.get(k, 0) + 1
+            disp = str(((p.get("detail") or {}) if isinstance(p.get("detail"), dict) else {}).get("disposition") or "")
+            if disp.startswith("deferred") or disp == "policy_error":        # a refusal for MISSING or unreadable evidence, not for the rule
+                missing[disp] = missing.get(disp, 0) + 1
         if e["type"] == "TechniquePlanExit":
             exits[str(p.get("kind"))] = exits.get(str(p.get("kind")), 0) + 1
     promoted = [r for r in armed if _j(r["promo"])]
@@ -76,7 +80,7 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
             "plans": {"armed": len(armed), "byOrigin": _count(r["trigger"] for r in armed), "promoted": len(promoted),
                       "promotedByVariant": _count((_j(r["promo"]) or {}).get("variant") for r in promoted)},
             "activity": {"fired": counts.get("TechniquePlanTriggerFired", 0), "entriesFilled": counts.get("TechniquePlanPositionOpened", 0),
-                         "refusedOrSkipped": counts.get("TechniquePlanTriggerSkipped", 0), "refusalsByStage": refusals, "misses": counts.get("TechniquePlanError", 0), "exitsByKind": exits},
+                         "refusedOrSkipped": counts.get("TechniquePlanTriggerSkipped", 0), "refusalsByStage": refusals, "missingDataRefusals": missing, "misses": counts.get("TechniquePlanError", 0), "exitsByKind": exits},
             "questionableFills": DISPUTED.get(date, [])}
 
 
@@ -101,9 +105,16 @@ async def build(date: str) -> dict:
         for name, pid in (("baseline", base), ("experiment", str(xp.get("portfolioId") or ""))):
             out["books"][name] = await _book(c, pid, date, a, b) if pid else None
         runs = await c.fetch("""select id, created_at, status, llm, usage, result, trigger from technique_runs where technique='enhanced_market'
-                                and created_at >= $1 and created_at < $2 and result->'plan'->>'planFor' like $3""", a - dt.timedelta(hours=44), b, date + "%")
+                                and created_at >= $1 and created_at < $2 and result->'plan'->>'planFor' like $3""", a - dt.timedelta(hours=96), b, date + "%")   # a Monday plan is reviewed over the weekend
         rows = [{"id": r["id"], "created_at": r["created_at"].date().isoformat(), "status": r["status"], "llm": _j(r["llm"]) or {}, "usage": _j(r["usage"]) or {},
                  "result": _j(r["result"]) or {}} for r in runs if r["trigger"] != "experiment"]
+        # shared order-rate window (ONE per engine, all desks): rejections and the busiest submission minute of the session
+        rl = await c.fetch("""select portfolio_id, payload from events where type='RiskCheckFailed' and ts >= $1 and ts < $2""", a, b)
+        rate = [r["portfolio_id"] for r in rl if any((x.get("name") == "order_rate" and not x.get("passed")) for x in ((_j(r["payload"]) or {}).get("checks") or []))]
+        busiest = await c.fetchrow("""select date_trunc('minute', created_at) m, count(*) n from orders where created_at >= $1 and created_at < $2 group by 1 order by 2 desc limit 1""", a, b)
+        cap = _unwrap(await c.fetchval("select value from settings where key='risk.max_orders_per_minute'"))
+        out["sharedRateLimit"] = {"orderRateRejections": len(rate), "byBook": _count(rate), "busiestMinute": (str(busiest["m"]) if busiest else None),
+                                  "busiestMinuteOrders": (int(busiest["n"]) if busiest else 0), "capPerMinute": cap}
         out["modelCost"] = {"baseline": mc.summarize(mc.requests_from_runs(rows), table=(rates if isinstance(rates, dict) else {})),
                             "experiment": {"modelCalls": 0, "note": "deterministic preparation and promotion: zero model calls by construction"}}
     finally:
@@ -130,12 +141,18 @@ def render(d: dict) -> str:
             ("Giveback vs the executable peak", ("capture", "givebackVsExecutablePeak")), ("Capture coverage (scorable / snapshots)", ("capture", "coverage", "ratio")),
             ("Capture status", ("capture", "status")), ("Plans armed", ("plans", "armed")), ("Plans by origin", ("plans", "byOrigin")),
             ("Promoted source / requalified plans", ("plans", "promotedByVariant")), ("Triggers fired", ("activity", "fired")), ("Entries filled", ("activity", "entriesFilled")),
-            ("Refused or skipped", ("activity", "refusalsByStage")), ("Misses (entry errors)", ("activity", "misses")), ("Exits by kind", ("activity", "exitsByKind")))
+            ("Refused or skipped", ("activity", "refusalsByStage")), ("Of which MISSING-DATA refusals", ("activity", "missingDataRefusals")),
+            ("Misses (entry errors)", ("activity", "misses")), ("Exits by kind (P-06 = runner_protect)", ("activity", "exitsByKind")),
+            ("Capture unscorable reasons", ("capture", "coverage", "unscorableReasons")))
     for label, path in rows:
         L.append(f"| {label} | {g(b, *path)} | {g(x, *path)} |")
     mcb = (d.get("modelCost") or {}).get("baseline") or {}
     L += ["", f"Model cost of preparing the baseline: estimated {g(mcb, 'estimated', 'usd')} USD at the current price card (an estimate, not an invoice; never subtracted from trading results); "
               f"invoice-verified {g(mcb, 'invoiceVerified', 'usd')}; unknown requests {g(mcb, 'unknown', 'requests')}. Experiment: 0 model calls.", ""]
+    rl = d.get("sharedRateLimit") or {}
+    L += ["## Shared order-rate window (all desks, one engine)", "",
+          f"order_rate rejections this session: {rl.get('orderRateRejections')} {rl.get('byBook') or ''}; busiest submission minute {rl.get('busiestMinute')} with "
+          f"{rl.get('busiestMinuteOrders')} orders against a cap of {rl.get('capPerMinute')} per minute.", ""]
     q = (b.get("questionableFills") or []) + (x.get("questionableFills") or [])
     L += ["## Questionable fills (shown apart, never netted away)", ""] + ([f"- {i}" for i in q] or ["- none recorded for this session"])
     return "\n".join(L) + "\n"
