@@ -45,6 +45,9 @@ class PlanArmer(PlanRunner):
     def __init__(self, engine, technique) -> None:
         super().__init__(engine, name="technique-armer")
         self.technique = technique
+        # ED-04 (book-snapshot-v1): EM-owned bounded recorder, DEFAULT OFF; the runner's `_book_snap` is a no-op without it
+        from .profit_capture_runtime import build_observer
+        self._book_observer = build_observer(self)
 
     # ================================================================ hooks — the EM opinions
     TECHNIQUE_ID = TECHNIQUE_ID

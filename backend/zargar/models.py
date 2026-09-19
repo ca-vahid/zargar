@@ -1113,6 +1113,26 @@ class TechniqueSourceJob(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TechniqueBookSnapshot(Base):
+    """ED-04 (`book-snapshot-v1`, 2026-09-18): APPEND-ONLY EM book observations - realized / displayed / covered
+    executable, side by side. Written only by the EM recorder behind `techniques.enhanced_market.book_snapshot_observe`
+    (default OFF). Research evidence: never read by an order, exit or risk path; never edited."""
+    __tablename__ = "technique_book_snapshots"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market")
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    session: Mapped[str] = mapped_column(String(10), index=True)               # ET trading date
+    seq: Mapped[int] = mapped_column(Integer, default=0)
+    captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    reason: Mapped[str] = mapped_column(String(24), default="periodic")
+    causal_run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    build: Mapped[str] = mapped_column(String(64), default="")
+    scorable: Mapped[bool] = mapped_column(Boolean, default=False)
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TechniqueCounterfactual(Base):
     """A trade the app MISSED through a bug (a restart stranded the entry, a
     crashed loop, a dead quote stream), reconstructed after the fix by replaying

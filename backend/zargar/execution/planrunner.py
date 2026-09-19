@@ -137,6 +137,12 @@ class ArmConfig:
                    option_tradeable=d.get("optionTradeable"))
 
 
+def _book_snap_family(kind) -> str:
+    """ED-04 snapshot reason family for an exit kind: target | stop | flatten | protection."""
+    k = str(kind or "")
+    return "target" if k.startswith("tp") else "stop" if k == "stop" else "flatten" if k in ("flatten", "disarm") else "protection"
+
+
 @dataclass
 class Trade:
     """One fired trigger's execution lifecycle (auto mode), or the record of
@@ -577,6 +583,18 @@ class PlanRunner(SessionListener):
         (Tips desk request, 2026-09-15). Code default True keeps a bare test rig observable."""
         return bool(self.rt("target_distance_diagnostic", True))
 
+    def _book_snap(self, reason: str, ap: "ArmedPlan | None" = None, tr: "Trade | None" = None, kind: str | None = None) -> None:
+        """ED-04: hand one book observation to the technique's observer, if it has one (base = none, so other desks run
+        nothing). Synchronous, never awaited, never raises - a protective path calls this and moves on."""
+        obs = self.__dict__.get("_book_observer")
+        if obs is None:
+            return
+        try:
+            obs.snap(reason, {"kind": kind, "runId": getattr(ap, "run_id", None), "symbol": getattr(ap, "symbol", None),
+                              "trigger": getattr(tr, "trigger_id", None)} if (ap is not None or kind) else None)
+        except Exception:                                  # noqa: BLE001 - research must never break the runner
+            log.exception("book snapshot failed")
+
     def _shadow_enabled(self, ap: ArmedPlan) -> bool:
         """shadow-exit-v1 is an EM Practice opt-in: the technique's own knob (default off) AND the technique's default
         (Practice) book only - other desks and other books produce no experiment records."""
@@ -811,6 +829,7 @@ class PlanRunner(SessionListener):
             excess, need = 0.25, 2
         max_age = int(self.rt("stale_seconds", 180))
         now_ms = int(time.time() * 1000)
+        self._book_snap("periodic")                        # ED-04: cadence-limited inside the observer; no await
         for ap in list(self._armed.values()):
             if ap.status not in ("armed", "paused"):
                 continue
@@ -1732,6 +1751,7 @@ class PlanRunner(SessionListener):
             tr.opened_ts = int(time.time() * 1000)
             self._log(ap, "position_open", f"{tid}: filled {tr.filled_qty:g} @ {tr.avg_fill}",
                       trigger=tid, qty=tr.filled_qty, avgFill=tr.avg_fill)
+            self._book_snap("fill", ap, tr, "entry")            # ED-04: the book after the entry fill (sync, never awaited)
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_POSITION_OPENED, {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "orderId": o["id"],
                 "qty": tr.filled_qty, "avgFill": tr.avg_fill, "stop": tr.stop, "targets": tr.targets},
@@ -2218,6 +2238,7 @@ class PlanRunner(SessionListener):
                     tr.remaining = max(0.0, tr.filled_qty - sum(float(e.get("filledQty") or 0) for e in tr.exits))
                     self._log(ap, "exit_fill", f"{tid}: {x['kind']} filled {fq:g} @ {x.get('price')}, {tr.remaining:g} left",
                               trigger=tid, kind=x["kind"], qty=fq, price=x.get("price"))
+                    self._book_snap("fill", ap, tr, x.get("kind"))     # ED-04: after the fill was applied
                     if tr.remaining <= 1e-9 and tr.status != "closed":
                         tr.status = "closed"
                         tr.closed_ts = int(time.time() * 1000)
@@ -3607,6 +3628,8 @@ class PlanRunner(SessionListener):
         if qty < 1:
             return
         cfg = ap.config
+        snap_kind = _book_snap_family(kind)
+        self._book_snap(f"pre_{snap_kind}", ap, tr, kind)  # ED-04: pure capture + put_nowait BEFORE the exit; never awaited
         bid = None
         if tr.instrument == "options" and tr.order_symbol:
             q = self.engine.quotes.get(tr.order_symbol)
@@ -3625,6 +3648,7 @@ class PlanRunner(SessionListener):
         self._log(ap, "exit_submit", f"{tr.trigger_id}: {kind} SELL {qty:g} {intent.order_type} (reduce-only)",
                   trigger=tr.trigger_id, kind=kind)
         result = await self._place_with_retry(ap, tr, intent, stage=f"exit:{kind}")
+        self._book_snap(f"post_{snap_kind}", ap, tr, kind)  # ED-04: after the exit was sent (the pending quantity is now reserved)
         if result is None:
             rec["status"] = "ERROR"
             return
