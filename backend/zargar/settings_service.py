@@ -227,6 +227,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_model": "",      # empty = the extraction model
     "techniques.tip.analyst_notes_max": 12,  # shared-knowledge notes handed to each run
     "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our positions
+    "techniques.tip.review_gate": "observe",  # review-gate-v1 (2026-09-19): off | observe (journal TipReviewGate, still review) | enforce (skip a message that cannot reach a held/armed/proposed item). Unknown value = observe
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
     "techniques.tip.max_contracts_per_tip": 25,  # hard cap on option qty per proposal — budget sizing on lotto premium is nonsense (277 × $0.09, 2026-08-31)
     "techniques.tip.max_premium_per_tip": 750.0,  # $ option premium cap per tip (BBAI 2026-09-04: one 25x $0.51 loser ate the day; 1 contract always fits)

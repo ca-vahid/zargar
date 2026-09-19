@@ -1,0 +1,38 @@
+{
+  "version": "questioned-fills-v1",
+  "rule": "A fill listed here stays in every ledger (it happened in the book) but is reported APART from method results. Add an entry only with a written evidence review; never remove one silently.",
+  "fills": [
+    {
+      "book": "4611946d8ff34d66868db948aa8dab59",
+      "symbol": "MRNA260918C00165000",
+      "executions": [
+        "b25af0e3174740959a0a12039ebc19f9",
+        "20c03276214f4704a3161c66325a4313"
+      ],
+      "orders": [
+        "1f4628dbb6644dbaaab7cd3400ecc246",
+        "f4ccfe68f005489ba1c6e294850b0e41"
+      ],
+      "session": "2026-09-17",
+      "flag": "evidence-quality",
+      "reason": "Entry at 0.75 priced on a real-time OPRA band that a stale 15-minute chart print (0.70) had recentred from 1.90/2.00 while keeping the venue label (fixed by E17-01, quote provenance). Net result +$112.92 is kept on the ledger and graded apart.",
+      "evidence": "docs/techniques/tip/reviews/2026-09-17-mrna-quote-audit.md"
+    },
+    {
+      "book": "4611946d8ff34d66868db948aa8dab59",
+      "symbol": "APLD261016C00030000",
+      "executions": [
+        "0e434c0583574b21a6dc0352dda62152",
+        "ae9bc5468b53442d94478aa613c0e4dd"
+      ],
+      "orders": [
+        "546bf00881dc453c8ab3eadd46f32f14",
+        "3e6b0ea7f576445faf6730ab0cf16e6e"
+      ],
+      "session": "2026-09-14",
+      "flag": "execution-realism",
+      "reason": "The exit SELL filled at 1.5697 at 04:01:39 ET, outside any option session (pre-v0.7.73; EOD-05 added sim_option_sessions). The first real prints that day were 1.09-1.13 at 09:31-09:36 ET, so the recorded -$210 FLATTERS the outcome; the idea is graded apart, never used as method evidence.",
+      "evidence": "docs/techniques/tip/reviews/2026-09-14-eod-response.md (EOD-05); Yahoo 1m prints APLD261016C00030000 2026-09-14"
+    }
+  ]
+}
