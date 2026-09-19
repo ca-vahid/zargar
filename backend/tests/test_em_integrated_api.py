@@ -69,7 +69,7 @@ async def test_manifest_shows_every_new_knob_at_its_safe_default(rig):
     eff = {k["key"].rsplit(".", 1)[-1]: (k["default"], k["effective"]) for k in m["knobs"]}
     assert eff["preparation_policy"] == ("baseline", "baseline") and eff["conditional_review_fix"] == ("report", "report") and eff["prep_audit_quota_pct"] == (0.0, 0.0)
     assert eff["book_snapshot_observe"] == (False, False) and eff["source_scenarios_observe"] == (False, False) and eff["source_candidates_observe"] == (False, False)
-    assert eff["first_sale_rr_gate"] == ("observe", "observe") and m["policy"]["preparationPolicyVersion"] == "em-prep-policy-v1"
+    assert eff["first_sale_rr_gate"] == ("off", "off") and m["policy"]["preparationPolicyVersion"] == "em-prep-policy-v1"
     assert m["observer"]["captured"] == 0, "the ED-04 recorder exists on the EM armer and has recorded nothing (OFF)"
 
 
@@ -92,7 +92,7 @@ async def test_source_table_lists_the_full_trigger_set_and_writes_nothing(rig):
 async def test_first_sale_prep_decision_and_profit_capture_routes(rig):
     client, eng = rig
     fs = (await client.get("/api/technique/em/first-sale", params={"date": DAY})).json()
-    assert fs["mode"] == "observe" and fs["rows"][0]["symbol"] == "SBUX" and fs["rows"][0]["rRunnerEntry"] == 1.316 and fs["rows"][0]["differsFromPlanTime"] is True
+    assert fs["mode"] == "off" and fs["rows"][0]["symbol"] == "SBUX" and fs["rows"][0]["rRunnerEntry"] == 1.316 and fs["rows"][0]["differsFromPlanTime"] is True
     rid = next(k for k, p in FX["plans"].items() if p["symbol"] == "AMD")
     d = (await client.get(f"/api/technique/em/runs/{rid}/prep-decision")).json()
     assert d["mode"] == "baseline" and d["modelReview"] == "absent" and d["disposition"] == "refused" and "explanation" in d
@@ -101,13 +101,17 @@ async def test_first_sale_prep_decision_and_profit_capture_routes(rig):
     assert pc["recorderOn"] is False and pc["capture"]["status"] == "no_snapshots" and "UNKNOWN" in pc["note"]
     pid = "book-x"
     await eng.settings.set("techniques.enhanced_market.default_portfolio", pid)
-    pos = {"runId": "r", "trigger": "d1", "tradeInstance": "E1", "symbol": "SBUX261002P00095000", "underlying": "SBUX", "direction": "short", "instrument": "options", "multiplier": 100.0,
-           "positionSide": "long", "original": 1, "remaining": 1, "pendingExit": 0, "avgFill": 1.05, "realizedGross": 0.0, "feesPaid": 1.04}
+    from zargar.technique.profit_capture import build_ledger
+    from zargar.technique.profit_capture_runtime import session_window
+    sym = "SBUX261002P00095000"
+    pos = {"runId": "r", "trigger": "d1", "tradeInstance": "E1", "symbol": sym, "underlying": "SBUX", "direction": "short", "instrument": "options", "multiplier": 100.0,
+           "positionSide": "long", "original": 1, "remaining": 1, "pendingExit": 0, "avgFill": 1.05}
     now = int(dt.datetime(2026, 9, 18, 15, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
-    rec = capture_book(ids={"portfolioId": pid, "session": DAY, "build": "t"}, seq=1, now_ms=now, reason="periodic", causal=None, cash=9000.0, realized_closed_net=0.0, fees_closed=0.0,
-                       positions=[pos], quotes={pos["symbol"]: {"bid": 0.9, "ask": 1.0, "last": 0.95, "bidSize": 5, "askSize": 5, "source": "opra", "sourceTs": now - 500}}, fee_per_contract=1.04)
+    ledger = build_ledger([{"orderId": "E1", "symbol": sym, "side": "BUY", "qty": 1, "price": 1.05, "commission": 1.04, "tsMs": now - 60_000}], window=session_window(DAY), as_of_ms=now)
+    rec = capture_book(ids={"portfolioId": pid, "session": DAY, "build": "t"}, seq=1, now_ms=now, reason="periodic", causal=None, cash=9000.0, positions=[pos], instance="obs-t", ledger=ledger,
+                       quotes={sym: {"symbol": sym, "bid": 0.9, "ask": 1.0, "last": 0.95, "bidSize": 5, "askSize": 5, "sizeUnit": "contracts", "source": "opra", "quoteTs": now - 500}}, fee_per_contract=1.04)
     async with eng.sf() as s:
-        s.add(TechniqueBookSnapshot(id=new_id(), portfolio_id=pid, session=DAY, seq=1, captured_at=dt.datetime.fromtimestamp(now / 1000, dt.timezone.utc), reason="periodic", scorable=True, payload=rec))
+        s.add(TechniqueBookSnapshot(id=rec["captureId"], portfolio_id=pid, session=DAY, seq=1, captured_at=dt.datetime.fromtimestamp(now / 1000, dt.timezone.utc), reason="periodic", scorable=True, payload=rec))
         await s.commit()
     pc2 = (await client.get("/api/technique/em/profit-capture", params={"date": DAY})).json()
     assert pc2["capture"]["status"] == "ok" and pc2["series"][0]["executable"] == -17.08 and pc2["series"][0]["displayed"] == -11.04, "bid-side estimate vs mid mark, side by side"

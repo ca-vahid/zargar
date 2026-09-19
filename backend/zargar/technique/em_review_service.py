@@ -174,7 +174,7 @@ async def first_sale_rows(svc, date: str) -> dict:
                      "instrument": v.get("instrument"), "quantity": v.get("quantity"), "rung": g.get("rung"), "rRunnerEntry": g.get("rRunnerEntry"),
                      "rObservedUnderlier": g.get("rObservedUnderlier"), "min": g.get("minRiskReward"), "verdict": g.get("verdict"), "reason": g.get("reason"),
                      "planTime": g.get("planTime"), "differsFromPlanTime": g.get("differsFromPlanTime"), "payoffProxy": p.get("payoffProxy"), "fees": p.get("fees")})
-    return {"date": date, "mode": svc.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "observe"), "rows": rows}
+    return {"date": date, "mode": svc.engine.settings.get("techniques.enhanced_market.first_sale_rr_gate", "off"), "rows": rows}
 
 
 async def profit_capture(svc, date: str) -> dict:
@@ -189,7 +189,7 @@ async def profit_capture(svc, date: str) -> dict:
                               {"p": pid, "a": a, "b": b})).mappings().all()
     exe = execution_net([dict(r) for r in ex])
     payloads = [dict(x.payload or {}) for x in snaps]
-    red = reduce_session(payloads, execution_net=exe["net"])
+    red = reduce_session(payloads, execution_net=exe["net"], execution_fees=exe["fees"])
     series = [{"at": p["capturedAt"], "seq": p["seq"], "reason": p["reason"], "realized": p["book"]["realizedNet"], "displayed": p["book"].get("displayedNet"),
                "executable": p["book"].get("executableTotalNet"), "scorable": p["book"]["scorable"], "why": p["book"].get("unscorableReasons")} for p in payloads][-600:]
     return {"date": date, "book": pid, "recorderOn": bool(s_get("techniques.enhanced_market.book_snapshot_observe", False)), "execution": exe, "capture": red, "series": series,

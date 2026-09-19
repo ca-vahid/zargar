@@ -84,7 +84,7 @@ async def build(date: str) -> dict:
         p02 = [{"tradeInstance": t.get("entryOrderId"), "policy": "small-position-exit-v1", "signalTs": (t.get("p02") or {}).get("observedAt"),
                 "outcome": (t.get("p02") or {}).get("outcome"), "dollarDelta": (t.get("p02") or {}).get("delta")} for t in trades if t.get("p02")]
     exe = execution_net(ex)
-    red = reduce_session(snaps, execution_net=exe["net"], p02=p02, p06=p06)
+    red = reduce_session(snaps, execution_net=exe["net"], execution_fees=exe["fees"], p02=p02, p06=p06)
     sampled = None
     if eq:
         hi = max(eq, key=lambda r: r["equity"]); first = eq[0]
