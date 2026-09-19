@@ -19,6 +19,9 @@ Usage (from backend/):
 from __future__ import annotations
 
 import argparse
+import statistics
+import math
+import hashlib
 import asyncio
 import collections
 import datetime as dt
@@ -167,6 +170,18 @@ def report_retro(res: dict, since: str) -> None:
         by[x["ctype"]].append(x)
     for k, xs in sorted(by.items(), key=lambda kv: -usd(kv[1])):
         print(f"| {k} | {len(xs)} | ${usd(xs):,.2f} | {sum(1 for x in xs if x['keep'])} | {sum(1 for x in xs if x['mgmt'])} |")
+    # cost by message category x what the review actually DID (one row per review, its most useful action)
+    def action(x):
+        return ("management (exit plan / close / disarm)" if x["mgmt"] else "possible missed entry flagged" if x["missedTip"]
+                else "note only" if x["notes"] else "nothing")
+    print("\n| content type | useful action | reviews | est. cost | of which the gate would skip |")
+    print("|---|---|---:|---:|---:|")
+    cross = collections.defaultdict(list)
+    for x in rows:
+        cross[(x["ctype"], action(x))].append(x)
+    for (ct, act), xs in sorted(cross.items(), key=lambda kv: -usd(kv[1])):
+        sk = [x for x in xs if not x["keep"]]
+        print(f"| {ct} | {act} | {len(xs)} | ${usd(xs):,.2f} | {len(sk)} (${usd(sk):,.2f}) |")
     print("\n| source | reviews | est. cost | kept | management |")
     print("|---|---:|---:|---:|---:|")
     by = collections.defaultdict(list)
@@ -223,15 +238,83 @@ async def prospective(c, since: str) -> None:
           "actions). A few clean sessions are not statistical proof that no harmful exclusion exists.")
 
 
+# ---- model-cost alternatives: the frozen-evaluation PLAN and its budget (no provider call is made here) ----
+# Candidate list prices per MTok (Anthropic published list, read 2026-09-19; cache read ~0.1x input, 5-minute cache
+# write ~1.25x input). They live HERE, not in `llm.rates`: a candidate is not a production model. Re-verify the card
+# on the day a paid evaluation is approved - the budget below is recomputed from whatever is passed.
+CANDIDATE_RATES = {"claude-sonnet-5": {"in": 2.0, "out": 10.0, "cacheRead": 0.2, "cacheWrite": 2.5},
+                   "claude-haiku-4-5": {"in": 1.0, "out": 5.0, "cacheRead": 0.1, "cacheWrite": 1.25}}
+QUOTAS = (("management", 20), ("missed_entry_flag", 10), ("correction", 8), ("mixed_multi_ticker", 6), ("note_only", 16))
+MARGIN = 1.30          # tokenizer differences, an extra tool turn, one retry
+_CORR = re.compile(r"correct|typo|meant|edit(ed)?\b|revis|update to (my|the)", re.I)
+
+
+def stratum(x: dict) -> str:
+    return ("management" if x["mgmt"] else "missed_entry_flag" if x["missedTip"] else
+            "correction" if _CORR.search(x.get("headline") or "") else "mixed_multi_ticker" if x["mixed"] else "note_only")
+
+
+def model_plan(res: dict, *, captured: set) -> dict:
+    """Stratified case quotas + a dollar ceiling. `captured` = review runs that carry an exact request manifest -
+    ONLY those are replayable; the historical rows size the budget and show how rare the hard strata are."""
+    rows = [r for r in res["rows"] if r["in"]]
+    days = max(1, len({x["at"].date() for x in rows}))
+    by = collections.defaultdict(list)
+    for r in rows:
+        by[stratum(r)].append(r)
+    strata, total = [], {m: 0.0 for m in CANDIDATE_RATES}
+    for name, quota in QUOTAS:
+        g = sorted(by.get(name, []), key=lambda x: hashlib.sha256(x["id"].encode()).hexdigest())
+        med_in = int(statistics.median(x["in"] for x in g)) if g else 0
+        med_out = int(statistics.median(x["out"] for x in g)) if g else 0
+        cost = {m: round(quota * (med_in / 1e6 * rt["in"] + med_out / 1e6 * rt["out"]) * MARGIN, 2) for m, rt in CANDIDATE_RATES.items()}
+        for m in total:
+            total[m] += cost[m]
+        strata.append({"stratum": name, "history": len(g), "perDay": round(len(g) / days, 1), "quota": quota,
+                       "capturedNow": sum(1 for x in g if x["id"] in captured), "medianIn": med_in, "medianOut": med_out,
+                       "cost": cost, "opusUsd": round(quota * (statistics.mean(x["usd"] for x in g) if g else 0), 2)})
+    cap = math.ceil(sum(total.values()) / 5.0) * 5.0
+    return {"strata": strata, "totals": {m: round(v, 2) for m, v in total.items()}, "capUsd": cap,
+            "capturedReviews": len(captured), "historyReviews": len(rows)}
+
+
+def report_model_plan(plan: dict, since: str) -> None:
+    print(f"# Cheaper intake-review processing - frozen evaluation plan and budget (history since {since})\n")
+    print("No provider call was made to produce this plan. Candidates are evaluated on the EXACT captured request of real "
+          "reviews (`review_frozen.py`): tools are served from the case, a management tool is recorded as a proposed action and "
+          "never executed. Production keeps its model whatever the result.\n")
+    print("| case type | in history | per day | quota | captured now | median in / out tokens | Sonnet 5 | Haiku 4.5 | same cases on Opus 5 (recorded mean) |")
+    print("|---|---:|---:|---:|---:|---|---:|---:|---:|")
+    for x in plan["strata"]:
+        print(f"| {x['stratum']} | {x['history']} | {x['perDay']} | {x['quota']} | {x['capturedNow']} | {x['medianIn']:,} / {x['medianOut']:,} | "
+              f"${x['cost']['claude-sonnet-5']:,.2f} | ${x['cost']['claude-haiku-4-5']:,.2f} | ${x['opusUsd']:,.2f} |")
+    t = plan["totals"]
+    print(f"\n**Budget: ${plan['capUsd']:,.0f} hard ceiling** (`frozen.ReplayBudget`, checked before and charged after every attempt) = "
+          f"Sonnet 5 ${t['claude-sonnet-5']:,.2f} + Haiku 4.5 ${t['claude-haiku-4-5']:,.2f}, one pass per model, including a "
+          f"{int(round((MARGIN - 1) * 100))}% margin. No repeat passes inside this budget.")
+    print(f"\nReplayable today: {plan['capturedReviews']} captured review(s) of {plan['historyReviews']} in history. A review before "
+          "capture was switched on kept its tool results but not its request, so it cannot be replayed faithfully; the quotas fill "
+          "from reviews captured prospectively. At the per-day rates above the rare case types (management, missed-entry, correction) "
+          "set the calendar, not the budget.")
+    print("\nAcceptance to even DISCUSS a change (not an activation rule): zero missed management actions, zero invalid replies on "
+          "the management and correction cases, missed-entry flags matched, and every disagreement read by a human. One pass is "
+          "not a measure of run-to-run variance.")
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
     ap.add_argument("--since", default="2026-09-09")
     ap.add_argument("--prospective", action="store_true")
+    ap.add_argument("--model-plan", action="store_true", help="frozen-evaluation case quotas + budget for cheaper review models (no provider call)")
     a = ap.parse_args()
     c = await asyncpg.connect(a.db, server_settings={"default_transaction_read_only": "on"})
     try:
-        if a.prospective:
+        if a.model_plan:
+            cap = {r["id"] for r in await c.fetch("""select id from tip_analyst_runs where kind='intake' and verdict='review'
+                                                     and trace::text like '%reviewManifest%'""")}
+            report_model_plan(model_plan(await retrospective(c, a.since), captured=cap), a.since)
+        elif a.prospective:
             await prospective(c, a.since)
         else:
             report_retro(await retrospective(c, a.since), a.since)

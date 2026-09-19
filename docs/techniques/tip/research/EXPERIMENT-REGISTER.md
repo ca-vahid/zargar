@@ -115,6 +115,17 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Evaluation window:** retrospective 2026-09-09..18 on the same evidence: 186 of 556 reviews skipped, $121.83 of $379.21 (32%), 0 false negatives; prospective = 5 observe sessions (2026-09-21..25, `tip_review_gate_eval --prospective`). **Decision rule:** a REVIEW checkpoint, never an automatic switch - 0 management false negatives (prospective AND retrospective) are necessary, and a human reads the skipped corrections / new entries / mixed messages / deferred actions; sessions are counted after the actual deployment (0.8.23, 2026-09-19 12:47 ET; first observed session 2026-09-21); the user approves any switch. ECON-03 (2026-09-19): absent or unrestored desk components always review.
 - **Status:** built, observe (2026-09-19).
 
+## `review-model-eval` (opened 2026-09-19, PREPARED - no paid run)
+
+- **Hypothesis:** a cheaper model can do the INTAKE REVIEW (not the appraisal) without missing a management action; note-only reviews are ~80% of review spend.
+- **Variants:** production model (recorded baseline) vs `claude-sonnet-5` vs `claude-haiku-4-5`, each on the exact captured request; tools served from the case; a management tool is a recorded PROPOSAL, never executed.
+- **Eligible setup:** an intake review captured with `techniques.tip.review_capture_context` on (exact header + system). Reviews before capture are NOT replayable (request not kept). **Unit:** one review. **Episode identity:** intake run id.
+- **Primary metric:** missed management actions (must be 0), invalid replies on management/correction cases (0), missed-entry flag agreement; extra actions reported apart, never netted.
+- **Costs:** $35 hard ceiling (`frozen.ReplayBudget`), 60 stratified cases (20 management / 10 missed-entry / 8 correction / 6 mixed / 16 note-only), one pass per model; plan `economics/review-model-evaluation-plan.md` (`tip_review_gate_eval --model-plan`). Candidate list prices live in the tool, not in `llm.rates`; re-verify on the approval day.
+- **Regime:** `techniques/tip/review_frozen.py` (`case v1`).
+- **Decision rule:** a paid run needs the user's approval; a result can only open a discussion - the production model changes on a user decision, never automatically. One pass does not measure run-to-run variance.
+- **Status:** prepared; capture knob default OFF.
+
 ## `feasibility-annotate`
 
 - **Hypothesis:** annotating every TAKE with the expression's feasibility and payoff (without downgrading)

@@ -149,3 +149,26 @@ def test_render_prints_marked_and_realized_after_cost_separately_with_open_pnl()
     assert "09-19 03:59" in row and "MARKED after model cost (primary)" in out
     assert "Interval baseline: 8,925.42 = the 2026-09-17 accounting-day mark" in out
     assert "Equity identity:** not printed" in out                               # the report starts after inception
+
+
+def test_every_actionable_idea_gets_one_disposition_and_only_processing_misses_are_avoidable():
+    cd, ak = tip_outcomes.classify_disposition, tip_outcomes.avoidable_key
+    base = dict(signal_status="proposed", verdict="take", filled=False, open_qty=0.0, proposals=[], orders=[], appraise=None, plan=None)
+    assert cd(**{**base, "filled": True, "open_qty": 2.0}) == {"disposition": "filled", "detail": "open", "reason": None}
+    q = cd(**{**base, "orders": [{"side": "BUY", "status": "REJECTED_RISK", "reject_reason": "quote age 10.5s (max 10s)"}]})
+    assert (q["disposition"], q["detail"]) == ("order_unfilled", "quote_age") and ak(q) == "order_unfilled:quote_age"
+    lim = cd(**{**base, "orders": [{"side": "BUY", "status": "CANCELLED", "reject_reason": None}]})
+    assert lim["detail"] == "limit_not_reached" and ak(lim) is None                       # the market's doing, not ours
+    gate = cd(**{**base, "orders": [{"side": "BUY", "status": "REJECTED_RISK", "reject_reason": "limit 3.85 is 0.25 from mid"}]})
+    assert gate["detail"] == "risk_gate" and ak(gate) is None                             # a risk check doing its job
+    inf = cd(**{**base, "proposals": [{"status": "expired", "reviewRequired": "no quantity satisfies the $90 risk budget: one unit risks $192", "verdict": "take"}]})
+    assert (inf["disposition"], inf["detail"]) == ("risk_infeasible", "budget") and ak(inf) is None
+    fail = cd(**{**base, "verdict": None, "appraise": {"status": "failed", "error": "timeout: final answer"}})
+    assert fail["disposition"] == "analysis_failed" and ak(fail) == "analysis_failed"
+    assert cd(**{**base, "verdict": "skip", "proposals": [{"status": "rejected", "declineReason": "analyst said skip"}]})["disposition"] == "declined"
+    exp = cd(**{**base, "proposals": [{"status": "expired"}]})
+    assert exp["disposition"] == "approval_expired" and ak(exp) == "approval_expired"
+    lvl = cd(**{**base, "plan": {"armed": False, "reason": "session closed"}})
+    assert (lvl["disposition"], lvl["detail"]) == ("order_unfilled", "level_never_reached") and ak(lvl) is None
+    assert cd(**{**base, "plan": {"armed": True}})["disposition"] == "pending"
+    assert cd(**{**base, "verdict": None, "signal_status": "parked"})["disposition"] == "late"

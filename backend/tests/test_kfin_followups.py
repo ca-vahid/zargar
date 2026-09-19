@@ -229,3 +229,39 @@ async def test_delayed_sample_timing_and_provenance_eligibility(app_client, monk
     # a finalized row is left alone by a racing second call
     again = await cohort.sample_one(eng, late.id)
     assert again["delayedStatus"] == "late"
+
+
+async def test_a_pending_consolidation_supersedes_disputed_duplicates_and_stays_non_operative(app_client):  # noqa: F811
+    """D5 (2026-09-19): duplicate PENDING proposals consolidate into ONE candidate that is itself born pending
+    (non-operative); the members keep their revisions and are reversibly superseded; a replay is idempotent."""
+    _, eng = app_client
+    svc = eng.signals_service
+    await eng.settings.set("techniques.tip.knowledge_apply_enabled", False, journal=False)
+    ids = []
+    for i in range(3):
+        n = await svc.add_tip_note("rule", f"RULE refinement - ladder/trailing coherence, case {i}.", author="analyst:x")
+        await svc.flag_tip_notes([n["id"]], needs_human=True)
+        ids.append(n["id"])
+    async with eng.sf() as session:
+        revs = {i: int(await session.scalar(select(TipNote.revision_no).where(TipNote.id == i))) for i in ids}
+    text = "RULE (ladder/trailing coherence - CANDIDATE, not operative): one consolidated clause."
+    batch = {"batchId": "d5-test", "scope": "rule", "author": "consolidation:d5",
+             "merge": {"supersedes": ids, "new_rule": text, "pending": True}, "expected_revisions": revs}
+    resolve = [{"id": i, "revision": revs[i]} for i in ids]
+    h = payload_hash(resolve=resolve, batches=[batch], evidence=[])
+    assert h != payload_hash(resolve=resolve, batches=[{**batch, "merge": {**batch["merge"], "pending": False}}], evidence=[])
+    out = await apply_consolidation(eng, manifest_hash=h, resolve=resolve, batches=[batch])
+    new_id = out["batches"]["d5-test"]["newRuleId"]
+    async with eng.sf() as session:
+        cand = await session.get(TipNote, new_id)
+        members = [await session.get(TipNote, i) for i in ids]
+        snaps = (await session.execute(select(TipNoteRevision).where(TipNoteRevision.note_id.in_(ids)))).scalars().all()
+    assert cand.needs_human is True and cand.superseded_by is None          # the candidate is a PROPOSAL, not policy
+    assert all(m.superseded_by == new_id and m.deleted_at is None for m in members)   # nothing deleted; reversible link
+    assert len(snaps) >= len(ids)                                              # every member keeps its revision history
+    from zargar.techniques.tip.analyst import PENDING_HEADER, _rules_text
+    rules_text, _n, _snap = await _rules_text(eng)
+    operative, _, pending = rules_text.partition(PENDING_HEADER)
+    assert text not in operative and text in pending
+    again = await apply_consolidation(eng, manifest_hash=h, resolve=resolve, batches=[batch])
+    assert again.get("replay") is True

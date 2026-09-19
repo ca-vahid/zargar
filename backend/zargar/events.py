@@ -193,6 +193,7 @@ AUTH_SIGN_IN = "AuthSignIn"
 
 # EOD-01 (2026-09-14): the Discord pipe's liveness is journaled, not inferred from API health
 TIP_INTAKE_STALLED = "TipIntakeStalled"
+SIGNAL_COLD_PARK_RECHECK = "SignalColdParkRecheck"   # 2026-09-19: a cold-quote park re-verified as soon as the quote warmed (same recovery path)
 TIP_REVIEW_GATE = "TipReviewGate"      # review-gate-v1 (2026-09-19): may this message reach a held/armed/proposed item? observe | enforce
 TIP_INTAKE_RECOVERED = "TipIntakeRecovered"
 
