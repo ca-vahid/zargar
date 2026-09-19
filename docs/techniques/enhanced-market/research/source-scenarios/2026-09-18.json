@@ -1,6 +1,6 @@
 {
  "date": "2026-09-18",
- "asOf": "2026-09-19T01:06:00+00:00",
+ "asOf": "2026-09-19T01:25:17+00:00",
  "versions": {
   "scenarios": "source-scenarios-v1",
   "matcher": "source-plan-match-v1",
@@ -9483,6 +9483,10 @@
    "firedTs": null,
    "outcome": null,
    "rMultiple": null,
+   "stillSkippedBy": [
+    "T3.3d no volume surge (1.13x)",
+    "T3.3c/f no follow-through / failed to hold"
+   ],
    "benefitOfExclusion": null,
    "costOfExclusion": null,
    "label": "HINDSIGHT diagnostic on the underlying; a single path; never grounds for loosening the production gate"
@@ -9495,6 +9499,7 @@
    "firedTs": null,
    "outcome": null,
    "rMultiple": null,
+   "stillSkippedBy": [],
    "benefitOfExclusion": null,
    "costOfExclusion": null,
    "label": "HINDSIGHT diagnostic on the underlying; a single path; never grounds for loosening the production gate"
@@ -9507,6 +9512,7 @@
    "firedTs": null,
    "outcome": null,
    "rMultiple": null,
+   "stillSkippedBy": [],
    "benefitOfExclusion": null,
    "costOfExclusion": null,
    "label": "HINDSIGHT diagnostic on the underlying; a single path; never grounds for loosening the production gate"
@@ -9519,6 +9525,7 @@
    "firedTs": null,
    "outcome": null,
    "rMultiple": null,
+   "stillSkippedBy": [],
    "benefitOfExclusion": null,
    "costOfExclusion": null,
    "label": "HINDSIGHT diagnostic on the underlying; a single path; never grounds for loosening the production gate"
@@ -9531,6 +9538,7 @@
    "firedTs": null,
    "outcome": null,
    "rMultiple": null,
+   "stillSkippedBy": [],
    "benefitOfExclusion": null,
    "costOfExclusion": null,
    "label": "HINDSIGHT diagnostic on the underlying; a single path; never grounds for loosening the production gate"
@@ -9543,6 +9551,7 @@
    "firedTs": 1789738200000,
    "outcome": "stopped",
    "rMultiple": -1.25,
+   "stillSkippedBy": [],
    "benefitOfExclusion": 1.25,
    "costOfExclusion": 0.0,
    "label": "HINDSIGHT diagnostic on the underlying; a single path; never grounds for loosening the production gate"

@@ -2408,3 +2408,19 @@ Shared session timestamp arithmetic is memoized by date plus the resolved close 
 ### Cartel provider non-emission — 2026-09-18
 
 Opt-in Cartel Practice interval verification retains positive, complete SIP trade evidence for minutes with no price-eligible trade and no emitted native bar. Proofs are separate from bars and saved in decision-context v2. Real gaps, incomplete responses and Live/paper accounts remain strict; recovery advances observation cutoff and never creates historical entries. Existing risk and exit paths are unchanged. See techniques/options-cartel/VERIFIED-INTERVALS.md.
+
+### 2026-09-18 evening (EM desk) - integrated delivery: three inert hooks on the shared runner, three EM-owned tables
+
+Shared `execution/planrunner.py` gained hooks whose BASE behaviour is "do nothing", so no other desk runs new code:
+`first_sale_policy()` -> `"off"` and `first_sale_record()` -> `None` (the entry-only `_first_sale_check` sits after sizing and
+before the order intent; a hook error is logged and never blocks an entry; exits never pass through it); `_book_snap()` - a
+synchronous, never-awaited call that returns immediately unless the technique attached `_book_observer` (only EM's `PlanArmer`
+does, and its knob is OFF). Call sites: the quote watch (cadence-limited inside the observer), before and after every `_exit`
+order, and after entry / exit fills. Invariant kept: research never sits ahead of a protective decision - capture is pure and
+`put_nowait`, the bounded recorder drops visibly. `technique/vision.py` now keeps a per-request ledger (`result.modelRequests`)
+so a retried or failed model request is never read as free. New EM-owned tables (additive, created by `db.create_all`):
+`technique_book_snapshots`, `technique_prep_decisions`, `technique_source_candidates`. New settings are all
+`techniques.enhanced_market.*` except `llm.pricing_table` (default `[]` = cost unknown). Read-only routes under
+`/api/technique/em/*`. Lesson for every desk's tooling: a walk-forward row's `session` is the session a plan was BUILT FROM; the
+session it TRADES is `technique_sweeps.params.planFor` - joining on the former shifted a whole comparison by one day before it
+was caught against the execution ledger.

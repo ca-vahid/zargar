@@ -1441,3 +1441,56 @@ key stays open (verified while the raw write is queued and after it is acknowled
 Partial-depth rule accepted; main `edc5dd0` (Tips #206-#208) merged cleanly; 70 focused + shared-change tests, build and
 release check green on the merged SHA; arming solo on the pre-merge tree 30 passed + the known baseline failure. Live stays
 v0.8.13 build `46c50eb`. Strategy changes deferred; the executable-profit measurement (ED-04) is the next work item.
+
+### 2026-09-18 evening - integrated delivery (A-E) built on one candidate; SBUX: R2 was never re-measured at the final quantity
+
+Closure: `reviews/INTEGRATED-DELIVERY-RESPONSE-2026-09-18.md`. Nothing below changes baseline Practice preparation or trading;
+every new policy / capture switch is OFF, and the one observation default is named.
+
+**Finding (SBUX 2026-09-18, event 165135; run `8a79a643`, trigger d1 breakdown).** Saved plan: entry 96.0907, stop 97.681,
+targets 94.1689 / 92.2471 / 90.3253, R:R 3.63 - measured to TP3, because `technique.rr_gate_target=auto` resolves to TP3
+whenever `technique.arm.contracts=0` (risk-based sizing leaves the quantity unknown at plan time). At the fire the runner's entry
+was the confirming close 95.335, the sizer bought ONE put, and a position of fewer than three contracts leaves whole at TP2:
+(95.335 - 92.2471) / (97.681 - 95.335) = **1.316R** against `min_risk_reward` 3.0. The documented rule ("R2 is measured where the
+position exits") was applied at plan time with the wrong quantity assumption and never re-applied after sizing. It is an
+UNDERLYING rule and stays one: no premium metric was substituted, 3R was not weakened, and the underlying's live price at
+admission - which the runner never captured - stays unknown in the record.
+
+**Change (`first-sale-v1`).** One versioned record at the final quantity and price (`TechniqueFirstSale`), journaled on the entry
+path after sizing and before the intent: the exit rung for that quantity (1-2 contracts -> `single_contract_exit`; 3+ contracts
+and shares -> the book's TP3; a pinned `rr_gate_target` is honoured), R on the saved entry / the runner's entry / the observed
+underlier (unknown when not observed), fees, spread cost, a labelled delta payoff proxy, the plan-time measurement beside it, and an
+order-free vehicle comparison on the chain rows already in hand. Setting `techniques.enhanced_market.first_sale_rr_gate` =
+`observe` (DEFAULT: records, never refuses) | `enforce` (refuses the ENTRY when R at the real exit rung is below the minimum;
+unknown never refuses; exits never pass through it) | `off`. Retrospective on the order-intent journal
+(`research/first-sale/2026-09-15_2026-09-18.md`): of 28 EM entries in four sessions, `enforce` would have refused exactly ONE -
+SBUX (-84.10). Break families are the exposed case: their entry is the confirming close, which eats reward the plan-time number
+assumed. `enforce` is a separate activation decision.
+
+**Other verdicts recorded tonight (all order-free).**
+- Conditional-plan review (`conditional-review-v1`): "the breakout has not happened yet" is classified and discarded clause by
+  clause; every other objection is kept; a reason that opens with a trigger id reaches that trigger only. On the REAL 09-18
+  overnight reviews (NVDA, META, MRNA, MU) the invalid clause was never the only objection - nothing is rescued. The mismatch was
+  real but was not why those plans were vetoed. Report-only under baseline (`conditional_review_fix=report`).
+- Preparation comparison (`research/prep-compare/2026-09-15_2026-09-18.md`, zero model calls, shared book `capacity-v1`):
+  proxy R, four sessions - model-selected +7.68 / -0.93 / +0.85 / -3.52; deterministic +7.90 / -1.76 / -0.40 / -2.78. The
+  deterministic selection roughly doubles the candidate count and meets the daily-loss halt more often. PROXY ONLY (underlying
+  replay; no option evidence exists for unselected plans). Actual baseline dollars: -220.30 / -147.55 / +222.65 / -299.33 =
+  -444.52. Neither selection is shown to be better; the model reads cost about 4.2M input + 1.6M output tokens per evening at
+  an UNKNOWN price (no dated price row is configured - never invented).
+- Source fidelity (`research/source-scenarios/2026-09-18.md`): MU was spoken, TSLA was extracted -> `conflict`, held; MBGO
+  unresolved (AVGO is a hypothesis); the 700C in the EvaPanda note is an option mention, not a target; 1155 beside 160C/165C is a
+  flagged conflict, never 155. The AMD 2.97R breakout and the SPCX long (k2, 2.56R) stay NAMED refusals; the armed SPCX trigger
+  was the opposite short reject. The author gave NVDA no numeric level: no app geometry, held - never "aligned".
+- Requalification (`requalification-v1`) on 09-18 bars: fresh NVDA structure after the 09:31 invalidation gave entry 219.76 /
+  stop 218.27 with the author target 222 = 1.51R -> refused by R2, threshold untouched. MRNA / TSLA / META (EvaPanda): no
+  author target beyond the fresh entry -> held. ARM: stop 3.04% > the 3% cap -> refused.
+- DRAM stop (19:45:24 -> 19:45:59 UTC): the MKT exit was accepted in 0.4 s; the sim waited because the thin contract's NBBO
+  source time was older than its freshness limit (`SimFillWaiting` 19:45:47) and filled at 0.24 when a fresh OPRA quote arrived -
+  the same bid that triggered the stop. No EM-side defect and no demonstrated price loss; an on-demand refresh would return the
+  same unchanged venue timestamp. Left as it is; how the shared simulator treats an unchanged standing quote is for its owners.
+- SKHY (19:22:05 UTC): the provider 429 outlasted the client's ~1.8 s back-off; a fired put entry sent nothing. Built, OFF:
+  ONE re-pick after `pick_retry_after_429_s` (cap 8 s) only if the underlying has not run 0.25R past the entry; never stale chain
+  data, never a loop. The missed trade belongs in the counterfactual ledger after the fix is live (rollout checklist).
+- ORCL 09-17: both fills carry `source: opra` raw evidence with no transform (buy 1.12 at the ask of 0.76/1.12, sell 3.65 at the
+  bid of 3.65/3.90). The 0.36-wide entry book (38% of mid) is the questionable part, not a derived quote. Cash is not rewritten.
