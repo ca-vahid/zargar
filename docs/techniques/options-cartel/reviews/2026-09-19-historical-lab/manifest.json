@@ -1,0 +1,9 @@
+{
+  "sourceReportHash": "badc8e3860ef363b280dae8c6157cde5bbbf9149cbb0ad5bbcdfac6377b39765",
+  "evidenceSha256": "badc8e3860ef363b280dae8c6157cde5bbbf9149cbb0ad5bbcdfac6377b39765",
+  "toolSha256": "68d1de3e88fd708c45f8c34493b248a8cde5a75cbb4091f8280c56063210e892",
+  "originalGeneratedAt": "2026-09-19T16:59:02.305912+00:00",
+  "nativeRequests": 55,
+  "note": "Provider history may be revised after this retrieval; compare hashes before treating reruns as identical.",
+  "postRunValidation": "All nine selected preparations verified done; added explicit status guard does not change this population."
+}
