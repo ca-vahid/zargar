@@ -118,6 +118,27 @@ async def test_gap_verification_advances_cutoff_and_preserves_no_signal(repo,mon
     assert read_entry(runtime.plans['r1'],bars,OPEN+10*MIN,entry_after=state['observeAfter'],verified_intervals=state['verifiedIntervals'])['signal'] is None
 
 
+async def test_enabled_practice_retries_after_one_minute_without_tight_loop(repo,monkeypatch):
+    from .test_options_cartel_review_quality import make_runtime
+    from zargar.techniques.options_cartel.observation_health import repair_gaps
+    runtime=await make_runtime(repo)
+    await repo.engine.positions.load();await repo.engine.settings.set(SETTING,True)
+    calls=[]
+    async def load(*args):calls.append(runtime.clock());return []
+    async def no_proof(*args):return {}
+    monkeypatch.setattr('zargar.techniques.options_cartel.nonemission.verify',no_proof)
+    await repair_gaps(runtime,load=load)
+    await repair_gaps(runtime,load=load)
+    assert len(calls)==1
+    runtime.clock=lambda:OPEN+11*MIN
+    await repair_gaps(runtime,load=load)
+    assert len(calls)==2
+    await repo.engine.settings.set(SETTING,False)
+    runtime.clock=lambda:OPEN+12*MIN
+    await repair_gaps(runtime,load=load)
+    assert len(calls)==2  # disabled/default still uses five minutes
+
+
 async def test_controller_uses_proofs_only_when_enabled_and_preserves_real_risk_path(repo,monkeypatch):
     from zargar.models import TechniqueRun
     from zargar.techniques.options_cartel.plans import CartelPlan

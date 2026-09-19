@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ...domain import Bar
 from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import ET, session_bounds
-from .data import DailyBar
+from .data import DailyBar, completed_daily
 from .data_quality import pack, trusted
 from .entry import read_entry
 from .exits import ExitCampaign, ExitState, allocation_preview, allocations, decide_exits, record_fill
@@ -75,8 +75,14 @@ def compare_rankings(candidates: list[dict], *, execution_slots=5):
             strength = number(ranking.get('directionalRelativeStrength'))
         theme_value = number(theme.get('medianRelativeStrength'))
         theme_known = _finite(theme.get('strengthKnown')) and theme['strengthKnown'] >= 3 and theme_value is not None
+        source_at=candidate.get('sourceAt')
+        history=completed_daily([DailyBar.model_validate(b) for b in candidate.get('daily') or []],source_at) \
+            if type(source_at) is int else []
+        trigger=number(candidate.get('trigger'))
+        distance=(trigger/history[-1].close-1)*100*(1 if candidate.get('direction')=='long' else -1) \
+            if history and trigger is not None and candidate.get('direction') in ('long','short') else None
         rows.append({'id': identity, 'analysisId': candidate.get('analysisId'), 'symbol': candidate['symbol'],
-            'structuralTargetR': number(ranking.get('structuralTargetR')), 'relativeStrength': strength,
+            'structuralTargetR': number(ranking.get('structuralTargetR')), 'relativeStrength': strength, 'triggerDistancePct':distance,
             'dailyVolume': number(ranking.get('dailyVolume')), 'dollarVolume': number(leader.get('dailyDollarVolume')),
             'volumeVsPrior20': number(leader.get('volumeVsPrior20')), 'themeKnown': theme_known,
             'themeRelativeStrength': theme_value if theme_known else None})
@@ -88,10 +94,18 @@ def compare_rankings(candidates: list[dict], *, execution_slots=5):
         desc(r['dailyVolume']), r['symbol'], r['id']))
     leaders = sorted(rows, key=lambda r: (not r['themeKnown'], desc(r['themeRelativeStrength']),
         desc(r['relativeStrength']), desc(r['volumeVsPrior20']), desc(r['dollarVolume']), r['symbol'], r['id']))
+    near=sorted([r for r in rows if r['triggerDistancePct'] is not None and r['triggerDistancePct']>=0],key=lambda r:(
+        r['triggerDistancePct'],
+        desc(r['relativeStrength']),r['symbol'],r['id']))
+    liquid=sorted([r for r in rows if r['dollarVolume'] is not None],key=lambda r:(desc(r['dollarVolume']),desc(r['relativeStrength']),r['symbol'],r['id']))
     base_ranks, leader_ranks = ({r['id']: i+1 for i, r in enumerate(order)} for order in (baseline, leaders))
     baseline_ids, leader_ids = ([r['id'] for r in order[:execution_slots]] for order in (baseline, leaders))
     return {'version': VERSION, 'policies': ['structural_r_v1', 'leader_first_v1'],
         'baselineIds': baseline_ids, 'leaderIds': leader_ids,
+        'opportunityComparisons':{'version':'cartel-opportunity-ranking-1',
+            'nearestUnbrokenIds':[r['id'] for r in near[:execution_slots]],
+            'liquidFirstIds':[r['id'] for r in liquid[:execution_slots]],
+            'note':'Research only; distance/liquidity ranking does not establish baseline coverage, contract eligibility or profit.'},
         'baselineOrderIds': [r['id'] for r in baseline], 'leaderOrderIds': [r['id'] for r in leaders],
         'overlapIds': [i for i in baseline_ids if i in leader_ids],
         'candidates': [{**r, 'baselineRank': base_ranks[r['id']], 'leaderRank': leader_ranks[r['id']],

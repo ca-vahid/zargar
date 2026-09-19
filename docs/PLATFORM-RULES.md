@@ -125,6 +125,16 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### Cartel Practice repair boundary and opportunity research — 2026-09-18
+
+The v0.8.20 Cartel-only repair path (enabled verified-interval Practice setting)
+excludes all buckets already closed when repair evidence arrives, but may evaluate
+the next future closed bucket. Existing arm/pause/restart boundaries never move
+backward. No provider evidence maturity, execution-age, quote, risk or Live rule
+is relaxed. Repair pacing is bounded at once/minute for this path; other accounts
+retain five minutes. Research rankings based on distance/liquidity remain outside
+order authority. See `techniques/options-cartel/reviews/2026-09-18-opportunity/`.
+
 ### Cartel final-dispatch entry authority — 2026-09-13
 
 OrderManager.place accepts an optional server-only synchronous before_submit guard,

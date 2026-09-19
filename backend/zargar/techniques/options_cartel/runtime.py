@@ -643,6 +643,8 @@ class CartelRuntime(CartelObserver):
                 reasons.append(f"Observation has {health['overdueMissingMinutes']} overdue minute gaps; bounded repair is pending.")
             if health.get('repairError'):
                 reasons.append(health['repairError'])
+            if health.get('untrustedMinutes'):
+                reasons.append(f"Verifying {health['untrustedMinutes']} price intervals before entry; no trade has been submitted.")
         reasons.extend(message for p in positions for message in p["attention"])
         result.update(needsAttention=bool(reasons), attentionReasons=reasons,
                       summary=reasons[0] if reasons else "Managing confirmed Cartel exposure." if positions else
@@ -651,6 +653,9 @@ class CartelRuntime(CartelObserver):
                       if row['status'] == 'armed' and state['phase'] == 'waiting' and self.clock() < state['opensAt'] else
                       "Cartel signal awaits approval." if result["awaitingApproval"] else
                       "Entry window expired without a purchase." if row['status'] == 'expired' and not state.get('signal') else
+                      "Data coverage is clear now; waiting for a fresh entry confirmation. Earlier checks are in decision history."
+                      if state.get('decisionHistory') and state['decisionHistory'][-1].get('decision') in
+                          ('missing_bucket','untrusted_confirmation') and not health.get('missingMinutes') and not health.get('untrustedMinutes') else
                       "Last entry check: " + state['decisionHistory'][-1]['reason'] if state.get('decisionHistory') else
                       f"Cartel {row['mode']}: {state['phase']}.")
         return result
