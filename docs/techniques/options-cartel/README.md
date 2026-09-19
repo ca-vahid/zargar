@@ -1,6 +1,6 @@
 # Options Cartel — current guide
 
-Updated 2026-09-16. Technique id: `options_cartel`. Deployment evidence is separate from source status.
+Updated 2026-09-18. Technique id: `options_cartel`. Deployment evidence is separate from source status.
 Sean Trades (`@SRxTrades`) is the source author; the app's numerical interpretations and Practice experiments are identified separately.
 
 The desk supports daily preparation, automatic Practice execution, separately permissioned Live execution, durable position management, actual daily accounting and non-executing research. The current guides describe code behavior; app-wide versions and dated deployment notes do not by themselves prove what process is running. No profitable strategy or exact author replication has been established.
@@ -15,6 +15,12 @@ The desk supports daily preparation, automatic Practice execution, separately pe
 Practice uses the configured Options Cartel Practice book. Live has separate settings and permissions. Preparation builds plans and may arm them; entry orders still require the engine's closed-bar, data, quote, cash/risk and execution checks. An armed plan is not a filled position. Held positions retain their protective management when preparation is stopped or a new plan expires.
 
 ## Reading status correctly
+
+See the [September 18 opportunity audit](reviews/2026-09-18-opportunity/README.md)
+for the measured selection comparison and actual after-fee accounting. New
+pre-session profitability snapshots also freeze nearest-level and liquidity-first
+research lists; these do not change automatic stock selection. Daily review
+separates recorded trigger touches from unresolved coverage and historical refusals.
 
 - **Armed** means waiting for a valid entry, not purchased. Before its first session, a plan names that future date and owes no prior-day observation minutes.
 - **Waiting for benchmark** means the provider has not supplied the required completed SPY/QQQ session. It is not a bearish or bullish judgment.

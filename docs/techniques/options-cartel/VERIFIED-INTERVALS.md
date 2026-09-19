@@ -42,9 +42,17 @@ Repair is bounded to five plans per pass and eight intervals per plan, with a
 uncertifiable early minutes cannot starve later ones. Ordinary successful bar
 recovery persists even when optional verification fails.
 
+As of v0.8.20, enabled Practice repairs retry at most once per minute; other
+paths retain the five-minute interval. Freshly recovered native bars are removed
+from the verification probe set. This does not reduce the evidence maturity or
+relax the complete-response requirements.
+
 Evidence is installed only while the plan remains armed/waiting. Installing new
 evidence advances `observeAfter`; repaired history does not cause a retrospective
-entry. Submission rechecks evidence and current feature/account scope. Disabling
+entry. Enabled Practice advances to the current bucket start, excluding every
+already-closed bucket while allowing the current bucket's future close to be
+evaluated. Existing arming, restart and pause cutoffs never move backward. Other
+accounts retain the original repair-time boundary. Submission rechecks evidence and current feature/account scope. Disabling
 the setting restores strict minute-presence behavior for new entries; it does not
 stop protective position management.
 

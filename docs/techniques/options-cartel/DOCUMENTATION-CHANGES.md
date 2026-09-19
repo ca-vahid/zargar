@@ -1,5 +1,17 @@
 # Cartel documentation changes
 
+## 2026-09-18 — opportunity audit and v0.8.20 recovery/reporting
+
+- Added a reproducible read-only candidate/distance/trigger audit with September
+  8–18 actual accounting and September 16–18 frozen selection comparisons.
+  Primary short sessions and the separate bearish proxy remain distinct.
+- The nearest-level and liquidity-first lists are saved only in Practice research.
+  Unknown option net outcomes remain unknown; no active rank or risk rule changed.
+- Daily review separates price opportunity, current coverage and historical data
+  refusals. Verified Practice repair retries once/minute and excludes already-closed
+  buckets without unnecessarily skipping the next future confirmation. Restore,
+  pause, Live, quote and risk boundaries remain unchanged.
+
 ## 2026-09-18 — revision 5 (remaining D4 registry defects, compact artifacts)
 
 - Dropped-bar registry: captured-snapshot persistence (in-flight drops stay dirty), forward-only session rollover, throttled failed attempts, pruning against the active plan set so every retirement path is covered; regressions added. Replay artifacts compacted with reproducibility manifests. Conclusion stated as zero strict qualifiers among the available frozen analyses (09-08: 58 analyses, 3,032 prefiltered listings unavailable). Reviewer answers on D3 storage, the Moderate column and provider-reconstruction order recorded.
