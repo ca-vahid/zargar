@@ -23,7 +23,8 @@
 # (2026-09-09 01:20 ET: "The string is missing the terminator", exit 1, nothing restarted).
 param(
   [string]$Expect = "",
-  [switch]$Force
+  [switch]$Force,
+  [switch]$AllowElevated
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -34,6 +35,14 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $logDirEarly = Join-Path $Root "logs"
 if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
 try { Start-Transcript -Path (Join-Path $logDirEarly ("restart-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")) -Append | Out-Null } catch { }
+# elevation pre-flight BEFORE the lease and BEFORE anything is stopped (2026-09-19): an elevated shell would stop the
+# engine and then have start.ps1 refuse to start it - the app went dark until someone ran the task
+$elevationRefusal = Test-ZargarDoorElevation (Get-ZargarElevation) ([bool]$AllowElevated)
+if ($elevationRefusal) {
+  Write-Host ("x Not restarting: " + $elevationRefusal) -ForegroundColor Red
+  try { Stop-Transcript | Out-Null } catch { }
+  exit 8
+}
 # one door at a time: wait up to 5 minutes for another door (the watchdog's start after a manual stop, another
 # desk's deploy) instead of failing on the spot
 try { $restartMutex = Enter-ZargarDeployment $Root -Restart -WaitSeconds 300 }
@@ -225,7 +234,7 @@ Start-Sleep -Seconds 2
 # splat a HASHTABLE: under Windows PowerShell 5.1 an array splat passes "-Detach" as a positional string,
 # not as the switch, and start.ps1 then ran the engine in this console's FOREGROUND (2026-09-09 09:26 ET:
 # the restart never reached its health wait or restoration check)
-$args2 = @{ Detach = $true }; if ($Force) { $args2.Force = $true }
+$args2 = @{ Detach = $true }; if ($Force) { $args2.Force = $true }; if ($AllowElevated) { $args2.AllowElevated = $true }
 if ($handoff) { $args2.NoBuild = $true } # the exact artifact was built and verified under the deployment owner
 & (Join-Path $Root "scripts\start.ps1") @args2
 if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; Leave 1 ("start.ps1 exited " + $LASTEXITCODE) }
