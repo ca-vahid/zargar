@@ -76,5 +76,12 @@ challenger. The existing forward collector remains optional observation.
 
 The historical study did not change trading behavior or prove profitability.
 See [the September 19 correction and concrete Monday action](MONDAY-ACTION-2026-09-21.md).
-The priority proposed change is an affordability-only Practice shares fallback
-within the existing $500 budget. It is not enabled merely by documenting it.
+The shares-fallback proposal was subsequently superseded by the user-approved
+capital-expanded Practice experiment below. Shares fallback remains unimplemented.
+
+### Current Practice capital regime
+
+On September 19 the user chose a [capital-expanded experiment](CAPITAL-EXPERIMENT-2026-09-19.md)
+to remove the small-book funding restriction: a separate $1m sim book, $25k budget
+and 20 focus slots. This supersedes the earlier keep-$500/shares-first proposal.
+Keep historical book returns separate and do not confuse increased sizing with edge.
