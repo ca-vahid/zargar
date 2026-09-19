@@ -228,3 +228,32 @@ function Set-ZargarReceiptPhase([string]$Root, [string]$Phase, [string]$Detail, 
   Write-ZargarReceipt $Root $receipt
   return $receipt
 }
+
+# --- elevation (2026-09-19) ---------------------------------------------------------------------------
+# An engine started from an ELEVATED shell cannot be stopped by the Limited doors (the ZargarRestart task, the
+# watchdog). restart.ps1 must refuse BEFORE it stops anything (the 0.8.23 deploy left the app dark ~4 minutes:
+# the old engine was stopped, then start.ps1 refused the elevated shell); deploy.ps1 hands the restart to the task.
+function Get-ZargarElevation {
+  try { return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) }
+  catch { return $false }
+}
+# Pure: the refusal text for a door that would stop the engine from an elevated shell, or $null to proceed.
+function Test-ZargarDoorElevation([bool]$Elevated, [bool]$AllowElevated) {
+  if ($Elevated -and -not $AllowElevated) {
+    return ('This shell is ELEVATED: nothing was stopped. An engine started here could not be stopped by the ' +
+            'ZargarRestart task or the watchdog. Run the ZargarRestart scheduled task (Start-ScheduledTask -TaskName ' +
+            'ZargarRestart) or use a non-elevated terminal; -AllowElevated overrides deliberately.')
+  }
+  return $null
+}
+# Wait for THIS deployment's receipt to reach a terminal phase (verified | failed | deferred). A receipt for another
+# target, or one still 'restarting', keeps waiting; $null on timeout (the caller decides what that means).
+function Wait-ZargarReceipt([string]$Root, [string]$Target, [int]$TimeoutSeconds = 480, [int]$PollSeconds = 3) {
+  $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
+  while ([DateTime]::UtcNow -lt $deadline) {
+    try { $r = Read-ZargarReceipt $Root } catch { $r = $null }
+    if ($null -ne $r -and "$($r.target)" -eq $Target -and @('verified', 'failed', 'deferred') -contains "$($r.phase)") { return $r }
+    Start-Sleep -Seconds ([Math]::Max(1, $PollSeconds))
+  }
+  return $null
+}

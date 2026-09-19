@@ -650,6 +650,19 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   `risk.sim_require_cash` stays on. INVARIANT 15: a technique's orders land only in its own book;
   a shared book is never a fallback for a technique that has one.
 
+### 2026-09-19 (Tips/platform desk) - an elevated shell never stops an engine it cannot restart
+
+The 0.8.23 deploy (and the 0.8.13 one before it) ran `deploy.ps1` from an ELEVATED assistant shell: its inner
+`restart.ps1` stopped the engine, then `start.ps1` refused the elevated shell (exit 8) and the app stayed dark (~4
+minutes on 0.8.23) until someone started the `ZargarRestart` task by hand. Fixed in the scripts: `restart.ps1` runs an
+elevation pre-flight BEFORE the lease and BEFORE any stop (exit 8, "nothing was stopped"; `-AllowElevated` is the
+deliberate override and is passed on to `start.ps1`); an elevated `deploy.ps1` writes the handoff as before, RELEASES
+its lease, starts the Limited `ZargarRestart` task itself and waits for THIS target's terminal receipt
+(`Wait-ZargarReceipt`, 8 minutes) - the one door assistants have stays usable and is one command. Helpers in
+`deployment-lock.ps1` (`Get-ZargarElevation`, `Test-ZargarDoorElevation`, `Wait-ZargarReceipt`);
+`tests/test_deploy_elevation.py` (pure helpers under PowerShell 5.1 + the script order from source; the scripts
+themselves are never run by a test - their stop step is machine-wide).
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **The post-close record of a plan built on an earlier session** (Team2 F67, 2026-09-08, no code
