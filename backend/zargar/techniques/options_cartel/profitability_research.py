@@ -165,12 +165,14 @@ async def freeze_preparation(engine, prep_id, policy, result, *, clock, report=N
             c['themeEvidence'] = {'strengthKnown': group.get('strengthKnown', 0),
                 'medianRelativeStrength': -median if cohort == 'bearish' and median is not None else median}
         rankings[cohort] = compare_rankings([{k: c.get(k) for k in ('id','analysisId','symbol','direction',
-            'ranking','leaderEvidence','themeEvidence')} for c in cohort_rows], execution_slots=policy.focus_count)
+            'ranking','leaderEvidence','themeEvidence','daily','sourceAt','trigger')} for c in cohort_rows], execution_slots=policy.focus_count)
     # Interleave both frozen rankings/cohorts so the bounded sample does not
     # silently equate research capacity with the five execution slots.
     by_id = {c['id']: c for c in candidates}
     orders = [[c['id'] for c in sorted(r['candidates'], key=lambda c: c[rank])]
         for r in rankings.values() for rank in ('baselineRank', 'leaderRank')]
+    orders.extend(r['opportunityComparisons'][key] for r in rankings.values()
+                  for key in ('nearestUnbrokenIds','liquidFirstIds'))
     selected = []
     for i in range(max((len(order) for order in orders), default=0)):
         for order in orders:

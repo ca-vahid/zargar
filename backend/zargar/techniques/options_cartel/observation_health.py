@@ -52,8 +52,22 @@ def plan_coverage(plan, state, now, *, use_verified=False):
     return coverage(state, now, day=day, use_verified=use_verified)
 
 
+def repair_cutoff(plan, state, now, *, use_verified=False):
+    """Practice: exclude every already-closed bucket, allow the next fresh close.
+
+    Arming, restart and pause boundaries remain unchanged. A data repair inside
+    an open bucket must not unnecessarily discard that bucket's *future* close.
+    """
+    cutoff=now
+    if use_verified:
+        opens,_=session_bounds(session_date(now))
+        step=plan.entry.timeframe_minutes*60000
+        cutoff=opens+max(0,(now-opens)//step)*step
+    return max(state.get('observeAfter',state['armedAt']),cutoff)
+
+
 async def repair_gaps(runtime, *, load=load_session_context):
-    """One owned task, at most five plans per pass, at most once/5min per plan."""
+    """One owned task, five plans/pass. Verified Practice: 1min; other paths: 5min."""
     now = runtime.clock()
     if bar_session(now) != 'rth':
         return
@@ -67,9 +81,11 @@ async def repair_gaps(runtime, *, load=load_session_context):
         if not plan.first_session.isoformat() <= session_date(now) <= plan.last_session.isoformat():
             continue
         from .nonemission import VERSION, enabled
-        health = plan_coverage(plan, cached['state'], now, use_verified=enabled(runtime.engine,cached))
-        first_verification = enabled(runtime.engine,cached) and cached['state'].get('providerIntervalVersion') != VERSION
-        if not (health['overdueMissingMinutes'] or (runtime.plans[rid].entry.require_exchange_bars and health['untrustedMinutes'])) or (not first_verification and now-cached['state'].get('lastGapRepairAt', 0) < 300_000):
+        verified_enabled=enabled(runtime.engine,cached)
+        health = plan_coverage(plan, cached['state'], now, use_verified=verified_enabled)
+        first_verification = verified_enabled and cached['state'].get('providerIntervalVersion') != VERSION
+        retry_interval=60_000 if verified_enabled else 300_000
+        if not (health['overdueMissingMinutes'] or (runtime.plans[rid].entry.require_exchange_bars and health['untrustedMinutes'])) or (not first_verification and now-cached['state'].get('lastGapRepairAt', 0) < retry_interval):
             continue
         attempted += 1
         async with runtime.engine.sf() as session, session.begin():
@@ -89,7 +105,10 @@ async def repair_gaps(runtime, *, load=load_session_context):
                 import asyncio
                 covered = minute_set(effective(runtime.engine,cached),cached['symbol'],now)
                 opens, closes = session_bounds(session_date(now))
-                tape = cached['state'].get('minutes',{})
+                tape = dict(cached['state'].get('minutes',{}))
+                for b in bars:
+                    if b.symbol==cached['symbol'] and b.tf=='1m' and b.ts+60000<=now:
+                        merge(tape,b)  # do not probe intervals whose native bars just arrived
                 candidates = [t for t in range(opens,min(closes,now//60000*60000),60000)
                               if t not in covered and (str(t) not in tape or len(tape[str(t)])<7 or tape[str(t)][6]!='exchange')]
                 counts = cached['state'].get('providerIntervalAttempts',{})
@@ -120,7 +139,7 @@ async def repair_gaps(runtime, *, load=load_session_context):
                     row.state = {**row.state,'verifiedIntervals':{**state.get('verifiedIntervals',{}),**proofs},
                                  'verifiedIntervalSymbol':row.symbol}
                 if added or proofs:
-                    row.state = {**row.state, 'observeAfter': max(state.get('observeAfter', state['armedAt']), recovered_at),
+                    row.state = {**row.state, 'observeAfter': repair_cutoff(plan,state,recovered_at,use_verified=enabled(runtime.engine,runtime.repository.view(row))),
                         'observationRecoveries': recovery_record(state, now=recovered_at, reason='missing_minute_repair', added=added)}
                     row.state['observationRecoveries'][-1]['verifiedIntervalsAdded'] = len(proofs)
                 snapshot = runtime.repository.view(row)

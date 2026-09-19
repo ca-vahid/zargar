@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.19";
+export const APP_VERSION = "0.8.20";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.20",date:"2026-09-18",title:"Cartel: clearer opportunity reviews and timely recovery",items:[
+    {tag:"fixed",text:"Daily review separates a stock not reaching its entry level from incomplete data and historical refusals. Current Armed coverage no longer repeats a resolved warning as a current hold."},
+    {tag:"improved",text:"Verified Practice repairs retry every minute and preserve the next fresh candle confirmation without replaying closed signals. Trading limits and selection rules are unchanged."},
+  ]},
   {version:"0.8.19",date:"2026-09-18",title:"Cartel: verify provider-omitted intervals",items:[
     {tag:"fixed",text:"Practice can distinguish provider-omitted price intervals from lost data using complete trade-feed evidence. No candles are invented, unresolved gaps still block, and repaired history cannot trigger a late entry."},
     {tag:"new",text:"Cartel Settings exposes the Practice-only verification switch; Armed shows verified interval counts. Exact proof evidence is saved with decisions."},

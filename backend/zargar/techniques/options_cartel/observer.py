@@ -396,8 +396,11 @@ class CartelObserver(SessionListener):
                 if bar.ts <= state.get("lastMinute", -1):
                     minutes = dict(state.get('minutes', {}))
                     if merge(minutes, bar):
+                        from .observation_health import repair_cutoff
+                        from .nonemission import enabled
                         row.state = {**state, 'minutes': minutes,
-                                     'observeAfter': max(state.get('observeAfter', state['armedAt']), now)}
+                                     'observeAfter': repair_cutoff(self.plans[rid],state,now,
+                                         use_verified=enabled(self.engine,self.repository.view(row)))}
                         self.rows[rid] = self.repository.view(row)
                     continue  # correction is context only, never a historical entry
                 day = session_date(bar.ts)

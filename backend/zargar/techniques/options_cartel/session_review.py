@@ -49,6 +49,9 @@ async def report(engine, portfolio_id, day):
         fill_ids = [f.id for f, _ in fills if f.ts >= begins]
         receipts = (await session.scalars(select(ExecutionEvidence).where(
             ExecutionEvidence.execution_id.in_(fill_ids)))).all() if fill_ids else []
+        plan_runs = (await session.execute(select(TechniqueRun.id, TechniqueRun.result['plan']['plan']).where(
+            TechniqueRun.id.in_([a.run_id for a in arms])))).all()
+        plans = dict(plan_runs)
         waits = (await session.scalars(select(Event).where(Event.type == 'SimFillWaiting',
             Event.portfolio_id == portfolio_id, Event.ts >= begins, Event.ts <= cutoff,
             Event.aggregate_id.in_([o.id for o in orders])).order_by(Event.ts))).all()
@@ -104,9 +107,14 @@ async def report(engine, portfolio_id, day):
             continue
         trace = [d for d in arm.state.get('decisionHistory', []) if d.get('at', 0) <= cutoff_ms]
         kinds = {d.get('decision') for d in trace}
+        from .opportunity_status import opportunity_status
+        from .plans import CartelPlan
+        opportunity = opportunity_status(CartelPlan.model_validate(plans[arm.run_id]), arm.state, day, cutoff_ms) \
+            if plans.get(arm.run_id) else None
         category = ('open' if related and any(a['remainingQty'] for a in related) else 'closed' if related else
             'invalidated' if 'invalidated' in kinds else 'signalled' if 'triggered' in kinds or 0 < (arm.state.get('signal') or {}).get('at', 0) <= cutoff_ms else
-            'data_limited' if kinds & {'unsupported_volume_period', 'untrusted_confirmation'} else
+            'no_trigger' if opportunity and opportunity['status']=='level_not_reached' else
+            'data_limited' if kinds & {'unsupported_volume_period', 'untrusted_confirmation', 'missing_bucket'} else
             'strategy_rejected' if 'watch_only' in kinds else 'no_trigger')
         checks = execution_checks.get(arm.run_id, [])
         latest_check = checks[-1] if checks else None
@@ -117,6 +125,7 @@ async def report(engine, portfolio_id, day):
         exit_reasons = [e.get('reason') or e.get('kind') for p in owned_positions
             for e in p.state.get('exits', []) if e.get('orderId') in actual_exit_ids]
         rows.append({'planId': arm.run_id, 'symbol': arm.symbol, 'status': category, 'category': category,
+            'opportunity': opportunity,
             'executionChecks': checks, 'latestExecutionCheck': latest_check,
             'decisions': trace, 'assets': related, 'exitReasons': exit_reasons,
             'dataEvidence': evidence({k:v for k,v in arm.state.get('minutes', {}).items() if int(k) < cutoff_ms}),
