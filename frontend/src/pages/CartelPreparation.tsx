@@ -62,6 +62,8 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
   const result = status?.latest?.result;
   const account = books.find(p => p.id === status?.configuration?.portfolioId) || (!live && books.length === 1 ? books[0] : null);
   const running = status?.latest?.status === "running";
+  const interrupted = !running && (result?.phase === "interrupted" || status?.latest?.verdict === "interrupted"
+    || status?.latest?.error?.startsWith("interrupted by a restart"));
   const progress = result?.discoveryProgress;
   const elapsedEnd = running ? status?.serverNow || Date.now() : result?.finishedAt || result?.updatedAt;
   const elapsed = result?.startedAt && elapsedEnd ? Math.max(0, Math.floor((elapsedEnd-result.startedAt)/1000)) : null;
@@ -204,9 +206,12 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           {result.armingBlocked && <p>{label(result.researchDirection || "long")} candidates are research only. Run fresh preparation after market alignment changes; these records cannot auto-arm.</p>}
         </section>}
         <div className="cartel-inset" role="status" aria-live="polite">
-          <strong>{result.message || (running ? `Working: ${label(result.phase || "starting")}` : "Preparation finished")}</strong>
+          <strong>{interrupted ? "Preparation interrupted — saved work is available" : result.message || (running ? `Working: ${label(result.phase || "starting")}` : "Preparation finished")}</strong>
+          {interrupted && <p className="cartel-notice">The app restarted before this scan finished. Existing armed plans are preserved.
+            {status.canResume ? " Use Resume saved scan to continue from the checkpoint without starting over." : " Use Prepare now to refresh the preparation."}
+            {status.configuration?.autoResume && " Automatic recovery retries outside market hours when the saved run is eligible and its retry allowance remains."}</p>}
           {running && result.shortlistReadyAt && <p>The executable shortlist has been checked. Optional research is finishing; any armed plans are already monitored.</p>}
-          {result.phaseDurationsMs && <p className="muted">Stage times: {Object.entries(result.phaseDurationsMs).map(([phase, ms]) => `${label(phase)} ${Math.round(Number(ms)/1000)}s`).join(" · ")}{result.historyPacingMs > 0 ? ` · Provider pacing ${Math.round(result.historyPacingMs/1000)}s (included above)` : ""}</p>}
+          {!interrupted && result.phaseDurationsMs && <p className="muted">Stage times: {Object.entries(result.phaseDurationsMs).map(([phase, ms]) => `${label(phase)} ${Math.round(Number(ms)/1000)}s`).join(" · ")}{result.historyPacingMs > 0 ? ` · Provider pacing ${Math.round(result.historyPacingMs/1000)}s (included above)` : ""}</p>}
           {result.historyRateLimitRetries > 0 && <p className="cartel-notice">Provider throttling: {result.historyRateLimitRetries} retries. Request spacing increased to {result.effectiveHistoryIntervalSeconds}s for this run.</p>}
           {running && <>
             {result.phase === "discovering" ? <><p>{progress?.received || 0}{progress?.total != null ? ` / ${progress.total}` : ""} listings received</p>
@@ -215,8 +220,8 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
                 <progress aria-label="Stock evaluation progress" max={result.evaluationTotal || 1} value={result.processed || 0}/></> : <progress aria-label="Preparation activity"/>}
           </>}
           {result.savedAnalysesAvailable > 0 && <p>Recovery checkpoint: {result.savedAnalysesAvailable} analyses already saved. Reused results are counted without downloading their histories again.</p>}
-          <p className="muted">{elapsed != null ? `Elapsed ${Math.floor(elapsed/60)}m ${elapsed%60}s` : ""}{sinceUpdate != null ? ` · Last update ${sinceUpdate}s ago` : ""}
-            {result.cacheHits != null ? ` · ${result.cacheHits} history cache hits` : ""}{result.resumedAnalyses ? ` · ${result.resumedAnalyses} saved analyses reused` : ""}</p>
+          {!interrupted && <p className="muted">{elapsed != null ? `Elapsed ${Math.floor(elapsed/60)}m ${elapsed%60}s` : ""}{sinceUpdate != null ? ` · Last update ${sinceUpdate}s ago` : ""}
+            {result.cacheHits != null ? ` · ${result.cacheHits} history cache hits` : ""}{result.resumedAnalyses ? ` · ${result.resumedAnalyses} saved analyses reused` : ""}</p>}
           {result.historyProvider && <p>Daily source: {result.historyProvider}{result.nativeDailyBatch ? ' · native multi-symbol requests' : ' · durable cache and incremental fetches'}</p>}
           {running && result.historyConcurrency != null && <p>History pipeline: {result.activeHistoryRequests || 0} active fetches · up to {result.historyConcurrency} parallel · batch window {result.historyBatchSize} · {result.prefetchedHistories || 0} histories ready so far.</p>}
           {running && sinceUpdate != null && sinceUpdate > 30 && <p className="cartel-notice">No recent progress update. The provider or worker may be delayed; this does not confirm progress.</p>}
@@ -225,9 +230,9 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           {result.recovery && (result.planErrors > 0 || result.dataErrors > 0) && <p className="cartel-notice">Recovery attempts: {result.recovery.attempt || 0}/3. {result.recovery.attempt >= 3 ? (result.recovery.window?.endsWith(":evening") ? "Evening retries exhausted; the pre-open window receives a fresh allowance. You can also review coverage and resume manually." : "Pre-open retries exhausted; review missing coverage or resume manually.") : result.recovery.nextRetryAt ? `Next eligible retry ${new Date(result.recovery.nextRetryAt).toLocaleString()}, outside regular hours.` : "Recovery will retry unresolved history outside regular hours."}</p>}
           {status.canResume && <p>Resume reuses the original snapshot and successful analyses. Prepare now refreshes market evidence.</p>}
         </div>
-        <div className="cartel-inset cartel-row"><strong>{result.session} · {label(result.phase || "pending")}</strong>
+        <div className="cartel-inset cartel-row"><strong>{result.session} · {interrupted ? "interrupted" : label(result.phase || "pending")}</strong>
           <span className="muted">{result.discovered} discovered · {result.prefiltered || 0} ruled out by industry · {result.evaluated} histories evaluated · {result.dataErrors || 0} data errors · {result.qualifying} qualifying · {result.researchCandidates || 0} research-only candidates · {result.armed} armed</span></div>
-        {status.latest.error && <ErrorState message={status.latest.error}/>}
+        {status.latest.error && !interrupted && <ErrorState message={status.latest.error}/>}
         {!!result.retainedPlans?.length && <p className="cartel-inset">{result.retainedPlans.length} existing campaigns preserved. Armed, paused and held campaigns reserve shortlist capacity.</p>}
         {result.candidatesChecked != null && <p className="cartel-inset">{result.candidatesChecked} candidates checked for history and contracts (up to {result.candidateCheckLimit}). Pending contracts are reserves and do not consume an armed slot; activation still requires available capacity.</p>}
         {result.shortlist?.length ? <div className="scroll-x"><table className="tbl cartel-table"><thead><tr><th>Symbol</th><th>Setup</th><th className="num">Trigger</th><th className="num">Invalidation</th><th>Status</th><th>Plan</th></tr></thead><tbody>

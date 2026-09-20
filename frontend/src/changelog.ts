@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.25";
+export const APP_VERSION = "0.8.27";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.27",date:"2026-09-20",title:"Cartel preparation resumes after restart",items:[
+    {tag:"fixed",text:"Interrupted Cartel preparation now keeps its recovery checkpoint and resumes under the existing retry settings. Existing armed plans are preserved."},
+    {tag:"improved",text:"The preparation panel explains saved work and how to resume, instead of showing stale discovery progress and a generic red restart error."},
+  ]},
   {version:"0.8.25",date:"2026-09-19",title:"Tips: opportunity tracking and a faster cold-ticker path",items:[
     {tag:"fixed",text:"A tip parked only because its symbol had no quote yet is re-checked on the first real quote (up to 60 s) instead of waiting for the 15-minute sweep. The same verification, plan and risk checks apply."},
     {tag:"new",text:"Reports: every actionable idea gets one disposition (filled, declined, risk-infeasible, late, analysis failed, approval expired, order unfilled) with avoidable misses apart; the scorecard shows how closed positions ended, winners and losers together; review cost is split by message type and what the review did."},
