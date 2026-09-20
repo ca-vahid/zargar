@@ -56,6 +56,39 @@ async def test_legacy_restart_failure_recovers_without_touching_real_failure_or_
             result={'phase':'interrupted','resumeReady':True},
             created_at=dt.datetime.now(dt.UTC)+dt.timedelta(seconds=2)))
     submit=AsyncMock();monkeypatch.setattr(prep,'submit_preparation',submit)
+    engine.cartel_observer=object()
     await prep.automatic_recovery(engine,clock=lambda:at+1)
     submit.assert_awaited_once()
     assert submit.call_args.kwargs['resume_run_id']=='legacy'
+
+
+async def test_retry_lineage_reuses_ancestor_and_uncheckpointed_child(engine):
+    from zargar.techniques.options_cartel.preparation_resume import saved_work
+    at,_=inputs();policy=PreparationPolicy(enabled=True,portfolio_id='book')
+    cfg={'coverageVersion':7,'session':next_session_date(at),'workspace':'practice','portfolioId':'book',
+         'policy':policy.model_dump(mode='json')}
+    async with engine.sf() as s,s.begin():
+        s.add_all([
+            TechniqueRun(id='ancestor',technique='options_cartel',mode='preparation',symbol='MULTI',
+                status='done',as_of=at,config=cfg,result={'rows':[{'symbol':'A','analysisId':'a','status':'filtered'}]}),
+            TechniqueRun(id='retry',technique='options_cartel',mode='preparation',symbol='MULTI',
+                status='failed',as_of=at,config=cfg,result={'resumedFrom':'ancestor','rows':[]}),
+            TechniqueRun(id='b',technique='options_cartel',mode='analysis',symbol='B',status='done',
+                parent_run_id='retry',as_of=at,config={'inputs':{'as_of_ms':at}},
+                result={'collection':{'historyCacheVersion':1}}),
+            TechniqueRun(id='future',technique='options_cartel',mode='analysis',symbol='C',status='done',
+                parent_run_id='retry',as_of=at+1,config={'inputs':{'as_of_ms':at+1}},
+                result={'collection':{'historyCacheVersion':1}})])
+    async with engine.sf() as s: row=await s.get(TechniqueRun,'retry')
+    rows,_,reused=await saved_work(engine,row)
+    assert reused=={'A':'a','B':'b'} and rows['A']['status']=='filtered'
+    async with engine.sf() as s,s.begin():
+        ancestor=await s.get(TechniqueRun,'ancestor');ancestor.config={**cfg,'portfolioId':'other-book'}
+    _,_,reused=await saved_work(engine,row)
+    assert reused=={'B':'b'}
+
+
+async def test_pre_attachment_recovery_does_not_consume_throttle(engine):
+    engine.cartel_observer=None
+    await prep.automatic_recovery(engine,clock=lambda:123456789)
+    assert not hasattr(engine,'_cartel_auto_recovery_at')
