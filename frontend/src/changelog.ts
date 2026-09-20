@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.27";
+export const APP_VERSION = "0.8.28";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.28",date:"2026-09-20",title:"Cartel keeps analysis checkpoints across repeated restarts",items:[
+    {tag:"fixed",text:"Resuming an interrupted retry now reuses analyses from its compatible earlier checkpoints, including work saved before a crash. Existing plans remain preserved."},
+    {tag:"fixed",text:"Automatic recovery waits for its runtime controller to attach before attempting a restart resume."},
+  ]},
   {version:"0.8.27",date:"2026-09-20",title:"Cartel preparation resumes after restart",items:[
     {tag:"fixed",text:"Interrupted Cartel preparation now keeps its recovery checkpoint and resumes under the existing retry settings. Existing armed plans are preserved."},
     {tag:"improved",text:"The preparation panel explains saved work and how to resume, instead of showing stale discovery progress and a generic red restart error."},

@@ -97,3 +97,12 @@ The page explains interruption and Resume saved scan instead of presenting stale
 discovery progress, a huge elapsed-update counter and a generic red error. Real
 provider failures and user cancellations retain their own states. Trading logic,
 funding and the six Monday arms are unchanged by this fix.
+
+
+Follow-up v0.8.28: resume reads compatible ancestor checkpoints rather than only
+the immediately interrupted retry. Reuse requires identical source cutoff, saved
+policy, book/workspace/session and coverage version; cancelled or incompatible
+ancestors stop traversal. Committed child analyses with matching cutoffs survive
+an incomplete progress checkpoint. A read-only reproduction recovered all 3,072
+saved analyses behind the reported early-interrupted retry. Startup recovery
+waits for controller attachment without consuming the five-minute throttle.
