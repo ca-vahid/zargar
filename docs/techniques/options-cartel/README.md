@@ -85,3 +85,15 @@ On September 19 the user chose a [capital-expanded experiment](CAPITAL-EXPERIMEN
 to remove the small-book funding restriction: a separate $1m sim book, $25k budget
 and 20 focus slots. This supersedes the earlier keep-$500/shares-first proposal.
 Keep historical book returns separate and do not confuse increased sizing with edge.
+
+### September 20 restart recovery fix (v0.8.27)
+
+A shared orphan cleanup could mark a preparation failed before Cartel's handler,
+leaving its phase as market_context and preventing automatic resumption. Shared
+cleanup now delegates Cartel preparation to its owner. The Cartel handler repairs
+legacy generic restart failures, preserves saved analyses/plans, and resumes only
+the active workspace/book under the existing policy and bounded retry allowance.
+The page explains interruption and Resume saved scan instead of presenting stale
+discovery progress, a huge elapsed-update counter and a generic red error. Real
+provider failures and user cancellations retain their own states. Trading logic,
+funding and the six Monday arms are unchanged by this fix.
