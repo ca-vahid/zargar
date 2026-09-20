@@ -198,13 +198,15 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
     prior = await service._load(resume_run_id) if resume_run_id else None
     if prior and not resumable(prior, policy, started):
         raise ValueError('This preparation cannot be resumed with current settings or expired evidence; start a fresh run')
+    from .preparation_resume import saved_work
+    previous_rows, previous_pending, reused = await saved_work(engine, prior)
     from ... import __version__
     run_id = new_id()
     result = {'phase': 'discovering', 'session': target_session, 'portfolioId': portfolio_id,
               'mode': 'auto', 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'rows': [], 'shortlist': [], 'warnings': [],
               'discovered': 0, 'evaluated': 0, 'qualifying': 0, 'armed': 0, 'processed': 0, 'dataErrors': 0,
               'logicalStartedAt': prior.result.get('logicalStartedAt', prior.result.get('startedAt', started)) if prior else started,
-              'savedAnalysesAvailable': prior.result.get('evaluated', 0) if prior else 0, 'startedAt': started, 'updatedAt': started, 'message': 'Starting market discovery', 'currentSymbol': None,
+              'savedAnalysesAvailable': len(reused), 'startedAt': started, 'updatedAt': started, 'message': 'Starting market discovery', 'currentSymbol': None,
               'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0,
               'researchProtocol': research_protocol(policy, code_version=__version__)}
     window = recovery_window(started, target_session)
@@ -368,16 +370,6 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
             result['notEvaluated'] = len(eligible)
             if len(selected_listings) < len(eligible):
                 result['warnings'].append(f"Optional cap limits this run to {len(selected_listings)} of {len(eligible)} eligible listings.")
-            reused = {}
-            previous_rows = {r['symbol']: r for r in prior.result.get('rows', []) if r.get('analysisId')} if prior else {}
-            previous_pending = {r['symbol']: r for r in prior.result.get('shortlist', []) if r.get('status') == 'awaiting_contract'} if prior else {}
-            if prior:
-                reused = {r['symbol']: r['analysisId'] for r in prior.result.get('rows', []) if r.get('analysisId') and r['status'] in ('candidate', 'filtered', 'research_only')}
-                # Child analyses survive a crash between their commit and the next progress checkpoint.
-                async with engine.sf() as session:
-                    children = (await session.execute(select(TechniqueRun.symbol, TechniqueRun.id).where(TechniqueRun.parent_run_id == prior.id,
-                        TechniqueRun.mode == 'analysis', TechniqueRun.result['collection']['historyCacheVersion'].as_integer() == 1))).all()
-                reused.update({r.symbol: r.id for r in children})
             pool = []
             consecutive_transport_errors = 0
             industry_reads = {}
@@ -857,6 +849,8 @@ async def recover_interrupted_preparations(engine):
 
 async def automatic_recovery(engine, *, clock=now_ms):
     """Bounded retry on the owning runtime; never resumes a cancelled/disabled job."""
+    if getattr(engine, 'cartel_observer', None) is None:
+        return  # restore invokes heartbeat before attachment; do not consume retry time
     now = clock()
     if now-getattr(engine, '_cartel_auto_recovery_at', 0) < 300_000:
         return
@@ -884,3 +878,4 @@ async def automatic_recovery(engine, *, clock=now_ms):
         await submit_preparation(engine, workspace=policy.workspace, clock=clock)
     elif resumable(row, policy, now) and row.status == 'failed' and row.result.get('phase') == 'interrupted' and recovery_due(row, now) or resumable(row, policy, now) and row.status == 'done' and recovery_due(row, now):
         await submit_preparation(engine, workspace=policy.workspace, resume_run_id=row.id, recovery_attempt=True, clock=clock)
+        engine._cartel_auto_recovery_error = None
