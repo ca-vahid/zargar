@@ -2235,7 +2235,10 @@ class TechniqueService:
             # the same for analysis runs: an LLM read that was mid-flight when the
             # process died never finishes (88 analyst checks died to a restart on
             # 2026-08-26 and sat 'running' — the scan panel waited on them for ever)
-            runs = (await session.execute(select(TechniqueRun).where(TechniqueRun.status == "running"))).scalars().all()
+            # Cartel preparation owns its checkpoint recovery. Generic failure
+            # marking would hide the interrupted phase from its auto-resumer.
+            runs = (await session.execute(select(TechniqueRun).where(TechniqueRun.status == "running",
+                (TechniqueRun.technique != 'options_cartel') | (TechniqueRun.mode != 'preparation')))).scalars().all()
             for r in runs:
                 r.status = "failed"
                 r.error = "interrupted by a restart — run it again"

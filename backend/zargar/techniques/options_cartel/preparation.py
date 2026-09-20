@@ -9,7 +9,7 @@ import math
 import time
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 
 from ... import events as ev
 from ...domain import new_id, now_ms
@@ -842,13 +842,17 @@ async def recover_interrupted_preparations(engine):
         return
     async with engine.sf() as session, session.begin():
         rows = (await session.scalars(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
-            TechniqueRun.mode == 'preparation', TechniqueRun.status == 'running'))).all()
+            TechniqueRun.mode == 'preparation', or_(TechniqueRun.status == 'running', and_(
+                TechniqueRun.status == 'failed',
+                TechniqueRun.error == 'interrupted by a restart — run it again'))))).all()
         for row in rows:
+            if row.result.get('userCancelled'):
+                continue
             row.status, row.verdict = 'failed', 'interrupted'
             row.error = 'Runtime restarted during preparation; published plans remain preserved'
             row.finished_at = dt.datetime.now(dt.UTC)
             row.result = {**row.result, 'phase': 'interrupted', 'updatedAt': now_ms(), 'finishedAt': now_ms(),
-                          'message': 'Runtime restarted; completed work is saved'}
+                          'message': 'Preparation interrupted; saved work and existing plans are preserved'}
 
 
 async def automatic_recovery(engine, *, clock=now_ms):
@@ -866,9 +870,14 @@ async def automatic_recovery(engine, *, clock=now_ms):
     policy = read_policy(engine)
     if not policy.enabled or not policy.auto_resume:
         return
+    # Repair legacy shared-startup failures too, including ones written after
+    # observer attachment by an older startup task. Never touch an active task.
+    await recover_interrupted_preparations(engine)
     async with engine.sf() as session:
         row = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
-            TechniqueRun.mode == 'preparation', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
+            TechniqueRun.mode == 'preparation', workspace_filter(policy.workspace),
+            TechniqueRun.config['portfolioId'].as_string() == policy.portfolio_id
+            ).order_by(TechniqueRun.created_at.desc()).limit(1))
     if row is None or row.result.get('userCancelled'):
         return
     if row.result.get('phase') == 'waiting_for_benchmark' and row.config.get('session') == next_session_date(now):

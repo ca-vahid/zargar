@@ -2505,3 +2505,14 @@ already per book; the per-technique day-notional cap is cross-book by design and
 ### One recovery sweep at a time; a cold-quote park is re-verified on its first real quote — 2026-09-19 (Tips desk; shared `signals/service.py`)
 
 `SignalService.recovery_sweep()` now holds an asyncio lock (the body moved to `_recovery_sweep_locked`): the periodic loop and the new cold-park fast path share one entry, so two sweeps can never promote the same park twice. A tip parked ONLY because `ticker_resolves` failed (no quote yet for a cold symbol) spawns a bounded wait (`signals.cold_park_recheck_seconds`, default 60, 0 = off) for a REAL quote and then runs that same sweep once (`SignalColdParkRecheck` journaled). Nothing else changes: the sweep re-verifies on the fresh quote and applies every existing gate; a price-position park stays the level watch's job; experiments never spawn it. Evidence: 44 of 49 parks since 2026-09-08 were cold-only and waited 5-13 minutes for the 15-minute sweep after an analyst TAKE. `apply_knowledge_batch` accepts `pending: true` on a merge: the consolidated note is born `needs_human` (non-operative) and the flag is part of the payload hash only when present, so every earlier receipt hash is unchanged.
+
+
+### 2026-09-20 — Cartel preparation owns restart recovery
+
+Shared TechniqueService orphan cleanup excludes Options Cartel preparation runs.
+The Cartel handler must mark their checkpoint interrupted and preserve saved
+analyses/arms before bounded auto-resume. Legacy generic restart failures are
+normalized by the Cartel handler as well; real failures and user cancellations
+are not relabeled. Recovery stays workspace/book scoped and respects saved policy,
+market hours and retry allowance. Generic cleanup still handles other run modes.
+Regression: test_cartel_restart_recovery.py reproduces the startup-order failure.
