@@ -42,19 +42,29 @@ of admission policy between the books.
 
 Both remain the user's decision. Nothing has been changed.
 
-## A finding handed to the Team2 desk
+## The Team2 exchange, and a correction I owe
 
-Their selection study recorded `room = unknown` on all four day-one observations, and they attributed it to underlying
-quotes carrying no venue time at all (`sourceTs: 0` on a live IWM read). That is a field-selection issue, not missing
-data, and it is worth recording here because it is the same trap EM avoided by accident:
+Their selection study recorded `room = unknown` on all four day-one observations. They first attributed it to underlying
+quotes carrying no venue time at all, from a live IWM read returning `source: ""` and `sourceTs: 0`. I answered that this
+was a field-selection error, because equity venue time lives on `quote_ts` and `last_ts` while `source_ts` is the option
+NBBO field, and the quotes API serializer exposes only the option fields so every equity reads as untimed through it.
 
-- `source_ts` is the **option** NBBO venue time. For an **equity** the venue time is on `quote_ts`, with `last_ts` for the
-  print. `technique/research_recorder.py` chooses between them by instrument, which is why EM's equity evidence above has
-  a populated `quoteTs` from the same feed.
-- The quotes API serializer exposes only `source` and `sourceTs`, so `GET /api/quotes?symbols=<equity>` reports an empty
-  source and a zero venue time for every equity regardless of what the `Quote` object holds. Reproduced today on IWM.
-- EM additionally synthesizes the source from the feed name when an equity quote has no source string but does have a
-  `quote_ts` (`sourceBasis: engine_feed`), rather than discarding the quote.
+Half of that was right and half was wrong, and the wrong half is mine. The serializer trap is real and they withdrew
+their conclusion from it. But their helper was never reading the wrong field: `techniques/team2/runner.py` takes
+`last_ts` first and falls back to `quote_ts or source_ts`, so the selection was already correct. My claim that their bug
+was field choice does not survive reading their code, and this paragraph replaces it.
 
-A clock resync would not have changed any of their four observations. Different fault, same symptom - which was their
-point, and it was a good one.
+The true answer is one cause, not two. Their freshness guard is `t > 0 and 0 <= now - t <= max_age`; the stamps are
+present, so it passes the first arm and fails the second on a future-dated venue time - the same rejection EM's gate
+makes, written differently. Measured across all nine of today's records, on the same feed their IWM quote uses:
+
+| | min | max |
+|---|---:|---:|
+| `lastTs` minus the record's host time | +5,078 ms | +9,974 ms |
+| `quoteTs` minus the record's host time | +4,030 ms | +10,073 ms |
+
+Every one is future by more than the 1,000 ms tolerance, so all nine fail on any reading. A resync therefore repairs both
+desks' symptoms, and neither desk is loosening a freshness guard to tolerate a skewed clock next to money.
+
+If the resync happens, the Team2 desk has asked for the landing time, so their study's monitoring notes can record which
+of its sixty counted sessions were collected under the skew.
