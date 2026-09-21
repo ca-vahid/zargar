@@ -114,6 +114,11 @@ class Team2Rules(MarketRules):
     slippage_ticks: int = 1                 # pay the ask + 1 tick, sell the bid − 1 tick
     tick: float = 0.01
     target_identity_guard: bool = True      # 2026-09-17: a destination must be distinct from the setup's source level (off = the pre-09-17 behaviour)
+    setup_target: str = "inherit"           # setup-target-v1 (2026-09-21): "inherit" (DEFAULT, today's behaviour:
+                                            #   the setup takes the day's global destination for its side) | "resolve"
+                                            #   (resolve a destination for THIS setup at confirmation, from candidates
+                                            #   known then, nearest valid wins, explicit refusal when none qualifies).
+                                            #   Changes which trades happen, so it is an experiment, default off.
     target_collision: str = "refuse"        # RESEARCH arm E1 (2026-09-19): "refuse" (the 2026-09-17 rule) | "replan" (re-derive from the next structural level)
 
     def to_dict(self) -> dict:
@@ -148,6 +153,7 @@ SETTINGS_MAP: dict[str, str] = {
     "trim_2_pct": "trim_2_pct", "trim_2_frac": "trim_2_frac", "runner_exit": "runner_exit",
     "target_exit": "target_exit", "hod_target": "hod_target", "hod_target_min_atr": "hod_target_min_atr",
     "target_replan": "target_replan", "preopen_target_rederive": "preopen_target_rederive", "target_replan_gap_only": "target_replan_gap_only",
+    "setup_target": "setup_target",
     "add_on_retest": "add_on_retest", "max_adds": "max_adds",
     "dte_policy": "dte_policy", "target_premium": "target_premium",
     "premium_floor": "premium_floor", "chase_cap_mult": "chase_cap_mult", "premium_pick": "premium_pick",

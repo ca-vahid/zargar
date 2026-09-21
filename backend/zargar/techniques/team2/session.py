@@ -28,6 +28,7 @@ from .scenario import (
     pm_room,
     SCENARIO_LABEL, TREND_SCENARIOS, ScenarioTracker, body_closed_beyond, destination_check, sizing_bucket, target_is_ahead,
 )
+from .setup_target import resolve as resolve_setup_target
 
 TRACE_VERSION = 1
 
@@ -51,6 +52,7 @@ class Setup:
     dead: bool = False
     dead_reason: str | None = None
     key_level_id: str | None = None   # C2: the key level this setup is anchored on (None for zone / PM setups)
+    target_record: dict | None = None  # setup-target-v1: the resolved destination with its full candidate ladder
     _stalled: bool = False
     _skipped: str | None = None   # last "not a tradeable location" skip already said out loud (F23)
     _departed: bool = True        # F62: price has moved off the EMA13 band since the last counted contact
@@ -61,7 +63,8 @@ class Setup:
                 "target": None if self.target is None else round(self.target, 4), "confirmedTs": self.confirmed_ts,
                 "rangeDay": self.range_day, "touches": self.touches, "pullbacks": self.pullbacks,
                 "opportunities": self.opportunities, "attempts": self.attempts, "entries": self.entries, "losses": self.losses,
-                "dead": self.dead, "deadReason": self.dead_reason, "skipped": self._skipped}
+                "dead": self.dead, "deadReason": self.dead_reason, "skipped": self._skipped,
+                **({"targetRecord": self.target_record} if self.target_record else {})}
 
 
 @dataclass
@@ -253,8 +256,32 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         # C2 identity (reviewers 2026-09-13): a key-level setup carries its level's price in the id, so two levels
         # breaking on the same 15m bar are two setups (`key_break_up@09:30` twice used to overwrite the first)
         sid = f"{kind}@{_hhmm(ts)}" + (f":{anchor:.2f}" if key_level_id else "")
+        record = None
+        if str(getattr(rules, "setup_target", "inherit")) == "resolve":
+            # setup-target-v1: the destination is resolved for THIS setup, from what was known at
+            # `ts`. The day's global value is offered as one candidate (`planned`) and wins only if
+            # it is valid and nothing valid lies nearer. Default `inherit` never reaches here.
+            lad = ladder_now() or {}
+            side = (lad.get("highs") if direction == "long" else lad.get("lows")) if isinstance(lad, dict) else None
+            record = resolve_setup_target(
+                source=float(anchor), direction=direction, kind=kind, tick=float(rules.tick),
+                zones=zones, pm_high=pmh, pm_low=pml, ladder=list(side or []), planned=target,
+                input_ts={"planned": plan.get("builtTs"), "pm_extreme": plan.get("premarketTs"),
+                          "ladder": plan.get("builtTs"), "pd_zone": plan.get("builtTs")})
+            target = record["target"]
         s = Setup(id=sid, kind=kind, direction=direction, anchor=anchor, target=target,
                   confirmed_ts=ts, range_day=range_day, key_level_id=key_level_id)
+        s.target_record = record
+        if record is not None:
+            note(ts, "setup_target_resolved" if not record["refused"] else "setup_target_refused",
+                 (f"{sid}: destination {record['target']:.2f} from {record['targetOrigin']} — the nearest valid level "
+                  f"beyond the source {float(anchor):.2f} (setup-target-v1)") if not record["refused"] else
+                 (f"{sid}: no destination exists in the available structural data beyond the source "
+                  f"{float(anchor):.2f} — {record['refusedFor']} (setup-target-v1)"),
+                 setup=sid, source=round(float(anchor), 4), sourceRole=record["sourceRole"],
+                 target=record["target"], targetOrigin=record["targetOrigin"],
+                 candidates=len(record["ladder"]), accepted=sum(1 for c in record["ladder"] if c["accepted"]),
+                 record=record)
         setups[s.id] = s
         return s
 
