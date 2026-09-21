@@ -25,8 +25,15 @@ Every step below is from the runtime's own records for 2026-09-21.
 
 **QQQ** is the same shape: planned `above` 721.886, re-derived at 09:25 to the pre-market high
 **729.14**, breakout confirmed at 09:46 with source 729.14 and target 729.14, then refused
-repeatedly through the morning. 37 `skip_target_collision` records on the day across the three
-books.
+repeatedly through the morning.
+
+**Count these carefully.** The day produced 37 `skip_target_collision` records, but that is 37
+*rows*, not 37 opportunities. It is **two** suppressed setups — SPY `pm_break_up@09:45` and QQQ
+`pm_break_up@09:30` — each refused on many bars across three books. The unit that matters is the
+physical candidate, not the refusal event. (The EM desk hit the same inflation from the other side:
+one trigger produced 48 occupancy-refusal rows over 51 minutes while a single position was open.)
+The opportunity audit in this package therefore counts deduplicated candidates, never skip rows,
+and any figure quoted as an opportunity count in this work means candidates.
 
 ### What is actually wrong
 
