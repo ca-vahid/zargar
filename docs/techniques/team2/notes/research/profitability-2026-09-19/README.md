@@ -24,3 +24,5 @@ numbers). The registrations are in `../2026-09-19-profitability-preregistration.
 
 Four kinds of number are kept apart everywhere: actual Practice fills; real trade prints; simulated execution on real prints;
 historical quotes (none exist for options, none is used).
+
+Session-by-session monitoring (counts, coverage, collector health only) is kept in `11-monitoring-log.md`.
