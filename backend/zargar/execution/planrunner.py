@@ -894,6 +894,9 @@ class PlanRunner(SessionListener):
                     if preason is None:
                         self._quote_breaches.pop(pkey, None)
                         self._quote_seen.pop(pkey, None)
+                    # `oq is None` cannot be reached today (no quote means no basis price, so `preason`
+                    # is None above) — it is kept so a future basis that tolerates a missing quote cannot
+                    # walk into an AttributeError on the confirmation counter
                     elif oq is None or self._quote_seen.get(pkey, 0) >= int(getattr(oq, "source_ts", 0) or oq.ts):
                         pass         # DA-05: same or OLDER observation than the last count - not forward confirmation
                     else:
