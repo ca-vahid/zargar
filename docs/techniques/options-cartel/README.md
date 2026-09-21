@@ -115,3 +115,11 @@ concentration in the quote refresh sampler; ULTA's stock move did not imply a
 profitable selected option because of the recorded spread. The report separates
 actual results, option quote illustrations, source-access limitations and the
 next concrete contract-search/economics/entry-cadence changes. No settings changed.
+
+### Implementation handoff from September 21 review
+
+[Comprehensive developer brief](IMPLEMENTATION-BRIEF-2026-09-21.md) specifies the
+contract-refresh fix, executable-cost selection, bounded active5m Practice
+comparison, setup-family calibration, optional shares, data gaps and causal EOD
+reporting. It includes evidence, code targets, acceptance tests, rollout and
+rollback. This is an implementation specification; no policy is activated by it.
