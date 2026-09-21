@@ -317,3 +317,38 @@ async def test_g2_the_failed_exit_watchdog_still_retries_at_market(rig, monkeypa
     assert len(calls) == 1 and calls[0]["kind"] == "stop" and calls[0]["forceMarket"] is True
     assert "watchdog retry 1" in calls[0]["reason"]
     assert any("watchdog retrying at market" in a for a in alerts)
+
+
+async def test_e2_the_orphan_guard_keeps_the_right_stop_line_across_a_restart(rig, monkeypatch):
+    """Deferring a modelled premium stop makes the present-time S1 guard load-bearing, and that
+    guard judges the close against the line the ENTRY leaned on. So the entry kind has to survive a
+    restart: a position that leaned on EMA48 must not come back judged against EMA13."""
+    from types import SimpleNamespace
+
+    from zargar.domain import Bar
+    from zargar.execution.planrunner import ArmConfig
+    from zargar.models import TechniqueArmed
+    eng, runner, ap, tr, calls, run_id = await desk(rig, monkeypatch)
+    tr._entry_kind = "ema48"
+    await runner._persist(ap)
+    async with eng.sf() as s:
+        row = await s.get(TechniqueArmed, run_id)
+        cfg, state = dict(row.config or {}), dict(row.state or {})
+    runner._armed.pop(run_id, None)
+    await runner.arm(run_id, ArmConfig.from_dict(cfg), restored=True, prior_state=state)
+    ap2 = runner.get(run_id)
+    tr2 = ap2.trades[tr.trigger_id]
+    assert getattr(tr2, "_entry_kind", None) == "ema48", "the entry's line did not survive the restart"
+    calls2: list[dict] = []
+
+    async def fake_exit(ap_, t, kind, qty_, *, journal, force_market=False, reason="", authority=None):
+        calls2.append({"kind": kind, "authority": authority})
+        t.remaining -= qty_
+
+    monkeypatch.setattr(runner, "_exit", fake_exit)
+    # the model holds nothing; the close is through EMA48 but NOT through EMA13
+    res = SimpleNamespace(open_position=None, regime_last={"ema13": 569.00, "ema48": 571.20}, setups=[])
+    bar = Bar(symbol=ap2.symbol, tf="1m", ts=1, open=571.3, high=571.4, low=570.9, close=571.00, volume=1)
+    await runner._guard_orphaned_positions(ap2, res, bar, journal=True)
+    assert len(calls2) == 1 and calls2[0]["authority"]["line"] == "EMA48"
+    assert calls2[0]["authority"]["guard"] == pytest.approx(571.20)
