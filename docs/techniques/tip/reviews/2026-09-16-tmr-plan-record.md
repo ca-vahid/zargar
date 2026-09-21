@@ -756,3 +756,30 @@ yesterday's 9 rows all got their next-open sample (fresh). **Tonight:** `tip_ret
 `tip_knowledge_maintenance` (propose-only), `tip_llm_stats` 17:40. **Deploys today (other desks):** 0.8.17 -> 0.8.18
 (11:11 ET) -> 0.8.19 `491d6ff` (12:14 ET), each receipt verified with full restoration (74/74 armed, 30/30 resting,
 6/6 managed); every build contains the Tips E17 commit e8aeb25. Gates unchanged; prompt caching off.
+
+## 2026-09-21 — observed session 1 of 5 (prospective measurement; build 0.8.28 `7ee5ad2a`, contains eaec9b55 and the 0.8.25 Tips package)
+
+Observe only: no settings, policy or code change on the trading path. `review_gate` stayed `observe`.
+
+**Trading (Tips Practice, NET of matched fees, `executions.commission`).** Realized today **+$16.63**, no questioned fills.
+
+| position | gross | fees | net | how |
+|---|---:|---:|---:|---|
+| AAL 10/16 14c ×2 (entered 09-18 @0.34) | +18.00 | 4.16 | **+13.84** | source ab closed the leg 13:56; analyst mirrored the exit at 13:57 (0.43) and disarmed the waiting AAL plan |
+| VKTX 17 of 50 sh (entered 15:23 @29.74) | +2.79 | 0 | **+2.79** | TP1 30.60 trim at 15:30; stop followed the held quantity (28.34 × 33) |
+
+Six genuine entries, every fill at or inside the fresh ask (`TipFillVsQuote`): NFLX 9/25 74c ×1 @0.62 (at ask, fee 1.04), PL 59 sh @16.94 (−0.02 vs ask), IONQ 28 sh @40.73 (at ask), CORZ 12/18 25c ×1 @1.00 (at ask, fee 1.04), ACHR 9/25 5.5c ×5 @0.14 (−0.01 vs ask, fee 5.20), VKTX 50 sh @29.74 (at ask). Diagnostic gap noted, not fixed: the three SHARE fill-vs-quote records carry `quoteSourceTs: 0` (option records carry the OPRA timestamp).
+
+**Decision funnel** (`tip_outcomes --dispositions --since 2026-09-21`): 27 actionable ideas, 8 takes, 6 filled, 19 declined, 1 risk-infeasible (MRNA 9/25 185c: one contract risks $245 vs the $90 budget — a P3 card, pending until 17:34 for a labelled override only), 0 avoidable. Signals by status: 63 verification_failed / 7 parked / 6 shadow / 20 proposed across 8 sources; eva's 09:21 pre-bell map fanned into 10 branches, all declined by the analyst (siblings inherit the verdict). Not counted as an idea but recorded: the MK-alpha-trades "Alpha Report" (08:32) failed extraction twice on provider 529 overload (08:32, recovery retry 08:35) and rests as `error` — a context source in own-book observe, so nothing tradable was lost; the two-attempt limit is a design choice to revisit after the window.
+
+**Review-gated cards:** 0 `TipGeometryRepaired reviewRequired`; 33 geometry records, all enforce pre-entry/submit. **Incidents / fast stops / retries / analyst failures / halts:** none. **Cold-park fast path:** 1 (ARM, quote warm after 7 s — the recovery sweep ran immediately instead of waiting up to 15 min). **Intake:** 3 transient `TipIntakeStalled` (in-flight bursts at 09:22, 09:58, 15:56, each drained within a minute); gateway reconnected 9 times today with no delivery loss; the liveness "late delivery" warning on MK-options/MK-stocks is onboard-backfill lag, not latency.
+
+**Overnight (8 positions):** SBLK 62 sh (GTC stop 30.58), PL 59 sh (15.45), IONQ 28 sh (37.60), VKTX 33 sh (28.34) — venue stops match held quantities; ACHR 1/15 7c ×3, ACHR 9/25 5.5c ×5, NFLX 9/25 74c ×1, CORZ 12/18 25c ×1 app-managed. **Hold study:** 14 rows captured 15:50 (`preclose fresh`), next-open 2026-09-22; Friday's 8 rows sampled 09:30 today. **Plans that roll:** 8 tip plans stay armed (AAOI, AMZN, GOOGL, MU, PLTR, RKT, T + one); the AMZN plan carries the source's "trim" follow-up flag for review; the DAL plan was disarmed by the analyst on the source's trim.
+
+**Model cost today (list-price estimate, apart from trading P&L):** priced **$109.90** (129 intake reviews $89.58 + 25 appraisals $20.32, Opus 5); unpriced: 29 intake runs with no model call (27 "1 tip" hand-offs + the 2 failed extractions); partial: 0. Lower bound: yes (2 failed runs).
+
+**Relevance filter (observe, never enforce):** 129 decisions — **103 review / 26 skip**, 0 readErrors. Management reviews today (AAL exit-plan update at 10:51, AAL close at 13:56, DAL disarm at 12:30) all sat on the review side. Prospective false negatives are judged by `tip_review_gate_eval --prospective` at the five-session report, not here.
+
+**Research-book note (not Tips Practice):** the eva armed shadow book holds MU −13 sh since 09-11 (duplicated 09-08 exit executions); a 1-share MU buy there was refused as "would be short" at 09:31. Bookkeeping repair is a human step; no money involved.
+
+Owned elsewhere today: Team2 stood down its after-close deploy (PR #242 open, unmerged); the IWM/MRVL/AVGO/IREN trips in the sweep are Team2/EM books.
