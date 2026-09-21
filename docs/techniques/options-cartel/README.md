@@ -106,3 +106,12 @@ ancestors stop traversal. Committed child analyses with matching cutoffs survive
 an incomplete progress checkpoint. A read-only reproduction recovered all 3,072
 saved analyses behind the reported early-interrupted retry. Startup recovery
 waits for controller attachment without consuming the five-minute throttle.
+
+### September 21 close
+
+[September 21 EOD review](reviews/2026-09-21-eod/README.md): zero orders/fills/P&L.
+Funding was not the binding gate. NTNX's 5m shadow confirmation exposed expiry
+concentration in the quote refresh sampler; ULTA's stock move did not imply a
+profitable selected option because of the recorded spread. The report separates
+actual results, option quote illustrations, source-access limitations and the
+next concrete contract-search/economics/entry-cadence changes. No settings changed.
