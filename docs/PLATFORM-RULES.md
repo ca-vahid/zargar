@@ -2553,6 +2553,24 @@ default-off `deferral-retry-v1` policy live entirely in EM's own `technique/armi
 `technique/admission_health.py` / `technique/deferred_retry.py`; no shared runner behaviour changed, and every other
 desk's first-sale hook remains the base no-op.
 
+### An alarm's clear path is a second code path, and a PowerShell logger that writes to the pipeline breaks it - 2026-09-21 (EM desk)
+
+The clock repair above was verified by running the recovery path for real, and that is what exposed the defect:
+the EM check script raised its attention notice correctly and could never clear it. `Say` logged through
+`Tee-Object`, which EMITS into the pipeline, so the clock function returned every logged line **plus** its exit
+code, and `if ($code -eq 0)` compared against an array and evaluated false. Three lessons, in widening order:
+
+1. **In PowerShell a function returns everything it emits.** Any helper that writes to the pipeline silently
+   becomes part of the contract of every function that calls it. This is a family of bugs, not one instance
+   (Team2 desk's generalisation). Log with `Write-Host` plus an explicit `Out-File`, never `Tee-Object`, inside
+   anything whose return value is read.
+2. **A raise path and a clear path are two code paths, and testing one tests neither.** A notice that cannot
+   clear is worse than no notice: it inverts the alarm's meaning, because a permanently-raised flag trains the
+   reader to ignore it.
+3. **A verification whose failure would be invisible must not share a command with the action it verifies.**
+   The same session committed a file with conflict markers because the marker check and `git add -A` ran in one
+   compound command and the check's non-zero exit was lost behind the add's success.
+
 Known gap PARKED WITH AN OWNER, not merely recorded: an F33 loss-budget block that is rescued by the shares
 fallback writes no journal row at all (`_entry_blocked`, shared `planrunner.py`), so the durable ledger
 under-counts budget blocks. MRVL was blocked in both EM books on 2026-09-21 and neither produced an event.
