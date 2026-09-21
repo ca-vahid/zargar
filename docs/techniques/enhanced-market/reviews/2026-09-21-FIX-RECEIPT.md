@@ -9,7 +9,7 @@ unchanged, and no setting was written.
 | | |
 |---|---|
 | Branch | `claude/technique-review-trade-plan-fbb9ba` |
-| Candidate SHA | `c2ad4686` (merge of `origin/main` into the desk branch) |
+| Candidate SHA | **`d251d3a7`** (the receipt commit; the merge of `origin/main` is `c2ad4686`) |
 | main at merge time | `7eb89303` (Tips EOD 2026-09-21, PR #245) |
 | Behind main | **0 commits** |
 | Runtime now | v0.8.28 build `7ee5ad2a` on `claude/zargar-stock-app-research-8mnqfh` |
@@ -55,6 +55,7 @@ These need a deploy before they do anything, and none of them changes trading de
 | Suite | Result |
 |---|---|
 | New: admission health, exit latency, source topic switch, shadow provenance | **62 passed** |
+| Post-merge re-run of the EM suites on the merged tree | **101 passed** |
 | Reviewers' suites: first sale, final dispatch budget, measurement boundaries, capture follow-up, DA execution, review execution | pass unchanged |
 | EM experiment, preparation policy, source scenarios, source wiring | pass |
 | `test_technique_arming.py` | **31/31 alone.** In a 200-test combined run one case fails, a different one each time, and every one passes in isolation: the file is timing-sensitive under long combined runs. Recorded, not hidden |
