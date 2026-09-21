@@ -296,3 +296,24 @@ async def test_the_exit_journal_row_carries_the_authority(rig, monkeypatch):
     assert a["quote"]["sourceTs"] and a["quote"]["basis"] == "mid"   # the quote and its source time
     assert "premium_stop_breach" in a["convention"]
     assert a["model"]["pnlPct"] == -32.0                 # the model's own number, kept separate
+
+
+async def test_g2_the_failed_exit_watchdog_still_retries_at_market(rig, monkeypatch):
+    """Acceptance (g): the protective retry is named in the brief, so it is proved rather than
+    assumed. A Team2 exit that errored is still re-sent at market by the 2 s watch, and the model
+    has no say in it."""
+    eng, runner, ap, tr, calls, _ = await desk(rig, monkeypatch)
+    quote(eng, EXIT_BID, EXIT_ASK)                       # premium NOT through the stop: only the watchdog can act
+    eng.quotes.on_quote(Quote(symbol=ap.symbol, bid=569.9, ask=570.1, last=570.0))
+    tr.exits.append({"kind": "stop", "qty": 35.0, "status": "ERROR", "error": "venue unreachable",
+                     "filledQty": 0.0, "orderId": None, "ts": 1})
+    alerts: list[str] = []
+
+    async def fake_alert(ap_, text, **kw):
+        alerts.append(text)
+
+    monkeypatch.setattr(runner, "_alert", fake_alert)
+    await runner.on_quote_watch()
+    assert len(calls) == 1 and calls[0]["kind"] == "stop" and calls[0]["forceMarket"] is True
+    assert "watchdog retry 1" in calls[0]["reason"]
+    assert any("watchdog retrying at market" in a for a in alerts)
