@@ -8,6 +8,20 @@ analysis; it is the record of what the study was collected under.
 
 ---
 
+## Which build collected which session
+
+The registration hash covers the study's definition, not the runtime it collects on, so the build
+moves underneath the study whenever any desk deploys. That does not affect registration integrity,
+but a reader of the frozen analysis should be able to tell the sessions apart, so the builds are
+recorded here as they change.
+
+| from session | build | version | note |
+|---|---|---|---|
+| activation, 2026-09-19 | `fea5bb49` | 0.8.26 | the build the activation record was journaled against |
+| session 1, 2026-09-21 | `7ee5ad2a` | 0.8.28 | another desk deployed on 2026-09-20; the whole of session 1 ran on this |
+
+---
+
 ## Session 1 — 2026-09-21 (first counted session)
 
 **Collector health:** nominal. State `collecting`, all health counters zero at activation.
