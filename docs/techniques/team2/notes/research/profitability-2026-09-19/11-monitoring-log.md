@@ -43,9 +43,19 @@ Measured on 2026-09-21, from durable records rather than from the API:
 
 | measurement | value |
 |---|---|
-| host clock − database clock | −8.978 s |
+| host clock vs true time, 5 NTP servers (4 stratum 1), agreeing within 38 ms | **−10.517 s** |
+| host clock − database clock (superseded, see below) | −8.978 s |
 | equity `evidence.lastTs` − the record's own host `ts`, 9 of 9 `TechniqueFirstSale` rows | +5,078 to +9,974 ms |
 | equity `quoteTs` − the record's own host `ts`, same rows | +4,030 to +10,073 ms |
+
+**Correction (same day, from the EM desk).** The host-to-database comparison above UNDERSTATES the
+skew by about 1.4 s, because the database runs in WSL and is itself behind true time. Comparing two
+drifting clocks measures their difference, not the error. The authoritative figure is the NTP one:
+the host is **10.517 s behind true time**, round-trip uncertainty at most 62 ms. Windows `w32time`
+is Stopped with start type Manual, so the drift returns after every reboot — a one-off correction
+without changing the service start type would not hold. The direction and the conclusion are
+unchanged; only the magnitude was wrong, and the larger figure makes the venue stamps look further
+into the future, not less.
 
 The same fault refused every EM first-sale entry this session with
 `underlying.validated.problems = ["venue_time_in_future"]` (9 of 9). One cause, two desks.
