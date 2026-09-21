@@ -2553,6 +2553,11 @@ default-off `deferral-retry-v1` policy live entirely in EM's own `technique/armi
 `technique/admission_health.py` / `technique/deferred_retry.py`; no shared runner behaviour changed, and every other
 desk's first-sale hook remains the base no-op.
 
-Known gap recorded, not fixed here: an F33 loss-budget block that is rescued by the shares fallback writes no
-journal row at all (`_entry_blocked`, shared `planrunner.py`), so the durable ledger under-counts budget blocks.
-That belongs in a reviewed shared diff of its own.
+Known gap PARKED WITH AN OWNER, not merely recorded: an F33 loss-budget block that is rescued by the shares
+fallback writes no journal row at all (`_entry_blocked`, shared `planrunner.py`), so the durable ledger
+under-counts budget blocks. MRVL was blocked in both EM books on 2026-09-21 and neither produced an event.
+**Owner: the Team2 desk** (accepted 2026-09-21), in its own reviewed diff with a contract row for the new event,
+after its current package ships - opportunity accounting is what that desk is working on, and a budget block that
+writes no row is the same species of hole as a candidate refused before contract selection: real suppression that
+leaves no trace. Team2 is options-only and has no shares fallback to be rescued by, so the gap does not reach its
+own books; that is a reason to schedule it, not to drop it.
