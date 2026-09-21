@@ -676,14 +676,34 @@ class PlanRunner(SessionListener):
             elif key in seen or key in pending:
                 return                                          # the candidate's first COVERED observation is recorded
             contract = None
-            oq = self.engine.quotes.get(tr.order_symbol) if (tr.instrument == "options" and tr.order_symbol) else q
+            is_opt = tr.instrument == "options" and bool(tr.order_symbol)
+            oq = self.engine.quotes.get(tr.order_symbol) if is_opt else q
             if oq is not None:
-                o_src = int(getattr(oq, "source_ts", 0) or oq.ts or 0)
-                contract = {"symbol": (tr.order_symbol if tr.instrument == "options" else ap.symbol),
+                # 2026-09-21: this block used to read `Quote.source` raw and fall back to the RECEIPT time when the
+                # venue time was missing. For an equity that meant two silent untruths: `source` is "" by contract on
+                # every equity quote, so every share observation EM ever recorded was discarded as having no
+                # provenance; and `sourceTs` then carried a receipt stamp, so `ageS` measured how long ago WE saw the
+                # quote, not how old the venue said it was. Both recorders now answer those two questions the same
+                # way - options from `source_ts`, equities from `quote_ts`/`last_ts` - and a missing venue time stays
+                # missing rather than borrowing the host clock.
+                # equities: the venue fields first (`quote_ts`, then the print's `last_ts`), and `source_ts` only if a
+                # producer did set it - never `oq.ts`, which is OUR receipt and tells you nothing about the venue.
+                o_src = int((getattr(oq, "source_ts", 0) if is_opt
+                             else (getattr(oq, "quote_ts", 0) or getattr(oq, "last_ts", 0) or getattr(oq, "source_ts", 0))) or 0)
+                raw_src = str(getattr(oq, "source", "") or "")
+                src, basis = raw_src, ("quote" if raw_src else None)
+                if not raw_src and not is_opt and o_src > 0:
+                    from ..technique.research_recorder import feed_identity
+                    fid = feed_identity(self.engine)
+                    if fid:
+                        # a PROCESS label, not a venue: `sourceBasis` keeps that visible to every later reader
+                        src, basis = fid, "engine_feed"
+                contract = {"symbol": (tr.order_symbol if is_opt else ap.symbol),
                             "bid": oq.bid, "ask": oq.ask, "bidSize": getattr(oq, "bid_size", None), "askSize": getattr(oq, "ask_size", None),
-                            "source": str(getattr(oq, "source", "") or ""), "sourceTs": o_src, "receivedTs": oq.ts,
+                            "source": src, "sourceBasis": basis, "rawSource": (raw_src or None),
+                            "sourceTs": o_src, "receivedTs": oq.ts,
                             "ageS": (round((now_ms - o_src) / 1000.0, 2) if o_src else None),
-                            "delayed": bool(getattr(oq, "delayed", False)) or str(getattr(oq, "source", "") or "") == "chain"}
+                            "delayed": bool(getattr(oq, "delayed", False)) or raw_src == "chain"}
             stop_reason = quote_stop_breach(tr, obs, excess_r=excess, direction=tr.direction)
             prem_reason = None
             if tr.instrument == "options" and contract and prem_pct > 0 and not contract["delayed"]:
@@ -703,8 +723,12 @@ class PlanRunner(SessionListener):
                 why = "no contract quote"
             elif contract["delayed"]:
                 why = "delayed chain row"
-            elif not contract["source"] or not contract["sourceTs"]:
-                why = "no source provenance / timestamp"
+            elif not contract["source"] and not contract["sourceTs"]:
+                why = "no source provenance and no venue timestamp"
+            elif not contract["source"]:
+                why = "no source provenance"
+            elif not contract["sourceTs"]:
+                why = "no venue timestamp"
             elif contract["ageS"] is None or contract["ageS"] < 0 or contract["ageS"] > 10.0:
                 why = "contract quote stale or future-dated"
             else:

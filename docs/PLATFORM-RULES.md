@@ -2528,6 +2528,14 @@ Three rules for every desk, learned the expensive way:
    report the failure explicitly, and let the gate keep refusing until it is fixed.
 3. **Durations use a monotonic clock; source-versus-decision comparisons use UTC epoch.** They are different
    questions and a wrong wall clock breaks only one of them.
+4. **A source timestamp that matches the host clock proves nothing about venue time** (Tips desk, same afternoon).
+   Where a `sourceTs` is really a receipt stamped here, a host offset cancels out of every age computed from it - the
+   ages stay unbiased, and the provenance is still absent. EM found the same thing as a defect rather than a caveat:
+   the shadow recorder fell back to the receipt time when an equity carried no venue stamp, so `ageS` measured how
+   long ago WE saw the quote. It now reads `quote_ts`, then `last_ts`, then `source_ts`, and never the receipt.
+   Equities also carry `source = ""` by contract, so a recorder that reads it raw discards every share observation:
+   use the shared `research_recorder.quote_evidence` policy, and when it substitutes the feed's class name keep the
+   `sourceBasis: engine_feed` marker, because `feed:HybridQuoteFeed` names a process in this app and never a venue.
 
 Shared surfaces touched, all additive and inert for other desks: one new journal type `TechniqueAdmissionAlarm`
 (with its contract entry) and two `techniques.enhanced_market.*` settings. The detection, the alarm and the
