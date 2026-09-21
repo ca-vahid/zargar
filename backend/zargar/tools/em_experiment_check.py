@@ -86,18 +86,24 @@ async def exceptions(c, date: str, books: list) -> dict:
     a = dt.datetime(d.year, d.month, d.day, 4, 0, tzinfo=NY)
     b = a + dt.timedelta(hours=16)
     ours = {str(x) for x in books if x}
-    rows = [dict(r) for r in await c.fetch("select type, ts, portfolio_id, payload from events where ts >= $1 and ts < $2 and type = any($3::text[]) order by ts", a, b, list(EXCEPTION_TYPES))]
+    # A run's book is resolved from the ARMED row, not only from the event's own column: TechniquePlanError is journaled
+    # with portfolio_id NULL on some paths (a bars/quote failure carries no book), and those rows were being discarded as
+    # another desk's. Never decide ownership on the nullable column alone.
+    run_book = {str(r["run_id"]): str(r["portfolio_id"]) for r in
+                await c.fetch("select run_id, portfolio_id from technique_armed where plan_for = $1", date)}
+    rows = [dict(r) for r in await c.fetch("select type, ts, portfolio_id, aggregate_id, payload from events where ts >= $1 and ts < $2 and type = any($3::text[]) order by ts", a, b, list(EXCEPTION_TYPES))]
     out: dict = {"window": [a.isoformat(), b.isoformat()], "byType": {}, "items": [], "rateLimit": {}, "recorder": {}, "unscorable": {}}
     for r in rows:
         p = _j(r["payload"]) or {}
-        mine = (str(r["portfolio_id"] or "") in ours) or (str(p.get("portfolioId") or "") in ours)
+        book = (r["portfolio_id"] or p.get("portfolioId") or run_book.get(str(r["aggregate_id"] or "")) or p.get("runId") and run_book.get(str(p.get("runId"))))
+        mine = str(book or "") in ours
         if r["type"] in ("TechniquePlanError", "TechniquePlanAlert") and not mine:
             continue                                        # another desk's plan noise is not an EM exception
         key = r["type"] + ("" if mine else " (other book)")
         out["byType"][key] = out["byType"].get(key, 0) + 1
         if r["type"] not in QUIET and len(out["items"]) < 40:
             why = str(p.get("reason") or p.get("error") or p.get("text") or p.get("label") or "")[:180]
-            out["items"].append({"at": r["ts"].isoformat(), "type": r["type"], "book": (r["portfolio_id"] or p.get("portfolioId")),
+            out["items"].append({"at": r["ts"].isoformat(), "type": r["type"], "book": book,
                                  "why": why, "ours": mine, "class": classify(r["type"], why)})
     rl = await c.fetch("select portfolio_id, payload from events where type='RiskCheckFailed' and ts >= $1 and ts < $2", a, b)
     hit = [r["portfolio_id"] for r in rl if any((x.get("name") == "order_rate" and not x.get("passed")) for x in ((_j(r["payload"]) or {}).get("checks") or []))]
@@ -120,11 +126,36 @@ async def exceptions(c, date: str, books: list) -> dict:
                     reasons[str(why).split(":")[0]] = reasons.get(str(why).split(":")[0], 0) + 1
             out["recorder"][pid] = {"snapshots": len(snaps), "instances": len(per), "drops": sum(per.values())}
             out["unscorable"][pid] = reasons
+    # An entry the method WANTED and the admission gate could not decide is an exception: the plan fired, the rules agreed,
+    # and no trade happened because evidence was missing or the policy errored. Counted apart from rule-based refusals
+    # (`refused` is the method saying no - that is the policy working and is not reported here).
+    skipped = await c.fetch("select aggregate_id, ts, payload from events where type='TechniquePlanTriggerSkipped' and ts >= $1 and ts < $2 order by ts", a, b)
+    adm: dict = {}
+    for r in skipped:
+        book = run_book.get(str(r["aggregate_id"] or ""))
+        if str(book or "") not in ours:
+            continue
+        pl = _j(r["payload"]) or {}
+        det = pl.get("detail") if isinstance(pl.get("detail"), dict) else {}
+        disp = str((det or {}).get("disposition") or "")
+        if not (disp.startswith("deferred") or disp == "policy_error"):
+            continue
+        cell = adm.setdefault(book, {})
+        row = cell.setdefault(disp, {"count": 0, "symbols": [], "firstAt": r["ts"].isoformat(), "lastAt": None, "why": ""})
+        row["count"] += 1
+        row["lastAt"] = r["ts"].isoformat()
+        sym = str(pl.get("symbol") or "")
+        if sym and sym not in row["symbols"] and len(row["symbols"]) < 12:
+            row["symbols"].append(sym)
+        row["why"] = row["why"] or str((det or {}).get("reason") or (det or {}).get("why") or (det or {}).get("boundClass") or "")[:180]
+    out["admissionDeferrals"] = adm
+    out["admissionDeferralCount"] = sum(v["count"] for cell in adm.values() for v in cell.values())
     out["byClass"] = _count(i["class"] for i in out["items"])
     out["faults"] = [i for i in out["items"] if i["class"] == "fault"]
     out["protectiveActions"] = [i for i in out["items"] if i["class"] == "protective"]
     out["restartsDuringSession"] = int((out["byType"].get("TechniquePlanRestored") or 0) + (out["byType"].get("TechniquePlanRestored (other book)") or 0))
-    out["anythingToReport"] = bool(out["items"] or out["rateLimit"]["orderRateRejections"] or any(v["drops"] for v in out["recorder"].values()))
+    out["anythingToReport"] = bool(out["items"] or out["admissionDeferralCount"] or out["rateLimit"]["orderRateRejections"]
+                                   or any(v["drops"] for v in out["recorder"].values()))
     return out
 
 
@@ -212,6 +243,8 @@ def main() -> int:
             print(f"Shared order-rate window: {e['rateLimit']['orderRateRejections']} rejections ({e['rateLimit']['ours']} in an EM book); busiest minute "
                   f"{e['rateLimit']['busiestMinute']} with {e['rateLimit']['busiestMinuteOrders']} orders, cap {e['rateLimit']['capPerMinute']}.")
             print(f"Recorder: {e['recorder'] or 'no captures'}; unscorable reasons: {e['unscorable'] or 'none'}.")
+            print(f"Entries the admission gate could not decide: {e['admissionDeferralCount']}"
+                  + (f" -> {json.dumps(e['admissionDeferrals'], default=str)}" if e["admissionDeferrals"] else " (none)."))
             for it in e["items"]:
                 print(f"- {it['at']} {it['type']} book={it['book']} ours={it['ours']} {it['why']}")
     return 0
