@@ -55,6 +55,14 @@ v0.8.02: a quote is evidence only when live, sane and fresh by its own source ti
 
 ## Status (2026-09-16)
 
+> **2026-09-19 profitability study, corrected pass (read this first): `notes/research/profitability-2026-09-19/00-decision-sheet.md`.** Decision:
+> INSUFFICIENT EVIDENCE of an after-cost edge. Simulated on real option prints the baseline's mean is -3.7% per trade (date-clustered
+> 95%: -7.9 to +0.8) at the books' fee, about zero with no fee, -7.6% at one tick per leg; the print proxy itself errs by about three
+> cents per leg against our fills. Nine preregistered variants failed their criterion. The product replay's premium formula reports
+> +22% on the same trades, so formula-scored sweep figures below are unreliable. Control / Sizing 0.5 / C1 were left untouched.
+> Next step, accepted by the review team: the ORDER-FREE selection study. Its collector is built and DEFAULT OFF
+> (`techniques.team2.selection_study`, `notes/research/profitability-2026-09-19/08-collector-package.md`); it is not enabled or deployed.
+
 **Where the desk stands.** Team2 trades its own Practice book (`Team2 Practice`, $10,000 start, sim fills on live NBBO)
 in `auto` mode since 2026-09-08 (auto on the shared Practice book from 2026-09-04). Live release **v0.7.94** (deployed
 2026-09-15 evening). Plans for SPY/QQQ/IWM are minted at 17:00 ET and armed automatically, completed at 09:25 and

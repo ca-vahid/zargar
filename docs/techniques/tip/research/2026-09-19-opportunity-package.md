@@ -79,7 +79,7 @@ in the baseline: **no demonstrated selection edge**, D2 stays NO-GO, D3 research
 
 **Cheaper review model.** `economics/review-model-evaluation-plan.md`: 60 stratified cases (20 management,
 10 missed-entry, 8 correction, 6 mixed, 16 note-only), Sonnet 5 and Haiku 4.5, one pass each,
-**$35 hard ceiling** enforced by `frozen.ReplayBudget`. Historical reviews kept their tool results but not their
+**$35 estimate-based spending guard, not a guaranteed maximum** (`review_frozen.SuiteBudget`, see 6b). Historical reviews kept their tool results but not their
 request, so none is faithfully replayable today; cases fill from reviews captured once
 `techniques.tip.review_capture_context` is on. Management tools are recorded as proposals and never executed.
 
@@ -88,7 +88,7 @@ request, so none is faithfully replayable today; cases fill from reviews capture
 | # | decision | recommendation | evidence | default if undecided |
 |---|---|---|---|---|
 | P1 | Enforce the relevance filter | wait for the five-session report | 186/557 skippable, $121.83, 0 management false negatives (history only) | stays `observe` |
-| P2 | Run the paid cheaper-model evaluation ($35 cap) | approve once ≥ 60 stratified cases are captured | plan above; ~10× lower list price on 80% of spend | not run; production model unchanged |
+| P2 | Run the paid cheaper-model evaluation ($35 estimate-based guard, not a guaranteed maximum) | decide once ≥ 60 stratified cases are captured, including whether to accept the estimate limitation | plan above; ~10× lower list price on 80% of spend | not run; production model unchanged |
 | P3 | Risk-infeasible cards wait 120 min | shorten to the quote-freshness horizon or keep for human override | 2 of 11 expiries; no trade lost | unchanged |
 | P4 | Shares alternative when no option quantity fits the risk budget | keep measuring to n ≥ 20 before any proposal | n = 4, mixed | research only |
 | P5 | Approve the pending consolidated ladder/trailing rule | human read in Knowledge → Audit proposals | D5 manifest `30c9891efc712b49` | stays non-operative |
@@ -98,6 +98,24 @@ request, so none is faithfully replayable today; cases fill from reviews capture
 
 Window 2026-09-21 .. 09-25. No prospective evidence exists yet and none is claimed here. The report
 (`tip_review_gate_eval --prospective`, scorecard v3, dispositions) is produced after the fifth session.
+
+## 6b. Evaluation safeguards, revision 2 (2026-09-19, reviewer follow-up - evaluation only, nothing deployed needs it)
+
+- **Instructions, not labels.** `compare` judges target + every operative parameter. SBLK stop 30.58 -> 25.00 is now a
+  `disagree` with the field listed; a different sale fraction or an added hold cap likewise.
+- **No substituted evidence.** A read is served only for the exact tool + arguments the case recorded. A replay asking
+  for MSFT's quote no longer receives AAPL's; the evidence stays missing and the case is `inconclusive` - never a pass.
+- **One $35 spending guard for the whole suite - an ESTIMATE, not a guaranteed maximum.** `SuiteBudget`: durable write-ahead ledger shared by both models, all cases,
+  turns, retries and separate invocations; reservation = request chars / 3 + full output allowance, x 1.25; unknown
+  billing stays charged at the reservation; SDK retries disabled; a later run cannot raise the cap. Remaining
+  limitation, stated: reservations are estimates and actual billing can exceed one; the total stays within $35 only while
+  no single attempt bills more than 1.25x its reservation, so the final bill can end above $35 by at most one attempt's
+  overrun (recorded). Paid execution stays unapproved until the cases are ready and the user decides on that limitation. Demonstrated in `tests/test_tip_review_frozen.py` (2 models x 6 cases x 2 turns, failing attempts, three
+  invocations, refusal before the call).
+- P1 observe, P3 unchanged, P4 research only, P5 pending, P6 unchanged. No paid evaluation and no production-model
+  change is approved.
+- **Durable owner of the 09-25 report:** `docs/techniques/tip/research/FIVE-SESSION-CHECKPOINT.md` (what to run, when it
+  is due, who owns it) + the Windows task `ZargarTipsFiveSession` that writes the raw outputs after the fifth session.
 
 ## 7. Rollout record (2026-09-19)
 

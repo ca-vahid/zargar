@@ -89,6 +89,7 @@ class Position:
     adds: int = 0
     added: list[dict] = field(default_factory=list)      # X5 adds
     pnl_per_unit_pct: float = 0.0   # R23
+    through_count: int = 0          # consecutive 2m closes through the guard line (S1/S2; research knob `stop_candles`)
     realised: list[dict] = field(default_factory=list)   # partial exits
 
     def to_dict(self) -> dict:
@@ -427,8 +428,14 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             guard_name, guard = {"ema": ("EMA13", r.ema_fast), "ema48": ("EMA48", r.ema_mid),
                                  "ema200": ("200 EMA", r.ema_slow)}.get(p.entry_kind, ("level", p.setup.anchor))
             through = guard is not None and ((b2.close < guard) if long else (b2.close > guard))
-            if through:
+            # S2 (research knob, default 1 = the behaviour since v0.1): the stop needs `stop_candles` CONSECUTIVE 2m closes
+            # through the line; a close back on the right side resets the count. At 1 this block is the old one-candle stop.
+            p.through_count = p.through_count + 1 if through else 0
+            if through and p.through_count >= max(1, int(rules.stop_candles or 1)):
                 why = f"2m close {b2.close:.2f} through the {guard_name} {guard:.2f} (S1 one-candle stop)"
+                if int(rules.stop_candles or 1) > 1:
+                    why = (f"{p.through_count} consecutive 2m closes through the {guard_name} {guard:.2f}, last {b2.close:.2f} "
+                           f"(S1 stop, stop_candles={int(rules.stop_candles)})")
                 if p.trims:
                     why = "runner: " + why + " (X2)"
                 close_fraction(p, p.remaining, b2.close, end_ts, why)
@@ -695,13 +702,39 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         # target that is the broken source level itself (or behind it) is refused for EVERY entry kind of the setup,
         # before any re-plan could substitute a farther level just to permit the trade. Judged here and again in the
         # runner (`resolve_fire_target`) so a restored or replayed fire meets the same rule.
-        if rules.target_identity_guard and target is not None and abs(float(target) - float(s.anchor)) <= max(float(rules.tick), 0.0):
+        if (rules.target_identity_guard and str(getattr(rules, "target_collision", "refuse")) != "replan" and target is not None
+                and abs(float(target) - float(s.anchor)) <= max(float(rules.tick), 0.0)):
             _, why_ = destination_check(target, s.anchor, None, None, s.direction, rules.tick)
             note_once(s, end_ts, "skip_target_collision", f"{s.id}: {why_} — no distinct valid destination, refusing the "
                       f"entry rather than re-planning to a farther level or dropping the target", setup=s.id, touch=idx,
                       spot=round(entry_spot, 4), target=round(float(target), 4), anchor=round(float(s.anchor), 4),
                       entryKind=entry_kind)
             continue
+        # RESEARCH arm E1 (2026-09-19, default `refuse` = the rule above, unchanged): under `target_collision="replan"` a
+        # planned target that IS the setup's source level is re-derived in the F81b order (pre-market extreme ahead, else the
+        # next ladder level), on any day type; with nothing distinct ahead the entry is refused exactly as before. The final
+        # destination check below still judges whatever this produces.
+        if (not rules.target_identity_guard or str(getattr(rules, "target_collision", "refuse")) != "replan") or target is None                 or abs(float(target) - float(s.anchor)) > max(float(rules.tick), 0.0):
+            pass
+        else:
+            pm_ = plan.get("pml") if s.direction == "short" else plan.get("pmh")
+            cand_ = None
+            for c_ in ([float(pm_)] if pm_ is not None else []) + [next_structural_level(ladder_now(), entry_spot, s.direction)]:
+                if c_ is None or not target_is_ahead(c_, entry_spot, s.direction):
+                    continue
+                if destination_check(c_, s.anchor, entry_spot, b2.close, s.direction, rules.tick)[0] is None:
+                    cand_ = float(c_)
+                    break
+            if cand_ is None:
+                _, why_ = destination_check(target, s.anchor, None, None, s.direction, rules.tick)
+                note_once(s, end_ts, "skip_target_collision", f"{s.id}: {why_} — nothing distinct lies ahead, refusing the entry "
+                          f"(target_collision=replan)", setup=s.id, touch=idx, spot=round(entry_spot, 4),
+                          target=round(float(target), 4), anchor=round(float(s.anchor), 4), entryKind=entry_kind)
+                continue
+            note(end_ts, "target_replanned", f"{s.id}: planned target {float(target):.2f} is the setup's own source level — "
+                 f"re-derived to {cand_:.2f} (RESEARCH target_collision=replan)", setup=s.id, touch=idx,
+                 spot=round(entry_spot, 4), was=round(float(target), 4), target=round(cand_, 4), source="collision_replan")
+            target, target_kind = cand_, "replan"
         if not target_is_ahead(target, entry_spot, s.direction):
             # F72 VARIANT `target_replan="entry"` (default off — the baseline is the refusal below).
             # Re-derive the target from the next structural level beyond THIS entry's price, using the

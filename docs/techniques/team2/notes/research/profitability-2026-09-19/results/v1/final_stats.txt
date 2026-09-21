@@ -1,0 +1,55 @@
+== baseline net % per trade (real prints, fees in, 0 slip)
+  TRAIN 05-07..08-14                 n= 283 win%= 32.9 mean=  -3.04  95% CI [ -7.16,   1.52]  median= -15.12
+  HOLDOUT 08-17..09-11               n=  40 win%= 30.0 mean=  -5.54  95% CI [-13.44,   3.61]  median= -14.35
+  POST 09-14..09-18                  n=  10 win%=  0.0 mean= -17.12  95% CI [-22.63, -12.01]  median= -15.43
+  ALL                                n= 333 win%= 31.5 mean=  -3.76  95% CI [ -7.56,   0.09]  median= -14.88
+== by setup (05-07..09-11)
+  pm_break_down                      n=  84 win%= 33.3 mean=  -4.76  95% CI [-11.22,   2.81]  median= -14.65
+  pm_break_up                        n=  87 win%= 25.3 mean=  -6.33  95% CI [-14.54,   3.85]  median= -19.37
+  scenario_1                         n=  74 win%= 33.8 mean=  -2.05  95% CI [ -9.59,   6.43]  median= -14.52
+  scenario_2                         n=  15 win%= 20.0 mean= -10.54  95% CI [-21.63,   4.23]  median= -20.11
+  scenario_3                         n=   5 win%= 40.0 mean=  12.26  95% CI [-22.39,  46.90]  median= -13.08
+  scenario_4                         n=  58 win%= 43.1 mean=   2.03  95% CI [ -5.31,   9.98]  median=  -5.10
+== by day type (05-07..09-11)
+  gap_down                           n=  30 win%= 30.0 mean=  -3.48  95% CI [-14.89,  10.80]  median= -16.64
+  gap_up                             n=  70 win%= 24.3 mean=  -4.80  95% CI [-14.82,   7.08]  median= -19.16
+  inside                             n=  64 win%= 34.4 mean=  -5.43  95% CI [-12.23,   1.99]  median= -13.94
+  normal                             n= 159 win%= 35.8 mean=  -1.84  95% CI [ -6.79,   3.42]  median= -12.15
+== by symbol (05-07..09-11)
+  IWM                                n= 120 win%= 31.7 mean=  -4.25  95% CI [-10.42,   2.26]  median= -17.70
+  QQQ                                n=  99 win%= 32.3 mean=  -5.52  95% CI [-11.35,   0.67]  median= -15.12
+  SPY                                n= 104 win%= 33.7 mean=  -0.24  95% CI [ -7.94,   8.52]  median= -13.09
+== by direction (05-07..09-11)
+  long                               n= 166 win%= 29.5 mean=  -3.86  95% CI [ -9.75,   2.76]  median= -17.35
+  short                              n= 157 win%= 35.7 mean=  -2.80  95% CI [ -7.47,   2.56]  median= -11.79
+== by attempt (05-07..09-11)
+  first entry                        n= 200 win%= 30.0 mean=  -2.97  95% CI [ -8.13,   2.71]  median= -15.04
+  re-entry (touch 2)                 n= 123 win%= 36.6 mean=  -3.96  95% CI [ -9.43,   2.06]  median= -13.50
+== by entry kind (05-07..09-11)
+  ema                                n= 205 win%= 32.2 mean=  -4.48  95% CI [ -8.75,   0.25]  median= -14.42
+  ema48                              n=  14 win%= 35.7 mean=   8.76  95% CI [-12.49,  31.90]  median= -12.43
+  level                              n= 104 win%= 32.7 mean=  -2.74  95% CI [-10.17,   5.89]  median= -15.66
+== by size bucket (05-07..09-11)
+  full                               n= 102 win%= 36.3 mean=  -0.32  95% CI [ -6.83,   7.00]  median= -12.20
+  small                              n= 221 win%= 30.8 mean=  -4.74  95% CI [ -9.23,   0.15]  median= -15.74
+== by time of day (05-07..09-11)
+  09:45-10:00                        n=  39 win%= 38.5 mean=   4.31  95% CI [-10.43,  22.81]  median= -10.72
+  10:00-11:00                        n= 142 win%= 31.7 mean=  -5.16  95% CI [-10.22,   0.39]  median= -15.09
+  11:00-12:00                        n=  77 win%= 29.9 mean=  -4.23  95% CI [-11.33,   3.54]  median= -15.74
+  12:00-14:00                        n=  44 win%= 36.4 mean=  -0.56  95% CI [-10.89,  10.00]  median= -13.64
+  14:00-15:30                        n=  21 win%= 28.6 mean=  -7.89  95% CI [-20.29,   6.53]  median= -18.52
+== by exit (05-07..09-11)
+  candle stop S1                     n= 138 win%=  9.4 mean= -11.77  95% CI [-15.01,  -8.02]  median= -16.21
+  flatten                            n=   3 win%=100.0 mean= 121.51  95% CI [  7.60, 285.92]  median=  71.02
+  premium stop P1                    n=  84 win%=  2.4 mean= -29.79  95% CI [-32.08, -27.14]  median= -29.65
+  target                             n=  98 win%= 88.8 mean=  27.35  95% CI [ 20.89,  34.22]  median=  14.68
+== by hold (05-07..09-11)
+  3-5 bars                           n=  70 win%= 34.3 mean=  -5.93  95% CI [-12.84,   1.91]  median= -17.88
+  6-15 bars                          n=  73 win%= 38.4 mean=   4.84  95% CI [ -4.28,  13.71]  median= -11.02
+  <=2 bars (<=4 min)                 n= 164 win%= 25.0 mean= -11.73  95% CI [-14.64,  -8.64]  median= -15.73
+  >15 bars                           n=  16 win%= 75.0 mean=  56.56  95% CI [ 19.87,  98.09]  median=  39.34
+== cost layer: mean fee drag per round trip 3.89% of cost; mean entry premium $0.56
+== displaced opportunities (desk-wide book rules applied in time order)
+  taken by the book                  n= 183 win%= 33.9 mean=  -0.35  95% CI [ -5.81,   6.05]  median= -13.46
+  displaced: position already open   n=  46 win%= 30.4 mean= -10.26  95% CI [-17.81,  -2.07]  median= -16.91
+  displaced: two-loss cap reached    n=  94 win%= 30.9 mean=  -5.80  95% CI [-11.66,   0.65]  median= -14.88

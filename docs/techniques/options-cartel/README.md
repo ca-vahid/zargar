@@ -85,3 +85,41 @@ On September 19 the user chose a [capital-expanded experiment](CAPITAL-EXPERIMEN
 to remove the small-book funding restriction: a separate $1m sim book, $25k budget
 and 20 focus slots. This supersedes the earlier keep-$500/shares-first proposal.
 Keep historical book returns separate and do not confuse increased sizing with edge.
+
+### September 20 restart recovery fix (v0.8.27)
+
+A shared orphan cleanup could mark a preparation failed before Cartel's handler,
+leaving its phase as market_context and preventing automatic resumption. Shared
+cleanup now delegates Cartel preparation to its owner. The Cartel handler repairs
+legacy generic restart failures, preserves saved analyses/plans, and resumes only
+the active workspace/book under the existing policy and bounded retry allowance.
+The page explains interruption and Resume saved scan instead of presenting stale
+discovery progress, a huge elapsed-update counter and a generic red error. Real
+provider failures and user cancellations retain their own states. Trading logic,
+funding and the six Monday arms are unchanged by this fix.
+
+
+Follow-up v0.8.28: resume reads compatible ancestor checkpoints rather than only
+the immediately interrupted retry. Reuse requires identical source cutoff, saved
+policy, book/workspace/session and coverage version; cancelled or incompatible
+ancestors stop traversal. Committed child analyses with matching cutoffs survive
+an incomplete progress checkpoint. A read-only reproduction recovered all 3,072
+saved analyses behind the reported early-interrupted retry. Startup recovery
+waits for controller attachment without consuming the five-minute throttle.
+
+### September 21 close
+
+[September 21 EOD review](reviews/2026-09-21-eod/README.md): zero orders/fills/P&L.
+Funding was not the binding gate. NTNX's 5m shadow confirmation exposed expiry
+concentration in the quote refresh sampler; ULTA's stock move did not imply a
+profitable selected option because of the recorded spread. The report separates
+actual results, option quote illustrations, source-access limitations and the
+next concrete contract-search/economics/entry-cadence changes. No settings changed.
+
+### Implementation handoff from September 21 review
+
+[Comprehensive developer brief](IMPLEMENTATION-BRIEF-2026-09-21.md) specifies the
+contract-refresh fix, executable-cost selection, bounded active5m Practice
+comparison, setup-family calibration, optional shares, data gaps and causal EOD
+reporting. It includes evidence, code targets, acceptance tests, rollout and
+rollback. This is an implementation specification; no policy is activated by it.

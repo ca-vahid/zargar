@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.26";
+export const APP_VERSION = "0.8.28";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,13 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.28",date:"2026-09-20",title:"Cartel keeps analysis checkpoints across repeated restarts",items:[
+    {tag:"fixed",text:"Resuming an interrupted retry now reuses analyses from its compatible earlier checkpoints, including work saved before a crash. Existing plans remain preserved."},
+    {tag:"fixed",text:"Automatic recovery waits for its runtime controller to attach before attempting a restart resume."},
+  ]},
+  {version:"0.8.27",date:"2026-09-20",title:"Cartel preparation resumes after restart",items:[
+    {tag:"fixed",text:"Interrupted Cartel preparation now keeps its recovery checkpoint and resumes under the existing retry settings. Existing armed plans are preserved."},
+    {tag:"improved",text:"The preparation panel explains saved work and how to resume, instead of showing stale discovery progress and a generic red restart error."},
   {version:"0.8.26",date:"2026-09-19",title:"EM Experimental: a second Practice book runs the integrated method",items:[
     {tag:"new",text:"EM can run a dedicated experimental Practice book beside the unchanged EM Practice baseline. The experimental book prepares with rules only, enforces reward to risk at the real first sale, records executable profit, trades eligible source ideas and fresh setups, and protects a runner that closes back through its first target."},
     {tag:"improved",text:"Every experimental policy is resolved for that one simulated book. The baseline book, other desks, live accounts and all risk limits are unchanged. Pausing the experimental book stops its new entries while open positions stay managed."},

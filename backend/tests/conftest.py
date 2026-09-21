@@ -85,3 +85,13 @@ def _em_dispatch_controlled_clock(request, monkeypatch):
     if "test_codex_em_final_dispatch" in name and not os.environ.get("ZARGAR_TEST_NOW"):
         monkeypatch.setenv("ZARGAR_TEST_NOW", "2026-09-16T10:00:00-04:00")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _team2_study_cli_uses_the_test_database(request, monkeypatch):
+    """Team2 selection-study CLI tests start the real operator tool in a SUBPROCESS, which reads ZARGAR_DATABASE_URL (and
+    otherwise backend/.env, i.e. the RUNTIME database). For those modules only, the subprocess inherits the test database."""
+    name = getattr(getattr(request, "module", None), "__name__", "") or ""
+    if "team2_selection" in name or "team2_release_boundaries" in name:
+        monkeypatch.setenv("ZARGAR_DATABASE_URL", TEST_DB_URL)
+    yield

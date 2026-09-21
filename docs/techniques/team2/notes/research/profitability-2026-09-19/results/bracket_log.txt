@@ -1,0 +1,4 @@
+tp 1.5 stress False trades 241 mean -5.62 win% 38.6 {'limit x1.50': 89, 'premium stop': 145, 'time stop 60m': 7}
+tp 2.0 stress False trades 228 mean -6.26 win% 27.2 {'limit x2.00': 44, 'premium stop': 161, 'time stop 60m': 22, 'flatten 15:45': 1}
+tp 1.5 stress True trades 241 mean -7.27 win% 37.8 {'limit x1.50': 87, 'premium stop': 146, 'time stop 60m': 8}
+tp 2.0 stress True trades 228 mean -7.89 win% 26.8 {'limit x2.00': 43, 'premium stop': 161, 'time stop 60m': 23, 'flatten 15:45': 1}
