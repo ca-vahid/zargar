@@ -268,3 +268,31 @@ async def test_g_targets_flatten_and_trims_are_unchanged(rig, monkeypatch):
                                        "fraction": 1.0, "ts": 4}, journal=True)
     assert calls[-1]["kind"] == "flatten" and calls[-1]["authority"]["decidedBy"] == "model_flatten"
     assert calls[-1]["forceMarket"] is True
+
+
+# ------------------------------------------------------------------ the record itself
+async def test_the_exit_journal_row_carries_the_authority(rig, monkeypatch):
+    """The point of the authority record is that it reaches the JOURNAL, not just the caller: a
+    reader of `TechniquePlanExit` must be able to say what the sale was decided on. This runs the
+    real `_exit` and reads the row back."""
+    from sqlalchemy import select
+
+    from zargar import events as ev
+    from zargar.models import Event
+    eng, runner, ap, tr, _calls, run_id = await desk(rig, monkeypatch)
+    monkeypatch.undo()                                   # the real `_exit`, routing a reduce-only order
+    quote(eng, 0.20, 0.21)                               # mid 0.205 vs 0.33 paid: past the -25% stop
+    await runner._exit_from_event(ap, MODEL_STOP, journal=True)
+    async with eng.sf() as s:
+        rows = (await s.execute(select(Event.payload).where(
+            Event.type == ev.TECHNIQUE_PLAN_EXIT, Event.aggregate_id == run_id))).scalars().all()
+    row = next(r for r in rows if r.get("trigger") == tr.trigger_id)
+    assert row["kind"] == "stop" and row["reduceOnly"] is True
+    a = row["authority"]
+    assert a["decidedBy"] == "held_contract" and a["confirmed"] is True
+    assert a["fillBasis"] == pytest.approx(PAID)         # what the desk actually paid
+    assert a["thresholdPct"] == pytest.approx(25.0)      # the threshold in force
+    assert a["returnPct"] == pytest.approx(-37.9, abs=0.5)   # the return that follows from the two
+    assert a["quote"]["sourceTs"] and a["quote"]["basis"] == "mid"   # the quote and its source time
+    assert "premium_stop_breach" in a["convention"]
+    assert a["model"]["pnlPct"] == -32.0                 # the model's own number, kept separate
