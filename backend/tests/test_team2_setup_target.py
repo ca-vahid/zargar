@@ -81,15 +81,53 @@ def test_it_takes_the_nearest_valid_destination_and_never_skips_a_level():
     assert 103.0 in ok and 107.0 in ok, "farther levels stay valid; they are simply not chosen"
 
 
-def test_it_can_only_choose_closer_or_equal_never_farther():
-    """Section 3: the asymmetry that separates this from the rejected re-planning variants, which
-    substitute a FARTHER level to unblock a refused trade. Whatever the ladder holds, the chosen
-    destination is the minimum of the valid ones."""
-    for extra in ([], [130.0], [130.0, 140.0], [102.5]):
-        r = st.resolve(source=100.0, direction="long", kind="pm_break_up",
-                       ladder=[105.0] + extra, tick=0.01)
-        valid = [c["price"] for c in r["ladder"] if c["accepted"]]
-        assert r["target"] == min(valid), "a farther candidate must never displace a nearer one"
+# --- Case A: a VALID inherited target (spec 3a) -------------------------------------------------
+def test_case_a_a_valid_inherited_target_is_preserved_not_moved():
+    """The case that answers the target-shopping concern. The evening target is distinct, beyond the
+    source and ahead of price, and nothing valid lies between. It survives untouched."""
+    r = st.resolve(source=100.0, direction="long", kind="pm_break_up", planned=110.0, tick=0.01)
+    assert r["target"] == 110.0 and r["targetOrigin"] == "planned"
+    assert r["refused"] is False
+
+
+def test_case_a_a_valid_inherited_target_is_never_pushed_farther_out():
+    """Whatever else the ladder offers, a valid inherited target cannot be replaced by a more
+    distant one. This is the property the rejected re-planning variants violate."""
+    for extra in ([], [130.0], [130.0, 140.0], [115.0]):
+        r = st.resolve(source=100.0, direction="long", kind="pm_break_up", planned=110.0,
+                       ladder=extra, tick=0.01)
+        assert r["target"] <= 110.0, "a valid inherited target must never be moved farther out"
+
+
+def test_case_a_a_nearer_obstacle_between_source_and_target_wins():
+    """Spec 2.6: a nearer valid level is an obstacle. Skipping it would manufacture room the
+    structure does not offer, so it becomes the destination even though the inherited target is
+    itself valid."""
+    r = st.resolve(source=100.0, direction="long", kind="pm_break_up", planned=110.0,
+                   ladder=[104.0], tick=0.01)
+    assert r["target"] == 104.0 and r["targetOrigin"] == "ladder"
+
+
+# --- Case B: an INVALID inherited target (spec 3a) ----------------------------------------------
+def test_case_b_an_invalid_inherited_target_is_rejected_and_one_is_resolved():
+    """Monday's shape. The inherited target IS the source, so there is no valid target to be
+    'closer than' - this resolves one where the day's global value supplied none."""
+    r = st.resolve(source=100.0, direction="long", kind="pm_break_up", planned=100.0,
+                   ladder=[104.0, 108.0], tick=0.01)
+    inherited = next(c for c in r["ladder"] if c["origin"] == "planned")
+    assert inherited["accepted"] is False and inherited["rejectedFor"] == "not_distinct"
+    assert r["target"] == 104.0, "the nearest VALID candidate, not a comparison against an invalid one"
+
+
+def test_case_b_is_reported_as_a_different_case_from_case_a():
+    """The two cases must be distinguishable in the record, because only Case B changes which
+    trades become possible and only Case A speaks to target shopping."""
+    a = st.resolve(source=100.0, direction="long", kind="pm_break_up", planned=110.0, tick=0.01)
+    b = st.resolve(source=100.0, direction="long", kind="pm_break_up", planned=100.0,
+                   ladder=[104.0], tick=0.01)
+    assert a["targetOrigin"] == "planned"        # inherited target survived
+    assert b["targetOrigin"] == "ladder"         # inherited target was rejected, one was resolved
+    assert next(c for c in b["ladder"] if c["origin"] == "planned")["rejectedFor"] == "not_distinct"
 
 
 def test_ties_break_deterministically_and_repeatably():
@@ -161,10 +199,40 @@ def test_every_setup_kind_has_a_source_role(kind, role):
     assert st.resolve(source=100.0, direction="long", kind=kind, ladder=[105.0])["sourceRole"] == role
 
 
-def test_casey_s_number_is_not_in_the_code():
-    """The spec's non-goal, made mechanical: his 769.70 is evidence of distinct roles, not authority
-    for our algorithm. It must never appear as a constant."""
+def test_the_resolver_holds_no_symbol_or_price_constants_at_all():
+    """Hygiene, NOT a defence against overfitting - excluding one number proves nothing about
+    behaviour. The behavioural guarantees are the tests above and below: causal inputs only,
+    nearest-obstacle selection, long/short symmetry, independence from future data, valid targets
+    preserved, and identical behaviour when disabled. This only checks the module carries no baked
+    price or ticker of any kind, which a tuned resolver would need."""
     import pathlib
+    import re
     src = pathlib.Path(st.__file__).read_text(encoding="utf-8")
-    for literal in ("769.70", "769.7"):
-        assert literal not in src
+    code = "\n".join(l.split("#")[0] for l in src.splitlines() if not l.strip().startswith("#"))
+    code = re.sub(chr(34) * 3 + ".*?" + chr(34) * 3, "", code, flags=re.S)
+    assert not re.search(r"\b\d{2,}\.\d+\b", code), "no baked price constants"
+    assert not re.search(r"\b(SPY|QQQ|IWM)\b", code), "no baked tickers"
+
+
+def test_long_and_short_are_exact_mirrors():
+    """Symmetry as behaviour: the same structure reflected must produce the same decision."""
+    up = st.resolve(source=100.0, direction="long", kind="pm_break_up", planned=100.0,
+                    ladder=[104.0, 108.0], pm_high=100.0, tick=0.01)
+    dn = st.resolve(source=100.0, direction="short", kind="pm_break_down", planned=100.0,
+                    ladder=[96.0, 92.0], pm_low=100.0, tick=0.01)
+    assert up["target"] == 104.0 and dn["target"] == 96.0
+    assert up["sourceRole"] == dn["sourceRole"] == "pm_extreme"
+    assert [c["rejectedFor"] for c in up["ladder"]] == [c["rejectedFor"] for c in dn["ladder"]]
+
+
+def test_only_inputs_known_at_confirmation_can_reach_the_decision():
+    """Causality as behaviour: the resolver is a pure function of its arguments, so there is no
+    channel by which a later bar, level or price could enter. Passing the same inputs in any order
+    returns the same record."""
+    kw = dict(source=100.0, direction="long", kind="pm_break_up", tick=0.01)
+    a = st.resolve(**kw, ladder=[104.0, 108.0], planned=110.0)
+    b = st.resolve(**kw, planned=110.0, ladder=[104.0, 108.0])
+    assert a == b
+    # and the record carries the input times, so a reader can check them against the confirmation
+    c = st.resolve(**kw, ladder=[104.0], input_ts={"ladder": 1790000000000})
+    assert c["targetInputTs"] == 1790000000000

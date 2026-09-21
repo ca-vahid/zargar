@@ -115,9 +115,32 @@ The rejected variants are target shopping: a trade is blocked, so a more distant
 found to unblock it. They can only ever move a target farther away, which inflates apparent reward
 and is exactly the failure mode that got them rejected.
 
-This policy cannot do that. It selects the nearest valid destination, so relative to a free choice
-it can only make a target **closer or equal, never farther**. It runs before any entry exists, so
-no blocked trade can influence it. That asymmetry is testable and is an acceptance case.
+### 3a. Amendment, 2026-09-21: "closer or equal" stated precisely
+
+An earlier draft of this section claimed the policy "can only make a target closer or equal, never
+farther". That is loose, and in the one case that matters it is meaningless: when the inherited
+target is the setup's own source level, it is not a valid destination at all, so "closer than it"
+compares against nothing. The claim is replaced by two separate cases, because they are separate
+behaviours and are tested separately.
+
+**Case A — the inherited target is valid.** It is distinct from the source, beyond it, and still
+ahead of the actionable price. Then it is **preserved**, unless a valid structural level lies
+*between* the source and it, in which case that nearer obstacle becomes the destination (§2.6: a
+nearer level is an obstacle, and skipping it would manufacture room the structure does not offer).
+The policy never moves a valid target farther out. This is the case that guarantees the policy is
+not target shopping.
+
+**Case B — the inherited target is invalid.** It is the source itself, behind the source, or behind
+the price. Then it is rejected with its reason, and the destination is the nearest valid candidate
+from the ladder. This is **not** "moving the target closer": there was no valid target to move.
+It is resolving one where the day's global value supplied none.
+
+Both cases fall out of the same mechanic — the inherited target is simply one candidate in the
+ladder, and the nearest valid candidate wins — but they must be reported and tested as two cases,
+because only Case A speaks to the target-shopping concern and only Case B changes which trades
+become possible.
+
+It runs before any entry exists, so no blocked trade can influence the result in either case.
 
 ---
 
@@ -130,6 +153,16 @@ no blocked trade can influence it. That asymmetry is testable and is an acceptan
   and loss limits are untouched in this package.
 - **Success is not more trades.** A policy that only raises trade count without improving
   after-cost outcomes has not succeeded. The comparison reports both.
+- **A source-to-target distance is not a profitability claim.** Room must be measured from the
+  ACTUAL entry price, which is a pullback to the EMA13 and is not the breakout level, and then
+  carried through the option's quote, spread and fees at that time. A distance quoted from the
+  source says nothing about whether a trade clears costs. Where option evidence is missing it stays
+  unknown and is reported as unknown.
+- **An excluded constant is not a defence against overfitting.** Checking that a particular number
+  does not appear in the source proves nothing about the policy's behaviour. The tests that carry
+  weight are the behavioural ones: causal inputs only, nearest-obstacle selection, long/short
+  symmetry, independence from future data, valid targets preserved, and byte-identical behaviour
+  when the policy is disabled.
 
 ---
 
