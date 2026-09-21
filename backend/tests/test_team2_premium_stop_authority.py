@@ -76,7 +76,8 @@ async def test_a_model_premium_stop_alone_never_sells_the_contract(rig, monkeypa
     assert tr.remaining == 35 and tr.status == "open"
     note = next(e for e in ap.events if e["event"] == "premium_stop_not_live")
     a = note["authority"]
-    assert a["confirmed"] is False and a["decidedBy"] == "held_contract"
+    assert a["confirmed"] is False and a["decidedBy"] == "model_only_observation"
+    assert a["authority"] == "model-only observation"      # named for what it is: nothing was sold
     assert a["fillBasis"] == pytest.approx(PAID)        # the fill the desk actually paid
     assert a["thresholdPct"] == pytest.approx(25.0)     # the configured stop, unchanged
     assert a["quote"]["usable"] is True and a["quote"]["basis"] == "mid"
@@ -95,6 +96,7 @@ async def test_b_the_held_contract_breaching_the_stop_still_exits(rig, monkeypat
     assert calls[0]["forceMarket"] is True
     a = calls[0]["authority"]
     assert a["confirmed"] is True and a["decidedBy"] == "held_contract"
+    assert a["authority"] == "live premium stop"
     assert "premium stop" in calls[0]["reason"] and "0.33 paid" in calls[0]["reason"]
     assert a["fillBasis"] == pytest.approx(PAID) and a["thresholdPct"] == pytest.approx(25.0)
     assert a["returnPct"] == pytest.approx(-37.9, abs=0.5) and a["quote"]["sourceTs"]
@@ -113,7 +115,8 @@ async def test_b2_the_live_quote_watch_premium_stop_is_untouched(rig, monkeypatc
         await runner.on_quote_watch()
     assert calls and calls[-1]["kind"] == "stop"
     a = calls[-1]["authority"]
-    assert a["decidedBy"] == "live_quote_watch" and a["confirmed"] is True
+    assert a["decidedBy"] == "live_quote_watch" and a["authority"] == "live premium stop"
+    assert a["confirmed"] is True
     assert a["fillBasis"] == pytest.approx(PAID) and a["quote"]["usable"] is True
 
 
@@ -127,6 +130,7 @@ async def test_c_the_structural_candle_stop_still_fires_and_is_attributed(rig, m
     assert len(calls) == 1 and calls[0]["kind"] == "stop" and calls[0]["qty"] == 35
     assert "one-candle stop" in calls[0]["reason"]
     assert calls[0]["authority"]["decidedBy"] == "model_structural"
+    assert calls[0]["authority"]["authority"] == "structural stop"
     assert not any(e["event"] == "premium_stop_not_live" for e in ap.events)
 
 
@@ -146,6 +150,7 @@ async def test_c2_the_model_closing_its_proxy_leaves_present_time_structure_in_c
     await runner._guard_orphaned_positions(ap, res, bar, journal=True)
     assert len(calls) == 1 and calls[0]["kind"] == "stop"
     assert calls[0]["authority"]["decidedBy"] == "present_time_structural"
+    assert calls[0]["authority"]["authority"] == "structural stop"
     assert calls[0]["authority"]["line"] == "EMA13"
 
 
@@ -213,7 +218,7 @@ async def test_e_the_disagreement_survives_a_restart_with_protection_intact(rig,
     quote(eng, 0.20, 0.21)                                 # the contract really bleeds: protection acts
     await runner._exit_from_event(ap2, {**MODEL_STOP, "ts": 10}, journal=True)
     assert len(calls2) == 1 and calls2[0]["kind"] == "stop"
-    assert calls2[0]["authority"]["decidedBy"] == "held_contract"
+    assert calls2[0]["authority"]["authority"] == "live premium stop"
 
 
 # ------------------------------------------------------------------ (f) partials, trims/adds, duplicates
@@ -261,12 +266,12 @@ async def test_g_targets_flatten_and_trims_are_unchanged(rig, monkeypatch):
     await runner._exit_from_event(ap, {"event": "exit", "why": "target 575.00 (planned level) touched — "
                                        "sell at target (X3/V11)", "fraction": 1.0, "pnlPct": 60.0, "ts": 3},
                                   journal=True)
-    assert calls[-1]["kind"] == "tp3" and calls[-1]["authority"]["decidedBy"] == "model_tp3"
+    assert calls[-1]["kind"] == "tp3" and calls[-1]["authority"]["authority"] == "target"
     assert calls[-1]["forceMarket"] is False
     tr.remaining = 6.0
     await runner._exit_from_event(ap, {"event": "exit", "why": "flatten: 0DTE flatten time reached (C3/D-1)",
                                        "fraction": 1.0, "ts": 4}, journal=True)
-    assert calls[-1]["kind"] == "flatten" and calls[-1]["authority"]["decidedBy"] == "model_flatten"
+    assert calls[-1]["kind"] == "flatten" and calls[-1]["authority"]["authority"] == "clock exit"
     assert calls[-1]["forceMarket"] is True
 
 
@@ -289,7 +294,8 @@ async def test_the_exit_journal_row_carries_the_authority(rig, monkeypatch):
     row = next(r for r in rows if r.get("trigger") == tr.trigger_id)
     assert row["kind"] == "stop" and row["reduceOnly"] is True
     a = row["authority"]
-    assert a["decidedBy"] == "held_contract" and a["confirmed"] is True
+    assert a["decidedBy"] == "held_contract" and a["authority"] == "live premium stop"
+    assert a["confirmed"] is True
     assert a["fillBasis"] == pytest.approx(PAID)         # what the desk actually paid
     assert a["thresholdPct"] == pytest.approx(25.0)      # the threshold in force
     assert a["returnPct"] == pytest.approx(-37.9, abs=0.5)   # the return that follows from the two

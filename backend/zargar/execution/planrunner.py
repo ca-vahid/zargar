@@ -3562,6 +3562,19 @@ class PlanRunner(SessionListener):
         if decision.qty >= 1:
             await self._exit(ap, tr, decision.kind, decision.qty, journal=True, reason=decision.reason)
 
+    # F129: the five authorities an exit can actually have. `decidedBy` stays granular (which code
+    # path); `authority` is the category a reader groups on, and is the handoff's own vocabulary.
+    AUTHORITY = {
+        "model_only_observation": "model-only observation",   # the model said sell; nothing was sold
+        "held_contract": "live premium stop",                 # the held contract's own fill and quote
+        "live_quote_watch": "live premium stop",              # the 2 s protective watch, same convention
+        "model_structural": "structural stop",                # the S1 candle stop, read off the underlying
+        "present_time_structural": "structural stop",         # the same rule applied on the current close
+        "model_tp3": "target",
+        "model_flatten": "clock exit",
+        "clock_flatten": "clock exit",
+    }
+
     def premium_stop_authority_record(self, tr: Trade, price: float | None, quote: dict, *, stop_pct: float,
                                       source: str, confirmed: bool, why: str = "",
                                       model: dict | None = None) -> dict:
@@ -3571,7 +3584,8 @@ class PlanRunner(SessionListener):
         the basis. Convention: the same raw fill-to-quote comparison `premium_stop_breach` applies."""
         paid = float(getattr(tr, "avg_fill", 0) or 0)
         pct = round((float(price) - paid) / paid * 100.0, 1) if (paid > 0 and price is not None) else None
-        rec = {"decidedBy": source, "confirmed": bool(confirmed), "thresholdPct": float(stop_pct),
+        rec = {"authority": self.AUTHORITY.get(source, source), "decidedBy": source,
+               "confirmed": bool(confirmed), "thresholdPct": float(stop_pct),
                "fillBasis": paid or None, "quote": quote, "livePrice": price, "returnPct": pct,
                "convention": f"{quote.get('basis') or 'bid'} vs fill, fees excluded (premium_stop_breach)"}
         if why:

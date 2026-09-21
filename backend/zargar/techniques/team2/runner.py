@@ -1805,7 +1805,8 @@ class Team2Runner(PlanRunner):
             await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "orphan_stop", why, trigger=tr.trigger_id, decisionTs=int(time.time() * 1000),
                               barTs=bar.ts, close=float(bar.close), guard=float(guard), line=name)
             await self._exit(ap, tr, "stop", float(tr.remaining), journal=True, reason=why, force_market=True,
-                             authority={"decidedBy": "present_time_structural", "confirmed": True, "why": why,
+                             authority={"authority": "structural stop", "decidedBy": "present_time_structural",
+                                        "confirmed": True, "why": why,
                                         "line": name, "guard": float(guard), "close": float(bar.close),
                                         "fillBasis": float(tr.avg_fill) if tr.avg_fill else None})
 
@@ -2025,7 +2026,8 @@ class Team2Runner(PlanRunner):
             elif kind in ("stop", "flatten", "tp3"):
                 # the underlying's own reads: the model and the desk share the tape, so the instruction
                 # stands — but the journal still says which authority took the position out (F129)
-                authority = {"decidedBy": f"model_{'structural' if kind == 'stop' else kind}", "confirmed": True,
+                by = f"model_{'structural' if kind == 'stop' else kind}"
+                authority = {"authority": self.AUTHORITY.get(by, by), "decidedBy": by, "confirmed": True,
                              "why": why, "fillBasis": float(trade.avg_fill) if trade.avg_fill else None}
             qty = float(int(round(trade.filled_qty * frac))) if e["event"] == "trim" else trade.remaining
             qty = max(1.0, min(qty, trade.remaining)) if trade.remaining >= 1 else trade.remaining
@@ -2050,9 +2052,10 @@ class Team2Runner(PlanRunner):
             with contextlib.suppress(Exception):
                 breach = premium_stop_breach(trade, price, stop_pct=stop_pct, basis=str(quote.get("basis") or "bid"),
                                              min_ticks=int(self.rt("premium_stop_min_ticks", 0) or 0))
-        rec = self.premium_stop_authority_record(trade, price, quote, stop_pct=stop_pct,
-                                                 source="held_contract", confirmed=breach is not None,
-                                                 why=breach or "", model=model)
+        rec = self.premium_stop_authority_record(
+            trade, price, quote, stop_pct=stop_pct,
+            source="held_contract" if breach is not None else "model_only_observation",
+            confirmed=breach is not None, why=breach or "", model=model)
         if breach is None:
             paid = float(getattr(trade, "avg_fill", 0) or 0)
             rec["why"] = (quote.get("why") or "no usable live quote for the contract") if price is None else (
