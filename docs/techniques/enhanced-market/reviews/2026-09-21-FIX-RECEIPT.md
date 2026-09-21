@@ -11,9 +11,14 @@ unchanged, and no setting was written.
 | Branch | `claude/technique-review-trade-plan-fbb9ba` |
 | Candidate SHA | **`d251d3a7`** (the receipt commit; the merge of `origin/main` is `c2ad4686`) |
 | main at merge time | `7eb89303` (Tips EOD 2026-09-21, PR #245) |
-| Behind main | **0 commits** |
+| Behind main | **0 commits** - main is fully absorbed INTO this branch |
+| On main? | **No.** Nothing of this delivery has travelled to main. `git branch -r --contains` lists only this branch, and main's `planrunner.py` carries neither `_book_snap` nor `_runner_protect`. Merging to main is part of the deployment decision, which has not been made |
 | Runtime now | v0.8.28 build `7ee5ad2a` on `claude/zargar-stock-app-research-8mnqfh` |
 | Version after merge | **0.8.28**, taken from main; no new number claimed, because no release is being called |
+
+**Direction matters and the phrase "merged onto main" would be wrong.** This is a merge of `origin/main`
+into the desk branch, so the branch is current with main; it is not a merge of the branch into main. The
+conflicts below were resolved HERE, and whichever desk merges to main second will meet them again there.
 
 Merge conflicts and how each was resolved, stated because two of them destroy work if resolved carelessly:
 
@@ -27,6 +32,12 @@ Merge conflicts and how each was resolved, stated because two of them destroy wo
 
 Verified after the merge: no conflict marker anywhere in the tree, `zargar.api.app` imports, and all four
 version values read 0.8.28.
+
+**A near-miss worth keeping.** While resolving those conflicts I ran the marker check and `git add -A` in the
+same command, so the check's failure was lost behind the add's success and `backend/pyproject.toml` was
+committed with its conflict markers intact. It was caught and amended before the push, but it would have
+imported fine and could have sat there for days. The general rule: a verification whose failure would be
+invisible must not share a command with the action it verifies.
 
 ## What is live right now, with no deploy
 
