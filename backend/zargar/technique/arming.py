@@ -241,6 +241,92 @@ class PlanArmer(PlanRunner):
                                      portfolio_id=item["portfolioId"])
             r = self._fs_recorder = BoundedRecorder(write, name="em-first-sale", maxsize=128)
         r.put({"rec": rec, "runId": ap.run_id, "portfolioId": ap.config.portfolio_id})
+        with contextlib.suppress(Exception):
+            self._admission_observe(ap, rec)          # alarm only - never refuses, never retries, never sizes
+
+    # ---- deferral-retry-v1 (2026-09-21): DEFAULT OFF. See `deferred_retry.py` for why this is a
+    # proposal rather than a fix: the frozen behaviour makes a "deferred" entry terminal, and that is
+    # what ran on 2026-09-21. Under `bounded` the same setup gets ONE more pass through the unchanged
+    # production path, inside its original bar-counted window.
+    def deferred_retry_mode(self, ap) -> str:
+        from .deferred_retry import normalize_mode
+        from .em_experiment import book_policy
+        pid = getattr(getattr(ap, "config", None), "portfolio_id", None)
+        return normalize_mode(book_policy(self.engine.settings.get, pid, "deferred_retry", "off"))
+
+    async def _on_bar(self, ap, bar, *, journal: bool) -> None:
+        await super()._on_bar(ap, bar, journal=journal)
+        with contextlib.suppress(Exception):
+            await self._deferred_retry_pass(ap, bar, journal=journal)
+
+    async def _deferred_retry_pass(self, ap, bar, *, journal: bool) -> None:
+        """At most one extra attempt per trigger, decided by the pure `eligible` and executed by the
+        ORDINARY entry path. Never called when the policy is off, so the frozen book is untouched."""
+        if self.deferred_retry_mode(ap) != "bounded":
+            return
+        from .deferred_retry import eligible, record
+        retried = ap.__dict__.setdefault("_deferred_retried", set())
+        window_bars = self.rules().plan_entry_window_bars
+        halted = bool(self.engine.trading_halted(ap.config.portfolio_id))
+        for trade in list(ap.trades.values()):
+            tracker = (ap.trackers or {}).get(trade.trigger_id)
+            if tracker is None:
+                continue
+            ok, why = eligible(trade, tracker, bar_index=ap.bar_index - 1, window_bars=window_bars,
+                               retried=retried, plan_status=ap.status, halted=halted)
+            if not ok:
+                continue
+            retried.add(trade.trigger_id)                       # consume the one retry BEFORE trying it
+            rec = record(trade, tracker, allowed=True, why=why, bar_index=ap.bar_index - 1, window_bars=window_bars)
+            self._log(ap, "deferred_retry", f"{trade.trigger_id}: re-evaluating - {why}", trigger=trade.trigger_id)
+            if journal:
+                with contextlib.suppress(Exception):
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id,
+                        "event": "deferred_retry", "reason": why, "detail": rec},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+            trade.status = "fired"                              # hand it back to the unchanged entry path
+            trade.reason = ""
+            await self._enter(ap, trade, tracker, journal=journal)
+            await self._persist(ap)
+            self._publish(ap, "fired")
+
+    # ---- admission-health-v1 (2026-09-21): notice when the desk is armed and SILENT.
+    # Every refusal on 2026-09-21 was individually correct; the nine of them together meant the book
+    # was not trading, and nothing said so. This watches the SHAPE of first-sale outcomes and shouts
+    # once. It decides nothing: `isGate` is false by construction and no entry consults it.
+    def _admission_watch(self):
+        w = self.__dict__.get("_adm_watch")
+        if w is None:
+            from .admission_health import AdmissionWatch
+            w = self._adm_watch = AdmissionWatch()
+        return w
+
+    def admission_alarm_enabled(self) -> bool:
+        return bool(self.engine.settings.get("techniques.enhanced_market.admission_alarm", True))
+
+    def _admission_observe(self, ap, rec: dict) -> None:
+        """Best-effort, synchronous and tiny; the alarm is raised on a task so nothing waits on it."""
+        if not self.admission_alarm_enabled():
+            return
+        build = str(getattr(self.engine, "build_sha", "") or "")
+        alarm = self._admission_watch().observe(rec, book=str(ap.config.portfolio_id), symbol=ap.symbol,
+                                                disposition=str(rec.get("disposition") or ""), build=build)
+        if not alarm:
+            return
+        import asyncio as _asyncio
+        with contextlib.suppress(Exception):
+            _asyncio.get_running_loop().create_task(self._admission_raise(ap, alarm), name="em-admission-alarm")
+
+    async def _admission_raise(self, ap, alarm: dict) -> None:
+        """One durable record for the checks to read, and one alert through the owner's real channel."""
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.TECHNIQUE_ADMISSION_ALARM, alarm, aggregate_type="technique_run",
+                                             aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        with contextlib.suppress(Exception):
+            recovered = alarm.get("kind") == "systemic_admission_recovered"
+            await self._alert(ap, alarm.get("text") or "admission alarm",
+                              level=("info" if recovered else "critical"), stage="admission_health")
 
     def fire_evidence_mode(self, ap) -> str:
         raw = str(self.engine.settings.get("techniques.enhanced_market.fire_evidence_mode", "off") or "off").strip().lower()

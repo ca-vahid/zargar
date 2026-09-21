@@ -76,6 +76,15 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
             exits[str(p.get("kind"))] = exits.get(str(p.get("kind")), 0) + 1
     promoted = [r for r in armed if _j(r["promo"])]
     # per UNDERLYING: what this book armed, entered, exited and refused - the cohort split is built from these
+    # ATTEMPTS vs ROWS (2026-09-21). A refusal event is not an opportunity. `max_open_trades` re-journals on EVERY
+    # bar while a position is open - one AVGO trigger produced 48 rows across 51 minutes that session - and the tracker
+    # confirmation skips repeat per qualifying touch. Only a `TechniquePlanTriggerFired` row is an attempt that sought
+    # an order. Both numbers are kept: the rows are the log, the attempts are the opportunities.
+    attempts: dict = {"entryAttempts": 0, "rows": 0, "distinctPairs": 0, "repeatedGuardRows": 0, "byReason": {},
+                      "note": "entryAttempts = TechniquePlanTriggerFired rows (a trigger that reached the entry path). "
+                              "rows = every refusal/skip event. A reason whose rows exceed its distinct (plan, trigger) "
+                              "pairs is a guard re-stating itself, never a fresh chance."}
+    seen_pairs: set = set()
     per_symbol: dict = {}
     for r in armed:
         per_symbol.setdefault(str(r["symbol"]), {"armed": 0, "fired": 0, "filled": 0, "refused": 0, "missingData": 0, "exits": {}, "net": 0.0, "fees": 0.0, "fills": 0})["armed"] += 1
@@ -88,10 +97,22 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
         cell = per_symbol[sym]
         if e["type"] == "TechniquePlanTriggerFired":
             cell["fired"] += 1
+            attempts["entryAttempts"] += 1
         elif e["type"] == "TechniquePlanPositionOpened":
             cell["filled"] += 1
         elif e["type"] == "TechniquePlanTriggerSkipped":
             cell["refused"] += 1
+            why = str(p.get("event") or "skipped")
+            pair = (e.get("aggregate_id"), str(p.get("trigger") or ""), why)
+            row = attempts["byReason"].setdefault(why, {"rows": 0, "distinct": 0})
+            row["rows"] += 1
+            attempts["rows"] += 1
+            if pair not in seen_pairs:
+                seen_pairs.add(pair)
+                row["distinct"] += 1
+                attempts["distinctPairs"] += 1
+            else:
+                attempts["repeatedGuardRows"] += 1
             disp = str(((p.get("detail") or {}) if isinstance(p.get("detail"), dict) else {}).get("disposition") or "")
             if disp.startswith("deferred") or disp == "policy_error":
                 cell["missingData"] += 1
@@ -109,7 +130,7 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
                       "promotedByVariant": _count((_j(r["promo"]) or {}).get("variant") for r in promoted)},
             "activity": {"fired": counts.get("TechniquePlanTriggerFired", 0), "entriesFilled": counts.get("TechniquePlanPositionOpened", 0),
                          "refusedOrSkipped": counts.get("TechniquePlanTriggerSkipped", 0), "refusalsByStage": refusals, "missingDataRefusals": missing, "misses": counts.get("TechniquePlanError", 0), "exitsByKind": exits},
-            "questionableFills": DISPUTED.get(date, []), "perSymbol": per_symbol}
+            "questionableFills": DISPUTED.get(date, []), "perSymbol": per_symbol, "attempts": attempts}
 
 
 def _underlying(symbol: str) -> str:
@@ -225,6 +246,33 @@ def protective_vs_faults(books: dict, rate: dict, exceptions: dict | None) -> di
                     "an unreconciled ledger or an unscorable capture is a fault"}
 
 
+def impairment(books: dict, exceptions: dict | None) -> dict:
+    """Is this session usable for judging the METHOD, or did the machinery stop it from trading?
+
+    A session where the desk was armed and could not submit is a fact about the environment, not about the bundle.
+    It stays in every chronological report - losses and no-trade days are never quietly dropped - but it is marked so
+    that a later average cannot silently include it as if the method had chosen not to trade.
+    """
+    reasons, books_hit = [], []
+    for who in ("baseline", "experiment"):
+        act = (books.get(who) or {}).get("activity") or {}
+        att = (books.get(who) or {}).get("attempts") or {}
+        missing = act.get("missingDataRefusals") or {}
+        undecided = sum(int(v) for k, v in missing.items() if str(k).startswith("deferred") or k == "policy_error")
+        fired, filled = int(att.get("entryAttempts") or act.get("fired") or 0), int(act.get("entriesFilled") or 0)
+        if undecided >= 3 and filled == 0 and fired > 0:
+            books_hit.append(who)
+            reasons.append(f"{who}: {fired} attempt(s), {filled} fill(s), {undecided} undecided at the admission gate")
+        elif undecided >= 3:
+            reasons.append(f"{who}: {undecided} attempt(s) undecided at the admission gate (the book still traded)")
+    ev = [i for i in ((exceptions or {}).get("items") or []) if i.get("class") == "fault"]
+    return {"operationallyImpaired": bool(books_hit), "impairedBooks": books_hit, "reasons": reasons or ["none found"],
+            "faultEvents": len(ev),
+            "evaluableForStrategy": not books_hit,
+            "note": "an impaired session is RETAINED in every chronological report and excluded only from strategy "
+                    "evaluation; the numbers in it are real, they just measure the environment rather than the method"}
+
+
 def _count(it) -> dict:
     out: dict = {}
     for x in it:
@@ -258,6 +306,7 @@ async def build(date: str) -> dict:
                                   "busiestMinuteOrders": (int(busiest["n"]) if busiest else 0), "capPerMinute": cap}
         out["cohorts"] = cohorts(out["books"])
         out["matched"] = matched(out["books"])
+        out["sessionQuality"] = impairment(out["books"], out.get("exceptions"))
         out["exitPolicy"] = exit_policy(out["books"])
         from .em_experiment_check import exceptions as _exc          # the exception log rides WITH the session report, never apart
         out["exceptionLog"] = await _exc(c, date, [base, str(xp.get("portfolioId") or "")])
@@ -298,6 +347,28 @@ def render(d: dict) -> str:
             ("Capture unscorable reasons", ("capture", "coverage", "unscorableReasons")))
     for label, path in rows:
         L.append(f"| {label} | {g(b, *path)} | {g(x, *path)} |")
+    q = d.get("sessionQuality") or {}
+    if q:
+        L += ["", "## Is this session evaluable?", "",
+              (f"**Operationally impaired: {q.get('operationallyImpaired')}.** " if q.get("operationallyImpaired") is not None else ""),
+              ""]
+        L += [f"- {r}" for r in (q.get("reasons") or [])]
+        L += ["", q.get("note", ""), ""]
+        if q.get("operationallyImpaired"):
+            L += ["The result below is REAL and is kept. What it measures is the environment, not the method: the book "
+                  "was armed, the rules produced entries, and the machinery could not submit them. Do not average this "
+                  "session into a judgement about selection or profit management.", ""]
+    for who in ("baseline", "experiment"):
+        att = ((d.get("books") or {}).get(who) or {}).get("attempts") or {}
+        if not att:
+            continue
+        repeats = [f"{k} ({v['rows']} rows, {v['distinct']} real)" for k, v in (att.get("byReason") or {}).items() if v["rows"] > v["distinct"]]
+        line = (f"**{who} attempts.** {att.get('entryAttempts')} entry attempt(s) sought an order. "
+                f"{att.get('rows')} refusal/skip row(s) cover {att.get('distinctPairs')} distinct (plan, trigger) pair(s); "
+                f"{att.get('repeatedGuardRows')} row(s) are a guard re-stating itself.")
+        if repeats:
+            line += " Repeating guards: " + ", ".join(repeats) + "."
+        L += [line, ""]
     m = d.get("matched") or {}
     L += ["", "## Two different questions, kept apart", "",
           "**Whole-bundle performance** is the book-level result below: it includes the trades one book never had, because admitting "

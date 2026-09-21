@@ -33,10 +33,13 @@ MATCHER_VERSION = "source-plan-match-v1"
 REGION_TOLERANCE_PCT = 0.5          # a plan trigger within 0.5% of the stated level is "the same region" (app convention)
 
 # company / spoken aliases for the names the room actually says. A ticker NOT verifiable from the evidence is unresolved.
+# These are TRANSCRIPTION variants as well as company names: the room is heard through ASR, so "in video" is NVDA and
+# "maderna" is MRNA (2026-09-21: the ASR wrote "maderna" twice; the passage, its numbers and the following topic switch
+# all confirm Moderna, and the scenario was held as an AMD conflict for want of that one spelling).
 ALIASES = {
     "AAPL": ["apple"], "AMZN": ["amazon"], "AMD": ["amd", "a m d"], "APP": ["applovin", "app loving", "app lovin"], "ARM": ["arm"],
     "AVGO": ["broadcom", "avgo"], "COIN": ["coinbase"], "GOOGL": ["google", "alphabet"], "INTC": ["intel"], "IWM": ["iwm", "i w m", "russell"],
-    "META": ["meta", "facebook"], "MRNA": ["moderna"], "MSFT": ["microsoft"], "MU": ["micron", "m you", "m u"], "NFLX": ["netflix"],
+    "META": ["meta", "facebook"], "MRNA": ["moderna", "maderna"], "MSFT": ["microsoft"], "MU": ["micron", "m you", "m u"], "NFLX": ["netflix"],
     "NVDA": ["nvidia", "in video"], "ORCL": ["oracle"], "PLTR": ["palantir"], "QQQ": ["qqq", "the q's", "cues", "q q q"], "SPCX": ["space x", "spacex"],
     "SPY": ["spy"], "SPX": ["spx", "s p x"], "TSLA": ["tesla"], "SBUX": ["starbucks"], "PANW": ["palo alto"], "FSLR": ["first solar"],
 }
