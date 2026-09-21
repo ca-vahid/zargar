@@ -47,7 +47,15 @@ async def _book(c, pid: str, date: str, a: dt.datetime, b: dt.datetime) -> dict:
         peak, worst = eq[0]["equity"], 0.0
         for r in eq:
             peak = max(peak, r["equity"]); worst = min(worst, r["equity"] - peak)
-        dd = {"maxDrawdown": round(worst, 2), "first": eq[0]["equity"], "last": eq[-1]["equity"], "markedChange": round(eq[-1]["equity"] - eq[0]["equity"], 2), "samples": len(eq)}
+        # The MARKED peak and trough come straight from the equity samples, so they are known whenever samples
+        # exist. They are NOT the executable peak, which needs capture coverage and stays unknown without it.
+        # 2026-09-21: both were being reported as unknown, which conflated "we did not record it" with
+        # "we cannot compute it" - the marked side was computable all along.
+        dd = {"maxDrawdown": round(worst, 2), "first": eq[0]["equity"], "last": eq[-1]["equity"],
+              "markedChange": round(eq[-1]["equity"] - eq[0]["equity"], 2), "samples": len(eq),
+              "markedPeak": round(max(r["equity"] for r in eq), 2), "markedTrough": round(min(r["equity"] for r in eq), 2),
+              "markedPeakGain": round(max(r["equity"] for r in eq) - eq[0]["equity"], 2),
+              "basis": "30 s equity samples; marked, not executable"}
     snaps = []
     if await c.fetchval("select to_regclass('public.technique_book_snapshots') is not null"):
         snaps = [_j(r["payload"]) for r in await c.fetch("select payload from technique_book_snapshots where portfolio_id=$1 and session=$2 order by captured_at, seq", pid, date)]
@@ -338,7 +346,8 @@ def render(d: dict) -> str:
         return default if v is None else v
     rows = (("Net realized after fees (flat symbols)", ("execution", "net")), ("Fees", ("execution", "fees")), ("Fills", ("execution", "fills")),
             ("Open at the cutoff", ("execution", "openAtCutoff")), ("Marked equity change (30 s samples)", ("equity", "markedChange")), ("Max drawdown (marked)", ("equity", "maxDrawdown")),
-            ("Executable peak (covered, scorable only)", ("capture", "peakExecutableNet", "value")), ("Displayed (marked) peak", ("capture", "peakDisplayedNet", "value")),
+            ("Marked peak / trough (equity samples)", ("equity", "markedPeak")), ("Marked peak gain over the open", ("equity", "markedPeakGain")),
+            ("Executable peak (covered, scorable only)", ("capture", "peakExecutableNet", "value")), ("Displayed peak from captures", ("capture", "peakDisplayedNet", "value")),
             ("Giveback vs the executable peak", ("capture", "givebackVsExecutablePeak")), ("Capture coverage (scorable / snapshots)", ("capture", "coverage", "ratio")),
             ("Capture status", ("capture", "status")), ("Plans armed", ("plans", "armed")), ("Plans by origin", ("plans", "byOrigin")),
             ("Promoted source / requalified plans", ("plans", "promotedByVariant")), ("Triggers fired", ("activity", "fired")), ("Entries filled", ("activity", "entriesFilled")),

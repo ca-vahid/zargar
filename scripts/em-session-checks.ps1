@@ -22,7 +22,15 @@ $attention = 'C:\ProgramData\Zargar\EM-ATTENTION.md'
 foreach ($d in @($outDir, $logDir)) { if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null } }
 if (-not $Date) { $Date = (Get-Date).ToString('yyyy-MM-dd') }
 $log = Join-Path $logDir ("em-checks-$Date.log")
-function Say($m) { "$((Get-Date).ToString('HH:mm:ss')) [$Phase] $m" | Tee-Object -FilePath $log -Append }
+# Say must NOT emit into the pipeline. `Tee-Object` does, and that silently broke the recovery path:
+# `Invoke-ClockCheck` returned every logged line PLUS its exit code, so `$code -eq 0` compared against an
+# array, evaluated falsy, and the attention notice could never clear itself. Write-Host goes to the console
+# only; the file write is explicit and utf8, which also fixes the UTF-16 mangling in the log.
+function Say($m) {
+  $line = "$((Get-Date).ToString('HH:mm:ss')) [$Phase] $m"
+  Write-Host $line
+  $line | Out-File -FilePath $log -Append -Encoding utf8
+}
 
 # The attending owner is named here because there is NO push destination configured on this host: no Telegram bot and
 # no web-push subscription. A check that finds a fault therefore has nowhere to page, and the honest substitute is a
@@ -71,14 +79,15 @@ function Invoke-ClockCheck([string]$file) {
       "Do NOT widen the admission tolerance instead. The gate is refusing evidence that genuinely looks future-dated;`r`n" +
       "loosening it would admit real stale quotes for the sake of a clock fault.")
   }
-  return $code
+  $script:LastClockCode = [int]$code
+  return
 }
 
 if ($Phase -eq 'clock') {
   $file = Join-Path $outDir ("$Date-clock.md")
   Say "raw time validity -> $file"
-  $code = Invoke-ClockCheck $file
-  if ($code -eq 0) { Clear-Attention 'clock healthy' }
+  Invoke-ClockCheck $file
+  if ($script:LastClockCode -eq 0) { Clear-Attention 'clock healthy' } else { Say "clock check exit $($script:LastClockCode) - attention stands" }
   exit 0
 } elseif ($Phase -eq 'exceptions') {
   # operational exceptions so far this session: halts, pauses, arm refusals, restarts, order-rate rejections,
@@ -105,7 +114,11 @@ if ($Phase -eq 'clock') {
 } else {
   $name = if ($Phase -eq 'preopen') { "$Date-preopen.md" } else { "$Date-postreplan.md" }
   $file = Join-Path $outDir $name
-  if ($Phase -eq 'preopen') { Say 'clock first: a wrong host clock refuses every entry, so it is checked before anything else'; Invoke-ClockCheck (Join-Path $outDir "$Date-clock.md") | Out-Null }
+  if ($Phase -eq 'preopen') {
+    Say 'clock first: a wrong host clock refuses every entry, so it is checked before anything else'
+    Invoke-ClockCheck (Join-Path $outDir "$Date-clock.md")
+    if ($script:LastClockCode -eq 0) { Clear-Attention 'clock healthy at the pre-open check' }
+  }
   Say "two-book verification -> $file"
   $text = & $py -m zargar.tools.em_experiment_check --date $Date 2>&1
   $text | Out-File -FilePath $file -Encoding utf8

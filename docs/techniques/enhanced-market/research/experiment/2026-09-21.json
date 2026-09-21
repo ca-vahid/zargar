@@ -1,6 +1,6 @@
 {
  "date": "2026-09-21",
- "generatedAt": "2026-09-21T20:52:27+00:00",
+ "generatedAt": "2026-09-21T23:22:49+00:00",
  "experiment": {
   "label": "EM Experimental",
   "owner": "EM desk (EM Dev session) - attends pre-open, open, close; rollback = pause this book",
@@ -55,7 +55,11 @@
     "first": 9849.603199999987,
     "last": 10051.301699999987,
     "markedChange": 201.7,
-    "samples": 1543
+    "samples": 1834,
+    "markedPeak": 10063.69,
+    "markedTrough": 9815.05,
+    "markedPeakGain": 214.09,
+    "basis": "30 s equity samples; marked, not executable"
    },
    "capture": {
     "status": "no_snapshots",
@@ -587,7 +591,11 @@
     "first": 9849.6032,
     "last": 9849.6032,
     "markedChange": 0.0,
-    "samples": 1543
+    "samples": 1834,
+    "markedPeak": 9849.6,
+    "markedTrough": 9849.6,
+    "markedPeakGain": 0.0,
+    "basis": "30 s equity samples; marked, not executable"
    },
    "capture": {
     "status": "no_snapshots",
@@ -1803,7 +1811,9 @@
    "2026-09-21T20:00:00-04:00"
   ],
   "byType": {
-   "TechniquePlanError": 3
+   "TechniquePlanError": 3,
+   "TechniquePlanRestored (other book)": 17,
+   "TechniquePlanRestored": 91
   },
   "items": [
    {
@@ -1893,7 +1903,7 @@
    }
   ],
   "protectiveActions": [],
-  "restartsDuringSession": 0,
+  "restartsDuringSession": 108,
   "anythingToReport": true
  },
  "protectiveVsFaults": {
@@ -1947,7 +1957,7 @@
      "why": "stale bars"
     }
    ],
-   "planRestoresInWindow": 0,
+   "planRestoresInWindow": 108,
    "captureStatus": {
     "baseline": "no_snapshots",
     "experiment": "no_snapshots"
