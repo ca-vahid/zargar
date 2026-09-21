@@ -1543,3 +1543,27 @@ candidates into real simulated plans, and P-06 runner protection as an executed 
 difference between the books will not say which component caused it, and four sessions of history predict nothing about it. Questions it can answer after
 the declared horizon: after-cost dollars and drawdown of the bundle against the baseline; how often enforcement defers for missing evidence and what those
 entries did in the baseline; how much displayed profit was executable; whether source-conditioned plans add trades the preparation did not already arm.
+
+
+### 2026-09-21 - the first active experimental session traded nothing, and the reason was the clock
+
+The experimental book fired 13 times, deferred 9 at the first-sale gate on `venue_time_in_future` and submitted no
+order; the baseline traded normally and finished +$201.70. **The method was not tested that day.** The host clock ran
+10.5 s behind true time, so correct venue timestamps looked future-dated and a gate built to refuse them did. The
+session is retained in every chronological report and marked **operationally impaired**: it measures the environment,
+not the bundle, and must not be averaged into any judgement about selection or profit management.
+
+What the session did teach, none of it about the rules:
+
+- **A refusal row is not an opportunity.** One AVGO trigger produced 48 `max_open_trades` rows across 51 minutes
+  while the plan's own long was open. Count attempts (`TechniquePlanTriggerFired`), not rows.
+- **Sizing feasibility is a property of the book.** With a ~$9.85k book, a 2% per-trade budget and a 50% premium
+  stop, no contract priced above **$3.94** can be bought at all. NBIS at $8.00 and AVGO at $4.80 were both refused
+  correctly, and the refusal is arithmetic, not a defect.
+- **The author's ideas mostly died for want of a chart, not for want of a rule.** Six of eighteen source rows were
+  him pointing at a line on a screen the app never received. Of those that did have numbers, META and TSLA failed on
+  a stop wider than the 3% cap, and AMZN, NVDA and MU on the 3R floor. META then ran to 753 - and TSLA, MU and SNDK
+  did not reach their first stated targets, which is the half of the evidence a tuning exercise would forget.
+- **`deferred` meant terminal.** Every deferred trigger fired once and never again. A bounded one-shot retry now
+  exists as `deferral-retry-v1`, DEFAULT OFF, and is a proposal to be judged on a forward sample, not a change to
+  the frozen bundle.

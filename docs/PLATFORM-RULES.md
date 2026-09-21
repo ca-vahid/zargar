@@ -2505,3 +2505,36 @@ already per book; the per-technique day-notional cap is cross-book by design and
 ### One recovery sweep at a time; a cold-quote park is re-verified on its first real quote — 2026-09-19 (Tips desk; shared `signals/service.py`)
 
 `SignalService.recovery_sweep()` now holds an asyncio lock (the body moved to `_recovery_sweep_locked`): the periodic loop and the new cold-park fast path share one entry, so two sweeps can never promote the same park twice. A tip parked ONLY because `ticker_resolves` failed (no quote yet for a cold symbol) spawns a bounded wait (`signals.cold_park_recheck_seconds`, default 60, 0 = off) for a REAL quote and then runs that same sweep once (`SignalColdParkRecheck` journaled). Nothing else changes: the sweep re-verifies on the fresh quote and applies every existing gate; a price-position park stays the level watch's job; experiments never spawn it. Evidence: 44 of 49 parks since 2026-09-08 were cold-only and waited 5-13 minutes for the 15-minute sweep after an analyst TAKE. `apply_knowledge_batch` accepts `pending: true` on a merge: the consolidated note is born `needs_human` (non-operative) and the flag is part of the payload hash only when present, so every earlier receipt hash is unchanged.
+
+
+### A wrong host clock refuses correct evidence; measure it against another machine - 2026-09-21 (EM desk; additive only)
+
+On 2026-09-21 every EM experimental entry was refused with `venue_time_in_future`, all session, on quotes that were
+two-sided, sourced and correctly timed. The host clock was **10.5 s behind true time** (five independent NTP servers
+agreeing within 38 ms; Windows `w32time` Stopped, start type Manual), so every fresh venue timestamp looked
+future-dated against a 1,000 ms tolerance. The engine's producer path was clean throughout: `brokers/alpaca.py`
+parses ISO venue times with their offset into epoch ms, keeps `quote_ts` / `last_ts` as VENUE times and `Quote.ts`
+as the receipt, and builds a fresh snapshot per emission.
+
+Three rules for every desk, learned the expensive way:
+
+1. **Reading the same host clock twice proves nothing.** Comparing the app to the database understated this fault by
+   1.4 s all day, because the database is another computer with its own drift. `tools/clock_health.py` asks several
+   independent NTP servers, reports the median with its round-trip uncertainty, and calls a disagreeing quorum
+   `unknown` rather than confident. It also reports the platform's sync state: a clock that is right now but not kept
+   synchronized is still a fault, because the drift returns after the next reboot.
+2. **Never widen a freshness tolerance to work around a clock.** A gate that refuses future-dated evidence is
+   protecting money; loosening it would admit genuinely stale quotes for the sake of a host fault. Fix the clock,
+   report the failure explicitly, and let the gate keep refusing until it is fixed.
+3. **Durations use a monotonic clock; source-versus-decision comparisons use UTC epoch.** They are different
+   questions and a wrong wall clock breaks only one of them.
+
+Shared surfaces touched, all additive and inert for other desks: one new journal type `TechniqueAdmissionAlarm`
+(with its contract entry) and two `techniques.enhanced_market.*` settings. The detection, the alarm and the
+default-off `deferral-retry-v1` policy live entirely in EM's own `technique/arming.py` subclass and
+`technique/admission_health.py` / `technique/deferred_retry.py`; no shared runner behaviour changed, and every other
+desk's first-sale hook remains the base no-op.
+
+Known gap recorded, not fixed here: an F33 loss-budget block that is rescued by the shares fallback writes no
+journal row at all (`_entry_blocked`, shared `planrunner.py`), so the durable ledger under-counts budget blocks.
+That belongs in a reviewed shared diff of its own.
