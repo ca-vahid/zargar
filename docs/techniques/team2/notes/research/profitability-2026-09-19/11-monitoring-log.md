@@ -70,10 +70,26 @@ would paper over a real clock fault on a gate that sits next to money, and would
 quietly measuring against a skewed clock for the rest of the window. The repair is to resync the host
 clock, which is a system settings change and the user's decision. Nothing was changed.
 
-**Boundary marking.** If and when the clock is resynced, the EM desk will supply the measured time it
-takes effect (host against database and against a venue stamp). The session in which that lands is
-recorded here as the boundary, so sessions collected under the skew can be told apart from sessions
-collected after it when the frozen analysis is read.
+**Boundary marking — RESOLVED, 2026-09-21 23:19:12 UTC.** The clock was repaired after the close by
+the EM desk, with every book on the host flat and no working, pending or in-flight orders anywhere.
+
+| | measured |
+|---|---|
+| before, host vs NTP | **+10,659.7 ms behind** true time (5 servers, spread 21.7 ms, worst round-trip uncertainty 54.1 ms); service Stopped, start type Manual |
+| repair timestamp | **2026-09-21 23:19:12 UTC** (16:19:12 PT) — the service's own last-successful-sync time for the step, not a wall-clock reading around the command |
+| after, host vs NTP | **+2.3 ms**, then **+0.3 ms**; service Running, start type **Automatic**, stratum 5, leap indicator 0, source time.windows.com |
+
+Verified independently on this desk after the repair: host minus database is now **+0.001 s**,
+against −8.978 s before, and `w32time` reports Running with start mode Auto. The Automatic start
+type is what makes the fix survive a reboot; that was the open worry when this was first recorded.
+
+**The boundary is clean.** Session 1 (2026-09-21) was collected in its entirety under the skew —
+the repair landed after the close, so no session is split across it. Everything from 23:19:12 UTC
+onward is on a synced clock, and the next counted session is the first clean one. The mixed-session
+case this log was prepared to handle did not arise.
+
+No threshold or tolerance was widened to accommodate the skew, on either desk. The gates are
+unchanged; the clock they judge against is now correct.
 
 ### Watch-out for a reader of this log
 
