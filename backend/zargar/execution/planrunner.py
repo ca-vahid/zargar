@@ -572,6 +572,45 @@ class PlanRunner(SessionListener):
         (Tips desk request, 2026-09-15). Code default True keeps a bare test rig observable."""
         return bool(self.rt("target_distance_diagnostic", True))
 
+    def live_premium_basis(self, tr: Trade, *, now_ms: int | None = None) -> tuple[float | None, dict]:
+        """The price the CONFIGURED premium stop measures on this contract right now, with the evidence
+        that says where it came from. One implementation, so every monetary premium decision reads the
+        same quote under the same validity rule (F129, 2026-09-21).
+
+        `None` means there is no usable quote: a delayed or stale row never drives money (R4, audit
+        2026-09-04 - a 15-minute-old chain print could market-sell a live position). A FRESH real-time
+        quote with NO bid is 0.0, not a gap: nobody is paying anything, which is the worst bleed there is.
+        F30: the basis is per technique - EM keeps the real bid, Team2 measures the mid so a one-cent
+        spread on a $0.34 contract is not an eighth of the stop budget."""
+        basis = str(self.rt("premium_stop_basis", "bid") or "bid")
+        rec: dict = {"symbol": tr.order_symbol, "basis": basis}
+        if tr.instrument != "options" or not tr.order_symbol:
+            rec["usable"] = False
+            rec["why"] = "not an option position"
+            return None, rec
+        now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        oq = self.engine.quotes.get(tr.order_symbol)
+        max_age = int(self.rt("stale_seconds", 180))
+        fresh = oq is not None and (now_ms - int(oq.ts)) <= max_age * 1000 and not getattr(oq, "delayed", False)
+        if oq is None:
+            rec.update({"usable": False, "why": "no quote for the contract"})
+            return None, rec
+        src_ts = int(getattr(oq, "source_ts", 0) or oq.ts or 0)
+        rec.update({"bid": oq.bid, "ask": oq.ask, "source": str(getattr(oq, "source", "") or ""),
+                    "sourceTs": src_ts, "receivedTs": int(oq.ts),
+                    "ageS": round((now_ms - src_ts) / 1000.0, 2) if src_ts else None,
+                    "delayed": bool(getattr(oq, "delayed", False)), "maxAgeS": max_age})
+        if not fresh:
+            rec.update({"usable": False,
+                        "why": "the contract's quote is delayed" if getattr(oq, "delayed", False)
+                               else f"the contract's quote is older than {max_age}s"})
+            return None, rec
+        obid = float(oq.bid) if (oq.bid and oq.bid > 0) else 0.0
+        oask = float(oq.ask) if (oq.ask and oq.ask > 0) else None
+        price = ((obid + oask) / 2.0) if (basis == "mid" and obid and oask) else obid
+        rec.update({"usable": True, "price": price})
+        return price, rec
+
     def _shadow_enabled(self, ap: ArmedPlan) -> bool:
         """shadow-exit-v1 is an EM Practice opt-in: the technique's own knob (default off) AND the technique's default
         (Practice) book only - other desks and other books produce no experiment records."""
@@ -834,18 +873,11 @@ class PlanRunner(SessionListener):
                 # 2) premium stop (options): the contract's own price bled too far
                 if tr.instrument == "options" and prem_pct > 0 and tr.order_symbol:
                     oq = self.engine.quotes.get(tr.order_symbol)
-                    fresh_o = oq is not None and (now_ms - oq.ts) <= max_age * 1000 \
-                        and not getattr(oq, "delayed", False)
-                    # a fresh REAL-TIME quote with no bid means nobody is paying
-                    # anything — that IS the worst bleed, not a data gap. A delayed
-                    # chain row with bid 0 (thin contract, audit 2026-09-02) is a
-                    # data gap: never market-sell a live position on it.
-                    # R4 (audit 2026-09-04): a stale or delayed row with a positive bid used to drive the stop —
-                    # a 15-minute-old chain print could market-sell a live position. Fresh real-time only.
-                    obid = (float(oq.bid) if (fresh_o and oq is not None and oq.bid and oq.bid > 0)
-                            else (0.0 if fresh_o else None))
+                    # the quote-validity rule and the F30 basis live in `live_premium_basis` — this watch and
+                    # every other monetary premium decision read the SAME price from the SAME rule (F129)
+                    pprice, pquote = self.live_premium_basis(tr, now_ms=now_ms)
                     nkey = (ap.run_id, tr.trigger_id + "~noq")
-                    if obid is None:
+                    if pprice is None:
                         miss = self._quote_breaches.get(nkey, 0) + 1
                         self._quote_breaches[nkey] = miss
                         if miss == 30:       # ~1 minute of consecutive misses at 2s
@@ -855,19 +887,14 @@ class PlanRunner(SessionListener):
                                               stage="option_quote_gap")
                     else:
                         self._quote_breaches.pop(nkey, None)
-                    # F30: the basis is per technique — EM keeps the real bid; Team2 measures the mid so a
-                    # one-cent spread on a $0.34 contract is not an eighth of the stop budget — and a
-                    # tick floor keeps cheap contracts from being stopped by their own spread
-                    basis = str(self.rt("premium_stop_basis", "bid") or "bid")
-                    oask = float(oq.ask) if (fresh_o and oq is not None and oq.ask and oq.ask > 0) else None
-                    pprice = ((obid + oask) / 2.0) if (basis == "mid" and obid and oask) else obid
+                    basis = str(pquote.get("basis") or "bid")
                     preason = premium_stop_breach(tr, pprice, stop_pct=prem_pct, basis=basis,
                                                   min_ticks=int(self.rt("premium_stop_min_ticks", 0) or 0))
                     pkey = (ap.run_id, tr.trigger_id + "~prem")
                     if preason is None:
                         self._quote_breaches.pop(pkey, None)
                         self._quote_seen.pop(pkey, None)
-                    elif self._quote_seen.get(pkey, 0) >= int(getattr(oq, "source_ts", 0) or oq.ts):
+                    elif oq is None or self._quote_seen.get(pkey, 0) >= int(getattr(oq, "source_ts", 0) or oq.ts):
                         pass         # DA-05: same or OLDER observation than the last count - not forward confirmation
                     else:
                         self._quote_seen[pkey] = int(getattr(oq, "source_ts", 0) or oq.ts)
@@ -879,7 +906,9 @@ class PlanRunner(SessionListener):
                             await self._alert(ap, f"{tr.trigger_id}: {preason} — selling at market",
                                               level="warning", stage="premium_stop")
                             await self._exit(ap, tr, "stop", tr.remaining, journal=True, force_market=True,
-                                             reason=preason)
+                                             reason=preason, authority=self.premium_stop_authority_record(
+                                                 tr, pprice, pquote, stop_pct=prem_pct, source="live_quote_watch",
+                                                 confirmed=True, why=preason))
                             continue
                 # 2b) the plan TARGET on the underlying's fresh print — a technique hook (Team2 F50); exit-only,
                 #     reduce-only limit at the contract's fresh bid, never an entry
@@ -3530,8 +3559,26 @@ class PlanRunner(SessionListener):
         if decision.qty >= 1:
             await self._exit(ap, tr, decision.kind, decision.qty, journal=True, reason=decision.reason)
 
+    def premium_stop_authority_record(self, tr: Trade, price: float | None, quote: dict, *, stop_pct: float,
+                                      source: str, confirmed: bool, why: str = "",
+                                      model: dict | None = None) -> dict:
+        """F129: what a monetary premium decision was actually decided on — the fill the desk paid, the
+        live quote and its source timestamp, the return that follows from the two, and the configured
+        threshold. A pricing model's own numbers ride along under `model`, as a diagnostic, never as
+        the basis. Convention: the same raw fill-to-quote comparison `premium_stop_breach` applies."""
+        paid = float(getattr(tr, "avg_fill", 0) or 0)
+        pct = round((float(price) - paid) / paid * 100.0, 1) if (paid > 0 and price is not None) else None
+        rec = {"decidedBy": source, "confirmed": bool(confirmed), "thresholdPct": float(stop_pct),
+               "fillBasis": paid or None, "quote": quote, "livePrice": price, "returnPct": pct,
+               "convention": f"{quote.get('basis') or 'bid'} vs fill, fees excluded (premium_stop_breach)"}
+        if why:
+            rec["why"] = why
+        if model is not None:
+            rec["model"] = model                 # diagnostics only - explicitly separate from the authority
+        return rec
+
     async def _exit(self, ap: ArmedPlan, tr: Trade, kind: str, qty: float, *, journal: bool,
-                    force_market: bool = False, reason: str = "") -> None:
+                    force_market: bool = False, reason: str = "", authority: dict | None = None) -> None:
         qty = float(int(qty))
         if qty < 1 or tr.remaining <= 0:
             return
@@ -3554,7 +3601,8 @@ class PlanRunner(SessionListener):
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_EXIT, {
             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "kind": kind, "qty": qty,
             "remainingBefore": tr.remaining, "stop": tr.stop, "targets": tr.targets, "reduceOnly": True,
-            "orderType": intent.order_type, "reason": reason},
+            "orderType": intent.order_type, "reason": reason,
+            **({"authority": authority} if authority else {})},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         self._log(ap, "exit_submit", f"{tr.trigger_id}: {kind} SELL {qty:g} {intent.order_type} (reduce-only)",
                   trigger=tr.trigger_id, kind=kind)

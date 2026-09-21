@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.28";
+export const APP_VERSION = "0.8.29";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.29",date:"2026-09-21",title:"Team2: a price estimate can no longer sell your position",items:[
+    {tag:"fixed",text:"A Team2 premium stop is now taken only when the contract you actually hold has bled past the configured limit on a valid live quote, measured against what you paid. The read's own price estimate can no longer sell the position on its own. Structural stops, targets, the flatten and the live protective exits are unchanged."},
+    {tag:"improved",text:"Every Team2 exit now records who decided it, the fill it was measured against, the quote and its timestamp, the resulting return and the limit in force."},
+  ]},
   {version:"0.8.28",date:"2026-09-20",title:"Cartel keeps analysis checkpoints across repeated restarts",items:[
     {tag:"fixed",text:"Resuming an interrupted retry now reuses analyses from its compatible earlier checkpoints, including work saved before a crash. Existing plans remain preserved."},
     {tag:"fixed",text:"Automatic recovery waits for its runtime controller to attach before attempting a restart resume."},

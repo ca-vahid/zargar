@@ -53,6 +53,19 @@ log = logging.getLogger("zargar.techniques.team2")
 EXIT_KIND = {"trim1": "tp1", "trim2": "tp2"}
 
 
+def _is_model_premium_stop(reason: str) -> bool:
+    """F129 (2026-09-21): is this model instruction a MONETARY stop?
+
+    Every other Team2 exit reads the underlying, which the model and the desk share: the S1 candle
+    stop, the X3 target, the C3 flatten. Only the P1/D13 premium stop is priced — and the model
+    prices a PROXY contract (its own strike at a flat-IV mark), not the one the desk holds. On
+    2026-09-21 that proxy bled -32% from $0.1794 while the contract actually bought at $0.33 was
+    still $0.2899, inside the -25% line, and the book was market-sold on the model's arithmetic.
+    A model estimate never independently forces a sale; the held contract's fill and a valid live
+    quote decide, under the configured convention."""
+    return "premium stop" in reason.lower()
+
+
 def _kind_for(reason: str, trims_done: int) -> str:
     r = reason.lower()
     if r.startswith("flatten"):
@@ -1791,7 +1804,10 @@ class Team2Runner(PlanRunner):
             self._log(ap, "orphan_stop", f"{tr.trigger_id}: {why}", trigger=tr.trigger_id, close=float(bar.close), guard=float(guard), line=name)
             await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "orphan_stop", why, trigger=tr.trigger_id, decisionTs=int(time.time() * 1000),
                               barTs=bar.ts, close=float(bar.close), guard=float(guard), line=name)
-            await self._exit(ap, tr, "stop", float(tr.remaining), journal=True, reason=why, force_market=True)
+            await self._exit(ap, tr, "stop", float(tr.remaining), journal=True, reason=why, force_market=True,
+                             authority={"decidedBy": "present_time_structural", "confirmed": True, "why": why,
+                                        "line": name, "guard": float(guard), "close": float(bar.close),
+                                        "fillBasis": float(tr.avg_fill) if tr.avg_fill else None})
 
     async def _fire_from_event(self, ap: ArmedPlan, e: dict, bar: Bar, res, *, halted: bool, journal: bool) -> None:
         tid = f"{e.get('setup')}#{e.get('touch')}"
@@ -1989,10 +2005,60 @@ class Team2Runner(PlanRunner):
                 trade.trims_done = level
                 await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")))
                 continue
+            why = str(e.get("why", ""))
+            authority: dict | None = None
+            if _is_model_premium_stop(why):
+                # F129: a MONETARY instruction. The model's proxy premium never sells the desk's
+                # contract on its own — the held fill and a valid live quote decide.
+                authority = self._premium_stop_authority(trade, e)
+                if not authority.get("confirmed"):
+                    self._log(ap, "premium_stop_not_live", f"{trade.trigger_id}: the model's premium stop "
+                              f"({e.get('pnlPct')}% on its own proxy contract) is not the contract the desk holds — "
+                              f"{authority['why']}; the live premium stop, the S1 candle stop, the target and the "
+                              f"flatten keep the position (F129)", trigger=trade.trigger_id,
+                              pnlPctModel=e.get("pnlPct"), authority=authority)
+                    await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "premium_stop_not_live",
+                                      f"model premium stop not confirmed on the held contract — {authority['why']}",
+                                      trigger=trade.trigger_id, decisionTs=int(time.time() * 1000), authority=authority)
+                    continue
+                why = str(authority.get("why") or why)
+            elif kind in ("stop", "flatten", "tp3"):
+                # the underlying's own reads: the model and the desk share the tape, so the instruction
+                # stands — but the journal still says which authority took the position out (F129)
+                authority = {"decidedBy": f"model_{'structural' if kind == 'stop' else kind}", "confirmed": True,
+                             "why": why, "fillBasis": float(trade.avg_fill) if trade.avg_fill else None}
             qty = float(int(round(trade.filled_qty * frac))) if e["event"] == "trim" else trade.remaining
             qty = max(1.0, min(qty, trade.remaining)) if trade.remaining >= 1 else trade.remaining
-            await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")),
-                             force_market=kind in ("stop", "flatten"))
+            await self._exit(ap, trade, kind, qty, journal=True, reason=why,
+                             force_market=kind in ("stop", "flatten"), authority=authority)
+
+    def _premium_stop_authority(self, trade: Trade, e: dict) -> dict:
+        """F129: has the HELD contract actually breached the configured premium stop?
+
+        Judged on the fill the desk paid and the contract's own valid live quote, through the SAME
+        predicate, threshold, basis, tick floor and quote-validity rule the 2 s live watch uses
+        (`premium_stop_breach`, `premium_stop_pct`, `premium_stop_basis`, `premium_stop_min_ticks`,
+        R4). Nothing here is a new threshold or a new fee convention. The model's own numbers are
+        carried as diagnostics under `model`, explicitly separate from the authority."""
+        from ...execution.exits import premium_stop_breach
+        stop_pct = float(self.rt("premium_stop_pct", 50.0) or 0)
+        price, quote = self.live_premium_basis(trade)
+        model = {"pnlPct": e.get("pnlPct"), "premium": e.get("premium"), "avgPremium": e.get("avgPremium"),
+                 "why": str(e.get("why", "")), "ts": e.get("ts")}
+        breach = None
+        if price is not None and stop_pct > 0:
+            with contextlib.suppress(Exception):
+                breach = premium_stop_breach(trade, price, stop_pct=stop_pct, basis=str(quote.get("basis") or "bid"),
+                                             min_ticks=int(self.rt("premium_stop_min_ticks", 0) or 0))
+        rec = self.premium_stop_authority_record(trade, price, quote, stop_pct=stop_pct,
+                                                 source="held_contract", confirmed=breach is not None,
+                                                 why=breach or "", model=model)
+        if breach is None:
+            paid = float(getattr(trade, "avg_fill", 0) or 0)
+            rec["why"] = (quote.get("why") or "no usable live quote for the contract") if price is None else (
+                f"the contract the desk holds is at {price:.2f} on the {quote.get('basis')} against the {paid:.2f} "
+                f"paid ({rec.get('returnPct'):+.0f}%) — inside the {stop_pct:g}% stop")
+        return rec
 
     async def _reprice_stuck_exits(self, ap: ArmedPlan) -> None:
         from ...execution.exits import EXIT_REPRICE_BARS, stale_working_exit
@@ -2207,6 +2273,23 @@ class Team2Runner(PlanRunner):
             self._log(ap, "add_skip", f"{base.trigger_id}: add wanted but {why}", trigger=base.trigger_id, why=why)
             return
         if base.remaining <= 0 or base.instrument != "options" or not base.contract or frac <= 0:
+            return
+        # F129: X5 is trim-AND-add. The model's add assumes the model's trim happened; on the desk a trim
+        # only happens when the CONTRACT reached the level (V2 live trims, `trim_deferred_live`). With the
+        # book still whole there is no room to re-fill, and buying anyway would carry more size than the
+        # method ever describes. Same rule as the premium stop: a model event never moves money the book's
+        # own record does not support.
+        freed = float(base.filled_qty or 0) - float(base.remaining or 0)
+        if freed <= 0:
+            self._log(ap, "add_no_room", f"{tid}: the model trimmed its proxy and wants the size back, but the desk "
+                      f"still holds all {float(base.remaining):g} contract(s) — nothing was freed to re-fill (F129)",
+                      trigger=tid, remaining=float(base.remaining), filled=float(base.filled_qty or 0))
+            if journal:
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "add_no_room",
+                    "instruction": "add", "remaining": float(base.remaining), "filled": float(base.filled_qty or 0),
+                    "ts": e.get("ts"), "reason": str(e.get("why", ""))},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id)
             return
         # R2 (2026-09-14): an add increases exposure — it obeys the same session / cutoff / freshness rule as a fire
         # at its origin, and the shared entry gate again at the order boundary (it rides a cached contract, so the
