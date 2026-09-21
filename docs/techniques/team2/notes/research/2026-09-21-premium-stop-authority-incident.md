@@ -119,6 +119,29 @@ ride along under `model` and are never the basis.
 | entry / contract choice | live NBBO picker (`quotes` authority, F104/F105/F108) | already correct: the model never vetoes and never prices an order |
 | live quote-watch premium stop, underlying quote stop, failed-exit watchdog, `_clock_flatten` | the desk's own quotes and clock | never model-driven; unchanged |
 
+## 6b. How often has this happened?
+
+Every premium-stop exit names its own authority in its reason text, and the two authorities write
+differently: the pure read states a percentage against its threshold (`premium stop: -32% <= -25%
+(P1/D13)`), while the live watch names the actual bid or mid against what was paid (`premium stop:
+mid 0.36 is 28% below the 0.51 paid`). Classifying the journal on that wording, over 60 days:
+
+| deciding authority | premium-stop exits | changed by this fix |
+|---|---|---|
+| the contract's own live quote | 4 | no |
+| the pricing model | 2 | yes — both are this incident |
+
+The four live-quote stops were genuine bleeds, decided on real quotes against real fills, and the
+fix leaves every one of them untouched. The only two model-priced premium stops in 60 days are the
+two IWM round trips above.
+
+Two cautions on reading that table. First, it is not evidence that the defect was harmless: it
+surfaced today only because the modelled contract drifted out of band from the one the live picker
+filled, and that condition is not itself rare, so two in sixty days should not be taken as the
+natural rate. Second, an earlier attempt to measure this by pairing exits to executions on
+timestamp produced a false third case — it matched an unrelated equity sale to a Starbucks option
+exit. Price-and-time matching across symbols is not reliable here; the reason text is.
+
 ## 7. Acceptance tests
 
 `backend/tests/test_team2_premium_stop_authority.py`, 13 cases:
