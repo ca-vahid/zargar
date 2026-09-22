@@ -101,6 +101,32 @@ def _ttl_expiry(ttl_min: int, now: dt.datetime | None = None) -> dt.datetime:
     return (base + dt.timedelta(minutes=ttl_min)).astimezone(dt.timezone.utc)
 
 
+def _contract_metadata(vehicle: dict | None, symbol: str | None) -> dict:
+    """S21-01: strike / expiry / type / DTE for the payoff, from the vehicle when it carries them, else DECODED from
+    the OCC symbol (never guessed). `source` says which. Missing stays missing."""
+    v = dict(vehicle or {})
+    out: dict = {"source": None, "strike": None, "expiry": None, "optionType": None, "dte": None}
+    try:
+        if v.get("strike") is not None and v.get("expiry"):
+            out.update(source="vehicle", strike=float(v["strike"]), expiry=str(v["expiry"]),
+                       optionType=(v.get("optionType") if v.get("optionType") in ("call", "put") else None))
+        else:
+            from ..options import occ as _occ
+            o = _occ.parse(symbol)
+            if o is not None:
+                out.update(source="occ", strike=float(o.strike), expiry=o.expiry.isoformat(), optionType=o.option_type)
+        if out["expiry"]:
+            import datetime as _dt
+            today = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-4))).date()
+            out["dte"] = (_dt.date.fromisoformat(out["expiry"]) - today).days
+        if out["optionType"] is None and v.get("optionType") in ("call", "put"):
+            out["optionType"] = v["optionType"]
+    except Exception:                                   # noqa: BLE001 - metadata is evidence, never a crash
+        pass
+    return out
+
+
+
 class ProposalService:
     def __init__(self, engine) -> None:
         self.engine = engine
@@ -992,15 +1018,37 @@ class ProposalService:
             option_type=option_type, delta=delta, greeks_meta=greeks_meta,
             budget=budget, budget_source=budget_source, quote_meta=quote_meta, currency=currency)
         # PROF-02: the whole exit path in integer units, beside the risk numbers
-        with contextlib.suppress(Exception):
+        try:
             from ..techniques.tip import payoff as _po
             _targets = [float(t) for t in (final_plan.get("targets") or [])]
             _fr = [float(x) for x in (final_plan.get("fractions") or [])] or ([1.0] if _targets else [])
             _gains = _po.unit_gains(vehicle=("shares" if sec_type == "STK" else "option"), entry_ref=float(entry_ref or 0),
                                     targets=_targets, direction=direction, delta=delta, multiplier=(1.0 if sec_type == "STK" else multiplier))
+            # S21-01 (2026-09-21 review): the CARD's payoff uses the same complete fee basis as execution and the
+            # analyst (commission + regulatory per contract per side, `execcost.fees_from_settings`) and the verified
+            # contract metadata - strike/expiry/type from the vehicle, else decoded from the OCC symbol itself - so the
+            # expiration break-even and the horizon are printed instead of null. Estimator labels stay; no Greek is invented.
+            from ..techniques.tip.execcost import fees_from_settings as _fees
+            _fb = _fees(s)
+            _fee_unit = 0.0 if sec_type == "STK" else float(_fb["feePerContract"]) + float(_fb["regPerContract"])
+            _meta = _contract_metadata(vehicle, symbol) if sec_type == "OPT" else {}
+            _hold = (exit_plan or {}).get("maxHoldSessions") or (final_plan or {}).get("maxHoldSessions")
             rp.payoff = _po.payoff_preview(qty=int(rp.qty or qty), fractions=_fr, gains=_gains, unit_loss=rp.unitLoss,
-                                           fee_per_unit=(0.0 if sec_type == "STK" else float(s.get("options.fee_per_contract", 0.0) or 0.0)),
-                                           vehicle=("shares" if sec_type == "STK" else "option"))
+                                           fee_per_unit=_fee_unit, vehicle=("shares" if sec_type == "STK" else "option"),
+                                           strike=_meta.get("strike"), premium=(None if sec_type == "STK" else float(limit)),
+                                           option_type=_meta.get("optionType"), dte=_meta.get("dte"),
+                                           hold_sessions=(int(_hold) if _hold is not None else None),
+                                           expiry_date=_meta.get("expiry"))
+            if sec_type == "OPT":
+                rp.payoff["feeBasis"] = "options.fee_per_contract + sim.reg_fee_per_contract per contract per side (execcost basis)"
+                rp.payoff["contractMetadata"] = {"source": _meta.get("source"), "strike": _meta.get("strike"),
+                                                 "expiry": _meta.get("expiry"), "optionType": _meta.get("optionType")}
+                # S21-03: the preview's target-price assumption is stated on the card, beside the numbers
+                rp.payoff["targetExecution"] = ("scenarios assume an exit AT the target price; the live manager exits at the "
+                                                "market after a closed-bar touch, so realised target exits can fall short")
+        except Exception as exc:                            # noqa: BLE001 - S21-01: a payoff failure is visible, never silent
+            log.warning("payoff preview failed for %s: %s", symbol, exc)
+            rp.payoff = {"status": "unknown", "reason": f"payoff preview failed: {exc}"}
         # TMR-02 (2026-09-16): the instantaneous round-trip cost of the FINAL size on the
         # qualified quote - spread once, both sides' fees - a diagnostic beside the risk
         # numbers, never a gate (unknown on a stale / crossed / missing quote)
