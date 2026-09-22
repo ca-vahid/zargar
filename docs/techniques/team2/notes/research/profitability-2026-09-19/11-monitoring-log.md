@@ -150,3 +150,25 @@ skew was the only cause".
 
 Coverage on counted sessions so far: 2 opportunities, 1 valid outcome, 50%. Reported as coverage
 only; no outcome value before the endpoint.
+
+### Build change after session 2: `63613751` / v0.8.32 (Tips desk)
+
+Restart timestamp **2026-09-22T20:15:38Z = 16:15:38 ET** — after the 15:45 cutoff and after session 2
+had closed and counted, so it carries **no exclusion**. Sequence on the record, unambiguously:
+session closed and counted, then Team2 confirmed flat, then the restart.
+
+Verified on this desk after the restart rather than taken on the receipt, because the build carries a
+protection fix:
+
+- F129 re-verified against the newly deployed modules: the incident's own numbers still produce no
+  stop, a genuine bleed still confirms, quote-validity is unchanged, and every structural protection
+  is present. All checks pass.
+- Team2 settings intact: `setup_target=inherit` (resolver still off), `selection_study=collect`,
+  premium stop 25% / `mid` / 3 ticks.
+- Study intact: `collecting`, 2 counted, both cohorts present, collector health all zero.
+
+Build history for the study, continued from the table above:
+
+| from session | build | version |
+|---|---|---|
+| session 2 close onward | `63613751` | 0.8.32 |
