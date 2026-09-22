@@ -419,9 +419,17 @@ class CartelObserver(SessionListener):
                 observation['dataEvidence'] = evidence(minutes)
                 from .decision_evidence import capture
                 captured_events = await capture(session, row, plan, minutes, state, observation, now)
+                # F4: the matched control is a pure read beside the executing cadence; it never
+                # reaches consume_locked (its signal id has the wrong shape) or reserve_submission.
+                from .cadence import read_control
+                control = read_control(plan, (row.config or {}).get('cadence'), tape, now,
+                                       entry_after=state.get("observeAfter", state["armedAt"]),
+                                       verified_intervals=interval_evidence,
+                                       previous=state.get('control') if state.get('day') == day else None)
                 row.state = {**state, 'dataEvidence': evidence(minutes), "minutes": minutes, "day": day, "lastMinute": bar.ts,
                              "observation": observation, "decisionHistory": retain_decisions(
-                                 state.get("decisionHistory", (state.get("observation") or {}).get("trace", [])), observation)}
+                                 state.get("decisionHistory", (state.get("observation") or {}).get("trace", [])), observation),
+                             **({'control': control} if control else {})}
                 if observation["status"] in ("expired", "invalidated"):
                     row.status = "expired" if observation["status"] == "expired" else "disarmed"
                 consumed = bool(observation["signal"]) and self.repository.consume_locked(

@@ -123,3 +123,11 @@ contract-refresh fix, executable-cost selection, bounded active5m Practice
 comparison, setup-family calibration, optional shares, data gaps and causal EOD
 reporting. It includes evidence, code targets, acceptance tests, rollout and
 rollback. This is an implementation specification; no policy is activated by it.
+
+### September 21 brief: first release built (F1-F4), not deployed, not activated
+
+Branch `claude/cartel-brief-0921`: versioned contract refresh allocation (`diverse_liquidity_v1`),
+executable-cost ranking (`executable_cost_v1`), causal daily-review attribution and the Practice
+entry-cadence experiment (`breakout_5m_v1` with a non-ordering 15m matched control). Every new
+field defaults to the legacy behaviour; saved arms are unchanged. Evidence, verdicts, activation
+order and rollback: [reviews/2026-09-21-brief/HANDBACK.md](reviews/2026-09-21-brief/HANDBACK.md).
