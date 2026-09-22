@@ -86,6 +86,8 @@ class PlanInput(WireModel):
     review_note: str = Field(min_length=1, max_length=10000)
     target_source: str | None = Field(default=None, max_length=2000)
     exit_campaign: ExitCampaign
+    # F4: the versioned entry-cadence label the plan was prepared under (None = unlabelled/manual).
+    cadence_version: str | None = Field(default=None, max_length=40)
 
 
 class ReplayInput(WireModel):
@@ -219,7 +221,7 @@ class CartelService:
                                 minute_history=[b.bar() for b in inputs.minute_history], as_of_ms=inputs.as_of_ms,
                                 direction=inputs.direction, setup=body.setup, horizon_sessions=body.horizon_sessions,
                                 reviewed_targets=body.reviewed_targets, review_note=body.review_note,
-                                target_source=body.target_source)
+                                target_source=body.target_source, cadence_version=body.cadence_version)
         plan = CartelPlan.model_validate(prepared["plan"]["plan"])
         targets = [r.target for r in body.exit_campaign.rungs if r.kind == "target"]
         if targets != list(plan.targets[:len(targets)]):

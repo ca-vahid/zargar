@@ -9,8 +9,9 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from ...options.occ import parse
-from .contracts import ContractSelectionInput
+from .contracts import ContractSelectionInput, SelectionEconomics, contract_economics
 from .data import DailyBar, completed_daily
+from .cadence import VolumeExperiment
 from .exits import ExitCampaign
 from .plans import EntryPolicy
 from .quality import target_room
@@ -61,6 +62,13 @@ class PreparationPolicy(WireModel):
     contract_policy: ContractSelectionInput = Field(default_factory=lambda: ContractSelectionInput(
         dte_min=21, dte_max=90, target_dte=45, target_abs_delta=.5, max_ask=5,
         max_spread_pct=20, min_open_interest=100, refresh_limit=6))
+    # F4 (2026-09-21, R2 2026-09-21 review): the explicit, versioned entry cadence. A saved policy
+    # that predates the label keeps its behaviour: an unlabelled 15-minute entry IS the incumbent
+    # ``breakout_15m_v1``; any other unlabelled timeframe (a saved Live or Practice 5m/30m entry) is
+    # ``legacy_timeframe`` - the pre-existing read, no control, no pilot semantics, valid in every
+    # workspace. Only the EXPLICIT ``breakout_5m_v1`` label opts into the Practice-only experiment.
+    entry_cadence: Literal['breakout_15m_v1', 'breakout_5m_v1', 'legacy_timeframe'] = 'breakout_15m_v1'
+    volume_experiment: VolumeExperiment = Field(default_factory=VolumeExperiment)
 
     @model_validator(mode='before')
     @classmethod
@@ -73,7 +81,24 @@ class PreparationPolicy(WireModel):
                 values['risk_pct'] = 1
             if 'baseline_readiness' not in values and 'baselineReadiness' not in values:
                 values['baseline_readiness'] = 'full_session'
+        if isinstance(values, dict) and 'entry_cadence' not in values and 'entryCadence' not in values:
+            entry = values.get('entry')
+            minutes = (entry.get('timeframe_minutes', entry.get('timeframeMinutes', 15)) if isinstance(entry, dict)
+                       else getattr(entry, 'timeframe_minutes', 15))
+            values = dict(values)
+            values['entry_cadence'] = 'breakout_15m_v1' if minutes == 15 else 'legacy_timeframe'
         return values
+
+    @model_validator(mode='after')
+    def cadence_consistency(self):
+        expected = {'breakout_15m_v1': 15, 'breakout_5m_v1': 5}.get(self.entry_cadence)
+        if expected is not None and self.entry.timeframe_minutes != expected:
+            raise ValueError(f'{self.entry_cadence} requires entry.timeframe_minutes={expected}')
+        if self.entry_cadence == 'breakout_5m_v1' and self.workspace != 'practice':
+            raise ValueError('breakout_5m_v1 is a Practice-only entry-cadence experiment')
+        if self.volume_experiment.version != 'off' and self.workspace != 'practice':
+            raise ValueError('the volume grid experiment is Practice-only and replay-only')
+        return self
 
     @model_validator(mode='after')
     def valid_exit_policy(self):
@@ -172,9 +197,16 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
         note = 'Practice post-ignition pilot: verified event, quiet consolidation and prospective breakout. Geometry is experimental; closed-bar, data, contract and risk gates remain mandatory.'
     if research_only:
         note = 'Research candidate only: market alignment blocks arming. Rebuild with fresh aligned market evidence before execution.'
+    entry_updates = {"min_target_r": policy.min_entry_target_r, "baseline_policy": policy.baseline_readiness, "require_exchange_bars": policy.require_exchange_history}
+    cadence = policy.entry_cadence
+    if cadence == 'breakout_5m_v1' and direction != 'long':
+        # R3 (2026-09-21 review): the 5-minute pilot is scoped to LONG Practice plans. A bearish
+        # executable plan keeps the incumbent 15-minute cadence and label; nothing else changes.
+        entry_updates["timeframe_minutes"] = 15
+        cadence = 'breakout_15m_v1'
     return PlanInput(setup=candidate['setup'], horizon_sessions=policy.horizon_sessions,
-        entry_policy=policy.entry.model_copy(update={"min_target_r": policy.min_entry_target_r, "baseline_policy": policy.baseline_readiness, "require_exchange_bars": policy.require_exchange_history}), reviewed_targets=tuple(targets), review_note=note,
-        target_source=source, exit_campaign=campaign)
+        entry_policy=policy.entry.model_copy(update=entry_updates), reviewed_targets=tuple(targets), review_note=note,
+        target_source=source, exit_campaign=campaign, cadence_version=cadence)
 
 
 async def planning_contract(engine, plan, policy: ContractSelectionInput):
@@ -200,8 +232,8 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
     best_distance = None
     for expiry in expiries:
         distance = abs((dt.date.fromisoformat(expiry)-plan.first_session).days-policy.target_dte)
-        if best_distance is not None and distance > best_distance:
-            break  # Later expiries cannot improve the primary DTE ranking.
+        if best_distance is not None and distance > best_distance and policy.ranking_version == 'legacy':
+            break  # Later expiries cannot improve the legacy primary DTE ranking; cost ranking examines the whole range.
         checked += 1
         try:
             rows = await provider.chain(plan.symbol, expiry)
@@ -249,8 +281,26 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
             candidates.append({'symbol': option.symbol, 'expiry': expiry, 'delta': delta, 'bid': bid, 'ask': ask,
                 'openInterest': oi, 'spreadPct': spread, 'dte': dte})
             best_distance = distance
-    candidates.sort(key=lambda c: (abs(c['dte']-policy.target_dte), abs(abs(c['delta'])-policy.target_abs_delta), c['spreadPct'], c['symbol']))
+    legacy_key = lambda c: (abs(c['dte']-policy.target_dte), abs(abs(c['delta'])-policy.target_abs_delta), c['spreadPct'], c['symbol'])
+    candidates.sort(key=legacy_key)
+    legacy_selected = candidates[0]['symbol'] if candidates else None
+    ranking = 'legacy: distance to reviewed DTE, delta distance, spread, symbol'
+    if policy.ranking_version == 'executable_cost_v1':
+        # F3 on delayed chain rows: friction per contract only (no displayed size, no quantity);
+        # the same tuple is re-applied on fresh quotes at the actual entry.
+        fee = engine.settings.get('options.fee_per_contract', .99)
+        regulatory = engine.settings.get('sim.reg_fee_per_contract', .05)
+        economics = SelectionEconomics(entry_fee_per_contract_usd=fee+regulatory, exit_fee_per_contract_usd=fee+regulatory,
+            basis='Delayed chain bid/ask with the Practice simulator fee schedule; sizes and quantity unknown pre-open')
+        for c in candidates:
+            c['economics'] = contract_economics(c['bid'], c['ask'], None, economics)
+        candidates.sort(key=lambda c: (c['economics']['frictionPctOfDebit'], abs(c['dte']-policy.target_dte),
+                                       abs(abs(c['delta'])-policy.target_abs_delta), c['symbol']))
+        ranking = ('executable_cost_v1 (planning basis): (crossing spread + round-trip fees) / entry debit on delayed chain '
+                   'prices, then distance to reviewed DTE, delta distance, symbol; displayed size unknown pre-open')
     audit = {'expiriesInRange': len(expiries), 'expiriesChecked': checked, 'rowsExamined': examined,
+             'rankingVersion': policy.ranking_version, 'ranking': ranking, 'legacySelected': legacy_selected,
+             'selectionChangedFromLegacy': bool(candidates) and candidates[0]['symbol'] != legacy_selected,
              'rejectedCandidates': rejected_details, 'eligible': len(candidates), 'rejections': rejected, 'effectiveMaxAsk': policy.max_ask,
              'maxDebitUsd': round(100*policy.max_ask, 2), 'lowestOtherwiseEligibleAsk': lowest_ask,
              'searchComplete': not errors and checked == len(expiries),

@@ -142,7 +142,7 @@ async def collect(runtime):
                         volume_baseline=baseline['baselines'],baseline_as_of=prep.as_of)
                     coverage=baseline_coverage(plan)
                     slots=coverage['usableEntryPeriods']
-                    if not coverage['ready'] or policy.coverage_policy=='full_session' and coverage['available']!=coverage['expected'] or policy.coverage_policy=='opening_and_broad' and (not all(i in slots for i in range(4)) or len(slots)<math.ceil((coverage['expected']-1)*.8)):
+                    if not coverage['ready'] or policy.coverage_policy=='full_session' and coverage['available']!=coverage['expected'] or policy.coverage_policy=='opening_and_broad' and (not all(i in slots for i in range(60//plan.entry.timeframe_minutes)) or len(slots)<math.ceil((coverage['expected']-1)*.8)):
                         raise ValueError(f"Baseline coverage insufficient: {coverage['available']}/{coverage['expected']} periods; existing coverage policy preserved")
                     plans.append({'symbol':candidate['symbol'],'plan':plan.model_dump(mode='json'),'baseline':baseline})
                 except (*DATA_ERRORS,httpx.HTTPError) as exc:

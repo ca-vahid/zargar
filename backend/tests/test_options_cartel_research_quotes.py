@@ -77,3 +77,28 @@ async def test_missing_funding_or_archived_book_does_not_request_contracts():
     result = await observe_contract(engine, plan, policy, lambda: NOW, choose=selector)
     assert result['status'] == 'budget_unavailable' and result['affordabilityOnly'] is False
     selector.assert_not_awaited()
+
+
+# ---- 2026-09-21 brief F2/F3: the observer forwards the reviewed contract, deadline and cash basis ----
+
+async def test_observer_forwards_preferred_contract_deadline_and_economics_and_keeps_unrefreshed_rows():
+    from zargar.techniques.options_cartel.contracts import SelectionRequest
+    engine, policy, plan, choose, quote, _ = fixture()
+    seen = {}
+
+    async def selector(eng, p, pol, request):
+        seen['request'] = request
+        base = await choose(eng, p, pol)
+        base['candidates'] = base['candidates']+[{'symbol': 'TEST261120C00100000', 'expiry': '2026-11-20', 'dte': 65,
+            'openInterest': 5, 'liquidity': 'known_failure', 'refreshed': False, 'eligible': False,
+            'reasons': ['open interest does not meet reviewed liquidity requirement', 'not refreshed: known static failure']}]
+        return base
+    result = await observe_contract(engine, plan, policy, lambda: NOW, choose=selector, preferred=CONTRACT, deadline_ms=NOW+120000)
+    request = seen['request']
+    assert isinstance(request, SelectionRequest) and request.preferred_contract == CONTRACT and request.deadline_ms == NOW+120000
+    assert request.economics.cash_cap_usd == pytest.approx(500) and request.economics.max_units == policy.max_contracts
+    assert request.economics.entry_fee_per_contract_usd == pytest.approx(1.04)
+    assert result['status'] == 'observed' and result['selected']['symbol'] == CONTRACT
+    unrefreshed = [c for c in result['selection']['candidates'] if c['symbol'] == 'TEST261120C00100000']
+    assert unrefreshed and unrefreshed[0]['refreshed'] is False and unrefreshed[0]['eligible'] is False
+    assert result['selected']['economics']['status'] == 'estimated'
