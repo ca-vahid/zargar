@@ -24,6 +24,7 @@ from ...models import DiscordMessage, TipAnalystRun
 log = logging.getLogger("zargar.tip.digest")
 
 ET = ZoneInfo("America/New_York")
+DIGEST_MAX_TOKENS = 2000      # the first attempt's cap; only a bounded repair turn gets more (S21-07)
 DIGEST_TIMEOUT_S = 180
 MAX_PROMOTIONS = 5
 
@@ -141,7 +142,7 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
     try:
         try:
             resp = await asyncio.wait_for(
-                client.messages.create(model=model, max_tokens=2000, system=system,
+                client.messages.create(model=model, max_tokens=DIGEST_MAX_TOKENS, system=system,
                                        messages=[{"role": "user", "content": header}]),
                 timeout=DIGEST_TIMEOUT_S)
         except asyncio.CancelledError:
@@ -160,16 +161,66 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
         _usage_record(usage, resp, latency_ms=latency_ms)
         with _ctx.suppress(Exception):
             llm_stats.record_response("digest", resp, model=model, latency_ms=latency_ms)
-        if getattr(resp, "stop_reason", "") == "max_tokens":
+        truncated = getattr(resp, "stop_reason", "") == "max_tokens"
+        if truncated:
             rec.step("note", "Reply hit the output-token limit (stop=max_tokens) — "
                              "recorded; the answer may be truncated.")
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-        i, j = text.find("{"), text.rfind("}")
-        if i == -1 or j <= i:
-            raise ValueError("no JSON object in the digest reply"
-                             + (" (truncated at max_tokens)"
-                                if getattr(resp, "stop_reason", "") == "max_tokens" else ""))
-        op = DigestOpinion.model_validate_json(text[i:j + 1])
+
+        def _parse(t: str, *, trunc: bool):
+            i, j = t.find("{"), t.rfind("}")
+            if i == -1 or j <= i:
+                raise ValueError("no JSON object in the digest reply" + (" (truncated at max_tokens)" if trunc else ""))
+            return DigestOpinion.model_validate_json(t[i:j + 1])
+
+        try:
+            op = _parse(text, trunc=truncated)
+        except (ValueError, Exception) as first_exc:          # noqa: BLE001 - pydantic errors included
+            # S21-07 (2026-09-21 review; run 10d44367 stopped at max_tokens with invalid JSON and died): ONE bounded
+            # same-transcript repair, the analyst family's contract - the assistant's partial answer stays in the
+            # transcript, the model is asked for ONLY the JSON object, and only this repair turn gets double the room
+            # (never every call). Nothing has been written yet, so a repair can never duplicate a knowledge write;
+            # the first attempt's usage and stop reason stay on the record whatever happens next.
+            repair_cap = min(DIGEST_MAX_TOKENS * 2, 8192)
+            partial["failure"] = {"kind": "truncation" if truncated else "validation", "stage": "digest",
+                                  "detail": str(first_exc)[:300], "repairAttempted": True, "repairCap": repair_cap}
+            rec.step("note", f"Digest reply unusable ({str(first_exc)[:120]}) — one same-transcript repair, "
+                             f"JSON only, output room {repair_cap} tokens.")
+            _t1 = _time.perf_counter()
+            try:
+                resp2 = await asyncio.wait_for(
+                    client.messages.create(model=model, max_tokens=repair_cap, system=system,
+                                           messages=[{"role": "user", "content": header},
+                                                     {"role": "assistant", "content": text.strip() or "(no answer)"},
+                                                     {"role": "user", "content": "Your reply was cut off or contained no "
+                                                      "parseable JSON. Reply with ONLY the complete JSON object now."}]),
+                    timeout=DIGEST_TIMEOUT_S)
+            except asyncio.CancelledError:
+                _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t1) * 1000.0, attempt=2, error="cancelled")
+                raise
+            except TimeoutError:
+                _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t1) * 1000.0, attempt=2,
+                              error=f"repair timed out after {DIGEST_TIMEOUT_S}s")
+                partial["failure"]["repair"] = "timed out"
+                raise ValueError(f"{first_exc}; repair timed out after {DIGEST_TIMEOUT_S}s") from None
+            except Exception as exc2:                          # noqa: BLE001 - the repair's own provider failure
+                _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t1) * 1000.0, attempt=2,
+                              error=f"{type(exc2).__name__}: {exc2}")
+                partial["failure"]["repair"] = f"{type(exc2).__name__}: {str(exc2)[:120]}"
+                raise ValueError(f"{first_exc}; repair attempt failed: {type(exc2).__name__}: {exc2}") from exc2
+            latency2 = (_time.perf_counter() - _t1) * 1000.0
+            _usage_record(usage, resp2, latency_ms=latency2, attempt=2)
+            with _ctx.suppress(Exception):
+                llm_stats.record_response("digest", resp2, model=model, latency_ms=latency2)
+            trunc2 = getattr(resp2, "stop_reason", "") == "max_tokens"
+            text2 = "".join(b.text for b in resp2.content if getattr(b, "type", "") == "text")
+            try:
+                op = _parse(text2, trunc=trunc2)
+            except Exception as exc2:                          # noqa: BLE001 - terminal: typed, with both attempts on record
+                partial["failure"]["repair"] = "truncated again" if trunc2 else "unparseable again"
+                raise ValueError(f"{exc2} — repair attempt was also {'truncated at max_tokens' if trunc2 else 'unparseable'}") from exc2
+            partial["failure"]["repaired"] = True
+            rec.step("note", "Repair produced a valid digest; both attempts are on the usage record.")
     except asyncio.CancelledError:
         await _terminal_failure("cancelled", cancelled=True)
         raise
@@ -215,7 +266,8 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
              noteId=note["id"], promoted=promoted)
     opinion = {"verdict": "digest", "summary": op.summary, "tickers": op.tickers,
                "noteId": note["id"], "promoted": promoted, "date": day,
-               "channelId": None, "runId": run_id, "usage": usage, "receipts": list(receipts)}
+               "channelId": None, "runId": run_id, "usage": usage, "receipts": list(receipts),
+               **({"failure": partial["failure"]} if partial.get("failure") else {})}   # S21-07: a repaired run says so
     await _persist_run(eng, run_id, status="done", rec=rec, opinion=opinion)
     return opinion
 

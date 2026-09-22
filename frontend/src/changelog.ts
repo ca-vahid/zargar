@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.29";
+export const APP_VERSION = "0.8.30";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.30",date:"2026-09-22",title:"Tips: correct decision arithmetic, complete observation evidence, exit and cost diagnostics",items:[
+    {tag:"fixed",text:"Approval cards price options with the same complete fee basis as execution and show the contract's break-even and expiry, decoded from the contract itself when the vehicle omits them. The card states that payoff scenarios assume an exit at the target price."},
+    {tag:"fixed",text:"The relevance-filter observation report joins every decision to its review's final status, marks the checkpoint INCOMPLETE when any decision is unresolved, and exports every human-review candidate. The five-session checkpoint task checks each report's exit code and counts only completed observe sessions."},
+    {tag:"fixed",text:"A context-channel digest that is cut off or unparseable gets one bounded same-transcript repair before failing; both attempts stay on the usage record and nothing is written twice."},
+    {tag:"new",text:"Scorecard v4: target exits show first touch, decision, order and fill times with the target-to-fill shortfall; open positions show all-in friction (fees plus quoted spread), hold cap and same-underlying exposure. Fill records label decision-, submission- and fill-time quotes apart and say which clock each age came from. Raw-message coverage report and a bounded manual replay for messages whose extraction failed. No trading policy, risk limit, stop or approval control changed."},
+  ]},
   {version:"0.8.29",date:"2026-09-21",title:"Cartel: contract search, executable cost, causal review and a 5-minute Practice cadence",items:[
     {tag:"new",text:"Contract selection version diverse_liquidity_v1 (Practice, off until chosen): the reviewed contract is refreshed first, refresh requests are spread across expiries, contracts already below the open-interest minimum are recorded instead of refreshed, and the search reports exactly what it did and did not cover."},
     {tag:"new",text:"Contract ranking version executable_cost_v1 (Practice, off until chosen): eligible contracts are ordered by displayed-size coverage and crossing spread plus fees over the debit; every estimate names its assumptions and the legacy choice."},
