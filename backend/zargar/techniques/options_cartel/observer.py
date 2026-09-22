@@ -5,6 +5,7 @@ can protect working partials and reconcile every submission/adoption boundary.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import time
 
@@ -230,7 +231,17 @@ class CartelObserver(SessionListener):
             if run is None:
                 return False
             self.plans[row["runId"]] = CartelPlan.model_validate(run.result["plan"]["plan"])
-        return self._register_control(row, restored=restored)
+        registered = self._register_control(row, restored=restored)
+        if registered:
+            try:
+                await asyncio.wait_for(self.engine.ensure_symbol(row['symbol']), 20)
+            except Exception as exc:  # control coverage failure must not stop protective restore
+                async with self.engine.sf() as session, session.begin():
+                    locked = await self.repository._locked(session, row['runId'])
+                    previous = (locked.state or {}).get('control') or {}
+                    locked.state = {**locked.state, 'control': {**previous,
+                        'subscriptionError': type(exc).__name__, 'subscriptionFailedAt': self.clock()}}
+        return registered
 
     async def _observe_controls(self, symbol, bar, now):
         """Pure control reads on the control's own tape; persisted under state.control; never consumed."""

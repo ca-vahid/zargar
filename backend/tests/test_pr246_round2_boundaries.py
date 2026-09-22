@@ -36,3 +36,8 @@ def test_asof_partial_fills_do_not_use_later_order_cumulative_totals():
     result=attribute(plan(id='r1'),{'orderId':'o','minutes':{}},plan().first_session.isoformat(),cutoff,
         assets=assets,entry_orders=[{'id':'o','qty':3,'filledQty':3,'status':'FILLED'}])
     assert result['entry']['filledQty']==2, 'Order row was updated after the cutoff; executions are the as-of authority'
+    unknown=attribute(plan(id='r1'),{'orderId':'o','minutes':{}},plan().first_session.isoformat(),cutoff,
+        assets=assets,entry_orders=[{'id':'o','qty':3,'status':'FILLED','asOfQualified':False}])
+    assert unknown['entry']['requestedQty'] is None
+    assert unknown['entry']['terminal'] is None
+    assert unknown['entry']['orderStatuses']==['UNKNOWN_AT_CUTOFF']
