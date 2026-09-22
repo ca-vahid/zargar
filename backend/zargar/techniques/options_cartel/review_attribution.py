@@ -154,15 +154,16 @@ def entry_ledger(state, assets, entry_orders=None):
     partial exits change. A caller without order rows may supply ``state['requestedQty']``.
     """
     orders = list(entry_orders or [])
-    requested = sum(o.get('qty') or 0 for o in orders) if orders else state.get('requestedQty')
-    filled_from_orders = sum(o.get('filledQty') or 0 for o in orders) if orders else None
+    qualified = all(o.get('asOfQualified', True) for o in orders)
+    requested = (sum(o.get('qty') or 0 for o in orders) if qualified else None) if orders else state.get('requestedQty')
     filled_from_ledger = sum(a.get('entryFilledQty') or 0 for a in assets) if assets else 0
-    filled = filled_from_orders if filled_from_orders is not None else filled_from_ledger
-    statuses = {str(o.get('status') or '').upper() for o in orders}
+    filled = filled_from_ledger  # executions were filtered to cutoff; order totals are mutable
+    statuses = {str(o.get('status') or '').upper() if o.get('asOfQualified', True)
+                else 'UNKNOWN_AT_CUTOFF' for o in orders}
     terminal = bool(orders) and statuses <= TERMINAL_ORDER
     working = bool(orders) and not terminal
     return {'requestedQty': requested, 'filledQty': filled, 'orderStatuses': sorted(statuses),
-            'terminal': terminal if orders else None, 'working': working if orders else None,
+            'terminal': terminal if orders and qualified else None, 'working': working if orders and qualified else None,
             'entryStatus': ('none' if not (orders or state.get('orderId') or state.get('attemptTag')) else
                             'unfilled' if not filled else 'filled' if _finite(requested) and filled >= requested-1e-9 else
                             'partially_filled' if _finite(requested) else 'filled_unknown_request')}
