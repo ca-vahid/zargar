@@ -306,7 +306,7 @@ async def _warm_baselines(runtime, context, policy, *, fetch=fetch_window, attem
                 coverage = baseline_coverage(plan); slots = coverage['usableEntryPeriods']
                 ready = coverage['ready'] and not (policy.coverage_policy=='full_session' and coverage['available']!=coverage['expected'])
                 ready = ready and not (policy.coverage_policy=='opening_and_broad' and
-                    (not all(i in slots for i in range(4)) or len(slots)<math.ceil((coverage['expected']-1)*.8)))
+                    (not all(i in slots for i in range(60//plan.entry.timeframe_minutes)) or len(slots)<math.ceil((coverage['expected']-1)*.8)))
                 update.update(baseline=baseline, coverage=coverage, baselineStatus='ready' if ready else 'data_unavailable',
                     baselineReason=None if ready else 'Historical baseline does not meet the unchanged coverage policy')
                 if ready:

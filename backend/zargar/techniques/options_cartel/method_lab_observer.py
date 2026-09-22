@@ -54,6 +54,18 @@ async def context_for(engine,policy,day):
             TechniqueRun.config['session'].as_string()==day).order_by(TechniqueRun.as_of.desc()).limit(1))
 
 
+def _observe(observer,*args,**kwargs):
+    """Call the (possibly monkeypatched) contract observer; drop per-call hints it cannot accept."""
+    import inspect
+    try:
+        parameters=inspect.signature(observer).parameters
+    except (TypeError,ValueError):
+        return observer(*args,**kwargs)
+    if any(p.kind==inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return observer(*args,**kwargs)
+    return observer(*args,**{k:v for k,v in kwargs.items() if k in parameters})
+
+
 def read_models(candidate, baseline, bars, proofs, boundary, observed_at, started):
     """One exact tape shared by model variants; each result retains its own cutoff."""
     rows={}
@@ -203,7 +215,12 @@ async def pending_quotes(runtime,context,policy):
                 result={'purpose':'entry_attempt','signalId':row.id,'attempt':attempt,'status':'started'})
             try:
                 async with asyncio.timeout(20):
-                    observation=await observe_contract(engine,SimpleNamespace(id=row.id,symbol=row.result['symbol'],direction='long'),policy,runtime.clock)
+                    # The armed Practice contract for the same symbol (if any) gets first refresh
+                    # consideration; the signal deadline bounds the search.
+                    reviewed=next((r['config']['execution'].get('contract_symbol') for r in getattr(runtime,'rows',{}).values()
+                        if r.get('symbol')==row.result['symbol'] and (r.get('config') or {}).get('execution')),None)
+                    observation=await _observe(observe_contract,engine,SimpleNamespace(id=row.id,symbol=row.result['symbol'],direction='long'),policy,runtime.clock,
+                        preferred=reviewed,deadline_ms=signal['at']+120000)
             except (ValueError,OSError,TimeoutError,httpx.HTTPError) as exc:
                 observation={'status':'unavailable','observedAt':runtime.clock(),'reason':type(exc).__name__}
             if observation.get('status')=='observed' and (not observation.get('selected')

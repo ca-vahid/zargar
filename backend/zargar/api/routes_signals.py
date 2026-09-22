@@ -499,6 +499,42 @@ def build_signal_routes(app, eng, auth, config) -> None:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 
+    class ReplayBody(BaseModel):
+        reason: str = "manual replay"
+
+    @app.post("/api/tip/intake/replay/{content_id}", dependencies=[auth])
+    async def tip_intake_replay(content_id: str, body: ReplayBody):
+        """S21-07 (2026-09-21 review): bounded, idempotent re-processing of ONE raw message whose extraction failed on a
+        transient error. At most `REPLAY_MAX` attempts per message in total (the recovery sweep's retry counts); the
+        attempt is marked on the row BEFORE the work so a crash never loops; the message re-enters the ordinary intake,
+        where content older than `max_tip_age_hours` is replayed on history - an old trade is never created blindly."""
+        import datetime as _dt
+        from ..models import RawContent
+        from ..tools.tip_outcomes import REPLAY_MAX
+        async with eng.sf() as session:
+            row = await session.get(RawContent, content_id)
+            if row is None:
+                raise HTTPException(status_code=404, detail="no such raw content")
+            meta = dict(row.meta or {})
+            attempts = int(bool(meta.get("recoveryRetried"))) + int(meta.get("replayCount") or 0)
+            if row.status != "error":
+                raise HTTPException(status_code=409, detail=f"content is {row.status!r}, not 'error' - nothing to replay")
+            if attempts >= REPLAY_MAX:
+                raise HTTPException(status_code=409, detail=f"replay budget exhausted ({attempts} of {REPLAY_MAX} attempts)")
+            meta["replayCount"] = int(meta.get("replayCount") or 0) + 1
+            meta["replayedAt"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+            meta["replayReason"] = str(body.reason)[:200]
+            row.meta = meta
+            await session.commit()
+        await eng.journal.append("TipIntakeReplayed", {"contentId": content_id, "attempt": attempts + 1, "max": REPLAY_MAX,
+                                                       "reason": str(body.reason)[:200]},
+                                 aggregate_type="content", aggregate_id=content_id)
+        try:
+            res = await eng.signals_service.process_content(content_id)
+        except Exception as exc:                        # noqa: BLE001 - the failure is the answer, on the record
+            return {"contentId": content_id, "attempt": attempts + 1, "status": "error", "error": str(exc)[:300]}
+        return {"contentId": content_id, "attempt": attempts + 1, **{k: v for k, v in (res or {}).items() if k != "contentId"}}
+
     @app.get("/api/tip/intake/liveness", dependencies=[auth])
     async def tip_intake_liveness():
         """EOD-01: is the Discord pipe DELIVERING? Gateway status file + mirror
