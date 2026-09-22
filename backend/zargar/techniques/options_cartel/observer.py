@@ -17,6 +17,10 @@ from ...execution.planrunner import ArmConfig, ArmedPlan
 from ...marketstructure.aggregate import bar_session
 from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import session_bounds, session_date
+
+
+def session_date_obj(day):
+    return dt.date.fromisoformat(day) if isinstance(day, str) else day
 from ...models import BarRow, Event, TechniqueRun
 from .data_quality import evidence, merge, unpack
 from .entry import read_entry
@@ -165,6 +169,10 @@ class CartelObserver(SessionListener):
         self.plans = {}
         self.clock = lambda: int(time.time()*1000)
         self.drops = DropRegistry()
+        # R1 (2026-09-21 review): matched cadence controls have their OWN session lifetime, tape and
+        # watermark. They keep observing after the executing plan signals, fills, invalidates or is
+        # retired, until the plan's last session has closed. Keyed by run id; never an order path.
+        self.controls = {}
 
     async def _persist_drop_summary(self, run_id, payload):
         async with self.engine.sf() as session, session.begin():
@@ -194,6 +202,86 @@ class CartelObserver(SessionListener):
             raise ValueError("owned Cartel plan missing during restore")
         self.plans[row["runId"]] = CartelPlan.model_validate(run.result["plan"]["plan"])
         self.rows[row["runId"]] = row
+        self._register_control(row)
+
+    def _register_control(self, row, *, restored=False):
+        """Track a matched control for a row whose plan session is still open. A restore never replays:
+        the control's watermark is floored at the restore clock."""
+        block = (row.get("config") or {}).get("cadence") or {}
+        plan = self.plans.get(row["runId"])
+        if not block.get("control") or plan is None:
+            return False
+        if self.clock() >= session_bounds(plan.last_session.isoformat())[1]+CONFIRMATION_MAX_AGE_MS:
+            return False
+        entry = self.controls.setdefault(row["runId"], {"symbol": row["symbol"], "floor": 0})
+        if restored:
+            entry["floor"] = max(entry["floor"], self.clock())
+        return True
+
+    async def _register_control_stored(self, stored, *, restored=False):
+        """Register a control from a DB row that the execution lane no longer tracks (retired, filled)."""
+        row = self.repository.view(stored)
+        if not ((row.get("config") or {}).get("cadence") or {}).get("control"):
+            return False
+        if row["runId"] not in self.plans:
+            async with self.engine.sf() as session:
+                run = await session.scalar(select(TechniqueRun).where(TechniqueRun.id == row["runId"],
+                                                                      TechniqueRun.technique == self.TECHNIQUE_ID))
+            if run is None:
+                return False
+            self.plans[row["runId"]] = CartelPlan.model_validate(run.result["plan"]["plan"])
+        return self._register_control(row, restored=restored)
+
+    async def _observe_controls(self, symbol, bar, now):
+        """Pure control reads on the control's own tape; persisted under state.control; never consumed."""
+        if not self.engine.settings.get("techniques.options_cartel.enabled", True):
+            return
+        from .cadence import read_control
+        from .nonemission import effective
+        day = session_date(bar.ts)
+        # A control block saved onto an already-tracked row (config revision) is discovered lazily.
+        for rid, cached in list(self.rows.items()):
+            if rid not in self.controls and cached.get("symbol") == symbol and rid in self.plans:
+                self.controls[rid] = {"symbol": symbol, "floor": 0, "probe": True}
+        for rid, entry in list(self.controls.items()):
+            if entry["symbol"] != symbol or rid not in self.plans:
+                continue
+            plan = self.plans[rid]
+            opens, closes = session_bounds(plan.last_session.isoformat())
+            if now >= closes+CONFIRMATION_MAX_AGE_MS:
+                self.controls.pop(rid, None)   # the plan's last session is over: the control is complete
+                continue
+            if not plan.first_session <= session_date_obj(day) <= plan.last_session:
+                continue
+            async with self.engine.sf() as session, session.begin():
+                locked = await self.repository._locked(session, rid)
+                config = (locked.config or {}).get("cadence") or {}
+                if not config.get("control"):
+                    self.controls.pop(rid, None)
+                    continue
+                state = locked.state
+                previous = state.get("control") if (state.get("control") or {}).get("day") == day else None
+                minutes = dict(previous.get("minutes", {})) if previous else {}
+                if not minutes and state.get("day") == day:
+                    minutes = dict(state.get("minutes", {}))   # adopt the executing tape as context (watermark stops replay)
+                watermark = max((previous or {}).get("observeAfter") or 0, state.get("armedAt", 0), entry["floor"])
+                if previous and bar.ts <= previous.get("lastMinute", -1):
+                    if merge(minutes, bar):   # correction: context only, never a historical control signal
+                        locked.state = {**state, "control": {**previous, "minutes": minutes, "observeAfter": max(watermark, now)}}
+                    continue
+                merge(minutes, bar)
+                tape = [unpack(symbol, values) for values in minutes.values()]
+                control = read_control(plan, config, tape, now, entry_after=watermark,
+                                       verified_intervals=effective(self.engine, self.repository.view(locked)),
+                                       previous=previous)
+                control.update(minutes=minutes, day=day, lastMinute=bar.ts,
+                               executingStatus=locked.status, executingPhase=state.get("phase"))
+                locked.state = {**state, "control": control}
+                snapshot = self.repository.view(locked)
+            if rid in self.rows:
+                self.rows[rid] = snapshot
+            if len(control.get("signals", [])) > len((previous or {}).get("signals", [])):
+                await self.repository._journal(snapshot, "control_signal")
 
     async def restore(self):
         rows = await self.repository.active()
@@ -419,17 +507,9 @@ class CartelObserver(SessionListener):
                 observation['dataEvidence'] = evidence(minutes)
                 from .decision_evidence import capture
                 captured_events = await capture(session, row, plan, minutes, state, observation, now)
-                # F4: the matched control is a pure read beside the executing cadence; it never
-                # reaches consume_locked (its signal id has the wrong shape) or reserve_submission.
-                from .cadence import read_control
-                control = read_control(plan, (row.config or {}).get('cadence'), tape, now,
-                                       entry_after=state.get("observeAfter", state["armedAt"]),
-                                       verified_intervals=interval_evidence,
-                                       previous=state.get('control') if state.get('day') == day else None)
                 row.state = {**state, 'dataEvidence': evidence(minutes), "minutes": minutes, "day": day, "lastMinute": bar.ts,
                              "observation": observation, "decisionHistory": retain_decisions(
-                                 state.get("decisionHistory", (state.get("observation") or {}).get("trace", [])), observation),
-                             **({'control': control} if control else {})}
+                                 state.get("decisionHistory", (state.get("observation") or {}).get("trace", [])), observation)}
                 if observation["status"] in ("expired", "invalidated"):
                     row.status = "expired" if observation["status"] == "expired" else "disarmed"
                 consumed = bool(observation["signal"]) and self.repository.consume_locked(
@@ -449,6 +529,7 @@ class CartelObserver(SessionListener):
             if self.rows[rid]["status"] not in ("armed", "paused"):
                 self.rows.pop(rid, None)
                 self.drops.retire(rid)
+        await self._observe_controls(symbol, bar, now)
 
     async def after_signal(self, run_id):
         pass  # alert lane has no execution side effect

@@ -61,7 +61,7 @@ These are implementation defaults, not a report of the user's currently saved co
 | Premium budget / equity risk / max contracts | 500 / 10% / 10 | 500 / 1% / 10 |
 | Draft option preferences | 21–90 DTE, target 45; absolute delta target 0.5/minimum 0.25; ask <=5; spread <=20%; OI >=100 | same |
 | Selection / ranking version (2026-09-21) | `legacy` / `legacy`; `diverse_liquidity_v1` (reviewed contract first, refresh spread across expiries, known OI failures set aside, bounded batches inside the signal deadline) and `executable_cost_v1` (displayed-size coverage, then crossing spread + round-trip fees over debit, then DTE/delta/symbol) are explicit Practice choices | legacy |
-| Entry cadence (2026-09-21) | `breakout_15m_v1`; `breakout_5m_v1` is a Practice-only experiment on new plans with its own 5m baseline and a non-ordering 15m matched control per arm | `breakout_15m_v1` |
+| Entry cadence (2026-09-21) | `breakout_15m_v1`; `breakout_5m_v1` is a Practice-only experiment for new LONG plans with its own 5m baseline and a non-ordering 15m matched control per arm (bearish plans keep 15m); a saved unlabelled 5-minute entry is `legacy_timeframe` (unchanged behaviour, no control) | `breakout_15m_v1`; a saved Live 5m entry stays `legacy_timeframe` |
 | Volume experiment | off; `grid_v1` only declares replay variants | off |
 | September exit allocation | 25/25/20/20/10% | same; whole-unit rounding applies |
 
@@ -164,18 +164,27 @@ only. Details, evidence and rollback: [reviews/2026-09-21-brief/HANDBACK.md](rev
   consideration (never unconditional selection); candidates are partitioned by expiry and refreshed
   round-robin in reviewed-DTE order; rows whose chain open interest is already below the reviewed
   minimum are recorded, not refreshed; missing open interest is unknown, not zero; every request is
-  bounded by the signal deadline and a per-request timeout; freshness is judged once after the last
-  request. `searchComplete` is true only when every refreshable candidate in the reviewed range was
-  judged; otherwise the report says an unrefreshed contract may still have qualified.
+  bounded by the signal deadline and a per-request timeout (expiry discovery and every chain request
+  too; nothing starts after the deadline and a result that lands after it is recorded but never
+  selected: `searchStatus=expired`); freshness is judged once after the last request. `searchComplete`
+  is true only when every refreshable candidate in the reviewed range was judged; otherwise the report
+  says an unrefreshed contract may still have qualified.
 - `contractPolicy.rankingVersion=executable_cost_v1`: after unchanged eligibility (the 20% spread limit
   stays the gate), candidates are ordered by displayed-size coverage of the affordable quantity, then
   (crossing spread + round-trip fees) / entry debit, then DTE distance, delta distance and symbol.
   Every component and the legacy choice are recorded. This measures current friction, not return.
-- `entryCadence=breakout_5m_v1` with `entry.timeframeMinutes=5`: new Practice plans confirm on
+- `entryCadence=breakout_5m_v1` with `entry.timeframeMinutes=5`: new LONG Practice plans confirm on
   5-minute candles with the same volume, close-quality, target and risk rules and their own 5-minute
-  baseline. Each arm records a `breakout_15m_v1` matched control on the same tape (state `control`,
-  signal ids that the arm can never consume). The daily review shows the executing cadence's actual
-  orders beside the control's confirmations; the control has no orders and no P&L.
+  baseline; a bearish executable plan keeps the incumbent 15-minute cadence (`breakout_15m_v1`) and has
+  no control. Each long arm records a `breakout_15m_v1` matched control on the same tape (state
+  `control`, its own tape/watermark, signal ids that the arm can never consume). The control keeps
+  observing after the executing plan signals, fills, invalidates or is retired, until the plan's last
+  session closes plus two minutes; a restart floors its watermark at the restore clock (no replay); the
+  technique's `enabled=false` stops it, the entry pause does not. The daily review shows the executing
+  cadence's actual orders beside the control's confirmations; the control has no orders and no P&L.
+- A saved policy without the label keeps its behaviour: an unlabelled 15-minute entry is
+  `breakout_15m_v1`; any other unlabelled timeframe (including a saved Live 5-minute entry) is
+  `legacy_timeframe`: the pre-existing read, no control, no pilot, valid in every workspace.
 - `volumeExperiment.version=grid_v1` declares a replay grid for sweeps; it never changes a live read.
 
 ## Spread-only alternative selection in Practice

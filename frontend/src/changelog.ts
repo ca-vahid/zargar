@@ -23,6 +23,7 @@ export const CHANGELOG: Release[] = [
     {tag:"improved",text:"Daily review names the first known blocker, other independent blockers, incomplete windows (kept unknown), contract-search coverage and actual versus modeled results per plan. NOW's wick and BBY/CNH/NVT's no-touch sessions are explained as such."},
     {tag:"new",text:"Practice entry cadence breakout_5m_v1 (off until chosen): new plans confirm on 5-minute candles with their own baseline while a non-ordering 15-minute matched control is recorded on the same tape for the daily review."},
     {tag:"improved",text:"Preflight and selection reports show spread in units, dollars and percent of premium, fees, debit and full-debit exposure beside the stock target/stop geometry."},
+    {tag:"fixed",text:"Review round 1: the matched 15-minute control keeps observing after the executing plan acts (own tape, watermark and session lifetime); saved unlabelled 5-minute settings stay legacy and valid in Live; the 5-minute pilot is long-only; discovery and chain requests obey the signal deadline; a partial candle is reported as unknown, not as a close; partial fills are classified from order and execution rows; later refusals are no longer claimed independent."},
   ]},
   {version:"0.8.28",date:"2026-09-20",title:"Cartel keeps analysis checkpoints across repeated restarts",items:[
     {tag:"fixed",text:"Resuming an interrupted retry now reuses analyses from its compatible earlier checkpoints, including work saved before a crash. Existing plans remain preserved."},

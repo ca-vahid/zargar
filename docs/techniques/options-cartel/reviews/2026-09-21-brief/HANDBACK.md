@@ -1,5 +1,7 @@
 # Handback: September 21 brief, first release (F1, F2, F3, F4)
 
+> Superseded in part by [HANDBACK-2.md](HANDBACK-2.md) (2026-09-21, response to REVIEW-ff67f695: R1-R7 corrections and the end-to-end fixture). The evidence table below still describes the first commit; the corrections change the control lifetime, the saved-policy compatibility, the long-only scope, the deadline contract, candle completeness, partial-fill classification and blocker independence as listed there.
+
 Prepared 2026-09-21 (evening ET) by the implementation desk for the reviewer. Code
 only: nothing in this handback changes trading settings, armed plans, positions or the
 running application. Activation of any new policy is a separate, journaled settings change
@@ -121,11 +123,10 @@ saved arm valid because every new field has a legacy default.
 
 ## Known limits of this delivery
 
-- The 5m cadence executes only for long Practice plans by the existing pipeline (bearish plans are
-  the research proxy and never arm); the control is recorded per arm, not for plans that never armed.
-- The end-to-end fixture required by section 13 (frozen plan -> confirmation -> diverse search ->
-  preflight -> simulated order -> partial fills -> exits -> restart -> report) is covered by separate
-  existing suites plus the new pieces; one single fixture spanning all stages is still to be written.
+- The 5m cadence executes only for long Practice plans (R3 correction: a bearish executable plan keeps
+  the 15m cadence explicitly; the earlier claim that bearish plans never arm was wrong); the control is
+  recorded per arm, not for plans that never armed.
+- The end-to-end fixture required by section 13 now exists: `tests/test_cartel_end_to_end.py` (HANDBACK-2).
 - The volume grid (`grid_v1`) is a replay-only declaration feeding `sweeps.py` variants; no replay run
   was executed.
 - Intraday and profitability research still refuse non-15m plans ("Research v1 ..."); their opening-

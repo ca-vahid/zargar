@@ -96,11 +96,15 @@ async def affordable_contract_policy(engine, portfolio_id, policy):
     return policy.contract_policy.model_copy(update={'max_ask': limit})
 
 
-def control_block(policy, symbol, minutes, at):
-    """F4: the matched-control block for an arm (None when the cadence has no control)."""
+def control_block(policy, symbol, minutes, at, *, direction='long'):
+    """F4: the matched-control block for an arm (None when the cadence has no control).
+
+    R3: only LONG plans run under the 5-minute pilot; a bearish plan keeps the 15-minute cadence
+    (see automatic_review) and therefore has no control.
+    """
     from .cadence import cadence_minutes, control_cadence, control_config
     control = control_cadence(policy.entry_cadence) if policy.entry_cadence in ('breakout_5m_v1', 'breakout_15m_v1') else None
-    if control is None:
+    if control is None or direction != 'long':
         return None
     baseline = build_volume_baseline(minutes, symbol, cadence_minutes(control), at, require_exchange=policy.require_exchange_history)
     return control_config(policy.entry_cadence, baseline, at)
@@ -532,7 +536,7 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                     result['candidatesChecked'] += 1
                     minutes = await history_reader.baseline(symbol, at, client)
                     baseline = build_volume_baseline(minutes, symbol, review.entry_policy.timeframe_minutes, at, require_exchange=policy.require_exchange_history)
-                    control = control_block(policy, symbol, minutes, at)
+                    control = control_block(policy, symbol, minutes, at, direction=direction)
                     if not baseline['baselines']:
                         raise ValueError('No supported same-time volume baseline; plan cannot be armed')
                     inputs = ResearchInput.model_validate(saved['config']['inputs']).model_copy(update={
@@ -751,7 +755,7 @@ async def _activate_pending(engine, *, clock=now_ms, choose=planning_contract, l
                 continue
             spec = prepared_execution(policy, portfolio_id, selection['selected']['symbol'], selection_policy)
             saved_minutes = [MinuteInput.model_validate(m).bar() for m in (record.config.get('inputs') or {}).get('minute_history', [])]
-            control = control_block(policy, plan.symbol, saved_minutes, plan.baseline_as_of)
+            control = control_block(policy, plan.symbol, saved_minutes, plan.baseline_as_of, direction=plan.direction)
             if lease_owner:
                 await renew(engine, policy.workspace, lease_owner, clock())
             await arm_with_capacity(engine, runtime, policy, plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
