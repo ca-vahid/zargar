@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import httpx
 
-from .contracts import rank_candidates, select_contract
+from .contracts import SelectionRequest, call_selector, rank_candidates, select_contract, selection_economics
 from .execution import ExecutionInput
 
 SETTING = 'techniques.options_cartel.reselect_wide_contract'
@@ -32,19 +32,29 @@ async def reselect_for_spread(controller, run_id, row, plan, spec, report, *, ch
             return None
         claim = {'signalId': signal['id'], 'startedAt': controller.clock(),
                  'oldContract': spec.contract_symbol, 'status': 'searching',
-                 'policy': spec.contract_policy.model_dump(mode='json')}
+                 'policy': spec.contract_policy.model_dump(mode='json'),
+                 'selectionVersion': spec.contract_policy.selection_version,
+                 'rankingVersion': spec.contract_policy.ranking_version}
         locked.state = {**locked.state, 'contractReselection': claim}
     # No widened premium/delta limits, extra expiry range, or extra refresh budget.
     cap = min(spec.contract_policy.max_ask, spec.max_premium or spec.contract_policy.max_ask)
     search_policy = spec.contract_policy.model_copy(update={'max_ask': cap,
         'min_abs_delta': max(spec.min_abs_delta, spec.contract_policy.min_abs_delta)})
-    remaining = (signal['at']+120000-controller.clock())/1000
+    deadline = signal['at']+120000
+    remaining = (deadline-controller.clock())/1000
     if remaining <= 0:
         return None
     try:
-        selection = await asyncio.wait_for((choose or select_contract)(engine, plan, search_policy), min(20., remaining))
+        # The saved contract gets first refresh consideration (F2 item 1), never unconditional
+        # selection; the signal deadline bounds the whole search and is never extended.
+        request = SelectionRequest(preferred_contract=spec.contract_symbol, deadline_ms=deadline,
+            economics=await selection_economics(engine, spec.portfolio_id, budget=spec.budget,
+                                                risk_pct=spec.risk_pct, max_units=spec.max_units),
+            plan_id=plan.id, portfolio_id=spec.portfolio_id, clock=controller.clock)
+        selection = await asyncio.wait_for(call_selector(choose or select_contract, engine, plan, search_policy, request), min(20., remaining))
         candidate = selection.get('selected')
-        accepted = rank_candidates(plan, search_policy, [candidate] if candidate else [], controller.clock())['selected']
+        accepted = rank_candidates(plan, search_policy, [candidate] if candidate else [], controller.clock(),
+                                   economics=request.economics)['selected']
         reason = 'No inspected alternative satisfies the saved contract limits.'
     except (ValueError, OSError, TimeoutError, httpx.HTTPError) as exc:
         selection, accepted = {'error': type(exc).__name__}, None

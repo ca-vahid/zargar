@@ -202,6 +202,11 @@ class CartelRuntime(CartelObserver):
                 self.register_order(row["state"]["orderId"], row["runId"])
             if row["status"] in ("armed", "paused") and row["state"]["phase"] == "waiting":
                 await self._prepare_observation(row["runId"], advance_cutoff=True)
+        for stored in rows:   # R1: matched controls outlive the executing lane until their session closes
+            book = self.engine.positions.portfolio(stored.portfolio_id)
+            if book and book.get('archived'):
+                continue
+            await self._register_control_stored(stored, restored=True)
         await self.on_heartbeat()
         return len(self.armed())
 

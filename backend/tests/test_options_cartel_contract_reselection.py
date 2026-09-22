@@ -96,3 +96,40 @@ async def test_search_timeout_is_spent_once_and_keeps_original_contract(repo):
     assert current['config']['execution']['contract_symbol']==OLD
     assert await reselect_for_spread(c,'r1',current,p,s,report,choose=choose) is None
     choose.assert_awaited_once()
+
+
+# ---- 2026-09-21 brief F2: the saved contract gets first refresh consideration inside the signal deadline ----
+
+async def test_reselection_passes_the_saved_contract_deadline_and_cash_basis_to_the_search(repo):
+    from zargar.techniques.options_cartel.contracts import SelectionRequest
+    c,row,p,s,report,now,result=await rig(repo)
+    seen={}
+    async def choose(engine,plan,policy,request):
+        seen['request']=request
+        return result()
+    new_row,new_spec=await reselect_for_spread(c,'r1',row,p,s,report,choose=choose)
+    request=seen['request']
+    assert isinstance(request,SelectionRequest)
+    assert request.preferred_contract==OLD and request.plan_id=='r1' and request.portfolio_id=='pf'
+    assert request.deadline_ms==row['state']['signal']['at']+120000 and request.clock is c.clock
+    assert request.economics is not None and request.economics.max_units==s.max_units
+    assert request.economics.cash_cap_usd==pytest.approx(min(s.budget,10000*s.risk_pct/100)) or request.economics.cash_cap_usd<=s.budget
+    claim=new_row['state']['contractReselection']
+    assert claim['selectionVersion']=='legacy' and claim['rankingVersion']=='legacy'
+
+
+async def test_reselection_snapshots_the_saved_selection_version(repo):
+    c,row,p,s,report,now,result=await rig(repo)
+    versioned=s.model_copy(update={'contract_policy':s.contract_policy.model_copy(update={'selection_version':'diverse_liquidity_v1','ranking_version':'executable_cost_v1'})})
+    async with repo.engine.sf() as session,session.begin():
+        locked=await repo._locked(session,'r1')
+        locked.config={**locked.config,'execution':versioned.model_dump()}
+    row=await repo.load('r1')
+    seen={}
+    async def choose(engine,plan,policy,request):
+        seen['policy']=policy
+        return result()
+    new_row,new_spec=await reselect_for_spread(c,'r1',row,p,versioned,report,choose=choose)
+    assert seen['policy'].selection_version=='diverse_liquidity_v1' and seen['policy'].ranking_version=='executable_cost_v1'
+    assert new_row['state']['contractReselection']['selectionVersion']=='diverse_liquidity_v1'
+    assert new_spec.contract_policy.selection_version=='diverse_liquidity_v1'
