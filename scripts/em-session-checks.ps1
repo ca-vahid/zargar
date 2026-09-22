@@ -36,16 +36,28 @@ function Say($m) {
 # no web-push subscription. A check that finds a fault therefore has nowhere to page, and the honest substitute is a
 # file that stays until someone clears it, plus a named person who looks.
 $owner = 'EM desk (attending); backup: the Zargar operator, who runs scripts\em-session-checks.ps1 -Phase clock before the open'
-function Raise-Attention($title, $body) {
-  $text = @("# EM needs attention - $title", "", "Raised $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) by the $Phase check for session $Date.",
+# One notice file, several possible conditions - so each notice carries a KEY and is only cleared by the check
+# that owns that key. Without it a healthy clock would silently clear an unrelated warning, which is the same
+# class of bug as an alarm that cannot clear: the reader is told everything is fine when it is not.
+function Raise-Attention($key, $title, $body) {
+  $text = @("# EM needs attention - $title", "", "Key: $key",
+            "Raised $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) by the $Phase check for session $Date.",
             "Owner: $owner", "", $body, "",
-            "This file stays until a later check finds the condition cleared. It is a NOTICE, not a trading action:",
-            "no setting was changed, no book was paused and no gate was loosened.") -join "`r`n"
+            "This file stays until a check that owns this key finds the condition cleared. It is a NOTICE, not a",
+            "trading action: no setting was changed, no book was paused and no gate was loosened.") -join "`r`n"
   $text | Out-File -FilePath $attention -Encoding utf8
-  Say "ATTENTION RAISED: $title"
+  Say "ATTENTION RAISED [$key]: $title"
 }
-function Clear-Attention($why) {
-  if (Test-Path $attention) { Remove-Item $attention -Force; Say "attention cleared: $why" }
+function Clear-Attention($key, $why) {
+  if (-not (Test-Path $attention)) { return }
+  $held = (Get-Content -LiteralPath $attention | Where-Object { $_ -like 'Key: *' } | Select-Object -First 1)
+  $heldKey = if ($held) { ($held -replace '^Key: ', '').Trim() } else { '' }
+  # An UNKEYED notice is one this version did not write, so its subject is unknown. Keeping it is the safe
+  # default: clearing an unknown warning tells the reader everything is fine when nothing checked that.
+  if (-not $heldKey) { Say "attention kept: the notice carries no key, so [$key] cannot vouch for it"; return }
+  if ($heldKey -ne $key) { Say "attention kept: it is held by [$heldKey], not [$key]"; return }
+  Remove-Item $attention -Force
+  Say "attention cleared [$key]: $why"
 }
 
 # the database URL comes from the runtime .env and is never printed
@@ -73,7 +85,7 @@ function Invoke-ClockCheck([string]$file) {
   if ($file) { $text | Out-File -FilePath $file -Encoding utf8 }
   $text | ForEach-Object { Say $_.ToString() }
   if ($code -ne 0) {
-    Raise-Attention 'host clock is wrong - entries will be refused' (($text | Out-String) + "`r`n" +
+    Raise-Attention 'clock' 'host clock is wrong - entries will be refused' (($text | Out-String) + "`r`n" +
       "What to do: restore Windows time synchronization (an administrator runs, in an elevated shell):`r`n" +
       "    Set-Service w32time -StartupType Automatic; Start-Service w32time; w32tm /resync /force`r`n" +
       "Do NOT widen the admission tolerance instead. The gate is refusing evidence that genuinely looks future-dated;`r`n" +
@@ -87,7 +99,7 @@ if ($Phase -eq 'clock') {
   $file = Join-Path $outDir ("$Date-clock.md")
   Say "raw time validity -> $file"
   Invoke-ClockCheck $file
-  if ($script:LastClockCode -eq 0) { Clear-Attention 'clock healthy' } else { Say "clock check exit $($script:LastClockCode) - attention stands" }
+  if ($script:LastClockCode -eq 0) { Clear-Attention 'clock' 'clock healthy' } else { Say "clock check exit $($script:LastClockCode) - attention stands" }
   exit 0
 } elseif ($Phase -eq 'exceptions') {
   # operational exceptions so far this session: halts, pauses, arm refusals, restarts, order-rate rejections,
@@ -102,7 +114,7 @@ if ($Phase -eq 'clock') {
   $n = 0
   if ($deferrals) { $n = [int]$deferrals.Matches[0].Groups[1].Value }
   if ($n -ge 3) {
-    Raise-Attention "$n entries could not be decided by the admission gate" (($text | Out-String))
+    Raise-Attention 'admission' "$n entries could not be decided by the admission gate" (($text | Out-String))
   }
 } elseif ($Phase -eq 'close') {
   Say 'daily comparison report (it embeds the session exception log)'
@@ -117,11 +129,33 @@ if ($Phase -eq 'clock') {
   if ($Phase -eq 'preopen') {
     Say 'clock first: a wrong host clock refuses every entry, so it is checked before anything else'
     Invoke-ClockCheck (Join-Path $outDir "$Date-clock.md")
-    if ($script:LastClockCode -eq 0) { Clear-Attention 'clock healthy at the pre-open check' }
+    if ($script:LastClockCode -eq 0) { Clear-Attention 'clock' 'clock healthy at the pre-open check' }
   }
   Say "two-book verification -> $file"
   $text = & $py -m zargar.tools.em_experiment_check --date $Date 2>&1
   $text | Out-File -FilePath $file -Encoding utf8
+  # A book with nothing armed is not a quiet day, it is a preparation that did not finish - and before the
+  # open is the only time that can still be fixed. 2026-09-21: the baseline's evening batch was interrupted
+  # three times by host memory pressure, and nothing but a person noticing would have caught an empty book.
+  $armedLine = ($text | Select-String -Pattern '^\| Armed for the session \|')
+  if ($armedLine) {
+    $cells = $armedLine.ToString().Split('|')
+    $baseArmed = ($cells[2].Trim() -split ' ')[0]
+    $expArmed = ($cells[3].Trim() -split ' ')[0]
+    if ($baseArmed -eq '0' -or $expArmed -eq '0') {
+      Raise-Attention 'armed' "a book has NOTHING armed for $Date" (
+        "baseline armed: $baseArmed ; experiment armed: $expArmed`r`n`r`n" +
+        "One book being empty means its preparation did not complete. The comparison has no control without`r`n" +
+        "the baseline, and the experiment cannot trade without its own plans.`r`n`r`n" +
+        "Check first: is the evening batch still running or did it die?`r`n" +
+        "    Get-ScheduledTaskInfo -TaskName ZargarEmEveningBatch*`r`n" +
+        "    Get-Content C:\ProgramData\Zargar\logs\em-evening-batch-*.log -Tail 5`r`n" +
+        "The batch is RESUMABLE: re-running it pays only for the reads that have not completed.`r`n" +
+        "Do NOT arm anything by hand to fill the gap.")
+    } else {
+      Clear-Attention 'armed' "both books armed for $Date (baseline $baseArmed, experiment $expArmed)"
+    }
+  }
   $text | Tee-Object -FilePath $log -Append | Out-Null
   # the same check as JSON, so a later reader has the raw numbers
   (& $py -m zargar.tools.em_experiment_check --date $Date --json 2>&1) | Out-File -FilePath ($file -replace '\.md$', '.json') -Encoding utf8
