@@ -2519,3 +2519,20 @@ normalized by the Cartel handler as well; real failures and user cancellations
 are not relabeled. Recovery stays workspace/book scoped and respects saved policy,
 market hours and retry allowance. Generic cleanup still handles other run modes.
 Regression: test_cartel_restart_recovery.py reproduces the startup-order failure.
+
+### 2026-09-21 - one implementation of "what the premium stop measures" (Team2 F129)
+
+`PlanRunner.live_premium_basis(trade)` is now the single place that answers "what price does the
+configured premium stop measure on this contract right now, and where did it come from". It is the
+2 s quote watch's own logic, extracted unchanged: the per-technique basis (F30 `premium_stop_basis`),
+`stale_seconds`, no delayed or derived rows (R4, 2026-09-04), and a FRESH real-time quote with no bid
+is `0.0` - a total bleed, not a data gap. The watch calls it, and so must any other path that turns a
+price into a monetary exit decision. A technique's own read may estimate a premium; it may not sell on
+that estimate.
+
+`PlanRunner._exit(...)` takes an optional `authority` record and puts it on the `TechniquePlanExit`
+row (additive - the event contract's required fields are unchanged). An exit that was decided on a
+price says which price, from which quote, at which source timestamp, against which fill and which
+threshold. Model or research numbers may ride along under `model`, explicitly separate from the
+authority. Base behaviour for other desks is unchanged: no runner passes `authority` unless it wants
+to, and no defaults moved.

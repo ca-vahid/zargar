@@ -35,6 +35,9 @@ from . import selection_study as ss
 from . import selection_study_analysis as an
 
 SETTING_KEY = "techniques.team2.selection_study"
+COHORT_KIND = "team2_collection_cohort"   # journal kind for a collection cohort. NOT `selection_study_*`:
+                                          # that prefix is swept into the study population, and a cohort must be
+                                          # readable beside the population and incapable of entering it.
 TARGET_SESSIONS = 60
 DEADLINE = dt.date(2026, 12, 18)
 EARLY_STOP_FROM = 15
@@ -198,6 +201,40 @@ def lifecycle(*, activation_rows: list[dict], setting_events: list[tuple[int, ob
             "collectorEnabledNow": bool(intervals and intervals[-1][1] >= int(now_ms))}
 
 
+def cohort_for(date: str, cohorts: list[dict] | None) -> str | None:
+    """Which collection cohort a session date falls in. Pure; `None` when none is recorded.
+
+    A cohort is an inclusive date window over the instrument state the study collected under. It
+    does not and must not affect counting: `_classify` is the only thing that decides that, and it
+    reads the frozen registration's three exclusion rules alone.
+    """
+    for c in (cohorts or []):
+        lo, hi = str(c.get("fromDate") or ""), str(c.get("toDate") or "")
+        if (not lo or date >= lo) and (not hi or date <= hi):
+            return str(c.get("cohort") or "") or None
+    return None
+
+
+def label_cohorts(life: dict, cohorts: list[dict] | None) -> dict:
+    """Stamp each session with its cohort and summarise the counted ones per cohort. Additive: no
+    session's `status` is read or changed here."""
+    out = dict(life)
+    # stamp ONLY when a cohort actually applies: an absent key means unassigned, and a session
+    # record with no cohort recorded stays byte-identical to what it was before cohorts existed
+    sessions = []
+    for s in (life.get("sessions") or []):
+        c = cohort_for(s["date"], cohorts)
+        sessions.append({**s, "cohort": c} if c is not None else dict(s))
+    per: dict[str, int] = {}
+    for s in sessions:
+        if s["status"] == "counted":
+            per[str(s.get("cohort") or "unassigned")] = per.get(str(s.get("cohort") or "unassigned"), 0) + 1
+    out["sessions"] = sessions
+    out["cohorts"] = list(cohorts or [])
+    out["countedByCohort"] = per
+    return out
+
+
 def coverage_view(life: dict, study_rows: list[dict]) -> dict:
     """The ONLY operational view before the endpoint: lifecycle, session accounting, counts and coverage. No outcome value."""
     counted = set(life.get("countedDates") or [])
@@ -216,6 +253,10 @@ def coverage_view(life: dict, study_rows: list[dict]) -> dict:
             "state": life["state"], "study": life["study"], "registrationHash": life["registrationHash"],
             "countedSessions": life["countedSessions"], "targetSessions": life["targetSessions"], "deadline": life["deadline"],
             "statusCounts": life["statusCounts"], "nonCounted": [s for s in life["sessions"] if s["status"] not in ("counted",)],
+            # collection cohorts: metadata beside the count, never part of it
+            "cohorts": life.get("cohorts") or [], "countedByCohort": life.get("countedByCohort") or {},
+            "countedSessionsByDate": [{"date": s["date"], "cohort": s.get("cohort")}
+                                      for s in life.get("sessions") or [] if s["status"] == "counted"],
             "opportunitiesInCountedSessions": opps, "validOutcomes": valid, "coveragePct": (round(100.0 * valid / opps, 1) if opps else None),
             "c1Only": len(pop["c1Only"]), "otherRegistrations": pop["otherRegistrations"], "ignoredCloses": pop["ignoredCloses"],
             "recoveredOpenings": pop["recoveredOpenings"], "collectorHealth": health,

@@ -3795,3 +3795,39 @@ coverage and collector health ONLY, until the frozen endpoint (the close of the 
 books, risk settings, product pricing and C2's sealed window stay unchanged. Accepted state: PR #223 at `aa495b47` (registration
 `s1-r4`, hash `13b2bcc18bbbf5fa`; it also contains PR #224's event contract), selection packet 89 passed, full Team2 + reviewer +
 `test_platform_phase3.py` 486 passed. Nothing is enabled or deployed by this acceptance.
+
+### F129 (2026-09-21) - a pricing model may not independently force a monetary sale
+
+Incident: `Team2 C1 Conjunction` bought 35 `IWM260921C00286000` at **0.33** (10:36:13 ET) and was
+market-sold at **0.2899** (10:40:03) - -$140.35 gross, -$213.15 after fees - on an exit whose reason
+read "premium stop: -32% <= -25% (P1/D13)". That -32% belonged to the MODEL's proxy contract (marked
+about 0.1794 at entry, 0.1391 at the exit); the contract the desk held had moved about -12% and the
+configured stop line on a 0.33 fill is 0.2475 (`premium_stop_pct` 25, basis `mid`, 3-tick floor). A
+`model_out_of_band` read at 10:36:00 had already said the modelled pick was outside the premium band
+while the live picker filled the real one. The same thing repeated at 11:30/11:36.
+
+Cause: `_exit_from_event` asked the contract's live premium before a modelled TRIM but not before a
+modelled PREMIUM STOP, so a proxy price could market-sell a live position on its own.
+
+Rule: **a monetary premium decision is judged on the fill the desk paid and a valid live quote for
+the contract it holds, under the convention already configured.** The threshold, the fee convention
+and the quote-validity policy are unchanged. A modelled premium stop that the held contract has not
+breached is recorded (`premium_stop_not_live`) and nothing is sold; the live 2 s premium stop, the
+S1 candle stop, the X3 target, the C3 flatten, the underlying quote stop and the failed-exit
+watchdog all keep their authority. Structural instructions (candle stop, target, flatten) read the
+underlying, which the model and the desk share, and still act at once. When the model closes its
+proxy while the book stays open, the present-time S1 guard (G) issues the stop on the CURRENT close.
+Every exit on this path now carries an `authority` record on `TechniquePlanExit` naming who decided,
+the fill basis, the quote and its source timestamp, the calculated return and the threshold, with
+the model's own numbers kept separate under `model`.
+
+Was the money lost to the defect? **No.** The 10:40 2m close 285.72 was through EMA13 285.7656, and
+the 11:36 close 285.85 through EMA13 285.9175 - the S1 one-candle stop independently required both
+exits at the moment they happened. What was wrong is the authority and the record. On a day where
+structure had not also broken, the same defect sells a position its own stop says to keep.
+
+Also corrected under the same rule: an X5 add is refused when the desk's book has freed no room
+(`add_no_room`) - the model's add assumes the model's trim happened, and buying anyway carries more
+size than the method describes. Trace, table of evidence and the audit of every other
+model-generated monetary instruction:
+`notes/research/2026-09-21-premium-stop-authority-incident.md`.
