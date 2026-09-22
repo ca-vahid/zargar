@@ -33,7 +33,7 @@ import asyncpg
 from . import tip_outcomes
 from .tip_llm_cost import normalize_usage, price
 
-VERSION = "tips-scorecard-v3"
+VERSION = "tips-scorecard-v4"
 ET = dt.timezone(dt.timedelta(hours=-4))
 OCC = re.compile(r"^([A-Z.]{1,6})(\d{6})([CP])(\d{8})$")
 REGISTRY = os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "techniques", "tip", "research",
@@ -244,6 +244,7 @@ async def exits(conn, *, book: str, since: str, until: dt.date, q_exec: set) -> 
         first_seconds = (lt.hour, lt.minute) <= (9, 30)
         m = OCC.match(sym)
         dte = (dt.datetime.strptime(m.group(2), "%y%m%d").date() - lt.date()).days if m else None
+        target_trail = await target_exits(conn, position_id=p["id"], symbol=sym, book=book, created=p["created_at"])
         cls = ("questioned" if any(e["id"] in q_exec for e in ex) else
                "premium/stop exit in the first seconds of a session" if first_seconds and kind in ("premium_stop", "stop") else
                "analyst mirrored the source's exit" if kind == "close" else
@@ -251,7 +252,102 @@ async def exits(conn, *, book: str, since: str, until: dt.date, q_exec: set) -> 
                "premium stop or bleed (in session)" if kind == "premium_stop" else
                "target / premium target" if kind in ("trim", "premium_trim") else kind)
         rows.append({"symbol": sym, "class": cls, "net": net, "dteAtExit": dte, "exitAt": lt.strftime("%m-%d %H:%M"),
-                     "heldOvernight": closed.astimezone(ET).date() > p["created_at"].astimezone(ET).date()})
+                     "heldOvernight": closed.astimezone(ET).date() > p["created_at"].astimezone(ET).date(),
+                     "targetExits": target_trail})
+    return rows
+
+
+_TP_RE = re.compile(r"TP(\d+)\s+([0-9.]+)\s+reached")
+
+
+async def target_exits(conn, *, position_id: str, symbol: str, book: str, created) -> list[dict]:
+    """S21-03: for every TARGET exit of a managed position (open or closed) - first touch of the target on the 1m tape
+    AFTER entry, the manager's decision time (the closed-bar `ManagedPositionExit`), the order time, the fill time and
+    price, the limit the exit was sent at (the bid the manager saw), and the target-to-fill shortfall. Arithmetic on the
+    record; no claim that a limit at the target would have filled."""
+    from ..techniques.tip.friction import target_to_fill
+    out = []
+    row = await conn.fetchrow("select state, legs, created_at from managed_positions where id = $1", position_id)
+    if row is None:
+        return out
+    st = J(row["state"]) if not isinstance(row["state"], dict) else row["state"]
+    legs = J(row["legs"]) if not isinstance(row["legs"], list) else row["legs"]
+    direction = str((legs[0] if legs else {}).get("direction") or "long")
+    m = OCC.match(symbol)
+    for x in (st.get("exits") or []):
+        if x.get("kind") not in ("trim", "premium_trim", "tp", "target"):
+            continue
+        mt = _TP_RE.search(str(x.get("reason") or ""))
+        target = float(mt.group(2)) if mt else None
+        decided = dt.datetime.fromtimestamp(int(x.get("ts") or 0) / 1000, dt.timezone.utc) if x.get("ts") else None
+        filled_at = dt.datetime.fromtimestamp(int(x.get("filledTs") or 0) / 1000, dt.timezone.utc) if x.get("filledTs") else None
+        order = await conn.fetchrow("select created_at, order_type, limit_price from orders where id = $1", x.get("orderId")) if x.get("orderId") else None
+        first_touch = None
+        if target is not None and not m:                       # shares: the underlying's own 1m tape
+            bar = await conn.fetchrow("""select ts from bars where symbol = $1 and tf = '1m' and ts >= $2 and ts <= $3
+                                          and ((high >= $4 and $5 = 'long') or (low <= $4 and $5 = 'short'))
+                                          order by ts limit 1""",
+                                      symbol, int(created.timestamp() * 1000), int(x.get("ts") or 0) + 60_000, target, direction)
+            if bar:
+                first_touch = dt.datetime.fromtimestamp(int(bar["ts"]) / 1000, dt.timezone.utc)
+        ttf = target_to_fill(target=target, fill_price=x.get("price"), qty=float(x.get("filledQty") or x.get("qty") or 0),
+                             multiplier=(100.0 if m else 1.0), direction=direction)
+        out.append({"kind": x.get("kind"), "reason": x.get("reason"), "qty": x.get("filledQty") or x.get("qty"),
+                    "target": target, "fill": x.get("price"),
+                    "firstTouchAt": first_touch.astimezone(ET).strftime("%H:%M") if first_touch else None,
+                    "decidedAt": decided.astimezone(ET).strftime("%H:%M:%S") if decided else None,
+                    "orderedAt": order["created_at"].astimezone(ET).strftime("%H:%M:%S") if order else None,
+                    "sentAs": (f"{order['order_type']} {float(order['limit_price']):.4f}" if order and order["limit_price"] else (order["order_type"] if order else None)),
+                    "filledAt": filled_at.astimezone(ET).strftime("%H:%M:%S") if filled_at else None,
+                    "shortfallPerUnit": ttf["shortfallPerUnit"], "shortfallDollars": ttf["shortfallDollars"],
+                    "touchToDecisionMin": (round((decided - first_touch).total_seconds() / 60, 1) if (decided and first_touch) else None),
+                    "quoteEvidence": "the limit is the bid the manager saw at the bar close; no depth is recorded on the exit"})
+    return out
+
+
+async def friction_open(conn, *, book: str, fee_per_contract: float) -> list[dict]:
+    """S21-04: all-in friction and same-underlying exposure for every OPEN managed position: entry fees paid, exit fees
+    at the same basis, the spread at the FILL-TIME quote when the fill record carries one (else the decision quote,
+    labelled), hold horizon, and the other lots on the same underlying in this book."""
+    from ..techniques.tip.friction import all_in_friction, same_underlying_exposure, _underlying_of
+    rows = []
+    opens = await conn.fetch("""select id, symbol, legs, state, config, created_at from managed_positions
+                                where portfolio_id = $1 and technique = 'tip' and status in ('open','attention') order by created_at""", book)
+    lots = []
+    for p in opens:                                       # every lot's cost first, so exposure sees the whole book
+        legs_ = J(p["legs"]) if not isinstance(p["legs"], list) else p["legs"]
+        leg_ = legs_[0] if legs_ else {}
+        sym_ = leg_.get("symbol") or p["symbol"]
+        lots.append({"symbol": sym_, "cost": float(leg_.get("avgFill") or 0) * float(leg_.get("qty") or 0) * (100.0 if OCC.match(sym_) else 1.0)})
+    for p in opens:
+        legs = J(p["legs"]) if not isinstance(p["legs"], list) else p["legs"]
+        leg = legs[0] if legs else {}
+        sym = leg.get("symbol") or p["symbol"]
+        is_opt = bool(OCC.match(sym))
+        mult_ = 100.0 if is_opt else 1.0
+        entry_orders = [l.get("entryOrderId") for l in legs if l.get("entryOrderId")]
+        ex = await conn.fetch("select qty, price, commission from executions where order_id = any($1::varchar[]) and side = 'BUY'", entry_orders)
+        qty = sum(float(e["qty"]) for e in ex) or float(leg.get("qty") or 0)
+        avg = (sum(float(e["qty"]) * float(e["price"]) for e in ex) / qty) if (ex and qty) else float(leg.get("avgFill") or 0)
+        fees = sum(float(e["commission"] or 0) for e in ex)
+        fvq = await conn.fetchrow("""select payload from events where type = 'TipFillVsQuote' and payload->>'symbol' = $1
+                                     and ts >= $2 order by ts desc limit 1""", sym, p["created_at"] - dt.timedelta(minutes=5))
+        fq = (J(fvq["payload"]) if fvq else {})
+        ft = fq.get("fillTimeQuote") or {}
+        use = ft if (ft.get("bid") and ft.get("ask")) else {"bid": fq.get("quoteBid"), "ask": fq.get("quoteAsk"), "quoteRole": "decision"}
+        fr = all_in_friction(qty=qty, fill_price=avg, multiplier=mult_, entry_fees=fees,
+                             fee_per_unit=(fee_per_contract if is_opt else 0.0), bid=use.get("bid"), ask=use.get("ask"))
+        cfg = J(p["config"]) if not isinstance(p["config"], dict) else p["config"]
+        hold_cap = ((cfg.get("policy") or {}).get("time_stop_sessions") or (cfg.get("policy") or {}).get("max_hold_sessions"))
+        expo = same_underlying_exposure(lots, underlying=_underlying_of(sym), exclude_symbol=sym)
+        trail = await target_exits(conn, position_id=p["id"], symbol=sym, book=book, created=p["created_at"])
+        rows.append({"symbol": sym, "qty": qty, "avgFill": round(avg, 4), "debit": fr["debit"], "entryFees": fr["entryFees"],
+                     "exitFeesEstimate": fr["exitFeesEstimate"], "spreadAtQuote": fr["spreadAtQuote"],
+                     "spreadQuoteRole": use.get("quoteRole") or ("fill" if ft.get("bid") else "decision"),
+                     "allInDollars": fr["allInDollars"], "allInPct": fr["allInPctOfDebit"], "unknown": fr["unknown"],
+                     "openedAt": p["created_at"].astimezone(ET).strftime("%m-%d %H:%M"), "holdCap": hold_cap,
+                     "sameUnderlyingOtherLots": expo["otherLots"], "sameUnderlyingOtherCost": expo["otherCost"],
+                     "targetExits": trail})
     return rows
 
 
@@ -265,6 +361,10 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
     since_dt = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=ET)
     mc = await model_cost(conn, since_dt, until, rates)
     ex_rows = await exits(conn, book=book, since=since, until=until, q_exec=t["questionedExecs"])
+    _fees = J(await conn.fetchval("select value from settings where key = 'options.fee_per_contract'") or "null")
+    _reg = J(await conn.fetchval("select value from settings where key = 'sim.reg_fee_per_contract'") or "null")
+    _fpc = float(((_fees or {}).get("v") if isinstance(_fees, dict) else _fees) or 0.99) + float(((_reg or {}).get("v") if isinstance(_reg, dict) else _reg) or 0.05)
+    fr_rows = await friction_open(conn, book=book, fee_per_contract=_fpc)
     disp = await tip_outcomes.build_dispositions(conn, since_text=since, portfolio=book, census=t["census"])
     shadows = []
     for pf in await conn.fetch("select id, name, quarantined, book from portfolios where kind='shadow' and archived is not true order by name"):
@@ -277,7 +377,7 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
     pre = await conn.fetchval("select count(*) from executions where portfolio_id = $1 and ts < $2", book,
                               dt.datetime.combine(since_d, dt.time(4, 0), tzinfo=ET))
     return {"version": VERSION, "since": since, "until": until.isoformat(), "book": book, "trading": t, "marks": m,
-            "preIntervalExecutions": int(pre or 0), "exits": ex_rows, "dispositions": disp,
+            "preIntervalExecutions": int(pre or 0), "exits": ex_rows, "dispositions": disp, "frictionOpen": fr_rows,
             "cash": cash, "model": mc, "shadows": shadows, "registry": registry}
 
 
@@ -479,6 +579,30 @@ def render(res: dict) -> str:
                      f"{sum(1 for x in g if x['net'] <= 0)} | {sum(1 for x in g if x['heldOvernight'])} | {', '.join(map(str, dtes)) or '-'} |")
         L.append("\nWhole-trade results by how the position ENDED; 'held overnight' marks a trade that crossed a night - it is not "
                  "overnight-only P&L. A bookkeeping repair is excluded here (see Reconciliation).")
+    # S21-03: target exits - first touch, decision, order, fill, and the target-to-fill shortfall
+    trail = [(r["symbol"], t) for r in ex_rows for t in (r.get("targetExits") or [])]         + [(r["symbol"], t) for r in (res.get("frictionOpen") or []) for t in (r.get("targetExits") or [])]
+    if trail:
+        L.append("\n## Target exits: touch -> decision -> order -> fill (S21-03)\n")
+        L.append("| symbol | rung | qty | target | first touch | decided | sent as | filled | fill | shortfall/unit | shortfall $ |")
+        L.append("|---|---|---:|---:|---|---|---|---|---:|---:|---:|")
+        for sym, t in trail:
+            L.append(f"| {sym} | {t['reason']} | {t['qty']} | {t['target']} | {t['firstTouchAt'] or '-'} | {t['decidedAt'] or '-'} | "
+                     f"{t['sentAs'] or '-'} | {t['filledAt'] or '-'} | {t['fill']} | {t['shortfallPerUnit']} | {t['shortfallDollars']} |")
+        L.append("\nThe manager decides on the CLOSED bar's high/low and sells at the bid it sees then; the shortfall is arithmetic "
+                 "between the touched target and the realised fill - it is not evidence that a resting limit at the target would "
+                 "have filled. The card's payoff scenarios assume an exit AT the target (stated on every card since S21-01).")
+    fr = res.get("frictionOpen") or []
+    if fr:
+        L.append("\n## Friction and exposure of open positions (S21-04; a diagnostic of an immediate round trip, not a forecast)\n")
+        L.append("| symbol | qty | debit | entry fees | exit fees est. | spread at quote (role) | all-in $ | all-in % | hold cap | same-underlying other lots (cost) |")
+        L.append("|---|---:|---:|---:|---:|---|---:|---:|---|---|")
+        for f in fr:
+            L.append(f"| {f['symbol']} | {f['qty']:g} | {f['debit'] if f['debit'] is not None else '?'} | {f['entryFees']} | {f['exitFeesEstimate']} | "
+                     f"{f['spreadAtQuote'] if f['spreadAtQuote'] is not None else '?'} ({f['spreadQuoteRole']}) | "
+                     f"{f['allInDollars'] if f['allInDollars'] is not None else '?'} | {f['allInPct'] if f['allInPct'] is not None else '?'} | "
+                     f"{f['holdCap'] or '-'} | {f['sameUnderlyingOtherLots']} (${f['sameUnderlyingOtherCost']:,.2f}) |")
+        L.append("\nNo friction threshold is applied; this is what the book pays to get in and out at the quoted market. Unknown "
+                 "inputs stay '?' (never estimated).")
     # source x setup x entry style
     L.append("\n## Source x setup x entry style - FILLED Practice ideas (method results; questioned apart)\n")
     L.append("| source | setup | entry | filled ideas | completed | partial | net realized | fees | wins (avg) | losses (avg) | max drawdown | open at cost | questioned net |")

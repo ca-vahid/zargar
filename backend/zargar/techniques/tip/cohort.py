@@ -176,6 +176,11 @@ def _snap_quote(eng, sym: str, *, max_age_s: float, kind: str, is_option: bool |
         is_option = len(sym) > 8 and sym[-9] in ("C", "P") and sym[-8:].isdigit()
     basis_ts = src_ts if (src_ts > 0 or is_option) else recv_ts
     age_s = max(0.0, (now_ms - basis_ts) / 1000.0) if basis_ts > 0 else None
+    # S21-05 (2026-09-21 review): the basis of the age is on the record. `source` = the producer's own stamp
+    # (OPRA polls stamp at receipt on this host, so even that is not venue time); `receipt` = this host saw it then,
+    # which says nothing about how old the venue's print was. A missing source time is never claimed as one.
+    receipt_age_s = max(0.0, (now_ms - recv_ts) / 1000.0) if recv_ts > 0 else None
+    time_basis = "source" if src_ts > 0 else ("receipt" if (not is_option and recv_ts > 0) else "none")
     # the venue-session test mirrors the Practice venue's own policy (EOD-05):
     # a config that lets the sim fill options at any hour judges no session here
     cfg = getattr(eng, "config", None)
@@ -184,6 +189,8 @@ def _snap_quote(eng, sym: str, *, max_age_s: float, kind: str, is_option: bool |
            "bidSize": getattr(q, "bid_size", None), "askSize": getattr(q, "ask_size", None),   # TMR-02: quoted size
            "source": getattr(q, "source", "") or "feed", "sourceTs": src_ts, "receivedTs": recv_ts,
            "ageSeconds": round(age_s, 1) if age_s is not None else None,
+           "sourceTimeBasis": time_basis, "receiptAgeSeconds": round(receipt_age_s, 1) if receipt_age_s is not None else None,
+           "sourceAgeKnown": src_ts > 0,
            "delayed": bool(getattr(q, "delayed", False)),
            "sampledAt": _iso(_utcnow()), "sampleKind": kind, "isOption": bool(is_option)}
     status, reasons = qualify_quote(rec, is_option=bool(is_option), max_age_s=max_age_s, now_ms=now_ms,
