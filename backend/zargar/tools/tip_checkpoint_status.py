@@ -25,7 +25,7 @@ import sys
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
-VERSION = "checkpoint-status-v2"
+VERSION = "checkpoint-status-v3"
 
 
 def accounting_day(ts: dt.datetime) -> dt.date:
@@ -92,13 +92,26 @@ def run_reports(commands: list[tuple[str, list[str]]], *, out_dir: str, runner=s
             err = (proc.stderr or "")[-2000:]
         except Exception as exc:                          # noqa: BLE001 - a launcher failure is a failed report
             code, out, err = 127, "", f"{type(exc).__name__}: {exc}"
-        if code == 0 and out.strip():
+        ok = code == 0 and bool(out.strip())            # exit 0 with EMPTY output is a failed report, never a pass
+        if ok:
             _atomic_write(target, out)
-            results[name] = {"exit": 0, "bytes": len(out)}
+            results[name] = {"exit": 0, "ok": True, "bytes": len(out)}
         else:
             _atomic_write(target + ".failed", out + ("\n\n[stderr]\n" + err if err else ""))
-            results[name] = {"exit": code, "bytes": len(out), "error": err[-300:] or ("empty output" if code == 0 else "")}
+            results[name] = {"exit": code, "ok": False, "bytes": len(out), "error": err[-300:] or ("empty output" if code == 0 else "")}
     return results
+
+
+REQUIRED_REPORTS = ("review-gate-prospective.md", "scorecard.md", "opportunity-dispositions.md", "intake-coverage.md", "review-model-cases.md")
+
+
+def read_eligibility(out_dir: str) -> dict | None:
+    """The structured summary the gate report wrote beside its markdown (`--json`); None when absent."""
+    p = os.path.join(out_dir, "review-gate-prospective.json")
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def _atomic_write(path: str, text: str) -> None:
@@ -108,13 +121,24 @@ def _atomic_write(path: str, text: str) -> None:
     os.replace(tmp, path)
 
 
-def publish(status: dict, reports: dict, *, out_dir: str) -> dict:
-    failed = {k: v for k, v in reports.items() if v.get("exit") != 0}
+def publish(status: dict, reports: dict, *, out_dir: str, eligibility: dict | None = None) -> dict:
+    """READY needs: every required report produced with non-empty output, the gate report's STRUCTURED eligibility
+    (not its prose) saying ELIGIBLE, and no weekday gap. Anything less is written as what it is."""
+    failed = {k: v for k, v in reports.items() if not v.get("ok", v.get("exit") == 0)}
+    missing = [k for k in REQUIRED_REPORTS if k not in reports]
     final = dict(status)
     final["reports"] = reports
-    if failed:
+    final["eligibility"] = eligibility
+    if failed or missing:
         final["state"] = "FAILED"
-        final["failedReports"] = sorted(failed)
+        final["failedReports"] = sorted(failed) + [f"{m} (not produced)" for m in missing]
+    elif eligibility is None:
+        final["state"] = "FAILED"
+        final["failedReports"] = ["review-gate-prospective.json (structured eligibility not written)"]
+    elif status["state"] == "READY" and not eligibility.get("eligible"):
+        final["state"] = "INCOMPLETE"                      # the report itself says unresolved decisions or false negatives exist
+        final["incompleteReason"] = {"unresolved": eligibility.get("unresolved"), "falseNegatives": eligibility.get("falseNegatives"),
+                                     "resolution": eligibility.get("resolution")}
     elif status["state"] == "READY" and status.get("gaps"):
         final["state"] = "INCOMPLETE"                      # enough days, but the window has holes a human must explain
     final["generatedAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -146,12 +170,14 @@ async def _load(db: str, since: dt.date) -> tuple[list[dict], str | None]:
     return [{"ts": r["ts"], "mode": r["mode"]} for r in rows], mode
 
 
-def report_commands(python: str, *, since: str, until: str) -> list[tuple[str, list[str]]]:
-    return [("review-gate-prospective.md", [python, "-m", "zargar.tools.tip_review_gate_eval", "--since", since, "--until", until, "--prospective"]),
+def report_commands(python: str, *, since: str, until: str, out_dir: str = "") -> list[tuple[str, list[str]]]:
+    """Every exported report carries the SAME `--until` cutoff; the gate report also writes its structured summary."""
+    gate_json = os.path.join(out_dir, "review-gate-prospective.json")
+    return [("review-gate-prospective.md", [python, "-m", "zargar.tools.tip_review_gate_eval", "--since", since, "--until", until, "--prospective", "--json", gate_json]),
             ("scorecard.md", [python, "-m", "zargar.tools.tip_scorecard", "--since", since, "--until", until]),
-            ("opportunity-dispositions.md", [python, "-m", "zargar.tools.tip_outcomes", "--dispositions", "--since", since]),
-            ("intake-coverage.md", [python, "-m", "zargar.tools.tip_outcomes", "--coverage", "--since", since]),
-            ("review-model-cases.md", [python, "-m", "zargar.tools.tip_review_gate_eval", "--since", since, "--model-plan"])]
+            ("opportunity-dispositions.md", [python, "-m", "zargar.tools.tip_outcomes", "--dispositions", "--since", since, "--until", until]),
+            ("intake-coverage.md", [python, "-m", "zargar.tools.tip_outcomes", "--coverage", "--since", since, "--until", until]),
+            ("review-model-cases.md", [python, "-m", "zargar.tools.tip_review_gate_eval", "--since", since, "--until", until, "--model-plan"])]
 
 
 async def main() -> int:
@@ -171,8 +197,11 @@ async def main() -> int:
         return 0
     os.makedirs(a.out, exist_ok=True)
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    reports = run_reports(report_commands(a.python, since=a.since, until=status["until"]), out_dir=a.out)
-    final = publish(status, reports, out_dir=a.out)
+    stale = os.path.join(a.out, "review-gate-prospective.json")
+    if os.path.exists(stale):
+        os.remove(stale)                                   # never read a previous run's eligibility
+    reports = run_reports(report_commands(a.python, since=a.since, until=status["until"], out_dir=a.out), out_dir=a.out)
+    final = publish(status, reports, out_dir=a.out, eligibility=read_eligibility(a.out))
     print(f"tips five-session: {final['state']} ({final['observedSessions']} of {a.need} observed sessions, through {final['until']}; "
           f"gaps {final['gaps'] or 'none'}; reports {', '.join(f'{k}={v['exit']}' for k, v in reports.items())}) -> {a.out}")
     return 0 if final["state"] in ("READY", "NOT-YET", "INCOMPLETE") else 2

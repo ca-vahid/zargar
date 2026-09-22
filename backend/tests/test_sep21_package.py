@@ -149,7 +149,8 @@ def test_a_gap_day_and_a_non_observe_day_are_never_silently_counted(tmp_path):
     st = cps.compute_status(decisions=decisions, since=dt.date(2026, 9, 21),
                             now=dt.datetime.fromisoformat("2026-09-29T09:00:00+00:00"), need=5, gate_mode="observe")
     assert st["observedSessions"] == 5 and st["gaps"] == ["2026-09-22"]
-    final = cps.publish(st, {"scorecard.md": {"exit": 0}}, out_dir=str(tmp_path))
+    full = {name: {"exit": 0, "ok": True} for name in cps.REQUIRED_REPORTS}
+    final = cps.publish(st, full, out_dir=str(tmp_path), eligibility={"eligible": True, "unresolved": 0, "falseNegatives": 0})
     assert final["state"] == "INCOMPLETE"                                     # five days, but a hole a human must explain
     bad = cps.compute_status(decisions=decisions + [_dec("2026-09-24", 16, mode="enforce")], since=dt.date(2026, 9, 21),
                              now=dt.datetime.fromisoformat("2026-09-29T09:00:00+00:00"), need=5, gate_mode="observe")
@@ -174,8 +175,8 @@ def test_a_failed_report_command_can_never_publish_ready(tmp_path):
     st = cps.compute_status(decisions=[_dec(f"2026-09-2{d}") for d in range(1, 6)], since=dt.date(2026, 9, 21),
                             now=dt.datetime.fromisoformat("2026-09-26T09:00:00+00:00"), need=5, gate_mode="observe")
     assert st["state"] == "READY"
-    final = cps.publish(st, reports, out_dir=str(tmp_path))
-    assert final["state"] == "FAILED" and final["failedReports"] == ["review-gate-prospective.md"]
+    final = cps.publish(st, reports, out_dir=str(tmp_path), eligibility={"eligible": True, "unresolved": 0, "falseNegatives": 0})
+    assert final["state"] == "FAILED" and "review-gate-prospective.md" in final["failedReports"]
     import json as _j
     assert _j.loads((tmp_path / "STATUS.json").read_text(encoding="utf-8"))["state"] == "FAILED"
 
@@ -223,3 +224,122 @@ def test_replay_event_has_a_contract_and_the_budget_is_two():
     assert to.REPLAY_MAX == 2
     assert set(CONTRACTS["TipIntakeReplayed"]["required"]) == {"contentId", "attempt", "max", "reason"}
     validate("TipIntakeReplayed", {"contentId": "c", "attempt": 2, "max": 2, "reason": "manual"})
+
+
+# ------------------------------------------------------------------ S21-02 rev 2: structured eligibility, empty reports, one cutoff
+def _ready_status():
+    return cps.compute_status(decisions=[_dec(f"2026-09-2{d}") for d in range(1, 6)], since=dt.date(2026, 9, 21),
+                              now=dt.datetime.fromisoformat("2026-09-26T09:00:00+00:00"), need=5, gate_mode="observe")
+
+
+def _all_ok():
+    return {name: {"exit": 0, "ok": True, "bytes": 100} for name in cps.REQUIRED_REPORTS}
+
+
+def test_a_report_that_says_incomplete_can_never_be_published_as_ready(tmp_path):
+    """Reproduces the reviewer's case: five clean days, every command exit 0, but the gate report's own verdict is
+    INCOMPLETE (an unmatched decision). The publisher used to write READY on command success alone."""
+    st = _ready_status()
+    assert st["state"] == "READY"
+    elig = {"eligible": False, "unresolved": 1, "falseNegatives": 0, "resolution": {"complete": 133, "unmatched": 1}}
+    final = cps.publish(st, _all_ok(), out_dir=str(tmp_path), eligibility=elig)
+    assert final["state"] == "INCOMPLETE" and final["incompleteReason"]["unresolved"] == 1
+    assert final["eligibility"] is elig
+    ok = cps.publish(st, _all_ok(), out_dir=str(tmp_path), eligibility={"eligible": True, "unresolved": 0, "falseNegatives": 0})
+    assert ok["state"] == "READY"
+    assert cps.publish(st, _all_ok(), out_dir=str(tmp_path), eligibility=None)["state"] == "FAILED"     # no structured verdict = no READY
+
+
+def test_empty_output_with_exit_zero_is_a_failed_report(tmp_path):
+    class P:
+        def __init__(self, code, out, err=""):
+            self.returncode, self.stdout, self.stderr = code, out, err
+
+    def runner(argv, **kw):
+        return P(0, "   \n") if "tip_outcomes" in " ".join(argv) else P(0, "# ok\n")
+    cmds = cps.report_commands("py", since="2026-09-21", until="2026-09-25", out_dir=str(tmp_path))
+    reports = cps.run_reports(cmds, out_dir=str(tmp_path), runner=runner)
+    assert reports["opportunity-dispositions.md"]["ok"] is False and reports["opportunity-dispositions.md"]["exit"] == 0
+    assert not (tmp_path / "opportunity-dispositions.md").exists() and (tmp_path / "opportunity-dispositions.md.failed").exists()
+    final = cps.publish(_ready_status(), reports, out_dir=str(tmp_path), eligibility={"eligible": True, "unresolved": 0, "falseNegatives": 0})
+    assert final["state"] == "FAILED" and "opportunity-dispositions.md" in final["failedReports"]
+    missing = {k: v for k, v in _all_ok().items() if k != "intake-coverage.md"}
+    assert "intake-coverage.md (not produced)" in cps.publish(_ready_status(), missing, out_dir=str(tmp_path),
+                                                              eligibility={"eligible": True})["failedReports"]
+
+
+def test_every_exported_report_carries_the_same_cutoff(tmp_path):
+    cmds = cps.report_commands("py", since="2026-09-21", until="2026-09-25", out_dir=str(tmp_path))
+    assert [n for n, _ in cmds] == list(cps.REQUIRED_REPORTS)
+    for name, argv in cmds:
+        assert argv[argv.index("--until") + 1] == "2026-09-25", name
+    gate = dict(cmds)["review-gate-prospective.md"]
+    assert gate[gate.index("--json") + 1].endswith("review-gate-prospective.json")
+
+
+# ------------------------------------------------------------------ S21-07 rev 2: the replay claim is atomic and durable
+from zargar.models import RawContent
+from zargar.techniques.tip import replay_claim as rc
+
+
+async def _seed_failed(eng, content_id="c-fail", retried=True):
+    async with eng.sf() as session:
+        session.add(RawContent(id=content_id, source_type="manual", source_name="MK-alpha-trades", subject="Alpha Report",
+                               body_text="x", status="error",
+                               meta={"recoveryRetried": "2026-09-21T12:35:16+00:00"} if retried else {}))
+        await session.commit()
+
+
+async def _meta(eng, content_id="c-fail"):
+    async with eng.sf() as session:
+        return dict((await session.get(RawContent, content_id)).meta or {})
+
+
+async def test_concurrent_replay_requests_claim_once(rig):
+    eng = rig
+    await _seed_failed(eng, retried=False)
+    results = await asyncio.gather(*[rc.claim_replay(eng.sf, "c-fail", reason=f"r{i}", max_attempts=2) for i in range(4)])
+    winners = [r for r in results if r.get("ok")]
+    assert len(winners) == 1 and winners[0]["attempt"] == 1
+    assert {r["reason"] for r in results if not r.get("ok")} == {"in_progress"}
+    meta = await _meta(eng)
+    assert meta["replayCount"] == 1 and meta["replayClaim"]["token"] == winners[0]["token"]   # exactly one claim, counted once
+    assert await rc.release_replay(eng.sf, "c-fail", "not-the-token", outcome="x") is False    # a foreign token releases nothing
+    assert await rc.release_replay(eng.sf, "c-fail", winners[0]["token"], outcome="error") is True
+    meta = await _meta(eng)
+    assert meta["replayClaim"] is None and meta["replayOutcome"]["outcome"] == "error"
+    second = await rc.claim_replay(eng.sf, "c-fail", reason="again", max_attempts=2)
+    assert second["ok"] and second["attempt"] == 2
+    await rc.release_replay(eng.sf, "c-fail", second["token"], outcome="error")
+    third = await rc.claim_replay(eng.sf, "c-fail", reason="again", max_attempts=2)
+    assert third == {"ok": False, "reason": "budget_exhausted", "attempts": 2, "max": 2}
+
+
+async def test_replay_claim_respects_the_recovery_retry_and_the_lease(rig):
+    eng = rig
+    await _seed_failed(eng, content_id="c-retried", retried=True)
+    one = await rc.claim_replay(eng.sf, "c-retried", reason="manual", max_attempts=2)
+    assert one["ok"] and one["attempt"] == 2                                          # the sweep's retry was attempt 1
+    held = await rc.claim_replay(eng.sf, "c-retried", reason="manual", max_attempts=2)
+    assert held["reason"] == "in_progress"
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=rc.CLAIM_LEASE_S + 1)
+    expired = await rc.claim_replay(eng.sf, "c-retried", reason="manual", max_attempts=2, now=later)
+    assert expired == {"ok": False, "reason": "budget_exhausted", "attempts": 2, "max": 2}   # a crashed replay still spent its attempt
+    assert (await rc.claim_replay(eng.sf, "nope", reason="x", max_attempts=2))["reason"] == "not_found"
+
+
+# ------------------------------------------------------------------ shared-owner follow-through: poll time is not vendor time
+def test_tips_quote_records_never_present_poll_age_as_vendor_age():
+    from zargar.techniques.tip.cohort import _snap_quote
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    opra = NS(bid=0.13, ask=0.14, last=0.14, source="opra", source_ts=now - 2000, ts=now - 1000, delayed=False, quote_ts=0, last_ts=0)
+    share = NS(bid=17.11, ask=17.13, last=17.12, source="", source_ts=0, ts=now - 3000, delayed=False, quote_ts=0, last_ts=0)
+    vendor = NS(bid=17.11, ask=17.13, last=17.12, source="alpaca", source_ts=0, ts=now - 3000, delayed=False, quote_ts=now - 5000, last_ts=0)
+    eng = NS(quotes=NS(get=lambda s: {"ACHR260925C00005500": opra, "PL": share, "IONQ": vendor}[s]), config=NS(sim_option_sessions=False))
+    o, _ = _snap_quote(eng, "ACHR260925C00005500", max_age_s=10, kind="t")
+    assert o["sourceTimeBasis"] == "poll" and o["sourceAgeKnown"] is False and o["pollTs"] == now - 2000
+    assert o["observationId"] == f"ACHR260925C00005500:{now - 2000}" and "not a verified source-event age" in o["ageBasisNote"]
+    s, _ = _snap_quote(eng, "PL", max_age_s=10, kind="t")
+    assert s["sourceTimeBasis"] == "receipt" and s["sourceAgeKnown"] is False and s["pollTs"] is None
+    v, _ = _snap_quote(eng, "IONQ", max_age_s=10, kind="t")
+    assert v["sourceTimeBasis"] == "vendor" and v["sourceAgeKnown"] is True and v["vendorTs"] == now - 5000

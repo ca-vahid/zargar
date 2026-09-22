@@ -110,7 +110,14 @@ def items_at(hist, t: int) -> list[dict]:
     return [{"kind": k, "symbol": sym, "source": src} for k, sym, src, a, b in hist if a <= t and (b is None or t < b)]
 
 
-async def retrospective(c, since: str) -> dict:
+def _window(since: str, until: str | None) -> tuple[dt.datetime, dt.datetime | None]:
+    """Accounting-day anchors (04:00 ET) - the ONE cutoff every exported report shares (S21-02 rev 2)."""
+    a = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=_ET)
+    b = dt.datetime.combine(dt.date.fromisoformat(until) + dt.timedelta(days=1), dt.time(4, 0), tzinfo=_ET) if until else None
+    return a, b
+
+
+async def retrospective(c, since: str, until: str | None = None) -> dict:
     rate = (await _rates(c)).get("claude-opus-5")
     hist = await desk_history(c)
     fails = collections.defaultdict(list)
@@ -119,9 +126,13 @@ async def retrospective(c, since: str) -> dict:
                            dt.datetime.fromisoformat(since).replace(tzinfo=dt.timezone.utc)):
         fails[s["source_name"]].append((s["created_at"], [x.get("name") for x in (J(s["verification"]).get("checks") or [])
                                                           if x.get("passed") is False]))
-    runs = await c.fetch("""select id, source, created_at, opinion, trace from tip_analyst_runs
-        where kind='intake' and verdict='review' and created_at >= $1 order by created_at""",
-                         dt.datetime.fromisoformat(since).replace(tzinfo=dt.timezone.utc))
+    _a, _b = _window(since, until)
+    if _b is None:
+        runs = await c.fetch("""select id, source, created_at, opinion, trace from tip_analyst_runs
+            where kind='intake' and verdict='review' and created_at >= $1 order by created_at""", _a)
+    else:
+        runs = await c.fetch("""select id, source, created_at, opinion, trace from tip_analyst_runs
+            where kind='intake' and verdict='review' and created_at >= $1 and created_at < $2 order by created_at""", _a, _b)
     rows = []
     for r in runs:
         op = J(r["opinion"])
@@ -204,9 +215,7 @@ async def prospective(c, since: str, *, until: str | None = None) -> dict:
     review; an unresolved decision can never certify a clean checkpoint. Every skip-decision that carried a
     correction / possible entry / mixed message / deferred action is exported in full - the human-review list is the
     artifact, never a preview of it. Returns the summary for the checkpoint tooling."""
-    # accounting-day anchors (04:00 ET), the same cutoff the checkpoint and the scorecard use (S21-02)
-    since_dt = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=_ET)
-    until_dt = (dt.datetime.combine(dt.date.fromisoformat(until) + dt.timedelta(days=1), dt.time(4, 0), tzinfo=_ET)) if until else None
+    since_dt, until_dt = _window(since, until)     # the same cutoff the checkpoint and every other report use
     if until_dt is None:
         ev = await c.fetch("""select ts, payload from events where type='TipReviewGate' and ts >= $1 order by ts""", since_dt)
     else:
@@ -371,7 +380,8 @@ async def main() -> None:
     ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
     ap.add_argument("--since", default="2026-09-09")
     ap.add_argument("--prospective", action="store_true")
-    ap.add_argument("--until", default=None, help="last accounting day (inclusive) for --prospective; default open-ended")
+    ap.add_argument("--until", default=None, help="last accounting day (inclusive) - applies to EVERY mode; default open-ended")
+    ap.add_argument("--json", default=None, help="--prospective: also write the structured summary (eligibility) to this path")
     ap.add_argument("--model-plan", action="store_true", help="frozen-evaluation case quotas + budget for cheaper review models (no provider call)")
     a = ap.parse_args()
     c = await asyncpg.connect(a.db, server_settings={"default_transaction_read_only": "on"})
@@ -379,11 +389,14 @@ async def main() -> None:
         if a.model_plan:
             cap = {r["id"] for r in await c.fetch("""select id from tip_analyst_runs where kind='intake' and verdict='review'
                                                      and trace::text like '%reviewManifest%'""")}
-            report_model_plan(model_plan(await retrospective(c, a.since), captured=cap), a.since)
+            report_model_plan(model_plan(await retrospective(c, a.since, a.until), captured=cap), a.since)
         elif a.prospective:
-            await prospective(c, a.since, until=a.until)
+            summary = await prospective(c, a.since, until=a.until)
+            if a.json:
+                with open(a.json, "w", encoding="utf-8") as fh:
+                    json.dump({**summary, "since": a.since, "until": a.until, "report": "review-gate-prospective"}, fh, indent=1)
         else:
-            report_retro(await retrospective(c, a.since), a.since)
+            report_retro(await retrospective(c, a.since, a.until), a.since)
     finally:
         await c.close()
 
