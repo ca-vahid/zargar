@@ -1,6 +1,6 @@
 ﻿# EM books - pre-open verification, 2026-09-22
 
-Generated 2026-09-22T13:07:10+00:00 (read-only).
+Generated 2026-09-22T13:32:01+00:00 (read-only).
 Experiment `em-experiment-v1` enabled: **True**; owner: EM desk (EM Dev session) - attends pre-open, open, close; rollback = pause this book
 
 | Item | baseline (EM Practice) | experiment (EM Experimental) |
@@ -9,10 +9,10 @@ Experiment `em-experiment-v1` enabled: **True**; owner: EM desk (EM Dev session)
 | Kind | sim | sim |
 | Cash | 10051.301699999987 | 9849.6032 |
 | Last equity point | 10051.301699999987 | 9849.6032 |
-| Armed for the session | 33 {'armed': 33} {'auto': 33} | 91 {'armed': 91} {'auto': 91} |
-| Plan origins | {'promote': 33} | {'experiment': 91} |
+| Armed for the session | 42 {'disarmed': 9, 'armed': 33} {'auto': 42} | 118 {'armed': 91, 'disarmed': 27} {'auto': 118} |
+| Plan origins | {'promote': 33, 'preopen_replan': 9} | {'preopen_replan': 27, 'experiment': 91} |
 | Promoted candidates | none | none |
-| Experiment-tagged arms | 0 | 91 |
+| Experiment-tagged arms | 0 | 118 |
 | Open positions / working orders | 0 / 0 | 0 / 0 |
 | Limit: mode | auto | auto |
 | Limit: instrument | options | options |

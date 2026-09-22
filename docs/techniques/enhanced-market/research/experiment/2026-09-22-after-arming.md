@@ -1,6 +1,6 @@
 ﻿# EM books - pre-open verification, 2026-09-22
 
-Generated 2026-09-22T13:07:10+00:00 (read-only).
+Generated 2026-09-22T03:59:06+00:00 (read-only).
 Experiment `em-experiment-v1` enabled: **True**; owner: EM desk (EM Dev session) - attends pre-open, open, close; rollback = pause this book
 
 | Item | baseline (EM Practice) | experiment (EM Experimental) |
