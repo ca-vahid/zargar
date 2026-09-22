@@ -126,3 +126,27 @@ did not justify the cost, and deferred to after 16:00 ET.
 Recorded because a clean account of why nothing went wrong is worth as much as an account of why
 something did: this session is counted because a cross-desk deploy was moved, not because nothing
 was scheduled.
+
+### Session 2 close — counted, and the clock diagnosis tested
+
+Closed and **counted** in cohort `B-synced-clock`. The study stands at **2 of 60**: one session under
+the skew, one synced. Collector health: all six counters zero. Team2 flat at the close — no open
+trades, no working entries, no pending exits, no in-flight orders, and the nine plans disarmed
+normally as 0DTE single-session plans do.
+
+**The room feature populated.** This was a test of my own diagnosis, not of the code: I claimed the
+clock skew was what blinded `room` on Monday, and a synced clock should therefore restore it.
+
+| session | clock | `room` observations |
+|---|---|---|
+| 2026-09-21 | ~10.5 s behind | 4 of 4 `unknown` |
+| 2026-09-22 | ~80 ms behind | 1 resolved (`near`), 1 `unknown` |
+
+So the diagnosis holds: the feature is no longer uniformly blind, and it resolved on a session where
+nothing else changed. It is **not** wholly fixed — one of two observations is still unknown, which
+may be a different cause entirely (no target, no ATR, or a genuinely stale quote at that instant).
+One clean session is one clean session, and the honest claim is "the skew was a cause", not "the
+skew was the only cause".
+
+Coverage on counted sessions so far: 2 opportunities, 1 valid outcome, 50%. Reported as coverage
+only; no outcome value before the endpoint.
