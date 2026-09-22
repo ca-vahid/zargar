@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.28";
+export const APP_VERSION = "0.8.29";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,13 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.29",date:"2026-09-21",title:"Cartel: contract search, executable cost, causal review and a 5-minute Practice cadence",items:[
+    {tag:"new",text:"Contract selection version diverse_liquidity_v1 (Practice, off until chosen): the reviewed contract is refreshed first, refresh requests are spread across expiries, contracts already below the open-interest minimum are recorded instead of refreshed, and the search reports exactly what it did and did not cover."},
+    {tag:"new",text:"Contract ranking version executable_cost_v1 (Practice, off until chosen): eligible contracts are ordered by displayed-size coverage and crossing spread plus fees over the debit; every estimate names its assumptions and the legacy choice."},
+    {tag:"improved",text:"Daily review names the first known blocker, other independent blockers, incomplete windows (kept unknown), contract-search coverage and actual versus modeled results per plan. NOW's wick and BBY/CNH/NVT's no-touch sessions are explained as such."},
+    {tag:"new",text:"Practice entry cadence breakout_5m_v1 (off until chosen): new plans confirm on 5-minute candles with their own baseline while a non-ordering 15-minute matched control is recorded on the same tape for the daily review."},
+    {tag:"improved",text:"Preflight and selection reports show spread in units, dollars and percent of premium, fees, debit and full-debit exposure beside the stock target/stop geometry."},
+  ]},
   {version:"0.8.28",date:"2026-09-20",title:"Cartel keeps analysis checkpoints across repeated restarts",items:[
     {tag:"fixed",text:"Resuming an interrupted retry now reuses analyses from its compatible earlier checkpoints, including work saved before a crash. Existing plans remain preserved."},
     {tag:"fixed",text:"Automatic recovery waits for its runtime controller to attach before attempting a restart resume."},

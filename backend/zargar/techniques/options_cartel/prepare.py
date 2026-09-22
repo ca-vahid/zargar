@@ -65,7 +65,7 @@ def prepare_plan(*, plan_id: str, history: list[DailyBar], indices: dict[str, li
                  entry_policy: EntryPolicy, minute_history: list[Bar], as_of_ms: int,
                  direction: str, setup: str, horizon_sessions: int,
                  reviewed_targets: tuple[float, ...] | None = None,
-                 review_note: str, target_source: str | None = None) -> dict:
+                 review_note: str, target_source: str | None = None, cadence_version: str | None = None) -> dict:
     if horizon_sessions < 1 or horizon_sessions > 60:
         raise ValueError("plan horizon must be 1–60 trading sessions")
     if not review_note.strip():
@@ -94,7 +94,7 @@ def prepare_plan(*, plan_id: str, history: list[DailyBar], indices: dict[str, li
                       created_at=as_of_ms, first_session=first, last_session=last,
                       trigger=candidate["trigger"], invalidation=candidate["invalidation"], targets=targets,
                       source_refs=refs, rationale=review_note, rules=rules, entry=entry_policy,
-                      volume_baseline=baseline["baselines"], baseline_as_of=as_of_ms)
+                      volume_baseline=baseline["baselines"], baseline_as_of=as_of_ms, cadence_version=cadence_version)
     return {"plan": plan.snapshot(), "screen": screen, "analysis": analysis,
             "volumeBaseline": baseline, "review": {"note": review_note, "targetSource": target_source,
                                                      "targetsOverridden": reviewed_targets is not None},

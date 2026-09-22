@@ -5,7 +5,7 @@ import hashlib
 import json
 import math
 
-from .contracts import rank_candidates, select_contract
+from .contracts import SelectionEconomics, SelectionRequest, call_selector, rank_candidates
 
 
 def finite(value):
@@ -43,11 +43,13 @@ def snapshot_quote(engine, contract, clock):
     return result
 
 
-async def observe_contract(engine, plan, policy, clock, *, choose=None):
+async def observe_contract(engine, plan, policy, clock, *, choose=None, preferred=None, deadline_ms=None):
     """Select against unchanged limits; capture unknowns instead of inventing fills.
 
     Quantity is an isolated cash/fee estimate, not a reservation. Shared account
     exposure, pending orders and final execution checks still own actual sizing.
+    ``preferred`` is a reviewed contract that gets first refresh consideration under
+    ``diverse_liquidity_v1``; ``deadline_ms`` bounds the search (never extended).
     """
     out = {'status': 'unavailable', 'observedAt': clock(), 'selected': None,
            'selection': None, 'quote': None, 'funding': None, 'affordabilityOnly': False,
@@ -80,10 +82,17 @@ async def observe_contract(engine, plan, policy, clock, *, choose=None):
     selection_policy = policy.contract_policy.model_copy(update={'max_ask': max_ask})
     funding.update(maxAskUsd=max_ask, maxSpreadPct=selection_policy.max_spread_pct,
                    maxContracts=policy.max_contracts)
-    selected = await (choose or select_contract)(engine, plan, selection_policy)
+    economics = SelectionEconomics(cash_cap_usd=cap/fx, max_units=policy.max_contracts,
+                                   entry_fee_per_contract_usd=unit_fee, exit_fee_per_contract_usd=unit_fee)
+    request = SelectionRequest(preferred_contract=preferred, deadline_ms=deadline_ms, economics=economics,
+                               plan_id=getattr(plan, 'id', None), portfolio_id=policy.portfolio_id, clock=clock)
+    selected = await call_selector(choose, engine, plan, selection_policy, request)
     at = clock()
-    # Refresh elapsed-time checks without issuing another chain request.
-    refreshed = rank_candidates(plan, selection_policy, selected.get('candidates', []), at)
+    # Refresh elapsed-time checks without issuing another chain request. Unrefreshed rows carry
+    # no quote and are kept as they were reported (never ranked as if they had been observed).
+    observed_rows = [c for c in selected.get('candidates', []) if c.get('refreshed', True)]
+    refreshed = rank_candidates(plan, selection_policy, observed_rows, at, economics=economics)
+    refreshed['candidates'] = refreshed['candidates']+[c for c in selected.get('candidates', []) if not c.get('refreshed', True)]
     selection = {**selected, **refreshed}
     out.update(observedAt=at, selection=selection)
     chosen = selection.get('selected')

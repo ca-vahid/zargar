@@ -70,6 +70,7 @@ async def report(engine, portfolio_id, day):
             'reasons': [c.get('reason') or c.get('name') for c in failures],
             'checks': failures, 'expression': read.get('expression'), 'eventId': event.id})
     ownership = {a.state.get('orderId'): a.run_id for a in arms if a.state.get('orderId')}
+    arm_orders = {a.run_id: a.state.get('orderId') for a in arms if a.state.get('orderId')}
     for p in managed:
         plan_id = (p.config or {}).get('runId')
         for item in [*p.legs, *p.state.get('exits', [])]:
@@ -109,23 +110,35 @@ async def report(engine, portfolio_id, day):
         kinds = {d.get('decision') for d in trace}
         from .opportunity_status import opportunity_status
         from .plans import CartelPlan
-        opportunity = opportunity_status(CartelPlan.model_validate(plans[arm.run_id]), arm.state, day, cutoff_ms) \
-            if plans.get(arm.run_id) else None
-        category = ('open' if related and any(a['remainingQty'] for a in related) else 'closed' if related else
-            'invalidated' if 'invalidated' in kinds else 'signalled' if 'triggered' in kinds or 0 < (arm.state.get('signal') or {}).get('at', 0) <= cutoff_ms else
-            'no_trigger' if opportunity and opportunity['status']=='level_not_reached' else
-            'data_limited' if kinds & {'unsupported_volume_period', 'untrusted_confirmation', 'missing_bucket'} else
-            'strategy_rejected' if 'watch_only' in kinds else 'no_trigger')
+        from .review_attribution import attribute, category_from
         checks = execution_checks.get(arm.run_id, [])
         latest_check = checks[-1] if checks else None
-        last_signal_at = max((d.get('at', 0) for d in trace if d.get('decision') == 'triggered'), default=0)
-        if not related and latest_check and latest_check['passed'] is False and latest_check['at'] >= last_signal_at:
-            category = 'execution_rejected'
+        plan_model = CartelPlan.model_validate(plans[arm.run_id]) if plans.get(arm.run_id) else None
+        opportunity = opportunity_status(plan_model, arm.state, day, cutoff_ms) if plan_model else None
+        if plan_model:
+            # F1 (2026-09-21): the category follows the first KNOWN blocker; a prior data refusal no
+            # longer hides a measured confirmation refusal, and unknown windows stay unknown.
+            attribution = attribute(plan_model, arm.state, day, cutoff_ms, checks=checks, assets=related, opportunity=opportunity)
+            category = category_from(attribution, opportunity, kinds, related)
+        else:
+            attribution = None
+            category = ('open' if related and any(a['remainingQty'] for a in related) else 'closed' if related else
+                'invalidated' if 'invalidated' in kinds else 'signalled' if 'triggered' in kinds or 0 < (arm.state.get('signal') or {}).get('at', 0) <= cutoff_ms else
+                'data_limited' if kinds & {'unsupported_volume_period', 'untrusted_confirmation', 'missing_bucket'} else
+                'strategy_rejected' if 'watch_only' in kinds else 'no_trigger')
+            last_signal_at = max((d.get('at', 0) for d in trace if d.get('decision') == 'triggered'), default=0)
+            if not related and latest_check and latest_check['passed'] is False and latest_check['at'] >= last_signal_at:
+                category = 'execution_rejected'
         actual_exit_ids = {f.order_id for f,o in fills if o.side == 'SELL'}
         exit_reasons = [e.get('reason') or e.get('kind') for p in owned_positions
             for e in p.state.get('exits', []) if e.get('orderId') in actual_exit_ids]
+        from .cadence import control_summary
+        cadence = {'executing': (plans.get(arm.run_id) or {}).get('cadence_version') or (arm.config.get('cadence') or {}).get('executing'),
+                   'executingTimeframeMinutes': plan_model.entry.timeframe_minutes if plan_model else None,
+                   'control': control_summary(arm.config.get('cadence'), arm.state.get('control'), cutoff_ms),
+                   'executingSignalAt': (arm.state.get('signal') or {}).get('at') if 0 < (arm.state.get('signal') or {}).get('at', 0) <= cutoff_ms else None}
         rows.append({'planId': arm.run_id, 'symbol': arm.symbol, 'status': category, 'category': category,
-            'opportunity': opportunity,
+            'opportunity': opportunity, 'attribution': attribution, 'cadence': cadence,
             'executionChecks': checks, 'latestExecutionCheck': latest_check,
             'decisions': trace, 'assets': related, 'exitReasons': exit_reasons,
             'dataEvidence': evidence({k:v for k,v in arm.state.get('minutes', {}).items() if int(k) < cutoff_ms}),
@@ -147,7 +160,22 @@ async def report(engine, portfolio_id, day):
     if currencies and currencies != {book.base_currency}:
         issues.append('Native-currency outcomes are not converted; no historical FX evidence supplied')
     totals = {key: sum(a[key] for a in assets) for key in ('grossRealized', 'realizedFees', 'netRealized', 'feesPaidToday')}
-    return {'schemaVersion': 2, 'session': day, 'asOfMs': cutoff_ms, 'portfolioId': portfolio_id,
+    controls = [r['cadence']['control'] for r in rows if r['cadence'].get('control')]
+    cadence_comparison = {'executing': {}, 'placesOrders': False,
+        'note': 'Actual fills and after-cost results belong to the executing cadence only; the matched control has no orders, fills or modeled P&L.'}
+    for r in rows:
+        label = r['cadence'].get('executing') or 'unlabelled'
+        bucket = cadence_comparison['executing'].setdefault(label, {'plans': 0, 'signals': 0, 'entryOrders': 0, 'filledEntries': 0, 'netRealized': 0.})
+        bucket['plans'] += 1
+        bucket['signals'] += 1 if r['cadence'].get('executingSignalAt') else 0
+        bucket['entryOrders'] += 1 if arm_orders.get(r['planId']) else 0
+        bucket['filledEntries'] += 1 if any(a.get('entryOrders') for a in r['assets']) else 0
+        bucket['netRealized'] += sum(a.get('netRealized', 0) for a in r['assets'])
+    if controls:
+        cadence_comparison['control'] = {'cadence': controls[0]['control'], 'plans': len(controls),
+            'signals': sum(c['controlSignals'] for c in controls), 'plansWithSignal': sum(1 for c in controls if c['controlSignals']),
+            'entryOrders': 0, 'filledEntries': 0, 'netRealized': None, 'basis': 'observation only'}
+    return {'schemaVersion': 2, 'session': day, 'asOfMs': cutoff_ms, 'portfolioId': portfolio_id, 'cadenceComparison': cadence_comparison,
         'account': book.name, 'baseCurrency': book.base_currency, 'rows': rows, 'assets': assets,
         'totals': totals if accounting_complete and (not currencies or currencies == {book.base_currency}) else None,
         'closedCampaigns': sum(r['category'] == 'closed' for r in rows),
