@@ -23,7 +23,7 @@ atomically. Read-only on the database. It overwrites, in `C:\ProgramData\Zargar\
 
 | file | tool |
 |---|---|
-| `STATUS.json` | `READY` / `NOT-YET` / `INCOMPLETE` (five days but a weekday gap to explain) / `FAILED` (a report command failed; its partial output is kept as `<name>.failed`) / `INVALID` (gate not in observe, or a mixed-mode day); observed days, gaps, the cutoff |
+| `STATUS.json` | `READY` (five completed observe days, every required report produced with non-empty output, the gate report's structured `eligible: true`, no gap) / `NOT-YET` / `INCOMPLETE` (a weekday gap, or the gate report itself says unresolved decisions or false negatives exist - `incompleteReason`) / `FAILED` (a report failed, was empty, or the structured verdict was not written; partial output kept as `<name>.failed`) / `INVALID` (gate not in observe, or a mixed-mode day); the structured `eligibility` block is embedded |
 | `review-gate-prospective.md` | `tip_review_gate_eval --since 2026-09-21 --until <cutoff> --prospective` — resolution of every decision (complete / running / failed / unmatched / unevaluable), **Checkpoint eligibility**, management false negatives on complete reviews only, ALL human-review candidates |
 | `scorecard.md` | `tip_scorecard --since 2026-09-21 --until <last completed day>` — marked change after model cost (primary), realized beside it, priced / unpriced / partial model runs, dispositions, how positions ended |
 | `opportunity-dispositions.md` | `tip_outcomes --dispositions --since 2026-09-21` — every idea's disposition, avoidable misses apart |

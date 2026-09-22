@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.31";
+export const APP_VERSION = "0.8.32";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.32",date:"2026-09-22",title:"Tips: checkpoint verdicts are structured, replay claims are locked",items:[
+    {tag:"fixed",text:"The five-session checkpoint reads the observation report's structured verdict: an INCOMPLETE report, an empty report or a missing verdict can no longer be published as READY, and every exported report uses the same cutoff."},
+    {tag:"fixed",text:"A manual intake replay takes an atomic, durable per-message claim, so two concurrent requests can never process the same failed message twice."},
+    {tag:"improved",text:"Quote records say whether an age comes from the vendor's stamp, this host's poll or receipt; a poll age is never presented as a verified source-event age. No trading policy, risk limit, stop or approval control changed."},
+  ]},
   {version:"0.8.31",date:"2026-09-22",title:"Team2: a price estimate can no longer sell your position",items:[
     {tag:"fixed",text:"A Team2 premium stop is now taken only when the contract you actually hold has bled past the configured limit on a valid live quote, measured against what you paid. The read's own price estimate can no longer sell the position on its own. Structural stops, targets, the flatten and the live protective exits are unchanged."},
     {tag:"improved",text:"Every Team2 exit now records who decided it, the fill it was measured against, the quote and its timestamp, the resulting return and the limit in force."},

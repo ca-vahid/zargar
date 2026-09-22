@@ -56,6 +56,8 @@ def round_trip(*, quote: dict | None, quote_status: str | None, qty: float, sec_
            "quoteAgeS": q.get("ageSeconds"), "quoteSource": q.get("source"), "delayed": q.get("delayed"),
            # S21-05: which clock the age came from - `receipt` is labelled, never passed off as source freshness
            "sourceTimeBasis": q.get("sourceTimeBasis") or ("source" if q.get("sourceTs") else "unknown"),
+           "vendorTs": q.get("vendorTs"), "pollTs": q.get("pollTs"), "observationId": q.get("observationId"),
+           "ageBasisNote": q.get("ageBasisNote"),
            "feeBasis": ("per contract per side" + (" + regulatory per contract" if reg_per_contract else "")) if is_opt
                        else "flat commission per order per side",
            "spreadPerUnit": None, "spread": None, "entryFees": None, "exitFees": None, "roundTrip": None,

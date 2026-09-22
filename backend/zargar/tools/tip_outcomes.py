@@ -329,10 +329,21 @@ def avoidable_key(d: dict) -> str | None:
     return k if k in AVOIDABLE else None
 
 
-async def build_dispositions(conn, *, since_text: str, portfolio: str = "", census: dict | None = None) -> list[dict]:
-    """Every actionable idea since `since_text` with ONE disposition, timestamps, reason and evidence ids."""
+def _until_end(until_text: str | None):
+    """Exclusive end of the last included accounting day (04:00 ET the next day) - the checkpoint's cutoff."""
+    if not until_text:
+        return None
+    from zoneinfo import ZoneInfo
+    return dt.datetime.combine(dt.date.fromisoformat(until_text) + dt.timedelta(days=1), dt.time(4, 0), tzinfo=ZoneInfo("America/New_York"))
+
+
+async def build_dispositions(conn, *, since_text: str, portfolio: str = "", census: dict | None = None,
+                             until_text: str | None = None) -> list[dict]:
+    """Every actionable idea since `since_text` (and, with `until_text`, up to that accounting day's close) with ONE
+    disposition, timestamps, reason and evidence ids."""
     census = census or await build_census(conn, since_text=since_text, portfolio=portfolio)
     since = census["since"]
+    _end = _until_end(until_text)
     by_id = {r["id"]: r for r in census["rows"]}
     props = collections_defaultdict_list()
     for p in census["proposals"]:
@@ -385,6 +396,8 @@ async def build_dispositions(conn, *, since_text: str, portfolio: str = "", cens
                     "evidence": {"analystRunId": (runs.get(sid) or {}).get("id"), "planRunId": (plans.get(sid) or {}).get("runId"),
                                  "orderIds": [o["id"] for o in orders.get(sid, [])]},
                     "realized": row.get("realized")})
+    if _end is not None:                                   # the checkpoint cutoff: ideas after it are not exported
+        out = [r for r in out if not ((r.get("at") or {}).get("signal")) or (r["at"]["signal"] < _end)]
     return out
 
 
@@ -449,10 +462,11 @@ def classify_coverage(content: dict, signal_count: int) -> str:
     return "refused_or_ignored"
 
 
-async def build_coverage(conn, *, since_text: str) -> dict:
+async def build_coverage(conn, *, since_text: str, until_text: str | None = None) -> dict:
     since = dt.datetime.fromisoformat(since_text).replace(tzinfo=dt.timezone.utc)
+    _end = _until_end(until_text) or dt.datetime.max.replace(tzinfo=dt.timezone.utc)
     contents = await conn.fetch("""select id, source_name, status, meta, received_at, left(coalesce(subject, body_text, ''), 80) as preview
-                                   from raw_content where received_at >= $1 order by received_at""", since)
+                                   from raw_content where received_at >= $1 and received_at < $2 order by received_at""", since, _end)
     counts = await conn.fetch("select raw_content_id, count(*) n, string_agg(distinct status, ',') statuses from signals "
                               "where created_at >= $1 group by 1", since)
     by_id = {r["raw_content_id"]: (int(r["n"]), r["statuses"]) for r in counts}
@@ -465,7 +479,7 @@ async def build_coverage(conn, *, since_text: str) -> dict:
                      "signalStatuses": statuses, "preview": c["preview"], "error": (meta.get("error") or "")[:120],
                      "retries": int(bool(meta.get("recoveryRetried"))) + int(meta.get("replayCount") or 0),
                      "replayable": cls == "failed" and (int(meta.get("replayCount") or 0) < REPLAY_MAX - 1)})
-    return {"rows": rows, "since": since_text}
+    return {"rows": rows, "since": since_text, "until": until_text}
 
 
 def render_coverage(cov: dict) -> str:
@@ -506,14 +520,15 @@ async def main() -> None:
                     help="Tips Practice book id (default: techniques.tip.default_portfolio)")
     ap.add_argument("--dispositions", action="store_true", help="print the opportunity dispositions instead of the census")
     ap.add_argument("--coverage", action="store_true", help="print raw-message -> signal coverage (S21-07)")
+    ap.add_argument("--until", default=None, help="last accounting day (inclusive) for --dispositions / --coverage (the checkpoint's cutoff)")
     a = ap.parse_args()
     conn = await asyncpg.connect(a.db)
     if getattr(a, "coverage", False):
-        print(render_coverage(await build_coverage(conn, since_text=a.since)))
+        print(render_coverage(await build_coverage(conn, since_text=a.since, until_text=a.until)))
         await conn.close()
         return
     if getattr(a, "dispositions", False):
-        rows = await build_dispositions(conn, since_text=a.since, portfolio=str(getattr(a, "portfolio", "") or ""))
+        rows = await build_dispositions(conn, since_text=a.since, portfolio=str(getattr(a, "portfolio", "") or ""), until_text=a.until)
         print(render_dispositions(rows, a.since))
         await conn.close()
         return
