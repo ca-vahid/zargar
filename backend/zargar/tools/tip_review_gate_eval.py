@@ -204,8 +204,9 @@ async def prospective(c, since: str, *, until: str | None = None) -> dict:
     review; an unresolved decision can never certify a clean checkpoint. Every skip-decision that carried a
     correction / possible entry / mixed message / deferred action is exported in full - the human-review list is the
     artifact, never a preview of it. Returns the summary for the checkpoint tooling."""
-    since_dt = dt.datetime.fromisoformat(since).replace(tzinfo=dt.timezone.utc)
-    until_dt = (dt.datetime.fromisoformat(until).replace(tzinfo=dt.timezone.utc) + dt.timedelta(days=1)) if until else None
+    # accounting-day anchors (04:00 ET), the same cutoff the checkpoint and the scorecard use (S21-02)
+    since_dt = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=_ET)
+    until_dt = (dt.datetime.combine(dt.date.fromisoformat(until) + dt.timedelta(days=1), dt.time(4, 0), tzinfo=_ET)) if until else None
     if until_dt is None:
         ev = await c.fetch("""select ts, payload from events where type='TipReviewGate' and ts >= $1 order by ts""", since_dt)
     else:

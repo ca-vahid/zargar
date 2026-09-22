@@ -122,3 +122,104 @@ async def test_digest_cancelled_during_the_repair_keeps_the_first_attempt(rig):
 
 def client_max_tokens(client) -> list[int]:
     return list(getattr(client, "max_tokens_seen", []))
+
+
+# ------------------------------------------------------------------ S21-02b checkpoint status (durable owner tooling)
+from zargar.tools import tip_checkpoint_status as cps
+
+
+def _dec(day: str, hour: int = 14, mode: str = "observe") -> dict:
+    return {"ts": dt.datetime.fromisoformat(f"{day}T{hour:02d}:00:00+00:00"), "mode": mode}
+
+
+def test_incomplete_fifth_day_is_not_ready_and_the_current_day_never_counts():
+    days = ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24"]
+    decisions = [_dec(d) for d in days] + [_dec("2026-09-25", 15)]          # Friday has decisions but is not complete
+    st = cps.compute_status(decisions=decisions, since=dt.date(2026, 9, 21),
+                            now=dt.datetime.fromisoformat("2026-09-25T20:00:00+00:00"), need=5, gate_mode="observe")
+    assert st["state"] == "NOT-YET" and st["observedSessions"] == 4 and st["until"] == "2026-09-24"
+    assert st["partialDayExcluded"] == "2026-09-25" and st["gaps"] == []
+    st2 = cps.compute_status(decisions=decisions, since=dt.date(2026, 9, 21),
+                             now=dt.datetime.fromisoformat("2026-09-26T09:00:00+00:00"), need=5, gate_mode="observe")
+    assert st2["state"] == "READY" and st2["observedSessions"] == 5             # after Friday's 04:00 ET close
+
+
+def test_a_gap_day_and_a_non_observe_day_are_never_silently_counted(tmp_path):
+    decisions = [_dec("2026-09-21"), _dec("2026-09-23"), _dec("2026-09-24"), _dec("2026-09-25"), _dec("2026-09-28")]
+    st = cps.compute_status(decisions=decisions, since=dt.date(2026, 9, 21),
+                            now=dt.datetime.fromisoformat("2026-09-29T09:00:00+00:00"), need=5, gate_mode="observe")
+    assert st["observedSessions"] == 5 and st["gaps"] == ["2026-09-22"]
+    final = cps.publish(st, {"scorecard.md": {"exit": 0}}, out_dir=str(tmp_path))
+    assert final["state"] == "INCOMPLETE"                                     # five days, but a hole a human must explain
+    bad = cps.compute_status(decisions=decisions + [_dec("2026-09-24", 16, mode="enforce")], since=dt.date(2026, 9, 21),
+                             now=dt.datetime.fromisoformat("2026-09-29T09:00:00+00:00"), need=5, gate_mode="observe")
+    assert bad["state"] == "INVALID" and bad["mixedModeDays"] == ["2026-09-24"]
+    assert cps.compute_status(decisions=decisions, since=dt.date(2026, 9, 21), now=dt.datetime.fromisoformat("2026-09-29T09:00:00+00:00"),
+                              need=5, gate_mode="enforce")["state"] == "INVALID"
+
+
+def test_a_failed_report_command_can_never_publish_ready(tmp_path):
+    class P:
+        def __init__(self, code, out, err=""):
+            self.returncode, self.stdout, self.stderr = code, out, err
+
+    def runner(argv, **kw):
+        return P(0, "# fine\n") if "tip_scorecard" in " ".join(argv) else P(1, "partial", "Traceback: boom")
+    reports = cps.run_reports([("scorecard.md", ["py", "-m", "zargar.tools.tip_scorecard"]),
+                               ("review-gate-prospective.md", ["py", "-m", "zargar.tools.tip_review_gate_eval"])],
+                              out_dir=str(tmp_path), runner=runner)
+    assert reports["scorecard.md"]["exit"] == 0 and reports["review-gate-prospective.md"]["exit"] == 1
+    assert (tmp_path / "scorecard.md").exists() and not (tmp_path / "review-gate-prospective.md").exists()
+    assert (tmp_path / "review-gate-prospective.md.failed").read_text(encoding="utf-8").startswith("partial")
+    st = cps.compute_status(decisions=[_dec(f"2026-09-2{d}") for d in range(1, 6)], since=dt.date(2026, 9, 21),
+                            now=dt.datetime.fromisoformat("2026-09-26T09:00:00+00:00"), need=5, gate_mode="observe")
+    assert st["state"] == "READY"
+    final = cps.publish(st, reports, out_dir=str(tmp_path))
+    assert final["state"] == "FAILED" and final["failedReports"] == ["review-gate-prospective.md"]
+    import json as _j
+    assert _j.loads((tmp_path / "STATUS.json").read_text(encoding="utf-8"))["state"] == "FAILED"
+
+
+# ------------------------------------------------------------------ S21-03/04 friction and target-to-fill arithmetic
+from zargar.techniques.tip import friction as fr
+
+
+def test_all_in_friction_reproduces_the_achr_case_and_keeps_unknowns_unknown():
+    d = fr.all_in_friction(qty=5, fill_price=0.14, multiplier=100, entry_fees=5.20, fee_per_unit=1.04, bid=0.13, ask=0.14)
+    assert (d["debit"], d["entryFees"], d["exitFeesEstimate"], d["spreadAtQuote"]) == (70.0, 5.2, 5.2, 5.0)
+    assert d["allInDollars"] == 15.4 and d["allInPctOfDebit"] == 22.0 and d["complete"] is True
+    u = fr.all_in_friction(qty=5, fill_price=0.14, multiplier=100, entry_fees=5.20, fee_per_unit=1.04, bid=None, ask=None)
+    assert u["spreadAtQuote"] is None and u["allInDollars"] == 10.4 and u["complete"] is False and u["unknown"] == ["spread"]
+
+
+def test_target_to_fill_reproduces_vktx_without_claiming_a_fill():
+    t = fr.target_to_fill(target=30.60, fill_price=29.904, qty=17, multiplier=1)
+    assert t["shortfallPerUnit"] == pytest.approx(0.696) and t["shortfallDollars"] == pytest.approx(11.83, abs=0.01)
+    assert "not evidence" in t["claim"]
+    assert fr.target_to_fill(target=None, fill_price=29.9, qty=17, multiplier=1)["unknown"] == ["target"]
+
+
+def test_same_underlying_exposure_sees_options_and_shares_together():
+    lots = [{"symbol": "ACHR270115C00007000", "cost": 144.0}, {"symbol": "ACHR260925C00005500", "cost": 70.0}, {"symbol": "ACHR", "cost": 500.0}]
+    e = fr.same_underlying_exposure(lots, underlying="ACHR", exclude_symbol="ACHR260925C00005500")
+    assert e["otherLots"] == 2 and e["otherCost"] == 644.0 and e["symbols"] == ["ACHR", "ACHR270115C00007000"]
+
+
+# ------------------------------------------------------------------ S21-07b coverage classes and the replay event
+from zargar.tools import tip_outcomes as to
+
+
+def test_raw_message_coverage_classes_are_exhaustive_and_honest():
+    assert to.classify_coverage({"status": "extracted", "meta": {}}, 2) == "extracted_with_signals"
+    assert to.classify_coverage({"status": "extracted", "meta": {}}, 0) == "extracted_no_signal"
+    assert to.classify_coverage({"status": "error", "meta": {"recoveryRetried": "x"}}, 0) == "failed"      # a retried failure is still failed
+    assert to.classify_coverage({"status": "extracted", "meta": {"recoveryRetried": "x"}}, 1) == "recovered"
+    assert to.classify_coverage({"status": "new", "meta": {}}, 0) == "pending"
+    assert to.classify_coverage({"status": "ignored", "meta": {}}, 0) == "refused_or_ignored"
+
+
+def test_replay_event_has_a_contract_and_the_budget_is_two():
+    from zargar.research.events_contract import CONTRACTS, validate
+    assert to.REPLAY_MAX == 2
+    assert set(CONTRACTS["TipIntakeReplayed"]["required"]) == {"contentId", "attempt", "max", "reason"}
+    validate("TipIntakeReplayed", {"contentId": "c", "attempt": 2, "max": 2, "reason": "manual"})

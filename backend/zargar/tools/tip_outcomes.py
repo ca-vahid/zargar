@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import collections
 import json
 import re
 import statistics
@@ -427,6 +428,76 @@ def render_dispositions(rows: list[dict], since_text: str) -> str:
     return "\n".join(L) + "\n"
 
 
+# ---- raw-message coverage (S21-07, 2026-09-21 review) ---------------------------------------------------------
+# The opportunity census starts from EXTRACTED signals, so a message whose extraction failed (provider 529, timeout)
+# is invisible to it. Coverage starts one step earlier: every received message ends in exactly one class.
+COVERAGE = ("extracted_with_signals", "extracted_no_signal", "pending", "failed", "recovered", "refused_or_ignored")
+REPLAY_MAX = 2          # bounded: the recovery sweep's one retry + one manual replay
+
+
+def classify_coverage(content: dict, signal_count: int) -> str:
+    st = str(content.get("status") or "")
+    meta = content.get("meta") or {}
+    if st == "extracted":
+        if meta.get("recoveryRetried") or meta.get("replayedAt"):
+            return "recovered"
+        return "extracted_with_signals" if signal_count > 0 else "extracted_no_signal"
+    if st == "error":
+        return "failed"
+    if st in ("new", "processing"):
+        return "pending"
+    return "refused_or_ignored"
+
+
+async def build_coverage(conn, *, since_text: str) -> dict:
+    since = dt.datetime.fromisoformat(since_text).replace(tzinfo=dt.timezone.utc)
+    contents = await conn.fetch("""select id, source_name, status, meta, received_at, left(coalesce(subject, body_text, ''), 80) as preview
+                                   from raw_content where received_at >= $1 order by received_at""", since)
+    counts = await conn.fetch("select raw_content_id, count(*) n, string_agg(distinct status, ',') statuses from signals "
+                              "where created_at >= $1 group by 1", since)
+    by_id = {r["raw_content_id"]: (int(r["n"]), r["statuses"]) for r in counts}
+    rows = []
+    for c in contents:
+        meta = c["meta"] if isinstance(c["meta"], dict) else (json.loads(c["meta"]) if c["meta"] else {})
+        n, statuses = by_id.get(c["id"], (0, ""))
+        cls = classify_coverage({"status": c["status"], "meta": meta}, n)
+        rows.append({"id": c["id"], "source": c["source_name"], "at": c["received_at"], "class": cls, "signals": n,
+                     "signalStatuses": statuses, "preview": c["preview"], "error": (meta.get("error") or "")[:120],
+                     "retries": int(bool(meta.get("recoveryRetried"))) + int(meta.get("replayCount") or 0),
+                     "replayable": cls == "failed" and (int(meta.get("replayCount") or 0) < REPLAY_MAX - 1)})
+    return {"rows": rows, "since": since_text}
+
+
+def render_coverage(cov: dict) -> str:
+    rows = cov["rows"]
+    L = [f"# Tips intake coverage (raw message -> signal) since {cov['since']}\n",
+         "Every received message ends in ONE class. A failed extraction is not proof the message held no opportunity, and "
+         "it is not a missed winner either: it is an unclassified message until it is recovered or a human reads it. "
+         f"Replay is bounded ({REPLAY_MAX} attempts per message in total) and idempotent; a replayed message re-enters the "
+         "ordinary intake with its own stated time, so an old tip is replayed on history, never traded.\n",
+         "| source | received | extracted (signals) | extracted (no signal) | pending | failed | recovered | refused/ignored |",
+         "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    by = collections.defaultdict(collections.Counter)
+    for r in rows:
+        by[r["source"] or "?"][r["class"]] += 1
+    tot = collections.Counter()
+    for src, c in sorted(by.items()):
+        tot.update(c)
+        L.append(f"| {src} | {sum(c.values())} | {c['extracted_with_signals']} | {c['extracted_no_signal']} | {c['pending']} | "
+                 f"{c['failed']} | {c['recovered']} | {c['refused_or_ignored']} |")
+    L.append(f"| **all** | {sum(tot.values())} | {tot['extracted_with_signals']} | {tot['extracted_no_signal']} | {tot['pending']} | "
+             f"{tot['failed']} | {tot['recovered']} | {tot['refused_or_ignored']} |")
+    bad = [r for r in rows if r["class"] in ("failed", "pending")]
+    L.append(f"\n## Failed or pending messages ({len(bad)}) - each needs a recovery, a replay or a human read\n")
+    L.append("| received (UTC) | source | id | class | retries | replayable | error | preview |")
+    L.append("|---|---|---|---|---:|---|---|---|")
+    for r in bad:
+        L.append(f"| {r['at']:%m-%d %H:%M} | {r['source']} | {r['id'][:8]} | {r['class']} | {r['retries']} | {'yes' if r['replayable'] else 'no'} | "
+                 f"{r['error'] or '-'} | {(r['preview'] or '').replace('|', '/')} |")
+    L.append("\nReplay: `python -m zargar.tools.tip_intake_replay --content <id>` (journaled, bounded, stale content re-verified).")
+    return "\n".join(L)
+
+
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
@@ -434,8 +505,13 @@ async def main() -> None:
     ap.add_argument("--portfolio", default="",
                     help="Tips Practice book id (default: techniques.tip.default_portfolio)")
     ap.add_argument("--dispositions", action="store_true", help="print the opportunity dispositions instead of the census")
+    ap.add_argument("--coverage", action="store_true", help="print raw-message -> signal coverage (S21-07)")
     a = ap.parse_args()
     conn = await asyncpg.connect(a.db)
+    if getattr(a, "coverage", False):
+        print(render_coverage(await build_coverage(conn, since_text=a.since)))
+        await conn.close()
+        return
     if getattr(a, "dispositions", False):
         rows = await build_dispositions(conn, since_text=a.since, portfolio=str(getattr(a, "portfolio", "") or ""))
         print(render_dispositions(rows, a.since))
