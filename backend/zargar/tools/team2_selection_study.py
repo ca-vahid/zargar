@@ -40,6 +40,9 @@ async def load_facts(sf, now_ms: int) -> dict:
                 if str((r.payload or {}).get("kind", "")).startswith("selection_study_")]
         settings = (await session.execute(select(Event).where(Event.type == "SettingChanged").order_by(Event.id))).scalars().all()
         setting_events = [(int(r.ts.timestamp() * 1000), (r.payload or {}).get("new")) for r in settings if (r.payload or {}).get("key") == lc.SETTING_KEY]
+        # collection cohorts: their own journal kind, swept separately so they can never join the population
+        cohorts = [dict(r.payload or {}) for r in diag_rows
+                   if str((r.payload or {}).get("kind", "")) == lc.COHORT_KIND]
         team2_runs = select(TechniqueArmed.run_id).where(TechniqueArmed.technique == "team2")
         restored = (await session.execute(select(Event.ts).where(and_(Event.type == ev.TECHNIQUE_PLAN_RESTORED,
                                                                       Event.aggregate_id.in_(team2_runs))))).scalars().all()
@@ -55,12 +58,17 @@ async def load_facts(sf, now_ms: int) -> dict:
                 by.setdefault(sym, []).append(int(ts))
             days = [d for d in lc.trading_days(lc.et_date(a_ms), lc.et_date(now_ms)) if lc.session_bounds(d)[1] <= now_ms]
             outages = lc.outage_dates(by, days)
-    return {"rows": rows, "settingEvents": setting_events, "restartTs": restart_ts, "outages": outages}
+    return {"rows": rows, "settingEvents": setting_events, "restartTs": restart_ts, "outages": outages,
+            "cohorts": cohorts if isinstance(cohorts, list) else []}
 
 
 def life_of(facts: dict, now_ms: int) -> dict:
-    return lc.lifecycle(activation_rows=facts["rows"], setting_events=facts["settingEvents"], restart_ts=facts["restartTs"],
+    life = lc.lifecycle(activation_rows=facts["rows"], setting_events=facts["settingEvents"], restart_ts=facts["restartTs"],
                         outages=facts["outages"], study_rows=facts["rows"], final_rows=facts["rows"], now_ms=now_ms)
+    # collection cohorts are METADATA stamped after the lifecycle has decided everything. The
+    # counting, stopping and population rules above never see them, so a cohort cannot reclassify a
+    # session - it only says which instrument state that session was collected under.
+    return lc.label_cohorts(life, facts.get("cohorts"))
 
 
 async def _append(sf, payload: dict) -> None:

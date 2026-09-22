@@ -254,7 +254,7 @@ async def test_target_sells_once_on_a_fresh_print_through_it(rig, monkeypatch):
     await runner.set_mode(ap.run_id, "auto")
     calls: list[tuple] = []
 
-    async def fake_exit(ap_, t, kind, qty, *, journal, force_market=False, reason=""):
+    async def fake_exit(ap_, t, kind, qty, *, journal, force_market=False, reason="", authority=None):
         calls.append((kind, qty, force_market))
         t.exits.append({"kind": kind, "qty": qty, "orderId": "t1", "status": "SUBMITTED", "filledQty": 0.0})
         t.exit_order_ids.append("t1")
