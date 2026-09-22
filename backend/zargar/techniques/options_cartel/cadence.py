@@ -107,6 +107,7 @@ def control_summary(config: dict | None, control_state: dict | None, cutoff: int
     for d in decisions:
         counts[d.get("decision")] = counts.get(d.get("decision"), 0)+1
     return {"executing": config.get("executing"), "control": config.get("control"), "controlTimeframeMinutes": config.get("controlTimeframeMinutes"),
+            "subscriptionError": state.get("subscriptionError"), "subscriptionFailedAt": state.get("subscriptionFailedAt"),
             "controlSignals": len(signals), "controlFirstSignalAt": signals[0]["at"] if signals else None,
             "controlFirstSignal": {k: signals[0].get(k) for k in ("at", "referencePrice", "stop", "volumeRatio", "closeLocation")} if signals else None,
             "controlDecisionCounts": counts, "controlBaselineSlots": len(config.get("controlBaseline") or {}),

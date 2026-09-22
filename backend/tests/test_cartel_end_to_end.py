@@ -48,6 +48,9 @@ class Options:
     def provider(self):
         return self
 
+    async def track(self, symbol):
+        assert symbol in self.books
+
     async def expirations(self, symbol):
         return ["2027-04-16", "2027-05-21"]
 
@@ -108,6 +111,10 @@ async def test_plan_to_report_with_diverse_search_partial_fills_exit_restart_and
     try:
         # 1. Complete closed-bar 5m confirmation on the executing plan.
         await publish_exchange_tape(repo, runner)
+        async def selection_completed():
+            snapshot = await repo.load("r1")
+            return bool(snapshot["state"].get("contractReselection"))
+        await wait_for(selection_completed)
         await runner.wait_idle()
         row = await repo.load("r1")
         assert row["state"]["signal"]["id"] == f"r1:entry:{OPEN+10*MIN}"
@@ -172,7 +179,8 @@ async def test_plan_to_report_with_diverse_search_partial_fills_exit_restart_and
         await runner.stop()
         await engine.position_manager.stop()
         engine.position_manager = PositionManager(engine)
-        engine.position_manager._now = lambda: OPEN+17*MIN/1000
+        engine.position_manager._now = lambda: (OPEN+17*MIN)/1000
+        assert engine.position_manager.now_ms() == OPEN+17*MIN
         register_cartel_policy(engine)
         await engine.position_manager.restore()
         restored = CartelRuntime(engine)
@@ -200,7 +208,7 @@ async def test_plan_to_report_with_diverse_search_partial_fills_exit_restart_and
         day = base.first_session.isoformat()
         async with engine.sf() as session, session.begin():
             stamp = {"at": dt.datetime.fromtimestamp(fill_at/1000, dt.UTC)}
-            await session.execute(text("UPDATE orders SET created_at = :at WHERE portfolio_id = 'pf'"), stamp)
+            await session.execute(text("UPDATE orders SET created_at = :at, updated_at = :at WHERE portfolio_id = 'pf'"), stamp)
             await session.execute(text("UPDATE managed_positions SET created_at = :at WHERE portfolio_id = 'pf'"), stamp)
         monkeypatch.setattr("zargar.techniques.options_cartel.session_review.now_ms", lambda: OPEN+18*MIN)
         result = await report(engine, "pf", day)
