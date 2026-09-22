@@ -311,7 +311,8 @@ async def test_refresh_timeout_and_deadline_make_the_search_incomplete_not_empty
     rig.reprice = reprice
     result = await select_contract(rig.engine(), ntnx_plan(), ntnx_policy(selection_version="diverse_liquidity_v1"),
                                    SelectionRequest(preferred_contract=hang, deadline_ms=SEP21_1030+1000, clock=rig.clock))
-    assert result["searchComplete"] is False and result["searchStatus"] == "incomplete"
+    # The hung refresh consumed the deadline: the search is EXPIRED (a deadline is never extended).
+    assert result["searchComplete"] is False and result["searchStatus"] == "expired" and result["expiredSelection"] is True
     assert result["batches"][0]["timedOut"] == 1 and result["batches"][0]["requested"] == 1
     assert any("deadline reached" in r for r in result["incompleteReasons"])
     assert result["selected"] is None and result["unrefreshedCandidates"] == 22
@@ -491,3 +492,56 @@ def test_unknown_economics_stay_unknown():
     assert unsized["sizeCoverage"] is None and unsized["affordableQuantity"] == 10
     unaffordable = contract_economics(9.80, 11.30, 74, econ(cap=1000.))
     assert unaffordable["status"] == "unaffordable" and unaffordable["quantity"] == 0
+
+
+# ---- R4 (2026-09-21 review): discovery and chain requests obey the same deadline as refreshes ----
+
+async def test_stalled_expiry_discovery_is_bounded_and_reported_incomplete():
+    rig = ntnx_rig()
+
+    async def expirations(symbol):
+        await asyncio.sleep(3600)
+    rig.expirations = expirations
+    result = await select_contract(rig.engine(), ntnx_plan(), ntnx_policy(selection_version="diverse_liquidity_v1"),
+                                   SelectionRequest(deadline_ms=int(dt.datetime.now(dt.UTC).timestamp()*1000)+300))
+    assert result["searchComplete"] is False and result["selected"] is None and rig.chain_calls == []
+    assert any("expiry discovery timed out" in r for r in result["incompleteReasons"])
+
+
+async def test_stalled_chain_request_is_bounded_and_the_other_expiry_still_searched():
+    rig = ntnx_rig()
+    original = rig.chain
+
+    async def chain(symbol, expiry):
+        if expiry == NOV:
+            await asyncio.sleep(3600)
+        return await original(symbol, expiry)
+    rig.chain = chain
+    result = await select_contract(rig.engine(), ntnx_plan(), ntnx_policy(selection_version="diverse_liquidity_v1"),
+                                   SelectionRequest(preferred_contract=NTNX_OCT, deadline_ms=int(dt.datetime.now(dt.UTC).timestamp()*1000)+600))
+    assert NOV in result["unsearchedExpiries"] and result["searchComplete"] is False
+    assert any("chain request timed out" in r for r in result["incompleteReasons"])
+
+
+async def test_already_expired_request_issues_no_provider_calls():
+    rig = ntnx_rig()
+    result = await select_contract(rig.engine(), ntnx_plan(), ntnx_policy(selection_version="diverse_liquidity_v1"),
+                                   SelectionRequest(deadline_ms=SEP21_1030-1, clock=rig.clock))
+    assert rig.chain_calls == [] and rig.refreshed == [] and result["selected"] is None
+    assert result["searchStatus"] == "expired" and result["searchComplete"] is False
+
+
+async def test_result_arriving_after_the_deadline_is_not_a_selection():
+    rig = ntnx_rig()
+    clock = [SEP21_1030]
+    rig.clock = lambda: clock[0]
+    original = rig.reprice
+
+    async def reprice(contract):
+        await original(contract)
+        clock[0] += 450   # the fifth refresh ends past the 2 s deadline
+    rig.reprice = reprice
+    result = await select_contract(rig.engine(), ntnx_plan(), ntnx_policy(selection_version="diverse_liquidity_v1"),
+                                   SelectionRequest(preferred_contract=NTNX_OCT, deadline_ms=SEP21_1030+2000, clock=rig.clock))
+    assert result["expiredSelection"] is True and result["selected"] is None and result["searchStatus"] == "expired"
+    assert any(c["symbol"] == NTNX_OCT and c["eligible"] for c in result["candidates"])   # recorded, not selected

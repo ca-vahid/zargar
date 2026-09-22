@@ -75,6 +75,14 @@ def ntnx_tape(until=at(10, 30)):
 def test_saved_policy_without_label_derives_its_cadence_and_explicit_labels_must_agree():
     saved = PreparationPolicy.model_validate({"entry": {"timeframe_minutes": 15}})
     assert saved.entry_cadence == "breakout_15m_v1" and saved.volume_experiment.version == "off"
+    # R2: an unlabelled saved 5-minute entry (Practice or Live, snake or camel case) keeps its legacy
+    # behaviour and validates; only the explicit label opts into the Practice-only experiment.
+    for saved in ({"workspace": "live", "entry": {"timeframe_minutes": 5}}, {"workspace": "practice", "entry": {"timeframe_minutes": 5}},
+                  {"workspace": "live", "allowLive": True, "overnightAck": True, "enabled": True, "entry": {"timeframe_minutes": 5}}):
+        legacy = PreparationPolicy.model_validate(saved)
+        assert legacy.entry.timeframe_minutes == 5 and legacy.entry_cadence == "legacy_timeframe"
+    from zargar.techniques.options_cartel.cadence import control_cadence
+    assert control_cadence("legacy_timeframe") is None
     five = PreparationPolicy(entry=EntryPolicy(timeframe_minutes=5), entry_cadence="breakout_5m_v1")
     assert five.entry_cadence == "breakout_5m_v1"
     with pytest.raises(ValidationError, match="requires entry.timeframe_minutes=5"):
@@ -257,3 +265,23 @@ def test_existing_arms_keep_their_prepared_cadence_when_the_policy_changes():
     assert snapshot.cadence_version == "breakout_5m_v1" and snapshot.entry.timeframe_minutes == 5
     legacy = CartelPlan.model_validate({k: v for k, v in armed.snapshot()["plan"].items() if k != "cadence_version"})
     assert legacy.cadence_version is None and legacy.entry.timeframe_minutes == 5
+
+
+# ---- R3 (2026-09-21 review): the 5m pilot is long-only; bearish executable plans keep 15m ----
+
+def test_bearish_executable_plan_keeps_the_15m_cadence_under_the_5m_pilot():
+    from zargar.techniques.options_cartel.automatic_plans import automatic_review
+    from zargar.techniques.options_cartel.preparation import control_block
+    from .test_options_cartel_prepare import input_data
+    pilot = PreparationPolicy(entry=EntryPolicy(timeframe_minutes=5), entry_cadence="breakout_5m_v1", min_target_distance_pct=0)
+    long_candidate = {"setup": "base", "trigger": 150., "invalidation": 140., "targets": [170.], "contextPassed": True}
+    reviewed = automatic_review(input_data(), {"candidates": [long_candidate]}, pilot)
+    assert reviewed.entry_policy.timeframe_minutes == 5 and reviewed.cadence_version == "breakout_5m_v1"
+    short_candidate = {"setup": "base", "trigger": 150., "invalidation": 160., "targets": [140., 130.], "contextPassed": True}
+    reviewed = automatic_review({**input_data(), "direction": "short"}, {"candidates": [short_candidate]}, pilot)
+    assert reviewed is not None and reviewed.entry_policy.timeframe_minutes == 15 and reviewed.cadence_version == "breakout_15m_v1"
+    incumbent = PreparationPolicy(min_target_distance_pct=0)
+    unchanged = automatic_review({**input_data(), "direction": "short"}, {"candidates": [short_candidate]}, incumbent)
+    assert (unchanged.entry_policy.timeframe_minutes, unchanged.cadence_version) == (reviewed.entry_policy.timeframe_minutes, reviewed.cadence_version)
+    assert control_block(pilot, "TEST", [], OPEN-MIN, direction="short") is None
+    assert control_block(pilot, "TEST", [], OPEN-MIN, direction="long") is not None

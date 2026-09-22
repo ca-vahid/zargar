@@ -62,9 +62,11 @@ class PreparationPolicy(WireModel):
     contract_policy: ContractSelectionInput = Field(default_factory=lambda: ContractSelectionInput(
         dte_min=21, dte_max=90, target_dte=45, target_abs_delta=.5, max_ask=5,
         max_spread_pct=20, min_open_interest=100, refresh_limit=6))
-    # F4 (2026-09-21): the explicit, versioned entry cadence. Derived from ``entry.timeframe_minutes``
-    # when a saved policy predates the label; an explicit label must agree with the timeframe, and
-    # ``breakout_5m_v1`` is Practice-only. The volume grid is replay-only and off by default.
+    # F4 (2026-09-21, R2 2026-09-21 review): the explicit, versioned entry cadence. A saved policy
+    # that predates the label keeps its behaviour: an unlabelled 15-minute entry IS the incumbent
+    # ``breakout_15m_v1``; any other unlabelled timeframe (a saved Live or Practice 5m/30m entry) is
+    # ``legacy_timeframe`` - the pre-existing read, no control, no pilot semantics, valid in every
+    # workspace. Only the EXPLICIT ``breakout_5m_v1`` label opts into the Practice-only experiment.
     entry_cadence: Literal['breakout_15m_v1', 'breakout_5m_v1', 'legacy_timeframe'] = 'breakout_15m_v1'
     volume_experiment: VolumeExperiment = Field(default_factory=VolumeExperiment)
 
@@ -84,7 +86,7 @@ class PreparationPolicy(WireModel):
             minutes = (entry.get('timeframe_minutes', entry.get('timeframeMinutes', 15)) if isinstance(entry, dict)
                        else getattr(entry, 'timeframe_minutes', 15))
             values = dict(values)
-            values['entry_cadence'] = {5: 'breakout_5m_v1', 15: 'breakout_15m_v1'}.get(minutes, 'legacy_timeframe')
+            values['entry_cadence'] = 'breakout_15m_v1' if minutes == 15 else 'legacy_timeframe'
         return values
 
     @model_validator(mode='after')
@@ -92,8 +94,6 @@ class PreparationPolicy(WireModel):
         expected = {'breakout_15m_v1': 15, 'breakout_5m_v1': 5}.get(self.entry_cadence)
         if expected is not None and self.entry.timeframe_minutes != expected:
             raise ValueError(f'{self.entry_cadence} requires entry.timeframe_minutes={expected}')
-        if self.entry_cadence == 'legacy_timeframe' and self.entry.timeframe_minutes in (5, 15):
-            raise ValueError('a 5- or 15-minute entry must carry its versioned cadence label')
         if self.entry_cadence == 'breakout_5m_v1' and self.workspace != 'practice':
             raise ValueError('breakout_5m_v1 is a Practice-only entry-cadence experiment')
         if self.volume_experiment.version != 'off' and self.workspace != 'practice':
@@ -197,9 +197,16 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
         note = 'Practice post-ignition pilot: verified event, quiet consolidation and prospective breakout. Geometry is experimental; closed-bar, data, contract and risk gates remain mandatory.'
     if research_only:
         note = 'Research candidate only: market alignment blocks arming. Rebuild with fresh aligned market evidence before execution.'
+    entry_updates = {"min_target_r": policy.min_entry_target_r, "baseline_policy": policy.baseline_readiness, "require_exchange_bars": policy.require_exchange_history}
+    cadence = policy.entry_cadence
+    if cadence == 'breakout_5m_v1' and direction != 'long':
+        # R3 (2026-09-21 review): the 5-minute pilot is scoped to LONG Practice plans. A bearish
+        # executable plan keeps the incumbent 15-minute cadence and label; nothing else changes.
+        entry_updates["timeframe_minutes"] = 15
+        cadence = 'breakout_15m_v1'
     return PlanInput(setup=candidate['setup'], horizon_sessions=policy.horizon_sessions,
-        entry_policy=policy.entry.model_copy(update={"min_target_r": policy.min_entry_target_r, "baseline_policy": policy.baseline_readiness, "require_exchange_bars": policy.require_exchange_history}), reviewed_targets=tuple(targets), review_note=note,
-        target_source=source, exit_campaign=campaign, cadence_version=policy.entry_cadence)
+        entry_policy=policy.entry.model_copy(update=entry_updates), reviewed_targets=tuple(targets), review_note=note,
+        target_source=source, exit_campaign=campaign, cadence_version=cadence)
 
 
 async def planning_contract(engine, plan, policy: ContractSelectionInput):

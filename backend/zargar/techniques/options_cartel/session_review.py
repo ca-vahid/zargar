@@ -118,7 +118,10 @@ async def report(engine, portfolio_id, day):
         if plan_model:
             # F1 (2026-09-21): the category follows the first KNOWN blocker; a prior data refusal no
             # longer hides a measured confirmation refusal, and unknown windows stay unknown.
-            attribution = attribute(plan_model, arm.state, day, cutoff_ms, checks=checks, assets=related, opportunity=opportunity)
+            entry_orders = [{'id': o.id, 'qty': o.qty, 'filledQty': o.filled_qty or 0., 'status': o.status, 'createdAt': int(o.created_at.timestamp()*1000) if o.created_at else None}
+                            for o in orders if o.side == 'BUY' and ownership.get(o.id) == arm.run_id]
+            attribution = attribute(plan_model, arm.state, day, cutoff_ms, checks=checks, assets=related, opportunity=opportunity,
+                                    entry_orders=entry_orders)
             category = category_from(attribution, opportunity, kinds, related)
         else:
             attribution = None

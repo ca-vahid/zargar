@@ -392,27 +392,57 @@ def allocate_refresh(structural: list[dict], policy: ContractSelectionInput, pre
                      "for the next batch")}
 
 
+def _remaining_seconds(request):
+    return None if request.deadline_ms is None else (request.deadline_ms-request.now())/1000
+
+
+async def _bounded(request, coroutine_factory, label, incomplete):
+    """Run one provider request inside the per-call ceiling AND the remaining deadline (R4).
+
+    Returns (value, ok). A request is never started once the deadline has passed; a timeout or
+    provider error is recorded as incomplete work, never as an empty result.
+    """
+    remaining = _remaining_seconds(request)
+    if remaining is not None and remaining <= 0:
+        incomplete.append(f"deadline reached before {label}")
+        return None, False
+    timeout = REFRESH_TIMEOUT_SECONDS if remaining is None else min(REFRESH_TIMEOUT_SECONDS, remaining)
+    try:
+        return await asyncio.wait_for(coroutine_factory(), timeout), True
+    except TimeoutError:
+        incomplete.append(f"{label} timed out after {timeout:g}s")
+        return None, False
+    except Exception as exc:  # noqa: BLE001 - provider failures are incomplete work, not evidence of absence
+        log.exception("Cartel selection request failed: %s", label)
+        incomplete.append(f"{label} unavailable ({type(exc).__name__})")
+        return None, False
+
+
 async def _select_diverse(engine, plan, policy, request):
     started = request.now()
     today = dt.datetime.fromtimestamp(started/1000, ET).date()
     provider = engine.options.provider()
     warnings, incomplete = [], []
-    all_expiries = await provider.expirations(plan.symbol)
+    all_expiries, ok = await _bounded(request, lambda: provider.expirations(plan.symbol), "expiry discovery", incomplete)
+    if not ok:
+        all_expiries = []
     expiries = [e for e in all_expiries if policy.dte_min <= (dt.date.fromisoformat(e)-today).days <= policy.dte_max]
     expiries.sort(key=lambda e: (abs((dt.date.fromisoformat(e)-today).days-policy.target_dte), e))
     searched, unsearched, raw = [], [], []
     for expiry in expiries[:6]:
-        try:
-            raw.extend(await provider.chain(plan.symbol, expiry))
+        rows, ok = await _bounded(request, lambda e=expiry: provider.chain(plan.symbol, e), f"{expiry} chain request", incomplete)
+        if ok:
+            raw.extend(rows)
             searched.append(expiry)
-        except Exception as exc:
-            log.exception("Cartel chain selection failed for %s %s", plan.symbol, expiry)
-            warnings.append(f"{expiry}: chain unavailable ({type(exc).__name__})")
+        else:
+            warnings.append(f"{expiry}: chain not searched ({incomplete[-1]})")
             unsearched.append(expiry)
     for expiry in expiries[6:]:
         unsearched.append(expiry)
     if unsearched:
         incomplete.append("expiries in the reviewed DTE range were not searched: " + ", ".join(unsearched))
+    if not ok and not all_expiries:
+        incomplete.append("expiry discovery did not complete; the reviewed DTE range may hold unsearched expiries")
     right = "C" if plan.direction == "long" else "P"
     structural, by_symbol = [], {}
     for row in raw:
@@ -540,6 +570,11 @@ async def _select_diverse(engine, plan, policy, request):
     failed = [i for i in refreshed if i.get("refreshStatus") != "refreshed"]
     if failed:
         incomplete.append(f"{len(failed)} refresh request(s) timed out or failed")
+    expired = request.deadline_ms is not None and at > request.deadline_ms
+    result["expiredSelection"] = expired
+    if expired:
+        incomplete.append("the signal deadline passed before the result could be used; no contract is selected")
+        result["selected"] = None
     complete = not incomplete
     result.update(selectionVersion="diverse_liquidity_v1", searchedExpiries=searched, unsearchedExpiries=unsearched,
                   structuralCandidates=len(structural), requestedCandidates=len(refreshed),
@@ -548,7 +583,7 @@ async def _select_diverse(engine, plan, policy, request):
                   "order": [i["symbol"] for i in order], "concurrency": REFRESH_CONCURRENCY,
                   "perRequestTimeoutSeconds": REFRESH_TIMEOUT_SECONDS, "deadlineMs": request.deadline_ms},
                   preferredContract=preferred_record, warnings=warnings, searchComplete=complete,
-                  searchStatus="complete" if complete else "incomplete", incompleteReasons=incomplete,
+                  searchStatus="complete" if complete else "expired" if expired else "incomplete", incompleteReasons=incomplete,
                   startedAt=started, finishedAt=at,
                   note=("Complete search: every refreshable candidate in the reviewed range was refreshed and judged."
                         if complete else "Incomplete search: an unrefreshed candidate may still be eligible; this is not proof that no option qualifies.")

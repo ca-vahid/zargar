@@ -56,38 +56,63 @@ def measured_failures(decision):
 
 
 def price_touch(plan, state, day, cutoff):
-    """Intrabar touch versus closed-bucket crossing, from the arm's final tape (exchange bars only)."""
+    """Intrabar touch versus closed-bucket crossing, from the arm's final tape.
+
+    R5 (2026-09-21 review): a bucket has a known close only when EVERY minute of it is present as an
+    exchange bar or is a verified non-emission interval (the canonical ``read_entry`` rule) and the
+    bucket ended by the cutoff. Anything less is an unknown close: never a completed candle and
+    never a wick-only conclusion. Sampled bars, missing minutes and repaired evidence that arrived
+    after the decision are all "unknown" here; the decision trace, not this summary, is authoritative.
+    """
     opens, closes = session_bounds(day)
     end = min(closes, cutoff//60000*60000)
     bars = sorted((b for b in state.get('minutes', {}).values() if len(b) > 6 and b[6] == 'exchange' and opens <= b[0] < end),
                   key=lambda b: b[0])
+    by_ts = {b[0]: b for b in bars}
+    verified = {t for t in minute_set(state.get('verifiedIntervals', {}), plan.symbol, cutoff) if opens <= t < end}
     sign = 1 if plan.direction == 'long' else -1
     touched = [b for b in bars if (b[2]-plan.trigger)*sign >= 0] if sign == 1 else [b for b in bars if (b[3]-plan.trigger)*sign >= 0]
     step = plan.entry.timeframe_minutes*60000
-    closes_beyond = []
+    closes_beyond, incomplete, complete = [], [], []
     for start in range(opens, end, step):
-        bucket = [b for b in bars if start <= b[0] < start+step]
-        if bucket and start+step <= end and (bucket[-1][4]-plan.trigger)*sign > 0:
+        minutes = list(range(start, min(start+step, closes), 60000))
+        if start+step > end:
+            continue   # the bucket has not ended by the cutoff: not judged
+        if not all(t in by_ts or t in verified for t in minutes):
+            incomplete.append(start+step)
+            continue
+        complete.append(start+step)
+        bucket = [by_ts[t] for t in minutes if t in by_ts]
+        if bucket and (bucket[-1][4]-plan.trigger)*sign > 0:
             closes_beyond.append(start+step)
     high = max((b[2] for b in bars), default=None)
     low = min((b[3] for b in bars), default=None)
+    base = {'closedBucketsBeyond': closes_beyond, 'completeBuckets': len(complete), 'incompleteBuckets': incomplete,
+            'basis': 'exchange bars plus verified non-emission intervals; a bucket with any unknown minute has an unknown close'}
     if not bars:
-        return {'touched': None, 'wickOnly': None, 'firstTouchAt': None, 'closedBucketsBeyond': [],
+        return {**base, 'touched': None, 'wickOnly': None, 'firstTouchAt': None,
                 'explanation': 'No exchange price evidence for this session.'}
     if not touched:
         extreme = high if sign == 1 else low
         distance = (plan.trigger-extreme)*sign/plan.trigger*100 if extreme else None
-        return {'touched': False, 'wickOnly': False, 'firstTouchAt': None, 'closedBucketsBeyond': [],
-                'explanation': (f"No level touch: the session {'high' if sign == 1 else 'low'} {extreme:g} stayed "
-                                f"{distance:.2f}% {'below' if sign == 1 else 'above'} the planned {plan.trigger:g} trigger.")}
+        note = '' if not incomplete else f' {len(incomplete)} confirmation window(s) had unknown minutes; a touch inside them cannot be ruled out.'
+        return {**base, 'touched': False, 'wickOnly': False, 'firstTouchAt': None,
+                'explanation': (f"No level touch in the recorded exchange bars: the session {'high' if sign == 1 else 'low'} {extreme:g} stayed "
+                                f"{distance:.2f}% {'below' if sign == 1 else 'above'} the planned {plan.trigger:g} trigger." + note)}
     first = touched[0][0]
-    if not closes_beyond:
-        return {'touched': True, 'wickOnly': True, 'firstTouchAt': first, 'closedBucketsBeyond': [],
-                'explanation': (f"Wick only: a 1-minute {'high' if sign == 1 else 'low'} crossed {plan.trigger:g} but no completed "
-                                f"{plan.entry.timeframe_minutes}-minute candle closed beyond it, so no eligible confirmation existed.")}
-    return {'touched': True, 'wickOnly': False, 'firstTouchAt': first, 'closedBucketsBeyond': closes_beyond,
-            'explanation': (f"Closed {plan.entry.timeframe_minutes}-minute candle(s) ended beyond {plan.trigger:g}; "
-                            "confirmation rules and execution checks decided the rest.")}
+    after_touch_unknown = [t for t in incomplete if t > first]
+    if closes_beyond:
+        return {**base, 'touched': True, 'wickOnly': False, 'firstTouchAt': first,
+                'explanation': (f"Closed {plan.entry.timeframe_minutes}-minute candle(s) ended beyond {plan.trigger:g}; "
+                                "confirmation rules and execution checks decided the rest.")}
+    if after_touch_unknown:
+        return {**base, 'touched': True, 'wickOnly': None, 'firstTouchAt': first,
+                'explanation': (f"A 1-minute {'high' if sign == 1 else 'low'} crossed {plan.trigger:g}, but {len(after_touch_unknown)} "
+                                f"{plan.entry.timeframe_minutes}-minute window(s) after it have unknown minutes: whether a candle closed "
+                                "beyond the trigger is unknown, not wick-only.")}
+    return {**base, 'touched': True, 'wickOnly': True, 'firstTouchAt': first,
+            'explanation': (f"Wick only: a 1-minute {'high' if sign == 1 else 'low'} crossed {plan.trigger:g} but every completed "
+                            f"{plan.entry.timeframe_minutes}-minute candle closed at or below it, so no eligible confirmation existed.")}
 
 
 def selection_coverage(state, checks, cutoff):
@@ -118,21 +143,47 @@ def selection_coverage(state, checks, cutoff):
     return {'status': 'not_attempted', 'basis': 'a signal exists but no contract judgement was recorded by this cutoff'}
 
 
-def actual_outcome(state, assets, cutoff):
+TERMINAL_ORDER = {'FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'REJECTED_RISK'}
+
+
+def entry_ledger(state, assets, entry_orders=None):
+    """Requested/filled entry quantity from ORDER and EXECUTION records (R6, 2026-09-21 review).
+
+    ``entry_orders`` are the arm's BUY orders at the cutoff (id, qty, filledQty, status). Cumulative
+    entry fills come from the fills ledger (``entryFilledQty``), never from remaining holdings, which
+    partial exits change. A caller without order rows may supply ``state['requestedQty']``.
+    """
+    orders = list(entry_orders or [])
+    requested = sum(o.get('qty') or 0 for o in orders) if orders else state.get('requestedQty')
+    filled_from_orders = sum(o.get('filledQty') or 0 for o in orders) if orders else None
+    filled_from_ledger = sum(a.get('entryFilledQty') or 0 for a in assets) if assets else 0
+    filled = filled_from_orders if filled_from_orders is not None else filled_from_ledger
+    statuses = {str(o.get('status') or '').upper() for o in orders}
+    terminal = bool(orders) and statuses <= TERMINAL_ORDER
+    working = bool(orders) and not terminal
+    return {'requestedQty': requested, 'filledQty': filled, 'orderStatuses': sorted(statuses),
+            'terminal': terminal if orders else None, 'working': working if orders else None,
+            'entryStatus': ('none' if not (orders or state.get('orderId') or state.get('attemptTag')) else
+                            'unfilled' if not filled else 'filled' if _finite(requested) and filled >= requested-1e-9 else
+                            'partially_filled' if _finite(requested) else 'filled_unknown_request')}
+
+
+def actual_outcome(state, assets, cutoff, entry_orders=None):
     """no_order | submitted | unfilled | partially_filled | held | closed, from recorded orders and fills."""
+    ledger = entry_ledger(state, assets, entry_orders)
     remaining = sum(a.get('remainingQty', 0) for a in assets)
-    if assets and remaining > 0:
-        requested = state.get('requestedQty') or (state.get('signal') or {}).get('quantity')
-        filled = sum(a.get('filledQty', 0) or 0 for a in assets)
-        return 'partially_filled' if _finite(requested) and 0 < filled < requested else 'held'
-    if assets:
-        return 'closed'
-    if state.get('orderId') or state.get('attemptTag'):
-        return 'unfilled' if state.get('phase') in ('closed', 'disarmed', 'cancelled') else 'submitted'
-    return 'no_order'
+    if ledger['entryStatus'] == 'none':
+        return 'no_order'
+    if not ledger['filledQty']:
+        if ledger['terminal'] or state.get('phase') in ('closed', 'disarmed', 'cancelled'):
+            return 'unfilled'
+        return 'submitted'
+    if ledger['entryStatus'] == 'partially_filled' and not ledger['terminal']:
+        return 'partially_filled'
+    return 'held' if remaining > 0 else 'closed'
 
 
-def attribute(plan, state, day, cutoff, *, checks=(), assets=(), opportunity=None):
+def attribute(plan, state, day, cutoff, *, checks=(), assets=(), opportunity=None, entry_orders=None):
     opens, closes = session_bounds(day)
     trace = sorted((d for d in state.get('decisionHistory', []) if opens <= d.get('at', 0) <= cutoff), key=lambda d: (d.get('at', 0), d.get('decision', '')))
     touch = price_touch(plan, state, day, cutoff)
@@ -166,16 +217,22 @@ def attribute(plan, state, day, cutoff, *, checks=(), assets=(), opportunity=Non
     others = []
     for b in blockers[1:]:
         same_window = first is not None and b['at'] == first['at'] and b['stage'] == first['stage']
+        # R7 (2026-09-21 review): independence is asserted only for a different rule judged in the SAME
+        # decision window on the same inputs. A later window is a chronological fact, not a proven
+        # counterfactual veto: had the first refusal not happened the plan could already have entered.
         others.append({**b, 'sameWindowAsFirst': same_window,
-                       'remainsIfFirstRemoved': True,   # every listed blocker is an independently measured refusal
-                       'independentBecause': 'different rule in the same window' if same_window else 'later window or later stage'})
+                       'remainsIfFirstRemoved': True if same_window else None,
+                       'independence': 'established' if same_window else 'unknown',
+                       'independentBecause': ('different rule in the same window on the same inputs' if same_window
+                                              else 'later window or stage; independence not established without a causal replay')})
     earlier_unknown = [w for w in incomplete if first is not None and w['at'] < first['at']]
     for w in incomplete:
         w['beforeFirstKnownBlocker'] = first is not None and w['at'] < first['at']
     signal = state.get('signal') or {}
     signalled = 0 < signal.get('at', 0) <= cutoff or any(d.get('decision') == 'triggered' for d in trace)
     selection = selection_coverage(state, list(checks), cutoff)
-    outcome = actual_outcome(state, list(assets), cutoff)
+    outcome = actual_outcome(state, list(assets), cutoff, entry_orders)
+    ledger = entry_ledger(state, list(assets), entry_orders)
     decision_time = [{'at': w['at'], 'minutesPresent': w['minutesPresent'], 'minutesMissing': w['minutesMissing'],
                       'minutesUntrusted': w['minutesUntrusted']} for w in incomplete]
     final = None
@@ -203,7 +260,7 @@ def attribute(plan, state, day, cutoff, *, checks=(), assets=(), opportunity=Non
     funnel = {'priceTouch': touch.get('touched'), 'confirmation': signalled,
               'contractEligibility': selection['status'] == 'eligible_expression_found',
               'submission': outcome not in ('no_order',), 'fill': outcome in ('partially_filled', 'held', 'closed')}
-    return {'actualOutcome': outcome, 'primaryKnownCause': primary, 'firstKnownBlocker': first,
+    return {'actualOutcome': outcome, 'entry': ledger, 'primaryKnownCause': primary, 'firstKnownBlocker': first,
             'otherIndependentBlockers': others, 'incompleteWindows': incomplete,
             'earlierUnknownWindows': len(earlier_unknown),
             'coverage': {'decisionTime': decision_time, 'final': final},

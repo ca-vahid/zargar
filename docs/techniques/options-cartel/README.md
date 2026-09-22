@@ -131,3 +131,5 @@ executable-cost ranking (`executable_cost_v1`), causal daily-review attribution 
 entry-cadence experiment (`breakout_5m_v1` with a non-ordering 15m matched control). Every new
 field defaults to the legacy behaviour; saved arms are unchanged. Evidence, verdicts, activation
 order and rollback: [reviews/2026-09-21-brief/HANDBACK.md](reviews/2026-09-21-brief/HANDBACK.md).
+Review round 1 (REVIEW-ff67f695, seven probes) is answered in
+[reviews/2026-09-21-brief/HANDBACK-2.md](reviews/2026-09-21-brief/HANDBACK-2.md); the probes are retained as regressions.

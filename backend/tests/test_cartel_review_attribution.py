@@ -62,7 +62,8 @@ def test_ntnx_volume_refusal_and_later_data_warning_are_separate():
     assert result["incompleteWindows"][0]["beforeFirstKnownBlocker"] is False and result["earlierUnknownWindows"] == 0
     assert result["incompleteWindows"][0]["evidenceAvailableAtTime"] is False
     assert [b["at"] for b in result["otherIndependentBlockers"]] == [at(15, 45)]
-    assert result["otherIndependentBlockers"][0]["remainsIfFirstRemoved"] is True
+    # R7: a later window is a fact, not a proven counterfactual veto.
+    assert result["otherIndependentBlockers"][0]["remainsIfFirstRemoved"] is None and result["otherIndependentBlockers"][0]["independence"] == "unknown"
     assert result["coverage"]["decisionTime"][0]["minutesUntrusted"] == [at(12, 58)] and result["coverage"]["final"]["nativeMinutes"] == 378
     assert result["actualOutcome"] == "no_order" and result["economics"]["actualNetRealized"] == 0
     assert result["selectionCoverage"]["status"] == "not_attempted"
@@ -79,9 +80,10 @@ def test_ulta_lists_both_independent_1000_blockers_and_keeps_target_passed_windo
     assert first["at"] == at(10, 0) and first["rule"] == "target_room" and first["measured"] == .064
     same_window = [b for b in result["otherIndependentBlockers"] if b["sameWindowAsFirst"]]
     assert [b["rule"] for b in same_window] == ["volume"] and same_window[0]["measured"] == .420
-    assert all(b["remainsIfFirstRemoved"] for b in result["otherIndependentBlockers"])
+    assert all(b["remainsIfFirstRemoved"] is True for b in same_window)   # same window, same inputs: established
     later = [b for b in result["otherIndependentBlockers"] if not b["sameWindowAsFirst"]]
     assert [b["decision"] for b in later] == ["target_passed", "target_passed"]
+    assert all(b["remainsIfFirstRemoved"] is None for b in later)
     assert result["incompleteWindows"][0]["minutesMissing"] == [at(10, 15)] and result["incompleteWindows"][0]["beforeFirstKnownBlocker"] is False
 
 
@@ -103,7 +105,7 @@ def test_now_wick_is_not_an_eligible_missed_entry():
     state = {"minutes": minutes, "decisionHistory": [{"at": at(16, 0), "rule": "SESSION", "decision": "entry_window_closed", "reason": "closing bell"}]}
     touch = price_touch(plan, state, DAY, CLOSE)
     assert touch["touched"] is True and touch["wickOnly"] is True and touch["firstTouchAt"] == OPEN+MIN
-    assert "no completed 15-minute candle closed beyond" in touch["explanation"]
+    assert "every completed 15-minute candle closed at or below it" in touch["explanation"] and touch["incompleteBuckets"] == []
     result = attribute(plan, state, DAY, CLOSE, opportunity={"status": "level_reached"})
     assert result["primaryKnownCause"] == "wick_only" and result["firstKnownBlocker"] is None
     assert category_from(result, None, {"entry_window_closed"}, []) == "no_trigger"
@@ -151,16 +153,50 @@ def test_contract_and_execution_stages_and_selection_coverage():
 
 def test_actual_outcomes_follow_recorded_fills():
     plan = make_plan("APA", 30., 29., (32.,))
+    # R6: quantities come from ORDER rows (requested/filled/status) and the fills ledger (entryFilledQty),
+    # never from remaining holdings. The asset shape below is what summarize_fills produces.
+    filled_order = [{"id": "buy", "qty": 2, "filledQty": 2, "status": "FILLED"}]
     held = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy", "signal": {"at": at(10, 0), "id": "s"}}, DAY, CLOSE,
-                     assets=[{"remainingQty": 2, "netRealized": 0., "feesPaidToday": 2.08, "filledQty": 2}])
+                     assets=[{"remainingQty": 2, "netRealized": 0., "feesPaidToday": 2.08, "entryFilledQty": 2}], entry_orders=filled_order)
     assert held["actualOutcome"] == "held" and held["economics"]["actualFees"] == 2.08 and held["funnel"]["fill"] is True
-    partial = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy", "requestedQty": 3, "signal": {"at": at(10, 0), "id": "s"}}, DAY, CLOSE,
-                        assets=[{"remainingQty": 2, "netRealized": 0., "feesPaidToday": 2.08, "filledQty": 2}])
-    assert partial["actualOutcome"] == "partially_filled"
+    assert held["entry"] == {"requestedQty": 2, "filledQty": 2, "orderStatuses": ["FILLED"], "terminal": True, "working": False, "entryStatus": "filled"}
+    working = [{"id": "buy", "qty": 3, "filledQty": 2, "status": "PARTIALLY_FILLED"}]
+    partial = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy", "signal": {"at": at(10, 0), "id": "s"}}, DAY, CLOSE,
+                        assets=[{"remainingQty": 2, "netRealized": 0., "feesPaidToday": 2.08, "entryFilledQty": 2}], entry_orders=working)
+    assert partial["actualOutcome"] == "partially_filled" and partial["entry"]["entryStatus"] == "partially_filled"
+    # The remainder was cancelled after a partial exit: holdings 1, cumulative entry fills still 2.
+    cancelled = [{"id": "buy", "qty": 3, "filledQty": 2, "status": "CANCELLED"}]
+    carried = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy"}, DAY, CLOSE,
+                        assets=[{"remainingQty": 1, "netRealized": 5., "feesPaidToday": 3.12, "entryFilledQty": 2, "exitFilledQty": 1}], entry_orders=cancelled)
+    assert carried["actualOutcome"] == "held" and carried["entry"]["entryStatus"] == "partially_filled" and carried["entry"]["terminal"] is True
     closed = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy"}, DAY, CLOSE,
-                       assets=[{"remainingQty": 0, "netRealized": -61.13, "feesPaidToday": 2.08}])
+                       assets=[{"remainingQty": 0, "netRealized": -61.13, "feesPaidToday": 2.08, "entryFilledQty": 1}], entry_orders=[{"id": "buy", "qty": 1, "filledQty": 1, "status": "FILLED"}])
     assert closed["actualOutcome"] == "closed" and closed["economics"]["actualNetRealized"] == -61.13 and closed["economics"]["modeled"] is None
-    unfilled = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy", "phase": "closed"}, DAY, CLOSE)
+    unfilled = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy", "phase": "closed"}, DAY, CLOSE,
+                         entry_orders=[{"id": "buy", "qty": 1, "filledQty": 0, "status": "CANCELLED"}])
     assert unfilled["actualOutcome"] == "unfilled" and category_from(unfilled, None, set(), []) == "unfilled"
     submitted = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "attemptTag": "t", "phase": "submitting"}, DAY, CLOSE)
     assert submitted["actualOutcome"] == "submitted"
+    working_no_fill = attribute(plan, {"minutes": tape("APA", 31.), "decisionHistory": [], "orderId": "buy"}, DAY, CLOSE,
+                                entry_orders=[{"id": "buy", "qty": 1, "filledQty": 0, "status": "ACCEPTED"}])
+    assert working_no_fill["actualOutcome"] == "submitted"
+
+
+def test_price_touch_completeness_rules():
+    """R5: sampled bars, missing minutes and verified non-emission intervals."""
+    plan = make_plan("NOW", 139.94, 135., (145., 150.), tf=5)
+    complete = tape("NOW", 138.0, minutes=10, spikes={1: (140.16, 140.10), 4: (140.5, 140.2)})
+    assert price_touch(plan, {"minutes": complete}, DAY, OPEN+10*MIN)["closedBucketsBeyond"] == [OPEN+5*MIN]
+    missing_last = {k: v for k, v in complete.items() if int(k) != OPEN+4*MIN}
+    result = price_touch(plan, {"minutes": missing_last}, DAY, OPEN+10*MIN)
+    assert result["closedBucketsBeyond"] == [] and result["wickOnly"] is None and result["incompleteBuckets"] == [OPEN+5*MIN]
+    sampled = dict(complete); sampled[str(OPEN+2*MIN)] = [OPEN+2*MIN, 138, 138.5, 137, 138.2, 5000, "sampled"]
+    result = price_touch(plan, {"minutes": sampled}, DAY, OPEN+10*MIN)
+    assert result["closedBucketsBeyond"] == [] and result["wickOnly"] is None
+    verified = {k: v for k, v in complete.items() if int(k) != OPEN+2*MIN}
+    proofs = {"p": {"minute": OPEN+2*MIN, "symbol": "NOW", "version": "alpaca-minute-eligibility-v1", "verifiedAt": OPEN+3*MIN}}
+    from zargar.techniques.options_cartel.nonemission import minute_set
+    if OPEN+2*MIN in minute_set(proofs, "NOW", OPEN+10*MIN):
+        assert price_touch(plan, {"minutes": verified, "verifiedIntervals": proofs}, DAY, OPEN+10*MIN)["closedBucketsBeyond"] == [OPEN+5*MIN]
+    # A bucket that has not ended by the cutoff is never judged.
+    assert price_touch(plan, {"minutes": complete}, DAY, OPEN+7*MIN)["completeBuckets"] == 1
