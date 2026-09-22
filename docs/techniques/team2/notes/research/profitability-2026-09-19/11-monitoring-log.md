@@ -97,3 +97,32 @@ unchanged; the clock they judge against is now correct.
 only `source` and `sourceTs`, which are the option NBBO fields, so it reports an empty source and a
 zero timestamp for every equity regardless of what the object holds. An earlier reading of this
 defect drew the wrong conclusion from exactly that, and was corrected against the durable records.
+
+---
+
+## Session 2 — 2026-09-22 (first session in cohort `B-synced-clock`)
+
+**Pre-open verification, 09:28 ET (13:28 UTC), two minutes before the bell.**
+
+| | measured |
+|---|---|
+| host vs true time, 4 independent NTP operators | **67 to 101 ms behind**, spread 33 ms, worst round trip 107 ms |
+| `w32time` | Running, start type Automatic |
+| runtime | build `3ac3dac7` / v0.8.31 (the F129 premium-stop fix) |
+
+The residual ~80 ms is about 130x better than Monday's 10.5 s and immaterial against the 180 s
+freshness window. It is still NOT the sub-millisecond figure reported immediately after the repair
+step; that discrepancy is recorded rather than smoothed over, and the independent SNTP reading is
+the one to trust because it excludes the host's own sync source.
+
+**The session ran uninterrupted, and that was not automatic.** The Tips desk had a build ready and
+intended to take the deploy door at 10:36 ET. A restart between 09:30 and 15:45 ET is one of the
+frozen registration's three exclusion rules, so that would have made today `excluded` rather than
+counted — costing the first clean-clock session in the 60-session window, and landing inside Team2's
+busiest hour (Monday's two fires were at 10:36 and 11:30 exactly). Raised as a fact with no request
+attached; they weighed what rev 2 actually was, concluded that checkpoint and diagnostics tooling
+did not justify the cost, and deferred to after 16:00 ET.
+
+Recorded because a clean account of why nothing went wrong is worth as much as an account of why
+something did: this session is counted because a cross-desk deploy was moved, not because nothing
+was scheduled.
