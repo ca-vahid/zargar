@@ -219,7 +219,12 @@ def label_cohorts(life: dict, cohorts: list[dict] | None) -> dict:
     """Stamp each session with its cohort and summarise the counted ones per cohort. Additive: no
     session's `status` is read or changed here."""
     out = dict(life)
-    sessions = [{**s, "cohort": cohort_for(s["date"], cohorts)} for s in (life.get("sessions") or [])]
+    # stamp ONLY when a cohort actually applies: an absent key means unassigned, and a session
+    # record with no cohort recorded stays byte-identical to what it was before cohorts existed
+    sessions = []
+    for s in (life.get("sessions") or []):
+        c = cohort_for(s["date"], cohorts)
+        sessions.append({**s, "cohort": c} if c is not None else dict(s))
     per: dict[str, int] = {}
     for s in sessions:
         if s["status"] == "counted":
