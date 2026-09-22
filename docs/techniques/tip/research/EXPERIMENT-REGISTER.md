@@ -115,6 +115,22 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Evaluation window:** retrospective 2026-09-09..18 on the same evidence: 186 of 556 reviews skipped, $121.83 of $379.21 (32%), 0 false negatives; prospective = 5 observe sessions (2026-09-21..25, `tip_review_gate_eval --prospective`). **Decision rule:** a REVIEW checkpoint, never an automatic switch - 0 management false negatives (prospective AND retrospective) are necessary, and a human reads the skipped corrections / new entries / mixed messages / deferred actions; sessions are counted after the actual deployment (0.8.23, 2026-09-19 12:47 ET; first observed session 2026-09-21); the user approves any switch. ECON-03 (2026-09-19): absent or unrestored desk components always review.
 - **Status:** built, observe (2026-09-19).
 
+## `target-execution` (opened 2026-09-22, DESIGN ONLY - not activated)
+
+- **Hypothesis:** exiting a ladder rung at an executable quote touch or with a resting reduce-only limit captures more of a touched target than the current closed-bar decision + marketable limit at the bid.
+- **Variants:** current (bar-touch on the 15m close, limit at the seen bid) = live; quote-touch; resting limit - both hypothetical, described in `research/2026-09-21-target-execution-design.md`.
+- **Eligible setup:** every target rung of a managed tip position. **Unit:** one rung. **Episode identity:** position id + rung.
+- **Primary metric:** target-to-fill shortfall per rung (scorecard v4 trail: first touch, decision, order, fill) and the reversal rate (touch then close below target).
+- **Costs:** none; observation from the scorecard trail. **Regime:** `friction.target_to_fill`, scorecard v4 `target_exits`.
+- **Decision rule:** a Practice-only, per-technique policy decision on the measured distribution, with rollback; never a bug fix. One case (VKTX $11.83) decides nothing.
+- **Status:** collecting the trail.
+
+## `friction-exposure` (opened 2026-09-22, DIAGNOSTIC)
+
+- **What:** all-in friction (entry fees + exit fees at the same basis + quoted spread) and same-underlying exposure on every open position (scorecard v4); fill records carry decision / submission / fill-time quotes apart.
+- **Boundary:** no friction threshold; no size change; lower-friction expressions at equal risk stay research (`tip_feasibility replay`).
+- **Status:** collecting.
+
 ## `review-model-eval` (opened 2026-09-19, PREPARED - no paid run)
 
 - **Hypothesis:** a cheaper model can do the INTAKE REVIEW (not the appraisal) without missing a management action; note-only reviews are ~80% of review spend.
