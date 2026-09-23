@@ -2,6 +2,9 @@
 import math
 
 
+MAX_VENUE_AHEAD_MS=30_000   # bounded host/venue clock skew tolerated between a print's venue time and its receipt
+
+
 def underlying_snapshot(engine,symbol,clock):
     from ...brokers.alpaca import AlpacaQuoteFeed,HybridQuoteFeed
     feed=engine.feed
@@ -11,10 +14,22 @@ def underlying_snapshot(engine,symbol,clock):
                    'reason':'A recent attributed SIP price is required.'}
     if not raw or raw.get('feed')!='sip': return out
     number=lambda n:isinstance(n,(int,float)) and not isinstance(n,bool) and math.isfinite(n)
-    if number(raw.get('last')) and raw['last']>0 and number(raw.get('last_ts')) and 0<=at-raw['last_ts']<=10000:
-        out.update(status='observed',price=raw['last'],sourceAt=raw['last_ts'],priceBasis='qualified_last',reason=None)
-    elif all(number(raw.get(k)) for k in ('bid','ask','quote_ts')) and 0<raw['bid']<=raw['ask'] and 0<=at-raw['quote_ts']<=10000:
-        out.update(status='observed',price=raw['ask'],sourceAt=raw['quote_ts'],priceBasis='fresh_ask',reason=None)
+    def fresh(venue_key,received_key):
+        # P7 (2026-09-22): freshness is judged on the LOCAL receipt time (never in the future on the host
+        # clock). The venue time is kept as evidence and must sit within a bounded skew of receipt: the
+        # host clock was measured ~9 s behind venue time, which made every fresh SIP print look future-dated.
+        venue,received=raw.get(venue_key),raw.get(received_key)
+        if not number(venue) or venue<=0:
+            return False
+        if number(received) and received>0:
+            return 0<=at-received<=10000 and -MAX_VENUE_AHEAD_MS<=received-venue<=10000
+        return 0<=at-venue<=10000   # feeds without receipt stamps keep the original rule
+    if number(raw.get('last')) and raw['last']>0 and fresh('last_ts','last_received_ts'):
+        out.update(status='observed',price=raw['last'],sourceAt=raw['last_ts'],receivedAt=raw.get('last_received_ts'),priceBasis='qualified_last',reason=None)
+    elif all(number(raw.get(k)) for k in ('bid','ask','quote_ts')) and 0<raw['bid']<=raw['ask'] and fresh('quote_ts','quote_received_ts'):
+        out.update(status='observed',price=raw['ask'],sourceAt=raw['quote_ts'],receivedAt=raw.get('quote_received_ts'),priceBasis='fresh_ask',reason=None)
+    if out['status']=='observed' and number(out.get('receivedAt')):
+        out['venueAheadOfReceiptMs']=max(0,out['sourceAt']-out['receivedAt'])
     return out
 
 
