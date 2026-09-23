@@ -17,7 +17,7 @@ from ...marketstructure.sessions import ET, session_bounds
 from ...models import Portfolio
 from ...options.occ import parse
 from ...orders import OrderIntent
-from .contracts import ContractSelectionInput
+from .contracts import ContractSelectionInput, SelectionEconomics, contract_economics
 from .loss import loss_gate
 from .plans import CartelPlan
 from .readiness import execution_readiness
@@ -224,11 +224,29 @@ async def preflight(engine, plan: CartelPlan, spec: ExecutionInput, *, client_ki
     # Equity/risk evaluation can await I/O. Re-read executable observations after
     # that last await; the controller repeats this after its own reconciliation.
     checks.extend(contract_entry_checks(engine, plan, spec, read_clock()))
+    economics = None
+    if spec.instrument == "options" and portfolio.kind == "sim":
+        fee = engine.settings.get("options.fee_per_contract", .99)
+        regulatory = engine.settings.get("sim.reg_fee_per_contract", .05)
+        economics = contract_economics(bid, ask, quote.ask_size if quote else None,
+            SelectionEconomics(cash_cap_usd=max(0., min(spec.budget, equity*spec.risk_pct/100))/fx if fx_valid else None,
+                               max_units=spec.max_units, entry_fee_per_contract_usd=fee+regulatory,
+                               exit_fee_per_contract_usd=fee+regulatory,
+                               basis="Practice simulator fee schedule; cash cap = min(budget, equity x risk%)"),
+            quantity=qty)
+    elif spec.instrument == "options":
+        economics = contract_economics(bid, ask, quote.ask_size if quote else None, None)
+    sign = 1 if plan.direction == "long" else -1
+    stock_risk = (plan.trigger-plan.invalidation)*sign
+    structural = {"trigger": plan.trigger, "invalidation": plan.invalidation, "firstTarget": plan.targets[0],
+                  "firstTargetR": round((plan.targets[0]-plan.trigger)*sign/stock_risk, 4) if stock_risk > 0 else None,
+                  "basis": "Reviewed stock geometry; separate from option full-debit exposure and executable option friction"}
     return {"runId": plan.id, "asOfMs": at, "passed": all(c["passed"] for c in checks)
             and bool(risk and risk["passed"]), "checks": checks, "risk": risk,
             "expression": {"symbol": order_symbol, "instrument": spec.instrument, "quantity": qty,
                            "bid": bid, "ask": ask, "quoteAgeSeconds": age,
                            "spread": spread_cost(bid, ask, qty, multiplier),
+                           "economics": economics, "stockGeometry": structural,
                            "notional": qty*ask*multiplier if valid_price else None,
                            "quoteCurrency": currency, "budgetCurrency": base_currency, "fxRate": fx,
                            "delta": delta if valid_delta else None,

@@ -122,7 +122,7 @@ async def test_live_premium_trims_beat_the_model(rig, monkeypatch):
     rules = runner.rules()
     calls: list[tuple] = []
 
-    async def fake_exit(ap_, tr, kind, qty, *, journal, force_market=False, reason=""):
+    async def fake_exit(ap_, tr, kind, qty, *, journal, force_market=False, reason="", authority=None):
         calls.append((kind, qty, reason))
         tr.remaining -= qty
         tr.exits.append({"kind": kind, "qty": qty, "status": "FILLED", "filledQty": qty})
@@ -286,7 +286,7 @@ async def test_small_positions_do_not_trim_and_adds_are_alerts_outside_auto(rig,
     rules = runner.rules()
     calls: list[tuple] = []
 
-    async def fake_exit(ap_, tr, kind, qty, *, journal, force_market=False, reason=""):
+    async def fake_exit(ap_, tr, kind, qty, *, journal, force_market=False, reason="", authority=None):
         calls.append((kind, qty, reason))
         tr.remaining -= qty
 

@@ -28,7 +28,7 @@ async def test_disarmed_plan_still_books_its_flatten_fill(rig, monkeypatch):
                avg_fill=0.59, instrument="options", order_symbol="QQQ260904P00717000", multiplier=100.0)
     ap.trades[tr.trigger_id] = tr
 
-    async def fake_exit(ap_, t, kind, qty, *, journal, force_market=False, reason=""):
+    async def fake_exit(ap_, t, kind, qty, *, journal, force_market=False, reason="", authority=None):
         # the flatten is SUBMITTED; its fill arrives later on the orders topic
         t.exits.append({"kind": kind, "qty": qty, "orderId": "flat-1", "status": "SUBMITTED", "filledQty": 0.0, "price": None})
         t.exit_order_ids.append("flat-1")
@@ -88,7 +88,7 @@ async def test_clock_flatten_sells_the_book_at_flatten_time_whatever_the_read_sa
     ap.trades[working.trigger_id] = working
     calls: list[tuple] = []
 
-    async def fake_exit(ap_, t, kind, qty, *, journal, force_market=False, reason=""):
+    async def fake_exit(ap_, t, kind, qty, *, journal, force_market=False, reason="", authority=None):
         calls.append((t.trigger_id, kind, qty, force_market))
         t.exits.append({"kind": kind, "qty": qty, "orderId": "f", "status": "SUBMITTED", "filledQty": 0.0})
 

@@ -1138,8 +1138,37 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         card = next((c for c in cards if c["source"] == src), None)
         if card is None:
             return {"note": f"no scorecard yet for {src}"}
-        return {k: card.get(k) for k in ("source", "signals", "verified", "failed",
-                                         "expiredUnfilled", "barCleared", "books")}
+        out = {k: card.get(k) for k in ("source", "signals", "verified", "failed", "expiredUnfilled", "barCleared", "books")}
+        # S21-08 (2026-09-21 review): a shadow book's P&L is RESEARCH with known execution/attribution limits - it is
+        # never positive trust evidence, and a quarantined or oversold book is not evidence at all. Each book says so.
+        try:
+            books = dict(out.get("books") or {})
+            by_id = {str(p.get("id")): p for p in eng.positions.portfolios()}
+            for bk, rec in list(books.items()):
+                if not isinstance(rec, dict):
+                    continue
+                p = by_id.get(str(rec.get("portfolioId") or ""), {})
+                quarantined = bool(p.get("quarantined"))
+                valid = (not quarantined)
+                rec.update({"bookKind": "shadow", "quarantined": quarantined,
+                            "quarantineNote": (p.get("quarantineNote") or None) if quarantined else None,
+                            "feeParity": "shadow books pay the same per-unit fees as Practice but fill every tip at the tip's own "
+                                         "time/size - not an executable control",
+                            "sampleSize": {"positions": rec.get("positions"), "closed": rec.get("closed")},
+                            "evidenceClass": "invalid" if not valid else "research-only",
+                            "trustEvidence": False,
+                            "limitation": ("quarantined book: its P&L is not evidence of anything" if quarantined else
+                                           "research book: execution and attribution differ from the Practice book; NeverTriggered "
+                                           "is not a loss; a positive P&L here is a hypothesis about the source, never a validated edge")})
+                if not valid:
+                    rec["pnl"], rec["pnlPct"], rec["equity"] = None, None, None      # an invalid book contributes no number
+            out["books"] = books
+            out["trust"] = {**(card.get("trust") or {}), "basis": "closed Practice positions only (graded / hits); shadow books never count"}
+            out["researchLimitation"] = ("shadow-book results are not controls (economics review 2026-09-19): do not cite a book's P&L "
+                                         "as support for a take; cite closed Practice outcomes and the source's verified/failed counts")
+        except Exception:                                # noqa: BLE001 - the audit labels never break the tool
+            pass
+        return out
     if name == "get_earnings":
         cal = getattr(eng, "calendar", None)
         if cal is None:

@@ -265,3 +265,15 @@ reporting and controlled entry comparisons. Existing trading gates and sizing ar
 retained. Alternative contract identity is journaled and revalidated; experimental
 gap/retest and volume rules are non-executing diagnostics, not adopted source rules.
 See DAILY-PREPARATION and PROFITABILITY-RESEARCH for exact bounds.
+
+## September 21 brief: selection, cost, attribution and cadence (built, inactive)
+
+Method facts recorded, not adopted: on 2026-09-21 NTNX's 5-minute confirmation at 10:30 carried
+2.511x its 5-minute baseline while the 15-minute confirmation carried 0.929x of its own baseline;
+cadence changes eligibility, and nothing here says 5m is profitable. NTNX's reviewed October call
+(bid 9.80 / ask 11.30) cost $150 per contract to cross before fees; ULTA's 10.00 / 14.80 book stays
+ineligible under the unchanged 20% spread limit at any capital. The legacy refresh sampler could spend
+its whole budget on one expiry's known-illiquid rows; `diverse_liquidity_v1` fixes the allocation
+without widening any limit. `executable_cost_v1` ranks eligible contracts by current friction; it adds
+no delta band and no model threshold. The daily review names the first KNOWN blocker and keeps unknown
+windows unknown. Activation of each version is a separate journaled settings decision.

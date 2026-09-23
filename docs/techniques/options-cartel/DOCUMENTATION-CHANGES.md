@@ -108,3 +108,16 @@ The observer now rejects misaligned and wrong-symbol bus updates before merging 
 ## 2026-09-18 verified intervals
 
 Added VERIFIED-INTERVALS.md: positive trade evidence, per-field aggregation, Practice-only activation, causal recovery and replay boundaries. No zero-volume or price candles are fabricated.
+
+## 2026-09-21 brief handback
+
+Added reviews/2026-09-21-brief/HANDBACK.md (F1-F4 evidence table, separate verdicts, activation order,
+rollback, known limits). Updated DAILY-PREPARATION (selection/ranking versions, entry cadence, volume
+grid), README pointer and TRADING-RULES. Documentation states what the branch does; it does not claim a
+deployment or an activation.
+
+## 2026-09-21 brief review round 1
+
+Added reviews/2026-09-21-brief/HANDBACK-2.md (R1-R7 fixes, retained probes, end-to-end fixture). DAILY-PREPARATION
+now states the control's own lifetime, the `legacy_timeframe` label for saved unlabelled non-15m entries, the long-only
+scope of the 5m pilot and the deadline contract for discovery/chain requests.

@@ -50,6 +50,9 @@ class CartelPlan(BaseModel):
     # shortcut: 09:45 volume must be compared with historical 09:45 volume.
     volume_baseline: dict[int, float] = Field(default_factory=dict)
     baseline_as_of: int = Field(ge=0)
+    # F4 (2026-09-21): the entry-cadence label this plan was prepared under. None on snapshots that
+    # predate the label; it never changes the read, which follows ``entry.timeframe_minutes``.
+    cadence_version: str | None = Field(default=None, max_length=40)
 
     @model_validator(mode="after")
     def geometry_and_provenance(self):

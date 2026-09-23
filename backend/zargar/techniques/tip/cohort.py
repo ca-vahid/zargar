@@ -125,14 +125,14 @@ def qualify_quote(rec: dict, *, is_option: bool, max_age_s: float, now_ms: int |
     (status, reasons): `fresh` | `stale` | `ineligible`. Diagnostics are kept
     on the record either way; only `fresh` may feed a variant."""
     reasons: list[str] = []
-    src_ts = int(rec.get("sourceTs") or 0)
+    src_ts = int(rec.get("sourceTs") or 0) or int(rec.get("vendorTs") or 0)   # a vendor stamp is a genuine source time
     now_ms = now_ms if now_ms is not None else int(_utcnow().timestamp() * 1000)
     if src_ts <= 0:
         if is_option or not rec.get("receivedTs"):
             reasons.append("no genuine source time (receipt time is not source freshness)")
         else:
             src_ts = int(rec.get("receivedTs") or 0)      # shares: labeled receipt-time basis
-            rec["sourceTimeBasis"] = "receipt"
+            rec.setdefault("sourceTimeBasis", "receipt")
     elif src_ts > now_ms + _clock_skew_s * 1000:
         reasons.append("source time is in the future")
     if rec.get("delayed"):
@@ -174,8 +174,20 @@ def _snap_quote(eng, sym: str, *, max_age_s: float, kind: str, is_option: bool |
     recv_ts = int(getattr(q, "ts", 0) or 0)
     if is_option is None:
         is_option = len(sym) > 8 and sym[-9] in ("C", "P") and sym[-8:].isdigit()
-    basis_ts = src_ts if (src_ts > 0 or is_option) else recv_ts
+    vendor_ts = int(getattr(q, "quote_ts", 0) or 0) or int(getattr(q, "last_ts", 0) or 0)
+    basis_ts = src_ts if (src_ts > 0 or is_option) else (vendor_ts or recv_ts)     # shares: the vendor stamp before receipt
     age_s = max(0.0, (now_ms - basis_ts) / 1000.0) if basis_ts > 0 else None
+    # S21-05 (2026-09-21 review): the basis of the age is on the record. `source` = the producer's own stamp
+    # (OPRA polls stamp at receipt on this host, so even that is not venue time); `receipt` = this host saw it then,
+    # which says nothing about how old the venue's print was. A missing source time is never claimed as one.
+    receipt_age_s = max(0.0, (now_ms - recv_ts) / 1000.0) if recv_ts > 0 else None
+    src_name = str(getattr(q, "source", "") or "")
+    # rev 2 (2026-09-22, shared-owner follow-through): OPRA's `source_ts` is stamped at the POLL on this host
+    # (options/service.py) - it identifies the observation and bounds its age, but it is not the vendor's event time.
+    time_basis = ("vendor" if vendor_ts > 0 else
+                  "poll" if (src_ts > 0 and src_name in ("opra", "chain")) else
+                  "source" if src_ts > 0 else
+                  "receipt" if (not is_option and recv_ts > 0) else "none")
     # the venue-session test mirrors the Practice venue's own policy (EOD-05):
     # a config that lets the sim fill options at any hour judges no session here
     cfg = getattr(eng, "config", None)
@@ -184,6 +196,13 @@ def _snap_quote(eng, sym: str, *, max_age_s: float, kind: str, is_option: bool |
            "bidSize": getattr(q, "bid_size", None), "askSize": getattr(q, "ask_size", None),   # TMR-02: quoted size
            "source": getattr(q, "source", "") or "feed", "sourceTs": src_ts, "receivedTs": recv_ts,
            "ageSeconds": round(age_s, 1) if age_s is not None else None,
+           "sourceTimeBasis": time_basis, "receiptAgeSeconds": round(receipt_age_s, 1) if receipt_age_s is not None else None,
+           "vendorTs": vendor_ts or None, "pollTs": (src_ts if time_basis == "poll" else None),
+           "observationId": (f"{sym}:{src_ts}" if src_ts > 0 else None),      # a new poll with the same stamp is the SAME observation
+           "sourceAgeKnown": vendor_ts > 0,                                     # only a vendor field proves source-event age
+           "ageBasisNote": ("age from the vendor's own stamp" if vendor_ts > 0 else
+                            "age since this host's poll - not a verified source-event age" if time_basis == "poll" else
+                            "age since this host received it - not a source-event age" if time_basis == "receipt" else None),
            "delayed": bool(getattr(q, "delayed", False)),
            "sampledAt": _iso(_utcnow()), "sampleKind": kind, "isOption": bool(is_option)}
     status, reasons = qualify_quote(rec, is_option=bool(is_option), max_age_s=max_age_s, now_ms=now_ms,

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.28";
+export const APP_VERSION = "0.8.32";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,29 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.32",date:"2026-09-22",title:"Tips: checkpoint verdicts are structured, replay claims are locked",items:[
+    {tag:"fixed",text:"The five-session checkpoint reads the observation report's structured verdict: an INCOMPLETE report, an empty report or a missing verdict can no longer be published as READY, and every exported report uses the same cutoff."},
+    {tag:"fixed",text:"A manual intake replay takes an atomic, durable per-message claim, so two concurrent requests can never process the same failed message twice."},
+    {tag:"improved",text:"Quote records say whether an age comes from the vendor's stamp, this host's poll or receipt; a poll age is never presented as a verified source-event age. No trading policy, risk limit, stop or approval control changed."},
+  ]},
+  {version:"0.8.31",date:"2026-09-22",title:"Team2: a price estimate can no longer sell your position",items:[
+    {tag:"fixed",text:"A Team2 premium stop is now taken only when the contract you actually hold has bled past the configured limit on a valid live quote, measured against what you paid. The read's own price estimate can no longer sell the position on its own. Structural stops, targets, the flatten and the live protective exits are unchanged."},
+    {tag:"improved",text:"Every Team2 exit now records who decided it, the fill it was measured against, the quote and its timestamp, the resulting return and the limit in force."},
+  ]},
+  {version:"0.8.30",date:"2026-09-22",title:"Tips: correct decision arithmetic, complete observation evidence, exit and cost diagnostics",items:[
+    {tag:"fixed",text:"Approval cards price options with the same complete fee basis as execution and show the contract's break-even and expiry, decoded from the contract itself when the vehicle omits them. The card states that payoff scenarios assume an exit at the target price."},
+    {tag:"fixed",text:"The relevance-filter observation report joins every decision to its review's final status, marks the checkpoint INCOMPLETE when any decision is unresolved, and exports every human-review candidate. The five-session checkpoint task checks each report's exit code and counts only completed observe sessions."},
+    {tag:"fixed",text:"A context-channel digest that is cut off or unparseable gets one bounded same-transcript repair before failing; both attempts stay on the usage record and nothing is written twice."},
+    {tag:"new",text:"Scorecard v4: target exits show first touch, decision, order and fill times with the target-to-fill shortfall; open positions show all-in friction (fees plus quoted spread), hold cap and same-underlying exposure. Fill records label decision-, submission- and fill-time quotes apart and say which clock each age came from. Raw-message coverage report and a bounded manual replay for messages whose extraction failed. No trading policy, risk limit, stop or approval control changed."},
+  ]},
+  {version:"0.8.29",date:"2026-09-21",title:"Cartel: contract search, executable cost, causal review and a 5-minute Practice cadence",items:[
+    {tag:"new",text:"Contract selection version diverse_liquidity_v1 (Practice, off until chosen): the reviewed contract is refreshed first, refresh requests are spread across expiries, contracts already below the open-interest minimum are recorded instead of refreshed, and the search reports exactly what it did and did not cover."},
+    {tag:"new",text:"Contract ranking version executable_cost_v1 (Practice, off until chosen): eligible contracts are ordered by displayed-size coverage and crossing spread plus fees over the debit; every estimate names its assumptions and the legacy choice."},
+    {tag:"improved",text:"Daily review names the first known blocker, other independent blockers, incomplete windows (kept unknown), contract-search coverage and actual versus modeled results per plan. NOW's wick and BBY/CNH/NVT's no-touch sessions are explained as such."},
+    {tag:"new",text:"Practice entry cadence breakout_5m_v1 (off until chosen): new plans confirm on 5-minute candles with their own baseline while a non-ordering 15-minute matched control is recorded on the same tape for the daily review."},
+    {tag:"improved",text:"Preflight and selection reports show spread in units, dollars and percent of premium, fees, debit and full-debit exposure beside the stock target/stop geometry."},
+    {tag:"fixed",text:"Review round 1: the matched 15-minute control keeps observing after the executing plan acts (own tape, watermark and session lifetime); saved unlabelled 5-minute settings stay legacy and valid in Live; the 5-minute pilot is long-only; discovery and chain requests obey the signal deadline; a partial candle is reported as unknown, not as a close; partial fills are classified from order and execution rows; later refusals are no longer claimed independent."},
+  ]},
   {version:"0.8.28",date:"2026-09-20",title:"Cartel keeps analysis checkpoints across repeated restarts",items:[
     {tag:"fixed",text:"Resuming an interrupted retry now reuses analyses from its compatible earlier checkpoints, including work saved before a crash. Existing plans remain preserved."},
     {tag:"fixed",text:"Automatic recovery waits for its runtime controller to attach before attempting a restart resume."},

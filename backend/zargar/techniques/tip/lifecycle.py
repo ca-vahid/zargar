@@ -804,9 +804,27 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         _dq = (_rp.get("execCost") or {})
         fvq = _ec.fill_vs_quote(fill_price=fill, fill_qty=qty, limit=proposal.get("limitPrice"),
                                 decision_quote={"bid": _dq.get("bid"), "ask": _dq.get("ask"), "sourceTs": _dq.get("sourceTs"),
-                                                "sampledAt": _dq.get("sampledAt"), "quoteStatus": _dq.get("quoteStatus")},
+                                                "sampledAt": _dq.get("sampledAt"), "quoteStatus": _dq.get("quoteStatus"),
+                                                "sourceTimeBasis": _dq.get("sourceTimeBasis"), "quoteRole": "decision"},
                                 sec_type=("OPT" if is_opt else "STK"), multiplier=(100.0 if is_opt else 1.0), side="BUY")
-        await note(ev.TIP_FILL_VS_QUOTE, {"symbol": proposal.get("symbol"), **fvq})
+        # S21-04 (2026-09-21 review; ACHR rested 58 minutes): the decision-time comparison is NOT fill-time market quality.
+        # A second, independently labelled sample is taken from the quote store AT the fill, with its own clock basis;
+        # the two never blend. A missing fill-time quote stays missing.
+        _ft = None
+        with contextlib.suppress(Exception):
+            from . import cohort as _co
+            _sym = str(proposal.get("symbol") or "")
+            _frec, _fst = _co._snap_quote(eng, _sym, max_age_s=float(eng.settings.get("execution.premium_mark_max_age_seconds", 10) or 10),
+                                          kind="fill", is_option=is_opt)
+            if _frec:
+                _ft = {"quoteRole": "fill", "bid": _frec.get("bid"), "ask": _frec.get("ask"), "sourceTs": _frec.get("sourceTs"),
+                       "receivedTs": _frec.get("receivedTs"), "sampledAt": _frec.get("sampledAt"), "quoteStatus": _fst,
+                       "sourceTimeBasis": _frec.get("sourceTimeBasis"), "ageSeconds": _frec.get("ageSeconds")}
+        _ord_at = row.get("createdAt") or row.get("submittedAt")
+        await note(ev.TIP_FILL_VS_QUOTE, {"symbol": proposal.get("symbol"), **fvq,
+                                          "decisionSampledAt": _dq.get("sampledAt"), "submittedAt": _ord_at,
+                                          "fillTimeQuote": _ft or {"quoteRole": "fill", "unknown": ["no quote in the store at the fill"]},
+                                          "labels": "decision / submission / fill are separate samples; none is a claim about the others"})
 
     plan = ctx.get("exitPlan") or {}
     await eng.ensure_symbol(underlying)

@@ -205,3 +205,29 @@ async def test_put_uses_absolute_negative_delta(rig):
                                                overnight_ack=True, risk_pct=5), now_ms=now)
     assert result["intent"] is not None and result["intent"]["side"] == "BUY"
     assert result["expression"]["delta"] == -.45
+
+
+
+# ---- 2026-09-21 brief F3: preflight reports executable economics beside the stock geometry ----
+
+async def test_preflight_reports_executable_economics_and_stock_geometry_separately(rig):
+    engine, plan = rig
+    expiry = next_trading_day(plan.last_session+dt.timedelta(days=30))
+    symbol = f"TEST{expiry:%y%m%d}C00100000"
+    # Half the recorded NTNX book (4.90/5.65: same 14.22% of mid) so the $1,000 risk budget funds one contract.
+    engine.quotes.on_quote(Quote(symbol=symbol, bid=4.9, ask=5.65, last=5.275, bid_size=401, ask_size=74, source="opra"))
+    greeks_at = int(dt.datetime.now(dt.UTC).timestamp()*1000)
+    engine.options = SimpleNamespace(snapshot_cached=lambda _: {
+        "greeks": {"delta": .45}, "greeksFieldAsOf": {"delta": greeks_at}})
+    request = spec(instrument="options", contract_symbol=symbol, overnight_ack=True, risk_pct=10, budget=5000, max_units=10)
+    result = await preflight(engine, plan, request)
+    expression = result["expression"]
+    assert expression["quantity"] == 1
+    economics = expression["economics"]
+    assert economics["spreadUsdPerContract"] == 75 and economics["spreadPctOfMid"] == pytest.approx(14.218, abs=.001)
+    assert economics["quantity"] == 1 and economics["roundTripFeesPerContractUsd"] == pytest.approx(2.08)
+    assert economics["displayedAskSize"] == 74 and economics["sizeCoverage"] == 1
+    assert economics["fullDebitExposureUsd"] == pytest.approx(566.04) and economics["frictionPerContractUsd"] == pytest.approx(77.08)
+    geometry = expression["stockGeometry"]
+    assert geometry["firstTargetR"] == pytest.approx(2.0) and geometry["trigger"] == 100 and geometry["invalidation"] == 95
+    assert "separate" in geometry["basis"]

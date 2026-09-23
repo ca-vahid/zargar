@@ -2502,6 +2502,14 @@ experimental book reads its overrides, the baseline book and everyone else read 
 with different policies: resolve by `ap.config.portfolio_id`, never flip a technique-wide key. Loss halts, cash, exposure and position caps were
 already per book; the per-technique day-notional cap is cross-book by design and is off (0) - a desk that turns it on shares it across its books.
 
+### Quote clock semantics have an owner: vendor time, poll time and observation identity are three things — 2026-09-22 (Tips desk; owner proposed)
+
+**Owner for resolving OPRA clock semantics: the Team2 desk — ACCEPTED 2026-09-22** (author of `Quote.quote_ts` / `last_ts`, PR #204 r2, and of the live premium basis, F129; proposed by the Tips desk, accepted the same night). Team2 confirmed in code that `options/service.py` stamps OPRA `source_ts = now` at the poll and that the vendor's own `quote_ts` / `trade_ts` never reach the `Quote` object (they are written only to the display snapshot), so every option quote carries `quote_ts = 0`. **Live defects of this class, recorded, not hot-patched:** (a) Team2's quote-watch forward-confirmation guard (DA-05, `planrunner.py`, `quote_exit_polls` = 2) compares `source_ts`, so two polls of one vendor print satisfy "two distinct observations"; (b) the SAME rule in the managed-position premium stop (`execution/positions.py::_confirm_premium_stop`, KB-06 I93-02: `obs` = per-leg `source_ts`, "forward-advanced" = confirmed) — the Tips desk's protective exits are exposed identically. Neither is a runaway (a fresh quote and a real price breach are still required), but both can confirm on one print seen twice. Fix path, owner Team2: carry the vendor stamp onto `Quote` and key observation identity on it, so a re-poll of one print is one observation everywhere; until then no desk widens a tolerance or disables the confirmation to work around it. The required semantics, whoever implements them: (1) a **vendor timestamp** (the venue/vendor's own event time) is the only basis for a verified source-event age; (2) a **poll time** (`options/service.py` stamps OPRA `source_ts = now` at the poll on this host) bounds staleness and identifies an observation but is never presented as source-event age; (3) an **observation identity** ties every consumer's evidence to one observation - a fresh host poll that returns the same vendor stamp is the SAME observation, not a new one, and a monetary decision that needs "two distinct observations" must not count two polls of one print. Tips already labels its records this way (`sourceTimeBasis` vendor / poll / source / receipt, `vendorTs`, `pollTs`, `observationId`, `ageBasisNote`) and claims `sourceAgeKnown` only from a vendor field; the shared producer (options/service.py, brokers) is the owner's to change.
+
+### September 21 review package: shared surfaces touched by the Tips desk — 2026-09-22
+
+Additive only. `api/routes_signals.py` gains `POST /api/tip/intake/replay/{content_id}` (bounded to 2 attempts per raw message, marked before the work, journaled `TipIntakeReplayed` with its contract row; re-enters the ordinary intake so stale content is replayed on history). `approvals/proposals.py::_compute_risk_plan` prices option cards with `execcost.fees_from_settings` (commission + regulatory) and decodes contract metadata from the OCC symbol when the vehicle omits it; a payoff failure is logged, never swallowed. `techniques/tip/lifecycle.py` records an independently labelled fill-time quote sample beside the decision quote on `TipFillVsQuote`. `techniques/tip/cohort._snap_quote` labels `sourceTimeBasis` (source / receipt / none) on every Tips quote record. Findings for the shared quote owner, NOT patched: OPRA `source_ts` is stamped at the poll on this host (options/service.py) - it is not venue time; equities carry no `source_ts` and `quote_ts` is populated only by the Alpaca feed, so a "venue time or nothing" rule on a decision path would refuse every Yahoo-fed share entry (user decision). The sim broker's fill evidence already records a missing source time as null. Nothing here changes an order path, a stop, a risk limit or a setting.
+
 ### One recovery sweep at a time; a cold-quote park is re-verified on its first real quote — 2026-09-19 (Tips desk; shared `signals/service.py`)
 
 `SignalService.recovery_sweep()` now holds an asyncio lock (the body moved to `_recovery_sweep_locked`): the periodic loop and the new cold-park fast path share one entry, so two sweeps can never promote the same park twice. A tip parked ONLY because `ticker_resolves` failed (no quote yet for a cold symbol) spawns a bounded wait (`signals.cold_park_recheck_seconds`, default 60, 0 = off) for a REAL quote and then runs that same sweep once (`SignalColdParkRecheck` journaled). Nothing else changes: the sweep re-verifies on the fresh quote and applies every existing gate; a price-position park stays the level watch's job; experiments never spawn it. Evidence: 44 of 49 parks since 2026-09-08 were cold-only and waited 5-13 minutes for the 15-minute sweep after an analyst TAKE. `apply_knowledge_batch` accepts `pending: true` on a merge: the consolidated note is born `needs_human` (non-operative) and the flag is part of the payload hash only when present, so every earlier receipt hash is unchanged.
@@ -2579,3 +2587,20 @@ after its current package ships - opportunity accounting is what that desk is wo
 writes no row is the same species of hole as a candidate refused before contract selection: real suppression that
 leaves no trace. Team2 is options-only and has no shares fallback to be rescued by, so the gap does not reach its
 own books; that is a reason to schedule it, not to drop it.
+
+### 2026-09-21 - one implementation of "what the premium stop measures" (Team2 F129)
+
+`PlanRunner.live_premium_basis(trade)` is now the single place that answers "what price does the
+configured premium stop measure on this contract right now, and where did it come from". It is the
+2 s quote watch's own logic, extracted unchanged: the per-technique basis (F30 `premium_stop_basis`),
+`stale_seconds`, no delayed or derived rows (R4, 2026-09-04), and a FRESH real-time quote with no bid
+is `0.0` - a total bleed, not a data gap. The watch calls it, and so must any other path that turns a
+price into a monetary exit decision. A technique's own read may estimate a premium; it may not sell on
+that estimate.
+
+`PlanRunner._exit(...)` takes an optional `authority` record and puts it on the `TechniquePlanExit`
+row (additive - the event contract's required fields are unchanged). An exit that was decided on a
+price says which price, from which quote, at which source timestamp, against which fill and which
+threshold. Model or research numbers may ride along under `model`, explicitly separate from the
+authority. Base behaviour for other desks is unchanged: no runner passes `authority` unless it wants
+to, and no defaults moved.

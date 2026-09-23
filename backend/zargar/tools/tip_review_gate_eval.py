@@ -110,7 +110,14 @@ def items_at(hist, t: int) -> list[dict]:
     return [{"kind": k, "symbol": sym, "source": src} for k, sym, src, a, b in hist if a <= t and (b is None or t < b)]
 
 
-async def retrospective(c, since: str) -> dict:
+def _window(since: str, until: str | None) -> tuple[dt.datetime, dt.datetime | None]:
+    """Accounting-day anchors (04:00 ET) - the ONE cutoff every exported report shares (S21-02 rev 2)."""
+    a = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=_ET)
+    b = dt.datetime.combine(dt.date.fromisoformat(until) + dt.timedelta(days=1), dt.time(4, 0), tzinfo=_ET) if until else None
+    return a, b
+
+
+async def retrospective(c, since: str, until: str | None = None) -> dict:
     rate = (await _rates(c)).get("claude-opus-5")
     hist = await desk_history(c)
     fails = collections.defaultdict(list)
@@ -119,9 +126,13 @@ async def retrospective(c, since: str) -> dict:
                            dt.datetime.fromisoformat(since).replace(tzinfo=dt.timezone.utc)):
         fails[s["source_name"]].append((s["created_at"], [x.get("name") for x in (J(s["verification"]).get("checks") or [])
                                                           if x.get("passed") is False]))
-    runs = await c.fetch("""select id, source, created_at, opinion, trace from tip_analyst_runs
-        where kind='intake' and verdict='review' and created_at >= $1 order by created_at""",
-                         dt.datetime.fromisoformat(since).replace(tzinfo=dt.timezone.utc))
+    _a, _b = _window(since, until)
+    if _b is None:
+        runs = await c.fetch("""select id, source, created_at, opinion, trace from tip_analyst_runs
+            where kind='intake' and verdict='review' and created_at >= $1 order by created_at""", _a)
+    else:
+        runs = await c.fetch("""select id, source, created_at, opinion, trace from tip_analyst_runs
+            where kind='intake' and verdict='review' and created_at >= $1 and created_at < $2 order by created_at""", _a, _b)
     rows = []
     for r in runs:
         op = J(r["opinion"])
@@ -197,45 +208,101 @@ def report_retro(res: dict, since: str) -> None:
           "consumes. Reviews before 2026-09-09 carry no usage and are excluded.")
 
 
-async def prospective(c, since: str) -> None:
-    ev = await c.fetch("""select ts, payload from events where type='TipReviewGate' and ts >= $1 order by ts""",
-                       dt.datetime.fromisoformat(since).replace(tzinfo=dt.timezone.utc))
+async def prospective(c, since: str, *, until: str | None = None) -> dict:
+    """S21-02 (2026-09-21 review): every observe decision is joined to its review run WITH the run's terminal status,
+    and the report says which decisions are COMPLETE (a done review, judged), RUNNING, FAILED, UNMATCHED (no run row)
+    or UNEVALUABLE (a done run without an opinion). A management false negative can only be counted on a complete
+    review; an unresolved decision can never certify a clean checkpoint. Every skip-decision that carried a
+    correction / possible entry / mixed message / deferred action is exported in full - the human-review list is the
+    artifact, never a preview of it. Returns the summary for the checkpoint tooling."""
+    since_dt, until_dt = _window(since, until)     # the same cutoff the checkpoint and every other report use
+    if until_dt is None:
+        ev = await c.fetch("""select ts, payload from events where type='TipReviewGate' and ts >= $1 order by ts""", since_dt)
+    else:
+        ev = await c.fetch("""select ts, payload from events where type='TipReviewGate' and ts >= $1 and ts < $2 order by ts""",
+                           since_dt, until_dt)
     rate = (await _rates(c)).get("claude-opus-5")
     ids = [J(e["payload"]).get("intakeRunId") for e in ev]
-    runs = {r["id"]: J(r["opinion"]) for r in await c.fetch(
-        "select id, opinion from tip_analyst_runs where id = any($1::varchar[])", [i for i in ids if i])}
+    runs = {r["id"]: {"status": (r["status"] if "status" in r.keys() else None),
+                      "opinion": J(r["opinion"]) if r["opinion"] is not None else None,
+                      "error": (r["error"] if "error" in r.keys() else None)}
+            for r in await c.fetch("select id, status, opinion, error from tip_analyst_runs where id = any($1::varchar[])",
+                                   [i for i in ids if i])}
     cnt = collections.Counter(); fn = []; cost = collections.defaultdict(float); other = []; incomplete = 0
+    resolution = collections.Counter(); unresolved: list[dict] = []
     sessions = set()
     for e in ev:
-        p = J(e["payload"]); op = runs.get(p.get("intakeRunId")) or {}
+        p = J(e["payload"])
+        rid = p.get("intakeRunId")
+        r = runs.get(rid)
+        status = (r or {}).get("status")
+        op = ((r or {}).get("opinion") or {}) if r else {}
+        if r is None:
+            state = "unmatched"
+        elif status in ("done", None) and op:
+            state = "complete"                      # a row without a status column (older rig) with an opinion counts
+        elif status == "running":
+            state = "running"
+        elif status == "failed":
+            state = "failed"
+        else:
+            state = "unevaluable"
+        resolution[state] += 1
+        if state != "complete":
+            unresolved.append({"at": e["ts"], "state": state, "runId": rid, "source": p.get("source"),
+                               "decision": p.get("decision"), "tickers": p.get("tickers"), "error": (r or {}).get("error")})
         tools = [t.get("tool") or t.get("name") for t in (op.get("toolsUsed") or [])]
         _i, _o, usd = usage_usd(op, rate)
         key = (p.get("mode"), p.get("decision"), bool(p.get("applied")))
         cnt[key] += 1; cost[key] += usd or 0.0
         sessions.add((e["ts"].astimezone(_ET) - dt.timedelta(hours=4)).date())
         incomplete += 1 if p.get("readErrors") else 0
-        if p.get("decision") == "skip" and any(t in MGMT for t in tools):
-            fn.append((e["ts"], p.get("source"), p.get("tickers"), [t for t in tools if t in MGMT]))
-        elif p.get("decision") == "skip" and (op.get("missedTip") or op.get("watch") or len(p.get("tickers") or []) >= 2):
-            other.append((e["ts"], p.get("source"), p.get("tickers"), bool(op.get("missedTip")), bool(op.get("watch")),
-                          (op.get("rationale") or "")[:140]))
-    print(f"# Intake review gate - prospective decisions since {since}\n")
+        if p.get("decision") != "skip":
+            continue
+        if state == "complete" and any(t in MGMT for t in tools):
+            fn.append({"at": e["ts"], "source": p.get("source"), "tickers": p.get("tickers"), "runId": rid,
+                       "tools": [t for t in tools if t in MGMT],
+                       "receipts": [x for x in (op.get("receipts") or []) if (x.get("tool") in MGMT)]})
+        elif state != "complete" or op.get("missedTip") or op.get("watch") or len(p.get("tickers") or []) >= 2:
+            other.append({"at": e["ts"], "source": p.get("source"), "tickers": p.get("tickers"), "runId": rid, "state": state,
+                          "missedTip": op.get("missedTip"), "watch": op.get("watch"),
+                          "proposedManagement": [t for t in tools if t in MGMT],
+                          "rationale": (op.get("rationale") or "")})
+    n_unresolved = sum(1 for r in unresolved)
+    eligible = (n_unresolved == 0 and len(fn) == 0)
+    print(f"# Intake review gate - prospective decisions since {since}" + (f" through {until}" if until else "") + "\n")
     print(f"Coverage: {len(ev)} decision(s) over {len(sessions)} accounting session(s) ({', '.join(str(d) for d in sorted(sessions)) or 'none'}); "
-          f"{incomplete} decided with an incomplete desk read (always reviewed).\n")
-    print("| mode | decision | skipped for real | messages | est. review cost |")
+          f"{incomplete} decided with an incomplete desk read (always reviewed).")
+    print("\n| resolution | decisions |\n|---|---:|")
+    for k in ("complete", "running", "failed", "unmatched", "unevaluable"):
+        print(f"| {k} | {resolution.get(k, 0)} |")
+    print(f"\n**Checkpoint eligibility: {'ELIGIBLE' if eligible else 'INCOMPLETE'}** - "
+          + ("every decision is joined to a complete review and no complete review managed anything on a skip."
+             if eligible else f"{n_unresolved} unresolved decision(s) (running / failed / unmatched / unevaluable) and "
+                              f"{len(fn)} management false negative(s); an unknown outcome cannot certify a clean checkpoint."))
+    if unresolved:
+        print("\nUnresolved decisions (each needs a human or a rerun before the checkpoint can be called clean):")
+        for u in unresolved:
+            print(f"- {u['at']:%Y-%m-%d %H:%M} {u['state']} run={u['runId']} {u['source']} {u['tickers']} decision={u['decision']}"
+                  + (f" error={str(u['error'])[:100]}" if u.get('error') else ""))
+    print("\n| mode | decision | skipped for real | messages | est. review cost |")
     print("|---|---|---|---:|---:|")
     for k, n in sorted(cnt.items()):
         print(f"| {k[0]} | {k[1]} | {k[2]} | {n} | ${cost[k]:,.2f} |")
-    print(f"\n**False negatives (observe skip-decisions whose review managed something): {len(fn)}**")
+    print(f"\n**Management false negatives (complete reviews of observe skip-decisions that managed something): {len(fn)}**")
     for f in fn:
-        print(f"- {f[0]:%Y-%m-%d %H:%M} {f[1]} {f[2]} {f[3]}")
-    print(f"\nSkip-decisions that carried something else worth a human read (possible new entry, deferred action, mixed "
-          f"message): {len(other)}")
-    for o in other[:20]:
-        print(f"- {o[0]:%Y-%m-%d %H:%M} {o[1]} {o[2]} missedTip={o[3]} watch={o[4]} | {o[5]}")
+        print(f"- {f['at']:%Y-%m-%d %H:%M} {f['source']} {f['tickers']} run={f['runId']} tools={f['tools']} receipts={len(f['receipts'])}")
+    print(f"\nHuman-review candidates among skip-decisions - ALL {len(other)} exported (possible new entry, deferred action, "
+          "mixed message, unresolved review); management proposals are listed apart from actions that succeeded:")
+    for o in other:
+        print(f"- {o['at']:%Y-%m-%d %H:%M} {o['source']} {o['tickers']} run={o['runId']} state={o['state']} "
+              f"missedTip={o['missedTip'] or None} watch={o['watch'] or None} proposedManagement={o['proposedManagement'] or None} "
+              f"| {o['rationale']}")
     print("\nThis is a REVIEW checkpoint, not an activation rule: zero management false negatives here AND in the retrospective "
-          "replay are necessary; a human also reads the list above (corrections, new entries, mixed messages, useful deferred "
-          "actions). A few clean sessions are not statistical proof that no harmful exclusion exists.")
+          "replay are necessary, every unresolved decision must be resolved, and a human reads the full list above. A few clean "
+          "sessions are not statistical proof that no harmful exclusion exists. No gate enforcement change follows from this report.")
+    return {"decisions": len(ev), "sessions": sorted(str(d) for d in sessions), "resolution": dict(resolution),
+            "falseNegatives": len(fn), "candidates": len(other), "unresolved": n_unresolved, "eligible": eligible}
 
 
 # ---- model-cost alternatives: the frozen-evaluation PLAN and its budget (no provider call is made here) ----
@@ -313,6 +380,8 @@ async def main() -> None:
     ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
     ap.add_argument("--since", default="2026-09-09")
     ap.add_argument("--prospective", action="store_true")
+    ap.add_argument("--until", default=None, help="last accounting day (inclusive) - applies to EVERY mode; default open-ended")
+    ap.add_argument("--json", default=None, help="--prospective: also write the structured summary (eligibility) to this path")
     ap.add_argument("--model-plan", action="store_true", help="frozen-evaluation case quotas + budget for cheaper review models (no provider call)")
     a = ap.parse_args()
     c = await asyncpg.connect(a.db, server_settings={"default_transaction_read_only": "on"})
@@ -320,11 +389,14 @@ async def main() -> None:
         if a.model_plan:
             cap = {r["id"] for r in await c.fetch("""select id from tip_analyst_runs where kind='intake' and verdict='review'
                                                      and trace::text like '%reviewManifest%'""")}
-            report_model_plan(model_plan(await retrospective(c, a.since), captured=cap), a.since)
+            report_model_plan(model_plan(await retrospective(c, a.since, a.until), captured=cap), a.since)
         elif a.prospective:
-            await prospective(c, a.since)
+            summary = await prospective(c, a.since, until=a.until)
+            if a.json:
+                with open(a.json, "w", encoding="utf-8") as fh:
+                    json.dump({**summary, "since": a.since, "until": a.until, "report": "review-gate-prospective"}, fh, indent=1)
         else:
-            report_retro(await retrospective(c, a.since), a.since)
+            report_retro(await retrospective(c, a.since, a.until), a.since)
     finally:
         await c.close()
 

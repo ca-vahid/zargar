@@ -15,15 +15,19 @@ ACTUAL observed sessions. **Opened:** 2026-09-19. **Status:** collecting.
 ## What is produced without anyone remembering
 
 Windows task **`ZargarTipsFiveSession`** (daily 02:00 Pacific from 2026-09-26, runs a missed start when the machine is
-next up) executes `C:\ProgramData\Zargar\tips-five-session.ps1` (source: `scripts/tips-five-session.ps1`). Read-only on
-the database. It overwrites, in `C:\ProgramData\Zargar\tips-five-session\`:
+next up) executes `C:\ProgramData\Zargar\tips-five-session.ps1` (source: `scripts/tips-five-session.ps1`, rev 2), which
+only launches `python -m zargar.tools.tip_checkpoint_status` (S21-02, 2026-09-22): an observed session is a COMPLETED
+accounting day with observe decisions (the current day never counts), ONE cutoff (`until` = last completed day) drives
+the count and every report, the gate must be in observe, every report's exit code is checked, and STATUS is written
+atomically. Read-only on the database. It overwrites, in `C:\ProgramData\Zargar\tips-five-session\`:
 
 | file | tool |
 |---|---|
-| `STATUS.json` | `READY` / `NOT-YET`, observed-session count, the last completed accounting day |
-| `review-gate-prospective.md` | `tip_review_gate_eval --since 2026-09-21 --prospective` — skip decisions, management false negatives, the human-read list |
+| `STATUS.json` | `READY` (five completed observe days, every required report produced with non-empty output, the gate report's structured `eligible: true`, no gap) / `NOT-YET` / `INCOMPLETE` (a weekday gap, or the gate report itself says unresolved decisions or false negatives exist - `incompleteReason`) / `FAILED` (a report failed, was empty, or the structured verdict was not written; partial output kept as `<name>.failed`) / `INVALID` (gate not in observe, or a mixed-mode day); the structured `eligibility` block is embedded |
+| `review-gate-prospective.md` | `tip_review_gate_eval --since 2026-09-21 --until <cutoff> --prospective` — resolution of every decision (complete / running / failed / unmatched / unevaluable), **Checkpoint eligibility**, management false negatives on complete reviews only, ALL human-review candidates |
 | `scorecard.md` | `tip_scorecard --since 2026-09-21 --until <last completed day>` — marked change after model cost (primary), realized beside it, priced / unpriced / partial model runs, dispositions, how positions ended |
 | `opportunity-dispositions.md` | `tip_outcomes --dispositions --since 2026-09-21` — every idea's disposition, avoidable misses apart |
+| `intake-coverage.md` | `tip_outcomes --coverage --since 2026-09-21` — every raw message's class (failed / pending messages listed with their replay budget) |
 | `review-model-cases.md` | `tip_review_gate_eval --model-plan` — how many captured review cases exist per case type (P2 readiness) |
 
 Outputs live outside the checkout on purpose: a dirty runtime checkout blocks deployments.

@@ -54,6 +54,10 @@ def round_trip(*, quote: dict | None, quote_status: str | None, qty: float, sec_
            "askSize": _f(q.get("askSize")) if q.get("askSize") is not None else None,
            "sourceTs": q.get("sourceTs"), "receivedTs": q.get("receivedTs"), "sampledAt": q.get("sampledAt"),
            "quoteAgeS": q.get("ageSeconds"), "quoteSource": q.get("source"), "delayed": q.get("delayed"),
+           # S21-05: which clock the age came from - `receipt` is labelled, never passed off as source freshness
+           "sourceTimeBasis": q.get("sourceTimeBasis") or ("source" if q.get("sourceTs") else "unknown"),
+           "vendorTs": q.get("vendorTs"), "pollTs": q.get("pollTs"), "observationId": q.get("observationId"),
+           "ageBasisNote": q.get("ageBasisNote"),
            "feeBasis": ("per contract per side" + (" + regulatory per contract" if reg_per_contract else "")) if is_opt
                        else "flat commission per order per side",
            "spreadPerUnit": None, "spread": None, "entryFees": None, "exitFees": None, "roundTrip": None,
@@ -118,6 +122,9 @@ def fill_vs_quote(*, fill_price: float | None, fill_qty: float | None, limit: fl
     out = {"version": DIAG_VERSION, "fillPrice": fp, "fillQty": fq, "limit": _f(limit),
            "quoteBid": bid, "quoteAsk": ask, "quoteMid": (round(mid, 4) if mid is not None else None),
            "quoteSourceTs": q.get("sourceTs"), "quoteSampledAt": q.get("sampledAt"), "quoteStatus": q.get("quoteStatus"),
+           # S21-04/05: WHICH quote this is (decision / submission / fill time) and which clock its age used
+           "quoteRole": q.get("quoteRole") or "decision",
+           "quoteSourceTimeBasis": q.get("sourceTimeBasis") or ("source" if q.get("sourceTs") else "receipt-or-unknown"),
            "vsLimit": None, "vsAsk": None, "vsMid": None, "vsAskDollars": None, "unknown": []}
     if fp is None or fq <= 0:
         out["unknown"] = ["fill"]
