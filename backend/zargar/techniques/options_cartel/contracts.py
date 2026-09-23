@@ -18,6 +18,11 @@ Two versioned behaviours live here (2026-09-21 brief, F2/F3):
   coverage, then (crossing spread + round-trip fees) / entry debit, then DTE distance, delta
   distance, symbol - current friction, never expected return. Eligibility is unchanged by
   either version; the saved 20% spread limit stays the gate.
+* ``executable_cost_v2`` (2026-09-22): v1 ranked every eligible contract by friction as a percent of
+  the debit, which always favours expensive deep in-the-money contracts (live Practice arms moved from
+  near-the-money calls to NOW 60C on a $140 stock). v2 applies the same cost tuple only inside a delta
+  window around the reviewed target (``cost_delta_band``, default 0.15 = 0.35-0.65 for a 0.50 target);
+  contracts outside the window rank after every contract inside it, in legacy order.
 """
 from __future__ import annotations
 
@@ -39,7 +44,7 @@ from .service import WireModel
 log = logging.getLogger("zargar.options_cartel.contracts")
 
 SELECTION_VERSIONS = ("legacy", "diverse_liquidity_v1")
-RANKING_VERSIONS = ("legacy", "executable_cost_v1")
+RANKING_VERSIONS = ("legacy", "executable_cost_v1", "executable_cost_v2")
 # One provider request at a time (the OPRA refresh already batches every tracked contract);
 # a single refresh may not outlive this many seconds or the caller's remaining deadline.
 REFRESH_CONCURRENCY = 1
@@ -66,7 +71,9 @@ class ContractSelectionInput(WireModel):
     refresh_limit: int = Field(default=12, ge=1, le=30)
     # Explicit, snapshotted behaviour versions. Missing keys on a saved arm mean legacy.
     selection_version: Literal["legacy", "diverse_liquidity_v1"] = "legacy"
-    ranking_version: Literal["legacy", "executable_cost_v1"] = "legacy"
+    ranking_version: Literal["legacy", "executable_cost_v1", "executable_cost_v2"] = "legacy"
+    # executable_cost_v2 only: the absolute-delta window around target_abs_delta inside which cost decides.
+    cost_delta_band: float = Field(default=.15, ge=.05, le=.5)
     # diverse_liquidity_v1 only: further batches of ``refresh_limit`` requests are allowed
     # only while refreshable candidates remain AND the caller's deadline has not passed.
     refresh_batches: int = Field(default=1, ge=1, le=3)
@@ -194,6 +201,23 @@ def _cost_key(policy):
     return key
 
 
+def in_delta_band(delta, policy) -> bool:
+    return _numeric(delta) and abs(abs(delta)-policy.target_abs_delta) <= policy.cost_delta_band+1e-12
+
+
+def _cost_v2_key(policy):
+    base = _cost_key(policy)
+    legacy = _legacy_key(policy)
+
+    def key(c):
+        if not c["eligible"]:
+            return (1, 0, legacy(c))
+        if not in_delta_band(c["delta"], policy):
+            return (0, 1, legacy(c))   # outside the reviewed delta window: legacy order, after every in-band contract
+        return (0, 0, base(c))
+    return key
+
+
 def rank_candidates(plan: CartelPlan, policy: ContractSelectionInput, rows: list[dict], at: int,
                     *, economics: SelectionEconomics | None = None) -> dict:
     today = dt.datetime.fromtimestamp(at/1000, ET).date()
@@ -244,7 +268,7 @@ def rank_candidates(plan: CartelPlan, policy: ContractSelectionInput, rows: list
                      "deltaAsOf": row.get("deltaAsOf") if _numeric(row.get("deltaAsOf")) else None,
                      "quoteSource": row.get("quoteSource"), "refreshed": True,
                      "eligible": not reasons, "reasons": reasons}
-        if policy.ranking_version == "executable_cost_v1" or economics is not None:
+        if policy.ranking_version in ("executable_cost_v1", "executable_cost_v2") or economics is not None:
             candidate["economics"] = contract_economics(bid, ask, candidate["askSize"], economics)
         candidates.append(candidate)
     legacy_order = sorted(candidates, key=_legacy_key(policy))
@@ -257,6 +281,17 @@ def rank_candidates(plan: CartelPlan, policy: ContractSelectionInput, rows: list
         ranking = ("executable_cost_v1: eligibility, displayed-size coverage of the affordable quantity, "
                    "(crossing spread + round-trip fees) / entry debit, distance to reviewed DTE, delta distance, symbol. "
                    "Current friction only; not expected return.")
+    elif policy.ranking_version == "executable_cost_v2":
+        candidates.sort(key=_cost_v2_key(policy))
+        for c in candidates:
+            k = _cost_key(policy)(c)
+            c["rankKey"] = {"ineligible": k[0], "inDeltaBand": in_delta_band(c["delta"], policy), "sizeCoverageKey": k[1],
+                            "frictionPctOfDebit": None if k[2] == float("inf") else k[2], "dteDistance": k[3],
+                            "deltaDistance": k[4], "symbol": k[5]}
+        lo, hi = policy.target_abs_delta-policy.cost_delta_band, policy.target_abs_delta+policy.cost_delta_band
+        ranking = (f"executable_cost_v2: eligibility; inside the reviewed delta window |delta| {lo:.2f}-{hi:.2f} first; within it "
+                   "displayed-size coverage, (crossing spread + round-trip fees) / entry debit, DTE distance, delta distance, "
+                   "symbol; outside it legacy order. Current friction only; not expected return.")
     else:
         candidates = legacy_order
         ranking = "Eligibility, distance to reviewed DTE, delta distance, spread, symbol."
