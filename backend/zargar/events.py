@@ -127,6 +127,7 @@ TECHNIQUE_ENTRY_DECISION = "TechniqueEntryDecision"      # deterministic-entry-v
 TECHNIQUE_ENTRY_EVIDENCE = "TechniqueEntryEvidence"      # optional LATER model opinion over the frozen decision snapshot - evidence only
 TECHNIQUE_EXIT_SHADOW = "TechniqueExitShadow"            # order-free exit observation (shadow-exit-v1): a target rung seen on a fresh quote
 TECHNIQUE_EXPERIMENT_PREPARED = "TechniqueExperimentPrepared"   # em-experiment-v1 (2026-09-19): one deterministic preparation of the experimental Practice book
+TECHNIQUE_EXIT_QUOTE = "TechniqueExitQuote"   # exit-quote-v1 (2026-09-22): the quote an EM exit was DECIDED on, journalled after the exit order is placed so it can never delay it
 TECHNIQUE_ADMISSION_ALARM = "TechniqueAdmissionAlarm"   # admission-health-v1 (2026-09-21): the desk is armed and silent - an ALARM about systemic evidence rejection, never a gate
 TECHNIQUE_FIRST_SALE = "TechniqueFirstSale"    # first-sale-v1 (2026-09-18): geometry/economics at the FINAL quantity; refuses only under `enforce`
 TECHNIQUE_TARGET_DISTANCE = "TechniqueTargetDistance"    # diagnostic only: distance in R to the quantity-dependent full-exit rung      # Delivery B: an accepted source edit/delete/restore (never touches positions)          # Delivery B: an order-free scenario candidate asked to arm

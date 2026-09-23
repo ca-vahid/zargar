@@ -244,6 +244,55 @@ class PlanArmer(PlanRunner):
         with contextlib.suppress(Exception):
             self._admission_observe(ap, rec)          # alarm only - never refuses, never retries, never sizes
 
+    # ---- exit-quote-v1 (2026-09-22): what the exit was DECIDED on.
+    # Until now an exit's fill could be compared only with nothing: the quote at the decision was never kept, so the
+    # exit-side spread - half of every option round trip's friction - was an estimate. The snapshot is a synchronous
+    # cache read taken BEFORE the exit is placed, so it is the quote the decision saw; it is journalled AFTER the exit
+    # order exists, through the same bounded recorder as the first-sale records, so a protective exit never waits on it.
+    def exit_quote_enabled(self) -> bool:
+        return bool(self.engine.settings.get("techniques.enhanced_market.exit_quote_capture", True))
+
+    def _exit_quote_snapshot(self, ap, trade, kind: str, qty: float) -> dict | None:
+        from .research_recorder import feed_identity, quote_evidence
+        is_opt = trade.instrument == "options" and bool(trade.order_symbol)
+        sym = trade.order_symbol if is_opt else ap.symbol
+        ev_ = quote_evidence(self.engine.quotes.get(sym), symbol=sym, is_option=is_opt,
+                             feed=(None if is_opt else feed_identity(self.engine)))
+        if ev_ is None:
+            return None
+        return {"version": "exit-quote-v1", "runId": ap.run_id, "symbol": sym, "underlying": ap.symbol,
+                "trigger": trade.trigger_id, "kind": kind, "qty": float(qty), "instrument": trade.instrument,
+                "bid": ev_.get("bid"), "ask": ev_.get("ask"), "bidSize": ev_.get("bidSize"), "askSize": ev_.get("askSize"),
+                "quoteTs": ev_.get("quoteTs"), "receivedTs": ev_.get("receivedTs"), "source": ev_.get("source"),
+                "sourceBasis": ev_.get("sourceBasis"), "decidedTs": int(time.time() * 1000)}
+
+    def _exit_quote_publish(self, ap, snap: dict, order_ids: list) -> None:
+        if not order_ids:
+            return                                    # no exit order was placed: there is no fill to compare against
+        r = self.__dict__.get("_eq_recorder")
+        if r is None:
+            from .research_recorder import BoundedRecorder
+            journal = self.engine.journal
+
+            async def write(item: dict) -> None:
+                await journal.append(ev.TECHNIQUE_EXIT_QUOTE, item["rec"], aggregate_type="technique_run",
+                                     aggregate_id=item["runId"], portfolio_id=item["portfolioId"])
+            r = self._eq_recorder = BoundedRecorder(write, name="em-exit-quote", maxsize=128)
+        r.put({"rec": {**snap, "exitOrderId": str(order_ids[0]), "exitOrderIds": [str(x) for x in order_ids]},
+               "runId": ap.run_id, "portfolioId": ap.config.portfolio_id})
+
+    async def _exit(self, ap, tr, kind, qty, *, journal, **kw):
+        snap = None
+        if self.exit_quote_enabled():
+            with contextlib.suppress(Exception):
+                snap = self._exit_quote_snapshot(ap, tr, kind, qty)
+        before = len(getattr(tr, "exit_order_ids", None) or [])
+        result = await super()._exit(ap, tr, kind, qty, journal=journal, **kw)
+        if snap is not None:
+            with contextlib.suppress(Exception):
+                self._exit_quote_publish(ap, snap, list((tr.exit_order_ids or [])[before:]))
+        return result
+
     # ---- deferral-retry-v1 (2026-09-21): DEFAULT OFF. See `deferred_retry.py` for why this is a
     # proposal rather than a fix: the frozen behaviour makes a "deferred" entry terminal, and that is
     # what ran on 2026-09-21. Under `bounded` the same setup gets ONE more pass through the unchanged
