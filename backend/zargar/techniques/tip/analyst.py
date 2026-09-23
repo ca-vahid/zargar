@@ -1712,7 +1712,7 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         _msgs = cache_messages(messages, enabled=bool(st.get("promptCache")) and st.get("promptCacheScope") == "conversation")
         create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=_msgs, tools=_tools_param)
         from .model_policy import effort_kw as _effort_kw
-        create_kw.update(_effort_kw(eng.settings, "techniques.tip.analyst_effort", model))   # 2026-09-23: pinned depth
+        create_kw.update(_effort_kw(getattr(eng, "settings", None), "techniques.tip.analyst_effort", model))   # 2026-09-23: pinned depth
         if force_final:
             create_kw["tool_choice"] = {"type": "none"}
         resp = None

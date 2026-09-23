@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.38";
+export const APP_VERSION = "0.8.39";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.39",date:"2026-09-23",title:"Tips: lower model cost (caching, Opus 5.5, fewer needless reviews, batch jobs)",items:[
+    {tag:"improved",text:"Tips reviews reuse their cached conversation (about half the cost of a multi-turn review) and can run on Claude Opus 5.5 at the same thinking depth. Replies are replayed exactly as received when a reply has to be repaired."},
+    {tag:"new",text:"A message that touches nothing the desk holds, waits on or proposes, and that extraction marked non-actionable, can skip the analyst review (a switch, recorded on every decision). Messages about positions, plans or possible entries are always reviewed."},
+    {tag:"new",text:"The cost of every intake extraction and image transcription is now recorded per call, so the Tips cost report covers intake too. Nightly digests and knowledge audits can go through the batch API at half price."},
+    {tag:"new",text:"Separate model and depth settings for intake extraction, and a notes-only review trim that keeps every rule in full; both are chosen from a side-by-side test on real messages. No trading policy, risk limit, stop or approval control changed."},
+  ]},
   {version:"0.8.38",date:"2026-09-23",title:"Hourly and daily history come from the paid Alpaca feed",items:[
     {tag:"fixed",text:"Hourly and daily price history for US stocks now comes from Alpaca instead of Yahoo, whose daily history silently skipped the September 22 session. Hours still start at the open (9:30, 10:30 ...), as every technique reads them, and daily bars carry the official open, close and volume; compared with Yahoo they match to within a few hundredths of a percent. Yahoo remains the fallback and the source for non-US listings."},
   ]},
