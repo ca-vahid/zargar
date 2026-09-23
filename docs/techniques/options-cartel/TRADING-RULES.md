@@ -287,3 +287,14 @@ non-increasing dry-up rule, first-target arm gate. Finding: every untrusted conf
 exist; fixing that would require deciding after the close, which the non-retroactivity rule forbids.
 No threshold was loosened on one day's evidence; no profitability is claimed.
 
+## September 23: benchmark data outage, Practice switched to native daily bars
+
+Yahoo's daily history omitted the 2026-09-22 session (SPY/QQQ jumped from 09-21 to 09-23 even on a
+cache-bypassing fetch). Every preparation from 09-22 20:20 ET to 09-23 09:29 ET stopped at
+`waiting_for_benchmark`, so Cartel armed nothing on 09-23. Alpaca's native daily bars contained the
+session (SPY 773.38, QQQ 747.46). At 13:52 ET Practice was switched to `nativeDailyBatch=true` (the
+documented alternate provider-day dataset, separate cache) through the journaled preparation endpoint.
+Native bars are raw (not split-adjusted); revert with `nativeDailyBatch=false` once Yahoo backfills
+09-22 if adjusted history is preferred. Open follow-up: a provider fallback for a single missing benchmark
+session, so one vendor hole cannot stop the desk for a day.
+
