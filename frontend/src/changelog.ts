@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.34";
+export const APP_VERSION = "0.8.35";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.35",date:"2026-09-23",title:"EM: a stop rule for the method, a daily scorecard, and BRK.B on the live stream",items:[
+    {tag:"new",text:"EM now has a stop rule, agreed before the answer is known: after 20 evaluable sessions from 2026-09-22, if the baseline book's cumulative R is at or below zero and the optimistic end of its average trade is under +0.1R, the paid nightly model review stops and EM stays watch-only. The close check writes a daily scorecard (track record per book, the stop rule, and five preregistered tests with fixed sample sizes) and raises a notice when a decision is due. It never changes a setting itself."},
+    {tag:"new",text:"EM records the quote each exit was decided on, tied to its exit order, so the exit side of the spread is measured instead of estimated. Observation only; an exit never waits for it."},
+    {tag:"fixed",text:"BRK.B (and other US share classes such as BF.B) now stream live from Alpaca. Before, the dot in the ticker kept them on the slower Yahoo poll, and on 2026-09-22 BRK.B's plans saw a new bar only every three to five minutes. Foreign listings (.TO, .V) are unchanged."},
+    {tag:"improved",text:"EM's evening preparation runs as a recurring, resumable weekday task (one paid read at a time, one batch at a time) with a switch to turn the paid review off; the after-arming check follows Friday's batch to Monday. The Sept-21 fixes ride along: clock health check, admission alarm, and share observations with the same evidence policy as options."},
+  ]},
   {version:"0.8.34",date:"2026-09-23",title:"Tips: correct target evidence, cleaner controls, and measured cost levers",items:[
     {tag:"fixed",text:"Scorecard: an option's target-to-fill is judged on the underlying at the fill minute (it had compared a premium with a stock target). Shadow research books are counted from their first execution, and the books with sells they never bought are quarantined as evidence."},
     {tag:"new",text:"Approval cards can show the equal-risk share size when an option cannot be sized within the budget (shown, never substituted), and an optional friction flag. Optional book and single-name exposure caps and per-source review budgets ship off."},
@@ -61,10 +67,22 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"Interrupted Cartel preparation now keeps its recovery checkpoint and resumes under the existing retry settings. Existing armed plans are preserved."},
     {tag:"improved",text:"The preparation panel explains saved work and how to resume, instead of showing stale discovery progress and a generic red restart error."},
   ]},
+  {version:"0.8.26",date:"2026-09-19",title:"EM Experimental: a second Practice book runs the integrated method",items:[
+    {tag:"new",text:"EM can run a dedicated experimental Practice book beside the unchanged EM Practice baseline. The experimental book prepares with rules only, enforces reward to risk at the real first sale, records executable profit, trades eligible source ideas and fresh setups, and protects a runner that closes back through its first target."},
+    {tag:"improved",text:"Every experimental policy is resolved for that one simulated book. The baseline book, other desks, live accounts and all risk limits are unchanged. Pausing the experimental book stops its new entries while open positions stay managed."},
+  ]},
   {version:"0.8.25",date:"2026-09-19",title:"Tips: opportunity tracking and a faster cold-ticker path",items:[
     {tag:"fixed",text:"A tip parked only because its symbol had no quote yet is re-checked on the first real quote (up to 60 s) instead of waiting for the 15-minute sweep. The same verification, plan and risk checks apply."},
     {tag:"new",text:"Reports: every actionable idea gets one disposition (filled, declined, risk-infeasible, late, analysis failed, approval expired, order unfilled) with avoidable misses apart; the scorecard shows how closed positions ended, winners and losers together; review cost is split by message type and what the review did."},
     {tag:"improved",text:"A reviewed rule consolidation can be applied as a pending proposal: duplicates are retired reversibly and the merged rule stays non-operative until approved. A cheaper-model evaluation of intake reviews is prepared with a $35 ceiling; no paid run and no model change."},
+  ]},
+  {version:"0.8.23",date:"2026-09-18",title:"EM: source fidelity, one preparation owner and executable profit",items:[
+    {tag:"new",text:"EM Validation has a read-only review panel: what each author actually said against every trigger we planned and the gate that decided, order-free source candidates, first-sale R at the final quantity, and realized, displayed and executable profit side by side."},
+    {tag:"fixed",text:"EM can measure reward to risk where a position really exits, at the quantity bought and the live underlying price. The check is built and switched off; observing it and enforcing it are separate settings."},
+    {tag:"new",text:"Source ideas keep their author, direction, conditions and timing. A ticker the transcript does not support stays unresolved, a call strike is never a price target, and a correction never rewrites what the app knew on the day."},
+    {tag:"new",text:"A rules-based preparation policy, a fresh-setup requalification study and the executable-profit recorder are built and switched off. Baseline Practice preparation and trading are unchanged."},
+    {tag:"fixed",text:"EM research: a thin first quote no longer closes the runner-protection search."},
+    {tag:"fixed",text:"EM review panel: each trade keeps its own result even when two entries share one contract, late fills are shown as revisions, partial results say what is unknown, and model cost is shown as an estimate beside results."},
   ]},
   {version:"0.8.22",date:"2026-09-18",title:"Cartel trial readiness",items:[
     {tag:"fixed",text:"A frozen trial now says awaiting sessions before its first market open, instead of reporting future observations as missing evidence."},
@@ -100,11 +118,20 @@ export const CHANGELOG: Release[] = [
     {tag:"improved",text:"Cartel records partial candle evidence, delayed-bar counts and the dollar cost of option spreads to explain missed entries. Trading thresholds and account protections are unchanged."},
     {tag:"new",text:"Offline Cartel method comparisons now distinguish original preparation, later recovery and unavailable evidence. Experimental setup and volume rules remain inactive."},
   ]},
+  {version:"0.8.13",date:"2026-09-18",title:"EM research: the runner-protection observation seeks a real quote",items:[
+    {tag:"improved",text:"EM research observer (behind the already-on shadow knob, order-free): after a confirmed TP1 trim, the bar that closes back through the saved first target now records the signal once and keeps looking for the first fresh, adequately covered contract quote on later quotes - a stale or thin first sample is raw evidence and no longer ends the search. The offline reducer walks fills and completed bars in time order, validates every observation strictly (trade, contract, signal, chronology, coverage, lifetime, cutoff) and reports proxy-only until an observation passes. No exit is placed from any of this; nothing else changes."},
+  ]},
   {version:"0.8.12",date:"2026-09-17",title:"Team2: a breakout never targets the level it broke",items:[
     {tag:"fixed",text:"Team2 target resolution (September 17 QQQ finding): a setup's destination must be distinct from, and beyond, the structural level it broke or held, and ahead of the current actionable price (the fresh underlying print aged by its own trade time, else the bid/ask midpoint aged by the quote's own time, judged at the fire and again at the order boundary after the awaited work) - the same way for the EMA entry and the level entry of one setup. A target that is the setup's own source level is refused with a clear reason (skip_target_collision) instead of being re-planned to a farther level or silently dropped; no distance threshold is used. Switch: techniques.team2.target_identity_guard (default on; off = the earlier behaviour)."},
     {tag:"new",text:"Team2 pre-market inputs carry provenance: every frozen PMH/PML names the bar it came from and the hash of all pre-market bars (journaled at 09:25 and at the 09:30 finalization), and python -m zargar.tools.team2_pm_audit --date reconciles a plan's frozen extremes against the bank and the plan's own bar-revision history without rewriting the decision."},
     {tag:"improved",text:"Team2 chain listings (which contracts exist for an expiry) are cached per provider, symbol and expiry, concurrent requests share one fetch, a rate-limited or transient failure is retried twice with short back-offs and may serve a labelled stale listing within a bound; every candidate is still re-priced on the live NBBO and the timing gates are unchanged."},
     {tag:"improved",text:"Team2 shadow diagnostics: target and stop room from the actual underlying quote at the order boundary, whether the target is the setup's own level, Greeks with their provenance, a labelled payoff estimate after commissions and spread (insufficient evidence when an input is missing), coverage reported separately for attempts, Greeks and follow-up quotes, and gross versus net outcomes side by side (the risk counter's basis is unchanged)."},
+  ]},
+  {version:"0.8.12",date:"2026-09-18",title:"EM: the pre-open re-plan stops drawing charts nobody reads; profit-protection and prep-ablation research",items:[
+    {tag:"improved",text:"EM pre-open re-plan runs (09:25 ET, deterministic, no model pass) no longer render four charts each on the single render thread - 45 of them did at the open on 09-17. Every run a model or a person reads keeps its charts and annotated map."},
+    {tag:"new",text:"Practice simulator: an OPTION quote implausibly wide for its mid can be barred from pricing an OPENING order (config sim_max_option_spread_pct, OFF by default; stops, flattens and reducing exits are never capped - a proposal after the ORCL 148C fill at 1.12 on a 0.76/1.12 snapshot the contract never traded at). Share orders keep their own 5% rule."},
+    {tag:"improved",text:"EM profitability report: a frozen runner-protection candidate (exit the runner only if a completed bar closes back through the saved TP1 after a CONFIRMED trim; a research-only reclaim observation records the contract quote at the signal), a descriptive table of closed positions without a TP1 trim, and the first-order premium edge at TP1 after friction per intent. Offline research; nothing trades from it."},
+    {tag:"new",text:"EM preparation ablation tool (research, zero paid calls): replays every saved read of a prepared sheet through the live pre-open rules and the walk-forward tracker to compare model-selected, deterministic and exception-filtered plan sets; classifies the model's vetoes."},
   ]},
   {version:"0.8.11",date:"2026-09-17",title:"A quote that was changed locally can no longer pass as a venue quote",items:[
     {tag:"fixed",text:"Options: a real-time OPRA bid/ask is never bent toward a slower feed's last print any more (a 15-minute-old 0.70 print had turned a fresh 1.90/2.00 MRNA 165C band into 0.65/0.75 still labelled OPRA, and Practice 'bought' at 0.75). A delayed-chain estimate that IS recentred is now labelled derived, keeps the raw venue prices beside it, and can never price a simulated fill; fill receipts show the raw values and the transform."},
@@ -118,12 +145,31 @@ export const CHANGELOG: Release[] = [
   {version:"0.8.10",date:"2026-09-17",title:"Practice share stops trigger only in the regular session, on a real quote",items:[
     {tag:"fixed",text:"Practice (sim) share orders now rest outside 09:30-16:00 ET unless placed for extended hours, and a stop never triggers on a placeholder quote: a quarantined shadow book's AFRM stop had 'filled' 27 sh at 44.99 at 03:59 ET on a 45/75 pre-market book while the stock traded 72-74. A share quote wider than 5% of mid cannot price a simulated fill; the order waits and says why (both knobs, sim.stock_sessions / sim.max_spread_pct)."},
   ]},
+  {version:"0.8.09",date:"2026-09-17",title:"EM Analyse tab stays up beside other techniques' runs",items:[
+    {tag:"fixed",text:"EM > Analyse crashed (\"Cannot read properties of undefined (reading 'map')\") a few seconds after opening: the page read the newest run of ANY technique, and tonight that was an Options Cartel research run whose analysis has no EM levels. The EM page now lists only EM runs, and the result view tolerates an analysis without levels, targets or reasons."},
+    {tag:"fixed",text:"EM profitability report (offline research tool): the paired confirmation comparison now tells the report's cutoff apart from the session's actual 16:00 ET close - a 10:02 ET report with one observed bar after the touch stays PENDING instead of reading as no confirmation; only the session's last bar closes an incomplete horizon. Preparation and trading unchanged."},
+  ]},
+  {version:"0.8.08",date:"2026-09-16",title:"The EM check panel finishes when the server has finished",items:[
+    {tag:"fixed",text:"EM > Validation: the analyst-check panel no longer sits at \"73/114 · 0 working · 0 queued · ~2.1 h left\" for hours on a batch the server had finished. Its run list was crowded out of the window by another technique's research runs, so every 3 s it fetched up to 40 full runs and restarted itself before recording any of them - a real load on the engine while the page stayed open. Now the list is filtered to the batch, a finished run is never fetched again, a run the server cannot return is counted as not loaded after a few looks, one poll runs at a time, and the batch closes when nothing is open."},
+    {tag:"improved",text:"The check panel lives on the Validation tab (phones keep it on every tab), the time-left estimate shows only while something is actually running, and a dismissed batch stays dismissed instead of coming back on the next reload."},
+  ]},
   {version:"0.8.07",date:"2026-09-16",title:"Knowledge tab: the true total, the loaded count and honest category counts",items:[
     {tag:"fixed",text:"Tips > Knowledge: the category buttons (Rules, Tickers, Sources, General, Needs you) now filter on the server BEFORE paging, so an older rule or a flagged note beyond the first 200 rows is reachable through its button instead of vanishing; their counts are the whole store's, not the loaded page's."},
     {tag:"improved",text:"The coverage line shows two separate numbers - how many notes MATCH the current view/search and how many are LOADED - with a load-more that names how many come next; it lives on its own wrapping row so it stays visible at phone widths and browser zoom instead of being pushed out of the panel header."},
   ]},
+  {version:"0.8.06",date:"2026-09-17",title:"The watchdog never mistakes a quiet engine for a dead one",items:[
+    {tag:"fixed",text:"Watchdog: a live engine process whose log is quiet is LIVE, not absent; a process-discovery failure is UNCERTAIN; both refuse ordinary recovery (with or without -Force) because readiness is unavailable, and only the explicit override replaces a living engine. A healthy first probe clears the stall marker and alert state; -ProbeOnly creates nothing and writes nothing. The caller decision is a pure function with mocked acceptance (20 cases)."},
+    {tag:"improved",text:"EM profitability report: the paired confirmation comparison judges the entry minute itself, keeps incomplete horizons pending, states that the touch bar never confirms, and labels itself a geometry-only underlying proxy naming the gates it does not evaluate. Research labels only; no trading change."},
+  ]},
   {version:"0.8.05",date:"2026-09-16",title:"Team2 candidate quotes are bound at examination",items:[
     {tag:"fixed",text:"Team2 shadow diagnostics: each contract the picker examines is recorded as ONE observation - its bid/ask, provenance, source-confirmation time, receipt time and capture time are captured together at that moment, and the report validates and shows exactly that record. A later quote-cache state is a separate observation and is never attached to an earlier price; a quote that moves during capture is marked unknown with the reason."},
+  ]},
+  {version:"0.8.04",date:"2026-09-17",title:"EM entries survive a rate-limited chain; the engine can name a stall",items:[
+    {tag:"fixed",text:"EM option pick: a CBOE HTTP 429 (rate limit) is retried briefly (0.6 s, then 1.2 s; Retry-After honoured up to 2 s) before the entry gives up; expired chain data is never served for a live pick; the no-contract alert names the cause and says a short has no shares fallback by rule. Background chain fetches (enrichment, research) stand down for options.cboe_cooldown_seconds after a 429 instead of feeding the burst."},
+    {tag:"fixed",text:"Two event-loop stall causes the new stall watch named on its first evening are fixed: root logging goes through a queue (the rotating file handler wrote on the loop - one 51 s stall came from inside it), and provider chain/snapshot JSON is parsed off the loop (a multi-megabyte CBOE chain took 4 s on it); chain normalisation and the enrichment index run on a worker thread too, and the enrichment pass yields between underlyings (a 4.8 s stall was OCC formatting over thousands of rows)."},
+    {tag:"improved",text:"Chart rendering for the vision passes runs off the event loop on one worker thread, and an event-loop stall watch (ops.loop_stall_seconds) logs the blocking call site and reports loopStalls / lastStall / eventLoopLagMs on /api/health - the 2026-09-16 restart storm could not say what stalled."},
+    {tag:"improved",text:"EM profitability report: P-04 entry strata (descriptive) plus a paired, order-free confirmation comparison (confirmed close, then next-bar open, unchanged gates, distinct refusals, option dollars unknown), and P-05 session-window / event-phase cohorts from the shared session clock with unknown calendar coverage stated. Research labels only; no trading rule changes."},
+    {tag:"fixed",text:"/api/health answers build=unknown instead of a 500 when the launch-bound build helper is missing from the checkout."},
   ]},
   {version:"0.8.03",date:"2026-09-16",title:"Team2 quote freshness reads the source, not the receipt",items:[
     {tag:"fixed",text:"Team2 shadow diagnostics: a price's freshness is judged on the provider's confirmation time for that bid/ask (the quote's source timestamp), never on when the app last received it - a recently received old price is unknown at the entry and at every follow-up, a price with no source evidence stays unknown, and a freshly confirmed unchanged price still counts. Receipt and collection times are recorded beside the source time."},

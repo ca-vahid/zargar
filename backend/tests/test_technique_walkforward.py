@@ -918,3 +918,18 @@ def test_tracker_short_reject_mirror_invalidation():
     st = tr.on_bar(_bar(d, 9, 45, 102.4, 102.6, 102.2, 102.5), 1)
     assert st == "invalidated"
     assert tr.on_bar(_bar(d, 9, 50, 100.0, 100.1, 99.9, 100.0), 2) == "invalidated"
+
+
+async def test_preopen_replan_runs_render_no_charts_but_ordinary_plan_runs_still_do(rig):
+    """2026-09-18 (EOD review, C): a deterministic pre-open re-plan renders no charts (no model pass reads them; the UI
+    renders on demand) - the 09:25 ET burst of 45 re-plans x 4 charts on the single render thread is gone. Every other
+    plan run keeps its pass charts and the annotated map."""
+    close_ts = session_bounds(rig.close_day)[1]
+    lazy = await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=False, wait=True, trigger="preopen_replan")
+    assert lazy["status"] == "done", lazy.get("error")
+    assert lazy["mode"] == "plan" and lazy["result"]["plan"]["validTriggers"] >= 1, "the plan itself is unchanged"
+    assert not lazy["images"].get("1m") and not lazy["images"].get("annotated")
+    steps = {(t["stage"], t["step"]): t for t in lazy["result"]["trace"]}
+    assert (steps[("data", "charts")].get("detail") or {}).get("skipped") is True
+    eager = await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=False, wait=True)
+    assert eager["images"].get("1m") and eager["images"].get("annotated")

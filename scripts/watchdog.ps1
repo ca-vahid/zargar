@@ -13,15 +13,42 @@
 # Every restart records the engine's state before (armed plans, open trades, pending exits, working
 # orders) and compares it after (restoration check, PLATFORM-RULES 2026-09-09); a mismatch is logged
 # as RESTORE MISMATCH with the missing ids and exits 4.
-param([switch]$Force, [switch]$Override)
+param([switch]$Force, [switch]$Override, [switch]$ProbeOnly)
 $root = Split-Path -Parent $PSScriptRoot
 $logDir = Join-Path $root "logs"
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 $log = Join-Path $logDir "watchdog.log"
-function Log($m) { Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
-$up = $false
-try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $up = [bool]$h.ok } catch { $up = $false }
-if ($up -and -not $Force) { exit 0 }
+# -ProbeOnly is a diagnostic: it creates no directory, writes no log line and touches no recovery state (stdout only).
+if (-not $ProbeOnly -and -not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+function Log($m) { if ($ProbeOnly) { Write-Output $m; return }; Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $m) }
+# 2026-09-17 (EM desk, PFU-01 re-review): classification AND the caller decision live in watchdog-classify.ps1 as pure
+# functions; this file only supplies the real actions. healthy | live-unhealthy | uncertain | absent - a live process
+# with a quiet log is LIVE; a discovery failure is UNCERTAIN; both refuse ordinary recovery (with or without -Force)
+# because readiness is unavailable, and only -Override replaces a living engine. Only `absent` takes the DOWN path.
+. (Join-Path $PSScriptRoot 'watchdog-classify.ps1')
+$stallMarker = Join-Path $logDir "watchdog-stall.txt"
+$engineLog = Join-Path $root "backend\zargar-8420.log"
+$actions = @{
+  Probe       = { param($t) try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec $t; return [bool]$h.ok } catch { return $false } }
+  Sleep       = { param($s) Start-Sleep -Seconds $s }
+  Liveness    = { $age = 999999; if (Test-Path $engineLog) { $age = [int]((Get-Date) - (Get-Item $engineLog).LastWriteTime).TotalSeconds }
+                  $b = Get-BoundEngineProcessCount -Root $root; return @{ bound = $b; logAgeS = $age; identity = $script:WatchdogIdentity } }
+  ReadMarker  = { if (Test-Path $stallMarker) { return (Get-Item $stallMarker).LastWriteTime } else { return $null } }
+  SetMarker   = { Set-Content -Path $stallMarker -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss") }
+  ClearMarker = { if (Test-Path $stallMarker) { Remove-Item $stallMarker -Force }; if (Test-Path ($stallMarker + ".alerted")) { Remove-Item ($stallMarker + ".alerted") -Force } }
+  Log         = { param($m) Log $m }
+  Alert       = { param($t) return (Send-WatchdogAlert -Root $root -Text $t -OnceFile ($stallMarker + ".alerted")) }
+  Now         = { Get-Date }
+}
+$decision = Invoke-WatchdogDecision -Force ([bool]$Force) -Override ([bool]$Override) -ProbeOnly ([bool]$ProbeOnly) -Actions $actions
+if ($ProbeOnly) { Write-Output ("probe-only: class=" + $decision.class + " - " + $decision.reason + $(if ($decision.identity) { " (identity " + $decision.identity + ")" } else { "" })); exit 0 }
+switch ($decision.action) {
+  'exit-healthy'     { exit 0 }
+  'refuse'           { exit 2 }
+  'proceed-force'    { $up = $true }        # health answers: readiness / quiesce / before-inventory run below
+  'proceed-override' { $up = $false }       # explicit override over a live or uncertain engine (logged as OVERRIDE above)
+  'proceed-down'     { $up = $false }       # no bound engine process: the DOWN path, nothing to quiesce
+  default            { Log ("unexpected decision " + $decision.action + " - refusing"); exit 2 }
+}
 # one start at a time: a start takes ~30-60 s (start.ps1 stops the old process, rebuilds dist if stale, launches)
 # and the 3-minute tick must not pile a second engine onto a restart in progress. The lock is age-based
 # (never deleted), so a crash mid-start cannot wedge the watchdog either.

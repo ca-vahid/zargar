@@ -179,7 +179,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
                 ages = [c["inFlightAgeMs"] for c in snap["consumers"].values() if c.get("inFlightAgeMs") is not None]
                 out["local"]["delivery"] = {"inFlightMaxAgeMs": max(ages) if ages else None,
                                             "busDrops": snap["busDrops"].get("total", 0),
-                                            "failedHandlers": sum(int(c.get("failed") or 0) for c in snap["consumers"].values())}
+                                            "failedHandlers": sum(int(c.get("failed") or 0) for c in snap["consumers"].values()),
+                                            "eventLoopLagMs": round(float(getattr(eng, "_event_loop_lag_ms", 0.0) or 0.0), 1),
+                                            **(eng.loop_watch.snapshot() if getattr(eng, "loop_watch", None) is not None else {})}
             except Exception:
                 log.debug("health: delivery snapshot unavailable", exc_info=True)
         return out
@@ -609,6 +611,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     # --- technique pipeline + chat ------------------------------------------------
     from .routes_technique import build_technique_routes
     build_technique_routes(app, eng, auth, config)
+    from .routes_em_review import build_em_review_routes
+    build_em_review_routes(app, eng, auth)     # EM integrated review (2026-09-18): read-only
 
     from .routes_options import build_options_routes
     build_options_routes(app, eng, auth, config)

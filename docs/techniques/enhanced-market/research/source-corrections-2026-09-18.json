@@ -1,0 +1,10 @@
+[
+ {"noteId": "ae7cfbc9010e4254bcdb714b821f7c79",
+  "match": {"symbolAsExtracted": "TSLA"},
+  "set": {"resolvedSymbol": "MU"},
+  "reason": "transcript [5:38] says `M you ... great push up in the beginning of the day yesterday` and [5:45] `if we could push through that high`; the extraction assigned that idea to TSLA, which is only named at [6:30] (`meta and Tesla we just looked at that before`)",
+  "evidence": "transcript artifact of the note + reviewers' 2026-09-18 author comparison, finding 2",
+  "correctedAt": "2026-09-19T02:00:00+00:00",
+  "correctedBy": "em-desk (review 2026-09-18)",
+  "notCorrected": "MBGO stays UNRESOLVED: `B go` / `Maybe go` at [6:02]-[6:05] is ambiguous; AVGO is a hypothesis until audio or chart evidence resolves it"}
+]

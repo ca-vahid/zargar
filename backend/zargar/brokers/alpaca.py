@@ -20,6 +20,7 @@ import datetime as dt
 import json
 import logging
 import math
+import re
 from typing import Callable
 
 import websockets
@@ -70,12 +71,28 @@ _NO_LAST_CONDS = frozenset(
 EMIT_MS = 250
 
 
+# 2026-09-22: a US share class (BRK.B, BF.B, HEI.A) is a US equity, and Alpaca spells it with the dot (verified on the
+# bars endpoint: BRK.B -> 200, BRK-B -> 400 "invalid symbol"). The old blanket "no dot" rule meant BRK.B was never
+# streamed: its only live data was the Yahoo poll, which reached its armed plans one bar in three to five minutes
+# whenever Yahoo rate-limited (42 of 113 stale-bar errors on 2026-09-22). Strictly a SINGLE-LETTER class A/B/C after a
+# 1-5 letter root, so .TO/.V/.CN/.NE and two-letter foreign suffixes (.L, .MI, .HK are single letters but not A/B/C)
+# stay on Yahoo.
+_US_SHARE_CLASS = re.compile(r"^[A-Z]{1,5}\.[ABC]$")
+
+
+def is_us_share_class(symbol: str) -> bool:
+    return bool(_US_SHARE_CLASS.match(str(symbol or "").upper()))
+
+
 def is_us_equity(symbol: str) -> bool:
     """Alpaca serves US-listed equities only — no .TO/.V listings, no =X FX, and
     no OCC option symbols (those quote from the chain / Yahoo; subscribing them
-    to the equity stream used to swallow the option's real quote)."""
+    to the equity stream used to swallow the option's real quote). A US share
+    class (BRK.B) IS a US equity."""
     s = symbol.upper()
-    if not s or "." in s or "=" in s or "/" in s:
+    if not s or "=" in s or "/" in s:
+        return False
+    if "." in s and not is_us_share_class(s):
         return False
     from ..options.occ import is_occ
     return not is_occ(s)

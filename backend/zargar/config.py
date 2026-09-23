@@ -49,6 +49,7 @@ class AppConfig(BaseSettings):
     sim_option_sessions: bool = True  # EOD-05: Practice option fills need an eligible session (09:30-16:00 ET)
     sim_stock_sessions: bool = True  # F-HOLD-01: Practice share fills / stop triggers only in the regular session
     sim_max_spread_pct: float = 0.05  # F-HOLD-01: a share quote wider than 5% of mid cannot price a simulated fill
+    sim_max_option_spread_pct: float = 0.0  # EM 2026-09-18 proposal (ORCL 148C 1.12 fill on a 0.76/1.12 book): OFF until decided
 
     # --- integrations ----------------------------------------------------
     # SnapTrade personal API credentials (dashboard → API Key page). Used for

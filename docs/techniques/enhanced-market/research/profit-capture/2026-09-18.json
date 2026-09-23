@@ -1,0 +1,130 @@
+{
+ "date": "2026-09-18",
+ "book": "045d8c35b3f149628ea001ae90a58edb",
+ "asOf": "2026-09-19T05:15:09.433406+00:00",
+ "engineBuildAtSession": null,
+ "recorder": {
+  "tablePresent": false,
+  "snapshots": 0
+ },
+ "execution": {
+  "net": -299.3265,
+  "fees": 10.4,
+  "bySymbol": {
+   "DRAM260921P00058000": {
+    "net": -104.32,
+    "fees": 8.32,
+    "qty": 4.0
+   },
+   "FSLR": {
+    "net": -47.225,
+    "fees": 0.0,
+    "qty": 25.0
+   },
+   "PANW": {
+    "net": -63.6815,
+    "fees": 0.0,
+    "qty": 27.0
+   },
+   "SBUX261002P00095000": {
+    "net": -84.1,
+    "fees": 2.08,
+    "qty": 1.0
+   }
+  },
+  "openAtCutoff": [],
+  "fills": 10,
+  "unknownInstrument": [],
+  "complete": true
+ },
+ "displayedSampledEquity": {
+  "samples": 769,
+  "first": {
+   "ts": 1789738209623,
+   "equity": 10148.929699999988
+  },
+  "peak": {
+   "ts": 1789738209623,
+   "equity": 10148.929699999988
+  },
+  "last": {
+   "ts": 1789761586522,
+   "equity": 9849.603199999987
+  },
+  "peakMinusFirst": 0.0,
+  "basis": "persisted 30 s equity samples on the book's MARKS (option mid / share last) - displayed, not executable; samples can miss peaks"
+ },
+ "capture": {
+  "version": "profit-capture-reducer-v3",
+  "snapshots": 0,
+  "duplicatesIgnored": 0,
+  "scope": {
+   "portfolioId": null,
+   "session": null,
+   "policyVariants": 0,
+   "singlePolicy": true
+  },
+  "status": "no_snapshots",
+  "note": "the recorder was off or the book was flat - nothing is inferred",
+  "pairedExits": {
+   "p02": {
+    "rows": [],
+    "withBookContext": 0,
+    "total": 0
+   },
+   "p06": {
+    "rows": [
+     {
+      "tradeInstance": "89a0621c595043efa1df26d1cc04bd1e",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "69d8d61cff8a43abb18efbddd2b653bb",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "c7eb04dee3e04a13bf45da8c301d75f8",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "108b944aa3e44645adba66f3ab25c427",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
+      "bookContext": null
+     },
+     {
+      "tradeInstance": "2666757c4c9441de97984f86365b043b",
+      "policy": "tp1-reclaim-runner-exit-v1",
+      "outcome": "not_eligible",
+      "dollarDelta": null,
+      "identityVerified": false,
+      "comparisonClass": "proxy_only",
+      "bookContext": null
+     }
+    ],
+    "withBookContext": 0,
+    "total": 5
+   }
+  }
+ },
+ "disputedEvidence": [],
+ "retrospective": "generated after the session; not knowledge that was available on the trading day"
+}

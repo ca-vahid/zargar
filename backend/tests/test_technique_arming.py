@@ -555,6 +555,10 @@ async def _opt_quote(rig, bid: float, ask: float):
     # working order, once more after the sim executor's 120ms latency so the LMT can fill
     for _ in range(2):
         q.ts = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+        # 2026-09-19: since 12491f2b (2026-09-14) the simulator prices an OPTION fill only from a quote with a venue source
+        # identity and a source time - this helper predates that rule and published an anonymous quote, so the entry rested
+        # for ever (the known baseline failure of the lifecycle test). Publish it the way the production OPRA path does.
+        q.source, q.source_ts = "opra", q.ts
         rig.eng.quotes.on_quote(q)      # cache (risk gate) + bus (sim executor fills)
         await asyncio.sleep(0.2)
 

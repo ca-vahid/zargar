@@ -102,7 +102,8 @@ class Engine:
         self.sim_executor = SimExecutor(settings=self.settings, synthetic_quotes=self.config.quote_source == "sim",
                                         option_sessions=bool(getattr(self.config, "sim_option_sessions", True)),
                                         stock_sessions=bool(getattr(self.config, "sim_stock_sessions", True)),
-                                        max_spread_pct=float(getattr(self.config, "sim_max_spread_pct", 0.05) or 0.0))
+                                        max_spread_pct=float(getattr(self.config, "sim_max_spread_pct", 0.05) or 0.0),
+                                        max_option_spread_pct=float(getattr(self.config, "sim_max_option_spread_pct", 0.0) or 0.0))
         if self.config.broker == "ibkr":
             try:
                 from .brokers.ibkr import IBKRBroker
@@ -233,6 +234,25 @@ class Engine:
             asyncio.create_task(self._daily_loss_monitor(), name="daily-loss-monitor"),
             asyncio.create_task(self._event_loop_monitor(), name="event-loop-monitor"),
         ]
+        # 2026-09-17 (PFU-01): the engine stamps its own pid so the watchdog binds liveness to THIS process
+        try:
+            import os as _os
+            _root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+            _logs = _os.path.join(_root, "logs"); _os.makedirs(_logs, exist_ok=True)
+            with open(_os.path.join(_logs, "engine.pid"), "w", encoding="utf-8") as fh:
+                fh.write(str(_os.getpid()))
+        except Exception:  # pragma: no cover - a diagnostic stamp never blocks a start
+            log.debug("engine.pid not written", exc_info=True)
+        # 2026-09-16: a stalled loop cannot report itself - a daemon thread captures the blocking call site
+        try:
+            from .loopwatch import LoopStallWatch
+            thr = float(self.settings.get("ops.loop_stall_seconds", 2.0) or 0)
+            self.loop_watch = LoopStallWatch(threshold_s=thr) if thr > 0 else None
+            if self.loop_watch is not None:
+                self.loop_watch.start()
+        except Exception:  # pragma: no cover - diagnostics never block a start
+            log.warning("loop stall watch not started", exc_info=True)
+            self.loop_watch = None
         if isinstance(self.feed, HybridQuoteFeed):
             self._tasks.append(asyncio.create_task(self._feed_monitor(), name="feed-monitor"))
         if self.snaptrade_sync is not None:
@@ -415,9 +435,10 @@ class Engine:
         the boot (400 symbols of history inside `start()` would stretch the boot past the watchdog's
         window). Bars go through `ingest_exchange_bar`, i.e. memory + the persister, by provenance."""
         from .options import occ
+        from .brokers.alpaca import is_us_share_class
         sem = asyncio.Semaphore(max(1, concurrency))
         out = {"symbols": 0, "bars": 0, "failed": 0}
-        syms = [s for s in symbols if not occ.is_occ(s) and "." not in s and "=" not in s and not s.startswith("^")]
+        syms = [s for s in symbols if not occ.is_occ(s) and ("." not in s or is_us_share_class(s)) and "=" not in s and not s.startswith("^")]
 
         async def one(sym: str) -> None:
             async with sem:

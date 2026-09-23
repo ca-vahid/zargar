@@ -1,0 +1,892 @@
+{
+ "NVDA": {
+  "runId": "297a664eb3ce43a488ebb34015ebe68d",
+  "createdAt": "2026-09-17T22:40:20.645811+00:00",
+  "verdict": "plan",
+  "analysis": {
+   "verdict": "no_setup",
+   "noTradeReasons": [
+    "k1 breakout @ 220.24 — REJECTED: no breakout has been observed or confirmed on the chart (T3.3a-c); the only break in the window, 219.49, failed all three fakeout tells — no volume surge (T3.3d/T2.6), non-decisive candle with a rejection wick (T3.3b/T3.3e) and the last close 219.37 back under the level (T3.3f). Its R2 margin is also razor-thin: solving 226.40 - E = 3(E - 218.27) caps the viable fill at 220.30, and a 'decisive large-body close above 220.24' normally prints well above that, so taking the confirming close at market breaks R2 and T4.1 (never chase). 220.24 is additionally a 1m-only level sitting above today's HOD 219.91, uncorroborated on 30m/1h (T1.3c weak provenance), while 30m and 1m trends are sideways — a second wick-and-close-back-inside probe puts the tape into R3.2 chop.",
+    "k2 breakout @ 226.40 — REJECTED: the level is 3.2% above the 219.37 close while today's ENTIRE range was 2.76 points; price plausibly never reaches it, and no breakout there has been observed (T3.3a-c). Its targets are the 2/4/6% ladder with nothing overhead to anchor them, so the 12.0 R:R is arithmetic, not chart-based (T4.4), and 226.40 is the top of the 1h supply band where a lower-timeframe break is the likely higher-timeframe fakeout (T3.3g).",
+    "r2 reject @ 226.40 — REJECTED: grade C, level 3.2% away and unreachable on today's realised range; no rejection has been observed there, and the plan text states 'long 226.40' against short targets — internally inconsistent geometry I will not trade. A put at a level that is also the deterministic long-breakout trigger k2 is a conflicting-signal stand-aside (T4.6).",
+    "d2 breakdown @ 210.82 — REJECTED: 3.9% below price and below the entire 212.57/216.76 prior-day support stack; no breakdown has been observed (T3.3a-c), it fights the 1h uptrend (HH/HL true, T3.5a/T3.3g), and its targets are the percentage ladder with no chart obstacle beneath (T4.4).",
+    "b1 bounce @ 218.52 — not tradeable as scored: R2 reward:risk 0.24 to TP3 is far below the 3.0 gate, and the stop the chart justifies (211.51) is 3.2% away, beyond the risk cap (T4.3a/T4.3d/R1). The last session's break of this area also failed (T3.3d-f).",
+    "r1 reject @ 220.24 — not tradeable: R2 reward:risk 0.73 to TP3, below the 3.0 minimum; the levels above and below are stacked too tightly to build 3R.",
+    "d1 breakdown @ 212.57 — not tradeable: R2 reward:risk 0.11 and a chart-justified stop 4.0% away (T4.3a/R1); the level is also 3.1% away.",
+    "Structural: 1h reads uptrend but 30m and 1m are sideways with no HH/HL — conflicting timeframes mean stand aside (T4.6), and rising price on falling 1h volume (T2.2) leaves the recovery leg unconfirmed. Confirm 2026-09-18 is not an FOMC/major-release day before arming anything (R3.4); the +2.10% gap (4.49) versus a 1.97 risk unit means a repeat gap voids the plan rather than being chased."
+   ]
+  },
+  "plan": {
+   "symbol": "NVDA",
+   "planFor": "2026-09-18",
+   "triggers": [
+    {
+     "id": "b1",
+     "kind": "bounce",
+     "direction": "long",
+     "levelPrice": 218.5199,
+     "valid": false,
+     "riskReward": 0.24,
+     "noTradeReasons": [
+      "R2 reward:risk 0.24 to TP3 below 3.0",
+      "T4.3a/R1 the stop the chart justifies (211.51) is 3.2% away — beyond the 3.0% cap"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 70,
+      "cautions": [
+       "the last session's break of this level FAILED (T3.3d–f) — demand every confirmation condition before believing a new one"
+      ],
+      "strengths": [
+       "prior-day extreme — the book's strongest carried level (T1.3a)",
+       "35 touches — a proven level (T1.2)",
+       "level visible on multiple timeframes",
+       "higher-timeframe trend is not against it (T3.3g)",
+       "a 7-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 211.5102,
+      "reference": "below_zone_low"
+     },
+     "targets": [
+      {
+       "basis": "next_resistance",
+       "price": 219.2066,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 219.8075,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 220.2367,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "k1",
+     "kind": "breakout",
+     "direction": "long",
+     "levelPrice": 220.2367,
+     "valid": true,
+     "riskReward": 3.13,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "B",
+      "score": 60,
+      "cautions": [
+       "the last session's break of this level FAILED (T3.3d–f) — demand every confirmation condition before believing a new one",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "11 touches — a proven level (T1.2)",
+       "higher-timeframe trend is not against it (T3.3g)",
+       "reward:risk 3.1 measured to a real obstacle (R2)",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 218.266,
+      "reference": "below_break_base"
+     },
+     "targets": [
+      {
+       "basis": "next_resistance",
+       "price": 222.702,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 224.8591,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 226.3999,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "k2",
+     "kind": "breakout",
+     "direction": "long",
+     "levelPrice": 226.3999,
+     "valid": true,
+     "riskReward": 12.0,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "B",
+      "score": 60,
+      "cautions": [
+       "targets are the book's 2/4/6% ladder — nothing overhead to anchor them, so the R:R number is optimistic (T4.4)",
+       "the level is 3.2% away — price may never reach it",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "10 touches — a proven level (T1.2)",
+       "higher-timeframe trend is not against it (T3.3g)",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 225.2679,
+      "reference": "below_broken_resistance"
+     },
+     "targets": [
+      {
+       "basis": "pct_ladder",
+       "price": 230.9279,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 235.4559,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 239.9839,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "r1",
+     "kind": "reject",
+     "direction": "short",
+     "levelPrice": 220.2367,
+     "valid": false,
+     "riskReward": 0.73,
+     "noTradeReasons": [
+      "R2 reward:risk 0.73 to TP3 below 3.0"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 27,
+      "cautions": [
+       "the last session's break of this level FAILED (T3.3d–f) — demand every confirmation condition before believing a new one",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "11 touches — a proven level (T1.2)"
+      ]
+     },
+     "stop": {
+      "price": 221.3379,
+      "reference": "above_resistance"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 219.9152,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 219.6339,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 219.433,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "r2",
+     "kind": "reject",
+     "direction": "short",
+     "levelPrice": 226.3999,
+     "valid": true,
+     "riskReward": 6.15,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "C",
+      "score": 52,
+      "cautions": [
+       "the level is 3.2% away — price may never reach it",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "10 touches — a proven level (T1.2)",
+       "reward:risk 6.2 measured to a real obstacle (R2)"
+      ]
+     },
+     "stop": {
+      "price": 227.5319,
+      "reference": "above_resistance"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 223.6131,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 221.1747,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 219.433,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "d1",
+     "kind": "breakdown",
+     "direction": "short",
+     "levelPrice": 212.5731,
+     "valid": false,
+     "riskReward": 0.11,
+     "noTradeReasons": [
+      "R2 reward:risk 0.11 to TP3 below 3.0",
+      "T4.3a/R1 the stop the chart justifies (221.00) is 4.0% away — beyond the 3.0% cap"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 70,
+      "cautions": [
+       "the level is 3.1% away — price may never reach it",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "prior-day extreme — the book's strongest carried level (T1.3a)",
+       "35 touches — a proven level (T1.2)",
+       "level visible on multiple timeframes",
+       "a 7-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 221.0045,
+      "reference": "above_break_top"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 212.2185,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 211.9082,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 211.6866,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "d2",
+     "kind": "breakdown",
+     "direction": "short",
+     "levelPrice": 210.8167,
+     "valid": true,
+     "riskReward": 6.56,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "B",
+      "score": 55,
+      "cautions": [
+       "targets are the book's 2/4/6% ladder — nothing overhead to anchor them, so the R:R number is optimistic (T4.4)",
+       "the level is 3.9% away — price may never reach it",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "37 touches — a proven level (T1.2)",
+       "a 2-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 212.745,
+      "reference": "above_broken_support"
+     },
+     "targets": [
+      {
+       "basis": "pct_ladder",
+       "price": 206.6004,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 202.384,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 198.1677,
+       "trimPct": 15.0
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "META": {
+  "runId": "4b9d8dab796f4c8b9859c72777a30888",
+  "createdAt": "2026-09-17T22:32:08.517872+00:00",
+  "verdict": "plan",
+  "analysis": {
+   "verdict": "no_setup",
+   "noTradeReasons": [
+    "k1 breakout @ 685.16 — REJECTED as a trade today: no breakout has been observed. The prior-day high 685.16 has not been touched this session (today's HOD is 683.20) and the only graded break in the FACTS (680.44) is decisive=False — small body / rejection wick — which fails T3.3b outright, so the method classifies it as unconfirmed, not genuine. A breakout setup may only be written on an observed, confirmed break (T3.3a-c); this is a watch item, not a plan with a fill.",
+    "k1 breakout @ 685.16 — R2 also fails on honest arithmetic: the plan's TP2 712.57 and TP3 726.27 are 4%/6% pct-ladder prices with no resistance overhead to anchor them (T4.4), and the headline 3.31 R:R is measured to them. Against the range's own structure and the 672.76/672.01 stop the real reward:risk is roughly 1:1 — below the 3.0 hard gate (R2).",
+    "k1 breakout @ 685.16 — context argues fakeout: 30m is rising price on falling volume with LH=True (T2.2), the two largest 1m bars are dojis with long lower wicks and a bearish_engulfing at 683.03 (T2.7, T3.4b absorption), and 1h/30m are sideways while only 1m trends up — conflicting factors, stand aside (T4.6), classic T3.3g higher-timeframe-fakeout candidate.",
+    "b1 bounce @ 679.31 — REJECTED: R2 reward:risk 0.10 to TP3 is far below 3.0, and the chart-justified stop 657.03 is 3.3% from entry, beyond the risk cap (T4.3a/R1). Price also closed at the TOP of the range (682.70), so the level is 3+ points below with last session's break of it having failed (T3.3d-f).",
+    "r1 reject @ 685.16 — REJECTED: R2 reward:risk 1.71 to TP3 is below 3.0. The level is real (T1.3a) but has only 2 touches (T1.2) and no volume evidence of rejection has printed at it — price has not reached 685.16 today (HOD 683.20).",
+    "d1 breakdown @ 660.33 — REJECTED: R2 reward:risk 0.25 to TP3 is below 3.0 and the stop 686.62 is 4.0% away (T4.3a/R1). The level is 3.3% below and price sits at the top of the range, not the bottom — no breakdown geometry exists.",
+    "R3.2 — 1h HH=False and 30m LH=True make this a sideways coil; 'clear structure' for a breakout trade is marginal at the top of a two-session range."
+   ]
+  },
+  "plan": {
+   "symbol": "META",
+   "planFor": "2026-09-18",
+   "triggers": [
+    {
+     "id": "b1",
+     "kind": "bounce",
+     "direction": "long",
+     "levelPrice": 679.3138,
+     "valid": false,
+     "riskReward": 0.1,
+     "noTradeReasons": [
+      "R2 reward:risk 0.10 to TP3 below 3.0",
+      "T4.3a/R1 the stop the chart justifies (657.03) is 3.3% away — beyond the 3.0% cap"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 50,
+      "cautions": [
+       "the last session's break of this level FAILED (T3.3d–f) — demand every confirmation condition before believing a new one"
+      ],
+      "strengths": [
+       "42 touches — a proven level (T1.2)",
+       "higher-timeframe trend is not against it (T3.3g)",
+       "a 8-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 657.03,
+      "reference": "below_zone_low"
+     },
+     "targets": [
+      {
+       "basis": "next_resistance",
+       "price": 680.2096,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 680.9934,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 681.5533,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "k1",
+     "kind": "breakout",
+     "direction": "long",
+     "levelPrice": 685.1633,
+     "valid": true,
+     "riskReward": 3.31,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "B",
+      "score": 69,
+      "cautions": [
+       "targets are the book's 2/4/6% ladder — nothing overhead to anchor them, so the R:R number is optimistic (T4.4)",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "prior-day extreme — the book's strongest carried level (T1.3a)",
+       "2 touches (T1.2)",
+       "level visible on multiple timeframes",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 672.7593,
+      "reference": "below_break_base"
+     },
+     "targets": [
+      {
+       "basis": "pct_ladder",
+       "price": 698.8666,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 712.5698,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 726.2731,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "r1",
+     "kind": "reject",
+     "direction": "short",
+     "levelPrice": 685.1633,
+     "valid": false,
+     "riskReward": 1.71,
+     "noTradeReasons": [
+      "R2 reward:risk 1.71 to TP3 below 3.0"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 66,
+      "cautions": [
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "prior-day extreme — the book's strongest carried level (T1.3a)",
+       "2 touches (T1.2)",
+       "level visible on multiple timeframes",
+       "higher-timeframe trend is not against it (T3.3g)"
+      ]
+     },
+     "stop": {
+      "price": 688.5891,
+      "reference": "above_resistance"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 682.8235,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 680.7762,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 679.3138,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "d1",
+     "kind": "breakdown",
+     "direction": "short",
+     "levelPrice": 660.3317,
+     "valid": false,
+     "riskReward": 0.25,
+     "noTradeReasons": [
+      "R2 reward:risk 0.25 to TP3 below 3.0",
+      "T4.3a/R1 the stop the chart justifies (686.62) is 4.0% away — beyond the 3.0% cap"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 50,
+      "cautions": [
+       "the level is 3.3% away — price may never reach it",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "42 touches — a proven level (T1.2)",
+       "a 8-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 686.616,
+      "reference": "above_break_top"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 657.6577,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 655.3179,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 653.6467,
+       "trimPct": 15.0
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "MRNA": {
+  "runId": "3549e1846b4b46e6bc83216e07563987",
+  "createdAt": "2026-09-17T22:33:08.864868+00:00",
+  "verdict": "plan",
+  "analysis": {
+   "verdict": "no_setup",
+   "noTradeReasons": [
+    "k1 breakout @ 161.96 — REJECTED: 161.96 does not appear in the FACTS key-level list at all; it is a one-print gap-day extreme, so T1.2 (>=2 touches to be a real level) is not met and there is no tested ceiling to break. With nothing overhead to anchor, the targets are an unanchored 2/4/6% ladder and the only honest objective gives under 3.0R, failing R2. No breakout has been observed or confirmed (T3.3a-c), so a breakout-type setup cannot be issued.",
+    "r1 reject @ 161.96 — REJECTED: a first-touch short at an untested, unlisted extreme fights a confirmed 1h and 30m uptrend (T3.5a, HH/HL true) and sits at the identical price as the opposing long trigger — conflicting signals mean stand aside (T4.6); the level itself also fails T1.2.",
+    "R2/T4.3d — every FACTS-legal entry is unusable: both deterministic candidates fail the gate (support_bounce RR 0.06, breakout RR 0.18), and the only multi-touch structure that could carry a chart-based stop, 149.11, is ~5.6% below 158.01 — far outside the risk cap (R1).",
+    "R3.2 — the 1m is sideways inside a ~3.4-point band with repeated failed pushes and small two-sided-wick bodies; that is chop, not structure.",
+    "T2.2/T2.4 — 1h relative volume 0.507x with dry-up into the highs after a sustained advance off 142.33 is divergence/climax risk, not launch fuel (T3.3g: a 1m push here can be a higher-timeframe fakeout)."
+   ]
+  },
+  "plan": {
+   "symbol": "MRNA",
+   "planFor": "2026-09-18",
+   "triggers": [
+    {
+     "id": "k1",
+     "kind": "breakout",
+     "direction": "long",
+     "levelPrice": 161.9599,
+     "valid": true,
+     "riskReward": 8.95,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "B",
+      "score": 60,
+      "cautions": [
+       "targets are the book's 2/4/6% ladder — nothing overhead to anchor them, so the R:R number is optimistic (T4.4)",
+       "the level is 2.5% away — price may never reach it",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "prior-day extreme — the book's strongest carried level (T1.3a)",
+       "higher-timeframe trend is not against it (T3.3g)",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 160.8744,
+      "reference": "below_broken_resistance"
+     },
+     "targets": [
+      {
+       "basis": "pct_ladder",
+       "price": 165.1991,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 168.4383,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 171.6775,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "r1",
+     "kind": "reject",
+     "direction": "short",
+     "levelPrice": 161.9599,
+     "valid": true,
+     "riskReward": 11.83,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "C",
+      "score": 52,
+      "cautions": [
+       "the level is 2.5% away — price may never reach it",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "prior-day extreme — the book's strongest carried level (T1.3a)",
+       "reward:risk 11.8 measured to a real obstacle (R2)"
+      ]
+     },
+     "stop": {
+      "price": 163.0454,
+      "reference": "above_resistance"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 156.8213,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 152.325,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 149.1133,
+       "trimPct": 15.0
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "MU": {
+  "runId": "e9543bac50e446a4b7a020325379c324",
+  "createdAt": "2026-09-17T22:36:19.583062+00:00",
+  "verdict": "plan",
+  "analysis": {
+   "verdict": "no_setup",
+   "noTradeReasons": [
+    "b1 bounce @ 972.10 — R2: reward:risk 0.93 to TP3 is below the 3.0 gate; targets sit inside the 976.60/979.68 box only ~4 pts above entry while the chart-justified stop is 4.86 pts below, so the geometry cannot pay (T4.3d).",
+    "b2 bounce @ 952.00 — R2: reward:risk 0.85 below 3.0, and the chart stop at 922.91 is 3.1% of entry, beyond the risk cap (R1, T4.3d); the level is also 2.6% below the last close and may never be reached.",
+    "k1 breakout @ 986.20 — R2 failure in substance: the 4.01 R:R comes from an unanchored 2/4/6% ladder (T4.4), and the 986.20 trigger price is today's single-print session high, not one of the FACTS key levels (the 42 touches credited to it belong to 979.68) — a level needs >=2 touches to be real (T1.2). The first honest overhead objective is the 1000 round number (T1.3d), roughly 13.8 pts against the 14.77-pt stop = ~0.93R, so the 3.0 gate is not met. It is also the weakest breakout context available: bearish volume divergence into the level (T2.2/T2.6), no taper-then-surge sequence anywhere in the tape (T3.3a), and 202k/237k-share bars absorbing at 978-981 (T2.7) i.e. supply defending the band the trigger must first clear.",
+    "r1 reject @ 979.68 — R2: reward:risk 0.66 to TP3 below 3.0. The level is strong (x42) but the 976.60 cluster sits only 3.1 pts under it, so every downside target is inside the same box while the stop must go above 983.22-ish structure (T4.3d).",
+    "d1 breakdown @ 972.10 — R2: reward:risk 1.51 below 3.0; the stop at 985.40 sits above the whole 976.60/979.68/983.22 band making risk 13.3 pts, and no volume surge exists to satisfy T3.3a-c in either direction.",
+    "R3.2 — 1h, 30m and 1m structure are all sideways and the session already produced one failed break at 978.15 (T3.3d/f); overlapping small bodies plus a fakeout is the chop signature, and T4.6 finds no two agreeing factors."
+   ]
+  },
+  "plan": {
+   "symbol": "MU",
+   "planFor": "2026-09-18",
+   "triggers": [
+    {
+     "id": "b1",
+     "kind": "bounce",
+     "direction": "long",
+     "levelPrice": 972.1,
+     "valid": false,
+     "riskReward": 0.93,
+     "noTradeReasons": [
+      "R2 reward:risk 0.93 to TP3 below 3.0"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 52,
+      "cautions": [],
+      "strengths": [
+       "19 touches — a proven level (T1.2)",
+       "higher-timeframe trend is not against it (T3.3g)"
+      ]
+     },
+     "stop": {
+      "price": 967.2395,
+      "reference": "below_support"
+     },
+     "targets": [
+      {
+       "basis": "next_resistance",
+       "price": 973.8988,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 975.4728,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 976.597,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "b2",
+     "kind": "bounce",
+     "direction": "long",
+     "levelPrice": 951.995,
+     "valid": false,
+     "riskReward": 0.85,
+     "noTradeReasons": [
+      "R2 reward:risk 0.85 to TP3 below 3.0",
+      "T4.3a/R1 the stop the chart justifies (922.91) is 3.1% away — beyond the 3.0% cap"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 68,
+      "cautions": [
+       "the level is 2.6% away — price may never reach it"
+      ],
+      "strengths": [
+       "50 touches — a proven level (T1.2)",
+       "level visible on multiple timeframes",
+       "higher-timeframe trend is not against it (T3.3g)",
+       "a 6-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 922.9077,
+      "reference": "below_zone_low"
+     },
+     "targets": [
+      {
+       "basis": "next_resistance",
+       "price": 961.8358,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 970.4465,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_resistance",
+       "price": 976.597,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "k1",
+     "kind": "breakout",
+     "direction": "long",
+     "levelPrice": 986.2,
+     "valid": true,
+     "riskReward": 4.01,
+     "noTradeReasons": [],
+     "assessment": {
+      "grade": "B",
+      "score": 60,
+      "cautions": [
+       "targets are the book's 2/4/6% ladder — nothing overhead to anchor them, so the R:R number is optimistic (T4.4)",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "42 touches — a proven level (T1.2)",
+       "a 3-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 971.4284,
+      "reference": "below_break_base"
+     },
+     "targets": [
+      {
+       "basis": "pct_ladder",
+       "price": 1005.924,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 1025.648,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "pct_ladder",
+       "price": 1045.372,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "r1",
+     "kind": "reject",
+     "direction": "short",
+     "levelPrice": 979.6797,
+     "valid": false,
+     "riskReward": 0.66,
+     "noTradeReasons": [
+      "R2 reward:risk 0.66 to TP3 below 3.0"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 50,
+      "cautions": [
+       "the last session's break of this level FAILED (T3.3d–f) — demand every confirmation condition before believing a new one",
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "42 touches — a proven level (T1.2)",
+       "higher-timeframe trend is not against it (T3.3g)",
+       "a 3-level zone backs the idea",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 991.131,
+      "reference": "above_zone_high"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 976.6478,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 973.9949,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 972.1,
+       "trimPct": 15.0
+      }
+     ]
+    },
+    {
+     "id": "d1",
+     "kind": "breakdown",
+     "direction": "short",
+     "levelPrice": 972.1,
+     "valid": false,
+     "riskReward": 1.51,
+     "noTradeReasons": [
+      "R2 reward:risk 1.51 to TP3 below 3.0"
+     ],
+     "assessment": {
+      "grade": null,
+      "score": 50,
+      "cautions": [
+       "fires only on full confirmation: volume surge + decisive candle + follow-through (T3.3a–c)"
+      ],
+      "strengths": [
+       "19 touches — a proven level (T1.2)",
+       "stop sits below the chart structure that invalidates the idea (T4.3d)"
+      ]
+     },
+     "stop": {
+      "price": 985.4025,
+      "reference": "above_break_top"
+     },
+     "targets": [
+      {
+       "basis": "next_support",
+       "price": 964.058,
+       "trimPct": 30.0
+      },
+      {
+       "basis": "next_support",
+       "price": 957.0213,
+       "trimPct": 40.0
+      },
+      {
+       "basis": "next_support",
+       "price": 951.995,
+       "trimPct": 15.0
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

@@ -16,6 +16,8 @@ Normalized row shape (every provider):
 """
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import logging
 import time
 
@@ -30,6 +32,26 @@ TRADIER_SANDBOX_BASE = "https://sandbox.tradier.com/v1"
 CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
+
+
+# Provider-rate-limit recovery (2026-09-16, PFU-04 wording): BACKGROUND cooldown with BOUNDED retry. "entry" (a live
+# option pick) and "position" (marks / exits for a held contract) retry a 429 briefly (RATE_LIMIT_RETRIES) and are not
+# subject to the cooldown; "background" (enrichment, research) fails fast on a 429 and skips requests for
+# `options.cboe_cooldown_seconds`. This reserves no provider capacity and preempts no in-flight request: an entry whose
+# retries still fail is refused by the unchanged freshness / risk checks downstream. Set with
+# `with cboe_priority("background"):`.
+CBOE_PRIORITY: contextvars.ContextVar[str] = contextvars.ContextVar("cboe_priority", default="normal")
+
+
+class cboe_priority:
+    def __init__(self, level: str) -> None:
+        self.level = level; self._token = None
+
+    def __enter__(self):
+        self._token = CBOE_PRIORITY.set(self.level); return self
+
+    def __exit__(self, *exc):
+        CBOE_PRIORITY.reset(self._token)
 
 
 class OptionsError(RuntimeError):
@@ -52,15 +74,25 @@ class CboeClient:
     name = "cboe"
     delayed = True
     CACHE_TTL = 60.0
+    RATE_LIMIT_RETRIES = (0.6, 1.2)      # bounded back-off on HTTP 429 (2026-09-16: one 429 killed a live entry with no retry)
+    COOLDOWN_S = 20.0                    # background fetches stand down this long after any 429 (settings: options.cboe_cooldown_seconds)
+    BACKGROUND = ("background",)
 
-    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(self, client: httpx.AsyncClient | None = None, *, cooldown_s: float | None = None) -> None:
         self._http = client or httpx.AsyncClient(timeout=30, headers={"User-Agent": UA},
                                                  follow_redirects=True)
         self._cache: dict[str, tuple[float, dict]] = {}
+        self.cooldown_s = float(cooldown_s) if cooldown_s is not None else float(self.COOLDOWN_S)   # options.cboe_cooldown_seconds
+        self._cooldown_until = 0.0
+        self.rate_limited = 0            # 429s seen (diagnostic)
 
     @property
     def available(self) -> bool:
         return True
+
+    def cooling_down(self) -> float:
+        """Seconds of background cooldown left (0 = none)."""
+        return max(0.0, self._cooldown_until - time.time())
 
     def cached_at(self, symbol: str) -> float | None:
         hit = self._cache.get(symbol.upper().strip())
@@ -74,12 +106,39 @@ class CboeClient:
         now = time.time()
         if hit and now - hit[0] < self.CACHE_TTL:
             return hit[1]
+        prio = CBOE_PRIORITY.get()
+        background = prio in self.BACKGROUND
+        if background and self.cooling_down() > 0:
+            raise OptionsError(f"CBOE cooling down after a rate limit ({self.cooling_down():.0f}s left) - background fetch for {sym} skipped")
         r = await self._http.get(CBOE_URL.format(symbol=sym))
+        if r.status_code == 429:
+            self.rate_limited += 1
+            self._cooldown_until = time.time() + self.cooldown_s
+            if background:                # never retry from the back of the queue - leave the budget to entries / positions
+                raise OptionsError("CBOE HTTP 429 (rate limited; background fetch not retried)")
+        for i, pause in enumerate(self.RATE_LIMIT_RETRIES):
+            if r.status_code != 429:
+                break
+            # CBOE's free endpoint rate-limits bursts (several desks share it). A live entry has a latency budget
+            # of a few seconds, so retry briefly and give up honestly - never serve stale chain data for a pick.
+            ra = r.headers.get("Retry-After")
+            try:
+                pause = min(float(ra), 2.0) if ra else pause
+            except ValueError:
+                pass
+            log.info("CBOE 429 for %s - retry %d/%d after %.1fs", sym, i + 1, len(self.RATE_LIMIT_RETRIES), pause)
+            await asyncio.sleep(pause)
+            r = await self._http.get(CBOE_URL.format(symbol=sym))
+            if r.status_code == 429:
+                self.rate_limited += 1
+                self._cooldown_until = time.time() + self.cooldown_s
         if r.status_code == 404:
             raise OptionsError(f"no US-listed options for {sym} (CBOE 404)")
+        if r.status_code == 429:
+            raise OptionsError(f"CBOE HTTP 429 (rate limited; {len(self.RATE_LIMIT_RETRIES)} retries)")
         if r.status_code >= 400:
             raise OptionsError(f"CBOE HTTP {r.status_code}")
-        data = (r.json() or {}).get("data") or {}
+        data = ((await asyncio.to_thread(r.json)) or {}).get("data") or {}   # multi-MB chain JSON: never parse it on the loop (stall #3, 2026-09-16)
         if not data.get("options"):
             raise OptionsError(f"CBOE returned no contracts for {sym}")
         self._cache[sym] = (now, data)
@@ -120,20 +179,25 @@ class CboeClient:
                 out.add(o.expiry.isoformat())
         return sorted(out)
 
+    def _normalize_all(self, rows: list[dict], sym: str, expiry: str | None = None) -> list[dict]:
+        """CPU-bound: thousands of rows x (occ.parse + symbol formatting). Stall #2 of 2026-09-16 20:58 (4.8 s) was this
+        loop on the event loop inside the enrichment pass - it runs on a worker thread now (pure, no shared state)."""
+        out = []
+        for row in rows or []:
+            n = self._normalize(row, sym)
+            if n and (expiry is None or n["expiry"] == expiry):
+                out.append(n)
+        return out
+
     async def chain(self, symbol: str, expiry: str) -> list[dict]:
         data = await self._payload(symbol)
         sym = symbol.upper().strip()
-        rows = []
-        for row in data.get("options") or []:
-            n = self._normalize(row, sym)
-            if n and n["expiry"] == expiry:
-                rows.append(n)
-        return rows
+        return await asyncio.to_thread(self._normalize_all, data.get("options") or [], sym, expiry)
 
     async def all_rows(self, symbol: str) -> list[dict]:
         data = await self._payload(symbol)
         sym = symbol.upper().strip()
-        return [n for n in (self._normalize(r, sym) for r in data.get("options") or []) if n]
+        return await asyncio.to_thread(self._normalize_all, data.get("options") or [], sym, None)
 
     async def spot(self, symbol: str) -> float | None:
         data = await self._payload(symbol)
@@ -299,12 +363,12 @@ class AlpacaOptionsData:
                 raise OptionsError(f"Alpaca options data refused ({rq.status_code}) — subscription?")
             if rq.status_code >= 400:
                 raise OptionsError(f"Alpaca options quotes HTTP {rq.status_code}")
-            quotes = (rq.json() or {}).get("quotes") or {}
+            quotes = ((await asyncio.to_thread(rq.json)) or {}).get("quotes") or {}
             trades: dict = {}
             try:
                 rt = await self._http.get("/v1beta1/options/trades/latest", params=params)
                 if rt.status_code < 400:
-                    trades = (rt.json() or {}).get("trades") or {}
+                    trades = ((await asyncio.to_thread(rt.json)) or {}).get("trades") or {}
             except httpx.HTTPError:                      # last is optional — the NBBO is the point
                 trades = {}
             for sym, q in quotes.items():
@@ -336,7 +400,7 @@ class AlpacaOptionsData:
                 raise OptionsError(f"Alpaca options snapshots refused ({r.status_code})")
             if r.status_code >= 400:
                 raise OptionsError(f"Alpaca options snapshots HTTP {r.status_code}")
-            for sym, snap in ((r.json() or {}).get("snapshots") or {}).items():
+            for sym, snap in (((await asyncio.to_thread(r.json)) or {}).get("snapshots") or {}).items():
                 g = snap.get("greeks") or {}
                 iv = snap.get("impliedVolatility")
                 if not g and not iv:

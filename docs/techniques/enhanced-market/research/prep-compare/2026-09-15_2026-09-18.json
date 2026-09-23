@@ -1,0 +1,2697 @@
+{
+ "manifest": {
+  "version": "prep-compare-v1",
+  "generatedAt": "2026-09-19T05:17:04+00:00",
+  "policyVersion": "em-prep-policy-v1",
+  "reviewVersion": "conditional-review-v1",
+  "replayVersion": "prep-ablation-v3",
+  "gradeFloor": "B",
+  "exceptionFeatures": {
+   "RR_TP3_MIN": 3.0,
+   "MIN_TOUCHES": 2,
+   "frozen": "2026-09-18"
+  },
+  "capacity": {
+   "version": "capacity-v1",
+   "riskPctPerEntry": 2.0,
+   "dailyLossHaltPct": 3.0,
+   "maxPositionPct": 10.0,
+   "maxGrossExposurePct": 100.0,
+   "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+   "slots": 10,
+   "haltAtR": -1.5
+  },
+  "sheets": {
+   "2026-09-15": "69cbf3b2d01c49249a19f813c38a6c6a",
+   "2026-09-16": "7da239dcf7ce404290bf19546fc2728e",
+   "2026-09-17": "fc9efd65418e4d9991930b61317c4a32",
+   "2026-09-18": "ed48a80aa9854e3d8ecb3da887aacfaa"
+  },
+  "pricingSource": "llm.rates",
+  "pricedModels": [
+   "claude-opus-5"
+  ],
+  "paidModelCalls": 0,
+  "book": "045d8c35b3f149628ea001ae90a58edb"
+ },
+ "days": [
+  {
+   "date": "2026-09-15",
+   "status": "ok",
+   "sheet": "69cbf3b2d01c49249a19f813c38a6c6a",
+   "reads": 112,
+   "barsSources": {
+    "stored": 66,
+    "yahoo": 46
+   },
+   "premarketSources": {
+    "yahoo": 59,
+    "journal": 53
+   },
+   "selections": {
+    "baseline_model": {
+     "coverage": {
+      "plans": 49,
+      "scorable": 49,
+      "unknown": 0,
+      "replannedNotRejudged": 0
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 5,
+      "refused": 0,
+      "refusedWhy": {},
+      "untimedExcluded": 0,
+      "haltedAtIndex": null,
+      "sumR": 7.682,
+      "winners": 4,
+      "losers": 1,
+      "worstDrawdownR": -1.054,
+      "independentSumR": 7.682,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "AMZN",
+       "runId": "83d089219d27405b87f03667dba65090",
+       "trigger": "d1",
+       "fillIndex": 38,
+       "barsHeld": 351,
+       "r": 0.316,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "CVNA",
+       "runId": "7235623e26534a2b8426fbb2df49622b",
+       "trigger": "b2",
+       "fillIndex": 31,
+       "barsHeld": 22,
+       "r": -1.0536,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "INTU",
+       "runId": "9a5bc7aee70144aab8b1f2ea741742fb",
+       "trigger": "b1",
+       "fillIndex": 56,
+       "barsHeld": 333,
+       "r": 2.3418,
+       "outcome": "tp3"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "8d2e0e60d92447f1992470b5fc299d89",
+       "trigger": "r1",
+       "fillIndex": 2,
+       "barsHeld": 387,
+       "r": 5.8056,
+       "outcome": "tp2"
+      },
+      {
+       "symbol": "TSM",
+       "runId": "86e8de3647d44e06984cf6963893fd23",
+       "trigger": "d1",
+       "fillIndex": 43,
+       "barsHeld": 346,
+       "r": 0.2719,
+       "outcome": "horizon"
+      }
+     ]
+    },
+    "deterministic": {
+     "coverage": {
+      "plans": 100,
+      "scorable": 100,
+      "unknown": 0,
+      "replannedNotRejudged": 26
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 9,
+      "refused": 2,
+      "refusedWhy": {
+       "daily_loss_halt": 2
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 68,
+      "sumR": 7.902,
+      "winners": 6,
+      "losers": 3,
+      "worstDrawdownR": -3.471,
+      "independentSumR": 9.079,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "AMZN",
+       "runId": "83d089219d27405b87f03667dba65090",
+       "trigger": "d1",
+       "fillIndex": 38,
+       "barsHeld": 351,
+       "r": 0.316,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "CRWD",
+       "runId": "afcfea47c4ae461ab1b1ec407ff76e3a",
+       "trigger": "r1",
+       "fillIndex": 44,
+       "barsHeld": 93,
+       "r": -1.1673,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "CVNA",
+       "runId": "7235623e26534a2b8426fbb2df49622b",
+       "trigger": "b2",
+       "fillIndex": 31,
+       "barsHeld": 22,
+       "r": -1.0536,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "GEV",
+       "runId": "2edc09416ecd42a18097b422e3a6a3f6",
+       "trigger": "r1",
+       "fillIndex": 30,
+       "barsHeld": 359,
+       "r": 2.3449,
+       "outcome": "tp2"
+      },
+      {
+       "symbol": "INTU",
+       "runId": "9a5bc7aee70144aab8b1f2ea741742fb",
+       "trigger": "b1",
+       "fillIndex": 56,
+       "barsHeld": 333,
+       "r": 2.3418,
+       "outcome": "tp3"
+      },
+      {
+       "symbol": "LITE",
+       "runId": "50904f84917d475f9a07b16c13ca8c48",
+       "trigger": "b2",
+       "fillIndex": 316,
+       "barsHeld": 73,
+       "r": 0.989,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "RBLX",
+       "runId": "ecce7e4970a540618f40102a7999879a",
+       "trigger": "r1",
+       "fillIndex": 31,
+       "barsHeld": 358,
+       "r": 0.2923,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "8d2e0e60d92447f1992470b5fc299d89",
+       "trigger": "r1",
+       "fillIndex": 2,
+       "barsHeld": 387,
+       "r": 5.8056,
+       "outcome": "tp2"
+      },
+      {
+       "symbol": "SOXS",
+       "runId": "f4d769c5dfa445d8b232a543dbab2948",
+       "trigger": "r1",
+       "fillIndex": 42,
+       "barsHeld": 26,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "TSM",
+       "runId": "86e8de3647d44e06984cf6963893fd23",
+       "trigger": "d1",
+       "fillIndex": 43,
+       "barsHeld": 346,
+       "r": 0.2719,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "XOM",
+       "runId": "d000fa38bcd24e3b943d95a8e777554b",
+       "trigger": "r2",
+       "fillIndex": 318,
+       "barsHeld": 71,
+       "r": 0.1889,
+       "outcome": "horizon"
+      }
+     ]
+    },
+    "frozen_exception": {
+     "coverage": {
+      "plans": 35,
+      "scorable": 35,
+      "unknown": 0,
+      "replannedNotRejudged": 10
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 3,
+      "refused": 0,
+      "refusedWhy": {},
+      "untimedExcluded": 0,
+      "haltedAtIndex": null,
+      "sumR": -1.929,
+      "winners": 1,
+      "losers": 2,
+      "worstDrawdownR": -2.221,
+      "independentSumR": -1.929,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "CRWD",
+       "runId": "afcfea47c4ae461ab1b1ec407ff76e3a",
+       "trigger": "r1",
+       "fillIndex": 44,
+       "barsHeld": 93,
+       "r": -1.1673,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "CVNA",
+       "runId": "7235623e26534a2b8426fbb2df49622b",
+       "trigger": "b2",
+       "fillIndex": 31,
+       "barsHeld": 22,
+       "r": -1.0536,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "RBLX",
+       "runId": "ecce7e4970a540618f40102a7999879a",
+       "trigger": "r1",
+       "fillIndex": 31,
+       "barsHeld": 358,
+       "r": 0.2923,
+       "outcome": "horizon"
+      }
+     ]
+    }
+   },
+   "members": {
+    "baseline_model": 49,
+    "deterministic": 100,
+    "frozen_exception": 35
+   },
+   "onlyDeterministic": [
+    "AAOI",
+    "AAPL",
+    "ADBE",
+    "ANET",
+    "APP",
+    "BA",
+    "CAT",
+    "CRWD",
+    "DAL",
+    "DIA",
+    "DIS",
+    "FCX",
+    "GDX",
+    "GEV",
+    "GM",
+    "GOOG",
+    "GS",
+    "IBIT",
+    "JNJ",
+    "JPM",
+    "KLAC",
+    "KWEB",
+    "LITE",
+    "LQD",
+    "MCHP",
+    "META",
+    "MRVL",
+    "MS",
+    "MSFT",
+    "MSTR",
+    "NOW",
+    "NVDA",
+    "PEP",
+    "PFE",
+    "PLTR",
+    "PYPL",
+    "QQQM",
+    "RBLX",
+    "SCHD",
+    "SCHW",
+    "SKHY",
+    "SLV",
+    "SMH",
+    "SOXL",
+    "SOXS",
+    "SOXX",
+    "SQQQ",
+    "TLT",
+    "TQQQ",
+    "WMT",
+    "XLU",
+    "XLV",
+    "XOM"
+   ],
+   "onlyModel": [
+    "CRDO",
+    "USO"
+   ],
+   "modelRejected": {
+    "plans": 63,
+    "replayFills": 7,
+    "avoidedLosers": 3,
+    "forgoneWinners": 4,
+    "sumR": 1.324,
+    "label": "PROXY-ONLY independent replay of the plans the model rejected"
+   },
+   "conditionalFixRescued": [],
+   "baselineLiveFunnel": {
+    "liveFired": 15,
+    "liveRefusedBeforeOrder": 4,
+    "liveOrders": 16,
+    "liveFilled": 5,
+    "replayFired": 5,
+    "replayFilled": 5
+   },
+   "baselineLiveRows": [
+    {
+     "symbol": "AMAT",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "AMZN",
+     "liveFired": 0,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "horizon": 1
+     }
+    },
+    {
+     "symbol": "BE",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (loss budget: this entry risks ~$415 at its"
+     ],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "CRWV",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "CVNA",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "DVN",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "INTU",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp3": 1
+     }
+    },
+    {
+     "symbol": "IREN",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "NFLX",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "ORCL",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "QCOM",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (T5.4 wide spread 13.0% on the NBBO (bid 3."
+     ],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "RKLB",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "SMCI",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "SNDK",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (loss budget: this entry risks ~$2,230 at i"
+     ],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp2": 1
+     }
+    },
+    {
+     "symbol": "TSM",
+     "liveFired": 0,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "horizon": 1
+     }
+    },
+    {
+     "symbol": "USO",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "one contract at 4.90 risks more than the 2% trade budget at "
+     ],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "WDC",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    }
+   ],
+   "baselineActual": {
+    "net": -220.3,
+    "fees": 20.8,
+    "bySymbol": {
+     "CRWV260918C00082500": {
+      "net": -9.58,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "CVNA260918C00070000": {
+      "net": -74.16,
+      "fees": 4.16,
+      "qty": 2.0
+     },
+     "IREN260918C00042000": {
+      "net": 2.84,
+      "fees": 4.16,
+      "qty": 2.0
+     },
+     "NFLX260918C00079000": {
+      "net": -60.32,
+      "fees": 8.32,
+      "qty": 4.0
+     },
+     "ORCL260918C00142000": {
+      "net": -79.08,
+      "fees": 2.08,
+      "qty": 1.0
+     }
+    },
+    "openAtCutoff": [],
+    "fills": 10,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "disputedEvidence": [],
+   "baselineActualSensitivity": null,
+   "modelCost": {
+    "version": "model-costs-v1",
+    "requests": 112,
+    "retries": 0,
+    "requestsWithoutCompletion": 0,
+    "tokens": {
+     "input": 4337313,
+     "output": 1678490,
+     "cacheRead": 2201537,
+     "cacheWrite": 38377
+    },
+    "invoiceVerified": {
+     "usd": null,
+     "invoices": 0
+    },
+    "estimated": {
+     "usd": 64.9894,
+     "requests": 112
+    },
+    "unknown": {
+     "requests": 0,
+     "why": {}
+    },
+    "subscriptionAllocation": null,
+    "byModel": {
+     "anthropic/claude-opus-5": {
+      "requests": 112,
+      "tokens": {
+       "input": 4337313,
+       "output": 1678490,
+       "cacheRead": 2201537,
+       "cacheWrite": 38377
+      },
+      "estimatedUsd": 64.989441,
+      "unknownRequests": 0
+     }
+    },
+    "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
+   },
+   "deterministicModelCalls": 0
+  },
+  {
+   "date": "2026-09-16",
+   "status": "ok",
+   "sheet": "7da239dcf7ce404290bf19546fc2728e",
+   "reads": 110,
+   "barsSources": {
+    "stored": 55,
+    "yahoo": 55
+   },
+   "premarketSources": {
+    "journal": 44,
+    "none": 1,
+    "yahoo": 65
+   },
+   "selections": {
+    "baseline_model": {
+     "coverage": {
+      "plans": 41,
+      "scorable": 41,
+      "unknown": 0,
+      "replannedNotRejudged": 0
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 4,
+      "refused": 4,
+      "refusedWhy": {
+       "daily_loss_halt": 4
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 9,
+      "sumR": -0.933,
+      "winners": 1,
+      "losers": 3,
+      "worstDrawdownR": -2.925,
+      "independentSumR": -1.048,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "BE",
+       "runId": "f92c7147636c48348cc26ac80b1861b3",
+       "trigger": "r1",
+       "fillIndex": 7,
+       "barsHeld": 14,
+       "r": -0.4253,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "CRWV",
+       "runId": "41be21922605400c8ee83bfb7d59efb6",
+       "trigger": "b2",
+       "fillIndex": 328,
+       "barsHeld": 21,
+       "r": -0.3032,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "CVNA",
+       "runId": "6e7fa235d19e452a928f7e18f88fb10d",
+       "trigger": "b1",
+       "fillIndex": 3,
+       "barsHeld": 6,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "DELL",
+       "runId": "13c82aa4c1a74081a86437c2cbfed651",
+       "trigger": "r2",
+       "fillIndex": 2,
+       "barsHeld": 3,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "NBIS",
+       "runId": "23cacfa544fc4381aeab2144a35e19c8",
+       "trigger": "b1",
+       "fillIndex": 350,
+       "barsHeld": 39,
+       "r": 0.4582,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "NBIS",
+       "runId": "23cacfa544fc4381aeab2144a35e19c8",
+       "trigger": "r2",
+       "fillIndex": 53,
+       "barsHeld": 44,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "NOW",
+       "runId": "78f6b51908944be8a903d3fbc0d04398",
+       "trigger": "b1",
+       "fillIndex": 0,
+       "barsHeld": 389,
+       "r": 1.9924,
+       "outcome": "tp3"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "c15bb0a74fce49ce815bc5d23f88e222",
+       "trigger": "b2",
+       "fillIndex": 344,
+       "barsHeld": 45,
+       "r": 0.9799,
+       "outcome": "tp1"
+      }
+     ]
+    },
+    "deterministic": {
+     "coverage": {
+      "plans": 95,
+      "scorable": 94,
+      "unknown": 1,
+      "replannedNotRejudged": 25
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 4,
+      "refused": 14,
+      "refusedWhy": {
+       "daily_loss_halt": 14
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 5,
+      "sumR": -1.758,
+      "winners": 1,
+      "losers": 3,
+      "worstDrawdownR": -3.75,
+      "independentSumR": -2.921,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "BE",
+       "runId": "f92c7147636c48348cc26ac80b1861b3",
+       "trigger": "r1",
+       "fillIndex": 7,
+       "barsHeld": 14,
+       "r": -0.4253,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "BMNR",
+       "runId": "c15d609f2de04ff4af1220f6740b19ad",
+       "trigger": "b1",
+       "fillIndex": 32,
+       "barsHeld": 17,
+       "r": -1.1927,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "COIN",
+       "runId": "0722609f173244058834323e40a09372",
+       "trigger": "b2",
+       "fillIndex": 40,
+       "barsHeld": 41,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "CRWV",
+       "runId": "41be21922605400c8ee83bfb7d59efb6",
+       "trigger": "b2",
+       "fillIndex": 328,
+       "barsHeld": 21,
+       "r": -0.3032,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "CVNA",
+       "runId": "6e7fa235d19e452a928f7e18f88fb10d",
+       "trigger": "b1",
+       "fillIndex": 3,
+       "barsHeld": 6,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "DELL",
+       "runId": "13c82aa4c1a74081a86437c2cbfed651",
+       "trigger": "r2",
+       "fillIndex": 2,
+       "barsHeld": 3,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "DIA",
+       "runId": "a6ec315a7827488ca2558a9f3501bb59",
+       "trigger": "d1",
+       "fillIndex": 320,
+       "barsHeld": 69,
+       "r": 0.6764,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "DRAM",
+       "runId": "9c255f6355fd417ab9dc4b94cdc48613",
+       "trigger": "b1",
+       "fillIndex": 9,
+       "barsHeld": 329,
+       "r": -1.2382,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "DRAM",
+       "runId": "9c255f6355fd417ab9dc4b94cdc48613",
+       "trigger": "b2",
+       "fillIndex": 339,
+       "barsHeld": 50,
+       "r": 0.5145,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "IONQ",
+       "runId": "31488f274ec54acb8fb3626c87bee535",
+       "trigger": "b2",
+       "fillIndex": 340,
+       "barsHeld": 49,
+       "r": 2.7581,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "IREN",
+       "runId": "beace72061754ff488b019c8c359552a",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "NBIS",
+       "runId": "23cacfa544fc4381aeab2144a35e19c8",
+       "trigger": "b1",
+       "fillIndex": 350,
+       "barsHeld": 39,
+       "r": 0.4582,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "NBIS",
+       "runId": "23cacfa544fc4381aeab2144a35e19c8",
+       "trigger": "r2",
+       "fillIndex": 53,
+       "barsHeld": 44,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "NOW",
+       "runId": "78f6b51908944be8a903d3fbc0d04398",
+       "trigger": "b1",
+       "fillIndex": 0,
+       "barsHeld": 389,
+       "r": 1.9924,
+       "outcome": "tp3"
+      },
+      {
+       "symbol": "SCHD",
+       "runId": "7a655ba4cc454c128e4046bb96b7b18e",
+       "trigger": "d1",
+       "fillIndex": 325,
+       "barsHeld": 64,
+       "r": 0.1165,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "c15bb0a74fce49ce815bc5d23f88e222",
+       "trigger": "b2",
+       "fillIndex": 344,
+       "barsHeld": 45,
+       "r": 0.9799,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "SOXL",
+       "runId": "9c256432bf224bf1822edc3b7e5005a3",
+       "trigger": "b1",
+       "fillIndex": 315,
+       "barsHeld": 7,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "SYY",
+       "runId": "8c4ca146bdb34d0e9dd117c75c550b47",
+       "trigger": "d1",
+       "fillIndex": 342,
+       "barsHeld": 46,
+       "r": 0.2424,
+       "outcome": "horizon"
+      }
+     ]
+    },
+    "frozen_exception": {
+     "coverage": {
+      "plans": 35,
+      "scorable": 35,
+      "unknown": 0,
+      "replannedNotRejudged": 16
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 4,
+      "refused": 5,
+      "refusedWhy": {
+       "daily_loss_halt": 5
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 9,
+      "sumR": -0.933,
+      "winners": 1,
+      "losers": 3,
+      "worstDrawdownR": -2.925,
+      "independentSumR": -2.298,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "BE",
+       "runId": "f92c7147636c48348cc26ac80b1861b3",
+       "trigger": "r1",
+       "fillIndex": 7,
+       "barsHeld": 14,
+       "r": -0.4253,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "CRWV",
+       "runId": "41be21922605400c8ee83bfb7d59efb6",
+       "trigger": "b2",
+       "fillIndex": 328,
+       "barsHeld": 21,
+       "r": -0.3032,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "CVNA",
+       "runId": "6e7fa235d19e452a928f7e18f88fb10d",
+       "trigger": "b1",
+       "fillIndex": 3,
+       "barsHeld": 6,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "DELL",
+       "runId": "13c82aa4c1a74081a86437c2cbfed651",
+       "trigger": "r2",
+       "fillIndex": 2,
+       "barsHeld": 3,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "NBIS",
+       "runId": "23cacfa544fc4381aeab2144a35e19c8",
+       "trigger": "b1",
+       "fillIndex": 350,
+       "barsHeld": 39,
+       "r": 0.4582,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "NBIS",
+       "runId": "23cacfa544fc4381aeab2144a35e19c8",
+       "trigger": "r2",
+       "fillIndex": 53,
+       "barsHeld": 44,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "NOW",
+       "runId": "78f6b51908944be8a903d3fbc0d04398",
+       "trigger": "b1",
+       "fillIndex": 0,
+       "barsHeld": 389,
+       "r": 1.9924,
+       "outcome": "tp3"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "c15bb0a74fce49ce815bc5d23f88e222",
+       "trigger": "b2",
+       "fillIndex": 344,
+       "barsHeld": 45,
+       "r": 0.9799,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "SOXL",
+       "runId": "9c256432bf224bf1822edc3b7e5005a3",
+       "trigger": "b1",
+       "fillIndex": 315,
+       "barsHeld": 7,
+       "r": -1.25,
+       "outcome": "stopped"
+      }
+     ]
+    }
+   },
+   "members": {
+    "baseline_model": 41,
+    "deterministic": 95,
+    "frozen_exception": 35
+   },
+   "onlyDeterministic": [
+    "AMAT",
+    "AMD",
+    "AMGN",
+    "APP",
+    "AXP",
+    "BA",
+    "BABA",
+    "BKNG",
+    "BMNR",
+    "BRK.B",
+    "CCL",
+    "CMG",
+    "COIN",
+    "CRWD",
+    "CSCO",
+    "DIA",
+    "DRAM",
+    "FXI",
+    "GLD",
+    "GS",
+    "IBIT",
+    "IONQ",
+    "IREN",
+    "KLAC",
+    "KO",
+    "KRE",
+    "LQD",
+    "MCD",
+    "META",
+    "MRK",
+    "MRVL",
+    "MSTR",
+    "ORCL",
+    "PANW",
+    "PFE",
+    "PG",
+    "QQQM",
+    "RKLB",
+    "SCHD",
+    "SCHW",
+    "SKHY",
+    "SLV",
+    "SOXL",
+    "SOXS",
+    "SOXX",
+    "SQQQ",
+    "SYY",
+    "T",
+    "TLT",
+    "USO",
+    "V",
+    "VZ",
+    "WDC",
+    "WFC",
+    "XBI",
+    "XLF",
+    "XLP",
+    "XLV",
+    "XOP"
+   ],
+   "onlyModel": [
+    "COST",
+    "IWM",
+    "LRCX",
+    "PLTR",
+    "TSLA"
+   ],
+   "modelRejected": {
+    "plans": 69,
+    "replayFills": 12,
+    "avoidedLosers": 5,
+    "forgoneWinners": 7,
+    "sumR": -0.096,
+    "label": "PROXY-ONLY independent replay of the plans the model rejected"
+   },
+   "conditionalFixRescued": [],
+   "baselineLiveFunnel": {
+    "liveFired": 11,
+    "liveRefusedBeforeOrder": 5,
+    "liveOrders": 10,
+    "liveFilled": 4,
+    "replayFired": 8,
+    "replayFilled": 8
+   },
+   "baselineLiveRows": [
+    {
+     "symbol": "BAC",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "BE",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (loss budget: this entry risks ~$415 at its"
+     ],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp1": 1
+     }
+    },
+    {
+     "symbol": "CRCL",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "CRWV",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp1": 1
+     }
+    },
+    {
+     "symbol": "CVNA",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "DELL",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (loss budget: this entry risks ~$708 at its"
+     ],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "NBIS",
+     "liveFired": 3,
+     "liveRefusedBeforeOrder": 3,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "one contract at 5.90 risks more than the 2% trade budget at ",
+      "one contract at 5.70 risks more than the 2% trade budget at ",
+      "one contract at 5.70 risks more than the 2% trade budget at "
+     ],
+     "replayFired": 2,
+     "replayFilled": 2,
+     "replayOutcomes": {
+      "tp1": 1,
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "NOW",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp3": 1
+     }
+    },
+    {
+     "symbol": "SNDK",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 3,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp1": 1
+     }
+    }
+   ],
+   "baselineActual": {
+    "net": -147.5518,
+    "fees": 4.16,
+    "bySymbol": {
+     "CRCL260918C00086000": {
+      "net": -94.11,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "CRWV260918C00082500": {
+      "net": -51.11,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "CVNA": {
+      "net": -29.49,
+      "fees": 0.0,
+      "qty": 75.0
+     },
+     "SNDK": {
+      "net": 27.1582,
+      "fees": 0.0,
+      "qty": 3.0
+     }
+    },
+    "openAtCutoff": [],
+    "fills": 9,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "disputedEvidence": [],
+   "baselineActualSensitivity": null,
+   "modelCost": {
+    "version": "model-costs-v1",
+    "requests": 110,
+    "retries": 0,
+    "requestsWithoutCompletion": 0,
+    "tokens": {
+     "input": 3992478,
+     "output": 1529969,
+     "cacheRead": 2075236,
+     "cacheWrite": 35143
+    },
+    "invoiceVerified": {
+     "usd": null,
+     "invoices": 0
+    },
+    "estimated": {
+     "usd": 59.4689,
+     "requests": 110
+    },
+    "unknown": {
+     "requests": 0,
+     "why": {}
+    },
+    "subscriptionAllocation": null,
+    "byModel": {
+     "anthropic/claude-opus-5": {
+      "requests": 110,
+      "tokens": {
+       "input": 3992478,
+       "output": 1529969,
+       "cacheRead": 2075236,
+       "cacheWrite": 35143
+      },
+      "estimatedUsd": 59.468874,
+      "unknownRequests": 0
+     }
+    },
+    "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
+   },
+   "deterministicModelCalls": 0
+  },
+  {
+   "date": "2026-09-17",
+   "status": "ok",
+   "sheet": "fc9efd65418e4d9991930b61317c4a32",
+   "reads": 111,
+   "barsSources": {
+    "stored": 71,
+    "yahoo": 40
+   },
+   "premarketSources": {
+    "none": 1,
+    "journal": 63,
+    "yahoo": 47
+   },
+   "selections": {
+    "baseline_model": {
+     "coverage": {
+      "plans": 58,
+      "scorable": 58,
+      "unknown": 0,
+      "replannedNotRejudged": 0
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 5,
+      "refused": 6,
+      "refusedWhy": {
+       "daily_loss_halt": 6
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 2,
+      "sumR": 0.851,
+      "winners": 1,
+      "losers": 4,
+      "worstDrawdownR": -4.181,
+      "independentSumR": 2.869,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "ARM",
+       "runId": "8a6be37eb4c047fbb3db7088a77dfe7f",
+       "trigger": "b1",
+       "fillIndex": 3,
+       "barsHeld": 386,
+       "r": 1.7323,
+       "outcome": "tp2"
+      },
+      {
+       "symbol": "BMNR",
+       "runId": "f04e6c93fcfc48198c07eba97bb67405",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 23,
+       "r": -0.4315,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "COHR",
+       "runId": "381b7a5b67aa42d7866ef6a176996577",
+       "trigger": "b2",
+       "fillIndex": 52,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "CRCL",
+       "runId": "49e290548aec4cf5be37807282fab976",
+       "trigger": "r1",
+       "fillIndex": 30,
+       "barsHeld": 181,
+       "r": -0.011,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "CRM",
+       "runId": "231db38755264ffbb310327f2692a2c6",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "ORCL",
+       "runId": "5edf9b469ec74008ae7895dc85805443",
+       "trigger": "b1",
+       "fillIndex": 0,
+       "barsHeld": 389,
+       "r": 5.0328,
+       "outcome": "tp3"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "212b492cc2a64fda9da630d85c66b3dd",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 6,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "RKLB",
+       "runId": "b3d27ea727154b83b2facf7a7c5cd873",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 2,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "SCHW",
+       "runId": "fc6f47416c3b431ba5ede0a9721714c8",
+       "trigger": "b1",
+       "fillIndex": 28,
+       "barsHeld": 361,
+       "r": 1.4223,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "7fdc1615701d4a9ab3a0260d362d4206",
+       "trigger": "k1",
+       "fillIndex": 4,
+       "barsHeld": 385,
+       "r": 0.2438,
+       "outcome": "tp2"
+      },
+      {
+       "symbol": "TXN",
+       "runId": "fdc8d307b8fc4aac84200e4322b3615b",
+       "trigger": "b2",
+       "fillIndex": 333,
+       "barsHeld": 56,
+       "r": -0.1196,
+       "outcome": "horizon"
+      }
+     ]
+    },
+    "deterministic": {
+     "coverage": {
+      "plans": 101,
+      "scorable": 100,
+      "unknown": 1,
+      "replannedNotRejudged": 49
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 6,
+      "refused": 10,
+      "refusedWhy": {
+       "daily_loss_halt": 10
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 1,
+      "sumR": -0.399,
+      "winners": 1,
+      "losers": 5,
+      "worstDrawdownR": -5.431,
+      "independentSumR": 2.098,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "ANET",
+       "runId": "4bcc508e8fa04ae990b7d69cb846d46a",
+       "trigger": "b1",
+       "fillIndex": 339,
+       "barsHeld": 50,
+       "r": -0.1386,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "ARM",
+       "runId": "8a6be37eb4c047fbb3db7088a77dfe7f",
+       "trigger": "b1",
+       "fillIndex": 3,
+       "barsHeld": 386,
+       "r": 1.7323,
+       "outcome": "tp2"
+      },
+      {
+       "symbol": "BMNR",
+       "runId": "f04e6c93fcfc48198c07eba97bb67405",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 23,
+       "r": -0.4315,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "C",
+       "runId": "491775520b9f42608ec3b59441e39f3f",
+       "trigger": "b2",
+       "fillIndex": 11,
+       "barsHeld": 3,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "C",
+       "runId": "491775520b9f42608ec3b59441e39f3f",
+       "trigger": "b3",
+       "fillIndex": 27,
+       "barsHeld": 362,
+       "r": 2.5095,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "COHR",
+       "runId": "381b7a5b67aa42d7866ef6a176996577",
+       "trigger": "b2",
+       "fillIndex": 52,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "CRCL",
+       "runId": "49e290548aec4cf5be37807282fab976",
+       "trigger": "r1",
+       "fillIndex": 30,
+       "barsHeld": 181,
+       "r": -0.011,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "CRM",
+       "runId": "231db38755264ffbb310327f2692a2c6",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "GS",
+       "runId": "96fa62acf68b48619144d127003f06ca",
+       "trigger": "b1",
+       "fillIndex": 0,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "ORCL",
+       "runId": "5edf9b469ec74008ae7895dc85805443",
+       "trigger": "b1",
+       "fillIndex": 0,
+       "barsHeld": 389,
+       "r": 5.0328,
+       "outcome": "tp3"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "212b492cc2a64fda9da630d85c66b3dd",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 6,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "RKLB",
+       "runId": "b3d27ea727154b83b2facf7a7c5cd873",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 2,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "SCHW",
+       "runId": "fc6f47416c3b431ba5ede0a9721714c8",
+       "trigger": "b1",
+       "fillIndex": 28,
+       "barsHeld": 361,
+       "r": 1.4223,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "7fdc1615701d4a9ab3a0260d362d4206",
+       "trigger": "k1",
+       "fillIndex": 4,
+       "barsHeld": 385,
+       "r": 0.2438,
+       "outcome": "tp2"
+      },
+      {
+       "symbol": "SQQQ",
+       "runId": "508564995ee748b1a7b4307dc52229f4",
+       "trigger": "k1",
+       "fillIndex": 4,
+       "barsHeld": 52,
+       "r": -0.6416,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "TXN",
+       "runId": "fdc8d307b8fc4aac84200e4322b3615b",
+       "trigger": "b2",
+       "fillIndex": 333,
+       "barsHeld": 56,
+       "r": -0.1196,
+       "outcome": "horizon"
+      }
+     ]
+    },
+    "frozen_exception": {
+     "coverage": {
+      "plans": 30,
+      "scorable": 30,
+      "unknown": 0,
+      "replannedNotRejudged": 17
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 3,
+      "refused": 2,
+      "refusedWhy": {
+       "daily_loss_halt": 2
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 2,
+      "sumR": -3.75,
+      "winners": 0,
+      "losers": 3,
+      "worstDrawdownR": -3.75,
+      "independentSumR": -4.756,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "COHR",
+       "runId": "381b7a5b67aa42d7866ef6a176996577",
+       "trigger": "b2",
+       "fillIndex": 52,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "CRM",
+       "runId": "231db38755264ffbb310327f2692a2c6",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 1,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "212b492cc2a64fda9da630d85c66b3dd",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 6,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "RKLB",
+       "runId": "b3d27ea727154b83b2facf7a7c5cd873",
+       "trigger": "r1",
+       "fillIndex": 0,
+       "barsHeld": 2,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "SNDK",
+       "runId": "7fdc1615701d4a9ab3a0260d362d4206",
+       "trigger": "k1",
+       "fillIndex": 4,
+       "barsHeld": 385,
+       "r": 0.2438,
+       "outcome": "tp2"
+      }
+     ]
+    }
+   },
+   "members": {
+    "baseline_model": 58,
+    "deterministic": 101,
+    "frozen_exception": 30
+   },
+   "onlyDeterministic": [
+    "AAPL",
+    "ADBE",
+    "AMZN",
+    "ANET",
+    "ARKK",
+    "AVGO",
+    "AXP",
+    "BABA",
+    "BRK.B",
+    "C",
+    "CAT",
+    "COST",
+    "CVNA",
+    "DAL",
+    "DIA",
+    "EEM",
+    "EWY",
+    "GDX",
+    "GLD",
+    "GM",
+    "GOOGL",
+    "GS",
+    "IWM",
+    "JNJ",
+    "JPM",
+    "KO",
+    "KRE",
+    "MCD",
+    "OKLO",
+    "PG",
+    "QQQ",
+    "SCHD",
+    "SOXX",
+    "SPY",
+    "SQQQ",
+    "TLT",
+    "UBER",
+    "UNH",
+    "USB",
+    "VOO",
+    "VZ",
+    "XBI",
+    "XLF",
+    "XLP",
+    "XLV"
+   ],
+   "onlyModel": [
+    "ABT",
+    "CRDO"
+   ],
+   "modelRejected": {
+    "plans": 53,
+    "replayFills": 5,
+    "avoidedLosers": 4,
+    "forgoneWinners": 1,
+    "sumR": -0.771,
+    "label": "PROXY-ONLY independent replay of the plans the model rejected"
+   },
+   "conditionalFixRescued": [],
+   "baselineLiveFunnel": {
+    "liveFired": 12,
+    "liveRefusedBeforeOrder": 5,
+    "liveOrders": 15,
+    "liveFilled": 6,
+    "replayFired": 11,
+    "replayFilled": 11
+   },
+   "baselineLiveRows": [
+    {
+     "symbol": "ARM",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 1,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp2": 1
+     }
+    },
+    {
+     "symbol": "BMNR",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 3,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp1": 1
+     }
+    },
+    {
+     "symbol": "COHR",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "CRCL",
+     "liveFired": 2,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [
+      "contract skipped (T5.4 wide spread 14.4% on the NBBO (bid 1."
+     ],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp1": 1
+     }
+    },
+    {
+     "symbol": "CRM",
+     "liveFired": 0,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "ORCL",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp3": 1
+     }
+    },
+    {
+     "symbol": "PANW",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (T5.4 wide spread 25.1% on the NBBO (bid 8."
+     ],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "RKLB",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (T5.4 wide spread 20.4% on the NBBO (bid 1."
+     ],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "SCHW",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 3,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp1": 1
+     }
+    },
+    {
+     "symbol": "SKHY",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "one contract at 6.40 risks more than the 2% trade budget at "
+     ],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "SNDK",
+     "liveFired": 0,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "tp2": 1
+     }
+    },
+    {
+     "symbol": "SOXS",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 1,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [
+      "contract skipped (T5.4 wide spread 24.5% on the NBBO (bid 2."
+     ],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "TXN",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "horizon": 1
+     }
+    }
+   ],
+   "baselineActual": {
+    "net": 222.6545,
+    "fees": 16.64,
+    "bySymbol": {
+     "BMNR260925P00023000": {
+      "net": -80.35,
+      "fees": 8.32,
+      "qty": 4.0
+     },
+     "COHR": {
+      "net": -23.4328,
+      "fees": 0.0,
+      "qty": 17.0
+     },
+     "CRCL260918P00085000": {
+      "net": 53.76,
+      "fees": 6.24,
+      "qty": 3.0
+     },
+     "ORCL260918C00148000": {
+      "net": 250.92,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "SCHW": {
+      "net": 34.5177,
+      "fees": 0.0,
+      "qty": 47.0
+     },
+     "TXN": {
+      "net": -12.7604,
+      "fees": 0.0,
+      "qty": 19.0
+     }
+    },
+    "openAtCutoff": [],
+    "fills": 14,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "disputedEvidence": [
+    "ORCL: the 09-17 simulated fill is questioned by the 09-17 review (E17-01 derived-quote producer); the execution ledger is reported as booked and flagged - no replacement price is invented"
+   ],
+   "baselineActualSensitivity": {
+    "class": "excludes_disputed_simulated_fills",
+    "excludedUnderlyings": [
+     "ORCL"
+    ],
+    "excludedFills": 2,
+    "result": {
+     "net": -28.2655,
+     "fees": 14.56,
+     "bySymbol": {
+      "BMNR260925P00023000": {
+       "net": -80.35,
+       "fees": 8.32,
+       "qty": 4.0
+      },
+      "COHR": {
+       "net": -23.4328,
+       "fees": 0.0,
+       "qty": 17.0
+      },
+      "CRCL260918P00085000": {
+       "net": 53.76,
+       "fees": 6.24,
+       "qty": 3.0
+      },
+      "SCHW": {
+       "net": 34.5177,
+       "fees": 0.0,
+       "qty": 47.0
+      },
+      "TXN": {
+       "net": -12.7604,
+       "fees": 0.0,
+       "qty": 19.0
+      }
+     },
+     "openAtCutoff": [],
+     "fills": 12,
+     "unknownInstrument": [],
+     "complete": true
+    },
+    "note": "the execution ledger stays as booked; this line only shows how much of the day rests on the disputed fills"
+   },
+   "modelCost": {
+    "version": "model-costs-v1",
+    "requests": 111,
+    "retries": 0,
+    "requestsWithoutCompletion": 0,
+    "tokens": {
+     "input": 4249586,
+     "output": 1657019,
+     "cacheRead": 2088130,
+     "cacheWrite": 120142
+    },
+    "invoiceVerified": {
+     "usd": null,
+     "invoices": 0
+    },
+    "estimated": {
+     "usd": 64.4684,
+     "requests": 111
+    },
+    "unknown": {
+     "requests": 0,
+     "why": {}
+    },
+    "subscriptionAllocation": null,
+    "byModel": {
+     "anthropic/claude-opus-5": {
+      "requests": 111,
+      "tokens": {
+       "input": 4249586,
+       "output": 1657019,
+       "cacheRead": 2088130,
+       "cacheWrite": 120142
+      },
+      "estimatedUsd": 64.468358,
+      "unknownRequests": 0
+     }
+    },
+    "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
+   },
+   "deterministicModelCalls": 0
+  },
+  {
+   "date": "2026-09-18",
+   "status": "ok",
+   "sheet": "ed48a80aa9854e3d8ecb3da887aacfaa",
+   "reads": 102,
+   "barsSources": {
+    "stored": 59,
+    "yahoo": 43
+   },
+   "premarketSources": {
+    "none": 1,
+    "journal": 46,
+    "yahoo": 55
+   },
+   "selections": {
+    "baseline_model": {
+     "coverage": {
+      "plans": 39,
+      "scorable": 39,
+      "unknown": 0,
+      "replannedNotRejudged": 0
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 3,
+      "refused": 2,
+      "refusedWhy": {
+       "daily_loss_halt": 2
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 34,
+      "sumR": -3.515,
+      "winners": 0,
+      "losers": 3,
+      "worstDrawdownR": -3.515,
+      "independentSumR": -5.912,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "DRAM",
+       "runId": "4a75f7d4dbb447c9ab83252ce162b543",
+       "trigger": "r2",
+       "fillIndex": 316,
+       "barsHeld": 64,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "FSLR",
+       "runId": "95ea8dcd44054c4e8c445ee419efa2dd",
+       "trigger": "b2",
+       "fillIndex": 24,
+       "barsHeld": 9,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "edfc80d6dec64f4491718fca9f3cd607",
+       "trigger": "b2",
+       "fillIndex": 2,
+       "barsHeld": 9,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "edfc80d6dec64f4491718fca9f3cd607",
+       "trigger": "b3",
+       "fillIndex": 17,
+       "barsHeld": 17,
+       "r": -1.0148,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "SKHY",
+       "runId": "9885439318f44bec8c8916b2f91684d6",
+       "trigger": "r2",
+       "fillIndex": 351,
+       "barsHeld": 26,
+       "r": -1.1467,
+       "outcome": "stopped"
+      }
+     ]
+    },
+    "deterministic": {
+     "coverage": {
+      "plans": 93,
+      "scorable": 93,
+      "unknown": 0,
+      "replannedNotRejudged": 13
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 5,
+      "refused": 2,
+      "refusedWhy": {
+       "daily_loss_halt": 2
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 34,
+      "sumR": -2.778,
+      "winners": 1,
+      "losers": 4,
+      "worstDrawdownR": -2.778,
+      "independentSumR": -5.175,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "AMGN",
+       "runId": "4dc6a58e45a04bb0a90fc37a48b0545f",
+       "trigger": "k1",
+       "fillIndex": 6,
+       "barsHeld": 380,
+       "r": 0.087,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "DRAM",
+       "runId": "4a75f7d4dbb447c9ab83252ce162b543",
+       "trigger": "r2",
+       "fillIndex": 316,
+       "barsHeld": 64,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "NOW",
+       "runId": "17440dccebdc4830a63965c4549b3ac2",
+       "trigger": "b2",
+       "fillIndex": 16,
+       "barsHeld": 372,
+       "r": -0.0489,
+       "outcome": "tp1"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "edfc80d6dec64f4491718fca9f3cd607",
+       "trigger": "b2",
+       "fillIndex": 2,
+       "barsHeld": 9,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "edfc80d6dec64f4491718fca9f3cd607",
+       "trigger": "b3",
+       "fillIndex": 17,
+       "barsHeld": 17,
+       "r": -1.0148,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "SKHY",
+       "runId": "9885439318f44bec8c8916b2f91684d6",
+       "trigger": "r2",
+       "fillIndex": 351,
+       "barsHeld": 26,
+       "r": -1.1467,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "XLF",
+       "runId": "4af411049ae247408b6367356626b21f",
+       "trigger": "d1",
+       "fillIndex": 8,
+       "barsHeld": 381,
+       "r": -0.5511,
+       "outcome": "horizon"
+      }
+     ]
+    },
+    "frozen_exception": {
+     "coverage": {
+      "plans": 40,
+      "scorable": 40,
+      "unknown": 0,
+      "replannedNotRejudged": 6
+     },
+     "sharedBook": {
+      "capacity": {
+       "version": "capacity-v1",
+       "riskPctPerEntry": 2.0,
+       "dailyLossHaltPct": 3.0,
+       "maxPositionPct": 10.0,
+       "maxGrossExposurePct": 100.0,
+       "derivation": "technique.arm.risk_pct / risk.daily_loss_halt_pct / risk.max_position_pct / risk.max_gross_exposure_pct as configured for EM Practice",
+       "slots": 10,
+       "haltAtR": -1.5
+      },
+      "taken": 3,
+      "refused": 2,
+      "refusedWhy": {
+       "daily_loss_halt": 2
+      },
+      "untimedExcluded": 0,
+      "haltedAtIndex": 34,
+      "sumR": -2.178,
+      "winners": 1,
+      "losers": 2,
+      "worstDrawdownR": -2.265,
+      "independentSumR": -4.574,
+      "label": "PROXY-ONLY: underlying walk-forward R under capacity-v1; not dollars, not option fills"
+     },
+     "fills": [
+      {
+       "symbol": "AMGN",
+       "runId": "4dc6a58e45a04bb0a90fc37a48b0545f",
+       "trigger": "k1",
+       "fillIndex": 6,
+       "barsHeld": 380,
+       "r": 0.087,
+       "outcome": "horizon"
+      },
+      {
+       "symbol": "DRAM",
+       "runId": "4a75f7d4dbb447c9ab83252ce162b543",
+       "trigger": "r2",
+       "fillIndex": 316,
+       "barsHeld": 64,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "edfc80d6dec64f4491718fca9f3cd607",
+       "trigger": "b2",
+       "fillIndex": 2,
+       "barsHeld": 9,
+       "r": -1.25,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "PANW",
+       "runId": "edfc80d6dec64f4491718fca9f3cd607",
+       "trigger": "b3",
+       "fillIndex": 17,
+       "barsHeld": 17,
+       "r": -1.0148,
+       "outcome": "stopped"
+      },
+      {
+       "symbol": "SKHY",
+       "runId": "9885439318f44bec8c8916b2f91684d6",
+       "trigger": "r2",
+       "fillIndex": 351,
+       "barsHeld": 26,
+       "r": -1.1467,
+       "outcome": "stopped"
+      }
+     ]
+    }
+   },
+   "members": {
+    "baseline_model": 39,
+    "deterministic": 93,
+    "frozen_exception": 40
+   },
+   "onlyDeterministic": [
+    "AMGN",
+    "ARM",
+    "AVGO",
+    "BA",
+    "BAC",
+    "BKNG",
+    "CRM",
+    "CRWD",
+    "CVX",
+    "DAL",
+    "DIA",
+    "EEM",
+    "FXI",
+    "GLD",
+    "GM",
+    "GOOG",
+    "GOOGL",
+    "HPE",
+    "HYG",
+    "JPM",
+    "KLAC",
+    "KO",
+    "KRE",
+    "LLY",
+    "LQD",
+    "META",
+    "MRNA",
+    "MU",
+    "NOW",
+    "NVDA",
+    "ORCL",
+    "OXY",
+    "PEP",
+    "PFE",
+    "PG",
+    "PLTR",
+    "RDDT",
+    "RKLB",
+    "SCHW",
+    "SLV",
+    "SOXL",
+    "SPCX",
+    "TSLA",
+    "TXN",
+    "UBER",
+    "UPS",
+    "USO",
+    "V",
+    "VOO",
+    "XBI",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU"
+   ],
+   "onlyModel": [
+    "FSLR",
+    "SQQQ"
+   ],
+   "modelRejected": {
+    "plans": 63,
+    "replayFills": 3,
+    "avoidedLosers": 2,
+    "forgoneWinners": 1,
+    "sumR": -0.513,
+    "label": "PROXY-ONLY independent replay of the plans the model rejected"
+   },
+   "conditionalFixRescued": [],
+   "baselineLiveFunnel": {
+    "liveFired": 6,
+    "liveRefusedBeforeOrder": 0,
+    "liveOrders": 10,
+    "liveFilled": 5,
+    "replayFired": 5,
+    "replayFilled": 5
+   },
+   "baselineLiveRows": [
+    {
+     "symbol": "DRAM",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "FSLR",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    },
+    {
+     "symbol": "PANW",
+     "liveFired": 2,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 4,
+     "liveFilled": 2,
+     "liveRefusals": [],
+     "replayFired": 2,
+     "replayFilled": 2,
+     "replayOutcomes": {
+      "stopped": 2
+     }
+    },
+    {
+     "symbol": "SBUX",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 2,
+     "liveFilled": 1,
+     "liveRefusals": [],
+     "replayFired": 0,
+     "replayFilled": 0,
+     "replayOutcomes": {}
+    },
+    {
+     "symbol": "SKHY",
+     "liveFired": 1,
+     "liveRefusedBeforeOrder": 0,
+     "liveOrders": 0,
+     "liveFilled": 0,
+     "liveRefusals": [],
+     "replayFired": 1,
+     "replayFilled": 1,
+     "replayOutcomes": {
+      "stopped": 1
+     }
+    }
+   ],
+   "baselineActual": {
+    "net": -299.3265,
+    "fees": 10.4,
+    "bySymbol": {
+     "DRAM260921P00058000": {
+      "net": -104.32,
+      "fees": 8.32,
+      "qty": 4.0
+     },
+     "FSLR": {
+      "net": -47.225,
+      "fees": 0.0,
+      "qty": 25.0
+     },
+     "PANW": {
+      "net": -63.6815,
+      "fees": 0.0,
+      "qty": 27.0
+     },
+     "SBUX261002P00095000": {
+      "net": -84.1,
+      "fees": 2.08,
+      "qty": 1.0
+     }
+    },
+    "openAtCutoff": [],
+    "fills": 10,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "disputedEvidence": [],
+   "baselineActualSensitivity": null,
+   "modelCost": {
+    "version": "model-costs-v1",
+    "requests": 102,
+    "retries": 0,
+    "requestsWithoutCompletion": 0,
+    "tokens": {
+     "input": 3717691,
+     "output": 1463069,
+     "cacheRead": 1921860,
+     "cacheWrite": 34794
+    },
+    "invoiceVerified": {
+     "usd": null,
+     "invoices": 0
+    },
+    "estimated": {
+     "usd": 56.3436,
+     "requests": 102
+    },
+    "unknown": {
+     "requests": 0,
+     "why": {}
+    },
+    "subscriptionAllocation": null,
+    "byModel": {
+     "anthropic/claude-opus-5": {
+      "requests": 102,
+      "tokens": {
+       "input": 3717691,
+       "output": 1463069,
+       "cacheRead": 1921860,
+       "cacheWrite": 34794
+      },
+      "estimatedUsd": 56.343574,
+      "unknownRequests": 0
+     }
+    },
+    "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
+   },
+   "deterministicModelCalls": 0
+  }
+ ]
+}

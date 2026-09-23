@@ -53,6 +53,14 @@ P02_POLICY = "small-position-exit-v1"
 P02_MAX_QTY = 2
 P02_MIN_FIRST_SALE_R = 2.0
 P03_HURDLE_MARK = 0.08                      # ranking marker (share of paid premium), never a gate
+COHORTS_ADDENDUM = "p04-p05-2026-09-17; p06-2026-09-18"
+P06_POLICY = "tp1-reclaim-runner-exit-v1"     # frozen additions (PFU-02/03 corrected): P-04 descriptive strata + PAIRED confirmation comparison, P-05 clock/event labels
+SESSION_CLOCK = "sessions-v1: prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00 ET"   # marketstructure.sessions.session_window
+# Event provenance is HAND-KEPT (the app's macro calendar is empty): a date without an entry has UNKNOWN coverage, never
+# "ordinary". Entries added after the session are retrospective and say so. Time is the event's ET clock time.
+EVENT_CALENDAR = {"2026-09-16": {"label": "FOMC", "atEt": "14:00", "source": "hand-kept 2026-09-16 (statement 14:00, presser 14:30 ET)", "retrospective": True}}
+P04_CONFIRM_WINDOW_BARS = 10                # paired comparison: a confirming completed close must arrive within this many 1m bars after the touch bar
+P04_MIN_RR = 3.0                            # frozen copy of the R2 bar (technique.min_risk_reward at freeze time) - never read live, the comparison must not drift
 ROOM_BINS = (("<1R", 0.0, 1.0), ("1-3R", 1.0, 3.0), (">=3R", 3.0, float("inf")))
 NY = ZoneInfo("America/New_York")
 EM_BOOK = "045d8c35b3f149628ea001ae90a58edb"
@@ -125,6 +133,207 @@ def payoff_to_tp1(delta: float | None, entry: float | None, tp1: float | None, q
         return round(d * (float(tp1) - float(entry)) * float(qty) * float(multiplier), 2)
     except (TypeError, ValueError):
         return None
+
+
+def _ev_ms(ts) -> int:
+    return int(ts.timestamp() * 1000) if hasattr(ts, "timestamp") else int(ts)
+
+
+def _minute(ts_ms: int) -> int:
+    return (int(ts_ms) // 60000) * 60000
+
+
+P06_OBSERVATION_LIFETIME_MS = 15 * 60000     # a covered quote later than this after the signal is not "the first opportunity"
+
+
+def validate_observation(o: dict, *, rung: str, entry_order_id, contract_symbol: str | None, signal_bar_ts: int | None,
+                         signal_ts: int, remaining: float, cutoff_ms: int, opened_ts=None, closed_ts=None,
+                         lifetime_ms: int = P06_OBSERVATION_LIFETIME_MS) -> tuple[bool, str | None, float | None, int | None]:
+    """STRICT shared validator for a money comparison (re-review 2026-09-17, correction 3). Returns (ok, why, bid, at).
+    Every identity must be PRESENT and match: rung; tradeInstance == the entry order id; contract symbol == the trade's
+    contract; the observation's own signal identity (signal.barTs) == the reducer's signal bar. Chronology: the contract
+    quote's source time <= observedAt; observedAt within [signalTs, min(cutoff, signalTs + lifetime, closedTs)] and not
+    before the position opened. Disposition must be `observed` (stop / pending exit lose), scorable, with coverage >= the
+    remaining quantity. A missing field is a failure, never a pass."""
+    if o.get("rung") != rung:
+        return False, "other rung", None, None
+    inst = o.get("tradeInstance")
+    if entry_order_id is None or inst is None or str(inst) != str(entry_order_id):
+        return False, "trade instance missing or different", None, None
+    contract = o.get("contract") or {}
+    csym = contract.get("symbol")
+    if not contract_symbol or not csym or str(csym) != str(contract_symbol):
+        return False, "contract missing or different", None, None
+    sig = o.get("signal") or {}
+    if signal_bar_ts is None or sig.get("barTs") is None or int(sig["barTs"]) != int(signal_bar_ts):
+        return False, "signal identity missing or different", None, None
+    at = o.get("observedAt", o.get("observedTs"))
+    if at is None:
+        return False, "no observation time", None, None
+    at = int(at)
+    src = contract.get("sourceTs")
+    if src is None or int(src) > at:
+        return False, "contract quote time missing or after the observation (out of order)", None, at
+    if at < int(signal_ts):
+        return False, "observed before the signal", None, at
+    upper = min(int(cutoff_ms), int(signal_ts) + int(lifetime_ms), int(closed_ts) if closed_ts else int(cutoff_ms))
+    if at > upper:
+        return False, "observed after the cutoff / lifetime / position close", None, at
+    if opened_ts is not None and at < int(opened_ts):
+        return False, "before the position opened", None, at
+    if o.get("disposition") != "observed":
+        return False, f"disposition {o.get('disposition')}", None, at
+    m = o.get("modeled") or {}
+    if not m.get("scorable") or not m.get("bid"):
+        return False, f"unscorable ({m.get('why') or 'no coverage'})", None, at
+    if float(m.get("coveredQty") or 0) + 1e-9 < float(remaining):
+        return False, f"coverage {m.get('coveredQty')} below the remainder {remaining:g}", None, at
+    return True, None, float(m["bid"]), at
+
+
+def runner_protection(direction: str, tp1: float | None, entry: float | None, stop: float | None, exits: list[dict], executions: list,
+                      bars: list[dict], cutoff_ms: int, *, filled_qty: float, multiplier: float, instrument: str | None,
+                      avg_fill: float | None = None, entry_fee_per_unit: float | None = None, fee_side: float = 0.0,
+                      observations: list[dict] | None = None, entry_order_id=None, contract_symbol: str | None = None,
+                      opened_ts=None, closed_ts=None) -> dict:
+    """P-06 `tp1-reclaim-runner-exit-v1` (frozen 2026-09-18; re-review corrections 2026-09-17 evening). A CHRONOLOGICAL
+    walk over this trade instance's confirmed executions and completed bars up to the cutoff:
+    - eligibility opens at the FIRST TP1 fill (any partial); a later partial TP1 fill never moves it; the remainder is the
+      original fill minus every execution seen so far, updated as later trims fill;
+    - after eligibility, bars are consumed in completion order (consecutive minutes; a gap = unknown); a fill of any
+      kind between bars reduces the remainder (an intermediate TP2 trim does NOT end the evaluation); a fill that takes
+      the remainder to zero ends it (`not_triggered`: production closed the runner first);
+    - the signal = the first completed bar whose close is back through the saved TP1 while a remainder exists and no
+      ordinary exit is working; the remainder at the signal is frozen;
+    - candidate = the EARLIEST strictly validated `tp1-reclaim` observation (identity, contract, signal identity,
+      chronology, coverage, lifetime, cutoff - `validate_observation`); options only: dollars = k x (bid - fill) x m -
+      actual entry fee - modeled exit fee; shares have NO dollar branch (disclosed: proxy only even with an observation);
+      without a valid observation the next bar's open is an UNDERLYING PROXY for shares and options alike;
+    - production = the remainder's fills after the signal to its terminal event (VWAP, allocated fees); a working
+      ordinary exit at the cutoff or an unsold remainder = `partial` (explicit: a later sale is never assumed).
+    Executions after the cutoff are ignored. TP1 is the plan's saved first target - never chosen after the fact."""
+    out = {"policy": P06_POLICY, "outcome": "unknown", "why": None, "tp1": tp1, "eligibleAt": None, "tp1FilledQty": None,
+           "remainingAtSignal": None, "reclaimTs": None, "signalTs": None, "modeledExitTs": None, "modeledExitPx": None, "modeledBasis": None,
+           "productionRunner": None, "underlyingDeltaR": None, "dollarDelta": None, "alternativeRealized": None, "productionRealized": None,
+           "observationsRejected": [], "dollarScope": "options only - shares are proxy-only in this implementation"}
+    if tp1 is None or entry is None or stop is None or abs(float(entry) - float(stop)) <= 0:
+        out["why"] = "geometry missing"; return out
+    long = direction != "short"; risk = abs(float(entry) - float(stop))
+    order_kind = {str(x.get("orderId")): x.get("kind") for x in (exits or []) if x.get("orderId")}
+    fills = sorted(({"ts": _ev_ms(e["ts"]), "qty": float(e["qty"] or 0), "price": float(e["price"] or 0), "commission": float(e["commission"] or 0),
+                     "kind": order_kind[str(e["order_id"])], "orderId": str(e["order_id"])}
+                    for e in executions or [] if str(e["order_id"]) in order_kind and str(e["side"] or "") == "SELL" and float(e["qty"] or 0) > 0
+                    and _ev_ms(e["ts"]) <= cutoff_ms), key=lambda f: f["ts"])
+    if not any(k == "tp1" for k in order_kind.values()):
+        out["outcome"] = "not_eligible"; out["why"] = "no TP1 trim order"; return out
+    first_tp1 = next((f for f in fills if f["kind"] == "tp1"), None)
+    if first_tp1 is None:
+        out["outcome"] = "not_eligible"; out["why"] = "TP1 trim never filled by the cutoff (cancelled or pending) - not a completed trim"; return out
+    t_e = first_tp1["ts"]; out["eligibleAt"] = t_e
+    out["tp1FilledQty"] = sum(f["qty"] for f in fills if f["kind"] == "tp1")
+    # working ordinary exits (an order without any fill by the cutoff and not cancelled) - explicit semantics
+    filled_orders = {f["orderId"] for f in fills}
+    working = [x for x in (exits or []) if x.get("orderId") and str(x["orderId"]) not in filled_orders
+               and str(x.get("status") or "").upper() not in ("CANCELLED", "REJECTED", "EXPIRED", "REJECTED_RISK")]
+    # ---- chronological walk: bars completing after the first TP1 fill, fills interleaved
+    path = sorted((b for b in bars if int(b["ts"]) + 60000 > t_e and int(b["ts"]) + 60000 <= cutoff_ms), key=lambda b: b["ts"])
+    remaining = float(filled_qty) - sum(f["qty"] for f in fills if f["ts"] <= t_e)
+    consumed = [f for f in fills if f["ts"] <= t_e]
+    prev_ts = _minute(t_e) - 60000; reclaim = None; ended = None     # the first bar consumed is the fill minute's own bar
+    for b in path:
+        ts = int(b["ts"]); done_at = ts + 60000
+        if ts - prev_ts != 60000:
+            out["why"] = f"bar gap after eligibility ({dt.datetime.fromtimestamp(prev_ts / 1000, NY).strftime('%H:%M')} -> {dt.datetime.fromtimestamp(ts / 1000, NY).strftime('%H:%M')})"; return out
+        prev_ts = ts
+        for f in fills:                                   # fills that completed before this bar did reduce the remainder first
+            if f in consumed or f["ts"] > done_at:
+                continue
+            consumed.append(f); remaining -= f["qty"]
+            if remaining <= 1e-9:
+                ended = f; break
+        if ended is not None:
+            break
+        if (float(b["close"]) < float(tp1)) if long else (float(b["close"]) > float(tp1)):
+            reclaim = b; break
+    if ended is not None:
+        out["outcome"] = "not_triggered"; out["why"] = f"production closed the runner ({ended['kind']}) before any completed close back through TP1"; return out
+    if reclaim is None:
+        if path and int(path[-1]["ts"]) + 60000 >= cutoff_ms - 60000:
+            out["outcome"] = "not_triggered"; out["why"] = "no completed close back through TP1 before the session's end"
+        else:
+            out["outcome"] = "partial"; out["why"] = "runner still open and no reclaim observed at the cutoff"
+        return out
+    signal_ts = int(reclaim["ts"]) + 60000
+    out.update({"reclaimTs": int(reclaim["ts"]), "signalTs": signal_ts, "remainingAtSignal": remaining})
+    if remaining <= 1e-9:
+        out["outcome"] = "not_eligible"; out["why"] = "nothing left to protect at the signal"; return out
+    if any(x for x in working if (x.get("ts") or 0) and int(x["ts"]) <= signal_ts):
+        out["outcome"] = "not_triggered"; out["why"] = "an ordinary exit was already working at the signal (pending exit precedence)"; return out
+    # ---- production branch: the remainder's fills after the signal to its terminal event
+    prod = [f for f in fills if f["ts"] > signal_ts]
+    prod_qty = sum(f["qty"] for f in prod)
+    if prod_qty + 1e-9 < remaining:
+        out["outcome"] = "partial"
+        out["why"] = (f"production still holds {remaining - prod_qty:g} of the remainder at the cutoff"
+                      + (" (an ordinary exit is working - not assumed filled)" if working else ""))
+        return out
+    prod_vwap = sum(f["qty"] * f["price"] for f in prod) / prod_qty
+    prod_fees = sum(f["commission"] for f in prod)
+    out["productionRunner"] = {"qty": prod_qty, "vwap": round(prod_vwap, 4), "fees": round(prod_fees, 2), "kinds": sorted({f["kind"] for f in prod if f["kind"]})}
+    # ---- candidate: the EARLIEST strictly valid observation; rejected ones are listed with their reason
+    valid = []
+    for o in observations or []:
+        ok, why, bid, at = validate_observation(o, rung="tp1-reclaim", entry_order_id=entry_order_id, contract_symbol=contract_symbol,
+                                                signal_bar_ts=int(reclaim["ts"]), signal_ts=signal_ts, remaining=remaining, cutoff_ms=cutoff_ms,
+                                                opened_ts=opened_ts, closed_ts=closed_ts)
+        if ok:
+            valid.append((at, bid, o))
+        else:
+            out["observationsRejected"].append({"observedAt": at, "why": why})
+    valid.sort(key=lambda x: x[0])
+    if valid and instrument == "options" and avg_fill is not None:
+        at, bid, o = valid[0]
+        entry_fee = float(entry_fee_per_unit if entry_fee_per_unit is not None else fee_side)
+        alt = remaining * ((bid - float(avg_fill)) * float(multiplier) - entry_fee - fee_side)
+        prod_real = remaining * ((prod_vwap - float(avg_fill)) * float(multiplier) - entry_fee) - prod_fees
+        out.update({"outcome": "compared", "modeledBasis": "earliest strictly validated covered executable bid after the signal",
+                    "modeledExitTs": at, "modeledExitPx": bid, "alternativeRealized": round(alt, 2), "productionRealized": round(prod_real, 2),
+                    "dollarDelta": round(alt - prod_real, 2)})
+        return out
+    nxt = next((b for b in path if int(b["ts"]) == signal_ts), None)
+    if nxt is None:
+        out["outcome"] = "unknown"; out["why"] = "no completed bar after the signal minute to exit at"; return out
+    px = float(nxt["open"])
+    if instrument == "options":
+        pb = next((b for b in sorted(bars, key=lambda x: x["ts"]) if int(b["ts"]) <= prod[0]["ts"] < int(b["ts"]) + 60000), None)
+        if pb is None:
+            out["outcome"] = "unknown"; out["why"] = "no underlying bar at production's runner fill"; return out
+        prod_ref = float(pb["close"]); out["productionRunner"]["underlyingRef"] = prod_ref
+    else:
+        prod_ref = prod_vwap
+    favour = (px - prod_ref) if long else (prod_ref - px)
+    out.update({"outcome": "underlying_proxy_only", "modeledBasis": "next bar's open (underlying proxy - no executable quote, no fees)",
+                "modeledExitTs": int(nxt["ts"]), "modeledExitPx": px, "underlyingDeltaR": round(favour / risk, 3),
+                "why": ("shares: no dollar branch in this implementation - proxy only" if instrument != "options"
+                        else ("no strictly valid covered tp1-reclaim observation" + (f" ({len(out['observationsRejected'])} rejected)" if out["observationsRejected"] else "")))})
+    return out
+
+
+def never_tp1_diag(direction: str, entry: float | None, stop: float | None, opened_ts, closed_ts, exits: list, bars: list[dict]) -> dict | None:
+    """Review B diagnostic for winners that never reached TP1: the best underlying excursion (R) during the completed
+    holding minutes versus the exit. Descriptive only - no threshold is derived from it."""
+    if any((p.get("kind") == "tp1") for _, p in exits) or entry is None or stop is None or not opened_ts or not closed_ts:
+        return None
+    risk = abs(float(entry) - float(stop))
+    if risk <= 0:
+        return None
+    o, c = int(opened_ts), int(closed_ts)
+    held = [b for b in bars if int(b["ts"]) > o and int(b["ts"]) + 60000 <= c]
+    if not held:
+        return {"mfeR": None, "why": "no completed holding minute"}
+    long = direction != "short"
+    mfe = max(((float(b["high"]) - float(entry)) if long else (float(entry) - float(b["low"]))) for b in held)
+    return {"mfeR": round(mfe / risk, 3), "heldBars": len(held)}
 
 
 def affordable_qty(risk_budget: float, premium: float, premium_stop_pct: float, multiplier: float = 100.0) -> int:
@@ -215,6 +424,13 @@ def _ms(d: dt.date, hh: int, mm: int) -> int:
     return int(dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=NY).timestamp() * 1000)
 
 
+def session_close_of(ts_ms: int) -> int:
+    """The regular-session close (16:00 ET) of the day `ts_ms` falls on - the only clock that closes an intraday horizon.
+    Early-close days are not modelled here: a 13:00 ET close leaves horizons pending until 16:00, never the reverse."""
+    d = dt.datetime.fromtimestamp(ts_ms / 1000, tz=NY).date()
+    return _ms(d, 16, 0)
+
+
 def underlying_proxy(bars: list[dict], fired_ts: int, entry: float, stop: float, tp1: float, direction: str, cutoff_ms: int) -> str:
     """Underlying-only diagnostic for a fired trigger that produced no position: which came first after the firing bar,
     a TP1 touch or a close through the stop, by the cutoff. Not dollars, not an option outcome."""
@@ -234,6 +450,97 @@ def underlying_proxy(bars: list[dict], fired_ts: int, entry: float, stop: float,
         if stopped:
             return "stop_first"
     return "unresolved"
+
+
+def session_labels(fired_ts: int, date: str) -> dict:
+    """PFU-03: timezone-aware fire time, the versioned session window from the shared clock, and event provenance with
+    pre / post / unknown - a date without a calendar entry is `unknown_calendar`, never ordinary."""
+    from ..marketstructure.sessions import session_window
+    fired = dt.datetime.fromtimestamp(fired_ts / 1000, NY)
+    ev = EVENT_CALENDAR.get(date)
+    if not ev:
+        phase = "unknown_calendar"
+    else:
+        hh, mm = (int(x) for x in ev["atEt"].split(":"))
+        at = fired.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        phase = ("pre_event:" if fired < at else "post_event:") + ev["label"]
+    return {"firedAtIso": fired.isoformat(), "sessionWindow": session_window(fired_ts), "sessionClock": SESSION_CLOCK,
+            "eventPhase": phase, "eventProvenance": (ev["source"] if ev else "no calendar entry"), "eventRetrospective": (bool(ev.get("retrospective")) if ev else None)}
+
+
+def confirmation_pair(bars: list[dict], fired_ts: int, direction: str, level: float | None, stop: float | None, tp1: float | None, tp2: float | None,
+                      cutoff_ms: int, *, window_bars: int = P04_CONFIRM_WINDOW_BARS, min_rr: float = P04_MIN_RR,
+                      session_close_ms: int | None = None) -> dict:
+    """PFU-02 (corrected after the 2026-09-17 re-review): the PAIRED, order-free confirmation variant of one touch
+    attempt - a GEOMETRY-ONLY UNDERLYING PROXY, not an admitted entry. Frozen rules:
+    - the firing (touch) bar itself never qualifies as the confirming close; the scan starts at the first bar AFTER it
+      (a firing bar that closed beyond the level is the `observed_reclaim` stratum of P-04a, and the paired variant
+      still waits for the NEXT completed close);
+    - confirmation = first COMPLETED 1m close beyond the level within `window_bars`; entry = the OPEN of the following bar
+      (no same-close hindsight fill);
+    - re-run the geometry gates only: stop side, room to TP1, R2 >= `min_rr` at the exit rung (TP2 when present) - a frozen
+      copy of the bar. NOT evaluated (unknown, never assumed passed): quote quality / freshness, premium sizing and the
+      quantity-dependent exit rung, the never-chase cap, timing windows, admission and daily-loss budgets;
+    - follow the underlying FROM THE ENTRY BAR (inclusive): TP1 touch vs stop close, first come; both on one bar = unknown;
+    - an incomplete horizon (fewer than `window_bars` bars observed and the session not over) is `pending`, not
+      `no_confirmation`; ONLY the session's actual last bar closes the horizon (`session_close_ms`, default 16:00 ET on
+      the firing day) - the REPORT cutoff (`cutoff_ms`, e.g. a 10:02 ET intraday report) never does: fewer bars because
+      the report ran early is pending, not a non-confirmation.
+    Underlying-only R (full-size proxy at TP1, -1R at the stop); option premium at the delayed time is UNKNOWN.
+    Outcomes: no_confirmation, pending (...), refused_stop_side, refused_no_room, refused_r2, unknown (...), tp1_first,
+    stop_first, unresolved."""
+    out = {"policy": "geometry_only_underlying_proxy:confirmed_close_then_next_open", "windowBars": window_bars, "minRr": min_rr,
+           "gatesNotEvaluated": ["quote quality/freshness", "premium sizing / quantity-dependent exit rung", "never-chase cap", "timing window", "admission and daily-loss budgets"],
+           "outcome": None, "resultR": None, "confirmTs": None, "entryTs": None, "entry": None, "riskPerUnit": None, "rr": None, "barsWaited": None}
+    if level is None or stop is None or tp1 is None:
+        out["outcome"] = "unknown (level, stop or target missing)"; return out
+    long = direction == "long"
+    path = sorted([b for b in bars if int(b["ts"]) > fired_ts and int(b["ts"]) + 60000 <= cutoff_ms], key=lambda x: x["ts"])
+    prev = fired_ts; confirm_i = None
+    for i, b in enumerate(path[:window_bars]):
+        if int(b["ts"]) - prev != 60000:
+            out["outcome"] = "unknown (bar gap before confirmation)"; return out
+        prev = int(b["ts"])
+        if (b["close"] > level) if long else (b["close"] < level):
+            confirm_i = i; break
+    if confirm_i is None:
+        observed = min(len(path), window_bars); out["barsWaited"] = observed
+        close_ms = session_close_ms if session_close_ms is not None else session_close_of(fired_ts)
+        session_over = bool(path) and int(path[-1]["ts"]) + 60000 >= close_ms         # the last observed bar IS the session's last bar
+        if observed < window_bars and not session_over:
+            out["outcome"] = f"pending (horizon incomplete: {observed} of {window_bars} bars observed)"; return out
+        out["outcome"] = "no_confirmation"; return out
+    if confirm_i + 1 >= len(path) or int(path[confirm_i + 1]["ts"]) - int(path[confirm_i]["ts"]) != 60000:
+        out["outcome"] = "unknown (no executable bar after the confirming close)"; return out
+    eb = path[confirm_i + 1]
+    entry = float(eb["open"])
+    out.update({"confirmTs": int(path[confirm_i]["ts"]), "entryTs": int(eb["ts"]), "entry": round(entry, 4), "barsWaited": confirm_i + 1})
+    risk = (entry - stop) if long else (stop - entry)
+    if risk <= 0:
+        out["outcome"] = "refused_stop_side"; return out
+    out["riskPerUnit"] = round(risk, 4)
+    room1 = (tp1 - entry) if long else (entry - tp1)
+    if room1 <= 0:
+        out["outcome"] = "refused_no_room"; return out
+    rung = tp2 if tp2 is not None else tp1
+    rr = ((rung - entry) if long else (entry - rung)) / risk
+    out["rr"] = round(rr, 2)
+    if rr < min_rr:
+        out["outcome"] = "refused_r2"; return out
+    prev = int(eb["ts"]) - 60000
+    for b in path[confirm_i + 1:]:                       # FROM the entry bar: the fill minute itself can reach TP1 or the stop
+        if int(b["ts"]) - prev != 60000:
+            out["outcome"] = "unknown (bar gap after entry)"; return out
+        prev = int(b["ts"])
+        stopped = (b["close"] < stop) if long else (b["close"] > stop)
+        hit = (b["high"] >= tp1) if long else (b["low"] <= tp1)
+        if hit and stopped:
+            out["outcome"] = "unknown (same-bar target and stop)"; return out
+        if hit:
+            out["outcome"] = "tp1_first"; out["resultR"] = round(room1 / risk, 2); return out
+        if stopped:
+            out["outcome"] = "stop_first"; out["resultR"] = -1.0; return out
+    out["outcome"] = "unresolved"; return out
 
 
 async def _budget_inputs(c, fired_ts: int) -> tuple[float | None, float | None, str]:
@@ -346,6 +653,8 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                        "confirmation": confirmation_class(fire_bar["close"] if fire_bar else None, level, direction),
                        "sourceSymbolDirectionMatch": (a["symbol"], direction) in matched, "status": tr.get("status"), "instrument": tr.get("instrument"),
                        "intendedEntry": tr.get("entry"), "stop": tr.get("stop"), "targets": tr.get("targets"),
+                       "window": fired_ev.get("window") or tr.get("window"),
+                       **session_labels(int(fired_ts), date), "firedTs": int(fired_ts), "level": level, "tp2": ((tr.get("targets") or [None, None])[1] if len(tr.get("targets") or []) > 1 else None),
                        "policyVersion": policy_version, "decisionId": decision.get("decisionId"), "decisionVerdict": decision.get("verdict"),
                        "fireDecisionMode": fired_ev.get("fireDecisionMode") or ("legacy" if fired_ev else None), "timing": fired_ev.get("timing"),
                        "quoteRefresh": (intent or {}).get("quoteRefresh"),
@@ -395,6 +704,16 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                                                   "productionPerContract": per_contract or None, "entryFeePerContract": (entry_fee_pc if entry_fee_pc is not None else fee_side),
                                                   "entryOrderId": eid, "contract": {"symbol": contract.get("symbol") or tr.get("orderSymbol")},
                                                   "openedTs": tr.get("openedTs"), "closedTs": tr.get("closedTs")}, shadow, fee_side)
+                    row["p06"] = runner_protection(direction, tp1, tr.get("entry"), tr.get("stop"), list(tr.get("exits") or []), list(ex), bars, cutoff_ms,
+                                                   filled_qty=q, multiplier=m, instrument=tr.get("instrument"), avg_fill=avg_fill,
+                                                   entry_fee_per_unit=entry_fee_pc, fee_side=fee_side,
+                                                   observations=[p for _, ty, p in evs if ty == "TechniqueExitShadow" and p.get("rung") == "tp1-reclaim"],
+                                                   entry_order_id=eid, contract_symbol=(contract.get("symbol") or tr.get("orderSymbol") or (a["symbol"] if tr.get("instrument") != "options" else None)),
+                                                   opened_ts=tr.get("openedTs"), closed_ts=tr.get("closedTs"))
+                    row["neverTp1"] = never_tp1_diag(direction, tr.get("entry"), tr.get("stop"), tr.get("openedTs"), tr.get("closedTs"),
+                                                     [(0, x) for x in (tr.get("exits") or []) if (x.get("filledQty") or 0) > 0], bars) if closed else None
+                    if row.get("cohort") == COHORT_P01:
+                        row["confirmationPair"] = confirmation_pair(bars, int(fired_ts), direction, level, tr.get("stop"), tp1, row.get("tp2"), cutoff_ms)
                     trades.append(row)
                 else:
                     result = next((p for _, ty, p in evs if ty == "TechniquePlanOrderResult" and p.get("trigger") == tid), None)
@@ -404,6 +723,8 @@ async def build(date: str, cutoff: str = "16:00") -> dict:
                     row.update({"refusal": reason, "intendedQty": qty, "multiplier": (100.0 if (intent or {}).get("secType", "OPT") == "OPT" else 1.0),
                                 "friction": (friction(ask, contract.get("bid"), qty, 100.0 if (intent or {}).get("secType") == "OPT" else 1.0, fee_side) if contract else None),
                                 "underlyingProxy": underlying_proxy(bars, int(fired_ts), float(tr.get("entry") or 0), float(tr.get("stop") or 0), float(tp1), direction, cutoff_ms) if tp1 and tr.get("stop") else "unknown"})
+                    if row.get("cohort") == COHORT_P01:
+                        row["confirmationPair"] = confirmation_pair(bars, int(fired_ts), direction, level, tr.get("stop"), tp1, row.get("tp2"), cutoff_ms)
                     refused.append(row)
         return {"version": VERSION, "date": date, "cutoff": cutoff, "feePerContractSide": fee_side, "trades": trades, "refused": refused,
                 "attempts": [{k: v for k, v in x.items() if k != "ts"} for x in attempts], "sourceLedgerRows": len(ledger)}
@@ -436,6 +757,8 @@ def summarize(data: dict) -> dict:
             if r.get("closed"): s["net"] += r.get("netRealized") or 0
             else: s["open"] += 1
     p02 = [r for r in trades if r.get("p02Eligible")]
+    p06 = [r for r in trades if (r.get("p06") or {}).get("outcome") not in (None, "not_eligible")]
+    never = [r for r in trades if r.get("closed") and r.get("neverTp1") and (r.get("netRealized") or 0) != 0]
 
     def econ(r):
         f = r.get("friction") or {}
@@ -446,9 +769,57 @@ def summarize(data: dict) -> dict:
                 "firstSaleDistanceR": r.get("firstSaleDistanceR"), "flag": (pct is not None and pct >= P03_HURDLE_MARK),
                 "delta": (r.get("contract") or {}).get("delta"),
                 "payoffTp1": payoff_to_tp1((r.get("contract") or {}).get("delta"), r.get("intendedEntry"), (r.get("targets") or [None])[0], qty, r.get("multiplier") or 100.0),
+                # 2026-09-18 (BMNR): the first-order premium edge at TP1 after friction - payoff proxy minus the hurdle. A thin or
+                # negative cushion means an underlying target reached does not imply a premium profit; a marker, never a gate.
+                "edgeAtTp1": (round(payoff_to_tp1((r.get("contract") or {}).get("delta"), r.get("intendedEntry"), (r.get("targets") or [None])[0], qty, r.get("multiplier") or 100.0) - f["total"], 2)
+                              if (f.get("total") is not None and payoff_to_tp1((r.get("contract") or {}).get("delta"), r.get("intendedEntry"), (r.get("targets") or [None])[0], qty, r.get("multiplier") or 100.0) is not None) else None),
                 "riskBudgetQty": r.get("riskBudgetQty"), "riskBudgetBasis": r.get("riskBudgetBasis"), "refusal": r.get("refusal")}
     p03 = [econ(r) for r in trades + refused]
     p03.sort(key=lambda e: (e["hurdlePct"] is None, -(e["hurdlePct"] or 0)))
+    # P-04 (frozen 2026-09-16): touch (`anticipated`) vs confirmed reaction (`observed_reclaim`) over EVERY attempt of the
+    # cohort - fills, rejected opportunities (refused rows) and sacrificed winners (refused rows whose underlying proxy
+    # reached TP1). Order-free; nothing is switched on or off by it.
+    def _cohort_split(rows_t, rows_r, keyf):
+        out = defaultdict(lambda: {"fills": 0, "net": 0.0, "open": 0, "winners": 0, "losers": 0, "rejected": 0, "underlyingTp1FirstRefused": 0, "unknownProxy": 0})
+        for r in rows_t:
+            b = out[keyf(r)]; b["fills"] += 1
+            if r.get("closed"):
+                b["net"] += r.get("netRealized") or 0
+                if (r.get("netRealized") or 0) > 0: b["winners"] += 1
+                elif (r.get("netRealized") or 0) < 0: b["losers"] += 1
+            else: b["open"] += 1
+        for r in rows_r:
+            b = out[keyf(r)]; b["rejected"] += 1
+            proxy = str(r.get("underlyingProxy") or "")
+            if proxy.startswith("tp1"): b["underlyingTp1FirstRefused"] += 1     # PFU-02: an underlying-only fact, NOT a sacrificed net winner
+            elif proxy == "" or proxy.startswith(("unresolved", "unknown")): b["unknownProxy"] += 1
+        return {k: {**v, "net": round(v["net"], 2)} for k, v in sorted(out.items())}
+    p04 = _cohort_split(coh, missed, lambda r: f"confirmation={r.get('confirmation') or 'unknown'}")
+    # P-04 PAIRED (PFU-02): baseline touch attempt vs its confirmation variant on the SAME setup; both baseline winners and
+    # losers stay in the sample; refusals of the variant are distinct outcomes; option dollars at the delayed entry are unknown.
+    paired = []
+    agg = defaultdict(int); r_sum = 0.0; r_n = 0
+    for r in coh + missed:
+        cp = r.get("confirmationPair")
+        if not cp:
+            continue
+        bl = ({"kind": "fill", "net": r.get("netRealized"), "closed": r.get("closed")} if "filledQty" in r
+              else {"kind": "refused", "refusal": (r.get("refusal") or "")[:80], "underlyingProxy": r.get("underlyingProxy")})
+        paired.append({"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "baseline": bl, "confirmation": cp,
+                       "dollarsAtDelayedEntry": ("unknown (no option quote at the delayed time)" if r.get("instrument") == "options" else "shares: underlying R applies")})
+        agg[cp["outcome"].split(" (")[0]] += 1
+        if cp.get("resultR") is not None:
+            r_sum += cp["resultR"]; r_n += 1
+    p04_paired = {"rows": paired, "outcomes": dict(sorted(agg.items())), "resolvedR": {"n": r_n, "sumR": round(r_sum, 2)},
+                  "baselineWinnersInSample": sum(1 for r in coh if (r.get("netRealized") or 0) > 0 and r.get("confirmationPair")),
+                  "baselineLosersInSample": sum(1 for r in coh if (r.get("netRealized") or 0) < 0 and r.get("confirmationPair")),
+                  "definition": f"GEOMETRY-ONLY UNDERLYING PROXY: touch baseline vs first completed close beyond the level within {P04_CONFIRM_WINDOW_BARS} bars after the touch bar, entry at the next bar OPEN, geometry gates only (stop side, room, R2 >= {P04_MIN_RR} at the exit rung); quote quality, sizing/exit rung, chase, timing windows and admission budgets NOT evaluated; underlying TP1-touch vs stop-close from the entry bar; incomplete horizons pending; descriptive/exploratory until >= 30 paired rows"}
+    # P-05 (frozen 2026-09-16): afternoon (prime_close / midday) vs morning (prime_open) and event-day vs ordinary day,
+    # over every EM attempt (not only the P-01 cohort) - rejected opportunities and sacrificed winners included.
+    def _session_key(r):
+        return f"{r.get('sessionWindow') or 'unknown_window'}|{r.get('eventPhase') or 'unknown_calendar'}"
+    p05 = _cohort_split(trades, refused, _session_key)
+    p05_diag = _cohort_split(trades, refused, lambda r: f"runnerWindowLabel={r.get('window') or 'unknown'}")   # the runner's own label, kept as a diagnostic
     # execution-policy cohorts (deterministic-entry-v1 vs legacy critic): actual fills, refusals and net by policy version
     by_policy = defaultdict(lambda: {"attempts": 0, "fills": 0, "refused": 0, "net": 0.0, "open": 0, "refreshOk": 0, "refreshAttempted": 0})
     census = data.get("attempts") or []
@@ -482,8 +853,11 @@ def summarize(data: dict) -> dict:
             "missedWinnersCandidates": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "refusal": (r.get("refusal") or "")[:90],
                                          "underlyingProxy": r.get("underlyingProxy"), "roomPlanned": r.get("roomBin")} for r in missed],
             "strata": {k: {"n": v["n"], "net": round(v["net"], 2), "open": v["open"]} for k, v in sorted(strata.items())},
+            "p06": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "instrument": r.get("instrument"), "qty": r.get("filledQty"), **{k: (r["p06"] or {}).get(k) for k in ("outcome", "why", "remainingAtSignal", "tp1FilledQty", "eligibleAt", "reclaimTs", "modeledBasis", "modeledExitPx", "productionRunner", "underlyingDeltaR", "dollarDelta", "alternativeRealized", "productionRealized", "observationsRejected", "dollarScope")}} for r in p06],
+            "neverTp1": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "netRealized": r.get("netRealized"), "exitKinds": r.get("exitKinds"), **(r.get("neverTp1") or {})} for r in never],
             "p02": [{"symbol": r.get("symbol"), "trigger": r.get("trigger"), "qty": r.get("filledQty"), "firstSaleDistanceR": r.get("firstSaleDistanceR"), **r["p02"]} for r in p02],
             "p03": p03,
+            "p04": p04, "p04Paired": p04_paired, "p05": p05, "p05RunnerLabels": p05_diag, "sessionClock": SESSION_CLOCK, "cohortsAddendum": COHORTS_ADDENDUM,
             "unknown": {"p02WithoutObservation": sum(1 for r in p02 if r["p02"]["outcome"] == "unknown"),
                         "refusedUnresolvedOrGap": sum(1 for r in refused if str(r.get("underlyingProxy", "")).startswith(("unresolved", "unknown"))),
                         "frictionUnknown": sum(1 for e in p03 if e["hurdlePct"] is None),
@@ -514,6 +888,12 @@ def render(data: dict, s: dict) -> str:
     L += ["", f"**P-02 `{P02_POLICY}` - PROVISIONAL (identical entry/contract/quantity; actual entry and retained fees, modeled exit fee {data.get('feePerContractSide', 0):.2f}/contract on the hypothetical sale; unknown without a covered TP1 bid observation bound to the trade instance):**",
           "| Position | Qty | First sale (R) | Outcome | Production net | Alternative net | Delta | Forgone on winner | Why |", "|---|---:|---:|---|---:|---:|---:|---:|---|"]
     L += [f"| {r['symbol']} {r['trigger']} | {int(r['qty'] or 0)} | {r['firstSaleDistanceR']} | {r['outcome']} | {r['productionRealized'] if r['productionRealized'] is not None else 'open'} | {_f(r['alternativeRealized'], '{:.2f}')} | {_f(r['delta'])} | {_f(r['forgoneOnWinner'], '{:.2f}')} | {r['why'] or ''} |" for r in s["p02"]] or ["| (no eligible small position) | | | | | | | | |"]
+    L += ["", f"**P-06 `{P06_POLICY}` - PROSPECTIVE, frozen 2026-09-18, re-review accounting (chronological walk over confirmed fills and completed bars: eligibility at the FIRST TP1 fill, remainder updated by later trims, a fill that empties the runner ends it; signal = first completed 1m close back through the saved TP1; candidate = the EARLIEST strictly validated covered `tp1-reclaim` observation - identity, contract, signal, chronology, coverage, lifetime {P06_OBSERVATION_LIFETIME_MS // 60000} min, cutoff - OPTIONS ONLY for dollars (shares are proxy-only in this implementation), else the next bar's open as an UNDERLYING PROXY; production = the remainder's actual fills after the signal, VWAP with allocated fees; a working ordinary exit at the cutoff = partial). Results stay proxy-only / unavailable until the observer is verified in production:**",
+          "| Position | Instr | TP1 filled | Remainder | Outcome | Signal (ET) | Modeled exit | Basis | Production runner | Underlying delta (R) | Alt $ | Prod $ | Delta $ | Why |", "|---|---|---:|---:|---|---|---:|---|---|---:|---:|---:|---:|---|"]
+    L += [f"| {r['symbol']} {r['trigger']} | {r.get('instrument')} | {_f(r.get('tp1FilledQty'), '{:g}')} | {_f(r.get('remainingAtSignal'), '{:g}')} | {r['outcome']} | {dt.datetime.fromtimestamp(r['reclaimTs'] / 1000 + 60, NY).strftime('%H:%M') if r.get('reclaimTs') else '-'} | {_f(r.get('modeledExitPx'), '{:.2f}')} | {(r.get('modeledBasis') or '-')[:40]} | {(f"{r['productionRunner']['qty']:g} @ {r['productionRunner']['vwap']:.2f} ({', '.join(r['productionRunner'].get('kinds') or [])})" if r.get('productionRunner') else '-')} | {_f(r.get('underlyingDeltaR'), '{:+.2f}')} | {_f(r.get('alternativeRealized'), '{:+.2f}')} | {_f(r.get('productionRealized'), '{:+.2f}')} | {_f(r.get('dollarDelta'), '{:+.2f}')} | {r.get('why') or ''} |" for r in s["p06"]] or ["| (no position completed a TP1 trim) | | | | | | | | | | | | | |"]
+    L += ["", "**Closed positions WITHOUT a TP1 trim (descriptive, winners and losers alike - single-contract full exits included; best underlying excursion during the completed holding minutes vs the exit; no threshold is derived):**",
+          "| Position | Net | MFE (R) | Held bars | Exits |", "|---|---:|---:|---:|---|"]
+    L += [f"| {r['symbol']} {r['trigger']} | {_f(r.get('netRealized'), '{:+.2f}')} | {_f(r.get('mfeR'), '{:.2f}')} | {r.get('heldBars', '-')} | {', '.join(r.get('exitKinds') or [])} |" for r in s["neverTp1"]] or ["| (none) | | | | |"]
     L += ["", f"**P-03 contract economics - PROVISIONAL (every intent, filled or refused; hurdle = concession to the intent bid + round-trip fees as a share of paid premium, `flag` = >= {int(P03_HURDLE_MARK*100)}% ranking marker, never a gate; payoff = signed delta x signed move, a local sensitivity; `riskBudgetQty` = budget bound only, not admission feasibility):**",
           "| Intent | Filled | Dir | Qty | Hurdle $ | Hurdle % | First sale (R) | Flag | Payoff to TP1 (delta proxy) | Hurdle / payoff | Risk-budget qty | Refusal |", "|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|"]
     for r in s["p03"]:
@@ -523,6 +903,28 @@ def render(data: dict, s: dict) -> str:
         L.append(f"| {r['symbol']} {r['trigger']} | {'yes' if r['filled'] else 'no'} | {r.get('direction') or '-'} | {r['qty'] if r['qty'] is not None else '-'} | {_f(r['hurdle'], '{:.2f}')} | {hp} | {r['firstSaleDistanceR'] if r['firstSaleDistanceR'] is not None else '-'} | {'thin' if r['flag'] else ''} | {pay} | {ratio} | {r['riskBudgetQty'] if r['riskBudgetQty'] is not None else 'unknown'} | {(r['refusal'] or '')[:60]} |")
     if not s["p03"]:
         L.append("| (none) | | | | | | | | | | | |")
+    L += ["", f"**P-04 entry strata - DESCRIPTIVE ({COHORTS_ADDENDUM}; P-01 attempts split by the FIRING bar's close: `anticipated` = touch, `observed_reclaim` = the firing bar closed on the trade's side; `underlyingTp1FirstRefused` = refused rows whose underlying-only proxy reached TP1 first - not a net winner, not a policy sacrifice):**",
+          "| Firing-bar class | Fills | Winners | Losers | Open | Net (closed) | Rejected | Underlying TP1-first refused | Proxy unknown |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    L += [f"| {k} | {v['fills']} | {v['winners']} | {v['losers']} | {v['open']} | {v['net']:+.2f} | {v['rejected']} | {v['underlyingTp1FirstRefused']} | {v['unknownProxy']} |" for k, v in s.get("p04", {}).items()] or ["| (no cohort attempts) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"]
+    pp = s.get("p04Paired") or {}
+    L += ["", f"**P-04 PAIRED confirmation comparison - order-free, {pp.get('definition', '')}. Not an admitted entry: the gates listed as not evaluated are unknown for every variant row:**",
+          f"outcomes {json.dumps(pp.get('outcomes', {}))}; resolved underlying R: n={pp.get('resolvedR', {}).get('n', 0)} sum={pp.get('resolvedR', {}).get('sumR', 0):+.2f}; baseline winners/losers kept in the paired sample: {pp.get('baselineWinnersInSample', 0)}/{pp.get('baselineLosersInSample', 0)}",
+          "| Attempt | Baseline | Confirmation variant | Dollars at the delayed entry |", "|---|---|---|---|"]
+    for r in pp.get("rows", []):
+        b = r["baseline"]; c = r["confirmation"]
+        bl = (f"fill net {b['net']:+.2f}" if b["kind"] == "fill" and b.get("net") is not None else (f"fill open" if b["kind"] == "fill" else f"refused ({b.get('refusal')}) proxy {b.get('underlyingProxy')}"))
+        cv = f"{c['outcome']}" + (f" entry {c['entry']} after {c['barsWaited']} bar(s), R2 {c['rr']}, result {c['resultR']:+.2f}R" if c.get("resultR") is not None else (f" (entry {c['entry']}, R2 {c['rr']})" if c.get("entry") is not None else ""))
+        L.append(f"| {r['symbol']} {r['trigger']} ({r.get('instrument')}) | {bl} | {cv} | {r['dollarsAtDelayedEntry']} |")
+    if not pp.get("rows"):
+        L.append("| (no P-01 attempts) | | | |")
+    L += ["", f"**P-05 session-window / event-phase cohort ({COHORTS_ADDENDUM}; every EM attempt; window from `{s.get('sessionClock')}` on the tz-aware fire time; event phase from the hand-kept calendar - `unknown_calendar` when the date has no entry; DESCRIPTIVE, never a trading-window rule):**",
+          "| Window | Event phase | Fills | Winners | Losers | Open | Net (closed) | Rejected | Underlying TP1-first refused | Proxy unknown |", "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for k, v in s.get("p05", {}).items():
+        w, _, ph = k.partition("|")
+        L.append(f"| {w} | {ph} | {v['fills']} | {v['winners']} | {v['losers']} | {v['open']} | {v['net']:+.2f} | {v['rejected']} | {v['underlyingTp1FirstRefused']} | {v['unknownProxy']} |")
+    if not s.get("p05"):
+        L.append("| (no attempts) | | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
+    L += ["", "Runner window labels as recorded at fire (diagnostic): " + json.dumps({k: v['fills'] + v['rejected'] for k, v in (s.get('p05RunnerLabels') or {}).items()})]
     L += ["", "**Unknowns:** " + json.dumps(s["unknown"]), "",
           f"Fees per contract per side observed: {data.get('feePerContractSide', 0):.2f}. Source ledger rows for the day: {data.get('sourceLedgerRows', 0)}. Refused/skipped EM fires: {len(data.get('refused', []))}.", ""]
     return "\n".join(L)

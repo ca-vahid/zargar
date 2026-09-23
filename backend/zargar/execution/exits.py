@@ -197,3 +197,12 @@ def reduce_only_exit_intent(*, portfolio_id: str, symbol: str, sec_type: str, qt
                            source=source, technique_id=technique_id, reduce_only=True)
     return OrderIntent(portfolio_id=portfolio_id, symbol=symbol, sec_type=sec_type, side="SELL",
                        qty=qty, order_type="MKT", tif="DAY", source=source, technique_id=technique_id, reduce_only=True)
+
+
+def tp1_reclaim_signal(direction: str, tp1: float | None, close: float | None) -> bool:
+    """P-06 `tp1-reclaim-runner-exit-v1` (frozen 2026-09-18) signal on a COMPLETED bar: the close is back through the
+    saved first target - long: close < TP1, short: close > TP1. Pure; the caller decides eligibility (a confirmed TP1
+    fill, remaining quantity, no pending exit). Never an exit by itself: research observation only."""
+    if tp1 is None or close is None:
+        return False
+    return (float(close) > float(tp1)) if direction == "short" else (float(close) < float(tp1))

@@ -2132,6 +2132,43 @@ boundaries can be measured separately from provider and venue latency.
   `/api/health` now answers `build=unknown` instead of a 500 when `zargar.build_sha` is absent (EM branch, PR #174,
   which also puts the helper on `main`). The probe policy (confirm DOWN with a second probe before any kill) is the
   start-path owner's decision; until it changes, every load stall longer than 4 s is a restart risk in RTH.
+- **2026-09-16 evening (EM desk) - the event-loop stall is real, measured, and now instrumented; the single-probe
+  watchdog killed a live engine FIVE times today.** Evidence (engine log gaps with no line at all, followed by an
+  Alpaca "no close frame" reconnect): 07:40 PT ~4 s, 08:56 ~10 s, 17:17 (unknown length, engine killed), 17:42-17:45
+  183 s, 17:52-17:54 141 s (killed at 17:55 mid-batch). The long ones coincide with technique-run load (Cartel
+  research 17:39; the EM review batch from 17:47 with 9 reads in flight, system CPU 100%). Confirmed on the loop:
+  `technique/render.py::render_chart` (matplotlib, 0.3-2 s per PNG) was called synchronously at every vision pass
+  (`technique/service.py` two sites) and the legacy fire critic (`technique/arming.py`) - now `render_chart_async`
+  on ONE worker thread (matplotlib is not thread-safe; renders are serialised, not parallelised). Model calls were
+  already async. Whether rendering explains a 141-183 s silence is NOT proven - a stall that long is either one
+  blocking call or a starved main thread - so the engine now carries a **loop stall watch** (`zargar/loopwatch.py`,
+  `ops.loop_stall_seconds` default 2 s): a daemon thread that captures the loop thread's stack while the loop is
+  blocked, logs the stall length on resume, and reports `loopStalls` / `lastStall` / `eventLoopLagMs` in
+  `/api/health.local.delivery`. The next stall names its call site. Diagnostic only; never cancels or restarts.
+  **Watchdog classification (proposal on the EM branch, `scripts/watchdog.ps1`, start-path owner's call):** before any
+  kill, a second probe 15 s later, then process + engine-log freshness; alive-and-logging with health late is logged
+  as STALL and left alone for one tick, and becomes DOWN only when it persists into the next tick or the process /
+  log are gone. `-ProbeOnly` classifies without acting. Parse-checked; exercised once against the worktree (probe
+  path). Not deployed; the runtime keeps the current single-probe script until the owner adopts it.
+  **Provider rate limits (CBOE):** callers now declare a priority (`options/chain.py::cboe_priority`): `entry` (a
+  live option pick) and `position` (a held contract's mark / exit read) retry a 429 briefly and are never held back;
+  `background` (enrichment, the nightly liquidity screen, research) fails fast on a 429 and skips requests for a
+  cooldown (`options.cboe_cooldown_seconds`, 20 s) so the burst that trips the limit is not fed by work that can wait.
+  Freshness checks (`risk.stale_quote_seconds`, delayed-row refusal) and every risk limit are untouched. Tests:
+  `test_em_loop_stall_watch.py`, `test_em_render_offloop.py`, `test_em_cboe_priority_cooldown.py`,
+  `test_em_cboe_rate_limit_retry.py`.
+  *PFU-01 (review 2026-09-17) - the first watchdog proposal was HELD: two failed probes still let a live-but-unhealthy
+  engine reach `start.ps1` without readiness / quiescence / before-inventory.* Reworked at `47275c3f8ff02c857b46b431e71b3300ec0eea67` as a PURE module
+  `scripts/watchdog-classify.ps1` (`Get-EngineClassification`: healthy | live-unhealthy | absent over probe results,
+  the engine process bound to THIS runtime - the pid the engine stamps in `logs/engine.pid`, venv path only as fallback,
+  identity logged - the engine log's freshness and a TIME-based stall marker: persisted only when >= 180 s and <= 600 s
+  old, older = unrelated and reset, ANY successful probe clears it, `-ReadOnly` never writes). Policy in
+  `scripts/watchdog.ps1`: probes are 2-of-3 with 12 s timeouts; `live-unhealthy` REFUSES ordinary recovery (exit 2),
+  escalates ONCE per stall marker (Telegram from `backend/.env` + a log line naming the human next step:
+  `ZargarRestartOverride`), and only the explicit override replaces a live engine; `absent` (no bound process or stale
+  log) takes the existing DOWN path; `-ProbeOnly` classifies without touching state. Acceptance
+  `scripts/tests/watchdog-classify.tests.ps1` 8/8 (mocked classification, no restart). Start-path owner (Tips desk)
+  agrees with the direction; integration into the shared protocol WAITS for the user's decision. Not deployed.
 - **2026-09-15 (Tips desk, shared scheduler) - a job may be scheduled RELATIVE to the exchange calendar.**
   `Scheduler.register(name, at_et, fn)` now also accepts `at_et` as a callable of the ET date
   returning "HH:MM" for that day (`resolve_at(name, day)`; `status()` shows today's resolved time and
@@ -2344,6 +2381,28 @@ authenticate a locally changed price. Tests: `tests/test_sep17_quote_provenance_
 times out waiting for a Practice option fill off the delayed chain quote (refused since the OPRA-identity rule of
 2026-09-14) - owner of that test to re-express it on an OPRA quote.
 
+### 2026-09-18 (EM desk) - simulator option spread guard (OFF) and lazy charts for deterministic re-plans
+
+- `brokers/sim.py` `max_option_spread_pct` / config `sim_max_option_spread_pct` (default 0.0 = off): when on, an OPENING option
+  order (`option_action` BUY_TO_OPEN / SELL_TO_OPEN, derived by the order manager from the book's position - ED-01) cannot be
+  priced by a quote whose spread exceeds the cap (spread / mid); the order rests with a journaled `fill_waiting` reason and
+  fills on the next plausible book. Closing / reducing orders (…_TO_CLOSE) and orders of unknown intent are NEVER capped and
+  keep every existing quote-quality check. Executor-wide: every Practice book, every desk. Shares keep F-HOLD-01's own `sim_max_spread_pct`. Evidence:
+  ORCL 148C 2026-09-17, limit 2.29 filled at 1.12 on an OPRA snapshot 0.76/1.12 the contract never traded at. This is a
+  simulator EVIDENCE guard (what counts as a market), not a cancel/reprice policy, and it is never applied to exits by this
+  knob. It complements E17-01 (0.8.11: a recentred quote is `derived:` and refused) - the ORCL book was most likely that
+  transform; an aberrant but untransformed book is what this cap catches. Activation and the cap value are a user decision. Tests: `tests/test_em_sim_option_spread.py`.
+- `technique/service.py`: a plan run with `trigger == "preopen_replan"` and no vision pass renders no charts (no model or
+  person reads them at 09:25 ET; the UI renders on demand). Every other run is unchanged. Test in `test_technique_walkforward.py`.
+
+### 2026-09-17 late (EM desk) - P-06 reclaim observation: a new observation-only path under an existing knob
+
+`PlanRunner._reclaim_signal` (closed-bar handler) + the `tp1-reclaim` rung in `_shadow_capture` (quote watch) run whenever
+`techniques.enhanced_market.shadow_exit_observe` is on (it is, user decision 2026-09-15). They journal `TechniqueExitShadow`
+rows only - no order, no exit, no setting - through the bounded non-blocking shadow recorder, so protective decisions never
+wait on them. "Settings unchanged" therefore means "no behaviour change", not "no new code path": the path is disclosed here.
+The trade state gains one persisted field (`reclaimSignal`, nullable; additive). Other desks' runners are unaffected unless
+their own `shadow_exit_observe` resolves true (Tips/Team2: `execution.shadow_exit_observe` default - unchanged).
 ### Exchange corrections reach the private tape but not the bank — 2026-09-17 (Team2 desk observation; for the platform owners)
 
 Team2's 09:25 plan completion reads the runner's private 1m tape. On 2026-09-17 that tape accepted exchange CORRECTIONS of
@@ -2386,6 +2445,63 @@ Shared session timestamp arithmetic is memoized by date plus the resolved close 
 
 Opt-in Cartel Practice interval verification retains positive, complete SIP trade evidence for minutes with no price-eligible trade and no emitted native bar. Proofs are separate from bars and saved in decision-context v2. Real gaps, incomplete responses and Live/paper accounts remain strict; recovery advances observation cutoff and never creates historical entries. Existing risk and exit paths are unchanged. See techniques/options-cartel/VERIFIED-INTERVALS.md.
 
+### 2026-09-18 evening (EM desk) - integrated delivery: three inert hooks on the shared runner, three EM-owned tables
+
+Shared `execution/planrunner.py` gained hooks whose BASE behaviour is "do nothing", so no other desk runs new code:
+`first_sale_policy()` -> `"off"` and `first_sale_record()` -> `None` (the entry-only `_first_sale_check` sits after sizing and
+before the order intent; a hook error is logged and never blocks an entry; exits never pass through it); `_book_snap()` - a
+synchronous, never-awaited call that returns immediately unless the technique attached `_book_observer` (only EM's `PlanArmer`
+does, and its knob is OFF). Call sites: the quote watch (cadence-limited inside the observer), before and after every `_exit`
+order, and after entry / exit fills. Invariant kept: research never sits ahead of a protective decision - capture is pure and
+`put_nowait`, the bounded recorder drops visibly. `technique/vision.py` now keeps a per-request ledger (`result.modelRequests`)
+so a retried or failed model request is never read as free. New EM-owned tables (additive, created by `db.create_all`):
+`technique_book_snapshots`, `technique_prep_decisions`, `technique_source_candidates`. New settings are all
+`techniques.enhanced_market.*` except `llm.pricing_table` (default `[]` = cost unknown). Read-only routes under
+`/api/technique/em/*`. Lesson for every desk's tooling: a walk-forward row's `session` is the session a plan was BUILT FROM; the
+session it TRADES is `technique_sweeps.params.planFor` - joining on the former shifted a whole comparison by one day before it
+was caught against the execution ledger.
+
+### 2026-09-19 (EM desk) - candidate-review corrections to the shared hooks; owner review recorded
+
+`execution/planrunner.py`: the first-sale hooks are now `first_sale_policy / prepare / record / decide / publish` (base: off / no-op /
+None / allow / no-op). `_first_sale_check` no longer awaits any research write (the record goes to the technique's bounded recorder);
+a refusal is journaled on the existing `_refuse_entry` path, which gained an optional `detail` payload key. `first_sale_final` is the
+first call inside `_entry_guard.guard()` - synchronous, None for every desk that does not opt into `enforce`; a refusal raises the same
+`RuntimeError("entry gate: ...")` shape as FC-01, so it takes the established order-rejection path. Exits never reach either.
+EM's `size_multiplier` reads the weekday from `zargar.clock` (test-pinnable; production is real time). `tests/conftest.py` pins a
+controlled clock for the modules `test_codex_em_final_dispatch_*` only. Owner review (Tips/platform desk, 2026-09-19): no objection to
+the hook placement, the fill call sites or the additive tables/routes/defaults, with one standing condition - an attached observer's
+`snap` stays O(1) capture + `put_nowait`, no I/O, no locks (kept by test). Their two findings were applied: ONE model price source
+(`llm.rates`; the duplicate `llm.pricing_table` was removed) and a failed retried model request is marked `failed`.
+Team2 desk review (2026-09-19, diff `f4ce6ad8..7002426d`, `planrunner.py` unchanged since): no objection for `Team2Runner`; 367 Team2 cases
+passed on that tree. Their note, kept as a rule for any desk that later overrides the hook: a `first_sale_policy` override that RAISES
+refuses the entry ("policy could not be read") - fail-closed by design, so a bug there stops entries and never exits. The duplicate
+`entry_guard_predicate` definition in `planrunner.py` predates this work and is unchanged by it.
+
+### 2026-09-19 (EM desk, later) - one additive journal key on the shared runner; read-only use of shared tables
+
+`execution/planrunner.py`: the exit `TechniquePlanOrderResult` payload also carries `entryOrderId` (the trade's entry order). Additive, no control
+flow, every runner's exits carry it; the contract's required fields are unchanged. It is the durable exit-to-entry link a per-trade ledger needs;
+older events are linked by their run + trigger journal sequence. EM research reads (only with its own OFF-by-default knobs on): `executions` JOIN
+`orders.sec_type`, `events` of type `OrderFill` (its `ts` is the INGESTION time of a fill, `executedAt` the occurrence time) and
+`TechniquePlanOrderResult`, for one book and one session. The order-free candidate stage calls `RiskGate.evaluate` directly on a dry intent - the
+production verdict as evidence, no order row, no journal entry, no rate budget (`OrderManager.place` is never called). The EM preparation owner
+takes a Postgres advisory lock per candidate key for the duration of one arm, only under `preparation_policy = deterministic` (default baseline).
+Instrument multipliers for money maths must come from the order's security type checked against the OCC identity (`options.occ.contract_multiplier`),
+never from the symbol's length.
+
+### 2026-09-19 (EM desk) - five inert runner hooks for a book-scoped experiment (`em-experiment-v1`)
+
+`execution/planrunner.py` gained five hooks whose BASE value does nothing, so every other desk runs exactly as before: `order_tags(ap)` (tags added
+to an intent at the ONE submission choke point `_place_with_retry`), `arm_guard(run, cfg, portfolio)` (a reason to refuse a NEW arm, journaled as
+`TechniqueArmRefused`; never applied to a restore), `seed_from_ts(ap)` (an intraday-born plan replays no bar from before its birth and skips the
+opening-bar fetch), `extra_observation_books()` (books besides the default one where the order-free shadow observations run) and
+`runner_protection_policy(ap)` (`execute` turns the frozen P-06 rule into a reduce-only exit through `_exit`, reached ONLY when the production
+decision for the bar is None). EM overrides all five and resolves each FOR THE PLAN'S BOOK (`technique/em_experiment.py::book_policy`): the
+experimental book reads its overrides, the baseline book and everyone else read the technique-wide settings. Rule for any desk that runs two books
+with different policies: resolve by `ap.config.portfolio_id`, never flip a technique-wide key. Loss halts, cash, exposure and position caps were
+already per book; the per-technique day-notional cap is cross-book by design and is off (0) - a desk that turns it on shares it across its books.
+
 ### Quote clock semantics have an owner: vendor time, poll time and observation identity are three things — 2026-09-22 (Tips desk; owner proposed)
 
 **Owner for resolving OPRA clock semantics: the Team2 desk — ACCEPTED 2026-09-22** (author of `Quote.quote_ts` / `last_ts`, PR #204 r2, and of the live premium basis, F129; proposed by the Tips desk, accepted the same night). Team2 confirmed in code that `options/service.py` stamps OPRA `source_ts = now` at the poll and that the vendor's own `quote_ts` / `trade_ts` never reach the `Quote` object (they are written only to the display snapshot), so every option quote carries `quote_ts = 0`. **Live defects of this class, recorded, not hot-patched:** (a) Team2's quote-watch forward-confirmation guard (DA-05, `planrunner.py`, `quote_exit_polls` = 2) compares `source_ts`, so two polls of one vendor print satisfy "two distinct observations"; (b) the SAME rule in the managed-position premium stop (`execution/positions.py::_confirm_premium_stop`, KB-06 I93-02: `obs` = per-leg `source_ts`, "forward-advanced" = confirmed) — the Tips desk's protective exits are exposed identically. Neither is a runaway (a fresh quote and a real price breach are still required), but both can confirm on one print seen twice. Fix path, owner Team2: carry the vendor stamp onto `Quote` and key observation identity on it, so a re-poll of one print is one observation everywhere; until then no desk widens a tolerance or disables the confirmation to work around it. The required semantics, whoever implements them: (1) a **vendor timestamp** (the venue/vendor's own event time) is the only basis for a verified source-event age; (2) a **poll time** (`options/service.py` stamps OPRA `source_ts = now` at the poll on this host) bounds staleness and identifies an observation but is never presented as source-event age; (3) an **observation identity** ties every consumer's evidence to one observation - a fresh host poll that returns the same vendor stamp is the SAME observation, not a new one, and a monetary decision that needs "two distinct observations" must not count two polls of one print. Tips already labels its records this way (`sourceTimeBasis` vendor / poll / source / receipt, `vendorTs`, `pollTs`, `observationId`, `ageBasisNote`) and claims `sourceAgeKnown` only from a vendor field; the shared producer (options/service.py, brokers) is the owner's to change.
@@ -2409,6 +2525,69 @@ are not relabeled. Recovery stays workspace/book scoped and respects saved polic
 market hours and retry allowance. Generic cleanup still handles other run modes.
 Regression: test_cartel_restart_recovery.py reproduces the startup-order failure.
 
+### A wrong host clock refuses correct evidence; measure it against another machine - 2026-09-21 (EM desk; additive only)
+
+On 2026-09-21 every EM experimental entry was refused with `venue_time_in_future`, all session, on quotes that were
+two-sided, sourced and correctly timed. The host clock was **10.5 s behind true time** (five independent NTP servers
+agreeing within 38 ms; Windows `w32time` Stopped, start type Manual), so every fresh venue timestamp looked
+future-dated against a 1,000 ms tolerance. The engine's producer path was clean throughout: `brokers/alpaca.py`
+parses ISO venue times with their offset into epoch ms, keeps `quote_ts` / `last_ts` as VENUE times and `Quote.ts`
+as the receipt, and builds a fresh snapshot per emission.
+
+Three rules for every desk, learned the expensive way:
+
+1. **Reading the same host clock twice proves nothing.** Comparing the app to the database understated this fault by
+   1.4 s all day, because the database is another computer with its own drift. `tools/clock_health.py` asks several
+   independent NTP servers, reports the median with its round-trip uncertainty, and calls a disagreeing quorum
+   `unknown` rather than confident. It also reports the platform's sync state: a clock that is right now but not kept
+   synchronized is still a fault, because the drift returns after the next reboot.
+2. **Never widen a freshness tolerance to work around a clock.** A gate that refuses future-dated evidence is
+   protecting money; loosening it would admit genuinely stale quotes for the sake of a host fault. Fix the clock,
+   report the failure explicitly, and let the gate keep refusing until it is fixed.
+3. **Durations use a monotonic clock; source-versus-decision comparisons use UTC epoch.** They are different
+   questions and a wrong wall clock breaks only one of them.
+4. **A source timestamp that matches the host clock proves nothing about venue time** (Tips desk, same afternoon).
+   Where a `sourceTs` is really a receipt stamped here, a host offset cancels out of every age computed from it - the
+   ages stay unbiased, and the provenance is still absent. EM found the same thing as a defect rather than a caveat:
+   the shadow recorder fell back to the receipt time when an equity carried no venue stamp, so `ageS` measured how
+   long ago WE saw the quote. It now reads `quote_ts`, then `last_ts`, then `source_ts`, and never the receipt.
+   Equities also carry `source = ""` by contract, so a recorder that reads it raw discards every share observation:
+   use the shared `research_recorder.quote_evidence` policy, and when it substitutes the feed's class name keep the
+   `sourceBasis: engine_feed` marker, because `feed:HybridQuoteFeed` names a process in this app and never a venue.
+
+Shared surfaces touched, all additive and inert for other desks: one new journal type `TechniqueAdmissionAlarm`
+(with its contract entry) and two `techniques.enhanced_market.*` settings. The detection, the alarm and the
+default-off `deferral-retry-v1` policy live entirely in EM's own `technique/arming.py` subclass and
+`technique/admission_health.py` / `technique/deferred_retry.py`; no shared runner behaviour changed, and every other
+desk's first-sale hook remains the base no-op.
+
+### An alarm's clear path is a second code path, and a PowerShell logger that writes to the pipeline breaks it - 2026-09-21 (EM desk)
+
+The clock repair above was verified by running the recovery path for real, and that is what exposed the defect:
+the EM check script raised its attention notice correctly and could never clear it. `Say` logged through
+`Tee-Object`, which EMITS into the pipeline, so the clock function returned every logged line **plus** its exit
+code, and `if ($code -eq 0)` compared against an array and evaluated false. Three lessons, in widening order:
+
+1. **In PowerShell a function returns everything it emits.** Any helper that writes to the pipeline silently
+   becomes part of the contract of every function that calls it. This is a family of bugs, not one instance
+   (Team2 desk's generalisation). Log with `Write-Host` plus an explicit `Out-File`, never `Tee-Object`, inside
+   anything whose return value is read.
+2. **A raise path and a clear path are two code paths, and testing one tests neither.** A notice that cannot
+   clear is worse than no notice: it inverts the alarm's meaning, because a permanently-raised flag trains the
+   reader to ignore it.
+3. **A verification whose failure would be invisible must not share a command with the action it verifies.**
+   The same session committed a file with conflict markers because the marker check and `git add -A` ran in one
+   compound command and the check's non-zero exit was lost behind the add's success.
+
+Known gap PARKED WITH AN OWNER, not merely recorded: an F33 loss-budget block that is rescued by the shares
+fallback writes no journal row at all (`_entry_blocked`, shared `planrunner.py`), so the durable ledger
+under-counts budget blocks. MRVL was blocked in both EM books on 2026-09-21 and neither produced an event.
+**Owner: the Team2 desk** (accepted 2026-09-21), in its own reviewed diff with a contract row for the new event,
+after its current package ships - opportunity accounting is what that desk is working on, and a budget block that
+writes no row is the same species of hole as a candidate refused before contract selection: real suppression that
+leaves no trace. Team2 is options-only and has no shares fallback to be rescued by, so the gap does not reach its
+own books; that is a reason to schedule it, not to drop it.
+
 ### 2026-09-21 - one implementation of "what the premium stop measures" (Team2 F129)
 
 `PlanRunner.live_premium_basis(trade)` is now the single place that answers "what price does the
@@ -2426,6 +2605,32 @@ threshold. Model or research numbers may ride along under `model`, explicitly se
 authority. Base behaviour for other desks is unchanged: no runner passes `authority` unless it wants
 to, and no defaults moved.
 
+### A US share class is a US equity: BRK.B streams from Alpaca - 2026-09-22 (EM desk; shared feed predicate)
+
+`brokers/alpaca.py::is_us_equity` refused ANY symbol with a dot, meant for `.TO`/`.V` listings. It also refused US
+share classes, so BRK.B was never subscribed to the Alpaca stream and its only live data was the Yahoo poll. On
+2026-09-22, whenever Yahoo rate-limited (72 cooldowns in the session), BRK.B bars reached its armed plans two or three
+at a time, one every 3-5 minutes: 42 of the day's 113 stale-bar errors, while `bars` held all 390 minutes (each
+successful poll back-filled what it missed, so the stored record hid the delivery gap).
+
+Change: `is_us_share_class` = `^[A-Z]{1,5}\.[ABC]$` passes `is_us_equity`; the same predicate gates Alpaca history
+(`marketstructure/history.py::_alpaca_symbol`) and the F80 boot seed. Alpaca's own spelling is the dot, verified on the
+bars endpoint 2026-09-22 (`BRK.B` 200 with bars, `BRK-B` 400 "invalid symbol", `BRK/B` 404). Foreign suffixes stay on
+Yahoo (`.TO`, `.V`, `.CN`, `.L`, `.MI`, `.HK` - single letters other than A/B/C and two-letter suffixes do not match).
+Symbols without a dot take exactly the path they took before. Pinned by
+`tests/test_alpaca_feed.py::test_a_us_share_class_is_streamed_and_foreign_suffixes_are_not`.
+
+Lesson: a stored bar series proves the data EXISTS, not that a live consumer saw it on time; the stale-bars error
+(`lastBarTs` per plan) is the live-side witness. Open, not fixed here: the Yahoo poll re-fetches every Alpaca-streamed
+symbol every 20 s for context, which drives the 429 cooldowns that hurt every Yahoo-only symbol; and `yahoo_symbol`
+dashes any single-letter suffix except V (`NVDI.L` → `NVDI-L`). Both belong to the feed owner.
+
+### `TechniqueExitQuote` (exit-quote-v1) - 2026-09-22 (EM desk; EM runner only)
+
+EM's `PlanArmer._exit` takes a synchronous quote snapshot BEFORE the exit is placed and journals it AFTER the exit order
+exists (bounded recorder `em-exit-quote`, `exitOrderId` = the first order placed by that exit). Observation only:
+nothing on a money path reads it, a capture failure never blocks an exit, `techniques.enhanced_market.exit_quote_capture`
+off writes nothing. Other desks' runners are untouched (the override lives in EM's subclass).
 ### Adversarial-plan package: shared surfaces touched by the Tips desk — 2026-09-23 (0.8.34)
 
 Additive, every new behaviour behind a Tips-scoped knob that ships off or at its old value. `approvals/proposals.py`:

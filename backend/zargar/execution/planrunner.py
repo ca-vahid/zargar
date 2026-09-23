@@ -60,6 +60,7 @@ from .exits import (
     premium_stop_breach,
     quote_stop_breach,
     reduce_only_exit_intent,
+    tp1_reclaim_signal,
     stale_working_exit,
 )
 from .listener import SessionListener
@@ -136,6 +137,12 @@ class ArmConfig:
                    option_tradeable=d.get("optionTradeable"))
 
 
+def _book_snap_family(kind) -> str:
+    """ED-04 snapshot reason family for an exit kind: target | stop | flatten | protection."""
+    k = str(kind or "")
+    return "target" if k.startswith("tp") else "stop" if k == "stop" else "flatten" if k in ("flatten", "disarm") else "protection"
+
+
 @dataclass
 class Trade:
     """One fired trigger's execution lifecycle (auto mode), or the record of
@@ -179,6 +186,10 @@ class Trade:
     multiplier: float = 1.0              # 100 for options
     single_exit: str = "tp2"             # options with < 3 contracts: exit everything at this target
     direction: str = "long"              # long (call) | short (put) — the underlying idea's side
+    # P-06 `tp1-reclaim-runner-exit-v1` (re-review 2026-09-17): the causal reclaim signal, set ONCE on the closed bar
+    # whose close is back through the saved TP1 after a confirmed TP1 fill; persisted so the quote watch keeps seeking
+    # the first covered contract quote across a restart. Research only - never an exit.
+    reclaim_signal: dict | None = None
     # a durable-position handoff has claimed this trade's fill (ARM-GAPS B5):
     # the session exit machinery must not touch it while the adopt is in flight
     handoff_pending: bool = False
@@ -247,7 +258,7 @@ class Trade:
                 "lastPrice": self.last_price, "errors": list(self.errors),
                 "retries": self.retries, "openedTs": self.opened_ts, "closedTs": self.closed_ts,
                 "critic": self.critic, "criticAdvisory": self.critic_advisory, "scratched": self.scratched,
-                "criticDisposition": self.critic_disposition,
+                "criticDisposition": self.critic_disposition, "reclaimSignal": self.reclaim_signal,
                 "decision": self.decision, "decisionDisposition": self.decision_disposition, "timing": dict(self.timing)}
 
 
@@ -572,6 +583,18 @@ class PlanRunner(SessionListener):
         (Tips desk request, 2026-09-15). Code default True keeps a bare test rig observable."""
         return bool(self.rt("target_distance_diagnostic", True))
 
+    def _book_snap(self, reason: str, ap: "ArmedPlan | None" = None, tr: "Trade | None" = None, kind: str | None = None) -> None:
+        """ED-04: hand one book observation to the technique's observer, if it has one (base = none, so other desks run
+        nothing). Synchronous, never awaited, never raises - a protective path calls this and moves on."""
+        obs = self.__dict__.get("_book_observer")
+        if obs is None:
+            return
+        try:
+            obs.snap(reason, {"kind": kind, "runId": getattr(ap, "run_id", None), "symbol": getattr(ap, "symbol", None),
+                              "trigger": getattr(tr, "trigger_id", None)} if (ap is not None or kind) else None)
+        except Exception:                                  # noqa: BLE001 - research must never break the runner
+            log.exception("book snapshot failed")
+
     def live_premium_basis(self, tr: Trade, *, now_ms: int | None = None) -> tuple[float | None, dict]:
         """The price the CONFIGURED premium stop measures on this contract right now, with the evidence
         that says where it came from. One implementation, so every monetary premium decision reads the
@@ -620,7 +643,11 @@ class PlanRunner(SessionListener):
         if not bool(self.rt("shadow_exit_observe", True)):
             return False
         book = str(self.rt("default_portfolio", "") or "")
-        return (not book) or str(ap.config.portfolio_id) == book   # configured desks: their default (Practice) book only
+        if (not book) or str(ap.config.portfolio_id) == book:    # configured desks: their default (Practice) book...
+            return True
+        with contextlib.suppress(Exception):                     # ...plus the books the technique explicitly names (base = none)
+            return str(ap.config.portfolio_id) in {str(x) for x in (self.extra_observation_books() or [])}
+        return False
 
     def _shadow_capture(self, ap: ArmedPlan, open_trades: list, q, now_ms: int, excess: float) -> list[dict]:
         """shadow-exit-v1 CAPTURE (pure, no I/O, no awaits): for each open trade, if THIS fresh underlying observation
@@ -656,17 +683,30 @@ class PlanRunner(SessionListener):
                     rungs.append((0, "tp1-candidate", (1.0 if float(tr.filled_qty) >= 2 else float(tr.filled_qty))))
             for idx, label, proposed in rungs:
                 self._shadow_capture_rung(ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out)
+            # P-06: a persisted reclaim signal keeps seeking its first COVERED contract quote on every fresh observation
+            sig = getattr(tr, "reclaim_signal", None)
+            if sig and tr.targets:
+                self._shadow_capture_rung(ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis,
+                                          0, "tp1-reclaim", float(tr.remaining), out, hit_override=True)
+                for p in out:
+                    if p.get("rung") == "tp1-reclaim" and "signal" not in p:
+                        p["signal"] = dict(sig)
         return out
 
-    def _shadow_capture_rung(self, ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out):
-        """One rung of `_shadow_capture` (pure). `label` `tp1-candidate` carries the P-02 candidate's own key."""
+    def _shadow_capture_rung(self, ap, tr, q, now_ms, excess, obs, src_ts, age_s, seen, prem_pct, basis, idx, label, proposed, out,
+                             hit_override: bool | None = None):
+        """One rung of `_shadow_capture` (pure). `label` `tp1-candidate` carries the P-02 candidate's own key;
+        `tp1-reclaim` (P-06, ED-02) is captured on a closed-bar signal and passes `hit_override`."""
         if True:
             target = float(tr.targets[idx])
             hit = (obs <= target) if tr.direction == "short" else (obs >= target)
+            if hit_override is not None:
+                hit = hit_override
             if not hit:
                 return
-            candidate = label == "tp1-candidate"
-            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1", idx if not candidate else "tp1-candidate")
+            candidate = label in ("tp1-candidate", "tp1-reclaim")     # first-COVERED semantics: raw samples never consume eligibility
+            key = (ap.run_id, tr.trigger_id, tr.entry_order_id or tr.opened_ts, "shadow-exit-v1",
+                   label if candidate else idx)
             pending = self.__dict__.setdefault("_shadow_pending", set())
             if not candidate:
                 if key in seen or key in pending:
@@ -675,14 +715,34 @@ class PlanRunner(SessionListener):
             elif key in seen or key in pending:
                 return                                          # the candidate's first COVERED observation is recorded
             contract = None
-            oq = self.engine.quotes.get(tr.order_symbol) if (tr.instrument == "options" and tr.order_symbol) else q
+            is_opt = tr.instrument == "options" and bool(tr.order_symbol)
+            oq = self.engine.quotes.get(tr.order_symbol) if is_opt else q
             if oq is not None:
-                o_src = int(getattr(oq, "source_ts", 0) or oq.ts or 0)
-                contract = {"symbol": (tr.order_symbol if tr.instrument == "options" else ap.symbol),
+                # 2026-09-21: this block used to read `Quote.source` raw and fall back to the RECEIPT time when the
+                # venue time was missing. For an equity that meant two silent untruths: `source` is "" by contract on
+                # every equity quote, so every share observation EM ever recorded was discarded as having no
+                # provenance; and `sourceTs` then carried a receipt stamp, so `ageS` measured how long ago WE saw the
+                # quote, not how old the venue said it was. Both recorders now answer those two questions the same
+                # way - options from `source_ts`, equities from `quote_ts`/`last_ts` - and a missing venue time stays
+                # missing rather than borrowing the host clock.
+                # equities: the venue fields first (`quote_ts`, then the print's `last_ts`), and `source_ts` only if a
+                # producer did set it - never `oq.ts`, which is OUR receipt and tells you nothing about the venue.
+                o_src = int((getattr(oq, "source_ts", 0) if is_opt
+                             else (getattr(oq, "quote_ts", 0) or getattr(oq, "last_ts", 0) or getattr(oq, "source_ts", 0))) or 0)
+                raw_src = str(getattr(oq, "source", "") or "")
+                src, basis = raw_src, ("quote" if raw_src else None)
+                if not raw_src and not is_opt and o_src > 0:
+                    from ..technique.research_recorder import feed_identity
+                    fid = feed_identity(self.engine)
+                    if fid:
+                        # a PROCESS label, not a venue: `sourceBasis` keeps that visible to every later reader
+                        src, basis = fid, "engine_feed"
+                contract = {"symbol": (tr.order_symbol if is_opt else ap.symbol),
                             "bid": oq.bid, "ask": oq.ask, "bidSize": getattr(oq, "bid_size", None), "askSize": getattr(oq, "ask_size", None),
-                            "source": str(getattr(oq, "source", "") or ""), "sourceTs": o_src, "receivedTs": oq.ts,
+                            "source": src, "sourceBasis": basis, "rawSource": (raw_src or None),
+                            "sourceTs": o_src, "receivedTs": oq.ts,
                             "ageS": (round((now_ms - o_src) / 1000.0, 2) if o_src else None),
-                            "delayed": bool(getattr(oq, "delayed", False)) or str(getattr(oq, "source", "") or "") == "chain"}
+                            "delayed": bool(getattr(oq, "delayed", False)) or raw_src == "chain"}
             stop_reason = quote_stop_breach(tr, obs, excess_r=excess, direction=tr.direction)
             prem_reason = None
             if tr.instrument == "options" and contract and prem_pct > 0 and not contract["delayed"]:
@@ -702,8 +762,12 @@ class PlanRunner(SessionListener):
                 why = "no contract quote"
             elif contract["delayed"]:
                 why = "delayed chain row"
-            elif not contract["source"] or not contract["sourceTs"]:
-                why = "no source provenance / timestamp"
+            elif not contract["source"] and not contract["sourceTs"]:
+                why = "no source provenance and no venue timestamp"
+            elif not contract["source"]:
+                why = "no source provenance"
+            elif not contract["sourceTs"]:
+                why = "no venue timestamp"
             elif contract["ageS"] is None or contract["ageS"] < 0 or contract["ageS"] > 10.0:
                 why = "contract quote stale or future-dated"
             else:
@@ -725,10 +789,14 @@ class PlanRunner(SessionListener):
             if disposition != "observed" and why is None:
                 why = disposition
             if candidate:
-                # PF-01 (2026-09-15): the frozen policy takes the FIRST COVERED opportunity - an unscorable touch is
-                # recorded once as raw evidence (its own key) and leaves the candidate eligible for a later covered one
-                if not scorable:
-                    key = key[:4] + ("tp1-candidate-raw",)
+                # PF-01 (2026-09-15) / P-06 re-review (2026-09-17): the frozen policies take the FIRST COVERED opportunity - an
+                # unscorable sample (stale, absent, thin, pending exit, stop first) is recorded once as raw evidence under its
+                # own key and leaves the candidate eligible for a later covered observation. P-06 needs the WHOLE remainder
+                # covered (the candidate sells all of it), so positive coverage below `proposed` is raw too and the covered key
+                # stays open for a later full-depth quote; P-02 keeps its own quantity semantics (its reducer applies k).
+                partial = label == "tp1-reclaim" and covered + 1e-9 < float(proposed)
+                if not scorable or partial:
+                    key = key[:4] + (label + "-raw",)
                     if key in seen or key in pending:
                         return
                 pending.add(key)
@@ -828,6 +896,7 @@ class PlanRunner(SessionListener):
             excess, need = 0.25, 2
         max_age = int(self.rt("stale_seconds", 180))
         now_ms = int(time.time() * 1000)
+        self._book_snap("periodic")                        # ED-04: cadence-limited inside the observer; no await
         for ap in list(self._armed.values()):
             if ap.status not in ("armed", "paused"):
                 continue
@@ -1296,6 +1365,12 @@ class PlanRunner(SessionListener):
         explicit_pid = (bool(config.portfolio_id) if isinstance(config, ArmConfig)
                         else bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
         portfolio = self.validate_config(cfg, explicit_portfolio=explicit_pid)
+        refusal = None if restored else self.arm_guard(run, cfg, portfolio)   # hook: a technique's book-scoped boundary (base = none); NEW arms only
+        if refusal:
+            await self.engine.journal.append(ev.TECHNIQUE_ARM_REFUSED, {
+                "runId": run_id, "symbol": str(run.get("symbol") or ""), "origin": str(((run.get("config") or {}).get("origin")) or ""),
+                "reason": str(refusal)[:300], "restored": bool(restored)}, aggregate_type="technique_run", aggregate_id=run_id)
+            raise ValueError(f"run {run_id[:8]}: {refusal}")
         symbol = run["symbol"]
         # tip-scoped override first (ARM-GAPS E1); the legacy EM name stays the
         # fallback so existing EM configs keep working unchanged
@@ -1362,7 +1437,13 @@ class PlanRunner(SessionListener):
         try:
             todays = [b for b in self.engine.bars.bars(symbol, "1m", limit=2000, include_forming=False)
                       if session_date(b.ts) == ap.plan_for]
-            todays = await self._complete_opening_bars(ap, todays)
+            born = None
+            with contextlib.suppress(Exception):
+                born = self.seed_from_ts(ap)                # hook: a plan BORN intraday never replays bars from before its birth
+            if born:
+                todays = [b for b in todays if int(b.ts) >= int(born)]
+            else:
+                todays = await self._complete_opening_bars(ap, todays)
             for b in todays:
                 # Events from replayed history carry the bar's time, not "now" —
                 # a 13:03 restart must not relabel the 09:41 refusals.
@@ -1742,6 +1823,7 @@ class PlanRunner(SessionListener):
             tr.opened_ts = int(time.time() * 1000)
             self._log(ap, "position_open", f"{tid}: filled {tr.filled_qty:g} @ {tr.avg_fill}",
                       trigger=tid, qty=tr.filled_qty, avgFill=tr.avg_fill)
+            self._book_snap("fill", ap, tr, "entry")            # ED-04: the book after the entry fill (sync, never awaited)
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_POSITION_OPENED, {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "orderId": o["id"],
                 "qty": tr.filled_qty, "avgFill": tr.avg_fill, "stop": tr.stop, "targets": tr.targets},
@@ -1824,7 +1906,7 @@ class PlanRunner(SessionListener):
                 realized_pnl=float(td.get("realizedPnl") or 0), instrument=td.get("instrument") or "shares",
                 contract=td.get("contract"), order_symbol=td.get("orderSymbol"),
                 multiplier=float(td.get("multiplier") or 1.0), opened_ts=td.get("openedTs"),
-                closed_ts=td.get("closedTs"), fire_bar_index=None,
+                closed_ts=td.get("closedTs"), fire_bar_index=None, reclaim_signal=td.get("reclaimSignal"),
                 # FIX-05 (2026-09-14): review evidence survives a restart - the critic's opinion, whether the
                 # entry went ahead against it, and the failure history (INTC/HOOD restored with false flags)
                 critic=td.get("critic"), critic_advisory=bool(td.get("criticAdvisory", False)),
@@ -2228,6 +2310,7 @@ class PlanRunner(SessionListener):
                     tr.remaining = max(0.0, tr.filled_qty - sum(float(e.get("filledQty") or 0) for e in tr.exits))
                     self._log(ap, "exit_fill", f"{tid}: {x['kind']} filled {fq:g} @ {x.get('price')}, {tr.remaining:g} left",
                               trigger=tid, kind=x["kind"], qty=fq, price=x.get("price"))
+                    self._book_snap("fill", ap, tr, x.get("kind"))     # ED-04: after the fill was applied
                     if tr.remaining <= 1e-9 and tr.status != "closed":
                         tr.status = "closed"
                         tr.closed_ts = int(time.time() * 1000)
@@ -3161,8 +3244,10 @@ class PlanRunner(SessionListener):
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
                 "error": trade.errors[-1] if trade.errors else "no contract"},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-            await self._alert(ap, f"{trade.trigger_id}: the trigger fired but no option contract was available "
-                              f"and the shares fallback is off - nothing was sent", stage="entry")
+            fb = ("the shares fallback never applies to a short (puts only)" if trade.direction == "short"
+                  else "the shares fallback is off")
+            await self._alert(ap, f"{trade.trigger_id}: the trigger fired but no option contract was available ({why}) "
+                              f"and {fb} - nothing was sent", stage="entry")
             return None
         trade.status = "skipped"
         trade.reason = f"contract skipped ({blocked})"
@@ -3310,6 +3395,12 @@ class PlanRunner(SessionListener):
         trade.qty = qty
         trade.limit_price = limit
         trade.timing["admissionTs"] = now_ms()
+        # first-sale-v1 (2026-09-18): the technique's first-sale record at the FINAL quantity/price. Base hook = off
+        # (other desks unchanged). `observe` journals the record; only `enforce` may refuse - never an exit path.
+        fs_why = await self._first_sale_check(ap, trade, qty, limit)
+        if fs_why:
+            await self._refuse_entry(ap, trade, fs_why, stage="first_sale", detail=trade.timing.get("firstSale"))   # the durable refusal record
+            return
         # R2: re-judged after sizing/pricing, immediately before the intent is written
         gate = await self._entry_gated(ap, trade, "order")
         if gate:
@@ -3412,6 +3503,11 @@ class PlanRunner(SessionListener):
         cfg = ap.config
 
         def guard() -> None:
+            # first-sale-v2 (IR-01): the admission is RE-DECIDED here - after every await and retry, on the final quantity
+            # and limit and the current validated evidence. Base hook = None; entry-only (exits never reach this guard).
+            fs = self.first_sale_final(ap, trade, qty, limit)
+            if fs:
+                raise RuntimeError(f"entry gate: {fs}")
             if contract is not None:
                 # FC-01 (closure review 2026-09-14): the CURRENT cached NBBO for the order symbol, judged by the
                 # technique's pure policy - never the captured warning list alone (a new OPRA print can widen
@@ -3447,6 +3543,10 @@ class PlanRunner(SessionListener):
         order; only a confirmed zero-fill is a failure."""
         from ..orders import SubmitUncertain
         cfg = ap.config
+        with contextlib.suppress(Exception):                # hook: experiment / policy identity on the ORDER row (base = none)
+            extra = [str(x)[:60] for x in (self.order_tags(ap) or [])]
+            if extra:
+                intent.tags = [*list(getattr(intent, "tags", None) or []), *[x for x in extra if x not in (intent.tags or [])]]
         attempt = 0
         money_entry = stage == "entry" and cfg.mode in ("proposal", "auto")
 
@@ -3537,6 +3637,9 @@ class PlanRunner(SessionListener):
                              scratch_trim=float(getattr(self.rules(), "scratch_trim", 0.5)),
                              scratch_only_far_tp1=bool(getattr(self.rules(), "scratch_only_far_tp1", False)),
                              far_tp1_r=float(getattr(self.rules(), "far_tp1_r", 3.0)))
+        self._shadow_enqueue(ap, self._reclaim_signal(ap, tr, bar))      # P-06 signal + first sample; never awaited here
+        if decision is None and await self._runner_protect(ap, tr, bar):
+            return
         if decision is None:
             # a single-contract position may need to advance its trim counter without an order -
             # but NEVER while an exit is working/unresolved (DA-02, 2026-09-14): a pending or later
@@ -3561,6 +3664,71 @@ class PlanRunner(SessionListener):
         tr.trims_done = decision.new_trims_done
         if decision.qty >= 1:
             await self._exit(ap, tr, decision.kind, decision.qty, journal=True, reason=decision.reason)
+
+    async def _runner_protect(self, ap: ArmedPlan, tr: Trade, bar: Bar) -> bool:
+        """P-06 `tp1-reclaim-runner-exit-v1` as an EXECUTED exit, only where the technique's hook says so for THIS plan's book
+        (base = off; EM = its experimental Practice book). Frozen rule: after a CONFIRMED TP1 fill, the first completed bar
+        that closes back through the saved TP1 exits the WHOLE remainder. Precedence: it is reached only when the production
+        decision for this bar is None - a stop, a flatten, a scratch or a target exit always goes first - and never while an
+        exit is working (pending quantity is never sold twice). Reduce-only through the normal exit path and RiskGate."""
+        try:
+            if self.runner_protection_policy(ap) != "execute":
+                return False
+            if tr.status != "open" or tr.remaining <= 0 or tr.pending_exit_qty > 1e-9:
+                return False
+            if not any(x.get("kind") == "tp1" and float(x.get("filledQty") or 0) > 0 for x in tr.exits):
+                return False
+            if any(x.get("kind") == "runner_protect" for x in tr.exits):
+                return False                                  # once per trade; a failed exit is the watchdog's to retry
+            tp1 = float(tr.targets[0]) if tr.targets else None
+            if not tp1_reclaim_signal(tr.direction, tp1, bar.close):
+                return False
+        except Exception:                                     # noqa: BLE001 - a policy fault never blocks the production path
+            log.exception("runner protection check failed")
+            return False
+        qty = float(int(tr.remaining - tr.pending_exit_qty))
+        if qty < 1:
+            return False
+        # no extra trade field: the persisted `exits` list (kind `runner_protect`) IS the once-per-trade record and survives a restart
+        await self._exit(ap, tr, "runner_protect", qty, journal=True,
+                         reason=f"P-06 tp1-reclaim-runner-exit-v1: bar closed {bar.close:.4f} back through TP1 {tp1:.4f} after a confirmed TP1 fill")
+        await self._persist(ap)
+        return True
+
+    def _reclaim_signal(self, ap: ArmedPlan, tr: Trade, bar: Bar) -> list[dict]:
+        """P-06 (re-review 2026-09-17): on the first completed bar whose close is back through the saved TP1 after a
+        CONFIRMED TP1 fill, persist the causal SIGNAL on the trade (once; survives a restart) and take the first sample
+        of the remaining quantity's contract NBBO. The quote watch (`_shadow_capture`) then keeps seeking the first
+        fresh, adequately covered quote on later observations; an unscorable sample is raw evidence only. Pending exit
+        / stop precedence: a signal is never set while an exit is working, and every observation carries the shadow
+        disposition. Pure capture; the caller enqueues. Research only - no exit is placed from it."""
+        try:
+            if getattr(tr, "reclaim_signal", None):
+                return []                                            # already signalled: the quote watch owns the seeking
+            if not self._shadow_enabled(ap) or tr.status != "open" or tr.remaining <= 0 or tr.pending_exit_qty > 1e-9:
+                return []
+            if not any(x.get("kind") == "tp1" and float(x.get("filledQty") or 0) > 0 for x in tr.exits):
+                return []
+            tp1 = float(tr.targets[0]) if tr.targets else None
+            if not tp1_reclaim_signal(tr.direction, tp1, bar.close):
+                return []
+            now_ms = int(getattr(self, "_now_ms", lambda: int(time.time() * 1000))())     # wall clock; tests pin it
+            tr.reclaim_signal = {"barTs": int(bar.ts), "signalTs": int(bar.ts) + 60000, "close": float(bar.close), "tp1": tp1,
+                                 "remaining": float(tr.remaining), "setAt": now_ms, "rule": "tp1-reclaim-runner-exit-v1"}
+            self._log(ap, "reclaim_signal", f"{tr.trigger_id}: P-06 signal - bar {bar.ts} closed {bar.close:.4f} back through TP1 {tp1:.4f} "
+                      f"(remaining {tr.remaining:g}); seeking the first covered contract quote (research only)", trigger=tr.trigger_id)
+            q = self.engine.quotes.get(ap.symbol)
+            seen = self.__dict__.setdefault("_shadow_seen", set())
+            prem_pct = float(self.rt("premium_stop_pct", 50.0) or 0)
+            basis = str(self.rt("premium_stop_basis", "bid") or "bid")
+            out: list[dict] = []
+            self._shadow_capture_rung(ap, tr, q, now_ms, 0.0, float(bar.close), int(bar.ts) + 60000, 0.0, seen, prem_pct, basis,
+                                      0, "tp1-reclaim", float(tr.remaining), out, hit_override=True)
+            for p in out:
+                p["signal"] = dict(tr.reclaim_signal)
+            return out
+        except Exception:      # research capture must never disturb the exit path
+            return []
 
     # F129: the five authorities an exit can actually have. `decidedBy` stays granular (which code
     # path); `authority` is the category a reader groups on, and is the handoff's own vocabulary.
@@ -3605,6 +3773,8 @@ class PlanRunner(SessionListener):
         if qty < 1:
             return
         cfg = ap.config
+        snap_kind = _book_snap_family(kind)
+        self._book_snap(f"pre_{snap_kind}", ap, tr, kind)  # ED-04: pure capture + put_nowait BEFORE the exit; never awaited
         bid = None
         if tr.instrument == "options" and tr.order_symbol:
             q = self.engine.quotes.get(tr.order_symbol)
@@ -3624,6 +3794,7 @@ class PlanRunner(SessionListener):
         self._log(ap, "exit_submit", f"{tr.trigger_id}: {kind} SELL {qty:g} {intent.order_type} (reduce-only)",
                   trigger=tr.trigger_id, kind=kind)
         result = await self._place_with_retry(ap, tr, intent, stage=f"exit:{kind}")
+        self._book_snap(f"post_{snap_kind}", ap, tr, kind)  # ED-04: after the exit was sent (the pending quantity is now reserved)
         if result is None:
             rec["status"] = "ERROR"
             return
@@ -3634,7 +3805,8 @@ class PlanRunner(SessionListener):
             self.register_order(rec["orderId"], (ap.run_id, tr.trigger_id))
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ORDER_RESULT, {
             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "stage": f"exit:{kind}",
-            "orderId": rec["orderId"], "status": rec["status"], "reason": result.get("rejectReason")},
+            "orderId": rec["orderId"], "entryOrderId": tr.entry_order_id,       # durable exit -> trade-instance link (R2-01)
+            "status": rec["status"], "reason": result.get("rejectReason")},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         if rec["status"] in ("REJECTED", "REJECTED_RISK"):
             rec["error"] = result.get("rejectReason")
@@ -3995,16 +4167,101 @@ class PlanRunner(SessionListener):
             self._log(ap, "entry_gate_refused", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id, stage=stage)
         return why or None
 
-    async def _refuse_entry(self, ap: "ArmedPlan", trade: "Trade", why: str, *, stage: str) -> None:
+    async def _refuse_entry(self, ap: "ArmedPlan", trade: "Trade", why: str, *, stage: str, detail: dict | None = None) -> None:
         trade.status = "skipped"
         trade.reason = why
         with contextlib.suppress(Exception):
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "entry_gate_refused",
                 "stage": stage, "why": why, "ts": trade.fired_ts, "sourceTs": trade.fired_ts,
-                "decisionTs": int(time.time() * 1000)}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                "decisionTs": int(time.time() * 1000), **({"detail": detail} if detail else {})},
+                aggregate_type="technique_run", aggregate_id=ap.run_id)
         await self._persist(ap)
         self._publish(ap, "fired")
+
+    def first_sale_policy(self, ap: "ArmedPlan") -> str:
+        """Hook: off | observe | enforce | invalid. Base = off, so a desk that does not opt in runs no first-sale code."""
+        return "off"
+
+    async def first_sale_prepare(self, ap: "ArmedPlan") -> None:
+        """Hook: bounded preparation of frozen policy inputs (never on an exit path)."""
+        return None
+
+    def first_sale_record(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None, mode: str, stage: str = "order") -> dict | None:
+        """Hook: the technique's pure first-sale record for the final quantity/price (no I/O, no awaits)."""
+        return None
+
+    def first_sale_decide(self, rec: dict | None, mode: str, error: str | None = None) -> dict:
+        """Hook: the admission disposition {allow, disposition, reason}. Base = allow."""
+        return {"allow": True, "disposition": "off", "reason": None}
+
+    def first_sale_publish(self, ap: "ArmedPlan", rec: dict) -> None:
+        """Hook: NON-BLOCKING research persistence of the record (never awaited here)."""
+        return None
+
+    def _first_sale_eval(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None, mode: str, stage: str) -> tuple[dict | None, dict]:
+        """Synchronous: build + decide. FAIL CLOSED: under enforce / invalid a hook error is a deferral, never a pass."""
+        rec, err = None, None
+        try:
+            rec = self.first_sale_record(ap, trade, qty, limit, mode, stage)
+            if not isinstance(rec, dict):
+                rec, err = None, "no record"
+        except Exception as exc:                          # noqa: BLE001
+            rec, err = None, f"{type(exc).__name__}: {exc}"[:160]
+            log.warning("first-sale record failed for %s %s: %s", ap.symbol, trade.trigger_id, err)
+        try:
+            d = self.first_sale_decide(rec, mode, err)
+            if not isinstance(d, dict) or "allow" not in d:
+                raise TypeError("decision hook returned no disposition")
+        except Exception as exc:                          # noqa: BLE001
+            closed = mode in ("enforce", "invalid")
+            d = {"allow": not closed, "disposition": ("deferred_error" if closed else "observed_error"),
+                 "reason": (f"first-sale gate: decision failed ({type(exc).__name__}) - entry deferred, nothing sent" if closed else None)}
+        return rec, d
+
+    async def _first_sale_check(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None) -> str | None:
+        """Entry-only, after sizing and before the intent. off = one settings read and nothing else. observe = the record
+        is built and handed to a bounded recorder; the entry never waits for research persistence and is never refused.
+        enforce = FAIL CLOSED (a failed gate refuses; missing evidence, unknown geometry or an error defers). Exits never
+        pass through here. The authoritative recheck at final dispatch is `first_sale_final` inside `_entry_guard`."""
+        try:
+            mode = str(self.first_sale_policy(ap) or "off")
+        except Exception as exc:                          # noqa: BLE001 - only an opted-in technique overrides the hook
+            log.warning("first-sale policy unreadable for %s: %s", ap.symbol, exc)
+            return "first-sale gate: the policy could not be read - entry deferred, nothing sent"
+        if mode == "off":
+            return None
+        if mode in ("observe", "enforce"):
+            with contextlib.suppress(Exception):
+                await self.first_sale_prepare(ap)         # bounded inside the hook; failure = unresolved pin (enforce defers)
+        rec, d = self._first_sale_eval(ap, trade, qty, limit, mode, "order")
+        g = (rec or {}).get("gate") or {}
+        trade.timing["firstSale"] = {"mode": mode, "disposition": d.get("disposition"), "verdict": g.get("verdict"), "rung": g.get("rung"),
+                                     "rAdmission": g.get("rAdmission"), "admissionEntry": g.get("admissionEntry"), "reason": d.get("reason")}
+        if rec is not None:
+            rec["disposition"] = d.get("disposition")
+            with contextlib.suppress(Exception):
+                self.first_sale_publish(ap, rec)          # put_nowait on a bounded recorder - never awaited
+        return None if d.get("allow") else str(d.get("reason") or "first-sale gate: entry refused")
+
+    def first_sale_final(self, ap: "ArmedPlan", trade: "Trade", qty: float, limit: float | None) -> str | None:
+        """SYNCHRONOUS recheck inside the final entry guard (after every await and retry, immediately before the venue
+        submit): the decision is recomputed from the FINAL quantity / limit and the CURRENT validated evidence, so a
+        decision taken before a wait can never authorise a changed price. Authoritative only under enforce / invalid."""
+        try:
+            mode = str(self.first_sale_policy(ap) or "off")
+        except Exception:                                 # noqa: BLE001
+            return "first-sale gate: the policy could not be read at dispatch"
+        if mode not in ("enforce", "invalid"):
+            return None
+        rec, d = self._first_sale_eval(ap, trade, qty, limit, mode, "dispatch")
+        g = (rec or {}).get("gate") or {}
+        trade.timing["firstSaleDispatch"] = {"disposition": d.get("disposition"), "rAdmission": g.get("rAdmission"), "admissionEntry": g.get("admissionEntry")}
+        if rec is not None and not d.get("allow"):
+            rec["disposition"] = d.get("disposition")
+            with contextlib.suppress(Exception):
+                self.first_sale_publish(ap, rec)
+        return None if d.get("allow") else str(d.get("reason") or "first-sale gate: refused at dispatch")
 
     async def after_fire(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade",
                          judgement: "FireJudgement", bar: Bar) -> None:
@@ -4026,6 +4283,27 @@ class PlanRunner(SessionListener):
         base runner manages targets on closed bars (`_manage`); a technique whose read judges the target
         intrabar (Team2 F50) overrides this so the book sells on the print. Exit-only by construction."""
         return None
+
+    def order_tags(self, ap: "ArmedPlan") -> list:
+        """Hook: tags stamped on every order of this plan (entry, exit, retry) - e.g. an experiment identity. Base: none."""
+        return []
+
+    def arm_guard(self, run: dict, cfg: "ArmConfig", portfolio: dict) -> str | None:
+        """Hook: a reason to REFUSE this arm (journaled), or None. Base: none. A technique uses it for a book-scoped
+        boundary - e.g. an experimental plan may arm only in its experimental book."""
+        return None
+
+    def seed_from_ts(self, ap: "ArmedPlan") -> int | None:
+        """Hook: the first bar START time an intraday-born plan may see. Base: None = the whole session from 09:30."""
+        return None
+
+    def extra_observation_books(self) -> list:
+        """Hook: books besides the default one where this technique's order-free shadow observations run. Base: none."""
+        return []
+
+    def runner_protection_policy(self, ap: "ArmedPlan") -> str:
+        """Hook: `execute` makes the frozen P-06 runner protection a real reduce-only exit for THIS plan. Base: `off`."""
+        return "off"
 
     async def entry_limit_cap(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> float | None:
         """The most an auto entry may pay for the contract (ARM-GAPS C1) —
