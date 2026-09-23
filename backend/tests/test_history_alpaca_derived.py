@@ -95,3 +95,8 @@ def test_alpaca_failure_falls_back_to_yahoo(monkeypatch):
     h._cache.clear()
     bars, prov = asyncio.run(h.fetch_window_ex("SPY", "1d", OPEN - 86_400_000, OPEN + 86_400_000, client=Http()))
     assert prov == "yahoo" and len(bars) == 1
+
+
+def test_index_symbols_never_try_alpaca():
+    """^VIX / ^VIX1D (Team2's sigma, the research VIX snapshot) go straight to Yahoo - Alpaca answers 400 for them."""
+    assert not h._alpaca_symbol("^VIX") and not h._alpaca_symbol("^VIX1D") and h._alpaca_symbol("SPY") and h._alpaca_symbol("BRK.B")
