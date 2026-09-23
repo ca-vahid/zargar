@@ -2654,3 +2654,20 @@ cache). Rules: never synthesize the missing daily bar from another feed or from 
 declared, versioned policy; name the provider on the record; revert to the primary feed once it backfills if
 adjusted history matters. Open item: a per-session provider fallback so one vendor hole cannot stop a desk.
 
+### 1h and 1d history come from Alpaca; Yahoo is the fallback - 2026-09-23 (EM desk; shared `marketstructure/history.py`)
+
+User decision 2026-09-23 ("move 1h and daily history to Alpaca"), prompted by Yahoo's daily history silently skipping the
+2026-09-22 session (the Cartel desk's entry above). Minute timeframes (1m-30m) were already Alpaca-first; 1h and 1d were Yahoo
+because Alpaca's native 1Hour bars are CLOCK-aligned (10:00, 11:00) while every method reads SESSION-aligned hours (09:30).
+
+Change (`fetch_window_ex`, regular session only): **1h is derived from Alpaca 30m bars** grouped into session-aligned hours
+(`hours_from_30m`: 09:30, 10:30 ... 15:30, the last one the final half hour - Yahoo's exact shape; an hour is stamped at its
+session-relative start even when its first half is missing). **1d is Alpaca's native 1Day** (`days_from_rows`, official
+open/close and consolidated volume), stamped at the session open like Yahoo's. `session="ext"` 1h/1d, non-US symbols and any
+Alpaca failure fall back to Yahoo exactly as before; provider is reported as `alpaca` / `yahoo`.
+
+Evidence (before/after through the real fetch path, 2026-09-23): SPY and BRK.B identical bar stamps for every completed bar;
+max OHLC deviation 0.01% (SPY) / 0.08% (BRK.B) on 1h and 0.005% / 0.04% on 1d; 6-symbol x 7-session sample median 0.000%,
+volume ratio 1.000; the Alpaca daily series HAS 2026-09-22; SHOP.TO unchanged (Yahoo). Grouping 30m bars into DAYS was
+rejected: it misses the official close and the closing-auction volume. Tests: `tests/test_history_alpaca_derived.py`.
+Who reads it: EM plan structure (1h), Tips analyst 1h context, research snapshots 1d, charts; Team2's minute data unchanged.

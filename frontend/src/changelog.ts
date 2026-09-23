@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.37";
+export const APP_VERSION = "0.8.38";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.38",date:"2026-09-23",title:"Hourly and daily history come from the paid Alpaca feed",items:[
+    {tag:"fixed",text:"Hourly and daily price history for US stocks now comes from Alpaca instead of Yahoo, whose daily history silently skipped the September 22 session. Hours still start at the open (9:30, 10:30 ...), as every technique reads them, and daily bars carry the official open, close and volume; compared with Yahoo they match to within a few hundredths of a percent. Yahoo remains the fallback and the source for non-US listings."},
+  ]},
   {version:"0.8.37",date:"2026-09-23",title:"EM runs without a model: the baseline book prepares by rules",items:[
     {tag:"major",text:"EM can now prepare its main Practice book from the graded sheet by rules alone, with no model calls, exactly as the experimental book already does. It switches on with the EM preparation policy set to deterministic; the paid nightly model review (about $1,100 of EM's $1,109 model spend since August) then stands down. Entry decisions were already rule-based; chat and manual Analyse runs still use the model only when you start them."},
   ]},
