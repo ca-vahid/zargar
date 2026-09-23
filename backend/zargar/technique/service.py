@@ -2281,6 +2281,13 @@ class TechniqueService:
                 raise
             except Exception:                              # noqa: BLE001
                 log.exception("source-candidate pass failed")
+            try:                                           # em-deterministic-prep-v1 (2026-09-23): the baseline's model-free preparation (off unless preparation_policy=deterministic)
+                from .em_deterministic_prep import auto_prepare as _det_prep
+                await _det_prep(self, int(_time.time() * 1000))
+            except asyncio.CancelledError:
+                raise
+            except Exception:                              # noqa: BLE001
+                log.exception("deterministic preparation pass failed")
             try:                                           # em-experiment-v1: promotion boundary + horizon sweep (one settings read when off)
                 from .em_experiment import tick as _xp_tick
                 await _xp_tick(self, int(_time.time() * 1000))

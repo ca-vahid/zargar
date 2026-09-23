@@ -13,7 +13,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from ..models import TechniqueArmed, TechniquePrepDecision, TechniqueRun
 from . import preparation_policy as pp
 
-ORIGIN_OF_TRIGGER = {"promote": "batch", "sheet": "batch", "ingest": "ingest", "preopen_replan": "preopen_replan"}
+ORIGIN_OF_TRIGGER = {"promote": "batch", "sheet": "batch", "prepare": "batch", "ingest": "ingest", "preopen_replan": "preopen_replan"}
 
 
 def _h(obj) -> str:

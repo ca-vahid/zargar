@@ -66,6 +66,16 @@ def build_em_review_routes(app, eng, auth) -> None:
         day = _day(planFor) if planFor else next_session_date(int(_t.time() * 1000))
         return await xp.prepare(svc(), day, limit=(limit or None))
 
+    @app.post("/api/technique/em/prepare", dependencies=[auth])
+    async def em_deterministic_prepare(planFor: str = "", limit: int = 0):
+        """Deterministic preparation of ONE session for the BASELINE book (em-deterministic-prep-v1: zero model calls;
+        idempotent). Refuses unless techniques.enhanced_market.preparation_policy is deterministic."""
+        import time as _t
+        from ..technique import em_deterministic_prep as dp
+        from ..marketstructure.sessions import next_session_date
+        day = _day(planFor) if planFor else next_session_date(int(_t.time() * 1000))
+        return await dp.prepare(svc(), day, limit=(limit or None))
+
     @app.get("/api/technique/em/model-cost", dependencies=[auth])
     async def em_model_cost(date: str = ""):
         from ..technique import em_review_service as rs

@@ -68,12 +68,20 @@ async def read_state() -> dict:
     c = await asyncpg.connect(DB)
     try:
         await c.execute("set default_transaction_read_only = on")
-        today = dt.datetime.now(ET).date().isoformat()
+        # the NEXT session: after today in ET, or today while its open is still ahead (a batch resumed after
+        # midnight ET prepares the session that opens this morning - 2026-09-22 found nothing at 00:08 ET)
+        now_et = dt.datetime.now(ET)
+        today = now_et.date().isoformat()
+        floor = today if (now_et.hour, now_et.minute) < (9, 30) else None
         sheet = await c.fetchrow(
             "select id, params->>'planFor' as plan_for from technique_sweeps where params->>'kind'='next' and status='done' "
-            "and params->>'planFor' > $1 order by created_at desc limit 1", today)
+            "and (params->>'planFor' > $1 or params->>'planFor' = $2) order by created_at desc limit 1", today, floor or "")
         raw = await c.fetchval("select value from settings where key='techniques.enhanced_market.paid_review'")
         paid = True if raw is None else bool((json.loads(raw) if isinstance(raw, str) else raw).get("v", True))
+        # em-deterministic-prep-v1 (2026-09-23): a deterministic baseline is prepared INSIDE the engine; the paid read never runs
+        pol = await c.fetchval("select value from settings where key='techniques.enhanced_market.preparation_policy'")
+        if pol is not None and str((json.loads(pol) if isinstance(pol, str) else pol).get("v", "")).lower() == "deterministic":
+            paid = False
         have = {}
         if sheet:
             rows = await c.fetch(
@@ -103,7 +111,8 @@ async def main():
             log("no finished sheet for the next session yet - nothing to do")
             return
         if not s["paid"]:
-            log(f"paid review is OFF (techniques.enhanced_market.paid_review) - no read, no baseline arm for {s['planFor']}")
+            log(f"paid review is OFF (paid_review false or preparation_policy deterministic) - no paid read for {s['planFor']}; "
+                "a deterministic baseline is prepared inside the engine")
             return
         have = s["have"]
         log(f"session {s['planFor']} sheet {s['sheet']}: {len(have)} symbol(s) already reviewed - not paid for again")

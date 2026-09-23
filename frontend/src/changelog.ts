@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.36";
+export const APP_VERSION = "0.8.37";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.37",date:"2026-09-23",title:"EM runs without a model: the baseline book prepares by rules",items:[
+    {tag:"major",text:"EM can now prepare its main Practice book from the graded sheet by rules alone, with no model calls, exactly as the experimental book already does. It switches on with the EM preparation policy set to deterministic; the paid nightly model review (about $1,100 of EM's $1,109 model spend since August) then stands down. Entry decisions were already rule-based; chat and manual Analyse runs still use the model only when you start them."},
+  ]},
   {version:"0.8.36",date:"2026-09-22",title:"EM: the analyst-check panel tells the truth about a scheduled batch",items:[
     {tag:"fixed",text:"The EM Validation analyst-check panel counted only the reads a scheduled evening batch had already started, so a 113-row batch read 19/20 with about 4 minutes left for hours and never closed. It now counts the whole sheet, shows how many rows are not yet started with an honest time estimate, and closes on its own when the batch finishes or stops (saying how many rows were never read). Dismissing it never stops the batch."},
   ]},
