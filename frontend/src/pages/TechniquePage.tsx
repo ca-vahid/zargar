@@ -98,8 +98,8 @@ function StatusBar({ status, onScan, scanBusy }: {
 /** Live progress of a scan: one row per symbol, filling in as runs finish.
  *  In `armable` mode (sheet scan) rows are promoted PLAN runs: each shows its
  *  deterministic grade + the analyst's read, with per-row and bulk Arm. */
-function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }: {
-  ids: string[]; armable?: boolean; onDone: () => void; onClose: () => void;
+function ScanPanel({ ids: rawIds, armable, pending = 0, onDone, onClose, onOpen, onArmedAll }: {
+  ids: string[]; armable?: boolean; pending?: number; onDone: () => void; onClose: () => void;
   onOpen: (id: string) => void; onArmedAll?: (n: number) => void;
 }) {
   const toast = useStore((s) => s.toast);
@@ -137,6 +137,7 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   // again, a run the list cannot show gets a bounded number of direct looks and is then counted as unresolved, one
   // poll runs at a time, the full-run fetches for the table are throttled, and a batch with nothing open is FINISHED.
   const fullRef = useRef(full); fullRef.current = full;
+  const pendingRef = useRef(0);        // set below from the render's own stillToSubmit (the poll closure must see it)
   const rowsRef = useRef(rows); rowsRef.current = rows;
   const misses = useRef<Record<string, number>>({});
   const [missBump, setMissBump] = useState(0);        // re-render when an id becomes unresolved
@@ -191,7 +192,7 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
           api.techniqueStatus().then((st) => { if (!stop) setActive((st as any).activeRuns ?? {}); }).catch(() => undefined);
         }
         setNow(Date.now());
-        if (scanFinished(ids, { ...rowsRef.current, ...map }, misses.current)) {
+        if (scanFinished(ids, { ...rowsRef.current, ...map }, misses.current) && pendingRef.current === 0) {
           finished.current = true;
           onDone();
         }
@@ -239,7 +240,13 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   const failedIds = doneIds.filter((id) => rows[id]?.status === "failed");
   void missBump;
   const unresolvedIds = ids.filter((id) => !rows[id] && isUnresolved(id, misses.current));   // given up on: counted, never re-asked
-  const allDoneNow = scanFinished(ids, rows, misses.current);
+  // a scheduled batch that has not submitted a read for 15 min while nothing is open has STOPPED (died, capped, or
+  // the rest were never meant to run): close the panel and say how many rows were never read
+  const newestCreated = Math.max(0, ...ids.map((id) => (rows[id]?.createdAt ? new Date(rows[id].createdAt!).getTime() : 0)));
+  const quiet = newestCreated > 0 && Date.now() - newestCreated > 15 * 60_000;
+  const stillToSubmit = pending > 0 && !quiet ? pending : 0;
+  const neverRead = pending > 0 && quiet ? pending : 0;
+  const allDoneNow = scanFinished(ids, rows, misses.current) && stillToSubmit === 0;
   if (allDoneNow) finished.current = true;          // sticky: a finished batch never flips back to "checking"
   const allDone = finished.current || allDoneNow;
   // "working" time counts from when a run actually took a slot (ref lives up
@@ -254,8 +261,10 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   const queuedIds = ids.filter((id) => !active[id] && rows[id]?.status === "running" && !firstActive.current[id]);
   const loadingIds = ids.filter((id) => !rows[id]);
   void loadingIds;
+  pendingRef.current = stillToSubmit;
   const resolvedCount = doneIds.length + unresolvedIds.length;
-  const pct = ids.length ? Math.round((resolvedCount / ids.length) * 100) : 0;
+  const total = ids.length + stillToSubmit;           // an adopted batch: every sheet row it will read, not just the ones started
+  const pct = total ? Math.round((resolvedCount / total) * 100) : 0;
   const startMs = useMemo(() => {
     const ts = ids.map((id) => rows[id]?.createdAt).filter(Boolean)
       .map((t) => new Date(t as string).getTime());
@@ -264,8 +273,8 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   }, [Object.keys(rows).length]);
   let eta = "";
   // an estimate only while something is actually running — a restored panel with nothing in flight once read "~2.1 h left"
-  if (!allDone && startMs && doneIds.length >= 3 && workingIds.length + finishingIds.length + queuedIds.length > 0) {
-    const remainMs = ((now - startMs) / doneIds.length) * (ids.length - doneIds.length);
+  if (!allDone && startMs && doneIds.length >= 3 && workingIds.length + finishingIds.length + queuedIds.length + stillToSubmit > 0) {
+    const remainMs = ((now - startMs) / doneIds.length) * (total - doneIds.length);
     const m = Math.max(1, Math.round(remainMs / 60000));
     eta = m >= 90 ? `~${(m / 60).toFixed(1)} h left` : `~${m} min left`;
   }
@@ -352,12 +361,13 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
       <div className="tq-progress-bar" role="progressbar" aria-valuenow={pct}>
         <div className="fill" style={{ width: `${pct}%` }} />
       </div>
-      <b className="nowrap">{resolvedCount}/{ids.length} · {pct}%</b>
+      <b className="nowrap">{resolvedCount}/{total} · {pct}%</b>
       {!allDone && (
         <span className="muted nowrap">
-          {workingIds.length} working{finishingIds.length ? ` · ${finishingIds.length} finishing` : ""} · {queuedIds.length} queued{eta ? ` · ${eta}` : ""}
+          {workingIds.length} working{finishingIds.length ? ` · ${finishingIds.length} finishing` : ""} · {queuedIds.length} queued{stillToSubmit ? ` · ${stillToSubmit} not yet started` : ""}{eta ? ` · ${eta}` : ""}
         </span>
       )}
+      {neverRead > 0 && <span className="muted nowrap" title="The scheduled batch stopped submitting reads with these sheet rows still unread. Its log is in C:/ProgramData/Zargar/logs.">{neverRead} never read</span>}
       {failedIds.length > 0 && <span className="neg nowrap">{failedIds.length} failed</span>}
       {unresolvedIds.length > 0 && <span className="muted nowrap" title="The server could not return these runs after several attempts; they are counted as finished so the batch can close. Open History to look for them.">{unresolvedIds.length} not loaded</span>}
     </div>
@@ -408,7 +418,7 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
       <div className="panel-head">
         {allDone
           ? <b>{armable ? `Analyst check finished — ${setups.length}/${ids.length} confirmed` : `Scan finished — ${setups.length ? `${setups.length} setup(s) found` : "no setups"} across ${ids.length} symbol(s)`}</b>
-          : <b><Spinner /> {armable ? "Analyst-checking" : "Scanning"}</b>}
+          : <b><Spinner /> {armable ? (pending > 0 ? "Analyst-checking (scheduled batch, one read at a time)" : "Analyst-checking") : "Scanning"}</b>}
         <span className="sub">{armable ? "grade = the plan's own read · analyst = the 4-pass model read of the same charts" : "each row is a full analysis run; they also live in History (trigger \"scan\")"}</span>
         {armable && allDone && (passed.length > 0 || bulkArm) && (
           <button className="primary-btn tq-scan-armall" disabled={!!bulkArm}
@@ -1049,12 +1059,15 @@ export function TechniquePage() {
 
   const [scanConfirm, setScanConfirm] = useState(false);
   // survives F5: an in-flight or finished scan keeps its panel until dismissed
-  const [scan, setScan] = useState<{ ids: string[]; done: boolean; armable?: boolean } | null>(() => {
+  // not `own` = a batch this page did not start (the scheduler's evening batch, the API): it submits reads one at a
+  // time, so the runs that exist are not the batch. `pending` = sheet rows with a valid trigger and no read yet
+  // (2026-09-22: the panel read "19/20 · ~4 min left" for hours on a 113-row scheduled batch).
+  const [scan, setScan] = useState<{ ids: string[]; done: boolean; armable?: boolean; own?: boolean; pending?: number } | null>(() => {
     try {
       const s = JSON.parse(localStorage.getItem("zargar_tq_scan") || "null");
       // bring a panel back only while it is plausibly still the batch of the moment
       if (s && Array.isArray(s.ids) && s.ids.length && Date.now() - (s.ts ?? 0) < 3 * 3_600_000)
-        return { ids: s.ids, done: !!s.done, armable: !!s.armable };
+        return { ids: s.ids, done: !!s.done, armable: !!s.armable, own: !!s.own, pending: s.pending };
     } catch { /* corrupt state — start clean */ }
     return null;
   });
@@ -1129,11 +1142,14 @@ export function TechniquePage() {
         const fullSheet = await api.techniqueSweep(sheet.id, true);
         const promoted = (fullSheet.rows ?? []).map((r: any) => r.promotedRunId as string | null)
           .filter((x): x is string => !!x);
-        if (stop || !promoted.length) return;
+        const pending = (fullSheet.rows ?? []).filter((r: any) => !r.promotedRunId
+          && ((r.plan?.triggers ?? []) as any[]).some((t) => t.valid)).length;
+        if (stop) return;
         setScan((s) => {
           if (!s?.armable) return s;
           const extra = promoted.filter((id) => !(s.ids ?? []).includes(id));
-          return extra.length ? { ...s, ids: [...(s.ids ?? []), ...extra], done: false } : s;
+          const next = !s.own ? { ...s, pending } : s;
+          return extra.length ? { ...next, ids: [...(s.ids ?? []), ...extra], done: false } : next;
         });
       } catch { /* the panel still shows the runs it already knows */ }
     })();
@@ -1216,11 +1232,11 @@ export function TechniquePage() {
         if (failed) toast("info", `${failed} symbol(s) could not start (daily cap / errors)`);
         if (reused.length) toast("info", `${reused.length} setup(s) already had an analyst read — reused, not re-run`);
         const ids = [...reused, ...started];
-        if (ids.length) { localStorage.removeItem("zargar_tq_scan_dismissed"); setScan({ ids, done: false, armable: true }); setTab("validation"); }
+        if (ids.length) { localStorage.removeItem("zargar_tq_scan_dismissed"); setScan({ ids, done: false, armable: true, own: true }); setTab("validation"); }
       } else {
         const r = await api.techniqueScan();
         if (r.skipped?.length) toast("info", `skipped ${r.skipped.map((s: any) => `${s.symbol} (${s.reason})`).join("; ")}`.slice(0, 160));
-        if (r.started?.length) { localStorage.removeItem("zargar_tq_scan_dismissed"); setScan({ ids: r.started, done: false }); setTab("validation"); }
+        if (r.started?.length) { localStorage.removeItem("zargar_tq_scan_dismissed"); setScan({ ids: r.started, done: false, own: true }); setTab("validation"); }
       }
       refreshStatus();
       api.techniqueRuns(100, undefined, EM_RUNS).then(setRuns).catch(() => undefined);
@@ -1321,7 +1337,7 @@ export function TechniquePage() {
           tabs neither restarts its polling nor re-fetches the table. Phones keep it on every tab (Validation is desktop-only). */}
       {scan && (
         <div hidden={!isPhone && tab !== "validation"}>
-        <ScanPanel ids={scan.ids} armable={scan.armable}
+        <ScanPanel ids={scan.ids} armable={scan.armable} pending={!scan.own ? scan.pending ?? 0 : 0}
           onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
           onClose={() => { localStorage.setItem("zargar_tq_scan_dismissed", scan.ids.slice().sort().join(",")); setScan(null); }}
           onOpen={(id) => { setFocusRun(id); setTab("analyse"); }}

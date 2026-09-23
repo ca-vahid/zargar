@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.35";
+export const APP_VERSION = "0.8.36";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.36",date:"2026-09-22",title:"EM: the analyst-check panel tells the truth about a scheduled batch",items:[
+    {tag:"fixed",text:"The EM Validation analyst-check panel counted only the reads a scheduled evening batch had already started, so a 113-row batch read 19/20 with about 4 minutes left for hours and never closed. It now counts the whole sheet, shows how many rows are not yet started with an honest time estimate, and closes on its own when the batch finishes or stops (saying how many rows were never read). Dismissing it never stops the batch."},
+  ]},
   {version:"0.8.35",date:"2026-09-23",title:"EM: a stop rule for the method, a daily scorecard, and BRK.B on the live stream",items:[
     {tag:"new",text:"EM now has a stop rule, agreed before the answer is known: after 20 evaluable sessions from 2026-09-22, if the baseline book's cumulative R is at or below zero and the optimistic end of its average trade is under +0.1R, the paid nightly model review stops and EM stays watch-only. The close check writes a daily scorecard (track record per book, the stop rule, and five preregistered tests with fixed sample sizes) and raises a notice when a decision is due. It never changes a setting itself."},
     {tag:"new",text:"EM records the quote each exit was decided on, tied to its exit order, so the exit side of the spread is measured instead of estimated. Observation only; an exit never waits for it."},
