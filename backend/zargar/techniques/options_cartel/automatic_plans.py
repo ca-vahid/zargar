@@ -47,6 +47,10 @@ class PreparationPolicy(WireModel):
     shortlist_ranking: Literal['quality', 'volume'] = 'quality'
     min_target_distance_pct: float = Field(default=0.5, ge=0, le=10)
     min_entry_target_r: float = Field(default=0.25, ge=0, le=10)
+    # P3 (2026-09-22): do not ARM a plan whose first target offers less than this many R from the trigger
+    # at the planned stop. 0 = off (legacy). Nearby resistance is never skipped to raise the ratio; the
+    # plan is simply not armed and the refusal is recorded.
+    min_arm_target_r: float = Field(default=0, ge=0, le=10)
     focus_count: int = Field(default=5, ge=1, le=20)
     horizon_sessions: int = Field(default=1, ge=1, le=20)
     budget: float = Field(default=500, gt=0, le=100000)
@@ -185,6 +189,8 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
         except ValueError:
             continue
         ratio = abs(targets[0]-trigger)/abs(trigger-stop)
+        if policy.min_arm_target_r and ratio < policy.min_arm_target_r:
+            continue
         specificity = candidate['setup'] != 'base'
         choices.append((ratio, specificity, candidate['setup'], candidate, targets, source, campaign))
     if not choices:
@@ -285,7 +291,7 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
     candidates.sort(key=legacy_key)
     legacy_selected = candidates[0]['symbol'] if candidates else None
     ranking = 'legacy: distance to reviewed DTE, delta distance, spread, symbol'
-    if policy.ranking_version == 'executable_cost_v1':
+    if policy.ranking_version in ('executable_cost_v1', 'executable_cost_v2'):
         # F3 on delayed chain rows: friction per contract only (no displayed size, no quantity);
         # the same tuple is re-applied on fresh quotes at the actual entry.
         fee = engine.settings.get('options.fee_per_contract', .99)
@@ -294,10 +300,19 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
             basis='Delayed chain bid/ask with the Practice simulator fee schedule; sizes and quantity unknown pre-open')
         for c in candidates:
             c['economics'] = contract_economics(c['bid'], c['ask'], None, economics)
-        candidates.sort(key=lambda c: (c['economics']['frictionPctOfDebit'], abs(c['dte']-policy.target_dte),
-                                       abs(abs(c['delta'])-policy.target_abs_delta), c['symbol']))
-        ranking = ('executable_cost_v1 (planning basis): (crossing spread + round-trip fees) / entry debit on delayed chain '
-                   'prices, then distance to reviewed DTE, delta distance, symbol; displayed size unknown pre-open')
+        cost = lambda c: (c['economics']['frictionPctOfDebit'], abs(c['dte']-policy.target_dte),
+                          abs(abs(c['delta'])-policy.target_abs_delta), c['symbol'])
+        if policy.ranking_version == 'executable_cost_v2':
+            # Cost decides only inside the reviewed delta window; outside it keeps legacy order after every in-band row.
+            from .contracts import in_delta_band
+            candidates.sort(key=lambda c: (0, cost(c)) if in_delta_band(c['delta'], policy) else (1, legacy_key(c)))
+            ranking = (f'executable_cost_v2 (planning basis): inside |delta| {policy.target_abs_delta-policy.cost_delta_band:.2f}-'
+                       f'{policy.target_abs_delta+policy.cost_delta_band:.2f} by (crossing spread + round-trip fees) / entry debit on '
+                       'delayed chain prices, then DTE and delta distance; outside the window legacy order')
+        else:
+            candidates.sort(key=cost)
+            ranking = ('executable_cost_v1 (planning basis): (crossing spread + round-trip fees) / entry debit on delayed chain '
+                       'prices, then distance to reviewed DTE, delta distance, symbol; displayed size unknown pre-open')
     audit = {'expiriesInRange': len(expiries), 'expiriesChecked': checked, 'rowsExamined': examined,
              'rankingVersion': policy.ranking_version, 'ranking': ranking, 'legacySelected': legacy_selected,
              'selectionChangedFromLegacy': bool(candidates) and candidates[0]['symbol'] != legacy_selected,

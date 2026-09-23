@@ -2,7 +2,7 @@
 
 > Execution update, 2026-09-12: the user subsequently authorized implementation, commit, push and deployment while the other team was busy. The proposal text below is the original review baseline, not a continuing approval block. See RELIABILITY-RELEASE-2026-09-12.md for shipped scope and remaining validation.
 
-**Historical review:** September 12, clarified September 13. The initial request was review-first; the user later authorized implementation and deployment. See [current status](DELIVERY-STATUS.md) and [backlog](PLAN.md); proposed corrections below are not all completed features.
+**Historical review:** September 12, clarified September 13. The initial request was review-first; the user later authorized implementation and deployment. See [current status](../../DELIVERY-STATUS.md) and [backlog](../../PLAN.md); proposed corrections below are not all completed features.
 
 ## Transcript recovery update
 

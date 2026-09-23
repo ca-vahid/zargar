@@ -27,6 +27,10 @@ class EntryPolicy(BaseModel):
     retest_tolerance_pct: float = Field(default=0.25, ge=0, le=5)
     baseline_policy: Literal['full_session', 'covered_periods'] = 'full_session'
     min_target_r: float = Field(default=0, ge=0, le=10)  # legacy snapshots retain their old behavior
+    # P5 (2026-09-22): breakout mode never counts an opening gap beyond the trigger as a crossing, so a
+    # gap-and-hold session had no entry path. ``retest_v1`` arms a completed-candle retest of the trigger
+    # after such a gap (S12: never chase a gap), with every other confirmation rule unchanged.
+    gap_policy: Literal["none", "retest_v1"] = "none"
     max_chase_r: float = Field(default=0.5, ge=0, le=10)
 
 
