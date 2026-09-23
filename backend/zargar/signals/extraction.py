@@ -223,10 +223,39 @@ class Extractor:
     """Wraps the Claude API call. Instantiated lazily so the app runs without a key
     (ingestion still stores raw content; extraction just reports unavailable)."""
 
-    def __init__(self, api_key: str, model: str) -> None:
+    def __init__(self, api_key: str, model: str, *, settings=None, ledger=None) -> None:
         self._api_key = api_key
-        self.model = model
+        self._default_model = model
+        self._model_override: str | None = None
+        # 2026-09-23 (cost levers): the model/effort are Tips-scoped settings (`techniques.tip.extraction_model`,
+        # `techniques.tip.extraction_effort`) read per call, and every request attempt is written to `tip_llm_calls`
+        # through `ledger` (async callable) - both optional so tests and tools can build a bare Extractor.
+        self.settings = settings
+        self.ledger = ledger
         self._client = None
+
+    @property
+    def model(self) -> str:
+        if self._model_override:
+            return self._model_override
+        from ..techniques.tip.model_policy import extraction_model
+        return extraction_model(self.settings, self._default_model)
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self._model_override = value
+
+    def _effort_kw(self, model: str) -> dict:
+        from ..techniques.tip.model_policy import effort_kw
+        return effort_kw(self.settings, "techniques.tip.extraction_effort", model)
+
+    async def _ledger(self, stage: str, model: str, **kw) -> None:
+        if self.ledger is None:
+            return
+        try:
+            await self.ledger(stage=stage, model=model, **kw)
+        except Exception:
+            pass
 
     @property
     def available(self) -> bool:
@@ -252,30 +281,36 @@ class Extractor:
         client = self._get_client()
         import time as _time
         _t0 = _time.perf_counter()
+        model = self.model
         try:
             response = await client.messages.create(
-                model=self.model, max_tokens=4000,
+                model=model, max_tokens=4000,
                 messages=[{"role": "user", "content": [
                     image_block(image),
                     {"type": "text", "text": (f"This is {label}. " if label else "")
-                                             + TRANSCRIBE_PROMPT}]}])
+                                             + TRANSCRIBE_PROMPT}]}],
+                **self._effort_kw(model))
         except Exception as exc:
             try:
                 from ..research import llm_stats
-                llm_stats.record("transcribe", model=self.model,
+                llm_stats.record("transcribe", model=model,
                                  stop_reason=f"exception:{type(exc).__name__}"[:48],
                                  latency_ms=(_time.perf_counter() - _t0) * 1000.0,
                                  retried=is_retry)
             except Exception:
                 pass
+            await self._ledger("transcribe", model, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                               retried=is_retry, error=f"{type(exc).__name__}: {exc}"[:200])
             raise
         try:
             from ..research import llm_stats
-            llm_stats.record_response("transcribe", response, model=self.model,
+            llm_stats.record_response("transcribe", response, model=model,
                                       latency_ms=(_time.perf_counter() - _t0) * 1000.0,
                                       retried=is_retry)
         except Exception:
             pass
+        await self._ledger("transcribe", model, resp=response, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                           retried=is_retry)
         if getattr(response, "stop_reason", None) == "refusal":
             raise RuntimeError("transcription refused by safety classifier")
         return "".join(b.text for b in response.content
@@ -345,29 +380,35 @@ class Extractor:
                     "Schema — no prose, no markdown fences:\n" + schema)
         messages: list = [{"role": "user", "content": user_content}]
         last_err = ""
+        model = self.model          # one model for both attempts of this read
         for attempt in range(2):
             import time as _time
             _t0 = _time.perf_counter()
             try:
                 response = await client.messages.create(
-                    model=self.model, max_tokens=16000, system=system, messages=messages)
+                    model=model, max_tokens=16000, system=system, messages=messages,
+                    **self._effort_kw(model))
             except Exception as exc:
                 # a FAILED attempt is measured too (Codex M1) — the caller's
                 # transient-retry loop re-enters with is_retry=True
                 try:
                     from ..research import llm_stats
-                    llm_stats.record("extraction", model=self.model,
+                    llm_stats.record("extraction", model=model,
                                      stop_reason=f"exception:{type(exc).__name__}"[:48],
                                      latency_ms=(_time.perf_counter() - _t0) * 1000.0,
                                      retried=attempt > 0 or is_retry)
                 except Exception:
                     pass
+                await self._ledger("extraction", model, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                                   retried=attempt > 0 or is_retry, error=f"{type(exc).__name__}: {exc}"[:200])
                 raise
+            await self._ledger("extraction", model, resp=response, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                               retried=attempt > 0 or is_retry)
             try:
                 from ..research import llm_stats
                 _u = getattr(response, "usage", None)
                 _stop = getattr(response, "stop_reason", None)
-                llm_stats.record("extraction", model=self.model,
+                llm_stats.record("extraction", model=model,
                                  input_tokens=int(getattr(_u, "input_tokens", 0) or 0) if _u else 0,
                                  output_tokens=int(getattr(_u, "output_tokens", 0) or 0) if _u else 0,
                                  stop_reason=str(_stop) if _stop else None,
@@ -391,8 +432,10 @@ class Extractor:
             except Exception as exc:           # invalid JSON / failed validation
                 last_err = str(exc)
                 log.warning("extraction JSON invalid (attempt %d): %s", attempt + 1, exc)
+                # the reply is replayed AS RECEIVED (thinking blocks included): Opus 5.5 rejects a transcript whose
+                # thinking blocks were dropped or edited (append-only rule, 2026-09-23 model switch)
                 messages = messages + [
-                    {"role": "assistant", "content": raw[:8000]},
+                    {"role": "assistant", "content": response.content},
                     {"role": "user", "content":
                         f"That JSON failed validation: {last_err[:1500]}\n"
                         "Reply again with ONLY the corrected JSON object."}]
@@ -400,7 +443,7 @@ class Extractor:
             from ..research import llm_stats
             # ANNOTATION only (Codex M1): both attempts were already counted
             # above — this marks their outcome, it is not a third request
-            llm_stats.record("extraction", model=self.model, invalid_output=True,
+            llm_stats.record("extraction", model=model, invalid_output=True,
                              annotation=True)
         except Exception:
             pass

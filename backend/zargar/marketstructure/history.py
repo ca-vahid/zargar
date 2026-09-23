@@ -170,9 +170,10 @@ def _rth_only(bars: list[Bar]) -> list[Bar]:
 
 
 def _alpaca_symbol(symbol: str) -> bool:
-    """A symbol Alpaca's history serves: no FX, and a dot only for a US share class (BRK.B; 2026-09-22)."""
+    """A symbol Alpaca's history serves: no FX, no index (^VIX - Alpaca answers 400 "invalid symbol", 2026-09-23), and a dot
+    only for a US share class (BRK.B; 2026-09-22)."""
     from ..brokers.alpaca import is_us_share_class
-    return "=" not in symbol and ("." not in symbol or is_us_share_class(symbol))
+    return "=" not in symbol and not symbol.startswith("^") and ("." not in symbol or is_us_share_class(symbol))
 
 
 async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,

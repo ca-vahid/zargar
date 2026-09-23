@@ -229,7 +229,7 @@ class SuiteBudget:
 
 # ------------------------------------------------------------------ replay
 async def replay_review(case: dict, *, client, model: str, budget: SuiteBudget, max_tokens: int = 3000,
-                        prompt_cache: str | None = None, header_transform=None) -> dict:
+                        prompt_cache: str | None = None, header_transform=None, extra_kw: dict | None = None) -> dict:
     """One paid, isolated replay of a captured review on `model`. The suite budget is mandatory."""
     from .analyst import TOOLS, ReviewOpinion, cache_messages, cacheable_request, parse_single_object
 
@@ -255,7 +255,7 @@ async def replay_review(case: dict, *, client, model: str, budget: SuiteBudget, 
                 _sys, _tools = cacheable_request(man["system"], TOOLS, enabled=bool(prompt_cache))
                 _msgs = cache_messages(messages, enabled=prompt_cache == "conversation")
                 resp = await client.messages.create(model=model, max_tokens=max_tokens, system=_sys,
-                                                    messages=_msgs, tools=_tools)
+                                                    messages=_msgs, tools=_tools, **(extra_kw or {}))
             except Exception as exc:
                 budget.settle(entry, error=f"{type(exc).__name__}: {str(exc)[:200]}")
                 raise

@@ -55,6 +55,25 @@ def entry_shaped(outcomes: list[dict]) -> bool:
     return False
 
 
+def nonactionable(out: list[dict]) -> bool:
+    """Cost lever 1 (2026-09-23, user decision): extraction marked EVERY signal in the message non-actionable (or found
+    none). Pure; a signal without the flag counts as actionable (fail-safe: keep the review)."""
+    for o in out or []:
+        sig = o.get("signal") or {}
+        if not sig:
+            continue
+        if sig.get("isActionable") is not False:
+            return False
+    return True
+
+
+def skip_nonactionable_enabled(settings) -> bool:
+    try:
+        return bool(settings.get("techniques.tip.review_skip_nonactionable", False))
+    except Exception:
+        return False
+
+
 def decide(*, tickers: list[str] | set[str], source: str, outcomes: list[dict], items: list[dict]) -> dict:
     """Pure. `items` = the desk's open items: {kind: position|plan|proposal, symbol, source}.
     Returns {review: bool, reason, matched: [...], tickers: [...]}."""

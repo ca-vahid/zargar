@@ -829,3 +829,58 @@ appraisals $22.46); unpriced: 26 intake runs with no model call; partial: 0; low
 
 **Relevance filter (observe, never enforce):** 100 decisions — **78 review / 22 skip**, 0 readErrors; the four
 management actions today (VKTX stop lifts, NFLX close, ACHR trims) all sat on the review side.
+
+## 2026-09-23 (Wed) - end of session (observed session 3 of 5)
+
+**Build:** 0.8.36 (`f5379bd9`) during the session; EM deployed 0.8.38 (`d6a75e99`) at 16:02 ET, which still contains
+eaec9b55. The gateway pair relaunched at 16:04:37 ET and intake was live again at 16:05. Tips 0.8.39 (cost package,
+PR #265) is merged but not yet deployed.
+
+**Fills and exits, Tips Practice (net of `executions.commission`; every fill today had $0 commission, so gross = net):**
+
+| position | how it ended | gross | fees | net |
+|---|---|---:|---:|---:|
+| IONQ 28 sh | half trimmed at the open mirroring neal ("trimming IONQ half at open"), rest stopped by the venue GTC stop 09:37 | +85.85 | 0.00 | **+85.85** |
+| NEM 9 sh | venue GTC stop 09:33 | -39.28 | 0.00 | **-39.28** |
+| SBLK 62 sh | venue GTC stop 09:36 | -84.70 | 0.00 | **-84.70** |
+| **total** | | -38.13 | 0.00 | **-38.13** |
+
+There were no questioned fills today, so the subtotal excluding them is the same: -$38.13. The one new entry was
+JELD, 369 shares at $1.92 from common-stock (auto). Marked change for the accounting day was -$40.07 (scorecard v6),
+or -$98.82 after model cost.
+
+**Decision funnel (dispositions, ideas since 2026-09-23):** 16 ideas, 4 takes, 1 filled, 12 declined, 2 risk-infeasible,
+1 order unfilled (an armed plan whose level never came), 0 avoidable misses. By source: ab 1 idea / 1 declined;
+common-stock 3 / 2 takes / 1 filled; eva 5 / 5 declined (the pre-bell level map); jon-and-kian 1 take, risk-infeasible
+(HOOD card expired when the source posted "trim"); muggzone 2 / 1 take risk-infeasible (GOOGL 9/25 345C) / 1 declined;
+neal 3 declined; tt 1 declined.
+
+**Review-gated cards:** 8. The four eva level-map cards were declined by the analyst. HOOD, GOOGL and AMAT (no stop)
+expired unreviewed. One more card was an MU card the analyst skipped. HOOD and GOOGL carried the new equal-risk share
+size (15 and 5 shares).
+
+**Incidents / fast-stop diagnostics:** none. There was no halt, no analyst run failure and no retry.
+
+**Execution cost on the genuine entry:** JELD filled at the ask ($1.92), half a cent over the mid ($1.915). The
+fill-time quote was fresh (0.3 s).
+
+**Carried overnight, with protection:** CRWV 12 sh (GTC stop 12 @ 79.81), JELD 369 sh (369 @ 1.67), PL 59 sh
+(59 @ 15.45). Two ACHR call positions are app-managed option exits (no venue stop). All venue stops survived the 16:02
+restart.
+
+**Hold study:** the 15:50 capture wrote 18 fresh rows. The 09-22 rows had all 17 next-open samples taken fresh this
+morning.
+
+**Plans that roll to 09-24 (7):** MU, PLTR, DAL, CRWV, GOOGL, T, AAOI. The MU plan sits in the quarantined eva armed
+research book.
+
+**Model cost today (calendar day, list-price estimate, apart from trading P&L):** priced **$59.57** (99 intake reviews
+$51.81 + 12 appraisals $7.76); unpriced: 12 intake runs with no model call; partial: 0. Conversation caching was
+switched on at 13:46 ET by the user's decision (cost only). The extraction reads are still unrecorded until 0.8.39
+deploys (`tip_llm_calls`).
+
+**Relevance filter (observe, never enforce):** 98 decisions - **76 review / 22 skip**, 0 readErrors.
+
+**User decisions today (cost package, `research/2026-09-23-cost-levers.md`):** caching ON; items 1-4, batching and
+Opus 5.5 approved. The paid A/B for the notes trim and Sonnet 5 extraction was stopped by the host for low memory
+after 22 of 30 review cases (about $15 estimated, detailed results not saved). Its re-run is waiting on the user.
