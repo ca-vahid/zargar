@@ -228,9 +228,10 @@ class SuiteBudget:
 
 
 # ------------------------------------------------------------------ replay
-async def replay_review(case: dict, *, client, model: str, budget: SuiteBudget, max_tokens: int = 3000) -> dict:
+async def replay_review(case: dict, *, client, model: str, budget: SuiteBudget, max_tokens: int = 3000,
+                        prompt_cache: str | None = None, header_transform=None) -> dict:
     """One paid, isolated replay of a captured review on `model`. The suite budget is mandatory."""
-    from .analyst import TOOLS, ReviewOpinion, parse_single_object
+    from .analyst import TOOLS, ReviewOpinion, cache_messages, cacheable_request, parse_single_object
 
     if not isinstance(budget, SuiteBudget):
         raise ValueError("a SuiteBudget is required - a paid evaluation never runs uncapped or on a per-case budget")
@@ -242,7 +243,8 @@ async def replay_review(case: dict, *, client, model: str, budget: SuiteBudget, 
         client = client.with_options(max_retries=0)
     served = _ServedReview(case)
     max_tools = int(man.get("maxTools") or 8)
-    messages: list = [{"role": "user", "content": man["header"]}]
+    header = header_transform(man["header"]) if header_transform else man["header"]
+    messages: list = [{"role": "user", "content": header}]
     usage = {"in": 0, "out": 0, "calls": 0}
     text, error, tools_used, t0 = None, None, 0, time.perf_counter()
     try:
@@ -250,13 +252,18 @@ async def replay_review(case: dict, *, client, model: str, budget: SuiteBudget, 
             entry = budget.reserve(model, label=f"{case.get('runId')}/{model} attempt {usage['calls'] + 1}",
                                    system=man["system"], messages=messages, tools=TOOLS, max_tokens=max_tokens)
             try:
-                resp = await client.messages.create(model=model, max_tokens=max_tokens, system=man["system"],
-                                                    messages=messages, tools=TOOLS)
+                _sys, _tools = cacheable_request(man["system"], TOOLS, enabled=bool(prompt_cache))
+                _msgs = cache_messages(messages, enabled=prompt_cache == "conversation")
+                resp = await client.messages.create(model=model, max_tokens=max_tokens, system=_sys,
+                                                    messages=_msgs, tools=_tools)
             except Exception as exc:
                 budget.settle(entry, error=f"{type(exc).__name__}: {str(exc)[:200]}")
                 raise
             usage["calls"] += 1
             u = getattr(resp, "usage", None)
+            if u is not None:
+                usage["cacheRead"] = usage.get("cacheRead", 0) + int(getattr(u, "cache_read_input_tokens", 0) or 0)
+                usage["cacheWrite"] = usage.get("cacheWrite", 0) + int(getattr(u, "cache_creation_input_tokens", 0) or 0)
             if u is None:
                 budget.settle(entry, error="no usage on the response")
             else:

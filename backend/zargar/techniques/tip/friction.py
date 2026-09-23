@@ -83,3 +83,23 @@ def _underlying_of(symbol: str) -> str:
     if len(s) > 8 and s[-9] in ("C", "P") and s[-8:].isdigit() and s[-15:-9].isdigit():
         return s[:-15]
     return s
+
+
+def rung_shortfall(*, is_option: bool, target: float | None, fill_price: float | None, underlying_at_fill: float | None,
+                   qty: float, direction: str = "long") -> dict:
+    """ADV-01 (2026-09-23): the target-to-fill shortfall of one exit rung in the units the target was set in.
+    A share rung compares the target with the share fill. An OPTION rung's ladder target is an UNDERLYING price, so it is
+    compared with the underlying's price at the fill minute - never with the premium (that produced $33,105 "shortfalls");
+    its dollar value is not computable without the contract's delta, so it stays None and says so."""
+    if not is_option:
+        d = target_to_fill(target=target, fill_price=fill_price, qty=qty, multiplier=1.0, direction=direction)
+        return {**d, "basis": "share fill vs target"}
+    t, u = _f(target), _f(underlying_at_fill)
+    if t is None or u is None:
+        return {"targetPrice": t, "underlyingAtFill": u, "shortfallPerUnit": None, "shortfallDollars": None,
+                "basis": "option rung: underlying at fill vs underlying target",
+                "unknown": [k for k, v in (("target", t), ("underlyingAtFill", u)) if v is None]}
+    sign = -1.0 if str(direction) == "short" else 1.0
+    return {"targetPrice": t, "underlyingAtFill": u, "shortfallPerUnit": round(sign * (t - u), 4), "shortfallDollars": None,
+            "basis": "option rung: underlying at fill vs underlying target; dollars need the contract's delta (not claimed)",
+            "unknown": []}

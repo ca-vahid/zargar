@@ -46,6 +46,11 @@ Outputs live outside the checkout on purpose: a dirty runtime checkout blocks de
 Boundaries that do not move with this report: P1 stays observe (no automatic enforcement), P3 approval expiry
 unchanged, P4 research only, P5 pending, P6 exit and overnight policies unchanged, no production-model change.
 
+Since 0.8.34 `python -m zargar.tools.tip_weekly_review --since 2026-09-21 --until 2026-09-25` stitches the same
+sources (plus overnight carry, knowledge ledger, shadow audit and the research-switch table) into one page - use it
+as the appendix, not as a substitute for items 1-5. Decisions queued behind this report: P1 (gate), conversation
+caching (`prompt_cache_scope`, measured -49.8%), and the values for the new exposure / source-budget knobs.
+
 ## If something is off
 
 - Task missing or disabled → re-register from `scripts/tips-five-session.ps1` (header comment), or run the script by hand.

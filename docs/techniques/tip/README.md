@@ -2,7 +2,8 @@
 
 *Start here. Dated; the newest entry wins over any older doc in this folder. Update this
 file whenever a rollout, an activation or a review changes what is true. Last full refresh:
-2026-09-16 13:00 ET (after the I175 / TMR builds; live 0.7.96 build `4c84697` since 10:52 ET).*
+2026-09-23 (adversarial review + plan implementation, 0.8.34). Superseded state-of-play text lives in
+`HISTORY.md` - nothing is deleted, only moved.*
 
 ## Doc map
 
@@ -20,91 +21,64 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 | `research/EXPERIMENT-REGISTER.md` | the one identity per research experiment (mirror of `experiments_register.py`) | current (TMR-05) |
 | `research/HOLD-STUDY-REPORT-TEMPLATE.md` | the paired hold-study report format | current |
 | `research/2026-09-16-time-vol-scenarios.md` | time/IV scenario design + worked example (prototype, wired to nothing) | current |
+| `research/2026-09-23-adversarial-review-and-plan.md` | the adversarial review, the plan and the measured results of its implementation (ADV-01..12) | **current - the working plan** |
+| `research/FIVE-SESSION-CHECKPOINT.md` | durable owner of the five-session observation report (09-21..25) | current |
+| `research/2026-09-22-s21-package.md`, `research/2026-09-19-*.md` | the September 21 / 19 review packages (decision tables P1-P11) | current record |
+| `research/economics/` | generated reports (scorecard, dispositions, gate, context cost, model plan) | dated outputs |
+| `HISTORY.md` | superseded state-of-play and "what changed" text from older refreshes | archive |
 | `reviews/` | external review rounds, responses, deploy and incident records | dated records; `2026-09-14-kfin-response.md` (0.7.83–0.7.87, HOLD142, R147, the 2026-09-15 incidents) and `2026-09-16-tmr-plan-record.md` (TMR, INTRA, I175, the 2026-09-16 incident) are the current ledgers |
 
-## State of play (2026-09-16)
+## State of play (2026-09-23)
 
-- **Live:** 0.7.96 build `4c84697` (since 10:52 ET, launched by the watchdog — see incident below); the
-  running checkout carries 0.7.97 with the I175 work merged and NOT deployed (next coordinated deployment
-  after the close). Practice only: `trading.mode=practice`, every `allow_live_auto` false. The Tips
-  Practice book (`techniques.tip.default_portfolio`) is the only book that trades tips; the shadow books
-  (immediate / armed) are research.
-- **Entry controls, ACTIVE by journaled settings since 2026-09-14:** `techniques.tip.geometry_gate=enforce`
-  and `techniques.tip.entry_pause_mode=integrity`. Code defaults remain `shadow` / `clock`. Rollback is one
-  journaled PATCH back; it never clears an incident row and never touches a position's stop.
-- **Geometry (enforce):** stop finalized and size derived from it against `risk_pct` 1% of equity
-  (`risk_budget_per_tip` 0 = percent budget) BEFORE the order; recomputed at submission and at every
-  revalidation; evidence missing → review-gated card, never auto. Shares sized at the executable limit;
-  options need delta ≤ 900 s old, a fresh non-delayed underlying reference and an explicit multiplier.
-  Post-fill: tighten immediately, widen only trim-first with a durable attempt.
-- **Approval cards (readiness-v1, 0.7.85–0.7.87):** the analyst's OPINION and the EXECUTION READINESS are
-  two statuses; "Refresh & revalidate" is zero orders; Approve submits exactly the displayed plan bound
-  by a fingerprint (final stop, admissible size, blocker set incl. incident identity); overrides are
-  labeled, reasoned and journaled. Since 2026-09-16 the card also shows the **round trip now** (TMR-02)
-  and the **event** label (TMR-01); neither is in the fingerprint.
-- **Integrity pause:** a persisted `TipExecutionIncident` pauses every automated tip entry, never exits;
-  release needs evidence bound to the incident or a labeled human override. A valid fast loss is a
-  `TipFastStopDiagnostic`. No incident has been open since 2026-09-14 18:22 ET.
-- **One exit authority (PR #145, live):** when the manager adopts a filled share proposal it cancels the
-  entry order's resting bracket children; the venue GTC stop follows the held quantity after every trim
-  and is re-registered after a restart (PR #138). Both fixes came from real over-sells on 2026-09-15
-  (RKT −59, MRNA 14 resting against 7 held).
-- **Analyst (ANALYST.md §10):** the approved planned-risk budget comes first (`check_feasibility` before a
-  take; `preview_payoff` for the integer-unit ladder, fees, one-lot policy, the EXPIRATION break-even
-  beside before-expiry scenarios, the horizon with the hold cap kept apart from the expiry); one lot is
-  an exit-plan question, never a rejection by itself; `analyst_feasibility_gate=annotate`.
-- **Research, all observation-only:** entry-timing cohort ON (since 2026-09-15); frozen capture ON
-  (variants current / core_only / no_knowledge / compact / recap_candidate); hold study `holdstudy-v2`
-  (calendar-relative jobs: pre-close at exchange close − 10 min, next-open from 09:30 searching the
-  09:30–09:45 window; admission on the quote's own sample time; one observation per position / session /
-  leg / arm; first protocol-correct capture 2026-09-16 15:50 ET); MK own-book `observe`. Every report
-  carries its register identity. Compact context is NOT adopted; `techniques.tip.recap_route=off`
-  (classify + journal only).
-- **Event awareness (TMR-01):** the desk carries its own verified events (`techniques.tip.verified_events`,
-  default = FOMC 2026-09-16 14:00 / 14:30 ET from the Federal Reserve calendar, verified 2026-09-15
-  23:35 ET, coverage through 2026-09-18); the shared manual calendar `research.macro_events` is EMPTY and
-  no desk enforces event days. A date beyond coverage reads UNKNOWN, never "no event".
-- **Knowledge:** propose-only maintenance (`knowledge_apply_enabled=false`); the reviewed consolidation
-  batches were applied 2026-09-14; model-written rules are proposals (`needs_human`).
-- **Monitoring:** the desk's Claude session runs a pre-open tick, 30-minute session ticks (:03/:33) and a
-  16:06 ET wrap-up, plus one-shot checkpoints for event days. Session-only crons — a session restart
-  drops them and they must be re-armed. After EVERY app restart the tick checks intake liveness and
-  that exactly ONE Discord listener runs.
+- **Live:** 0.8.32 build `63613751` (S21 rev 2, deployed 2026-09-22 16:15 ET after the close); this package is
+  0.8.34. Practice only: `trading.mode=practice`, every `allow_live_auto` false. Tips Practice
+  (`techniques.tip.default_portfolio`) is the only book that trades tips; shadow books are research.
+- **Five-session observation (2026-09-21..25) is running.** The relevance filter stays `observe`; the durable
+  report owner is `research/FIVE-SESSION-CHECKPOINT.md` + the Windows task `ZargarTipsFiveSession`.
+- **Economics to 2026-09-22 (scorecard v6):** marked -$820, priced model cost $736, marked after cost -$1,556
+  over 10 sessions. Options cohorts realized -$1,034, shares +$360; mirrored source exits are the best exit
+  class (+$332). Source return net of model cost is on the scorecard (only common-stock is positive).
+- **Model cost lever (measured 2026-09-23):** conversation-scoped prompt caching cut the cost of four replayed
+  3-turn reviews by 49.8% (`tools/tip_cache_pilot.py`). The compact review context was MEASURED UNSAFE (it lost
+  a disarm and turned a close into a stop update) and stays off.
+- **Entry controls:** geometry `enforce` (Practice), integrity pause, readiness cards, one exit authority -
+  unchanged. New knobs from the plan are OFF by default (exposure caps, per-source review budgets, friction
+  flag); the equal-risk share size is annotated on infeasible option cards (`shares_alternative=annotate`).
+- **Knowledge:** propose-only; the pending consolidated ladder/trailing rule is non-operative until approved;
+  37 operative rules, 41.7k chars on every call; rule reliance is NOT recorded (a known gap, ADV-11).
+- **Research, observation-only:** entry-timing cohort, frozen + review capture, hold study (`holdstudy-v2`),
+  MK own-book observe. The weekly one-page review is `tools/tip_weekly_review.py`.
+- **Monitoring:** pre-open 08:52 ET, hourly ticks, 16:06 ET wrap-up (session-only crons - re-arm after a
+  session restart). Deploys go after the close while Team2's study sessions count (a 09:30-15:45 ET restart
+  excludes their session).
 
-## What changed on 2026-09-15/16 (why older docs read differently)
+## What changed before 2026-09-19
 
-- **E17 F1-R2 / F2-R2 (2026-09-17 late):** an OPTIONAL call cut at the reserve boundary records unknown/partial usage and the loop then requests the final answer with tools off inside the original deadline (a cut FINAL call stays a typed `timeout`); `parse_single_object` and `_parse_result_json` strip every fence marker and scan the complete reply (a schema-valid object after a closing fence = `ambiguity:`); provider-retry backoff awaits `analyst._backoff_sleep` (tests replace the seam, never `asyncio.sleep`). Tests: reviewer's `tests/test_e17_reserve_fence_review.py` (4) + `tests/test_tip_e17_r2.py` (4).
-- **E17 round 3 (2026-09-17 late):** the two reply parsers REFUSE (`ambiguity: scan limit reached ...`) when their 20-object scan ends with JSON content unexamined - never a certified unique answer over unread content; digest usage and every rule-audit attempt (success/error/cancelled) carry the model; the frozen replay harness has an explicit `--cache off|on` switch and an ENFORCED `--budget-usd` ceiling (`frozen.ReplayBudget`: estimate checked before each attempt, provider usage charged after, unknown-billed attempts at estimate; a paid replay without a cap is refused) with per-attempt accounting and the cacheable prefix measured apart from the uncached header (~5.3k vs ~20.4k tokens on the SBLK bundle; the day's appraisals averaged ~46.5k input per CALL, 178k was per run). Production caching stays OFF; the paid pilot waits for the go. Tests: reviewer's `tests/test_e17_scan_limit_review.py` (3) + `tests/test_tip_e17_r3.py` (5).
-
-- **E17-F1..F3 (Codex follow-up, 2026-09-17 late):** F1 - `run_agent_loop` re-reads the monotonic clock after every provider reply, before every retry attempt and before every tool; optional (tool-capable) calls are bounded to `remaining - reserve` and abandoned for the final call when that budget is gone; a reply landing inside the reserve has its tool requests stubbed. F2 - `parse_single_object` (analyst + review) and `_parse_result_json` (intake) accept exactly ONE schema-valid object with harmless prose / fences / unrelated JSON; a second schema-valid object raises `ambiguity:` (bounded same-transcript clarification for appraisals, typed failure for intake's second attempt) - never first-object-wins. F3 - `tools/tip_llm_cost.py` prices `usage.model` (the model that consumed the tokens), keeps `extractionModel` apart on intake records, uses `opinion.model` only as a qualified fallback on appraise/retro, normalises legacy list-shaped usage. Tests: reviewer's `tests/test_e17_followup_review.py` (3, verbatim) + `tests/test_tip_e17_followup.py` (5).
-
-- **E17-03 operating cost (2026-09-17 evening, v0.8.11):** `IntakeRun.model` (set by the intake service from the extractor) rides every persisted intake record; `usage.model` and `usage.promptCache` are stamped on every loop run. `python -m zargar.tools.tip_llm_cost --since <date> [--until] [--json]` reads `tip_analyst_runs.opinion.usage` (+ the nightly `TechniqueHookStats.llm` stage rollups) and prices per day x kind x model ONLY from `llm.rates` (`{model: {in, out, cacheRead, cacheWrite}}` in $/Mtok; empty = UNPRICED - no bill is inferred); `unknownCalls` / `partialRuns` / `runsWithoutUsage` mark a lower bound. `techniques.tip.prompt_cache` (default False) marks the stable prefix (system + schema + tool definitions) `cache_control: ephemeral`; the per-run header (quotes, positions, evidence) stays outside the cache. Reviewer's rule: validate actual cache hits, billable cost and latency on identical prefixes before claiming savings; an enable is the user's call. Tests: `tests/test_tip_llm_cost_e17.py` (4).
-
-- **E17-02 deadline discipline (2026-09-17 evening, v0.8.11):** `analyst.run_agent_loop` runs under a monotonic end-to-end deadline (`TIMEOUT_S` 120 s) with a FINAL-ANSWER RESERVE (`techniques.tip.analyst_final_reserve_s`, 20 s, clamped to half the budget): inside the reserve tools are off (`tool_choice none`, requests stubbed - no duplicate side effects) and the model is told to answer; each provider call is bounded by the remaining budget. A run without a final answer persists `opinion.failure = {kind: timeout|deadline|cancelled|validation|error, stage, detail, elapsedS, remainingS, reserveS}` - never an empty error - and `usage.partial/unknownCalls` count a call that was in flight. The same-transcript repair obeys the same deadline with tools off. Intake `_parse_result_json` takes the FIRST complete object (`raw_decode`) and types validation errors. Fixtures: today's AMZN (deadline after 4 calls + a cancelled repair, empty error), TQQQ (cancelled 3rd call after a saved note), TSLA (trailing characters). Tests: `tests/test_tip_deadline_e17.py` (6).
-
-- **Knowledge tab pagination (2026-09-16 evening, v0.8.06):** `GET /api/tip/notes/search` takes `category` (all | rule | ticker | source | general | flagged | daily | experiment | other) and filters on the server BEFORE paging; `total` is the filtered total and `counts` are global per-category counts over the history/search filter. The tab shows "N match · M loaded" apart, load-more names the next page size, and the category buttons / Needs-you banner read the global counts - older rules and flagged notes beyond the first 200 rows were previously unreachable and uncounted. Analyst supply limits unchanged (`tests/test_tip_knowledge_pagination.py`).
-
-| Older statement | Now |
-|---|---|
-| "hold study samples at 15:50 / 09:36 fixed" (PROF-03 v1) | `holdstudy-v2`: exchange-calendar windows, jobs relative to the close and from 09:30, admission on the actual sample time, durable observation identity, fees both sides, R rebased to the sampled size, carry reported as quote drift APART from the managed outcome; the three 2026-09-15 v1 rows are `outside_window` / insufficient |
-| "the first paired frozen report printed None token values" | corrected from the persisted report: 68,917 vs 37,235 input tokens, 2 vs 3 calls, coverage-LIMITED (missing tool calls, uncapturable image); mixed reading, compact not adopted |
-| "a one-lot option is an unmanageable binary" (analyst rationales 09-16) | one lot is an exit-plan question (`singleLot`, INTRA-02/I175-02); skip only when the thesis depends on scaling or one unit does not fit the budget |
-| "break-even 352.19 sits above the ceiling, so the trade only pays on a break" | strike + premium is the EXPIRATION break-even; a sale before expiry pays when the executable bid exceeds entry + costs (INTRA-01, I175-03) |
-| "the venue GTC stop protects the remaining shares" | it did not follow trims (RKT) and coexisted with bracket children (MRNA) until PR #138 / #145 |
-| "a watchdog restart is an app restart" | it restores the ENGINE only; helper windows (Discord gateway, EM ingestion) die and must be relaunched; a second start can leave two listeners (PLATFORM-RULES 2026-09-15/16) |
-| "merged, not deployed" is safe | the watchdog launches the checkout AS IT STANDS — a converged checkout must be launch-ready at every instant (import + check-release after every merge) |
+Moved to `HISTORY.md` (2026-09-23): the 2026-09-15/16 change table, the E17 rounds and the
+older state of play. They are accurate as history; the state above supersedes them.
 
 ## Known gaps, risks and what could be wrong (read before trusting a number)
+- **Adversarial review + plan (0.8.34, `research/2026-09-23-adversarial-review-and-plan.md`, ADV-01..12):**
+  measured results - conversation caching saves ~50% of a multi-turn review (built, knob `prompt_cache_scope`);
+  compact review context is unsafe (built, off); the -$830 "first-seconds" option exits are NOT explained by
+  overnight carry (sampled carry of <=7-DTE options was +$447 bid-to-bid on 5 samples) - they point at exits on
+  the OPENING quote (see the premium-bleed open question below); eva's immediate shadow book (+$123.8k, META
+  690C settled at intrinsic on a +11% move) is real research evidence that the analyst declined 82 of 83 eva
+  ideas; four shadow books with unallocated sells / negative lots were quarantined (`tools/tip_shadow_audit.py`);
+  the scorecard's option target-to-fill rows now compare the underlying (they had compared a premium with an
+  underlying target). Rule reliance is not recorded, so no rule's value can be measured yet.
 - **September 21 review package (0.8.30, `research/2026-09-22-s21-package.md`; review `reviews/2026-09-21-comprehensive-review.md`, reviewer regressions `tests/test_sep21_economics_review.py`):** cards price options on the execution fee basis with decoded contract metadata and state the target-price assumption (S21-01); the observation report joins run status, marks the checkpoint INCOMPLETE on any unresolved decision and exports every candidate, and `tools/tip_checkpoint_status.py` owns the five-session status (completed observe days only, one cutoff, exit codes, atomic STATUS) (S21-02); digests get one bounded repair (S21-07); scorecard v4 adds target-to-fill trails, all-in friction and same-underlying exposure (S21-03/04); quote records say which clock their age came from and fills carry decision/submission/fill-time samples apart (S21-04/05); raw-message coverage + bounded replay (`tip_outcomes --coverage`, `POST /api/tip/intake/replay/{id}`) (S21-07b); source stats label research books and blank quarantined ones (S21-08); context-cost study (`tools/tip_review_context_cost.py`: rulebook 68% + notes 28% of every review request) (S21-06). Rev 2 (0.8.32): structured checkpoint eligibility + empty-report rejection + one cutoff on every report; locked replay claim (`techniques/tip/replay_claim.py`); Team2 owns OPRA clock semantics (accepted) - the premium-stop two-observation rule keys on poll stamps (P11, owner's fix). Policy decisions P1-P11 prepared, NOT activated: target execution design `research/2026-09-21-target-execution-design.md`.
 - **Five-session observation (window opens 2026-09-21): the durable owner is `research/FIVE-SESSION-CHECKPOINT.md`** + the Windows task `ZargarTipsFiveSession` (raw outputs in `C:/ProgramData/Zargar/tips-five-session`, `STATUS.json` READY/NOT-YET). Review-model evaluation safeguards rev 2: instructions compared (levels, fractions), no substituted evidence (missing = inconclusive), one suite-wide $35 ledger (`review_frozen.SuiteBudget`) - an estimate-based spending guard, not a guaranteed maximum. No paid run approved.
 - **Opportunity package 2026-09-19 (0.8.25, `research/2026-09-19-opportunity-package.md`):** every actionable idea has ONE disposition (`tip_outcomes --dispositions`; 189 ideas, 34 takes, 22 filled, 7 avoidable misses - all from causes already fixed: six no-verdict analyst runs before E17 and one 10.5 s quote before `freshRetry`); a tip parked ONLY for a cold ticker is re-verified on its first real quote (`signals.cold_park_recheck_seconds`, same recovery sweep, now locked) instead of waiting up to 15 minutes; scorecard v3 adds dispositions and how closed positions ended; review cost is split by message type x useful action; a reviewed consolidation can be applied PENDING (born `needs_human`); the cheaper-model evaluation of intake reviews is PREPARED (`review_frozen.py`, capture knob `techniques.tip.review_capture_context` default off, 60 stratified cases, $35 estimate-based spending guard) - no paid run, no model change. Known gap: reviews before capture are not replayable (their request was never kept).
 - **Economics review 2026-09-19, revision 2 (`research/2026-09-19-economics-review.md`; verdict `reviews/2026-09-19-economics-verdict.md`):** Tips Practice MARKED -$1,035.54 over 9 sessions and -$1,530.13 after >= $494.59 priced model cost (the primary metric; realized-after-cost -$1,540.27 is printed beside it; marks are 04:00 ET accounting-day cutoffs, not the 16:00 close). Supported: losses before operating cost and a large intake bill. NOT established: the cause of the losses - the six first-seconds exits (-$999.09) span 3 to 70 DTE and the largest, CCXI -$505.08, was 37 DTE; the corrected horizon study (38 eligible observations) shows a negative MEDIAN overnight drift for short-dated contracts with a roughly flat mean, and no demonstrated selection edge. D2 (opening exit guard) is NO-GO, D3 research only, D4 (operative rules keep the rule budget; pending proposals in a separate capped channel; rule supply stamped) is DONE, D5 is a prepared reversible manifest, the review gate stays in OBSERVE (an absent or unrestored desk component always reviews). `tools/tip_scorecard.py` is the reconciled view.
 - **Premium-bleed exit on the opening bid (2026-09-18, open question):** the shared `premium_bleed` rule (premium <= -35% with the underlying within 3%) sold SMCI 41C at 09:30:24 on a fresh OPRA bid of 0.98 against a 0.98/1.13 book - -38% on the bid, -33.6% on the mid. The opening spread alone decided the exit. Not changed; record in `reviews/2026-09-16-tmr-plan-record.md` (EOD 09-18).
 
-- **E17-01 (2026-09-17, FIXED in 0.8.11, not yet deployed):** the MRNA 165C 0.75 fill was a locally RECENTRED OPRA band (a stale 0.70 chart print bent the fresh 1.90/2.00 band to 0.65/0.75 and kept `source=opra`); venue bands are never recentred now and any derived estimate carries `derived:` provenance the sim refuses - audit in `reviews/2026-09-17-mrna-quote-audit.md`; the +$112.92 stays booked and is shown apart in method grading.
+- **E17-01 (2026-09-17, FIXED in 0.8.11, deployed since):** the MRNA 165C 0.75 fill was a locally RECENTRED OPRA band (a stale 0.70 chart print bent the fresh 1.90/2.00 band to 0.65/0.75 and kept `source=opra`); venue bands are never recentred now and any derived estimate carries `derived:` provenance the sim refuses - audit in `reviews/2026-09-17-mrna-quote-audit.md`; the +$112.92 stays booked and is shown apart in method grading.
 - **F-FILL-02 (2026-09-17, OPEN - user/reviewer decision):** simulated OPTION fills have no spread or flash-quote sanity by design (wide books are normal), so a one-lot OPRA quote 60% below the surrounding market that lived ~3 s priced a Practice fill (MRNA Sep-18 165C bought 0.75 between 1.90/2.01 quotes; sold 4 s later at 1.90, +$115). `TipFillVsQuote` flags such fills (vsMid far negative); every Practice number that includes them is labeled suspect until a rule exists. Candidate rule: refuse/flag an option fill when the top of book is 1x1 with spread > ~40% of mid or the price deviates > ~35% from the last qualified mid within 10 s. Share fills got the equivalent guards in 0.8.10 (F-HOLD-01, PLATFORM-RULES).
 
-1. **The shadow armed books carry phantom SHORT share positions** from the over-sell classes fixed on
+1. **(2026-09-23: the books with unallocated sells or negative lots are now QUARANTINED - ab/eva/common-stock armed,
+   muggzone immediate + armed, tt immediate; `tools/tip_shadow_audit.py`; the scorecard's shadow census now runs
+   FIFO from the book's first execution, which removed the window-cut artifact.)** The shadow armed books carry phantom SHORT share positions from the over-sell classes fixed on
    2026-09-15 (eva: TSLA −5, MU −13, AAPL −15, MSTR −36, SNOW −6, GOOGL −28, AMZN −57; ab: APLD −40,600,
    RDDT −64, GOOGL −2, AMZN −3; common-stock LULU −49; muggzone MSFT −2), with stale oversize stops still
    resting. No money, but the ARMED scorecards that judge source trust are polluted for those names.
@@ -120,7 +94,8 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
    its worked example; it forecasts nothing.
 4. **Execution costs are diagnostics, not gates.** `execcost-v1` prices the round trip on a qualified
    quote and journals every realised fill against the decision quote (`TipFillVsQuote`); it changes no
-   quantity, contract, limit or stop. The first fill records arrive with the next Tips Practice fill.
+   quantity, contract, limit or stop. Since 0.8.30 every fill also carries a fill-time quote sample labelled
+   apart from the decision quote, and open positions show all-in friction (fees + spread) on the scorecard.
 5. **Recap routing is OFF and unevaluated.** The classifier (`recap-read-v2`) is journaled on every
    multi-signal message; the compact candidate (`recap-candidate-v1`) has proven request-assembly parity
    with the replay, but the paid pairs need bundles WITH a captured classifier read - today's SPX-map and
@@ -138,8 +113,8 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
    truncated `experiment:*` notes stay unproven.
 10. **The MK own-book classifier is text rules + two extraction fields**, observed only (known blind
     spots in TRADING-RULES 2026-09-14); promotion to shadow needs the predefined criteria and a human verdict.
-11. **Hold-study evidence starts 2026-09-16.** The first valid paired report is due 2026-09-17 after the
-    09:30–09:45 window (template in `research/`); an event-day session is labelled, not blended.
+11. **Hold-study evidence is thin.** 25 paired close -> open samples by 2026-09-22 (`tools/tip_overnight_study.py`);
+    direction only, no rule. An event-day session is labelled, not blended.
 12. **Restarts remain the platform's biggest operational risk.** 2026-09-15 saw five restarts from three
     paths and an out-of-band stop; 2026-09-16 the watchdog killed a live engine on one timed-out probe and
     launched the checkout into a health-500 loop caused by a dropped runtime-only helper (fixed 10:50 ET).

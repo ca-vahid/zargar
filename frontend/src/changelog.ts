@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.33";
+export const APP_VERSION = "0.8.34";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.34",date:"2026-09-23",title:"Tips: correct target evidence, cleaner controls, and measured cost levers",items:[
+    {tag:"fixed",text:"Scorecard: an option's target-to-fill is judged on the underlying at the fill minute (it had compared a premium with a stock target). Shadow research books are counted from their first execution, and the books with sells they never bought are quarantined as evidence."},
+    {tag:"new",text:"Approval cards can show the equal-risk share size when an option cannot be sized within the budget (shown, never substituted), and an optional friction flag. Optional book and single-name exposure caps and per-source review budgets ship off."},
+    {tag:"improved",text:"Prompt caching can cover the whole review conversation (measured about 50% cheaper on replayed reviews; off until chosen). A compact review context was measured and rejected because it lost management actions."},
+    {tag:"new",text:"Reports: source return net of model cost, overnight carry by expiry, a knowledge ledger (what each rule costs on every call) and a one-page weekly review. No trading policy, risk limit, stop or approval control changed."},
+  ]},
   {version:"0.8.33",date:"2026-09-22",title:"Cartel: better contracts and more ways into a trade (Practice switches, off until chosen)",items:[
     {tag:"fixed",text:"Contract ranking executable_cost_v2 compares crossing cost only among contracts near the target delta (0.35-0.65), so it no longer drifts to deep in-the-money contracts as v1 did."},
     {tag:"new",text:"Gap opens: an optional retest_v1 entry lets a stock that opens above its trigger enter on a completed candle that retests the trigger, with every other confirmation rule unchanged."},
