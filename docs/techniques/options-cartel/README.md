@@ -1,135 +1,67 @@
-# Options Cartel — current guide
+# Options Cartel: current guide
 
-Updated 2026-09-18. Technique id: `options_cartel`. Deployment evidence is separate from source status.
-Sean Trades (`@SRxTrades`) is the source author; the app's numerical interpretations and Practice experiments are identified separately.
+Updated 2026-09-22 (release 0.8.33). Technique id: `options_cartel`. Source author: Sean Trades
+(`@SRxTrades`); the app's numerical interpretations and Practice experiments are ours and are labelled as
+such. No profitable strategy or exact author replication has been established.
 
-The desk supports daily preparation, automatic Practice execution, separately permissioned Live execution, durable position management, actual daily accounting and non-executing research. The current guides describe code behavior; app-wide versions and dated deployment notes do not by themselves prove what process is running. No profitable strategy or exact author replication has been established.
+## State of play (2026-09-22)
+
+- **Book.** Practice runs on `Options Cartel Practice - Capital Experiment` (`e7b246c9…`, $1m virtual
+  capital, $25k per plan, 20 focus slots) since 2026-09-19. The old $10k book is archived with its history.
+- **Results.** Zero orders on 2026-09-21 and 2026-09-22. Across 24 automatic plan-days since 09-14, 11
+  touched their trigger and none reached an order. One trade since 09-14 (APA, -$61.13). The binding
+  problem is trade flow, not position management.
+- **What changed in 0.8.29-0.8.33.** Versioned contract search (`diverse_liquidity_v1`, on in Practice),
+  cost ranking (`executable_cost_v2` built, Practice runs `legacy` after v1 drifted to deep
+  in-the-money contracts), causal daily-review attribution, the 5-minute entry pilot with a 15-minute
+  matched control, gap-open retest, non-increasing dry-up rule, first-target arm gate, research panels
+  under a 5m pilot and receipt-time lab quotes. New switches default to legacy behaviour; activation order
+  is in the [2026-09-22 plan](reviews/2026-09-22-plan/PLAN.md).
+- **2026-09-23.** Yahoo's daily series omitted 09-22, so preparation waited for the benchmark all day and
+  nothing armed. Practice now uses native Alpaca daily bars (`nativeDailyBatch=true`); see TRADING-RULES.
+- **Known limits.** Untrusted confirmation windows are caused by no-trade minutes at the end of a
+  bucket, before a non-emission proof can exist (design decision open). Sean's daily posts cannot be
+  retrieved automatically (X returns 402). Shares fallback (brief F6) and historical data repair (F7)
+  are not built.
 
 ## Start here
 
-The [Method lab](METHOD-LAB.md) documents the separate prospective Practice
-experiments, receipt-timed economic models, trial review and rollback. It does
-not change automatic trading rules or establish profitability.
+1. [Daily preparation](DAILY-PREPARATION.md): account routing, every setting and switch, preparation,
+   recovery and arming.
+2. [Current capabilities and limits](DELIVERY-STATUS.md): what is shipped versus open.
+3. [2026-09-22 improvement plan](reviews/2026-09-22-plan/PLAN.md): funnel evidence, switches, activation
+   order and rollback. The [September 21 brief](IMPLEMENTATION-BRIEF-2026-09-21.md) is the specification it
+   implements (F1-F4 plus the plan items; F5-F8 partly open).
+4. [Trading decisions log](TRADING-RULES.md): every method decision with its date and evidence.
 
-1. Read [Automatic daily preparation](DAILY-PREPARATION.md) for account routing, settings, preparation, recovery and arming.
-2. Read [Post-ignition workflow](IGNITION.md) before selecting the optional Practice pilot. Its research watchlist does not itself trade.
-3. Use [Current capabilities and limits](DELIVERY-STATUS.md) to distinguish shipped behavior from open validation work.
-4. Open Plans for preparation, Armed for actual monitored campaigns, History/Validation for research and Method for source documentation. Records have dedicated `/techniques/options-cartel/run/<runId>` URLs.
-
-Practice uses the configured Options Cartel Practice book. Live has separate settings and permissions. Preparation builds plans and may arm them; entry orders still require the engine's closed-bar, data, quote, cash/risk and execution checks. An armed plan is not a filled position. Held positions retain their protective management when preparation is stopped or a new plan expires.
+In the app: Plans for preparation, Armed for monitored campaigns, History/Validation for research,
+Method for the bundled chapters. An armed plan is not a filled position; entries still pass closed-bar,
+data, contract, quote, cash/risk and execution checks.
 
 ## Reading status correctly
 
-See the [September 18 opportunity audit](reviews/2026-09-18-opportunity/README.md)
-for the measured selection comparison and actual after-fee accounting. New
-pre-session profitability snapshots also freeze nearest-level and liquidity-first
-research lists; these do not change automatic stock selection. Daily review
-separates recorded trigger touches from unresolved coverage and historical refusals.
-
-- **Armed** means waiting for a valid entry, not purchased. Before its first session, a plan names that future date and owes no prior-day observation minutes.
-- **Waiting for benchmark** means the provider has not supplied the required completed SPY/QQQ session. It is not a bearish or bullish judgment.
-- **Daily review** reports actual orders, executions and fees. **Validation → Profitability research** reports hypothetical comparisons and missing evidence.
-- A **short** setup expresses downside through the reviewed option contract, normally a put; it is not permission to short shares. The separately tagged bearish research proxy never arms itself.
+- **Armed** means waiting for a valid entry. **Waiting for benchmark** means the provider has not
+  supplied the completed SPY/QQQ session; it is not a market judgment.
+- **Daily review** reports actual orders, executions and fees, and names the first known blocker per
+  plan; incomplete windows stay unknown. **Validation -> Profitability research** is hypothetical.
+- A **short** setup trades a put, never short shares. The bearish research proxy never arms itself.
 
 ## Documentation map
 
 | Purpose | Documents |
 |---|---|
-| Operating instructions | [Preparation](DAILY-PREPARATION.md), [record details](RECORD-PAGE.md), [selected-symbol scans](SCANNING.md), [replays/comparisons](REPLAY.md) |
-| Method and policy | [Method](METHOD.md), [ignition](IGNITION.md), [trading decisions](TRADING-RULES.md), [traceability](TRACEABILITY.md) |
-| Source evidence | [Source ledger](SOURCES.md), [source-version review](SOURCE-REVIEW.md), [video evidence](VIDEO-REVIEW.md), [examples](EXAMPLES.md), [public ledger audit](LEDGER-REVIEW.md), [industry evidence](INDUSTRY-DATA.md) |
-| Developer work | [Work status/backlog](PLAN.md), [release handoff](RELEASE-HANDOFF.md), [September 12 release scope](RELIABILITY-RELEASE-2026-09-12.md) |
-| Historical evidence | [September 12 deployment](DEPLOYMENT-2026-09-12.md), [weekend review](WEEKEND-REVIEW-2026-09-12.md), [original proposal](IMPLEMENTATION-PLAN-2026-09-12.md), [archived milestones](archive/PLAN-PRE-2026-09-13.md) |
-| Proposal under review | [2026-09-17 Lane A package](reviews/2026-09-17-proposal/README.md): reconstructed bottlenecks (APA, QS, TTWO, PWR, APTV), gate map, rule matrix, proposal; read-only tool `zargar.tools.cartel_evidence` |
-| Documentation changes | [Change record](DOCUMENTATION-CHANGES.md) |
-
-The in-app Method library bundles selected Markdown chapters. A frontend rebuild is needed to display updated text. Git documentation updates do not themselves restart the app or change account settings.
+| Operating | [Preparation](DAILY-PREPARATION.md), [record page](RECORD-PAGE.md), [scans](SCANNING.md), [replay](REPLAY.md), [dedicated book](DEDICATED-BOOK.md), [capital experiment](CAPITAL-EXPERIMENT-2026-09-19.md) |
+| Method and policy | [Method](METHOD.md), [ignition](IGNITION.md), [trading decisions](TRADING-RULES.md), [traceability](TRACEABILITY.md), [execution acceptance](EXECUTION-ACCEPTANCE.md) |
+| Research | [Profitability research](PROFITABILITY-RESEARCH.md), [method lab](METHOD-LAB.md) and its [source matrix](METHOD-LAB-SOURCE-MATRIX.md), [intraday decision](INTRADAY-RESEARCH-DECISION-2026-09-14.md), [Sept 15 review](PROFITABILITY-REVIEW-2026-09-15.md) |
+| Data | [Verified provider intervals](VERIFIED-INTERVALS.md), [Sept 18 diagnostics](DIAGNOSTICS-2026-09-18.md), [preparation performance](PREPARATION-PERFORMANCE.md) |
+| Source evidence | [Sources](SOURCES.md), [source versions](SOURCE-REVIEW.md), [videos](VIDEO-REVIEW.md), [examples](EXAMPLES.md), [public ledger](LEDGER-REVIEW.md), [industry data](INDUSTRY-DATA.md), [related sources](RELATED-SOURCES.md) |
+| Development | [Work status](PLAN.md), [release handoff](RELEASE-HANDOFF.md), [regression notes](REGRESSION-NOTES.md), reviews in [reviews/](reviews/) |
+| History | Dated deployment, readiness, weekend and one-off action records: [archive/2026-09/](archive/2026-09/README.md); pre-2026-09-13 records: [archive/](archive/) |
+| Change record | [Documentation changes](DOCUMENTATION-CHANGES.md) |
 
 ## Collaboration and evidence boundaries
 
-Follow root [AGENTS.md](../../../AGENTS.md) and [COLLABORATION.md](../../COLLABORATION.md). Preserve Claude worktrees and the shared runtime. Codex tests use only `zargar_test_codex`, sequentially. Never start a second engine against a runtime or test database. Keep other techniques' knowledge/rules separate.
-
-No full public-feed coverage, exact author replication, broker-verified author return or profitable strategy has been established. Test success verifies the tested mechanics; source examples and replay R are not realized option P&L. Active plans, balances, versions and provider availability must be checked live when needed.
-
-- [Intraday market research: accepted decision and limits](INTRADAY-RESEARCH-DECISION-2026-09-14.md)
-  records the user-approved observation-only experiment. It does not change trading permission.
-
-- [September 15 profitability review](PROFITABILITY-REVIEW-2026-09-15.md): cash-day accounting, 63 research cases, candidate/target selection and a prioritized prospective experiment queue. No execution settings changed.
-
-- [Profitability research](PROFITABILITY-RESEARCH.md): prospective candidate/ranking,
-  bearish, campaign-target and exit comparisons in Practice; operating instructions
-  and promotion criteria. Actual trades remain in Daily review.
-
-Current completion: [September 18 diagnostics and provider reconstruction](DIAGNOSTICS-2026-09-18.md).
-
-Data repair: [Verified provider intervals](VERIFIED-INTERVALS.md).
-
-### September 19 historical scope revision
-
-The user removed waiting for future market evidence from the implementation goal.
-See the [historical six-model evaluation](reviews/2026-09-19-historical-lab/README.md)
-and [revised acceptance audit](METHOD-LAB-ACCEPTANCE-AUDIT.md). Keep current
-execution settings: the historical sample does not establish a profitable
-challenger. The existing forward collector remains optional observation.
-
-### Profitability accountability and Monday action
-
-The historical study did not change trading behavior or prove profitability.
-See [the September 19 correction and concrete Monday action](MONDAY-ACTION-2026-09-21.md).
-The shares-fallback proposal was subsequently superseded by the user-approved
-capital-expanded Practice experiment below. Shares fallback remains unimplemented.
-
-### Current Practice capital regime
-
-On September 19 the user chose a [capital-expanded experiment](CAPITAL-EXPERIMENT-2026-09-19.md)
-to remove the small-book funding restriction: a separate $1m sim book, $25k budget
-and 20 focus slots. This supersedes the earlier keep-$500/shares-first proposal.
-Keep historical book returns separate and do not confuse increased sizing with edge.
-
-### September 20 restart recovery fix (v0.8.27)
-
-A shared orphan cleanup could mark a preparation failed before Cartel's handler,
-leaving its phase as market_context and preventing automatic resumption. Shared
-cleanup now delegates Cartel preparation to its owner. The Cartel handler repairs
-legacy generic restart failures, preserves saved analyses/plans, and resumes only
-the active workspace/book under the existing policy and bounded retry allowance.
-The page explains interruption and Resume saved scan instead of presenting stale
-discovery progress, a huge elapsed-update counter and a generic red error. Real
-provider failures and user cancellations retain their own states. Trading logic,
-funding and the six Monday arms are unchanged by this fix.
-
-
-Follow-up v0.8.28: resume reads compatible ancestor checkpoints rather than only
-the immediately interrupted retry. Reuse requires identical source cutoff, saved
-policy, book/workspace/session and coverage version; cancelled or incompatible
-ancestors stop traversal. Committed child analyses with matching cutoffs survive
-an incomplete progress checkpoint. A read-only reproduction recovered all 3,072
-saved analyses behind the reported early-interrupted retry. Startup recovery
-waits for controller attachment without consuming the five-minute throttle.
-
-### September 21 close
-
-[September 21 EOD review](reviews/2026-09-21-eod/README.md): zero orders/fills/P&L.
-Funding was not the binding gate. NTNX's 5m shadow confirmation exposed expiry
-concentration in the quote refresh sampler; ULTA's stock move did not imply a
-profitable selected option because of the recorded spread. The report separates
-actual results, option quote illustrations, source-access limitations and the
-next concrete contract-search/economics/entry-cadence changes. No settings changed.
-
-### Implementation handoff from September 21 review
-
-[Comprehensive developer brief](IMPLEMENTATION-BRIEF-2026-09-21.md) specifies the
-contract-refresh fix, executable-cost selection, bounded active5m Practice
-comparison, setup-family calibration, optional shares, data gaps and causal EOD
-reporting. It includes evidence, code targets, acceptance tests, rollout and
-rollback. This is an implementation specification; no policy is activated by it.
-
-### September 21 brief: first release built (F1-F4), not deployed, not activated
-
-Branch `claude/cartel-brief-0921`: versioned contract refresh allocation (`diverse_liquidity_v1`),
-executable-cost ranking (`executable_cost_v1`), causal daily-review attribution and the Practice
-entry-cadence experiment (`breakout_5m_v1` with a non-ordering 15m matched control). Every new
-field defaults to the legacy behaviour; saved arms are unchanged. Evidence, verdicts, activation
-order and rollback: [reviews/2026-09-21-brief/HANDBACK.md](reviews/2026-09-21-brief/HANDBACK.md).
-Review round 1 (REVIEW-ff67f695, seven probes) is answered in
-[reviews/2026-09-21-brief/HANDBACK-2.md](reviews/2026-09-21-brief/HANDBACK-2.md); the probes are retained as regressions.
+Follow root [AGENTS.md](../../../AGENTS.md) and [COLLABORATION.md](../../COLLABORATION.md). Each desk tests
+on its own database (this desk: `zargar_test_cartel`; Codex: `zargar_test_codex`). Never start a second
+engine against a runtime or test database. Test success verifies the tested mechanics; source examples
+and replay R are not realized option P&L. Versions, balances and active plans must be checked live.

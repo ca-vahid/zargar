@@ -276,7 +276,7 @@ one consolidated review per packet rather than many partial review cycles.
 - [Mirrored setup-rating post](https://mobile.twstalker.com/coinking211): indexed
   Sean text about stage, trend, ADR-relative tightness and setup quality. Exact
   original date and intended universal applicability remain unresolved.
-- [September 18 local audit](reviews/2026-09-18-opportunity/README.md): measured
+- [September 18 local audit](../../reviews/2026-09-18-opportunity/README.md): measured
   application evidence, limitations and already-delivered v0.8.20 improvements.
 
 Author profit claims, testimonials and third-party follower results are not

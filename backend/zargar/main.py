@@ -16,22 +16,39 @@ from .api.app import create_app
 from .config import get_config
 
 
+LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s %(message)s"
+
+
+def configure_logging(log_path: "pathlib.Path", *, stream=None) -> "logging.handlers.QueueListener":
+    """Root logging through a QUEUE (2026-09-16 stall #5): the event loop only enqueues; the rotating file handler
+    and the console handler write on the listener thread. A slow disk or a locked log file can no longer stall the
+    engine's loop for 51 s the way the synchronous FileHandler did. Returns the started listener (stop it at exit).
+    F69 (2026-09-08): 50 MB x 10 keeps days of evidence; httpx's per-poll INFO line is the bulk of it."""
+    import queue
+    from logging.handlers import QueueHandler, QueueListener
+    file_handler = logging.handlers.RotatingFileHandler(log_path, maxBytes=50_000_000, backupCount=10, encoding="utf-8")
+    console = logging.StreamHandler(stream) if stream is not None else logging.StreamHandler()
+    plain = logging.Formatter("%(message)s")             # the QueueHandler already formatted the line (prepare())
+    file_handler.setFormatter(plain); console.setFormatter(plain)
+    q: "queue.SimpleQueue" = queue.SimpleQueue()
+    listener = QueueListener(q, console, file_handler, respect_handler_level=True)
+    listener.start()
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, handlers=[QueueHandler(q)], force=True)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    return listener
+
+
 def main() -> None:
     config = get_config()
     # Always keep a rotating file log next to the package: the app usually runs
     # detached/hidden on Windows, and the 2026-08-25 feed outage was
     # undiagnosable because stdout went to a hidden window and nothing else.
     log_path = pathlib.Path(__file__).resolve().parent.parent / f"zargar-{config.port}.log"
-    # F69 (2026-09-08): 5 MB x 3 kept ~50 minutes of a market-hours day — the 14:24 stop had no
-    # surviving evidence. 50 MB x 10 keeps days; httpx's per-poll INFO line is the bulk of it.
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_path, maxBytes=50_000_000, backupCount=10, encoding="utf-8")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s %(message)s",
-        handlers=[logging.StreamHandler(), file_handler],
-    )
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    listener = configure_logging(log_path)
+    atexit.register(listener.stop)
     boot = logging.getLogger("zargar.process")
     boot.warning("process starting pid=%s parent=%s argv=%s", os.getpid(), os.getppid(), sys.argv)
     # the 2026-09-08 stop left no shutdown line at all: say goodbye on every path we can see

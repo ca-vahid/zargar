@@ -1,6 +1,6 @@
 # Current Cartel capabilities and limits
 
-Reviewed September 16, 2026 against the integrated source tree. This is a capability
+Reviewed September 22, 2026 (release 0.8.33) against the integrated source tree. This is a capability
 summary, not a statement that a particular build is running. Verify health/build,
 served frontend and the deployment receipt for operational status.
 
@@ -15,6 +15,9 @@ served frontend and the deployment receipt for operational status.
 | Manual research | Underlying replay, paired entry variants and recorded-premium valuation | Selected-plan hindsight comparisons are not an unbiased universe walk-forward |
 | Prospective research | Frozen bounded full pool, structural-R/leader ranking, primary direction plus optional structural-short proxy, target/exit/shares studies | Funding estimates reserve no capital; no portfolio-wide competition model or proved option expectancy |
 | Research scheduling | Never-attempted due baselines first, then least-attempted/oldest-due retries; persisted across restart | Fair scheduling cannot create absent provider history; collection may remain incomplete |
+| Contract selection | Versioned search (`diverse_liquidity_v1`: saved contract first, spread across expiries, deadline-bounded) and ranking (`legacy`, `executable_cost_v2` within the reviewed delta window; `executable_cost_v1` kept but not recommended); spread/fee/debit economics on every report | Cost is current friction only, not expected return; delta and OI in chain rows can be stale pre-open |
+| Entry variants | 15m incumbent; `breakout_5m_v1` Practice pilot with a non-ordering 15m matched control; `gap_policy=retest_v1`; `minArmTargetR` arm gate; `non_increasing_v1` dry-up rule | Every variant is off until chosen; one attributable change per preparation; no profitability evidence yet |
+| Daily review attribution | First known blocker, independent same-window blockers, incomplete windows kept unknown, selection coverage, order-row entry ledger, cadence comparison | Later windows are facts, not proven counterfactuals |
 | Ignition | Research stages and separately selectable long-side Practice pilot | Fixed engineering thresholds need calibration; richer catalyst/thesis modeling remains open |
 
 ## Distinct research paths
@@ -37,7 +40,7 @@ Definitions and user instructions: [profitability protocol](PROFITABILITY-RESEAR
 - Source-example calibration and broker-specific Live acceptance; no automatic strategy graduation.
 
 Historical checks and deployments stay in dated evidence records, including
-[September 13 readiness](READINESS-2026-09-13.md) and
-[September 15 research release](PROFITABILITY-RELEASE-2026-09-15.md).
+[September 13 readiness](archive/2026-09/READINESS-2026-09-13.md) and
+[September 15 research release](archive/2026-09/PROFITABILITY-RELEASE-2026-09-15.md).
 Their test totals and balances are not current system-wide claims. See
 [the current work plan](PLAN.md) for priorities.

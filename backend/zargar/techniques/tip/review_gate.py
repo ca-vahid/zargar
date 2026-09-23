@@ -55,6 +55,25 @@ def entry_shaped(outcomes: list[dict]) -> bool:
     return False
 
 
+def nonactionable(out: list[dict]) -> bool:
+    """Cost lever 1 (2026-09-23, user decision): extraction marked EVERY signal in the message non-actionable (or found
+    none). Pure; a signal without the flag counts as actionable (fail-safe: keep the review)."""
+    for o in out or []:
+        sig = o.get("signal") or {}
+        if not sig:
+            continue
+        if sig.get("isActionable") is not False:
+            return False
+    return True
+
+
+def skip_nonactionable_enabled(settings) -> bool:
+    try:
+        return bool(settings.get("techniques.tip.review_skip_nonactionable", False))
+    except Exception:
+        return False
+
+
 def decide(*, tickers: list[str] | set[str], source: str, outcomes: list[dict], items: list[dict]) -> dict:
     """Pure. `items` = the desk's open items: {kind: position|plan|proposal, symbol, source}.
     Returns {review: bool, reason, matched: [...], tickers: [...]}."""
@@ -125,3 +144,49 @@ async def desk_items(eng, *, now: dt.datetime | None = None) -> tuple[list[dict]
     except Exception as exc:                              # noqa: BLE001
         errors.append(f"proposals: {type(exc).__name__}")
     return items, errors
+
+
+# ---- ADV-05 (2026-09-23): per-source review budget -----------------------------------------------------------------
+def source_budget(settings, source: str) -> float | None:
+    """The source's daily intake-review budget in list-price USD (`techniques.tip.review_source_budgets`, a map with an
+    optional "*" default). None / 0 = no cap. Only ever applied to messages the gate already judged irrelevant to the
+    desk - a message about anything we hold, arm or propose is always reviewed."""
+    try:
+        m = settings.get("techniques.tip.review_source_budgets", {}) or {}
+    except Exception:
+        return None
+    if not isinstance(m, dict):
+        return None
+    v = m.get(source, m.get("*"))
+    try:
+        v = float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+    return v if v and v > 0 else None
+
+
+def over_budget(spent_usd: float | None, cap_usd: float | None) -> bool:
+    """Pure: a known spend at or above a set cap. Unknown spend never trips the cap (fail-open to reviewing)."""
+    return cap_usd is not None and spent_usd is not None and spent_usd >= cap_usd
+
+
+async def source_spend_today(eng, source: str) -> float | None:
+    """Priced intake-review spend for `source` since 04:00 ET today, at the llm.rates card (an estimate)."""
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    from sqlalchemy import text as _t
+    et = ZoneInfo("America/New_York")
+    now = _dt.datetime.now(et)
+    start = now.replace(hour=4, minute=0, second=0, microsecond=0)
+    if now < start:
+        start -= _dt.timedelta(days=1)
+    try:
+        rates = eng.settings.get("llm.rates", {}) or {}
+        rate = (rates.get("v", rates) if isinstance(rates, dict) else {}).get("claude-opus-5") or {}
+        async with eng.sf() as session:
+            row = (await session.execute(_t(
+                "select coalesce(sum((opinion->'usage'->>'in')::numeric),0), coalesce(sum((opinion->'usage'->>'out')::numeric),0) "
+                "from tip_analyst_runs where kind='intake' and source = :s and created_at >= :t"), {"s": source, "t": start})).first()
+        return float(row[0]) / 1e6 * float(rate.get("in", 5.0)) + float(row[1]) / 1e6 * float(rate.get("out", 25.0))
+    except Exception:                                     # noqa: BLE001 - unknown spend never skips a review
+        return None

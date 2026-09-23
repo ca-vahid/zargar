@@ -33,7 +33,8 @@ import asyncpg
 from . import tip_outcomes
 from .tip_llm_cost import normalize_usage, price
 
-VERSION = "tips-scorecard-v4"
+VERSION = "tips-scorecard-v6"
+SHADOW_HISTORY_START = "2026-08-01"   # before the first shadow book existed
 ET = dt.timezone(dt.timedelta(hours=-4))
 OCC = re.compile(r"^([A-Z.]{1,6})(\d{6})([CP])(\d{8})$")
 REGISTRY = os.path.join(os.path.dirname(__file__), "..", "..", "..", "docs", "techniques", "tip", "research",
@@ -265,7 +266,7 @@ async def target_exits(conn, *, position_id: str, symbol: str, book: str, create
     AFTER entry, the manager's decision time (the closed-bar `ManagedPositionExit`), the order time, the fill time and
     price, the limit the exit was sent at (the bid the manager saw), and the target-to-fill shortfall. Arithmetic on the
     record; no claim that a limit at the target would have filled."""
-    from ..techniques.tip.friction import target_to_fill
+    from ..techniques.tip.friction import rung_shortfall
     out = []
     row = await conn.fetchrow("select state, legs, created_at from managed_positions where id = $1", position_id)
     if row is None:
@@ -283,15 +284,21 @@ async def target_exits(conn, *, position_id: str, symbol: str, book: str, create
         filled_at = dt.datetime.fromtimestamp(int(x.get("filledTs") or 0) / 1000, dt.timezone.utc) if x.get("filledTs") else None
         order = await conn.fetchrow("select created_at, order_type, limit_price from orders where id = $1", x.get("orderId")) if x.get("orderId") else None
         first_touch = None
-        if target is not None and not m:                       # shares: the underlying's own 1m tape
+        tape = m.group(1) if m else symbol                     # ADV-01: an option's ladder target lives on the UNDERLYING tape
+        if target is not None:
             bar = await conn.fetchrow("""select ts from bars where symbol = $1 and tf = '1m' and ts >= $2 and ts <= $3
                                           and ((high >= $4 and $5 = 'long') or (low <= $4 and $5 = 'short'))
                                           order by ts limit 1""",
-                                      symbol, int(created.timestamp() * 1000), int(x.get("ts") or 0) + 60_000, target, direction)
+                                      tape, int(created.timestamp() * 1000), int(x.get("ts") or 0) + 60_000, target, direction)
             if bar:
                 first_touch = dt.datetime.fromtimestamp(int(bar["ts"]) / 1000, dt.timezone.utc)
-        ttf = target_to_fill(target=target, fill_price=x.get("price"), qty=float(x.get("filledQty") or x.get("qty") or 0),
-                             multiplier=(100.0 if m else 1.0), direction=direction)
+        u_fill = None
+        if m and filled_at is not None:
+            ub = await conn.fetchrow("""select close from bars where symbol = $1 and tf = '1m' and ts <= $2 order by ts desc limit 1""",
+                                     tape, int(filled_at.timestamp() * 1000))
+            u_fill = round(float(ub["close"]), 4) if ub else None
+        ttf = rung_shortfall(is_option=bool(m), target=target, fill_price=x.get("price"), underlying_at_fill=u_fill,
+                             qty=float(x.get("filledQty") or x.get("qty") or 0), direction=direction)
         out.append({"kind": x.get("kind"), "reason": x.get("reason"), "qty": x.get("filledQty") or x.get("qty"),
                     "target": target, "fill": x.get("price"),
                     "firstTouchAt": first_touch.astimezone(ET).strftime("%H:%M") if first_touch else None,
@@ -300,6 +307,7 @@ async def target_exits(conn, *, position_id: str, symbol: str, book: str, create
                     "sentAs": (f"{order['order_type']} {float(order['limit_price']):.4f}" if order and order["limit_price"] else (order["order_type"] if order else None)),
                     "filledAt": filled_at.astimezone(ET).strftime("%H:%M:%S") if filled_at else None,
                     "shortfallPerUnit": ttf["shortfallPerUnit"], "shortfallDollars": ttf["shortfallDollars"],
+                    "underlyingAtFill": ttf.get("underlyingAtFill"), "shortfallBasis": ttf.get("basis"),
                     "touchToDecisionMin": (round((decided - first_touch).total_seconds() / 60, 1) if (decided and first_touch) else None),
                     "quoteEvidence": "the limit is the bid the manager saw at the bar close; no depth is recorded on the exit"})
     return out
@@ -361,6 +369,14 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
     since_dt = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=ET)
     mc = await model_cost(conn, since_dt, until, rates)
     ex_rows = await exits(conn, book=book, since=since, until=until, q_exec=t["questionedExecs"])
+    # ADV-10: follow-up coverage - reviews that ACTED on the book (management tools) per source, in the window
+    _mg = await conn.fetch("""select source, count(*) as n from tip_analyst_runs
+                              where kind = 'intake' and created_at >= $1 and created_at < $2
+                                and (opinion->'toolsUsed')::text ~ '(update_exit_plan|close_position|disarm_plan)'
+                              group by source""",
+                           dt.datetime.combine(dt.date.fromisoformat(since), dt.time(4, 0), tzinfo=ET),
+                           dt.datetime.combine(until + dt.timedelta(days=1), dt.time(4, 0), tzinfo=ET))
+    mgmt_by_source = {r["source"]: int(r["n"]) for r in _mg}
     _fees = J(await conn.fetchval("select value from settings where key = 'options.fee_per_contract'") or "null")
     _reg = J(await conn.fetchval("select value from settings where key = 'sim.reg_fee_per_contract'") or "null")
     _fpc = float(((_fees or {}).get("v") if isinstance(_fees, dict) else _fees) or 0.99) + float(((_reg or {}).get("v") if isinstance(_reg, dict) else _reg) or 0.05)
@@ -368,8 +384,11 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
     disp = await tip_outcomes.build_dispositions(conn, since_text=since, portfolio=book, census=t["census"])
     shadows = []
     for pf in await conn.fetch("select id, name, quarantined, book from portfolios where kind='shadow' and archived is not true order by name"):
-        sd = await tip_outcomes.build_census(conn, since_text=since, portfolio=pf["id"], kinds=("shadow",))
-        net = sum(r["gross"] - r["fees"] for r in sd["realizations"] if session_of(r["ts"]) <= until)
+        # ADV-02: FIFO from the book's FIRST execution - cutting the census at `since` turned every sell of a lot bought
+        # before the window into an "unallocated sell" (eva looked broken; it was the cut). Only the window is summed.
+        sd = await tip_outcomes.build_census(conn, since_text=SHADOW_HISTORY_START, portfolio=pf["id"], kinds=("shadow",))
+        net = sum(r["gross"] - r["fees"] for r in sd["realizations"]
+                  if dt.date.fromisoformat(since) <= session_of(r["ts"]) <= until)
         shadows.append({"book": pf["name"], "quarantined": bool(pf["quarantined"]), "kind": pf["book"],
                         "realizedNet": net, "closedMatches": len(sd["realizations"]),
                         "openLots": len(sd["open_lots"]), "unallocated": len(sd["unallocated"])})
@@ -378,6 +397,7 @@ async def build(conn, *, since: str, until: dt.date, book: str) -> dict:
                               dt.datetime.combine(since_d, dt.time(4, 0), tzinfo=ET))
     return {"version": VERSION, "since": since, "until": until.isoformat(), "book": book, "trading": t, "marks": m,
             "preIntervalExecutions": int(pre or 0), "exits": ex_rows, "dispositions": disp, "frictionOpen": fr_rows,
+            "mgmtBySource": mgmt_by_source,
             "cash": cash, "model": mc, "shadows": shadows, "registry": registry}
 
 
@@ -586,8 +606,12 @@ def render(res: dict) -> str:
         L.append("| symbol | rung | qty | target | first touch | decided | sent as | filled | fill | shortfall/unit | shortfall $ |")
         L.append("|---|---|---:|---:|---|---|---|---|---:|---:|---:|")
         for sym, t in trail:
+            _opt = "option" in str(t.get("shortfallBasis") or "")
+            _fill = f"{t['fill']} (underlying {t['underlyingAtFill']})" if t.get("underlyingAtFill") is not None else t["fill"]
+            _sd = t["shortfallDollars"] if t["shortfallDollars"] is not None else ("n/a (option)" if _opt else "-")
+            _sp = t["shortfallPerUnit"] if t["shortfallPerUnit"] is not None else "-"
             L.append(f"| {sym} | {t['reason']} | {t['qty']} | {t['target']} | {t['firstTouchAt'] or '-'} | {t['decidedAt'] or '-'} | "
-                     f"{t['sentAs'] or '-'} | {t['filledAt'] or '-'} | {t['fill']} | {t['shortfallPerUnit']} | {t['shortfallDollars']} |")
+                     f"{t['sentAs'] or '-'} | {t['filledAt'] or '-'} | {_fill} | {_sp} | {_sd} |")
         L.append("\nThe manager decides on the CLOSED bar's high/low and sells at the bid it sees then; the shortfall is arithmetic "
                  "between the touched target and the realised fill - it is not evidence that a resting limit at the target would "
                  "have filled. The card's payoff scenarios assume an exit AT the target (stated on every card since S21-01).")
@@ -613,6 +637,30 @@ def render(res: dict) -> str:
                  + (f" ({r['avgLoss']:+,.2f})" if r['avgLoss'] is not None else "") + f" | {r['maxDrawdown']:+,.2f} | {r['open_cost']:,.2f} | {r['q']:+,.2f} |")
     L.append("\nNo cohort above has enough completed ideas to claim an edge; the table ranks where money went, not what will "
              "work. Open exposure is at cost and is not credited to any cohort.")
+    # ADV-10 (2026-09-23): what each source returned NET of what we spent on the model for it
+    _cost = collections.Counter()
+    for (sd, src), usd in (res.get("model") or {}).get("bySource", {}).items():
+        if since <= sd <= until:
+            _cost[src] += usd
+    _roi = collections.defaultdict(lambda: {"shares": 0.0, "options": 0.0, "q": 0.0, "open": 0.0, "ideas": 0, "completed": 0})
+    for r in source_setup(res):
+        g = _roi[r["source"]]
+        g["shares" if r["setup"] == "shares" else "options"] += r["net"]
+        g["q"] += r["q"]; g["open"] += r["open_cost"]; g["ideas"] += r["ideas"]; g["completed"] += r["completed"]
+    for src in _cost:
+        _roi[src]
+    if _roi:
+        L.append("\n## Source return net of model cost (ADV-10; method realized, questioned apart, open at cost)\n")
+        L.append("| source | filled ideas | completed | realized shares | realized options | model $ | **realized - model** | management actions | open at cost |")
+        L.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        mg = res.get("mgmtBySource") or {}
+        for src, g in sorted(_roi.items(), key=lambda kv: (kv[1]["shares"] + kv[1]["options"]) - _cost.get(kv[0], 0.0)):
+            net = g["shares"] + g["options"] - _cost.get(src, 0.0)
+            L.append(f"| {src} | {g['ideas']} | {g['completed']} | {g['shares']:+,.2f} | {g['options']:+,.2f} | {_cost.get(src, 0.0):,.2f} | "
+                     f"**{net:+,.2f}** | {mg.get(src, 0)} | {g['open']:,.2f} |")
+        L.append("\nModel $ is the list-price estimate of appraisals, retros and intake reviews attributed to the source; "
+                 "management actions = reviews that updated, closed or disarmed something we held (follow-up coverage). "
+                 "Open exposure is not credited. A source's row is evidence for allocation, never proof of an edge.")
     # shadow books
     L.append("\n## Shadow research books (never summed with Practice; quarantined books excluded from any judgement)\n")
     L.append("| book | kind | quarantined | realized net (FIFO, research) | matched sells | open lots | unallocated sells |")

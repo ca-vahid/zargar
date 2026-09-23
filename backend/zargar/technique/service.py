@@ -60,7 +60,7 @@ from .outcome import (
 from .plans import build_session_plan, plan_summary_text
 from .provenance import snapshot as provenance_snapshot
 from .provenance import sweep_version, technique_source_version
-from .render import render_chart
+from .render import render_chart, render_chart_async
 from .review import diff_runs, review_dict, validate_review
 from .rulebook import (
     DEFAULT_THRESHOLDS,
@@ -669,17 +669,28 @@ class TechniqueService:
                               assetId=bars_asset, bytes=len(blob),
                               perTf={k: len(v) for k, v in bars.items()})
                 imgs: dict[str, bytes] = {}
-                for tfx in req.timeframes:
+                # 2026-09-18 (EOD review, C): a pre-open re-plan builds its plan deterministically and nobody reads its
+                # charts during the open - 45 such runs rendered 4 charts each on the single render thread at 09:25 ET
+                # on 09-17. Charts stay eager for every run a model or a person reads; the UI's chart endpoint renders
+                # on demand for the rest.
+                # 2026-09-18 (integrated plan B): under the deterministic preparation policy NO deterministic plan read renders
+                # charts eagerly (batch, ingestion, re-plan) - nothing reads them; the chart endpoint renders on demand.
+                _det_prep = str(self.engine.settings.get("techniques.enhanced_market.preparation_policy", "baseline") or "baseline") == "deterministic"
+                render_charts = not (mode == "plan" and not with_vision and (trigger == "preopen_replan" or _det_prep))
+                if not render_charts:
+                    await vp.note("data", "charts", "charts not rendered: deterministic pre-open re-plan, no model pass reads them "
+                                  "(the UI renders on demand)", skipped=True)
+                for tfx in (req.timeframes if render_charts else ()):
                     if tfx in bars:
-                        png = render_chart(bars[tfx][-WINDOW_FOR_TF.get(tfx, 150):],
-                                           title=f"{symbol} {tfx}", tf=tfx)
+                        png = await render_chart_async(bars[tfx][-WINDOW_FOR_TF.get(tfx, 150):],
+                                                       title=f"{symbol} {tfx}", tf=tfx)
                         imgs[tfx] = png
                         images_meta[tfx] = await chat.store_asset(png, "image/png", thread_id=thread_id,
                                                                   meta={"kind": "pass_chart", "tf": tfx})
                 if image is not None:
                     images_meta["user"] = await chat.store_asset(image, None, thread_id=thread_id,
                                                                  meta={"kind": "user_image"})
-                await vp.note("data", "charts",
+                if render_charts: await vp.note("data", "charts",
                               f"rendered {len(imgs)} chart(s) for the model: "
                               + ", ".join(f"{k} ({min(len(bars[k]), WINDOW_FOR_TF.get(k, 150))} bars)"
                                           for k in imgs),
@@ -806,12 +817,12 @@ class TechniqueService:
                     lv_overlay = [{"price": lv.price, "kind": lv.kind, "touches": lv.touches,
                                    "strong": lv.touches >= 3} for lv in (a.levels if a else [])][:8]
                     caption = _chart_caption(a, rejected_overlay)
-                if ptf in bars:
-                    png = render_chart(bars[ptf][-WINDOW_FOR_TF.get(ptf, 150):],
-                                       title=f"{symbol} {ptf}" + (f" — plan for {plan_d['planFor']}" if plan_d else ""),
-                                       tf=ptf, levels=lv_overlay, setup=setup_overlay,
-                                       rejected=rejected_overlay, caption=caption,
-                                       wedge=(facts.get("wedge") or {}).get(ptf))
+                if ptf in bars and render_charts:
+                    png = await render_chart_async(bars[ptf][-WINDOW_FOR_TF.get(ptf, 150):],
+                                                   title=f"{symbol} {ptf}" + (f" — plan for {plan_d['planFor']}" if plan_d else ""),
+                                                   tf=ptf, levels=lv_overlay, setup=setup_overlay,
+                                                   rejected=rejected_overlay, caption=caption,
+                                                   wedge=(facts.get("wedge") or {}).get(ptf))
                     images_meta["annotated"] = await chat.store_asset(
                         png, "image/png", thread_id=thread_id, meta={"kind": "annotated", "tf": ptf})
 
@@ -1799,9 +1810,24 @@ class TechniqueService:
         return rd
 
     # ------------------------------------------------------------ arming (phase 2)
-    async def arm_plan(self, run_id: str, config: dict | None = None, *, authorize=None) -> dict:
-        # C1 (2026-09-12): route option-untradeable names before the runner sees the config
+    async def arm_plan(self, run_id: str, config: dict | None = None, *, authorize=None, _prep_checked: bool = False) -> dict:
         config = dict(config or {})
+        # em-prep-policy-v1: under the PROPOSED policy every arm - batch sheet, manual, API - passes the SAME eligibility owner
+        # and the same cross-worker single-arm guarantee. Baseline (the default) runs none of this. A human may still arm an
+        # ineligible plan, but only as an explicit, recorded override.
+        if not _prep_checked and self.prep_policy()["preparationPolicy"] == "deterministic":
+            run0 = await self.get_run(run_id)
+            if run0 is not None and str(run0.get("technique") or "enhanced_market") == "enhanced_market":
+                from .prep_service import prep_arm, prep_decide
+                if config.get("prepOverride"):
+                    d = await prep_decide(self, run_id, persist=True, run=run0)
+                    config["prepOverride"] = {"by": "manual", "disposition": d.get("disposition"), "inputKey": d.get("inputKey")}
+                else:
+                    out = await prep_arm(self, run_id, run=run0, arm=lambda: self.arm_plan(run_id, config, authorize=authorize, _prep_checked=True))
+                    if not out["armed"]:
+                        raise ValueError(f"preparation policy: not armed ({out['why']}): {(out['decision'].get('explanation') or '')[:200]}")
+                    return out["result"]
+        # C1 (2026-09-12): route option-untradeable names before the runner sees the config
         s = self.engine.settings
         policy = str(s.get("technique.universe.untradeable", "shares") or "shares")
         run = await self.get_run(run_id)
@@ -1817,6 +1843,20 @@ class TechniqueService:
         elif liq is not None:
             config["optionTradeable"] = True
         return await self.armer.arm(run_id, config, authorize=authorize)
+
+    # --- em-prep-policy-v1 (2026-09-18): ONE preparation eligibility owner for batch, ingestion and the pre-open re-plan
+    def prep_policy(self) -> dict:
+        from .preparation_policy import effective
+        return effective(self.engine.settings.get)
+
+    async def prep_decide(self, run_id: str, *, origin: str | None = None, persist: bool = False, run: dict | None = None,
+                          source_hold: list | None = None, source_ids: list | None = None) -> dict:
+        from .prep_service import prep_decide
+        return await prep_decide(self, run_id, origin=origin, persist=persist, run=run, source_hold=source_hold, source_ids=source_ids)
+
+    async def prep_select(self, run_ids: list, *, persist: bool = False) -> dict:
+        from .prep_service import prep_select
+        return await prep_select(self, run_ids, persist=persist)
 
     # --- the multi-technique armed hub -------------------------------------------
     # Every PlanRunner on the engine (EM's armer, the tip runner, future
@@ -2146,7 +2186,7 @@ class TechniqueService:
     # ------------------------------------------------------------ options
     async def option_pick(self, symbol: str, direction: str = "long", *, spot: float | None = None,
                           max_strike: float | None = None, min_strike: float | None = None,
-                          avoid_0dte: bool = False) -> dict:
+                          avoid_0dte: bool = False, near_money: bool = False) -> dict:
         client = self.options_provider()
         if spot is None:
             q = self.engine.quotes.get(symbol.upper())
@@ -2160,8 +2200,10 @@ class TechniqueService:
         if not spot:
             return {"available": False, "error": "no spot price",
                     "provider": getattr(client, "name", "?")}
-        out = await pick_for_setup(client, symbol, spot, direction, max_strike=max_strike,
-                                   min_strike=min_strike, avoid_0dte=avoid_0dte)
+        from ..options.chain import cboe_priority
+        with cboe_priority("entry"):                         # 2026-09-16: a live pick retries a 429 and is never held back
+            out = await pick_for_setup(client, symbol, spot, direction, max_strike=max_strike,
+                                       min_strike=min_strike, avoid_0dte=avoid_0dte, near_money=near_money)
         out["spot"] = spot
         return out
 
@@ -2218,11 +2260,41 @@ class TechniqueService:
         if getattr(self, "_sheet_task", None) is None:
             self._sheet_task = asyncio.create_task(self._sheet_loop(), name="technique-sheet-auto")
         self.armer.start()
+        if getattr(self, "_source_cand_task", None) is None:      # integrated plan C: order-free forward evaluator, knob default OFF
+            self._source_cand_task = asyncio.create_task(self._source_candidates_loop(), name="em-source-candidates")
         with contextlib.suppress(Exception):
             self.engine.scheduler.register("em_option_liquidity", str(self.engine.settings.get("technique.universe.liquidity_at", "16:40")),
                                            lambda: self.refresh_option_liquidity())
         if self._restore_task is None:
             self._restore_task = asyncio.create_task(self._restore_armed(), name="technique-armer-restore")
+
+    async def _source_candidates_loop(self) -> None:
+        """Once a minute: the ORDER-FREE source-candidate evaluator. With the knob OFF (default) a pass is one settings read.
+        Never raises, never touches an armed plan, never fetches a chain, never places or arms anything."""
+        import time as _time
+        from .source_candidates_runtime import tick
+        while True:
+            await asyncio.sleep(60.0)
+            try:
+                await tick(self, int(_time.time() * 1000))
+            except asyncio.CancelledError:
+                raise
+            except Exception:                              # noqa: BLE001
+                log.exception("source-candidate pass failed")
+            try:                                           # em-deterministic-prep-v1 (2026-09-23): the baseline's model-free preparation (off unless preparation_policy=deterministic)
+                from .em_deterministic_prep import auto_prepare as _det_prep
+                await _det_prep(self, int(_time.time() * 1000))
+            except asyncio.CancelledError:
+                raise
+            except Exception:                              # noqa: BLE001
+                log.exception("deterministic preparation pass failed")
+            try:                                           # em-experiment-v1: promotion boundary + horizon sweep (one settings read when off)
+                from .em_experiment import tick as _xp_tick
+                await _xp_tick(self, int(_time.time() * 1000))
+            except asyncio.CancelledError:
+                raise
+            except Exception:                              # noqa: BLE001
+                log.exception("experiment pass failed")
 
     # ---------------------------------------------------------- C1: option-liquidity screen (2026-09-12)
     async def refresh_option_liquidity(self) -> dict:
@@ -2337,7 +2409,7 @@ class TechniqueService:
             log.exception("re-arming plans failed")
 
     async def stop(self) -> None:
-        names = ("_scan_task", "_outcome_task", "_sheet_task", "_restore_task", "_orphan_task")
+        names = ("_scan_task", "_outcome_task", "_sheet_task", "_restore_task", "_orphan_task", "_source_cand_task")
         tasks = {t for t in [*self._running.values(), *self._sweeps.values(),
                             *(getattr(self, name, None) for name in names)]
                  if t is not None and t is not asyncio.current_task()}

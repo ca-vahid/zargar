@@ -277,3 +277,24 @@ its whole budget on one expiry's known-illiquid rows; `diverse_liquidity_v1` fix
 without widening any limit. `executable_cost_v1` ranks eligible contracts by current friction; it adds
 no delta band and no model threshold. The daily review names the first KNOWN blocker and keeps unknown
 windows unknown. Activation of each version is a separate journaled settings decision.
+
+## September 22: switches built for trade flow (0.8.33, off until chosen)
+
+Across 24 automatic plan-days (09-14..09-22) 11 touched their trigger and none reached an order. Built
+as Practice switches, each separately attributable: delta-bounded cost ranking, gap-open retest,
+non-increasing dry-up rule, first-target arm gate. Finding: every untrusted confirmation window on
+09-21/22 had its sampled minute in the bucket's last three minutes, before a non-emission proof can
+exist; fixing that would require deciding after the close, which the non-retroactivity rule forbids.
+No threshold was loosened on one day's evidence; no profitability is claimed.
+
+## September 23: benchmark data outage, Practice switched to native daily bars
+
+Yahoo's daily history omitted the 2026-09-22 session (SPY/QQQ jumped from 09-21 to 09-23 even on a
+cache-bypassing fetch). Every preparation from 09-22 20:20 ET to 09-23 09:29 ET stopped at
+`waiting_for_benchmark`, so Cartel armed nothing on 09-23. Alpaca's native daily bars contained the
+session (SPY 773.38, QQQ 747.46). At 13:52 ET Practice was switched to `nativeDailyBatch=true` (the
+documented alternate provider-day dataset, separate cache) through the journaled preparation endpoint.
+Native bars are raw (not split-adjusted); revert with `nativeDailyBatch=false` once Yahoo backfills
+09-22 if adjusted history is preferred. Open follow-up: a provider fallback for a single missing benchmark
+session, so one vendor hole cannot stop the desk for a day.
+

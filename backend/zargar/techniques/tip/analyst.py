@@ -52,6 +52,41 @@ async def _backoff_sleep(seconds: float) -> None:
     await asyncio.sleep(seconds)
 
 
+def prompt_cache_scope(eng) -> str:
+    """ADV-03 (2026-09-23): WHAT the cache covers when caching is on. `prefix` (E17-03) = system + tool definitions
+    only (~11% of a call). `conversation` = also everything up to the latest message: the per-run header (rulebook +
+    notes, ~20k tokens) and the turns so far, which a 3-turn review otherwise re-sends in full on every call. The
+    request content is byte-identical either way - caching changes the bill, never what the model reads."""
+    try:
+        v = str(eng.settings.get("techniques.tip.prompt_cache_scope", "prefix") or "prefix")
+    except Exception:
+        v = "prefix"
+    return v if v in ("prefix", "conversation") else "prefix"
+
+
+def cache_messages(messages: list, *, enabled: bool) -> list:
+    """Return a copy of `messages` whose LAST block carries `cache_control: ephemeral` (the provider caches everything
+    up to and including a marked block). Earlier messages are left as they are; the original list is never mutated,
+    so the transcript the loop keeps stays marker-free. Blocks that are SDK objects (assistant turns) are not marked."""
+    if not enabled or not messages:
+        return messages
+    out = list(messages)
+    last = dict(out[-1]) if isinstance(out[-1], dict) else None
+    if last is None:
+        return messages
+    content = last.get("content")
+    if isinstance(content, str):
+        last["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+    elif isinstance(content, list) and content and isinstance(content[-1], dict):
+        blocks = list(content)
+        blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
+        last["content"] = blocks
+    else:
+        return messages
+    out[-1] = last
+    return out
+
+
 def prompt_cache_enabled(eng) -> bool:
     """E17-03: knob-gated prompt caching of the STABLE prefix (system prompt + schema + tool
     definitions). Off by default - the reviewer's rule is to validate actual cache hits,
@@ -1620,7 +1655,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     usage = st.setdefault("usage", _usage_new())
     if "promptCache" not in st:
         st["promptCache"] = prompt_cache_enabled(eng)
+    if "promptCacheScope" not in st:
+        st["promptCacheScope"] = prompt_cache_scope(eng)
     usage["promptCache"] = bool(st["promptCache"])
+    usage["promptCacheScope"] = st["promptCacheScope"] if st["promptCache"] else None
     usage.setdefault("model", model)
     from ...research import llm_stats
     stage = str(tool_ctx.get("stage") or "appraise")
@@ -1671,7 +1709,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 messages.append({"role": "user", "content":
                                  "Time is nearly up. Reply with ONLY the JSON object now — request no more tools."})
         _sys_param, _tools_param = cacheable_request(system, TOOLS, enabled=st.get("promptCache", False))
-        create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=messages, tools=_tools_param)
+        _msgs = cache_messages(messages, enabled=bool(st.get("promptCache")) and st.get("promptCacheScope") == "conversation")
+        create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=_msgs, tools=_tools_param)
+        from .model_policy import effort_kw as _effort_kw
+        create_kw.update(_effort_kw(getattr(eng, "settings", None), "techniques.tip.analyst_effort", model))   # 2026-09-23: pinned depth
         if force_final:
             create_kw["tool_choice"] = {"type": "none"}
         resp = None
@@ -1793,6 +1834,9 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
             # unserviced (Codex finding 4: four tools used + a fifth request
             # returned bare text, often empty -> parse failure); the per-call
             # branch below stubs it and the model is told to answer.
+            # the final reply AS RECEIVED - a same-transcript repair replays it unmodified (thinking blocks included):
+            # Opus 5.5 rejects a transcript whose thinking blocks were dropped or edited (2026-09-23 model switch)
+            st["lastAssistantContent"] = resp.content
             await _persist_run(eng, run_id, status="running", rec=rec)
             return think
         messages.append({"role": "assistant", "content": resp.content})
@@ -2082,7 +2126,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             rec.step("note", f"Reply had no parseable opinion ({exc}) — same-"
                              "transcript repair, tool evidence retained; JSON only.")
             loop_state["messages"].append(
-                {"role": "assistant", "content": text.strip() or "(no answer)"})
+                {"role": "assistant", "content": loop_state.pop("lastAssistantContent", None)
+                                                 or (text.strip() or "(no answer)")})
             loop_state["messages"].append(
                 {"role": "user", "content": "Your reply contained no parseable JSON "
                  "opinion object. Reply with ONLY the JSON opinion object now."})
@@ -2380,6 +2425,20 @@ class IntakeRun:
                   f"RECENT MESSAGES FROM THIS SOURCE (mirror, newest first):\n{history_txt}")
         system = REVIEW_SYSTEM + json.dumps(ReviewOpinion.model_json_schema(),
                                             separators=(",", ":"))
+        _ctx_mode = str(s.get("techniques.tip.review_context", "full") or "full")
+        if _ctx_mode == "notes":
+            # cost lever 2 (2026-09-23): rulebook + pending proposals verbatim, only the shared notes scoped + trimmed
+            with contextlib.suppress(Exception):
+                from .review_context import compact_review_header, tickers_in
+                header = compact_review_header(header, tickers=tickers_in(message_text, outcomes), source=source,
+                                               notes_only=True)
+                self.step("note", f"Notes-trimmed review context ({len(header):,} chars): full rulebook, scoped notes.")
+        elif _ctx_mode == "compact":
+            # ADV-04 (2026-09-23): rule headlines, scoped + trimmed notes; the same transform the frozen comparison measured
+            with contextlib.suppress(Exception):
+                from .review_context import compact_review_header, tickers_in
+                header = compact_review_header(header, tickers=tickers_in(message_text, outcomes), source=source)
+                self.step("note", f"Compact review context ({len(header):,} chars): rule headlines + scoped notes.")
         if bool(s.get("techniques.tip.review_capture_context", False)):
             # 2026-09-19 (model-cost research): keep the EXACT review request so a cheaper model can be judged on the
             # same input later (review_frozen.py). Observation only - the request below is unchanged.

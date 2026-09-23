@@ -239,6 +239,19 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_max_output_tokens": 3000,
     "techniques.tip.analyst_final_reserve_s": 20.0,
     "techniques.tip.prompt_cache": False,             # E17-03: cache the stable prefix (system + schema + tools); validate hits before claiming savings
+    "techniques.tip.shares_alternative": "annotate",  # ADV-07: off | annotate - show the equal-risk share size on a card whose option cannot be sized (never substituted)
+    "techniques.tip.friction_flag_pct": 0,            # ADV-08: flag a card whose round-trip fees+spread >= this % of the debit (annotation; 0 = off)
+    "techniques.tip.max_book_exposure_pct": 0,        # ADV-06: refuse NEW tip entries once open tip cost basis >= this % of the book's equity (0 = off)
+    "techniques.tip.max_name_exposure_pct": 0,        # ADV-06: same, per underlying (options count under their root) (0 = off)
+    "techniques.tip.review_source_budgets": {},       # ADV-05: {source: daily USD, "*": default}; a source over budget skips ONLY reviews the relevance gate judged irrelevant (never a message about a held/armed/proposed item). {} = off
+    "techniques.tip.review_context": "full",          # ADV-04: full | notes (2026-09-23: full rulebook, only notes scoped + trimmed) | compact (rule headlines too - measured UNSAFE) for INTAKE REVIEWS only; appraisals keep the full rulebook
+    "techniques.tip.extraction_model": "",           # 2026-09-23: intake extraction + attachment transcription model ("" = engine extraction_model)
+    "techniques.tip.analyst_effort": "high",         # 2026-09-23: output_config.effort for analyst/digest calls (Opus 5 default = high; Opus 5.5 default = medium). "" = model default
+    "techniques.tip.extraction_effort": "high",      # 2026-09-23: same for extraction/transcription. "" = model default
+    "techniques.tip.batch_jobs": False,              # 2026-09-23: nightly digests + knowledge-audit judge calls go through the Message Batches API (50% list price); intake/appraise/retro stay live
+    "techniques.tip.batch_timeout_s": 3600,          # a batch that has not ended by then is cancelled and the call fails as a timeout
+    "techniques.tip.review_skip_nonactionable": False,  # 2026-09-23 cost lever 1: skip the intake review when the gate found nothing on the desk AND extraction marked every signal non-actionable (journaled appliedBy=nonactionable)
+    "techniques.tip.prompt_cache_scope": "prefix",   # ADV-03: prefix (system+tools) | conversation (+ header and turns so far; the bulk of a multi-turn review). Only read when prompt_cache is on
     "llm.rates": {},                                  # E17-03: {"<model>": {"in": $/Mtok, "out": $/Mtok, "cacheRead": $/Mtok, "cacheWrite": $/Mtok}}; empty = usage reported UNPRICED   # E17-02: seconds of the 120 s run kept for the final answer / one repair
     # KFIN-09 (2026-09-14) experiments - ALL inert by default
     "techniques.tip.review_capture_context": False,   # 2026-09-19: stamp the exact INTAKE REVIEW request on its run so a cheaper model can be evaluated on the same input (review_frozen.py); observation only, ~100 KB per review
@@ -549,6 +562,22 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
     "techniques.enhanced_market.entry_fallback": "shares",   # C2 (2026-09-12): an untradeable option buys shares in Practice (longs only)
+    "techniques.enhanced_market.preparation_policy": "baseline",   # em-prep-policy-v1 (2026-09-18): baseline (the model's plan review selects - today's behaviour) | deterministic (rules + grade floor, ZERO model calls). Activation is a separate user decision
+    "techniques.enhanced_market.prep_grade_floor": "B",           # documented grade floor for deterministic eligibility (A < B < C)
+    "techniques.enhanced_market.conditional_review_fix": "report",  # conditional-review-v1: off | report (rescued triggers are LISTED, never armed) | apply. "the breakout has not happened yet" is not a veto of a conditional plan
+    "techniques.enhanced_market.prep_audit_quota_pct": 0.0,       # deterministic audit sampler quota (% of candidates); 0 = zero paid calls. Evidence only, never execution authority
+    "techniques.enhanced_market.source_scenarios_observe": False,  # source-scenarios-v1: build + store the append-only scenarios artifact during the board check (order-free). Default OFF
+    "techniques.enhanced_market.experiment": {"enabled": False},   # em-experiment-v1 (2026-09-19): ONE dedicated sim Practice book runs the integrated bundle by BOOK-SCOPED overrides {enabled, portfolioId, label, version, startedAt, startingEquity, comparisonTs, owner, overrides:{preparation_policy, conditional_review_fix, prep_grade_floor, first_sale_rr_gate, book_snapshot_observe, source_candidates_execute, runner_protection}}; the baseline book and every other desk keep reading the technique-wide settings. Rollback = POST /api/portfolios/<id>/pause (entries stop, positions stay managed)
+    "techniques.enhanced_market.source_candidates_chain_fetch": False,   # candidate-pricing-v1 (IR-05): with the candidate observer ON, allow ONE background-priority chain read + one bounded NBBO reprice per newly triggered candidate (research task only, never an entry/exit path). Default OFF = contract gates stay unknown
+    "techniques.enhanced_market.source_candidates_observe": False,  # source-conditioned continuation + requalification-v1 candidate producer (order-free; nothing arms). Default OFF
+    "techniques.enhanced_market.book_snapshot_observe": False,   # ED-04 book-snapshot-v1 (2026-09-18): EM-only executable-profit recorder, DEFAULT OFF; research evidence only, never read by an order/exit path; turning it on is a separate user decision
+    "techniques.enhanced_market.book_snapshot_seconds": 30.0,    # ED-04 periodic cadence while the EM Practice book holds a position (event snapshots are taken regardless of the cadence)
+    "techniques.enhanced_market.pick_retry_after_429_s": 0.0,     # SKHY 2026-09-18: ONE bounded option re-pick this many seconds after a provider 429 (cap 8 s), only if the underlying has not run > 0.25R; 0 = OFF (baseline)
+    "techniques.enhanced_market.paid_review": True,   # em-stop-rule-v1 (2026-09-22): the paid model review that prepares the BASELINE book (scripts/em-evening-batch.py). The EM stop rule (technique/em_scorecard.py) says when to set it False: EM then stays watch-only for the baseline - no paid read, no baseline arm. The rules-only experimental book is not affected
+    "techniques.enhanced_market.exit_quote_capture": True,   # exit-quote-v1 (2026-09-22): journal the contract (or share) quote each EM exit was decided on, AFTER the exit order is placed. Observation only - it closes the gap that left exit-side spread cost unmeasurable; nothing on a money path reads it
+    "techniques.enhanced_market.admission_alarm": True,   # admission-health-v1 (2026-09-21): shout once when the desk is ARMED AND SILENT (>=2 symbols undecided on the same evidence problem within 5 min, or >=3 attempts with no submission). ALARM ONLY - it refuses nothing, retries nothing and is never consulted by an entry. On by default because the 2026-09-21 zero-trade session went unnoticed for hours
+    "techniques.enhanced_market.deferred_retry": "off",   # deferral-retry-v1 (2026-09-21): off (DEFAULT, the frozen behaviour: a first-sale deferral is TERMINAL for that trigger) | bounded (ONE idempotent re-evaluation of the SAME setup when valid evidence arrives, inside the original entry window only - never extends a window, never re-prices, never re-sizes). A separately disclosed proposal, not part of the active bundle
+    "techniques.enhanced_market.first_sale_rr_gate": "off",   # first-sale-v2 (2026-09-19): off (DEFAULT: one settings read, nothing else) | observe (record via a bounded non-blocking recorder; never refuses) | enforce (FAIL CLOSED: refuses below the minimum, defers on missing/invalid evidence, rechecked at final dispatch). Any other value refuses entries with a policy error - never silently off. Activation is a separate decision
     "techniques.enhanced_market.fire_decision_mode": "deterministic",   # deterministic-entry-v1 (2026-09-15, user decision): the app's rules make the live entry decision; `legacy` = explicit rollback to the awaited critic
     "techniques.enhanced_market.fire_evidence_mode": "off",             # optional LATER model evidence over frozen decision snapshots: off | after_close (never trades)
     "techniques.enhanced_market.fire_evidence_max_calls": 40,           # after-close evidence command: paid calls per run (bound)
@@ -568,6 +597,8 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_timeout_seconds": 25,  # fire-time critic hard timeout; a timeout fails OPEN with an alert
     "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
     "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
+    "ops.loop_stall_seconds": 2.0,             # event-loop stall watch: log the blocking call site when the loop is silent this long (0 = off)
+    "options.cboe_cooldown_seconds": 20.0,     # after a CBOE 429, BACKGROUND chain fetches (enrich, research) skip requests this long; entry/position reads are not subject to it (they retry briefly, then the normal refusals apply)
     "technique.arm.quote_exit": True,          # intra-minute safety: exit when the live quote is decisively through the stop
     "technique.arm.quote_exit_excess_r": 0.25,  # "decisively" = beyond the stop by this x planned risk
     "technique.arm.quote_exit_polls": 2,       # consecutive ~2s polls required (one bad tick is not a breach)

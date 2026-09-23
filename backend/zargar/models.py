@@ -1012,6 +1012,28 @@ class TipKnowledgeBatch(Base):
     applied_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class TipLlmCall(Base):
+    """One provider call made OUTSIDE an analyst run (intake extraction, attachment transcription), with its usage
+    (2026-09-23, cost lever 3). Analyst/digest/retro runs keep their usage on `tip_analyst_runs`; before this table the
+    extraction reads lived only in the in-memory TechniqueHookStats rollup and were lost on every restart. Append-only,
+    one row per request attempt; `ref` = the raw content id the call served."""
+    __tablename__ = "tip_llm_calls"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    stage: Mapped[str] = mapped_column(String(32), index=True)              # extraction | transcribe
+    model: Mapped[str] = mapped_column(String(64), default="")
+    ref: Mapped[str | None] = mapped_column(String(64), index=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    stop_reason: Mapped[str | None] = mapped_column(String(48))
+    latency_ms: Mapped[float | None] = mapped_column(Float)
+    retried: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(String(200))                 # the call failed; usage unknown
+
+
 class TechniqueMethodNote(Base):
     """EM method ingestion (docs/techniques/enhanced-market/INGESTION-PLAN.md):
     one note per captured item from the author's channels — a watch-list post,
@@ -1111,6 +1133,67 @@ class TechniqueSourceJob(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TechniqueSourceCandidate(Base):
+    """source-continuation-v1 / requalification-v1 (2026-09-18): the ORDER-FREE candidate state of one scenario branch for one
+    session - one row per candidate id, its disposition history inside the payload. Origin `scenario:*`: the runner never
+    arms it. Written only by the EM forward evaluator behind `techniques.enhanced_market.source_candidates_observe` (OFF)."""
+    __tablename__ = "technique_source_candidates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)               # candidate id (stable per scenario branch + session)
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market")
+    session: Mapped[str] = mapped_column(String(10), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    scenario_id: Mapped[str] = mapped_column(String(64), index=True)
+    variant: Mapped[str] = mapped_column(String(32), default="source_continuation")
+    disposition: Mapped[str] = mapped_column(String(32), default="waiting")
+    state_hash: Mapped[str] = mapped_column(String(64), default="")
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TechniquePrepDecision(Base):
+    """em-prep-policy-v1 (2026-09-18): one preparation eligibility decision per CAUSAL INPUT key - the resume ledger of a
+    preparation batch (done work is reused, a changed input is a new row, only failed reads retry). Order-free: a row
+    here never arms anything by itself."""
+    __tablename__ = "technique_prep_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)               # causal input key
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market")
+    session: Mapped[str] = mapped_column(String(10), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    candidate_key: Mapped[str] = mapped_column(String(64), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    origin: Mapped[str] = mapped_column(String(24), default="batch")
+    mode: Mapped[str] = mapped_column(String(24), default="baseline")
+    status: Mapped[str] = mapped_column(String(16), default="done")             # done | failed
+    attempts: Mapped[int] = mapped_column(Integer, default=1)
+    disposition: Mapped[str] = mapped_column(String(32), default="")
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TechniqueBookSnapshot(Base):
+    """ED-04 (`book-snapshot-v1`, 2026-09-18): APPEND-ONLY EM book observations - realized / displayed / covered
+    executable, side by side. Written only by the EM recorder behind `techniques.enhanced_market.book_snapshot_observe`
+    (default OFF). Research evidence: never read by an order, exit or risk path; never edited."""
+    __tablename__ = "technique_book_snapshots"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market")
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    session: Mapped[str] = mapped_column(String(10), index=True)               # ET trading date
+    seq: Mapped[int] = mapped_column(Integer, default=0)
+    captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    reason: Mapped[str] = mapped_column(String(24), default="periodic")
+    causal_run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    build: Mapped[str] = mapped_column(String(64), default="")
+    scorable: Mapped[bool] = mapped_column(Boolean, default=False)
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class TechniqueCounterfactual(Base):

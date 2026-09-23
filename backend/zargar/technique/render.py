@@ -112,6 +112,28 @@ def _draw_labels(ax, items: list[dict], y_lo: float, y_hi: float,
                         annotation_clip=False)
 
 
+_RENDER_POOL = None
+
+
+def _pool():
+    """ONE worker: matplotlib is not thread-safe, so renders are serialised off the loop rather than parallelised."""
+    global _RENDER_POOL
+    if _RENDER_POOL is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _RENDER_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chart-render")
+    return _RENDER_POOL
+
+
+async def render_chart_async(*args, **kwargs):
+    """`render_chart` off the event loop (2026-09-16: a synchronous render per vision pass stalled the loop under
+    review load; the watchdog read the silent /api/health as DOWN). Same bytes, same arguments, serialised on one
+    thread."""
+    import asyncio
+    import functools
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_pool(), functools.partial(render_chart, *args, **kwargs))
+
+
 def render_chart(
     bars: list[Bar],
     *,

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Markdown } from "../components/technique/Markdown";
 import currentStatus from "../../../docs/techniques/options-cartel/DELIVERY-STATUS.md?raw";
-import readiness from "../../../docs/techniques/options-cartel/READINESS-2026-09-13.md?raw";
+import plan from "../../../docs/techniques/options-cartel/reviews/2026-09-22-plan/PLAN.md?raw";
 import ignition from "../../../docs/techniques/options-cartel/IGNITION.md?raw";
 import preparation from "../../../docs/techniques/options-cartel/DAILY-PREPARATION.md?raw";
 import method from "../../../docs/techniques/options-cartel/METHOD.md?raw";
@@ -19,7 +19,7 @@ import profitability from "../../../docs/techniques/options-cartel/PROFITABILITY
 const documents = [
   {file:"DELIVERY-STATUS.md", title:"Current capabilities and limits", text:currentStatus},
   {file:"PROFITABILITY-RESEARCH.md", title:"Profitability research: collection and comparisons", text:profitability},
-  {file:"READINESS-2026-09-13.md", title:"Practice readiness and evidence protocol", text:readiness},
+  {file:"reviews/2026-09-22-plan/PLAN.md", title:"Current improvement plan and switches", text:plan},
   {file:"IGNITION.md", title:"Post-ignition workflow", text:ignition},
   {file:"METHOD.md", title:"Detailed method", text:method},
   {file:"DAILY-PREPARATION.md", title:"Automatic daily preparation", text:preparation},

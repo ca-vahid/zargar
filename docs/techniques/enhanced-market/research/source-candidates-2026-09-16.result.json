@@ -1,0 +1,41 @@
+{
+ "version": "source-continuation-v1",
+ "date": "2026-09-16",
+ "evaluatedAt": "2026-09-16T20:26:04.262928+00:00",
+ "rows": [
+  {
+   "version": "source-continuation-v1",
+   "symbol": "AMZN",
+   "date": "2026-09-16",
+   "direction": "long",
+   "level": 250.0,
+   "target": 255.0,
+   "availableAt": "2026-09-16T09:23:28-04:00",
+   "observations": [],
+   "outcome": "never_confirmed",
+   "why": "no completed close beyond the level by 11:30 ET",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 446,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 246.69,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "83c5dd3fd0d94c8fb60a8a04cbf17dcc",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  }
+ ]
+}

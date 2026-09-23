@@ -131,6 +131,11 @@ async def collect(runtime):
                         raise ValueError('Research setup no longer matches saved policy')
                     if review.setup != candidate['setup']:
                         raise ValueError('Saved research candidate differs from its reviewed setup')
+                    if review.entry_policy.timeframe_minutes == 5:
+                        # P6: the executing 5m pilot is compared by its matched control; this panel keeps its
+                        # incumbent 15-minute research basis for the same candidate (labelled on the plan).
+                        review = review.model_copy(update={'entry_policy': review.entry_policy.model_copy(update={'timeframe_minutes': 15}),
+                                                           'cadence_version': 'breakout_15m_v1'})
                     if review.entry_policy.timeframe_minutes != 15:
                         raise ValueError('Research v1 supports 15-minute stock confirmations; execution policy was not changed')
                     minutes=await reader.baseline(candidate['symbol'],prep.as_of,client)

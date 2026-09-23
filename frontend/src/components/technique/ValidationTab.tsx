@@ -8,6 +8,7 @@ import { Collapse, DisclosureHead, useDisclosure } from "../Collapse";
 import { RailShell, useRail } from "./RailShell";
 import { SymbolPicker, type SymbolSet } from "./SymbolPicker";
 import { AuthorBoardCard } from "./AuthorBoardCard";
+import { EmReviewPanel } from "./EmReviewPanel";
 import { SYMBOL_BUNDLES } from "../../lib/symbolBundles";
 
 // --- row-action icons ---------------------------------------------------------------------
@@ -621,6 +622,7 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
     <div className={rail.gridClass}>
       <div className="tq-main">
         <AuthorBoardCard />
+        <EmReviewPanel />
         {/* ---- set-up ---- */}
         <div className="panel tq-form">
           <div className="panel-head tq-form-head" role="button" tabIndex={0} onClick={() => setFormOpen((v) => !(v ?? !sel))}

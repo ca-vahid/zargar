@@ -1,0 +1,408 @@
+{
+ "version": "source-continuation-v1",
+ "date": "2026-09-22",
+ "evaluatedAt": "2026-09-23T02:13:58.311671+00:00",
+ "rows": [
+  {
+   "version": "source-continuation-v1",
+   "symbol": "SPX",
+   "date": "2026-09-22",
+   "direction": "long",
+   "level": 7780.0,
+   "target": 7800.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [],
+   "outcome": "unknown",
+   "why": "no RTH bars stored",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 0,
+    "provenance": "bars table, tf=1m",
+    "sources": [],
+    "datasetVersion": null
+   },
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "SPX",
+   "date": "2026-09-22",
+   "direction": "short",
+   "level": 7750.0,
+   "target": 7725.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [],
+   "outcome": "unknown",
+   "why": "no RTH bars stored",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 0,
+    "provenance": "bars table, tf=1m",
+    "sources": [],
+    "datasetVersion": null
+   },
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "AMZN",
+   "date": "2026-09-22",
+   "direction": "long",
+   "level": 257.0,
+   "target": null,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [
+    {
+     "at": "09:35",
+     "event": "confirmed_close",
+     "close": 257.02
+    }
+   ],
+   "outcome": "unknown",
+   "why": "the author gave no target - R2 cannot be evaluated",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 253.78,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "entry": {
+    "at": "09:36",
+    "entry": 257.01,
+    "basis": "next-open-proxy"
+   },
+   "riskPerShare": 3.23,
+   "rewardToRisk": null,
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "PLTR",
+   "date": "2026-09-22",
+   "direction": "long",
+   "level": 185.0,
+   "target": 190.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [
+    {
+     "at": "09:30",
+     "event": "early_cross",
+     "note": "before the opening range was complete - recorded, not entered"
+    }
+   ],
+   "outcome": "never_confirmed",
+   "why": "no completed close beyond the level by 11:30 ET",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 183.15,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "META",
+   "date": "2026-09-22",
+   "direction": "short",
+   "level": 724.0,
+   "target": 700.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [],
+   "outcome": "never_confirmed",
+   "why": "no completed close beyond the level by 11:30 ET",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 747.31,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "MSTR",
+   "date": "2026-09-22",
+   "direction": "short",
+   "level": 161.0,
+   "target": 156.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [],
+   "outcome": "never_confirmed",
+   "why": "no completed close beyond the level by 11:30 ET",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 169.9,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "MSTR",
+   "date": "2026-09-22",
+   "direction": "long",
+   "level": 171.0,
+   "target": 183.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [
+    {
+     "at": "10:13",
+     "event": "confirmed_close",
+     "close": 171.045
+    }
+   ],
+   "outcome": "flattened",
+   "why": null,
+   "path": {
+    "end": "flattened",
+    "at": "15:55",
+    "price": 167.6,
+    "r": -0.91
+   },
+   "gates": {
+    "r2": "passed",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 167.25,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "entry": {
+    "at": "10:14",
+    "entry": 171.02,
+    "basis": "next-open-proxy"
+   },
+   "riskPerShare": 3.77,
+   "rewardToRisk": 3.178,
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "MU",
+   "date": "2026-09-22",
+   "direction": "long",
+   "level": 1000.0,
+   "target": null,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [
+    {
+     "at": "09:30",
+     "event": "early_cross",
+     "note": "before the opening range was complete - recorded, not entered"
+    },
+    {
+     "at": "09:35",
+     "event": "confirmed_close",
+     "close": 1045.162
+    },
+    {
+     "at": "09:36",
+     "event": "no_chase_wait_retest",
+     "open": 1045.3983,
+     "cap": 1005.0
+    }
+   ],
+   "outcome": "no_chase_refused",
+   "why": "no retest before the close",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 1030.015,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "MRVL",
+   "date": "2026-09-22",
+   "direction": "long",
+   "level": 250.0,
+   "target": 262.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [
+    {
+     "at": "09:30",
+     "event": "early_cross",
+     "note": "before the opening range was complete - recorded, not entered"
+    },
+    {
+     "at": "09:35",
+     "event": "confirmed_close",
+     "close": 260.9
+    },
+    {
+     "at": "09:36",
+     "event": "no_chase_wait_retest",
+     "open": 260.69,
+     "cap": 251.25
+    }
+   ],
+   "outcome": "no_chase_refused",
+   "why": "no retest before the close",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 254.0,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  },
+  {
+   "version": "source-continuation-v1",
+   "symbol": "MRVL",
+   "date": "2026-09-22",
+   "direction": "short",
+   "level": 250.0,
+   "target": 240.0,
+   "availableAt": "2026-09-22T13:22:30+00:00",
+   "observations": [],
+   "outcome": "never_confirmed",
+   "why": "no completed close beyond the level by 11:30 ET",
+   "path": null,
+   "gates": {
+    "r2": "not_evaluated",
+    "optionLiquidity": "not_evaluated",
+    "dailyBudget": "not_evaluated",
+    "finalDispatch": "not_evaluated",
+    "contractSelection": "not_evaluated"
+   },
+   "evidence": {
+    "barCount": 450,
+    "provenance": "bars table, tf=1m",
+    "sources": [
+     "exchange"
+    ],
+    "datasetVersion": null
+   },
+   "stop": 260.3,
+   "stopKnownAt": "09:35",
+   "eligibleFrom": "09:35",
+   "noteId": "22abea897cc645bfa35bf0a9dd185258",
+   "retrospective": false,
+   "ledgerVersion": "source-continuation-v1"
+  }
+ ]
+}

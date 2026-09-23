@@ -309,3 +309,30 @@ async def test_baseline_retry_ties_use_oldest_due_time(research, monkeypatch):
     monkeypatch.setattr(PreparationHistory, 'baseline', baseline)
     await _warm_baselines(runtime, context, research.policy, fetch=provider)
     assert calls == ['TEST2', 'TEST1']
+
+
+async def test_a_5m_pilot_candidate_is_scored_on_the_incumbent_15m_research_basis(research, monkeypatch):
+    """P6 (2026-09-22): the panel no longer refuses a 5m execution pilot's candidates; it scores them on the
+    labelled 15-minute research basis (the 5m execution is compared by the arm's matched control)."""
+    row = candidate(0)
+    row.update(baselineStatus='pending', baselineAttempts=0, nextBaselineAt=0,
+               entryPolicy={'timeframe_minutes': 5, 'require_exchange_bars': True})
+    context = await seed_context(research, [row])
+    runtime = SimpleNamespace(engine=research.engine, clock=lambda: OPEN-60000, stopping=False)
+    seen = []
+
+    async def baseline(self, symbol, at, client):
+        return []
+
+    def build(bars, symbol, timeframe, *args, **kwargs):
+        seen.append(timeframe)
+        return {'baselines': {i: 100 for i in range(26)}}
+    monkeypatch.setattr(PreparationHistory, 'baseline', baseline)
+    monkeypatch.setattr('zargar.techniques.options_cartel.profitability_research.build_volume_baseline', build)
+
+    async def provider(*args, **kwargs):
+        return []
+    context = await _warm_baselines(runtime, context, research.policy, fetch=provider)
+    scored = context.result['candidates'][0]
+    assert scored['baselineStatus'] == 'ready' and seen == [15]
+    assert scored['entryPolicy']['timeframe_minutes'] == 15 and 'incumbent research basis' in scored['researchCadence']

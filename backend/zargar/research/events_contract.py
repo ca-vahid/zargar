@@ -50,6 +50,11 @@ CONTRACTS: dict[str, dict] = {
     "TechniqueEntryDecision": {"version": 1, "required": ("runId", "symbol", "trigger", "decisionId", "decisionMode", "decisionVersion", "verdict", "reasonCodes", "inputHash", "checks")},   # deterministic-entry-v1: the app decides; allow = eligible for the existing order checks, never a fill
     "TechniqueEntryEvidence": {"version": 1, "required": ("runId", "symbol", "trigger", "decisionId", "inputHash", "reviewOutcome", "authority"), "nullable": ("modelOpinion", "modelConfidence", "error")},   # evidence_only: no path back to trading
     "TechniqueExitShadow":    {"version": 1, "required": ("runId", "symbol", "trigger", "rung", "target", "version", "disposition")},   # STRATEGY-PROPOSAL 2026-09-14 §2a shadow-exit-v1: observation only, never an order
+    "TechniquePrepared": {"version": 1, "required": ("planFor", "eligible", "minted", "armed", "modelCalls")},   # em-deterministic-prep-v1 (2026-09-23)
+    "TechniqueExperimentPrepared": {"version": 1, "required": ("planFor", "eligible", "minted", "armed", "modelCalls")},   # em-experiment-v1 (2026-09-19)
+    "TechniqueExitQuote": {"version": 1, "required": ("runId", "symbol", "trigger", "kind", "exitOrderId", "version")},   # exit-quote-v1 (2026-09-22): research record; nothing reads it on a money path
+    "TechniqueAdmissionAlarm": {"version": 1, "required": ("kind", "book", "cause", "version", "text")},   # admission-health-v1 (2026-09-21): alarm + recovery; `isGate` is always false
+    "TechniqueFirstSale":     {"version": 1, "required": ("runId", "symbol", "trigger", "stage", "mode", "version", "gate", "vehicle")},   # first-sale-v1 (2026-09-18): R where the FINAL quantity exits; refuses an entry only under `enforce`
     "TechniqueTargetDistance": {"version": 1, "required": ("runId", "symbol", "trigger", "stage", "fullExitRung", "distanceR", "version")},   # diagnostic flag; never rejects, resizes or retargets   # Delivery B next PR: a source revision landed (edit / delete / restore); positions and exits are never touched by it   # Delivery B order-free boundary (2026-09-14): scenario candidates never arm
     "TechniquePlanRestored":  {"version": 1, "required": ("runId", "symbol", "planFor", "portfolio")},   # restart re-attach; never counted as an arm
     "TechniquePlanDisarmed":  {"version": 1, "required": ("runId", "symbol", "reason")},

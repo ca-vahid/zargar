@@ -45,6 +45,9 @@ class PlanArmer(PlanRunner):
     def __init__(self, engine, technique) -> None:
         super().__init__(engine, name="technique-armer")
         self.technique = technique
+        # ED-04 (book-snapshot-v1): EM-owned bounded recorder, DEFAULT OFF; the runner's `_book_snap` is a no-op without it
+        from .profit_capture_runtime import build_book_observers
+        self._book_observer = build_book_observers(self)      # one recorder per EM book (baseline knob / experiment override)
 
     # ================================================================ hooks — the EM opinions
     TECHNIQUE_ID = TECHNIQUE_ID
@@ -77,7 +80,10 @@ class PlanArmer(PlanRunner):
         half (T5.2 "reduced size")."""
         s = self.engine.settings
         mult, why = 1.0, []
-        if dt.datetime.now(ET).weekday() == 4:
+        # the WEEKDAY comes from the test-pinnable clock (production = real time): the reviewers' dispatch cases were
+        # sized x0.5 and skipped whenever the suite ran on a Friday (found 2026-09-18, a Friday evening)
+        from ..clock import now_ms as _clock_ms
+        if dt.datetime.fromtimestamp(_clock_ms() / 1000.0, ET).weekday() == 4:
             fm = float(s.get("technique.arm.friday_size_mult", 0.5) or 1.0)
             mult *= fm
             why.append(f"Friday x{fm:g}")
@@ -104,6 +110,272 @@ class PlanArmer(PlanRunner):
     # rollback to the old reviewer branch (veto / momentum_only / advisory semantics unchanged there).
     def fire_review_policy(self, ap) -> str:
         return normalize_fire_mode(self.engine.settings.get("techniques.enhanced_market.fire_decision_mode", "deterministic"))
+
+    # ---- em-prep-policy-v1 (2026-09-18, integrated plan B): the effective PREPARATION policy rides every preflight and
+    # every armed snapshot beside the fire-decision policy - the two are distinct settings
+    def _em_policy_extras(self) -> dict:
+        from .preparation_policy import effective
+        try:
+            out = effective(self.engine.settings.get)
+        except Exception:                                  # noqa: BLE001
+            out = {"preparationPolicy": "baseline"}
+        out["firstSaleGate"] = self.first_sale_policy(None)
+        return out
+
+    def _preflight_policy(self) -> dict:
+        return {**super()._preflight_policy(), **self._em_policy_extras()}
+
+    def fire_policy_view(self, ap) -> dict:
+        return {**super().fire_policy_view(ap), **self._em_policy_extras()}
+
+    # ---- first-sale-v2 (2026-09-19, IR-01 / IR-04): R2 at the gate target of the FINAL quantity, from the validated current
+    # executable underlying bound. DEFAULT OFF. observe = non-authoritative record; enforce = fail closed (refuse / defer).
+    def first_sale_policy(self, ap) -> str:
+        from .em_experiment import book_policy
+        from .first_sale import normalize_mode
+        pid = getattr(getattr(ap, "config", None), "portfolio_id", None)
+        return normalize_mode(book_policy(self.engine.settings.get, pid, "first_sale_rr_gate", "off"))
+
+    # ---- em-experiment-v1 (2026-09-19): the experimental Practice book. Every hook resolves FOR THE PLAN'S BOOK.
+    def arm_guard(self, run, cfg, portfolio):
+        from .em_experiment import arm_refusal
+        return arm_refusal(self.engine.settings.get, run, cfg.portfolio_id, portfolio)
+
+    def order_tags(self, ap) -> list:
+        from .em_experiment import is_book, run_tags
+        return run_tags(self.engine.settings.get) if is_book(self.engine.settings.get, ap.config.portfolio_id) else []
+
+    def seed_from_ts(self, ap):
+        born = (ap.plan or {}).get("eligibleFromTs") if (ap.plan or {}).get("promotion") else None
+        return int(born) if born else None
+
+    def extra_observation_books(self) -> list:
+        from .em_experiment import config
+        c = config(self.engine.settings.get)
+        return [c["portfolioId"]] if c["enabled"] else []
+
+    def runner_protection_policy(self, ap) -> str:
+        from .em_experiment import book_policy
+        return str(book_policy(self.engine.settings.get, ap.config.portfolio_id, "runner_protection", "off") or "off")
+
+    async def first_sale_prepare(self, ap) -> None:
+        """Resolve the policy-defining pin (`technique.rr_gate_target`) from the plan's FROZEN run config, once per plan,
+        bounded. Never a fresh read of the live legacy key. Unresolved stays unresolved (enforce then defers)."""
+        cache = self.__dict__.setdefault("_fs_pins", {})
+        if ap.run_id in cache:
+            return
+        try:
+            run = await asyncio.wait_for(self.load_plan(ap.run_id), timeout=2.0)
+            cfg = (run or {}).get("config") or {}
+            pin = (cfg.get("settings") or {}).get("technique.rr_gate_target")
+            cache[ap.run_id] = {"pin": str(pin or "auto"), "source": ("run_config" if cfg else "unresolved"),
+                                "planRrGateTarget": (cfg.get("thresholds") or {}).get("rr_gate_target")}
+        except Exception:                                  # noqa: BLE001 - unresolved is a value; enforce defers on it
+            cache[ap.run_id] = {"pin": "auto", "source": "unresolved", "planRrGateTarget": None}
+        if len(cache) > 500:
+            for k in list(cache)[:250]:
+                cache.pop(k, None)
+
+    def first_sale_record(self, ap, trade, qty, limit, mode, stage="order"):
+        from .first_sale import build_record, compare_vehicles
+        from .research_recorder import feed_identity, quote_evidence
+        s = self.engine.settings
+        trig = next((t for t in ((ap.plan or {}).get("triggers") or []) if t.get("id") == trade.trigger_id), {}) or {}
+        uq = self.engine.quotes.get(ap.symbol)
+        ue = quote_evidence(uq, symbol=ap.symbol, is_option=False, feed=feed_identity(self.engine))
+        oq = None
+        if trade.instrument == "options" and trade.order_symbol:
+            oq = quote_evidence(self.engine.quotes.get(trade.order_symbol), symbol=trade.order_symbol, is_option=True, feed=None)
+            if oq is not None:
+                oq["derived"] = bool(str(oq.get("source") or "").startswith("derived:") or oq.get("transform"))
+        trk = (getattr(ap, "trackers", None) or {}).get(trade.trigger_id)
+        th = getattr(trk, "thresholds", None)
+        if th is None or not hasattr(th, "min_risk_reward"):
+            th = self.technique.thresholds()
+        pin = (self.__dict__.get("_fs_pins") or {}).get(ap.run_id) or {"pin": "auto", "source": "unresolved", "planRrGateTarget": None}
+        plan_gate = None
+        if trig.get("riskReward") is not None:
+            plan_gate = {"targetIndex": (pin.get("planRrGateTarget") if pin.get("planRrGateTarget") is not None else getattr(th, "rr_gate_target", None)),
+                         "rr": trig.get("riskReward"), "rrTp3": trig.get("riskRewardTp3"), "min": getattr(th, "min_risk_reward", None)}
+        fee = float(s.get("options.fee_per_contract", 0.99)) + float(s.get("sim.reg_fee_per_contract", 0.05))
+        entry = trig.get("entry")
+        rec = build_record(stage=stage, symbol=ap.symbol, run_id=ap.run_id, trigger_id=trade.trigger_id, family=trade.kind,
+                           direction=trade.direction, session=ap.plan_for, plan_entry=(entry.get("price") if isinstance(entry, dict) else entry),
+                           runner_entry=trade.entry, stop=trade.stop, targets=trade.targets, underlier_evidence=ue, instrument=trade.instrument,
+                           qty=qty, multiplier=trade.multiplier, limit_price=limit, single_exit=str(ap.config.single_contract_exit or "tp2"),
+                           pinned_gate_target=pin["pin"], pin_source=pin["source"], min_rr=float(getattr(th, "min_risk_reward", 3.0)),
+                           contract=trade.contract, option_quote=oq, fee_per_contract=fee, stock_commission=float(s.get("sim.stock_commission", 0.0)),
+                           affordable_qty=qty, plan_gate=plan_gate, mode=mode, now_ms=now_ms(),
+                           max_underlier_age_ms=int(float(s.get("risk.stale_quote_seconds", 10) or 10) * 1000))
+        if stage == "order":
+            try:                                          # order-free vehicle comparison on rows already in hand - never a gate
+                vr = (getattr(trade, "timing", None) or {}).get("vehicleRows") or {}
+                if vr.get("rows"):
+                    cash = float(((self.engine.positions.portfolio(ap.config.portfolio_id) or {}).get("cash")) or 0.0)
+                    sq = ({"ask": (ue or {}).get("ask") or None, "last": (ue or {}).get("last") or None, "askSize": (ue or {}).get("askSize")} if ue else None)
+                    rec["vehicleComparison"] = {**compare_vehicles(
+                        setup={"symbol": ap.symbol, "direction": trade.direction, "entry": trade.entry, "stop": trade.stop, "targets": trade.targets,
+                               "singleExit": str(ap.config.single_contract_exit or "tp2")},
+                        contracts=vr["rows"], share_quote=sq, budget=float(s.get("risk.max_option_premium_notional", 1000.0) or 0.0),
+                        risk_budget=cash * float(ap.config.risk_pct or 0.0) / 100.0, fee_per_contract=fee,
+                        stock_commission=float(s.get("sim.stock_commission", 0.0)), allow_shares=(str(ap.config.entry_fallback or "") == "shares")),
+                        "rowsCapturedTs": vr.get("ts"), "riskBudgetBasis": "cash x risk_pct (approximation; the sizer uses equity)"}
+            except Exception:                              # noqa: BLE001
+                pass
+        return rec
+
+    def first_sale_decide(self, rec, mode, error=None) -> dict:
+        from .first_sale import decide
+        return decide(rec, mode, error=error)
+
+    def first_sale_publish(self, ap, rec: dict) -> None:
+        """Research persistence of the record: bounded, never awaited by the entry (IR-04). The REFUSAL itself is journaled
+        on the established durable path by the runner (`_refuse_entry` / the order's own rejection)."""
+        r = self.__dict__.get("_fs_recorder")
+        if r is None:
+            from .research_recorder import BoundedRecorder
+            journal = self.engine.journal
+
+            async def write(item: dict) -> None:
+                await journal.append(ev.TECHNIQUE_FIRST_SALE, item["rec"], aggregate_type="technique_run", aggregate_id=item["runId"],
+                                     portfolio_id=item["portfolioId"])
+            r = self._fs_recorder = BoundedRecorder(write, name="em-first-sale", maxsize=128)
+        r.put({"rec": rec, "runId": ap.run_id, "portfolioId": ap.config.portfolio_id})
+        with contextlib.suppress(Exception):
+            self._admission_observe(ap, rec)          # alarm only - never refuses, never retries, never sizes
+
+    # ---- exit-quote-v1 (2026-09-22): what the exit was DECIDED on.
+    # Until now an exit's fill could be compared only with nothing: the quote at the decision was never kept, so the
+    # exit-side spread - half of every option round trip's friction - was an estimate. The snapshot is a synchronous
+    # cache read taken BEFORE the exit is placed, so it is the quote the decision saw; it is journalled AFTER the exit
+    # order exists, through the same bounded recorder as the first-sale records, so a protective exit never waits on it.
+    def exit_quote_enabled(self) -> bool:
+        return bool(self.engine.settings.get("techniques.enhanced_market.exit_quote_capture", True))
+
+    def _exit_quote_snapshot(self, ap, trade, kind: str, qty: float) -> dict | None:
+        from .research_recorder import feed_identity, quote_evidence
+        is_opt = trade.instrument == "options" and bool(trade.order_symbol)
+        sym = trade.order_symbol if is_opt else ap.symbol
+        ev_ = quote_evidence(self.engine.quotes.get(sym), symbol=sym, is_option=is_opt,
+                             feed=(None if is_opt else feed_identity(self.engine)))
+        if ev_ is None:
+            return None
+        return {"version": "exit-quote-v1", "runId": ap.run_id, "symbol": sym, "underlying": ap.symbol,
+                "trigger": trade.trigger_id, "kind": kind, "qty": float(qty), "instrument": trade.instrument,
+                "bid": ev_.get("bid"), "ask": ev_.get("ask"), "bidSize": ev_.get("bidSize"), "askSize": ev_.get("askSize"),
+                "quoteTs": ev_.get("quoteTs"), "receivedTs": ev_.get("receivedTs"), "source": ev_.get("source"),
+                "sourceBasis": ev_.get("sourceBasis"), "decidedTs": int(time.time() * 1000)}
+
+    def _exit_quote_publish(self, ap, snap: dict, order_ids: list) -> None:
+        if not order_ids:
+            return                                    # no exit order was placed: there is no fill to compare against
+        r = self.__dict__.get("_eq_recorder")
+        if r is None:
+            from .research_recorder import BoundedRecorder
+            journal = self.engine.journal
+
+            async def write(item: dict) -> None:
+                await journal.append(ev.TECHNIQUE_EXIT_QUOTE, item["rec"], aggregate_type="technique_run",
+                                     aggregate_id=item["runId"], portfolio_id=item["portfolioId"])
+            r = self._eq_recorder = BoundedRecorder(write, name="em-exit-quote", maxsize=128)
+        r.put({"rec": {**snap, "exitOrderId": str(order_ids[0]), "exitOrderIds": [str(x) for x in order_ids]},
+               "runId": ap.run_id, "portfolioId": ap.config.portfolio_id})
+
+    async def _exit(self, ap, tr, kind, qty, *, journal, **kw):
+        snap = None
+        if self.exit_quote_enabled():
+            with contextlib.suppress(Exception):
+                snap = self._exit_quote_snapshot(ap, tr, kind, qty)
+        before = len(getattr(tr, "exit_order_ids", None) or [])
+        result = await super()._exit(ap, tr, kind, qty, journal=journal, **kw)
+        if snap is not None:
+            with contextlib.suppress(Exception):
+                self._exit_quote_publish(ap, snap, list((tr.exit_order_ids or [])[before:]))
+        return result
+
+    # ---- deferral-retry-v1 (2026-09-21): DEFAULT OFF. See `deferred_retry.py` for why this is a
+    # proposal rather than a fix: the frozen behaviour makes a "deferred" entry terminal, and that is
+    # what ran on 2026-09-21. Under `bounded` the same setup gets ONE more pass through the unchanged
+    # production path, inside its original bar-counted window.
+    def deferred_retry_mode(self, ap) -> str:
+        from .deferred_retry import normalize_mode
+        from .em_experiment import book_policy
+        pid = getattr(getattr(ap, "config", None), "portfolio_id", None)
+        return normalize_mode(book_policy(self.engine.settings.get, pid, "deferred_retry", "off"))
+
+    async def _on_bar(self, ap, bar, *, journal: bool) -> None:
+        await super()._on_bar(ap, bar, journal=journal)
+        with contextlib.suppress(Exception):
+            await self._deferred_retry_pass(ap, bar, journal=journal)
+
+    async def _deferred_retry_pass(self, ap, bar, *, journal: bool) -> None:
+        """At most one extra attempt per trigger, decided by the pure `eligible` and executed by the
+        ORDINARY entry path. Never called when the policy is off, so the frozen book is untouched."""
+        if self.deferred_retry_mode(ap) != "bounded":
+            return
+        from .deferred_retry import eligible, record
+        retried = ap.__dict__.setdefault("_deferred_retried", set())
+        window_bars = self.rules().plan_entry_window_bars
+        halted = bool(self.engine.trading_halted(ap.config.portfolio_id))
+        for trade in list(ap.trades.values()):
+            tracker = (ap.trackers or {}).get(trade.trigger_id)
+            if tracker is None:
+                continue
+            ok, why = eligible(trade, tracker, bar_index=ap.bar_index - 1, window_bars=window_bars,
+                               retried=retried, plan_status=ap.status, halted=halted)
+            if not ok:
+                continue
+            retried.add(trade.trigger_id)                       # consume the one retry BEFORE trying it
+            rec = record(trade, tracker, allowed=True, why=why, bar_index=ap.bar_index - 1, window_bars=window_bars)
+            self._log(ap, "deferred_retry", f"{trade.trigger_id}: re-evaluating - {why}", trigger=trade.trigger_id)
+            if journal:
+                with contextlib.suppress(Exception):
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id,
+                        "event": "deferred_retry", "reason": why, "detail": rec},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+            trade.status = "fired"                              # hand it back to the unchanged entry path
+            trade.reason = ""
+            await self._enter(ap, trade, tracker, journal=journal)
+            await self._persist(ap)
+            self._publish(ap, "fired")
+
+    # ---- admission-health-v1 (2026-09-21): notice when the desk is armed and SILENT.
+    # Every refusal on 2026-09-21 was individually correct; the nine of them together meant the book
+    # was not trading, and nothing said so. This watches the SHAPE of first-sale outcomes and shouts
+    # once. It decides nothing: `isGate` is false by construction and no entry consults it.
+    def _admission_watch(self):
+        w = self.__dict__.get("_adm_watch")
+        if w is None:
+            from .admission_health import AdmissionWatch
+            w = self._adm_watch = AdmissionWatch()
+        return w
+
+    def admission_alarm_enabled(self) -> bool:
+        return bool(self.engine.settings.get("techniques.enhanced_market.admission_alarm", True))
+
+    def _admission_observe(self, ap, rec: dict) -> None:
+        """Best-effort, synchronous and tiny; the alarm is raised on a task so nothing waits on it."""
+        if not self.admission_alarm_enabled():
+            return
+        build = str(getattr(self.engine, "build_sha", "") or "")
+        alarm = self._admission_watch().observe(rec, book=str(ap.config.portfolio_id), symbol=ap.symbol,
+                                                disposition=str(rec.get("disposition") or ""), build=build)
+        if not alarm:
+            return
+        import asyncio as _asyncio
+        with contextlib.suppress(Exception):
+            _asyncio.get_running_loop().create_task(self._admission_raise(ap, alarm), name="em-admission-alarm")
+
+    async def _admission_raise(self, ap, alarm: dict) -> None:
+        """One durable record for the checks to read, and one alert through the owner's real channel."""
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.TECHNIQUE_ADMISSION_ALARM, alarm, aggregate_type="technique_run",
+                                             aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        with contextlib.suppress(Exception):
+            recovered = alarm.get("kind") == "systemic_admission_recovered"
+            await self._alert(ap, alarm.get("text") or "admission alarm",
+                              level=("info" if recovered else "critical"), stage="admission_health")
 
     def fire_evidence_mode(self, ap) -> str:
         raw = str(self.engine.settings.get("techniques.enhanced_market.fire_evidence_mode", "off") or "off").strip().lower()
@@ -151,7 +423,7 @@ class PlanArmer(PlanRunner):
         from dataclasses import replace as dc_replace
 
         from .analysis import AnalysisRequest, compute_facts
-        from .render import render_chart
+        from .render import render_chart_async
         from .vision import VisionPipeline
         # fire-time reads don't need deep thinking — latency IS cost here
         eff = str(self.engine.settings.get("technique.arm.critic_effort", "low") or "low")
@@ -165,7 +437,7 @@ class PlanArmer(PlanRunner):
             bars = pre[-1500:] + bars
         req = AnalysisRequest(symbol=ap.symbol, primary_tf="1m", context_tfs=(), thresholds=self.technique.thresholds())
         facts = compute_facts(req, {"1m": bars}, []) if bars else {}
-        png = render_chart(bars[-240:], title=f"{ap.symbol} 1m", tf="1m") if bars else None
+        png = (await render_chart_async(bars[-240:], title=f"{ap.symbol} 1m", tf="1m")) if bars else None
         vp = VisionPipeline(self.technique._get_client(), llm, thresholds=self.technique.thresholds(),
                             max_passes=2, trace=judgement.trace)
         # give the critic the whole live picture, not just the draft: which
@@ -317,7 +589,9 @@ class PlanArmer(PlanRunner):
         try:
             pick = await self.technique.option_pick(ap.symbol, "short" if trade.direction == "short" else "long",
                                                     spot=float(trade.last_price or trade.entry),
-                                                    max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte)
+                                                    max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte,
+                                                    near_money=(self.first_sale_policy(ap) in ("observe", "enforce")))
+            pick = await self._repick_after_rate_limit(ap, trade, pick, max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte)
         except Exception as exc:
             trade.errors.append(f"option chain: {exc}")
             self._log(ap, "option_pick_failed", f"{trade.trigger_id}: option chain error {exc}", trigger=trade.trigger_id)
@@ -331,6 +605,8 @@ class PlanArmer(PlanRunner):
                                                     "bid", "ask", "mid", "spreadPct", "delta", "theta", "iv", "dte",
                                                     "is0dte", "openInterest", "volume", "warnings", "provider")}
         trade.order_symbol = pick["symbol"]
+        if pick.get("nearMoney"):
+            trade.timing["vehicleRows"] = {"ts": now_ms(), "rows": pick["nearMoney"]}    # first-sale-v1: contemporaneous alternatives (evidence only)
         # the chain's bid/ask picked the strike; the real-time NBBO prices the
         # trade (sizing, entry limit, caps) — never the delayed row
         with contextlib.suppress(Exception):
@@ -347,6 +623,34 @@ class PlanArmer(PlanRunner):
                   + (f"; warnings: {'; '.join(warns)}" if warns else ""),
                   trigger=trade.trigger_id, contract=trade.contract)
         return trade.contract
+
+    async def _repick_after_rate_limit(self, ap, trade, pick, **kw):
+        """SKHY 2026-09-18: the provider's 429 outlasted the client's ~1.8 s back-off and a fired put entry sent nothing.
+        ONE more pick after `techniques.enhanced_market.pick_retry_after_429_s` (default 0 = OFF, capped at 8 s) - never a
+        loop, never stale chain data. The entry is then only allowed if the underlying has NOT run away meanwhile (no-chase:
+        at most 0.25R beyond the entry in the trade's direction); every later check (NBBO reprice, spread, sizing, first
+        sale, final guard, RiskGate) still runs. The fire chain is off the bar loop, so the wait blocks nothing else."""
+        err = str((pick or {}).get("error") or "")
+        if (pick or {}).get("available") or "429" not in err:
+            return pick
+        try:
+            wait = min(8.0, float(self.engine.settings.get("techniques.enhanced_market.pick_retry_after_429_s", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            wait = 0.0
+        if wait <= 0:
+            return pick
+        self._log(ap, "option_pick_retry", f"{trade.trigger_id}: provider rate limit - one more pick in {wait:g}s", trigger=trade.trigger_id)
+        await asyncio.sleep(wait)
+        q = self.engine.quotes.get(ap.symbol)
+        last = float(q.last) if q is not None and q.last and q.last > 0 else None
+        risk = abs(float(trade.entry) - float(trade.stop)) if trade.stop is not None else 0.0
+        if last is None or risk <= 0:
+            return {**(pick or {}), "error": err + "; no re-pick: the underlying cannot be re-checked"}
+        ran = (float(trade.entry) - last) if trade.direction == "short" else (last - float(trade.entry))
+        if ran > 0.25 * risk:
+            return {**(pick or {}), "error": err + f"; no re-pick: the underlying moved {ran / risk:.2f}R past the entry during the provider outage (no chase)"}
+        trade.timing["pickRetryAfter429S"] = wait
+        return await self.technique.option_pick(ap.symbol, "short" if trade.direction == "short" else "long", spot=last, **kw)
 
     async def rejudge_contract(self, ap, trade, contract: dict) -> None:
         """EM's quality re-judgement on the fresh NBBO (DA-01): T5.4 spread and T5.3 IV, the same
@@ -412,8 +716,26 @@ class PlanArmer(PlanRunner):
         return {"rows": rows, "reference": prev, "gapPct": pct, "replan": replan}
 
     async def build_replacement_plan(self, ap: ArmedPlan, *, reference_price: float) -> dict | None:
-        return await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
-                                            primary_tf=str(ap.plan.get("triggerTf") or "1m"),
-                                            trigger="preopen_replan", plan=True, with_vision=False, wait=True,
-                                            parent_run_id=ap.run_id, reference_price=reference_price)
+        from .em_experiment import is_book, prep_policy, run_tags
+        get = self.engine.settings.get
+        in_experiment = is_book(get, ap.config.portfolio_id)
+        run = await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
+                                           primary_tf=str(ap.plan.get("triggerTf") or "1m"),
+                                           trigger="preopen_replan", plan=True, with_vision=False, wait=True,
+                                           parent_run_id=ap.run_id, reference_price=reference_price,
+                                           tags=(run_tags(get) if in_experiment else None))   # a replacement stays in ITS book
+        # em-prep-policy-v1: under the PROPOSED policy the re-plan is a candidate like any other and passes the SAME
+        # eligibility owner (baseline keeps today's behaviour: any valid trigger replaces the dead plan)
+        try:
+            from .preparation_policy import effective
+            book_pol = prep_policy(get, ap.config.portfolio_id)      # the policy of THIS plan's book (baseline book: the technique-wide one)
+            if run and book_pol["preparationPolicy"] == "deterministic":
+                from .prep_service import prep_decide as _pd
+                d = await _pd(self.technique, run["id"], origin="preopen_replan", persist=True, run=run, policy=book_pol)
+                if d.get("disposition") != "eligible":
+                    self._log(ap, "preopen_replan_ineligible", f"re-plan {run['id'][:8]} is not eligible under the preparation policy: {d.get('explanation', '')[:200]}")
+                    return None
+        except Exception:                                  # noqa: BLE001 - the policy record must never break the pre-open path
+            log.exception("prep decision for the pre-open re-plan failed")
+        return run
 

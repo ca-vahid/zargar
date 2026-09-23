@@ -149,7 +149,7 @@ export function RunResult({ run, rules, onRefresh }: { run: TechniqueRun; rules:
                 <span>{a.entry.basis.replace(/_/g, " ")}{a.entry.requiresConfirmation ? " · confirm" : ""}</span></div>
               <div className="tq-plan-cell"><small>Stop</small><b className="neg">{fmt(a.stop.price)}</b>
                 <span>{a.stop.kind} · {a.stop.reference.replace(/_/g, " ")}</span></div>
-              {a.targets.map((t, i) => (
+              {(a.targets ?? []).map((t, i) => (
                 <div className="tq-plan-cell" key={i}><small>TP{i + 1}</small><b className="pos">{fmt(t.price)}</b>
                   <span>{t.trimPct}% · {t.basis.replace(/_/g, " ")}</span></div>
               ))}
@@ -181,7 +181,7 @@ export function RunResult({ run, rules, onRefresh }: { run: TechniqueRun; rules:
           <div className="tq-section">
             <div className="tq-label">Levels that matter</div>
             <div className="tq-levels">
-              {a.levels.map((lv, i) => (
+              {(a.levels ?? []).map((lv, i) => (
                 <span key={i} className={`tq-level ${lv.kind}`} title={lv.note}>
                   {lv.kind === "support" ? "S" : "R"} {fmt(lv.price)} <em>×{lv.touches}</em>
                 </span>
@@ -205,9 +205,9 @@ export function RunResult({ run, rules, onRefresh }: { run: TechniqueRun; rules:
                 <span className={`tq-chip ${a.breakout.higherTfAgrees ? "ok" : "bad"}`}>higher TF</span>
               </div></div>
           )}
-          {a.noTradeReasons.length > 0 && (
+          {(a.noTradeReasons ?? []).length > 0 && (
             <div className="tq-section"><div className="tq-label">{a.verdict === "setup" ? "Warnings" : "No-trade reasons"}</div>
-              <ul className="tq-reasons">{a.noTradeReasons.map((r, i) => <li key={i}>{r}</li>)}</ul></div>
+              <ul className="tq-reasons">{(a.noTradeReasons ?? []).map((r, i) => <li key={i}>{r}</li>)}</ul></div>
           )}
           {options && (
             <div className="tq-section"><div className="tq-label">Options expression (T5)</div>

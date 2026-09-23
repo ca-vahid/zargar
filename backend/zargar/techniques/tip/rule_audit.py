@@ -111,7 +111,7 @@ class JudgeCancelled(asyncio.CancelledError):
 
 
 async def _judge(client, *, model: str, system: str, header: str, cap: int,
-                 max_tokens_ceiling: int = MAX_TOKENS_CEILING) -> tuple[RuleAuditOpinion, list[dict]]:
+                 max_tokens_ceiling: int = MAX_TOKENS_CEILING, settings=None) -> tuple[RuleAuditOpinion, list[dict]]:
     """One audit judgement, measured (KB-08): returns the parsed opinion and
     the per-call usage list [{inputTokens, outputTokens, stopReason,
     latencyMs, maxTokens}]. A reply that does not validate earns ONE retry —
@@ -130,10 +130,14 @@ async def _judge(client, *, model: str, system: str, header: str, cap: int,
     for attempt in (1, 2):
         try:
             with llm_stats.timed() as _t:
+                # 2026-09-23: through the Batch API (50% list) when techniques.tip.batch_jobs is on - maintenance can wait
+                from . import batching as _batching
+                from .model_policy import effort_kw as _effort_kw
                 resp = await asyncio.wait_for(
-                    client.messages.create(model=model, max_tokens=cap, system=system,
-                                           messages=[{"role": "user", "content": header}]),
-                    timeout=AUDIT_TIMEOUT_S)
+                    _batching.create(client, settings, custom_id=f"audit-{attempt}", model=model, max_tokens=cap,
+                                     system=system, messages=[{"role": "user", "content": header}],
+                                     **_effort_kw(settings, "techniques.tip.analyst_effort", model)),
+                    timeout=_batching.timeout_s(settings, AUDIT_TIMEOUT_S))
         except asyncio.CancelledError as exc:          # shutdown/restart mid-call
             calls.append({"attempt": attempt, "maxTokens": cap, "error": "cancelled", "model": model})
             raise JudgeCancelled(calls) from exc
@@ -144,6 +148,7 @@ async def _judge(client, *, model: str, system: str, header: str, cap: int,
         u = getattr(resp, "usage", None)
         stop = getattr(resp, "stop_reason", None)
         calls.append({"attempt": attempt, "model": model,                       # COST-R3: stamped on every attempt
+                      **({"batch": True} if _batching.enabled(settings) else {}),
                       "inputTokens": int(getattr(u, "input_tokens", 0) or 0) if u else None,
                       "outputTokens": int(getattr(u, "output_tokens", 0) or 0) if u else None,
                       "cacheReadTokens": int(getattr(u, "cache_read_input_tokens", 0) or 0) if u else None,
@@ -533,7 +538,8 @@ async def _audit_scope(eng, client, *, model: str, scope: str, notes: list[dict]
 
         try:
             op, calls = await _judge(client, model=model, system=system,
-                                     header=header_for(c["notes"], c["index"], len(chunks)), cap=cap)
+                                     header=header_for(c["notes"], c["index"], len(chunks)), cap=cap,
+                                     settings=getattr(eng, "settings", None))
         except asyncio.CancelledError as exc:
             calls = list(getattr(exc, "calls", None) or [])
             usage_all.extend({"scope": scope, "chunkId": cid, **x} for x in calls)

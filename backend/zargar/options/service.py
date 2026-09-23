@@ -60,8 +60,11 @@ class OptionsService:
                     self._tradier = TradierClient(
                         tok, sandbox=bool(getattr(self.engine.config, "tradier_sandbox", False)))
                 return self._tradier
+        cooldown = float(s.get("options.cboe_cooldown_seconds", CboeClient.COOLDOWN_S) or CboeClient.COOLDOWN_S)
         if self._cboe is None:
-            self._cboe = CboeClient()
+            self._cboe = CboeClient(cooldown_s=cooldown)
+        elif hasattr(self._cboe, "cooldown_s"):
+            self._cboe.cooldown_s = cooldown             # the setting is live-editable; the client follows it
         return self._cboe
 
     def use_client(self, client) -> None:
@@ -245,7 +248,9 @@ class OptionsService:
         if not refresh and o.symbol in self._snapshots:
             return self._snapshots[o.symbol]
         try:
-            rows = await self.provider().chain(o.underlying, o.expiry.isoformat())
+            from .chain import cboe_priority
+            with cboe_priority("position"):                  # a held contract's mark / exit read is never held back by a cooldown
+                rows = await self.provider().chain(o.underlying, o.expiry.isoformat())
         except OptionsError as exc:
             log.info("chain unavailable for %s: %s", o.symbol, exc)
             return self._snapshots.get(o.symbol)
@@ -426,7 +431,8 @@ class OptionsService:
         # F44 (2026-09-04): a contract past its expiry has nothing left to quote — drop it from the
         # batch (the set only ever grew: 2026-09-02 expiries were still polled on 09-04)
         today = dt.datetime.now(ET).date()
-        dead = [sym for sym in self._tracked if (occ.parse(sym) is not None and occ.parse(sym).expiry < today)]
+        parsed = {sym: occ.parse(sym) for sym in list(self._tracked)}        # parse once per tracked contract, not twice
+        dead = [sym for sym, o in parsed.items() if o is not None and o.expiry < today]
         for sym in dead:
             self._tracked.discard(sym)
         if dead:
@@ -438,17 +444,19 @@ class OptionsService:
         self._cycle = getattr(self, "_cycle", 0) + 1
         greeks_pass = self._cycle % GREEKS_EVERY == 1
         by_underlying: dict[str, list[occ.Occ]] = {}
-        for sym in list(self._tracked):
-            o = occ.parse(sym)
-            if o is not None:
+        for sym, o in parsed.items():
+            if o is not None and sym in self._tracked:
                 by_underlying.setdefault(o.underlying, []).append(o)
         for underlying, contracts in by_underlying.items():
+            await asyncio.sleep(0)                          # yield between underlyings: the loop serves health / quotes in between
             if not greeks_pass:
                 contracts = [o for o in contracts if o.symbol not in live]
             if not contracts:
                 continue
             try:
-                rows = await self.provider().all_rows(underlying)
+                from .chain import cboe_priority
+                with cboe_priority("background"):            # 2026-09-16: enrichment never competes with an entry or a held position
+                    rows = await self.provider().all_rows(underlying)
             except OptionsError as exc:
                 log.info("enrich skipped for %s: %s", underlying, exc)
                 continue
@@ -456,7 +464,8 @@ class OptionsService:
                 log.warning("enrich failed for %s: %s", underlying, exc)
                 continue
             now = now_ms()
-            index = {r["symbol"]: r for r in rows}
+            wanted = {o.symbol: o for o in contracts}       # format each OCC symbol once
+            index = await asyncio.to_thread(lambda: {r["symbol"]: r for r in rows if r.get("symbol") in wanted})
             for o in contracts:
                 r = index.get(o.symbol)
                 if r is None:
