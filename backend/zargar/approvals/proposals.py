@@ -142,7 +142,42 @@ class ProposalService:
         cap = int(self.engine.settings.get("techniques.tip.max_contracts_per_tip", 25) or 0)
         return min(qty, cap) if cap > 0 else qty
 
-    async def _tip_budget(self, policy, pid: str) -> tuple[float, str | None, str | None]:
+    async def _book_exposure(self, pid: str, underlying: str | None) -> tuple[float, float]:
+        """ADV-06: cost basis ($) of every OPEN managed tip position in this book, and of those on `underlying`
+        (an option leg counts under its OCC root)."""
+        from ..options import occ as _occ
+        total = name = 0.0
+        u = str(underlying or "").upper()
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(ManagedPositionRow).where(
+                ManagedPositionRow.technique == "tip", ManagedPositionRow.portfolio_id == pid,
+                ManagedPositionRow.status.in_(("open", "attention"))))).scalars().all()
+        for r in rows:
+            for leg in (r.legs or []):
+                c = abs(float(leg.get("avgFill") or 0) * float(leg.get("qty") or 0) * float(leg.get("multiplier") or 1.0))
+                total += c
+                sym = str(leg.get("symbol") or r.symbol or "").upper()
+                o = _occ.parse(sym)
+                if u and (o.underlying if o else sym) == u:
+                    name += c
+        return total, name
+
+    @staticmethod
+    def exposure_refusal(*, equity: float | None, total_cost: float, name_cost: float, book_pct: float, name_pct: float,
+                         underlying: str | None) -> str | None:
+        """ADV-06 (pure): refuse a NEW entry when the book's open tip cost basis, or this name's, is already at its cap
+        (% of equity). 0 = no cap. Exits and management are never touched - only new entries are refused."""
+        if not equity or equity <= 0:
+            return None
+        if book_pct > 0 and total_cost >= equity * book_pct / 100.0:
+            return (f"book exposure cap: open tip positions cost ${total_cost:,.0f} = {total_cost / equity * 100:.0f}% of "
+                    f"${equity:,.0f} equity (max {book_pct:g}%)")
+        if name_pct > 0 and underlying and name_cost >= equity * name_pct / 100.0:
+            return (f"name exposure cap: {underlying} already costs ${name_cost:,.0f} = {name_cost / equity * 100:.0f}% of "
+                    f"equity (max {name_pct:g}%)")
+        return None
+
+    async def _tip_budget(self, policy, pid: str, underlying: str | None = None) -> tuple[float, str | None, str | None]:
         """Reserve-aware per-tip budget (user decision 2026-09-07: ambitious
         early, never lose a late tip to a full book). budget =
         min(policy.budget_per_tip, free_cash / reserve_slots) — the desk always
@@ -172,6 +207,17 @@ class ProposalService:
                 budget = max(glide, min(floor, cash))
                 note = (f"Sized for the reserve: ${cash:,.0f} free cash across "
                         f"{slots} slots → ${budget:,.0f} budget (full is ${base:,.0f}).")
+        # ADV-06 (2026-09-23): book-level concentration caps (0 = off; defaults off)
+        _bp = float(eng.settings.get("techniques.tip.max_book_exposure_pct", 0) or 0)
+        _np = float(eng.settings.get("techniques.tip.max_name_exposure_pct", 0) or 0)
+        if _bp > 0 or _np > 0:
+            with contextlib.suppress(Exception):
+                _eq = float(await eng.positions.equity(pid) or 0)
+                _tot, _nm = await self._book_exposure(pid, underlying)
+                _why = self.exposure_refusal(equity=_eq, total_cost=_tot, name_cost=_nm, book_pct=_bp, name_pct=_np,
+                                             underlying=underlying)
+                if _why:
+                    return 0.0, None, _why
         n_open, open_cost = await self._source_open(pid, policy.name)
         if int(policy.max_open_tips or 0) > 0 and n_open >= int(policy.max_open_tips):
             return 0.0, None, (f"source cap: {policy.name} already has {n_open} open tips "
@@ -243,7 +289,7 @@ class ProposalService:
         eng = self.engine
         from ..signals.sources import resolve_policy
         policy = resolve_policy(eng.settings, signal_row.source_name)
-        budget, glide_note, refuse = await self._tip_budget(policy, portfolio_id)
+        budget, glide_note, refuse = await self._tip_budget(policy, portfolio_id, underlying=signal_row.ticker)
         if refuse:
             await self._refuse(signal_id=signal_row.id, reason=refuse, run_id=run_id)
             return None
@@ -363,7 +409,7 @@ class ProposalService:
             pid = portfolios[0]["id"]
         pf = eng.positions.portfolio(pid) or {}
         policy = resolve_policy(eng.settings, signal_row.source_name)
-        budget, glide_note, refuse = await self._tip_budget(policy, pid)
+        budget, glide_note, refuse = await self._tip_budget(policy, pid, underlying=signal_row.ticker)
         if refuse:
             await self._refuse(signal_id=signal_row.id, reason=refuse)
             return None
@@ -1061,6 +1107,18 @@ class ProposalService:
         except Exception as exc:                        # noqa: BLE001 - diagnostic only, but visible
             log.warning("execution-cost diagnostic failed for %s: %s", symbol, exc)
             rp.execCost = {"status": "unknown", "symbol": str(symbol), "reasons": [f"diagnostic failed: {exc}"]}
+        # ADV-07 / ADV-08 (2026-09-23): annotations on the card - never a gate, never a substitution
+        with contextlib.suppress(Exception):
+            if sec_type == "OPT" and str(s.get("techniques.tip.shares_alternative", "annotate") or "off") == "annotate" \
+                    and (not rp.qty or (rp.reviewRequired and "no quantity" in str(rp.reviewRequired))):
+                rp.sharesAlternative = _geo.shares_alternative(
+                    direction=direction, entry_ref=entry_ref, final_stop=rp.finalStop, budget=rp.budget,
+                    max_notional=float(s.get("techniques.tip.budget_per_tip", 0) or 0) or None)
+            _fp = float(s.get("techniques.tip.friction_flag_pct", 0) or 0)
+            _share = (rp.execCost or {}).get("costShareOfPurchase")
+            if _fp > 0 and _share is not None and float(_share) * 100.0 >= _fp:
+                rp.frictionFlag = {"roundTripSharePct": round(float(_share) * 100.0, 1), "flagPct": _fp,
+                                   "note": "round-trip fees + spread at the quote exceed the configured share of the debit"}
         if problems:
             rp.evidence = [{"code": c, "detail": d} for c, d in problems]
             rp.reviewRequired = "; ".join(d for _c, d in problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")

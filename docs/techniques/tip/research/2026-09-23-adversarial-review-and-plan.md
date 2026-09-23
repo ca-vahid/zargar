@@ -6,6 +6,9 @@ plan: what we trade, how we take tips, how we spend on the model, how the knowle
 measurements can be trusted. Every number is from those tools; sample sizes are small and stated. Nothing here is
 activated by this document — the decisions are in §4.
 
+> **Implemented 2026-09-23 as 0.8.34 (ADV-01..12).** Two findings were CORRECTED by measurement (E1, A2) and two
+> levers were measured (cache: works; compact context: unsafe). Read §7 before quoting anything above it.
+
 ## 1. The honest scoreboard
 
 | 2026-09-08 → 09-22 (10 sessions) | $ |
@@ -44,7 +47,7 @@ Severity: **H** = changes the P&L or the evidence materially; **M** = meaningful
 | # | Finding | Evidence | Sev |
 |---|---|---|---|
 | A1 | **Long options are the loss engine.** Buying the tip's contract verbatim buys theta, spread and fees; nine premium-stop exits lost $1,099.56 with zero winners. | exit table above; ACHR 5.5c all-in friction 22% of debit, ACHR 6c 13% | H |
-| A2 | **Holding short-dated long options overnight is the single worst habit.** All six first-seconds exits were overnight holds (−$829.85). The earlier D2 review rejected an "opening exit guard" because DTE ranged 3–70 — but that rejected one *remedy*, not the finding. The question to test is whether to *enter* or *hold* those contracts overnight at all. | exit table; `2026-09-19-economics-review.md` D2 | H |
+| A2 | *(Corrected in §7: sampled overnight carry was POSITIVE; the loss class is exits on the opening quote.)* **Holding short-dated long options overnight is the single worst habit.** All six first-seconds exits were overnight holds (−$829.85). The earlier D2 review rejected an "opening exit guard" because DTE ranged 3–70 — but that rejected one *remedy*, not the finding. The question to test is whether to *enter* or *hold* those contracts overnight at all. | exit table; `2026-09-19-economics-review.md` D2 | H |
 | A3 | **The risk budget kills most option takes after we have already paid to appraise them.** 12 of 48 takes (25%) were risk-infeasible: one contract risked $113–$505 against a ~$92 budget. We pay Opus to appraise, then the geometry gate refuses. | dispositions; 09-22 HIMS/COIN/BABA | M |
 | A4 | **Shares at equal risk are feasible where options are not**, and the only positive cohorts are shares. The account-fit study found a shares alternative for 4 of 6 infeasible takes; the live share entries (SBLK, VKTX, PL, IONQ, CRWV, NEM) are the book's best positions. | `tip_feasibility replay`; source × setup table | H |
 | A5 | **Exposure is concentrated and unmanaged as a portfolio.** ~71% of equity is held overnight, mostly five share names; there is no book-level cap on aggregate open risk or on correlated names. | friction/exposure table 09-22 | M |
@@ -80,7 +83,7 @@ Severity: **H** = changes the P&L or the evidence materially; **M** = meaningful
 
 | # | Finding | Evidence | Sev |
 |---|---|---|---|
-| E1 | **Shadow research books are broken, so we cannot judge the analyst's declines.** eva immediate shows **+$145,506** (21 unallocated sells); two armed books are quarantined; ab immediate −$6,257. Any "the analyst skipped a winner" claim is unsupported. | shadow section of scorecard | H |
+| E1 | *(Corrected in §7: the +$145.5k was mostly a window-cut artifact plus a real META expiry gain; four books were quarantined.)* **Shadow research books are broken, so we cannot judge the analyst's declines.** eva immediate shows **+$145,506** (21 unallocated sells); two armed books are quarantined; ab immediate −$6,257. Any "the analyst skipped a winner" claim is unsupported. | shadow section of scorecard | H |
 | E2 | **Scorecard v4 target-to-fill is wrong for options (our defect).** For an option rung it compares the *underlying* target with the *premium* fill (T: "shortfall" $5,172; GOOGL $33,105). Shares rows are correct. | scorecard v4 target table | H (fix now) |
 | E3 | **Premium-stop confirmations cannot be verified (P11).** Two OPRA poll stamps can be one print; CORZ's 09-22 exit is an instance. Owner Team2 (accepted). | PLATFORM-RULES 2026-09-22 | H |
 | E4 | **n is tiny.** 31 filled ideas, 21 completed; no cohort has enough to claim an edge. Plans must be designed to learn fast, not to be right. | all tables | — |
@@ -140,21 +143,21 @@ Target: intake + appraisal spend from ~$65–90/session to ~$20–30/session.
 
 ## 4. Decisions (one table)
 
-| # | Decision | Recommendation | Evidence to wait for | Expected value |
-|---|---|---|---|---|
-| D-1 | Fix scorecard option target-to-fill (E2) | do now (bug) | none | correct evidence |
-| D-2 | Repair/exclude broken shadow books (E1) | do now | none | trustworthy controls |
-| D-3 | Correctly scoped cache pilot, ≤ $10 | approve | none (captured cases exist) | −$25–45/session if confirmed |
-| D-4 | Review context diet | approve after 1a replay | no lost management action on captured cases | −$15–25/session |
-| D-5 | Enforce relevance gate | after five-session report | 0 false negatives, clean human list | −$15–20/session |
-| D-6 | Cheaper model for note-only reviews | after evaluation | instructions match on management/correction cases | −$20–30/session |
-| D-7 | Per-source spend caps | approve design | 10-session source ledger | −$10–20/session |
-| D-8 | Shares-first alternative cards | approve as human-approved cards | n ≥ 20 before auto | recovers infeasible takes |
-| D-9 | Overnight short-DTE long options | research comparison | hold-study rows over ≥ 20 cases | avoids the −$830 class |
-| D-10 | Premium/friction floor | research | friction table over the window | avoids high-friction losers |
-| D-11 | Book-level risk caps | approve values | — | limits concentration |
-| D-12 | Rule budget + evidence binding | approve | — | smaller, better rulebook; lower cost |
-| D-13 | P11 premium-stop observation identity | Team2 first, then Tips | vendor stamp on Quote | trustworthy stops |
+| # | Decision | Recommendation | Evidence to wait for | Expected value | Status 2026-09-23 |
+|---|---|---|---|---|---|
+| D-1 | Fix scorecard option target-to-fill (E2) | do now (bug) | none | correct evidence | done (0.8.34) |
+| D-2 | Repair/exclude broken shadow books (E1) | do now | none | trustworthy controls | done - 4 books quarantined |
+| D-3 | Correctly scoped cache pilot, ≤ $10 | approve | none (captured cases exist) | −$25–45/session if confirmed | done - measured -49.8% |
+| D-4 | Review context diet | approve after 1a replay | no lost management action on captured cases | −$15–25/session | REJECTED by measurement |
+| D-5 | Enforce relevance gate | after five-session report | 0 false negatives, clean human list | −$15–20/session | observe until 09-25 report |
+| D-6 | Cheaper model for note-only reviews | after evaluation | instructions match on management/correction cases | −$20–30/session | not approved (P2) |
+| D-7 | Per-source spend caps | approve design | 10-session source ledger | −$10–20/session | built, off |
+| D-8 | Shares-first alternative cards | approve as human-approved cards | n ≥ 20 before auto | recovers infeasible takes | built: annotate on cards |
+| D-9 | Overnight short-DTE long options | research comparison | hold-study rows over ≥ 20 cases | avoids the −$830 class | first pass: carry positive |
+| D-10 | Premium/friction floor | research | friction table over the window | avoids high-friction losers | built, off (flag) |
+| D-11 | Book-level risk caps | approve values | — | limits concentration | built, off (caps 0) |
+| D-12 | Rule budget + evidence binding | approve | — | smaller, better rulebook; lower cost | report built (ledger) |
+| D-13 | P11 premium-stop observation identity | Team2 first, then Tips | vendor stamp on Quote | trustworthy stops | Team2 owns (P11) |
 
 **Combined target if Phase 1 lands:** model cost from ~$74/session (window average) to ~$20–30/session — on this
 window's trading that turns −$1,556 after cost into roughly −$1,100; the rest has to come from Phase 2 (vehicle and
@@ -171,3 +174,30 @@ overnight). Break-even needs both.
 
 The risk gate and geometry sizing, write-ahead exits and venue stops, source-following management, the five-session
 observation, observe mode for the gate until the report, and the production model until an evaluation says otherwise.
+
+## 7. Implementation record and measured results (2026-09-23, 0.8.34)
+
+Everything below is built, tested (`tests/test_adv_plan.py` + the adjacent suites) and merged. Every
+behaviour-changing knob ships **off** or at its old value; turning one on is a journaled `PATCH /api/settings`.
+
+| id | what was built | where | measured / found | default |
+|---|---|---|---|---|
+| ADV-01 | option target-to-fill judged on the UNDERLYING at the fill minute (it compared a premium with an underlying target - GOOGL showed a $33,105 "shortfall") | `friction.rung_shortfall`, scorecard v6 | option rows now show the underlying close; dollars n/a | - |
+| ADV-02 | shadow-book audit + quarantine; shadow census FIFO from the book's first execution | `tools/tip_shadow_audit.py`, scorecard | **E1 corrected:** with full history eva immediate's unallocated sells vanish - the window cut the lots. Its +$123.8k is real: META 690C held to a +11% move and settled at intrinsic. Quarantined (unallocated sells / negative lots): common-stock armed, muggzone immediate + armed, tt immediate | applied |
+| ADV-03 | conversation-scoped prompt caching (marker on the last message block, transcript untouched) | `analyst.cache_messages`, `prompt_cache_scope` | **paid pilot, 4 captured 3-turn reviews: $2.39 off -> $1.20 on = -49.8%** ($3.58 of a $10 estimate-based guard) | `prefix` (old behaviour) |
+| ADV-04 | compact review header (rule headlines, pending titles, ticker/source-scoped notes) | `review_context.py`, knob `review_context` | **REJECTED:** 73.6k -> 16.4k chars but on 8 captured reviews the compact arm agreed with the original 1 time (full: 4), turned a close into a stop update and missed a disarm; $3.84 spent (`tools/tip_context_compare.py`) | `full` |
+| ADV-05 | per-source daily review budget; an over-budget source skips only gate-irrelevant messages, journaled `sourceBudget` | `review_gate.source_budget`, `signals/service._review_gate` | - | `{}` (off) |
+| ADV-06 | book and single-name exposure caps refuse NEW entries only | `ProposalService.exposure_refusal`, `_tip_budget` | 71% of equity held overnight on 09-22 | `0` (off) |
+| ADV-07 | equal-risk share size on option cards the budget cannot afford (long only, notional-bounded) | `geometry.shares_alternative`, card `sharesAlternative` | annotation only, never an order | `annotate` |
+| ADV-08 | friction flag on cards when spread+fees exceed a share of the purchase | card `frictionFlag` | - | `0` (off) |
+| ADV-09 | overnight carry study, bid-to-bid 15:50 -> next open, by DTE | `tools/tip_overnight_study.py` | **A2 corrected:** 0-7 DTE n=5 **+$447** (median +15.4%), 8-30 n=4 +$17, 31+ n=6 -$23, shares n=10 +$322; 11 pending. Carry did not lose - the -$830 class is exits on the OPENING quote (README "premium-bleed exit on the opening bid") | report |
+| ADV-10 | source return net of model cost + management actions per source | scorecard v6 | only common-stock is positive after model cost | report |
+| ADV-11 | knowledge ledger: chars per rule, dated cases bound, retirement manifest | `tools/tip_knowledge_ledger.py` | 37 rules, 41.7k chars on every call; 18 cite < 3 dated cases; **rule reliance is not recorded** (rules have no citable id), so no rule's value is measurable; 0 notes old enough to retire | report |
+| ADV-12 | weekly one-page decision review + research-switch table | `tools/tip_weekly_review.py` | - | report |
+
+**What this changes in the plan.** Phase 1's biggest lever is real and costs nothing to keep: conversation caching
+(about -$25-35/session at the window's mix). Its activation is a decision for after the 09-25 five-session report,
+so the observation window is not disturbed. The context diet (1b) is off the table in this form - the
+next attempt would keep the full rulebook and trim only notes, and must pass the same comparison. 2b (overnight
+rule) should become an OPENING-EXIT study: what the stop and premium-stop do at 09:30:00-09:30:59 against the
+first-minute mid. D-12 needs rule ids in the prompt before any rule can be judged on reliance.

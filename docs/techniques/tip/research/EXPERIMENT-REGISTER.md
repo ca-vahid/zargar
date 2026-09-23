@@ -156,3 +156,39 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - **Evaluation window:** opened 2026-09-15; closes on the reviewer's decision. **Decision rule:** downgrade only
   on a reviewer verdict.
 - **Status:** collecting.
+
+## `prompt-cache-conversation` (opened + measured 2026-09-23, ADV-03)
+
+- **Hypothesis:** caching through the last message of each turn (not only system + tools) removes most of the
+  re-sent input on a multi-turn review without changing the reply.
+- **Variants:** `prompt_cache_scope` = prefix (production) vs conversation. **Unit:** one captured review, replayed.
+- **Result:** 4 captured 3-turn reviews, $2.39 off vs $1.20 on = **-49.8%** (`tools/tip_cache_pilot.py`; $3.58 of a $10
+  estimate-based guard). Caching changes cost only; reply agreement was not the metric and is not claimed.
+- **Decision rule:** activation is a user decision; proposed for after the 09-25 five-session report so the
+  observation window is not disturbed. Rollback = the knob back to `prefix`.
+- **Status:** measured; production stays `prefix`.
+
+## `review-context-compact` (opened + REJECTED 2026-09-23, ADV-04)
+
+- **Hypothesis:** a review needs only rule headlines, pending-rule titles and ticker/source-scoped notes.
+- **Variants:** full header (73.6k chars) vs compact (16.4k chars), same model, same captured requests.
+- **Result (8 captured reviews, $3.84, `tools/tip_context_compare.py`):** full arm agreed with the recorded
+  review 4 times, compact 1; compact was inconclusive 6 times, turned a `close_position` into an `update_exit_plan`
+  and missed a `disarm_plan`. **Unsafe - rejected.** A future attempt keeps the full rulebook and trims notes only,
+  and must pass the same comparison with no lost management action.
+- **Status:** closed; knob `review_context` stays `full`.
+
+## `overnight-carry` (opened 2026-09-23, ADV-09, observation only)
+
+- **Hypothesis (A2):** holding short-dated long options overnight loses money.
+- **Measure:** bid-to-bid 15:50 -> next open from the hold study (`tools/tip_overnight_study.py`), by DTE bucket.
+- **First pass (to 2026-09-22):** 0-7 DTE n=5 +$447 (median +15.4%), 8-30 n=4 +$17, 31+ n=6 -$23, shares n=10 +$322;
+  11 pending. **The hypothesis is not supported** - the losing class is exits on the opening quote, not the carry.
+- **Decision rule:** no rule from n < 20 per bucket; the follow-up study is the opening-exit comparison.
+- **Status:** collecting.
+
+## `source-review-budget` and `book-exposure-caps` (built 2026-09-23, ADV-05/06, OFF)
+
+- Per-source daily review budget (`review_source_budgets`, `{}` = off; only gate-irrelevant messages are skipped,
+  journaled `sourceBudget`) and book / single-name exposure caps (`max_book_exposure_pct`, `max_name_exposure_pct`,
+  0 = off; refuse new entries only). Values are a user decision; no evidence window is claimed for either.

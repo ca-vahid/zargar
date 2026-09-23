@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.32";
+export const APP_VERSION = "0.8.34";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.34",date:"2026-09-23",title:"Tips: correct target evidence, cleaner controls, and measured cost levers",items:[
+    {tag:"fixed",text:"Scorecard: an option's target-to-fill is judged on the underlying at the fill minute (it had compared a premium with a stock target). Shadow research books are counted from their first execution, and the books with sells they never bought are quarantined as evidence."},
+    {tag:"new",text:"Approval cards can show the equal-risk share size when an option cannot be sized within the budget (shown, never substituted), and an optional friction flag. Optional book and single-name exposure caps and per-source review budgets ship off."},
+    {tag:"improved",text:"Prompt caching can cover the whole review conversation (measured about 50% cheaper on replayed reviews; off until chosen). A compact review context was measured and rejected because it lost management actions."},
+    {tag:"new",text:"Reports: source return net of model cost, overnight carry by expiry, a knowledge ledger (what each rule costs on every call) and a one-page weekly review. No trading policy, risk limit, stop or approval control changed."},
+  ]},
   {version:"0.8.32",date:"2026-09-22",title:"Tips: checkpoint verdicts are structured, replay claims are locked",items:[
     {tag:"fixed",text:"The five-session checkpoint reads the observation report's structured verdict: an INCOMPLETE report, an empty report or a missing verdict can no longer be published as READY, and every exported report uses the same cutoff."},
     {tag:"fixed",text:"A manual intake replay takes an atomic, durable per-message claim, so two concurrent requests can never process the same failed message twice."},
