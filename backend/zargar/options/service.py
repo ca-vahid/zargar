@@ -389,12 +389,18 @@ class OptionsService:
             src_ts = now
             self._snapshots[sym].update({"quoteTs": int(r.get("quote_ts") or 0),
                                          "tradeTs": int(r.get("trade_ts") or 0)})
+            # OPRA clock semantics (owned by Team2, PLATFORM-RULES 2026-09-22): `source_ts` stays OUR POLL time -
+            # every freshness gate and both premium-stop confirmations read it, and a quiet contract's standing
+            # NBBO must not look stale. `quote_ts` is the VENDOR's time for this bid/ask, carried beside it as
+            # evidence; nothing decides on it yet. `last_ts` is OPRA's own trade time, on the direct Quote only.
+            vendor_qts = int(r.get("quote_ts") or 0)
             quotes.set_overlay(sym, bid=bid, ask=ask, bid_size=int(r.get("bid_size") or 0),
                                ask_size=int(r.get("ask_size") or 0), source="opra", source_ts=src_ts,
-                               anchor_last=last or None)
+                               quote_ts=vendor_qts, anchor_last=last or None)
             quotes.on_quote(Quote(symbol=sym, bid=bid, ask=ask, last=last or ((bid + ask) / 2 if bid and ask else ask or bid),
                                   bid_size=int(r.get("bid_size") or 0), ask_size=int(r.get("ask_size") or 0),
-                                  volume=0, ts=now, session="regular", source="opra", source_ts=src_ts))
+                                  volume=0, ts=now, session="regular", source="opra", source_ts=src_ts,
+                                  quote_ts=vendor_qts, last_ts=int(r.get("trade_ts") or 0)))
         self._served_live = served
         # phase 2: real-time greeks/IV every ~15th pass (~30 s at the 2 s cadence)
         # — the roll-up's delta trigger and the monetize IV-tighten read these;

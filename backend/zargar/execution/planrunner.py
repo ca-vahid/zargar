@@ -596,9 +596,16 @@ class PlanRunner(SessionListener):
             rec.update({"usable": False, "why": "no quote for the contract"})
             return None, rec
         src_ts = int(getattr(oq, "source_ts", 0) or oq.ts or 0)
-        rec.update({"bid": oq.bid, "ask": oq.ask, "source": str(getattr(oq, "source", "") or ""),
+        src = str(getattr(oq, "source", "") or "")
+        vendor_ts = int(getattr(oq, "quote_ts", 0) or 0)
+        rec.update({"bid": oq.bid, "ask": oq.ask, "source": src,
                     "sourceTs": src_ts, "receivedTs": int(oq.ts),
+                    # OPRA's `source_ts` is our POLL time, not the vendor's: say so, and carry the vendor stamp
+                    # beside it. `ageS` bounds staleness; only `vendorAgeS` is a source-event age.
+                    "sourceTimeBasis": ("poll" if src == "opra" else "source" if src_ts else "receipt"),
                     "ageS": round((now_ms - src_ts) / 1000.0, 2) if src_ts else None,
+                    "vendorTs": vendor_ts or None,
+                    "vendorAgeS": round((now_ms - vendor_ts) / 1000.0, 2) if vendor_ts else None,
                     "delayed": bool(getattr(oq, "delayed", False)), "maxAgeS": max_age})
         if not fresh:
             rec.update({"usable": False,
@@ -891,9 +898,11 @@ class PlanRunner(SessionListener):
                     preason = premium_stop_breach(tr, pprice, stop_pct=prem_pct, basis=basis,
                                                   min_ticks=int(self.rt("premium_stop_min_ticks", 0) or 0))
                     pkey = (ap.run_id, tr.trigger_id + "~prem")
+                    vendor_seen = self.__dict__.setdefault("_quote_vendor_seen", {})
                     if preason is None:
                         self._quote_breaches.pop(pkey, None)
                         self._quote_seen.pop(pkey, None)
+                        vendor_seen.pop(pkey, None)
                     # `oq is None` cannot be reached today (no quote means no basis price, so `preason`
                     # is None above) — it is kept so a future basis that tolerates a missing quote cannot
                     # walk into an AttributeError on the confirmation counter
@@ -901,10 +910,22 @@ class PlanRunner(SessionListener):
                         pass         # DA-05: same or OLDER observation than the last count - not forward confirmation
                     else:
                         self._quote_seen[pkey] = int(getattr(oq, "source_ts", 0) or oq.ts)
+                        # evidence only (OPRA clock semantics): which VENDOR observation each counted poll saw.
+                        # The rule above still counts polls; this lets us see how often it counted one print twice.
+                        vendor_seen.setdefault(pkey, []).append(int(getattr(oq, "quote_ts", 0) or 0))
                         pn = self._quote_breaches.get(pkey, 0) + 1
                         self._quote_breaches[pkey] = pn
                         if pn >= need:
                             self._quote_breaches.pop(pkey, None)
+                            stamps = vendor_seen.pop(pkey, [])
+                            known = [s for s in stamps if s]
+                            if isinstance(pquote, dict):
+                                pquote["confirmation"] = {
+                                    "polls": len(stamps), "vendorStamps": stamps,
+                                    "distinctVendorObservations": len(set(known)),
+                                    # None = the vendor sent no stamp, so distinctness is unknowable, not assumed
+                                    "genuinelyDistinct": (len(set(known)) >= 2) if len(known) == len(stamps) and known else None,
+                                    "rule": "counts polls by source_ts; vendor stamps recorded, not used (2026-09-22)"}
                             self._log(ap, "premium_stop", f"{tr.trigger_id}: {preason}", trigger=tr.trigger_id)
                             await self._alert(ap, f"{tr.trigger_id}: {preason} — selling at market",
                                               level="warning", stage="premium_stop")
