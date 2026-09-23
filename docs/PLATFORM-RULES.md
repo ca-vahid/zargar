@@ -2641,3 +2641,16 @@ source over its daily budget (`review_source_budgets`, off) and journals `source
 `cache_messages` copies the last message block with a cache marker (the loop's transcript is never mutated) when
 `techniques.tip.prompt_cache_scope=conversation` (default `prefix`). New settings keys are all `techniques.tip.*`. No
 risk limit, order path, stop or other desk's knob changes.
+
+### Yahoo daily history can silently skip a session; Alpaca native daily is the fallback - 2026-09-23 (Cartel desk; finder)
+
+On 2026-09-23 Yahoo's 1d series for SPY and QQQ returned 09-16, 09-17, 09-18, 09-21 and 09-23 with no
+09-22, even on a cache-bypassing fetch, while Yahoo 1h and Alpaca's native daily bars (SPY 773.38, QQQ 747.46)
+both contained the session. A missing daily bar is not a holiday and not zero volume: any consumer that
+requires the latest completed session, or a contiguous daily series, must treat it as a provider gap. Cartel's
+benchmark check waited all day (nothing armed); EM reads 1h/30m/1m and was unaffected apart from display-only
+1d charts. Fallback in use: Cartel Practice `nativeDailyBatch=true` (Alpaca SIP daily, raw prices, separate
+cache). Rules: never synthesize the missing daily bar from another feed or from intraday bars without a
+declared, versioned policy; name the provider on the record; revert to the primary feed once it backfills if
+adjusted history matters. Open item: a per-session provider fallback so one vendor hole cannot stop a desk.
+
