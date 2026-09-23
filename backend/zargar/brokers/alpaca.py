@@ -135,7 +135,8 @@ class AlpacaQuoteFeed(QuoteFeed):
             return None
         return {"symbol": symbol, "provider": "alpaca", "feed": self._feed,
                 **{key: state.get(key) for key in
-                   ("bid", "ask", "bid_size", "ask_size", "quote_ts", "last", "last_ts")},
+                   ("bid", "ask", "bid_size", "ask_size", "quote_ts", "last", "last_ts",
+                    "quote_received_ts", "last_received_ts")},
                 "rawBidSize":state.get('raw_bid_size'),"rawAskSize":state.get('raw_ask_size'),
                 "sizeBasis": state.get('quote_size_basis','unknown')}
 
@@ -250,6 +251,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             "bid": 0.0, "ask": 0.0, "bid_size": 0, "ask_size": 0,
             "last": 0.0, "volume": 0, "day_high": 0.0, "day_low": 0.0, "emit_ms": 0,
             "last_ts": 0, "quote_ts": 0,   # PR #204 r2: venue time of the print that set `last` / of the current bid-ask
+            "last_received_ts": 0, "quote_received_ts": 0,   # local receipt time of the same message (host clock)
             # F19 (2026-09-04): the day range/volume are SESSION-to-date, not process-to-date.
             # `day` = the ET session the running numbers belong to (reset on a new session);
             # `vol_live` = regular-session prints seen since that reset; `vol_seed` = the
@@ -292,6 +294,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             st["bid"] = float(m.get("bp") or 0)
             st["ask"] = float(m.get("ap") or 0)
             st["quote_ts"] = venue_ms(m.get("t"))               # 0 when the message carries no venue time (r3)
+            st["quote_received_ts"] = now_ms()
             st['raw_bid_size'],st['raw_ask_size']=m.get('bs'),m.get('as')
             st['bid_size'],st['quote_size_basis']=equity_quote_size(m.get('bs'),self._feed,st['quote_ts'])
             st['ask_size'],_=equity_quote_size(m.get('as'),self._feed,st['quote_ts'])
@@ -312,6 +315,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             if px > 0 and not (conds & _NO_LAST_CONDS):
                 st["last"] = px
                 st["last_ts"] = venue_ts                 # never the receipt time (PR #204 r2/r3)
+                st["last_received_ts"] = now_ms()
                 if regular:                              # F19: the day range is the regular session's
                     st["day_high"] = max(st["day_high"], px)
                     st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)

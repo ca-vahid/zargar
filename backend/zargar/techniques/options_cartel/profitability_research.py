@@ -296,6 +296,11 @@ async def _warm_baselines(runtime, context, policy, *, fetch=fetch_window, attem
             update = {'baselineAttempts': candidate.get('baselineAttempts', 0)+1,
                 'nextBaselineAt': runtime.clock()+300_000}
             try:
+                if candidate['entryPolicy']['timeframe_minutes'] == 5:
+                    # P6: a 5m execution pilot keeps this panel's incumbent 15-minute research basis.
+                    candidate = {**candidate, 'entryPolicy': {**candidate['entryPolicy'], 'timeframe_minutes': 15},
+                                 'researchCadence': 'breakout_15m_v1 (incumbent research basis; executing cadence 5m)'}
+                    update.update(researchCadence=candidate['researchCadence'], entryPolicy=candidate['entryPolicy'])   # later reads use the same basis
                 if candidate['entryPolicy']['timeframe_minutes'] != 15:
                     raise ValueError('Research v1 requires the saved 15-minute entry policy; other timeframes remain unscored')
                 if fetch is fetch_window and getattr(getattr(runtime.engine, 'config', None), 'quote_source', None) == 'sim':

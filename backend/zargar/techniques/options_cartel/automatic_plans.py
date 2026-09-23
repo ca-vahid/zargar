@@ -47,6 +47,10 @@ class PreparationPolicy(WireModel):
     shortlist_ranking: Literal['quality', 'volume'] = 'quality'
     min_target_distance_pct: float = Field(default=0.5, ge=0, le=10)
     min_entry_target_r: float = Field(default=0.25, ge=0, le=10)
+    # P3 (2026-09-22): do not ARM a plan whose first target offers less than this many R from the trigger
+    # at the planned stop. 0 = off (legacy). Nearby resistance is never skipped to raise the ratio; the
+    # plan is simply not armed and the refusal is recorded.
+    min_arm_target_r: float = Field(default=0, ge=0, le=10)
     focus_count: int = Field(default=5, ge=1, le=20)
     horizon_sessions: int = Field(default=1, ge=1, le=20)
     budget: float = Field(default=500, gt=0, le=100000)
@@ -185,6 +189,8 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
         except ValueError:
             continue
         ratio = abs(targets[0]-trigger)/abs(trigger-stop)
+        if policy.min_arm_target_r and ratio < policy.min_arm_target_r:
+            continue
         specificity = candidate['setup'] != 'base'
         choices.append((ratio, specificity, candidate['setup'], candidate, targets, source, campaign))
     if not choices:

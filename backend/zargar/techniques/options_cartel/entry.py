@@ -132,7 +132,8 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             if entry_after is not None and start < entry_after:
                 broke_at = gap_at = None
                 continue  # keep session extremes and invalidations, but require a new observed setup
-            if start == opens and plan.entry.mode == "retest" and plan.entry.allow_gap_retest \
+            gap_retest = plan.entry.mode == "breakout" and plan.entry.gap_policy == "retest_v1"
+            if start == opens and ((plan.entry.mode == "retest" and plan.entry.allow_gap_retest) or gap_retest) \
                     and (opening-plan.trigger)*sign > 0:
                 gap_at = opens
                 trace.append({"at": opens, "rule": "S12", "decision": "gap_observed",
@@ -164,6 +165,10 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                 ready = anchor is not None and end > anchor and touched and (close - plan.trigger) * sign > 0
             else:
                 ready = crossed
+                if not ready and gap_retest and gap_at is not None and end > gap_at:
+                    tolerance = plan.trigger * plan.entry.retest_tolerance_pct / 100
+                    touched = low <= plan.trigger + tolerance and high >= plan.trigger - tolerance
+                    ready = touched and (close - plan.trigger) * sign > 0
             if not ready:
                 if (close-plan.targets[0])*sign >= 0:
                     trace.append({"at": end, "rule": "M4", "decision": "target_passed",
