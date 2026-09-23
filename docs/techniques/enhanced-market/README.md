@@ -26,6 +26,11 @@ evening (profitability plan implemented: stop rule, scorecard, exit quotes, BRK.
 
 ## State of play (2026-09-22 evening)
 
+- **2026-09-23: EM is fully deterministic (user decision, v0.8.37, `em-deterministic-prep-v1`).** The baseline book is
+  prepared by rules inside the engine (`technique/em_deterministic_prep.py`, `trigger=prepare`, event `TechniquePrepared`,
+  manual `POST /api/technique/em/prepare`) once `preparation_policy=deterministic`; the paid nightly review (which was
+  $1,104 of EM's $1,109 model spend) stands down (`paid_review=false`). `rules_vs_model` is superseded by that decision;
+  the only automatic EM model call left is author-note ingestion (cents a day). TRADING-RULES §5 2026-09-23.
 - **EM has not shown an edge.** 38 closed trades over 8 sessions across the books: −$219.40 after fees (about −$336 with
   the disputed ORCL fill at the ask), 29% winners, profit factor 0.84; 27 of 38 ended at the stop, and 18 of those
   kept running another 1R against the position (wrong entries, not tight stops). The 95% range of the average trade
