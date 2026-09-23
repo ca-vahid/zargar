@@ -44,5 +44,5 @@ results, relax gates or turn research into automatic trades.
 Completing the historical packet did not improve automatic trading behavior or
 solve profitability. The user requires actionable progress toward Monday, not
 more research infrastructure alone. The prior completion wording applies only
-to the delivered packet. See [Monday action](MONDAY-ACTION-2026-09-21.md) for the
+to the delivered packet. See [Monday action](archive/2026-09/MONDAY-ACTION-2026-09-21.md) for the
 verified affordability constraint and the proposed bounded shares integration.

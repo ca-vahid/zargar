@@ -2631,3 +2631,13 @@ EM's `PlanArmer._exit` takes a synchronous quote snapshot BEFORE the exit is pla
 exists (bounded recorder `em-exit-quote`, `exitOrderId` = the first order placed by that exit). Observation only:
 nothing on a money path reads it, a capture failure never blocks an exit, `techniques.enhanced_market.exit_quote_capture`
 off writes nothing. Other desks' runners are untouched (the override lives in EM's subclass).
+### Adversarial-plan package: shared surfaces touched by the Tips desk — 2026-09-23 (0.8.34)
+
+Additive, every new behaviour behind a Tips-scoped knob that ships off or at its old value. `approvals/proposals.py`:
+`_tip_budget(..., underlying=)` consults `exposure_refusal` (book / single-name caps; 0 = off) before sizing, and
+option cards may carry `sharesAlternative` / `frictionFlag` annotations (never an order). `techniques/tip/geometry.py`
+`RiskPlan` gains those two optional fields. `signals/service.py::_review_gate` can skip a gate-irrelevant review for a
+source over its daily budget (`review_source_budgets`, off) and journals `sourceBudget`. `techniques/tip/analyst.py`
+`cache_messages` copies the last message block with a cache marker (the loop's transcript is never mutated) when
+`techniques.tip.prompt_cache_scope=conversation` (default `prefix`). New settings keys are all `techniques.tip.*`. No
+risk limit, order path, stop or other desk's knob changes.

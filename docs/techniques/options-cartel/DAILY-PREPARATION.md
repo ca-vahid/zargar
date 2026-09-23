@@ -7,7 +7,7 @@ session; genuine gaps and the normal delivery grace period remain visible.
 
 Current behavior, reviewed 2026-09-16. This is the operating guide; dated release notes are historical evidence.
 
-The [September 13 corrections](READINESS-2026-09-13.md) preserve contract limits through final submission, recheck pending invalidation after selection and retain nearer confirmed targets. Older unused automatic Practice arms need the explicit **Review entry contract limits** action before entry. It preserves their selected contract, chart targets and exit policy.
+The [September 13 corrections](archive/2026-09/READINESS-2026-09-13.md) preserve contract limits through final submission, recheck pending invalidation after selection and retain nearer confirmed targets. Older unused automatic Practice arms need the explicit **Review entry contract limits** action before entry. It preserves their selected contract, chart targets and exit policy.
 
 Settings → Plan policy and exit allocations has a Practice-only whole-contract alternative for new plans: two contracts use first target/EMA50, three use first target/EMA8/EMA50. One contract retains its final EMA/protective exit. Old campaigns retain their saved policy. Enable Option quote recording to collect contemporaneous evidence. Leadership and prospective evidence on Plans is advisory; it does not replace the configured executable ranking.
 
@@ -186,6 +186,22 @@ only. Details, evidence and rollback: [reviews/2026-09-21-brief/HANDBACK.md](rev
   `breakout_15m_v1`; any other unlabelled timeframe (including a saved Live 5-minute entry) is
   `legacy_timeframe`: the pre-existing read, no control, no pilot, valid in every workspace.
 - `volumeExperiment.version=grid_v1` declares a replay grid for sweeps; it never changes a live read.
+
+## Practice switches added 2026-09-22 (0.8.33)
+
+All default to legacy behaviour; see [the plan](reviews/2026-09-22-plan/PLAN.md) for evidence and order.
+
+- `contractPolicy.rankingVersion=executable_cost_v2`: crossing cost decides only inside |delta| target
+  +/- `costDeltaBand` (default 0.15); outside that window legacy order. v1 is kept for records but
+  drifts to deep in-the-money contracts and is not recommended.
+- `entry.gap_policy=retest_v1` (breakout mode): a session that opens beyond the trigger can enter on a
+  completed candle that retests the trigger within `retest_tolerance_pct` and closes beyond it.
+- `setups.dry_up_rule=non_increasing_v1`: the base's average volume must not exceed the prior base's
+  (instead of at most 0.8x). The screen check records the rule and threshold used.
+- `minArmTargetR`: a plan whose first target is under this many R from the trigger at the planned
+  stop is not armed. Resistance is never skipped to raise the ratio.
+- Research panels score a 5m pilot's candidates on the labelled 15-minute basis; the lab judges stock
+  quote freshness by receipt time (venue time kept, bounded to 30 s ahead of receipt).
 
 ## Spread-only alternative selection in Practice
 

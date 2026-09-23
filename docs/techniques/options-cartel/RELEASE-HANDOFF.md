@@ -47,6 +47,6 @@ own fresh pre-session preparation. Check Validation for pending/ready/unavailabl
 counts and actual attempt progress. Quote and history gaps remain visible; no
 execution setting or saved campaign is silently migrated.
 
-Historical evidence remains in [the September 15 research release](PROFITABILITY-RELEASE-2026-09-15.md)
+Historical evidence remains in [the September 15 research release](archive/2026-09/PROFITABILITY-RELEASE-2026-09-15.md)
 and [archived handoffs](archive/RELEASE-HANDOFF-PRE-2026-09-13.md). Historical armed
 symbols, balances, PIDs and test totals do not describe today's runtime.

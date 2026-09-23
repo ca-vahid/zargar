@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.33";
+export const APP_VERSION = "0.8.35";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,11 +17,24 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.8.33",date:"2026-09-22",title:"EM: a stop rule for the method, a daily scorecard, and BRK.B on the live stream",items:[
+  {version:"0.8.35",date:"2026-09-23",title:"EM: a stop rule for the method, a daily scorecard, and BRK.B on the live stream",items:[
     {tag:"new",text:"EM now has a stop rule, agreed before the answer is known: after 20 evaluable sessions from 2026-09-22, if the baseline book's cumulative R is at or below zero and the optimistic end of its average trade is under +0.1R, the paid nightly model review stops and EM stays watch-only. The close check writes a daily scorecard (track record per book, the stop rule, and five preregistered tests with fixed sample sizes) and raises a notice when a decision is due. It never changes a setting itself."},
     {tag:"new",text:"EM records the quote each exit was decided on, tied to its exit order, so the exit side of the spread is measured instead of estimated. Observation only; an exit never waits for it."},
     {tag:"fixed",text:"BRK.B (and other US share classes such as BF.B) now stream live from Alpaca. Before, the dot in the ticker kept them on the slower Yahoo poll, and on 2026-09-22 BRK.B's plans saw a new bar only every three to five minutes. Foreign listings (.TO, .V) are unchanged."},
     {tag:"improved",text:"EM's evening preparation runs as a recurring, resumable weekday task (one paid read at a time, one batch at a time) with a switch to turn the paid review off; the after-arming check follows Friday's batch to Monday. The Sept-21 fixes ride along: clock health check, admission alarm, and share observations with the same evidence policy as options."},
+  ]},
+  {version:"0.8.34",date:"2026-09-23",title:"Tips: correct target evidence, cleaner controls, and measured cost levers",items:[
+    {tag:"fixed",text:"Scorecard: an option's target-to-fill is judged on the underlying at the fill minute (it had compared a premium with a stock target). Shadow research books are counted from their first execution, and the books with sells they never bought are quarantined as evidence."},
+    {tag:"new",text:"Approval cards can show the equal-risk share size when an option cannot be sized within the budget (shown, never substituted), and an optional friction flag. Optional book and single-name exposure caps and per-source review budgets ship off."},
+    {tag:"improved",text:"Prompt caching can cover the whole review conversation (measured about 50% cheaper on replayed reviews; off until chosen). A compact review context was measured and rejected because it lost management actions."},
+    {tag:"new",text:"Reports: source return net of model cost, overnight carry by expiry, a knowledge ledger (what each rule costs on every call) and a one-page weekly review. No trading policy, risk limit, stop or approval control changed."},
+  ]},
+  {version:"0.8.33",date:"2026-09-22",title:"Cartel: better contracts and more ways into a trade (Practice switches, off until chosen)",items:[
+    {tag:"fixed",text:"Contract ranking executable_cost_v2 compares crossing cost only among contracts near the target delta (0.35-0.65), so it no longer drifts to deep in-the-money contracts as v1 did."},
+    {tag:"new",text:"Gap opens: an optional retest_v1 entry lets a stock that opens above its trigger enter on a completed candle that retests the trigger, with every other confirmation rule unchanged."},
+    {tag:"new",text:"Screening: an optional non_increasing_v1 volume dry-up rule (base volume not above the prior base) beside the 0.8x rule; the review shows which rule each check used."},
+    {tag:"new",text:"Arming: an optional minimum first-target R keeps plans whose first target sits almost on the trigger from taking an arm."},
+    {tag:"improved",text:"Research panels keep scoring candidates on the 15-minute basis when a 5-minute entry pilot runs; the lab judges stock quote freshness by receipt time, so venue timestamps ahead of the host clock no longer blank its observations."},
   ]},
   {version:"0.8.32",date:"2026-09-22",title:"Tips: checkpoint verdicts are structured, replay claims are locked",items:[
     {tag:"fixed",text:"The five-session checkpoint reads the observation report's structured verdict: an INCOMPLETE report, an empty report or a missing verdict can no longer be published as READY, and every exported report uses the same cutoff."},

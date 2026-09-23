@@ -277,3 +277,13 @@ its whole budget on one expiry's known-illiquid rows; `diverse_liquidity_v1` fix
 without widening any limit. `executable_cost_v1` ranks eligible contracts by current friction; it adds
 no delta band and no model threshold. The daily review names the first KNOWN blocker and keeps unknown
 windows unknown. Activation of each version is a separate journaled settings decision.
+
+## September 22: switches built for trade flow (0.8.33, off until chosen)
+
+Across 24 automatic plan-days (09-14..09-22) 11 touched their trigger and none reached an order. Built
+as Practice switches, each separately attributable: delta-bounded cost ranking, gap-open retest,
+non-increasing dry-up rule, first-target arm gate. Finding: every untrusted confirmation window on
+09-21/22 had its sampled minute in the bucket's last three minutes, before a non-emission proof can
+exist; fixing that would require deciding after the close, which the non-retroactivity rule forbids.
+No threshold was loosened on one day's evidence; no profitability is claimed.
+

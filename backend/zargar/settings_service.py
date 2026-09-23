@@ -239,6 +239,13 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_max_output_tokens": 3000,
     "techniques.tip.analyst_final_reserve_s": 20.0,
     "techniques.tip.prompt_cache": False,             # E17-03: cache the stable prefix (system + schema + tools); validate hits before claiming savings
+    "techniques.tip.shares_alternative": "annotate",  # ADV-07: off | annotate - show the equal-risk share size on a card whose option cannot be sized (never substituted)
+    "techniques.tip.friction_flag_pct": 0,            # ADV-08: flag a card whose round-trip fees+spread >= this % of the debit (annotation; 0 = off)
+    "techniques.tip.max_book_exposure_pct": 0,        # ADV-06: refuse NEW tip entries once open tip cost basis >= this % of the book's equity (0 = off)
+    "techniques.tip.max_name_exposure_pct": 0,        # ADV-06: same, per underlying (options count under their root) (0 = off)
+    "techniques.tip.review_source_budgets": {},       # ADV-05: {source: daily USD, "*": default}; a source over budget skips ONLY reviews the relevance gate judged irrelevant (never a message about a held/armed/proposed item). {} = off
+    "techniques.tip.review_context": "full",          # ADV-04: full | compact (rule headlines + ticker/source-scoped trimmed notes) for INTAKE REVIEWS only; appraisals keep the full rulebook
+    "techniques.tip.prompt_cache_scope": "prefix",   # ADV-03: prefix (system+tools) | conversation (+ header and turns so far; the bulk of a multi-turn review). Only read when prompt_cache is on
     "llm.rates": {},                                  # E17-03: {"<model>": {"in": $/Mtok, "out": $/Mtok, "cacheRead": $/Mtok, "cacheWrite": $/Mtok}}; empty = usage reported UNPRICED   # E17-02: seconds of the 120 s run kept for the final answer / one repair
     # KFIN-09 (2026-09-14) experiments - ALL inert by default
     "techniques.tip.review_capture_context": False,   # 2026-09-19: stamp the exact INTAKE REVIEW request on its run so a cheaper model can be evaluated on the same input (review_frozen.py); observation only, ~100 KB per review

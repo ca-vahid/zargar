@@ -73,6 +73,8 @@ class RiskPlan:
     evidence: list = field(default_factory=list)  # typed evidence problems [{code, detail}] (readiness-v1, 2026-09-15)
     payoff: dict = field(default_factory=dict)    # PROF-02: integer-unit ladder + scenario arithmetic (estimate, no claim)
     execCost: dict = field(default_factory=dict)  # TMR-02: instantaneous round trip on the qualified quote (diagnostic, no gate)
+    sharesAlternative: dict = field(default_factory=dict)  # ADV-07: equal-risk SHARE sizing when no option quantity fits (annotation, never substituted)
+    frictionFlag: dict = field(default_factory=dict)       # ADV-08: round-trip friction above the configured share of the debit (annotation)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -420,3 +422,27 @@ def risk_accounting(position: dict) -> dict:
                                "stressRisk": rp.get("stressRisk"), "resized": rp.get("resized"),
                                "note": "what the gate WOULD have done — research only, not the executed trade"}
     return out
+
+
+def shares_alternative(*, direction: str, entry_ref: float | None, final_stop: float | None, budget: float | None,
+                       max_notional: float | None = None) -> dict:
+    """ADV-07 (pure): the equal-risk SHARE position when the option cannot be sized - qty = floor(budget / stop
+    distance), bounded by `max_notional` when given. A long-only book never sizes a short in shares (puts only), so a
+    short direction returns unavailable. The desk never substitutes it automatically; the card shows it."""
+    if str(direction) == "short":
+        return {"available": False, "reason": "short ideas are expressed with puts only - no share alternative"}
+    try:
+        e, st, b = float(entry_ref or 0), float(final_stop or 0), float(budget or 0)
+    except (TypeError, ValueError):
+        return {"available": False, "reason": "missing entry, stop or budget"}
+    dist = e - st
+    if e <= 0 or st <= 0 or b <= 0 or dist <= 0:
+        return {"available": False, "reason": "no valid underlying stop below the entry reference"}
+    qty = int(b // dist)
+    if max_notional and max_notional > 0:
+        qty = min(qty, int(max_notional // e))
+    if qty < 1:
+        return {"available": False, "reason": f"one share risks ${dist:,.2f} vs the ${b:,.2f} budget"}
+    return {"available": True, "qty": qty, "entryRef": round(e, 4), "stop": round(st, 4), "unitRisk": round(dist, 4),
+            "plannedRisk": round(qty * dist, 2), "notional": round(qty * e, 2), "budget": round(b, 2),
+            "note": "equal-risk share alternative at the same stop - shown for a human; never substituted automatically"}
