@@ -1567,3 +1567,20 @@ What the session did teach, none of it about the rules:
 - **`deferred` meant terminal.** Every deferred trigger fired once and never again. A bounded one-shot retry now
   exists as `deferral-retry-v1`, DEFAULT OFF, and is a proposal to be judged on a forward sample, not a change to
   the frozen bundle.
+
+
+### 2026-09-22 - the midday experiment is ended; R6 stands (`technique.arm.midday_trading` true -> false)
+
+Decided on the preregistered rule in the midday section above: at least 30 scored midday fires, then compare midday R
+against the prime windows. There were 62 midday fires. The filled midday trades lost **−0.30R per trade** (total −2.40R,
+22% winners) against −0.09R per trade in the prime windows, de-duplicated across the two books.
+
+Recorded honestly: the prime windows are negative too, and midday is **not** statistically distinguishable from them
+(one-sided permutation p = 0.36, eight midday trades against twenty-eight prime). So this does not show midday is the
+cause of EM's losses. What it shows is that allowing midday adds nothing, which was the experiment's question, and the
+null answer returns the method to its own documented rule: midday is chop, watch-only. The toggle's default was always
+off. It applies to both books equally, so the A/B comparison stays fair. Rollback is the same key back to true.
+
+Context for anyone revisiting it: across all 38 EM trades to date the method has not made money (−$219.40 net, profit
+factor 0.84), and 18 of its 27 stop-outs kept moving against the position afterwards, so the losses are mostly entry
+selection rather than stop placement. Full analysis in `reviews/2026-09-22-PROFITABILITY-PLAN.md`.
