@@ -240,7 +240,7 @@ the dated notes below retain the inspection trail.
 - S28: [September 7 weekly focus](https://x.com/SRxTrades/status/2097097587828707793): memory, storage, semiconductors and biotech reference list. Used as a dated coverage comparison, not an order feed or timeless universe.
 - S29: [Cartel DRAM swing highlight, September 8](https://x.com/TheOptionCartel/status/2097414673662718231): public text reports over 200%; not a complete realized daily account return or independently verified Sean execution.
 
-See [the implementation review](FIDELITY-REVIEW-2026-09-08.md) for the exact changes and remaining limitations.
+See [the implementation review](archive/2026-09/FIDELITY-REVIEW-2026-09-08.md) for the exact changes and remaining limitations.
 
 
 ## S30 — September 11 continuation video (reviewed September 12)

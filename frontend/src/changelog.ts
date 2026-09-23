@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.32";
+export const APP_VERSION = "0.8.33";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,13 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.33",date:"2026-09-22",title:"Cartel: better contracts and more ways into a trade (Practice switches, off until chosen)",items:[
+    {tag:"fixed",text:"Contract ranking executable_cost_v2 compares crossing cost only among contracts near the target delta (0.35-0.65), so it no longer drifts to deep in-the-money contracts as v1 did."},
+    {tag:"new",text:"Gap opens: an optional retest_v1 entry lets a stock that opens above its trigger enter on a completed candle that retests the trigger, with every other confirmation rule unchanged."},
+    {tag:"new",text:"Screening: an optional non_increasing_v1 volume dry-up rule (base volume not above the prior base) beside the 0.8x rule; the review shows which rule each check used."},
+    {tag:"new",text:"Arming: an optional minimum first-target R keeps plans whose first target sits almost on the trigger from taking an arm."},
+    {tag:"improved",text:"Research panels keep scoring candidates on the 15-minute basis when a 5-minute entry pilot runs; the lab judges stock quote freshness by receipt time, so venue timestamps ahead of the host clock no longer blank its observations."},
+  ]},
   {version:"0.8.32",date:"2026-09-22",title:"Tips: checkpoint verdicts are structured, replay claims are locked",items:[
     {tag:"fixed",text:"The five-session checkpoint reads the observation report's structured verdict: an INCOMPLETE report, an empty report or a missing verdict can no longer be published as READY, and every exported report uses the same cutoff."},
     {tag:"fixed",text:"A manual intake replay takes an atomic, durable per-message claim, so two concurrent requests can never process the same failed message twice."},

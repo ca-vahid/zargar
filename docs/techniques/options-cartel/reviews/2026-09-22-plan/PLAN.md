@@ -61,25 +61,33 @@ Inventory of every sim/shadow book (orders, open positions, live arms, settings 
 
 Each item is a separately versioned Practice policy with a rollback switch. Live stays unchanged.
 
-| # | Change | Evidence | Measure of success | Status |
+| # | Change | Setting (Practice) | Evidence | Status (0.8.33) |
 |---|---|---|---|---|
-| P1 | Cost ranking v2 (delta-bounded) | Deep-ITM arms 2026-09-22 | Arms stay within |delta| 0.35-0.65; friction recorded vs legacy | Built, PR open |
-| P2 | Candidate supply: setup-family calibration (brief F5) - compare the legacy 0.8 dry-up rule with a declared non-increasing-volume rule and setup-specific windows on equal snapshots | 6 candidates/day; NTAP excluded only by 0.916 vs 0.8 | More qualified plans per day at unchanged screen gates, every changed rule named | Next |
-| P3 | Arm-quality gate: do not arm a plan whose first target is under 0.5R or 1% from the trigger at the planned stop (never skip the nearest resistance to manufacture room) | 8/24 plans under 0.25R, 10/24 under 1% | Share of armed plans that can pass the entry target rule | Next, Practice knob |
-| P4 | Data trust: extend verified-interval repair and native-aggregate baselines (brief F7) | 64 untrusted-confirmation refusals | Untrusted refusals per plan-day, without admitting sampled bars as evidence | Next |
-| P5 | Gap-open handling: Practice retest variant when the session opens beyond the trigger (S12: never chase a gap; require a completed retest) | 4/24 gap opens (BBY held above trigger all morning on 09-22) | Retest confirmations on gap days, against the matched breakout control | Needs design |
-| P6 | 5-minute cadence activation (built, PR #246) | NTNX 09-21 5m 2.51x vs 15m 0.93x | Executed 5m entries vs the 15m control | Blocked on lifting the research-panel 15m-only exclusion |
-| P7 | Lab underlying-quote timestamp mismatch (SIP quote time after observation time) | 09-21 shadow evidence | Lab observations become usable | Investigate with receipt-time evidence |
+| P1 | Cost ranking bounded to the reviewed delta window | `contractPolicy.rankingVersion=executable_cost_v2` (`costDeltaBand` 0.15) | Deep-ITM arms 2026-09-22 | Built and tested; off until chosen (Practice runs `legacy` since 22:15 ET) |
+| P2 | Volume dry-up read as non-increasing base volume instead of 0.8x | `setups.dry_up_rule=non_increasing_v1` | NTAP excluded only by 0.916 vs 0.8 | Built; the check records the rule and threshold it used |
+| P3 | Do not arm a plan whose first target is under N R from the trigger at the planned stop | `minArmTargetR` (0 = off; proposed 0.5) | 8/24 plans under 0.25R | Built; never skips resistance, the plan is simply not armed |
+| P4 | Untrusted confirmations | none | Every untrusted window on 09-21/22 had its sampled minute within the bucket's last three minutes, before any non-emission proof can exist (proofs need minute+3 min). The kernel already drops sampled prints in proven minutes. | Not built: the only remedy is deciding after the candle closes, which the non-retroactivity rule forbids. Needs a design decision (a declared, fixed decision delay versus accepting the loss). |
+| P5 | Enter a gap-and-hold session on a completed retest candle | `entry.gap_policy=retest_v1` | 4/24 gap opens (BBY 09-22) | Built; volume, close quality, chase, stop and target rules unchanged |
+| P6 | Research panels keep scoring when the 5m pilot runs | automatic | Panels refused non-15m plans | Built: 5m candidates are scored on the labelled 15m research basis; the 5m execution is compared by the matched control |
+| P7 | Lab stock-quote freshness judged on receipt time | automatic | Host clock ~9 s behind venue time made fresh SIP prints look future-dated | Built: receipt time decides freshness; venue time kept and bounded to 30 s ahead of receipt |
+| P8 | 5-minute cadence activation | `entryCadence=breakout_5m_v1` + `entry.timeframe_minutes=5` | NTNX 09-21 5m 2.51x vs 15m 0.93x | Built (PR #246); unblocked by P6 |
 
 Not recommended: lowering the 1.5x volume multiple or the 20% spread limit on one day's evidence;
 widening stops or skipping resistance to raise R; using bigger size to make results look better.
 
 ## 5. Activation order and rollback
 
-1. Tonight: legacy ranking in Practice (done). 2. After review of `claude/cartel-cost-v2`: deploy through
-the guarded procedure, then `rankingVersion=executable_cost_v2`. 3. P3 and P2 as Practice knobs, each with
-a before/after count on the same preparation. 4. P6 after the research panels accept 5m plans.
-Rollback of any step is a settings change back to the prior version; records and policy ids stay.
+Every switch above defaults to the legacy behaviour; merging and deploying 0.8.33 changes nothing
+until a setting is chosen. Recommended Practice activation after deployment, one preparation apart so
+each effect is attributable:
+
+1. `rankingVersion=executable_cost_v2` (contract quality; no effect on trade count).
+2. `minArmTargetR=0.5` and `entry.gap_policy=retest_v1` (entry paths and arm quality).
+3. `setups.dry_up_rule=non_increasing_v1` (more candidates; compare the shortlist before/after).
+4. `entryCadence=breakout_5m_v1` with `entry.timeframe_minutes=5` (the 15m matched control records the comparison).
+
+Rollback of any step is a settings change back to the prior value; records and policy ids stay, held
+positions keep the policy they entered under.
 
 ## 6. What the next EOD must answer
 

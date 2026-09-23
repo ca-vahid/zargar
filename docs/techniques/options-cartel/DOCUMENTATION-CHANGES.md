@@ -121,3 +121,16 @@ deployment or an activation.
 Added reviews/2026-09-21-brief/HANDBACK-2.md (R1-R7 fixes, retained probes, end-to-end fixture). DAILY-PREPARATION
 now states the control's own lifetime, the `legacy_timeframe` label for saved unlabelled non-15m entries, the long-only
 scope of the 5m pilot and the deadline contract for discovery/chain requests.
+
+## 2026-09-22 cleanup (0.8.33)
+
+- README rewritten around the current state (book, results, switches, known limits) with one documentation
+  map; the dated narrative sections were removed from it.
+- Fourteen dated one-off records (deployments 09-12..14, readiness/final review 09-13, weekend review,
+  09-12 proposal, 09-14 EOD/implementation, 09-15 release, 09-18 development plan, 09-21 Monday action,
+  09-08 fidelity review) moved to `archive/2026-09/` with an index; every repository link was rewritten
+  and checked (0 broken Cartel links).
+- The in-app Method library shows the current plan instead of the archived 09-13 readiness record.
+- DELIVERY-STATUS gained contract selection, entry variants and review attribution rows; PLAN.md
+  priorities point to the 2026-09-22 plan; DAILY-PREPARATION documents every new switch.
+
