@@ -1584,3 +1584,40 @@ off. It applies to both books equally, so the A/B comparison stays fair. Rollbac
 Context for anyone revisiting it: across all 38 EM trades to date the method has not made money (−$219.40 net, profit
 factor 0.84), and 18 of its 27 stop-outs kept moving against the position afterwards, so the losses are mostly entry
 selection rather than stop placement. Full analysis in `reviews/2026-09-22-PROFITABILITY-PLAN.md`.
+
+### 2026-09-22 (late) - the EM stop rule is adopted and the open questions are preregistered (`em-scorecard-v1`)
+
+User decision 2026-09-22, on `reviews/2026-09-22-PROFITABILITY-PLAN.md`. Nothing here changes a trade; it fixes, BEFORE
+the data exists, what will decide EM's future and each open method question.
+
+**The stop rule (`em-stop-rule-v1`).** Counted forward from 2026-09-22 in the BASELINE book (the sessions that suggested
+the rule do not get to decide it). After **20 evaluable sessions**: if cumulative R is **at or below zero** AND the
+upper end of a 95% session-resampled bootstrap of the mean trade R is **below +0.1R**, stop the paid model review
+(`techniques.enhanced_market.paid_review` → false) and keep the baseline watch-only: plans still built and scored, no
+money spent. A losing but noisy record (upper bound ≥ +0.1R) does not trip it - the rule stops a method shown to have
+no edge, not one that is merely unlucky. R = the method's own planned risk: shares |entry − stop| × qty; options the
+premium stop (premium × 100 × qty × `premium_stop_pct`). Impaired book-sessions (the 2026-09-21 experimental clock
+fault) are excluded from evaluation and kept in every report; the disputed ORCL fill is reported as booked and at the
+ask, never silently replaced. The close check writes `research/experiment/<date>-scorecard.md` daily and raises a keyed
+`stoprule` notice when it trips; setting the switch is a human step.
+
+**Preregistered tests** (thresholds fixed now; `technique/em_scorecard.py::TESTS`; a reading before the sample is
+complete is printed for transparency and is never a verdict; the copy of a baseline trade in the experimental book
+counts once):
+
+| Test | Question | Counted from | Sample | Metric |
+|---|---|---|---:|---|
+| `shares_fallback` | does the shares fallback do as well as the option leg? | 2026-09-12 | 20 trades | mean R, long shares vs long options |
+| `short_puts_prime` | do short puts pay in the prime windows, now midday is off? | 2026-09-23 | 20 trades | mean R |
+| `stop_vs_volatility` | are stops small against the stock's own range stopped by noise? | 2026-09-23 | 40 stops | share later reaching TP1, stop < 2 vs ≥ 2 average 1m ranges |
+| `one_touch_levels` | do entries off a once-touched level lose disproportionately? | 2026-09-23 | 15 trades | mean R vs the rest |
+| `rules_vs_model` | does free rules-only preparation do no worse than the paid review? | 2026-09-22 | 20 sessions | cumulative and per-session R, experimental vs baseline |
+
+Readings at adoption (NOT verdicts): stop rule collecting 1/20; shares fallback n = 14, shares −0.54R vs options +0.52R
+per trade. Until a test is ready, `stop_buffer`, the shares fallback, the put side and the level-touch floor stay as
+they are.
+
+**Measurement added the same evening:** `TechniqueExitQuote` (`exit-quote-v1`, `techniques.enhanced_market.exit_quote_capture`
+on) - the exit side of the spread becomes measured instead of estimated from 2026-09-23. **Operational fix:** BRK.B now
+streams from Alpaca (PLATFORM-RULES 2026-09-22); before it, BRK.B plans saw one bar every 3-5 minutes and could miss
+their trigger bar, so BRK.B trades before 2026-09-23 are a feed artefact as much as a method result.

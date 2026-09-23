@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.32";
+export const APP_VERSION = "0.8.33";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.33",date:"2026-09-22",title:"EM: a stop rule for the method, a daily scorecard, and BRK.B on the live stream",items:[
+    {tag:"new",text:"EM now has a stop rule, agreed before the answer is known: after 20 evaluable sessions from 2026-09-22, if the baseline book's cumulative R is at or below zero and the optimistic end of its average trade is under +0.1R, the paid nightly model review stops and EM stays watch-only. The close check writes a daily scorecard (track record per book, the stop rule, and five preregistered tests with fixed sample sizes) and raises a notice when a decision is due. It never changes a setting itself."},
+    {tag:"new",text:"EM records the quote each exit was decided on, tied to its exit order, so the exit side of the spread is measured instead of estimated. Observation only; an exit never waits for it."},
+    {tag:"fixed",text:"BRK.B (and other US share classes such as BF.B) now stream live from Alpaca. Before, the dot in the ticker kept them on the slower Yahoo poll, and on 2026-09-22 BRK.B's plans saw a new bar only every three to five minutes. Foreign listings (.TO, .V) are unchanged."},
+    {tag:"improved",text:"EM's evening preparation runs as a recurring, resumable weekday task (one paid read at a time, one batch at a time) with a switch to turn the paid review off; the after-arming check follows Friday's batch to Monday. The Sept-21 fixes ride along: clock health check, admission alarm, and share observations with the same evidence policy as options."},
+  ]},
   {version:"0.8.32",date:"2026-09-22",title:"Tips: checkpoint verdicts are structured, replay claims are locked",items:[
     {tag:"fixed",text:"The five-session checkpoint reads the observation report's structured verdict: an INCOMPLETE report, an empty report or a missing verdict can no longer be published as READY, and every exported report uses the same cutoff."},
     {tag:"fixed",text:"A manual intake replay takes an atomic, durable per-message claim, so two concurrent requests can never process the same failed message twice."},
@@ -47,6 +53,7 @@ export const CHANGELOG: Release[] = [
   {version:"0.8.27",date:"2026-09-20",title:"Cartel preparation resumes after restart",items:[
     {tag:"fixed",text:"Interrupted Cartel preparation now keeps its recovery checkpoint and resumes under the existing retry settings. Existing armed plans are preserved."},
     {tag:"improved",text:"The preparation panel explains saved work and how to resume, instead of showing stale discovery progress and a generic red restart error."},
+  ]},
   {version:"0.8.26",date:"2026-09-19",title:"EM Experimental: a second Practice book runs the integrated method",items:[
     {tag:"new",text:"EM can run a dedicated experimental Practice book beside the unchanged EM Practice baseline. The experimental book prepares with rules only, enforces reward to risk at the real first sale, records executable profit, trades eligible source ideas and fresh setups, and protects a runner that closes back through its first target."},
     {tag:"improved",text:"Every experimental policy is resolved for that one simulated book. The baseline book, other desks, live accounts and all risk limits are unchanged. Pausing the experimental book stops its new entries while open positions stay managed."},

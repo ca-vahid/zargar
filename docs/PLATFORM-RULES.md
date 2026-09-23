@@ -2604,3 +2604,30 @@ price says which price, from which quote, at which source timestamp, against whi
 threshold. Model or research numbers may ride along under `model`, explicitly separate from the
 authority. Base behaviour for other desks is unchanged: no runner passes `authority` unless it wants
 to, and no defaults moved.
+
+### A US share class is a US equity: BRK.B streams from Alpaca - 2026-09-22 (EM desk; shared feed predicate)
+
+`brokers/alpaca.py::is_us_equity` refused ANY symbol with a dot, meant for `.TO`/`.V` listings. It also refused US
+share classes, so BRK.B was never subscribed to the Alpaca stream and its only live data was the Yahoo poll. On
+2026-09-22, whenever Yahoo rate-limited (72 cooldowns in the session), BRK.B bars reached its armed plans two or three
+at a time, one every 3-5 minutes: 42 of the day's 113 stale-bar errors, while `bars` held all 390 minutes (each
+successful poll back-filled what it missed, so the stored record hid the delivery gap).
+
+Change: `is_us_share_class` = `^[A-Z]{1,5}\.[ABC]$` passes `is_us_equity`; the same predicate gates Alpaca history
+(`marketstructure/history.py::_alpaca_symbol`) and the F80 boot seed. Alpaca's own spelling is the dot, verified on the
+bars endpoint 2026-09-22 (`BRK.B` 200 with bars, `BRK-B` 400 "invalid symbol", `BRK/B` 404). Foreign suffixes stay on
+Yahoo (`.TO`, `.V`, `.CN`, `.L`, `.MI`, `.HK` - single letters other than A/B/C and two-letter suffixes do not match).
+Symbols without a dot take exactly the path they took before. Pinned by
+`tests/test_alpaca_feed.py::test_a_us_share_class_is_streamed_and_foreign_suffixes_are_not`.
+
+Lesson: a stored bar series proves the data EXISTS, not that a live consumer saw it on time; the stale-bars error
+(`lastBarTs` per plan) is the live-side witness. Open, not fixed here: the Yahoo poll re-fetches every Alpaca-streamed
+symbol every 20 s for context, which drives the 429 cooldowns that hurt every Yahoo-only symbol; and `yahoo_symbol`
+dashes any single-letter suffix except V (`NVDI.L` → `NVDI-L`). Both belong to the feed owner.
+
+### `TechniqueExitQuote` (exit-quote-v1) - 2026-09-22 (EM desk; EM runner only)
+
+EM's `PlanArmer._exit` takes a synchronous quote snapshot BEFORE the exit is placed and journals it AFTER the exit order
+exists (bounded recorder `em-exit-quote`, `exitOrderId` = the first order placed by that exit). Observation only:
+nothing on a money path reads it, a capture failure never blocks an exit, `techniques.enhanced_market.exit_quote_capture`
+off writes nothing. Other desks' runners are untouched (the override lives in EM's subclass).

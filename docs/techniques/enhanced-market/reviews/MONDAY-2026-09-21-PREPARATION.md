@@ -1,5 +1,9 @@
 # Monday 2026-09-21 - both EM books prepared (baseline + experiment)
 
+> **Historical record.** The one-off `em-monday-checks.ps1` named below is SUPERSEDED (2026-09-22) by the recurring,
+> versioned `scripts/em-session-checks.ps1`, `scripts/em-evening-batch.py` and `scripts/em-after-arming-check.ps1`,
+> installed by `scripts/em-install-session-checks.ps1`. Do not re-run the commands below; see the EM README.
+
 Run once on 2026-09-19 (Saturday, market closed). No setting was changed, no book was paused, the experiment stays frozen at
 `em-experiment-v1` with the bundle of `reviews/EXPERIMENT-LAUNCH-RECEIPT-2026-09-19.md`. Nothing here is live money.
 

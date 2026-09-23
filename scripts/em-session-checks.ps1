@@ -123,6 +123,30 @@ if ($Phase -eq 'clock') {
   $exc = Join-Path $outDir ("$Date-exceptions-close.md")
   Say "exception log -> $exc"
   (& $py -m zargar.tools.em_experiment_check --date $Date --exceptions 2>&1) | Out-File -FilePath $exc -Encoding utf8
+  # em-scorecard-v1 (2026-09-22): the track record, the EM stop rule and the preregistered tests. It decides
+  # nothing by itself: a tripped rule or a test that reached its sample raises a NOTICE for a human decision.
+  $sc = Join-Path $outDir ("$Date-scorecard.md")
+  Say "scorecard -> $sc"
+  $sctext = & $py -m zargar.tools.em_scorecard --out $sc 2>&1
+  $ruleLine = ($sctext | Select-String -Pattern '^STOP-RULE: ' | Select-Object -Last 1)
+  $readyLine = ($sctext | Select-String -Pattern '^TESTS-READY: ' | Select-Object -Last 1)
+  $rule = if ($ruleLine) { ($ruleLine.ToString() -replace '^STOP-RULE: ', '').Trim() } else { 'unknown' }
+  $ready = if ($readyLine) { ($readyLine.ToString() -replace '^TESTS-READY: ', '').Trim() } else { 'unknown' }
+  Say "stop rule: $rule ; tests ready: $ready"
+  if ($rule -eq 'tripped') {
+    Raise-Attention 'stoprule' 'the EM stop rule has TRIPPED' (
+      "20+ evaluable sessions, cumulative R at or below zero and the optimistic average trade below +0.1R.`r`n" +
+      "The pre-agreed action (em-stop-rule-v1, TRADING-RULES 2026-09-22): stop the paid model review -`r`n" +
+      "    PATCH /api/settings  techniques.enhanced_market.paid_review = false`r`n" +
+      "EM then stays watch-only for the baseline. This check did NOT change the setting: that is a human step.`r`n" +
+      "Scorecard: $sc")
+  } elseif ($ready -ne 'none' -and $ready -ne 'unknown') {
+    Raise-Attention 'decision' "preregistered test(s) reached their sample: $ready" (
+      "Each has reached its fixed threshold and needs a decision on the record (TRADING-RULES).`r`n" +
+      "Nothing was changed. Scorecard: $sc")
+  } elseif ($rule -eq 'collecting' -or $rule -eq 'passing') {
+    Clear-Attention 'stoprule' "stop rule $rule"
+  }
 } else {
   $name = if ($Phase -eq 'preopen') { "$Date-preopen.md" } else { "$Date-postreplan.md" }
   $file = Join-Path $outDir $name
@@ -142,7 +166,10 @@ if ($Phase -eq 'clock') {
     $cells = $armedLine.ToString().Split('|')
     $baseArmed = ($cells[2].Trim() -split ' ')[0]
     $expArmed = ($cells[3].Trim() -split ' ')[0]
-    if ($baseArmed -eq '0' -or $expArmed -eq '0') {
+    $prev = Get-ChildItem $logDir -Filter 'em-evening-batch-*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $paidOff = $prev -and [bool](Select-String -LiteralPath $prev.FullName -Pattern 'paid review is OFF' -Quiet)
+    if ($paidOff) { Say 'paid review is OFF: an empty baseline is the decided state' }
+    if (($baseArmed -eq '0' -and -not $paidOff) -or $expArmed -eq '0') {
       Raise-Attention 'armed' "a book has NOTHING armed for $Date" (
         "baseline armed: $baseArmed ; experiment armed: $expArmed`r`n`r`n" +
         "One book being empty means its preparation did not complete. The comparison has no control without`r`n" +

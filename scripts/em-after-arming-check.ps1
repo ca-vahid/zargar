@@ -17,7 +17,11 @@ $py = 'C:\Cursor\zargar\backend\.venv\Scripts\python.exe'
 $outDir = Join-Path $work 'docs\techniques\enhanced-market\research\experiment'
 $logDir = 'C:\ProgramData\Zargar\logs'
 $attention = 'C:\ProgramData\Zargar\EM-ATTENTION.md'
-if (-not $Date) { $Date = (Get-Date).AddDays(1).ToString('yyyy-MM-dd') }   # the batch prepares the NEXT session
+if (-not $Date) {                                          # the batch prepares the NEXT session: Friday's prepares Monday
+  $d = (Get-Date).AddDays(1)
+  while ($d.DayOfWeek -in 'Saturday', 'Sunday') { $d = $d.AddDays(1) }
+  $Date = $d.ToString('yyyy-MM-dd')
+}
 $log = Join-Path $logDir ("em-after-arming-$Date.log")
 function Say($m) {
   $line = "$((Get-Date).ToString('HH:mm:ss')) [after-arming] $m"
@@ -63,7 +67,11 @@ if ($armedLine) {
   $baseArmed = ($cells[2].Trim() -split ' ')[0]
   $expArmed = ($cells[3].Trim() -split ' ')[0]
   Say "armed after the batch: baseline $baseArmed, experiment $expArmed"
-  if ($baseArmed -eq '0' -or $expArmed -eq '0') {
+  # paid review switched off (the EM stop rule's action): an empty BASELINE is the intended state, not a failure
+  $batchLog = Join-Path $logDir ("em-evening-batch-$((Get-Date).ToString('yyyy-MM-dd')).log")
+  $paidOff = (Test-Path $batchLog) -and [bool](Select-String -LiteralPath $batchLog -Pattern 'paid review is OFF' -Quiet)
+  if ($paidOff) { Say 'paid review is OFF: the baseline is watch-only by decision, only the experiment is judged' }
+  if (($baseArmed -eq '0' -and -not $paidOff) -or $expArmed -eq '0') {
     $body = @("baseline armed: $baseArmed ; experiment armed: $expArmed", "",
               "The evening batch has stopped and a book is still empty. The batch is RESUMABLE: re-running it",
               "pays only for the reads that have not completed. Do NOT arm anything by hand to fill the gap.",

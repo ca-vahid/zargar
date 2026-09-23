@@ -131,3 +131,18 @@ Each one is decided by data that now accumulates on its own, with the threshold 
 - **Option exit spreads are not recorded**, so friction is part measured and part estimated.
 - **The capture recorder flags quote-time skew** on option observations, most likely because OPRA `source_ts` is the
   poll time rather than the vendor time (found by the Team2 desk).
+
+## Implemented 2026-09-22 (user decision: "implement this fully")
+
+| Plan item | Where it lives now | State |
+|---|---|---|
+| 1. EM stop rule | `technique/em_scorecard.py` (`em-stop-rule-v1`), `tools/em_scorecard.py`, close check writes `research/experiment/<date>-scorecard.md` and raises keyed `stoprule` | adopted; collecting 1/20 |
+| 2. A/B decides the paid review | preregistered test `rules_vs_model` (20 sessions); switch `techniques.enhanced_market.paid_review` (default on) honoured by `scripts/em-evening-batch.py` | collecting |
+| 3. Sept-21 package deployed in an off-hours window | with this release, through `scripts/deploy.ps1` after the evening batch finishes | see the release receipt |
+| 4. BRK.B live bars | `is_us_share_class` in `brokers/alpaca.py` - BRK.B streams from Alpaca (PLATFORM-RULES 2026-09-22) | fixed |
+| Preregistered tests | `em_scorecard.TESTS`; TRADING-RULES §5 2026-09-22 (late) | collecting; a ready test raises keyed `decision` |
+| Exit-side spreads | `TechniqueExitQuote` (`exit-quote-v1`) | recording from 2026-09-23 |
+| Recurring preparation | weekday tasks `ZargarEmEveningBatch` 14:05 PT + `ZargarEmAfterArming` 14:07 PT | replaces the per-date one-offs |
+
+Still a human step, by design: switching `paid_review` off when the stop rule trips, and every decision a ready test asks
+for. No threshold, stop, vehicle or window was changed by this implementation beyond the midday switch above.
