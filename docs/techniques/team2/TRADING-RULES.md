@@ -3796,6 +3796,20 @@ books, risk settings, product pricing and C2's sealed window stay unchanged. Acc
 `s1-r4`, hash `13b2bcc18bbbf5fa`; it also contains PR #224's event contract), selection packet 89 passed, full Team2 + reviewer +
 `test_platform_phase3.py` 486 passed. Nothing is enabled or deployed by this acceptance.
 
+### 2026-09-19 - Selection study S1 DEPLOYED and ACTIVATED (collector `collect`); first counted session 2026-09-21
+
+On the user's authorisation: PR #223 merged to `main` (`6a8f46b8`); PR #224 was already merged and its event contract is on main;
+`main` merged INTO the running checkout preserving the other desks' runtime-only code (one conflict, `backend/tests/conftest.py`,
+resolved by keeping BOTH autouse fixtures); gates passed; `/api/ops/restart-check` safe with the market closed; restarted through the
+`ZargarRestart` task. Running build `fea5bb49a3fc125f0b4c7818146e81b20db63633` (v0.8.26). Restore check OK (armed 142/142, resting
+orders 28/28, managed positions 6/6); the nine Team2 plans are identical by run id, book, symbol, status and mode; every Team2
+setting is byte-identical. Then, outside market hours: the activation record was journaled once against that build for registration
+`s1-r4` (hash `13b2bcc18bbbf5fa`, analysis `4022fccf…`), and `techniques.team2.selection_study` was switched `off` -> `collect`
+(journaled). Lifecycle `collecting`; first eligible full session **2026-09-21**; endpoint frozen at the close of the 60th counted
+session or of 2026-12-18. Collector health all zero at activation. No trading book, sizing, risk, product pricing or C2 change.
+Monitoring owner: the Team2 desk, `python -m zargar.tools.team2_selection_study status` after each close: counts, coverage and
+collector health ONLY until the endpoint. Full receipt: `notes/research/profitability-2026-09-19/10-deployment-and-activation-receipt.md`.
+
 ### F129 (2026-09-21) - a pricing model may not independently force a monetary sale
 
 Incident: `Team2 C1 Conjunction` bought 35 `IWM260921C00286000` at **0.33** (10:36:13 ET) and was

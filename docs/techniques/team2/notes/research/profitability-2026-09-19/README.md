@@ -1,6 +1,7 @@
 # Team2 profitability study: acceptance package (correction and validation pass, 2026-09-19)
 
-**Read `00-decision-sheet.md` first.** The selection-study package (pages 7 to 9) is ACCEPTED (2026-09-19) and waiting for a
+**Read `00-decision-sheet.md` first.** DEPLOYED and ACTIVATED on 2026-09-19: build `fea5bb49`, registration `s1-r4`, collector
+`collect`, first counted session 2026-09-21 (`10-deployment-and-activation-receipt.md`). The selection-study package (pages 7 to 9) is ACCEPTED (2026-09-19) and waiting for a
 separate merge, deployment and activation approval; the collector is OFF. It holds the decision, the accepted findings with their evidence class, every correction to
 the first package, the limitations, the blockers, the reproduction commands and the acceptance checklist.
 
@@ -23,3 +24,5 @@ numbers). The registrations are in `../2026-09-19-profitability-preregistration.
 
 Four kinds of number are kept apart everywhere: actual Practice fills; real trade prints; simulated execution on real prints;
 historical quotes (none exist for options, none is used).
+
+Session-by-session monitoring (counts, coverage, collector health only) is kept in `11-monitoring-log.md`.
