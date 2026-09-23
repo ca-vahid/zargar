@@ -132,11 +132,20 @@ def _parse(symbol: str, tf: str, data: dict) -> list[Bar]:
 
 
 # --- Alpaca SIP history (preferred for US symbols when keys are set) ----------
-# Minute-aligned timeframes only: Alpaca's 1Hour bars are clock-aligned (09:00,
-# 10:00) while Yahoo's are session-aligned (09:30) — swapping those would
-# silently reshape 1h structure detection. 1h/1d stay on Yahoo.
+# Minute-aligned timeframes are fetched natively. Alpaca's own 1Hour bars are clock-aligned (09:00, 10:00) while the methods
+# read session-aligned hours (09:30) - swapping those would silently reshape 1h structure detection, so 1h is DERIVED from
+# 30m bars instead (ALPACA_DERIVED below).
 _ALPACA = {"key": "", "secret": ""}
 ALPACA_TF = {"1m": "1Min", "5m": "5Min", "15m": "15Min", "30m": "30Min"}
+# 2026-09-23 (user decision: history from the paid Alpaca feed; Yahoo's DAILY history silently skipped the 2026-09-22 session -
+# PLATFORM-RULES 2026-09-23): 1h and 1d are now DERIVED from Alpaca for the regular session, Yahoo is the fallback.
+#   1h = Alpaca 30m regular-session bars grouped into SESSION-aligned hours (09:30, 10:30 ... 15:30, the last one half an hour -
+#        exactly Yahoo's shape; never Alpaca's clock-aligned 1Hour). Measured against Yahoo, 6 symbols x 7 sessions: median OHLC
+#        deviation 0.000%, max 0.36% (single opening/closing prints), volume ratio 1.000.
+#   1d = Alpaca native 1Day bars (official open/close and consolidated volume - equal to Yahoo's on every compared session),
+#        stamped at the session OPEN, as Yahoo stamps its daily bars.
+# `session="ext"` 1h/1d requests stay on Yahoo (includePrePost shapes the extended tape differently).
+ALPACA_DERIVED = ("1h", "1d")
 _cache_provider: dict = {}        # which provider filled each cache key (review R5)
 ALPACA_BARS_URL = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
 _ET = ZoneInfo("America/New_York")
@@ -161,9 +170,10 @@ def _rth_only(bars: list[Bar]) -> list[Bar]:
 
 
 def _alpaca_symbol(symbol: str) -> bool:
-    """A symbol Alpaca's history serves: no FX, and a dot only for a US share class (BRK.B; 2026-09-22)."""
+    """A symbol Alpaca's history serves: no FX, no index (^VIX - Alpaca answers 400 "invalid symbol", 2026-09-23), and a dot
+    only for a US share class (BRK.B; 2026-09-22)."""
     from ..brokers.alpaca import is_us_share_class
-    return "=" not in symbol and ("." not in symbol or is_us_share_class(symbol))
+    return "=" not in symbol and not symbol.startswith("^") and ("." not in symbol or is_us_share_class(symbol))
 
 
 async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
@@ -191,6 +201,67 @@ async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
         if not token:
             break
     return bars if session == "ext" else _rth_only(bars)
+
+
+async def _alpaca_rows(symbol: str, timeframe: str, start_s: int, end_s: int, http: httpx.AsyncClient) -> list[dict]:
+    """Raw Alpaca bar rows for one symbol and timeframe (paginated), no session filtering."""
+    headers = {"APCA-API-KEY-ID": _ALPACA["key"], "APCA-API-SECRET-KEY": _ALPACA["secret"]}
+    iso = lambda s_: dt.datetime.fromtimestamp(s_, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    params = {"timeframe": timeframe, "start": iso(start_s), "end": iso(end_s), "limit": 10_000, "feed": "sip", "adjustment": "raw"}
+    rows: list[dict] = []
+    token = None
+    for _ in range(20):
+        if token:
+            params["page_token"] = token
+        r = await http.get(ALPACA_BARS_URL.format(symbol=symbol.upper()), params=params, headers=headers, timeout=20)
+        if r.status_code >= 400:
+            raise HistoryError(f"Alpaca HTTP {r.status_code}: {r.text[:120]}")
+        data = r.json()
+        rows.extend(data.get("bars") or [])
+        token = data.get("next_page_token")
+        if not token:
+            break
+    return rows
+
+
+def hours_from_30m(bars: list[Bar]) -> list[Bar]:
+    """Pure: regular-session 30m bars -> SESSION-aligned 1h bars (09:30, 10:30 ... ; the 15:30 hour is the last half hour, as
+    Yahoo's is). An hour is stamped at its session-relative start even when its first half hour is missing (a halt)."""
+    from .sessions import session_bounds, session_date
+    groups: dict[int, list[Bar]] = {}
+    opens: dict[str, int] = {}
+    for b in sorted(bars, key=lambda x: x.ts):
+        day = session_date(b.ts)
+        o = opens.get(day)
+        if o is None:
+            o = opens[day] = session_bounds(day)[0]
+        if b.ts < o:
+            continue
+        start = o + ((b.ts - o) // 3_600_000) * 3_600_000
+        groups.setdefault(start, []).append(b)
+    out: list[Bar] = []
+    for start, g in sorted(groups.items()):
+        out.append(Bar(symbol=g[0].symbol, tf="1h", ts=start, source=g[0].source, provider=g[0].provider,
+                       open=g[0].open, high=max(x.high for x in g), low=min(x.low for x in g), close=g[-1].close,
+                       volume=int(sum(x.volume for x in g))))
+    return out
+
+
+def days_from_rows(symbol: str, rows: list[dict]) -> list[Bar]:
+    """Pure: Alpaca 1Day rows -> daily bars stamped at the session open (Yahoo's convention), official OHLC and volume."""
+    from .sessions import session_bounds
+    out: list[Bar] = []
+    for row in rows:
+        day = str(row["t"])[:10]
+        out.append(Bar(symbol=symbol.upper(), tf="1d", ts=int(session_bounds(day)[0]), source="exchange", provider="alpaca",
+                       open=float(row["o"]), high=float(row["h"]), low=float(row["l"]), close=float(row["c"]), volume=int(row.get("v") or 0)))
+    return out
+
+
+async def _alpaca_derived(symbol: str, tf: str, start_s: int, end_s: int, http: httpx.AsyncClient) -> list[Bar]:
+    if tf == "1h":
+        return hours_from_30m(await _alpaca_window(symbol, "30m", start_s, end_s, http, session="rth"))
+    return days_from_rows(symbol, await _alpaca_rows(symbol, "1Day", start_s, end_s, http))
 
 
 async def fetch_window(
@@ -246,9 +317,11 @@ async def fetch_window_ex(
     own = False                                  # the shared client is never closed here
     http = client or _client_shared()
     bars: list[Bar] = []
-    if _ALPACA["key"] and tf in ALPACA_TF and _alpaca_symbol(symbol):
+    derived = tf in ALPACA_DERIVED and session == "rth"
+    if _ALPACA["key"] and (tf in ALPACA_TF or derived) and _alpaca_symbol(symbol):
         try:
-            bars = await _alpaca_window(symbol, tf, start_s, end_s, http, session=session)
+            bars = (await _alpaca_derived(symbol, tf, start_s, end_s, http) if derived
+                    else await _alpaca_window(symbol, tf, start_s, end_s, http, session=session))
             provider = "alpaca" if bars else None
         except Exception as exc:
             log.warning("alpaca history failed for %s %s (%s) — falling back to Yahoo", symbol, tf, exc)
