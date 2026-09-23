@@ -1621,3 +1621,26 @@ they are.
 on) - the exit side of the spread becomes measured instead of estimated from 2026-09-23. **Operational fix:** BRK.B now
 streams from Alpaca (PLATFORM-RULES 2026-09-22); before it, BRK.B plans saw one bar every 3-5 minutes and could miss
 their trigger bar, so BRK.B trades before 2026-09-23 are a feed artefact as much as a method result.
+
+### 2026-09-23 - EM becomes fully deterministic (user decision); the paid nightly review is retired
+
+User decision 2026-09-23, after the model-cost analysis: EM's model spend over 2026-08-21..09-23 was **$1,109 at list
+price, of which $1,104 was the nightly paid review** of the next session's sheet (the rest: manual Analyse runs, scans,
+chat). The pre-open re-plan, the experimental book's preparation, the author-source plan runs and the live entry decision
+(`deterministic-entry-v1`, since 2026-09-15) already made zero model calls. EM had shown no edge (38 trades, −$219.40, PF
+0.84), and the review's value was the open question of the `rules_vs_model` test.
+
+**Change (`em-deterministic-prep-v1`):** the baseline book is prepared inside the engine from the graded sheet by the same
+eligibility owner the experimental book uses (`preparation_policy.decide`, grade floor, no analysis), minting one
+`trigger=prepare` plan run per eligible row with no model pass, armed through `prep_arm` (one arm per candidate, RiskGate on
+every order). Switch: `techniques.enhanced_market.preparation_policy=deterministic` (technique-wide) with
+`techniques.enhanced_market.paid_review=false`; the evening batch stands down on either. Rollback = both keys back
+(`baseline`, `true`) - the batch then prepares the baseline as before.
+
+**What it does to the tests.** `rules_vs_model` is **superseded by decision**, not answered: both books now prepare by
+rules, so it can no longer compare them. The two books still differ by the experiment bundle (first-sale enforcement,
+P-06 runner protection, promoted source candidates, conditional-review fix, grade floor); the comparison continues as a
+bundle comparison. The stop rule (`em-stop-rule-v1`) keeps counting in the baseline book, but its action - stop the paid
+review - has already been taken; if it trips, the remaining decision is whether EM keeps trading in Practice at all.
+Author-note ingestion (`technique/ingest.py::_llm_extract`, ~2 notes a day at low effort, cents) still reads the author's
+free text with a model; it is the only automatic EM model call left and can be stopped with the ingestion switch if wanted.
