@@ -2671,3 +2671,19 @@ max OHLC deviation 0.01% (SPY) / 0.08% (BRK.B) on 1h and 0.005% / 0.04% on 1d; 6
 volume ratio 1.000; the Alpaca daily series HAS 2026-09-22; SHOP.TO unchanged (Yahoo). Grouping 30m bars into DAYS was
 rejected: it misses the official close and the closing-auction volume. Tests: `tests/test_history_alpaca_derived.py`.
 Who reads it: EM plan structure (1h), Tips analyst 1h context, research snapshots 1d, charts; Team2's minute data unchanged.
+
+### Tips cost package: shared surfaces touched by the Tips desk — 2026-09-23 (0.8.39)
+
+User decision (Tips cost levers, `docs/techniques/tip/research/2026-09-23-cost-levers.md`). Shared edits, all
+Tips-scoped: `models.py` gains the append-only table `tip_llm_calls` (one row per intake extraction/transcription
+request; additive via create_all). `signals/extraction.py` `Extractor` reads its model/effort per call from
+`techniques.tip.extraction_model` / `extraction_effort` (falls back to the engine's `extraction_model`; a test may set
+`extractor.model`), writes every attempt through an optional `ledger`, and its JSON repair now replays the reply AS
+RECEIVED (thinking blocks included) — the rule for every same-transcript repair on Opus 5.5 and later: never rebuild
+an assistant turn from its text. `signals/service.py`: the Extractor is wired to settings + ledger; `process_content`
+binds the content id for the ledger; `_review_gate` may skip a review when `techniques.tip.review_skip_nonactionable`
+is on AND the gate found nothing on the desk AND extraction marked every signal non-actionable (journaled
+`appliedBy=nonactionable`). `tools/tip_llm_cost.py` prices `tip_llm_calls` rows and `(batch)` groups at 50%. The
+`llm.rates` table gained `claude-opus-5-5` and `claude-sonnet-5` (official page, journaled PATCH). No risk limit, order
+path, stop or other desk's knob changed; EM/Team2/Cartel model settings are untouched.
+

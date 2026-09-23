@@ -46,8 +46,9 @@ def rollup(runs: list[dict], rates: dict) -> dict:
     groups: dict[tuple, dict] = {}
     for r in runs:
         u = r.get("usage") or {}
-        key = (r["day"], r["kind"], r.get("model") or "unknown-model")
-        g = groups.setdefault(key, {"day": key[0], "kind": key[1], "model": key[2], "runs": 0, "calls": 0,
+        batch = bool(u.get("batch"))                    # 2026-09-23: Message Batches bill 50% of list
+        key = (r["day"], r["kind"], (r.get("model") or "unknown-model") + (" (batch)" if batch else ""))
+        g = groups.setdefault(key, {"day": key[0], "kind": key[1], "model": key[2], "batch": batch, "runs": 0, "calls": 0,
                                     "in": 0, "out": 0, "cacheRead": 0, "cacheWrite": 0,
                                     "unknownCalls": 0, "partialRuns": 0, "runsWithoutUsage": 0, "failed": 0})
         g["runs"] += 1
@@ -64,7 +65,10 @@ def rollup(runs: list[dict], rates: dict) -> dict:
             g["legacyRuns"] = int(g.get("legacyRuns") or 0) + 1
     out = []
     for g in groups.values():
-        p = price(g, rates.get(g["model"]) if g["model"] else None)
+        base = g["model"].removesuffix(" (batch)")
+        p = price(g, rates.get(base) if base else None)
+        if g.get("batch") and p.get("priced"):
+            p = {**p, "usd": round(p["usd"] * 0.5, 4), "note": "batch rate (50% of list)"}
         g.update(p)
         g["lowerBound"] = bool(g["unknownCalls"] or g["partialRuns"] or g["runsWithoutUsage"])
         out.append(g)
@@ -92,7 +96,8 @@ def normalize_usage(u) -> dict:
                 "cacheWrite": sum(int(e.get("cacheWriteTokens") or 0) for e in calls),
                 "unknownCalls": sum(1 for e in calls if e.get("inputTokens") is None and e.get("in") is None),
                 "partial": any(e.get("inputTokens") is None and e.get("in") is None for e in calls),
-                "model": next((e.get("model") for e in calls if e.get("model")), None)}
+                "model": next((e.get("model") for e in calls if e.get("model")), None),
+                "batch": any(bool(e.get("batch")) for e in calls)}
     return {}
 
 
@@ -128,6 +133,23 @@ async def load_runs(sf, *, since: str, until: str) -> list[dict]:
                     "model": used_model, "extractionModel": extraction_model if kind == "intake" else None,
                     "modelSource": ("usage.model" if usage.get("model") else fallback), "usage": usage})
     return out
+
+
+async def load_calls(sf, *, since: str, until: str) -> list[dict]:
+    """2026-09-23 (cost lever 3): intake extraction / transcription requests from `tip_llm_calls`, one row per request
+    attempt, shaped like runs (kind = the stage) so the same rollup prices them. A failed attempt has unknown usage."""
+    from ..models import TipLlmCall
+    start = dt.datetime.combine(dt.date.fromisoformat(since), dt.time(0, 0), tzinfo=ET)
+    end = dt.datetime.combine(dt.date.fromisoformat(until), dt.time(23, 59, 59), tzinfo=ET)
+    async with sf() as session:
+        rows = (await session.execute(select(TipLlmCall).where(
+            TipLlmCall.at >= start, TipLlmCall.at <= end))).scalars().all()
+    return [{"id": f"call:{r.id}", "kind": r.stage, "status": "failed" if r.error else "done",
+             "day": r.at.astimezone(ET).strftime("%Y-%m-%d"), "model": r.model or None, "extractionModel": None,
+             "modelSource": "tip_llm_calls",
+             "usage": {"calls": 1, "in": r.input_tokens, "out": r.output_tokens, "cacheRead": r.cache_read_tokens,
+                       "cacheWrite": r.cache_write_tokens, "unknownCalls": 1 if r.error else 0,
+                       "partial": bool(r.error)}} for r in rows]
 
 
 async def load_rates(sf) -> dict:
@@ -169,6 +191,7 @@ def main() -> None:
     async def run():
         try:
             runs = await load_runs(sf, since=a.since, until=until)
+            runs += await load_calls(sf, since=a.since, until=until)   # extraction/transcription (runs column = requests)
             rates = await load_rates(sf)
             stages = await load_stage_rollup(sf, since=a.since, until=until)
         finally:

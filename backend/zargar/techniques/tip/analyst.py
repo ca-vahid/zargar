@@ -1711,6 +1711,8 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         _sys_param, _tools_param = cacheable_request(system, TOOLS, enabled=st.get("promptCache", False))
         _msgs = cache_messages(messages, enabled=bool(st.get("promptCache")) and st.get("promptCacheScope") == "conversation")
         create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=_msgs, tools=_tools_param)
+        from .model_policy import effort_kw as _effort_kw
+        create_kw.update(_effort_kw(getattr(eng, "settings", None), "techniques.tip.analyst_effort", model))   # 2026-09-23: pinned depth
         if force_final:
             create_kw["tool_choice"] = {"type": "none"}
         resp = None
@@ -1832,6 +1834,9 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
             # unserviced (Codex finding 4: four tools used + a fifth request
             # returned bare text, often empty -> parse failure); the per-call
             # branch below stubs it and the model is told to answer.
+            # the final reply AS RECEIVED - a same-transcript repair replays it unmodified (thinking blocks included):
+            # Opus 5.5 rejects a transcript whose thinking blocks were dropped or edited (2026-09-23 model switch)
+            st["lastAssistantContent"] = resp.content
             await _persist_run(eng, run_id, status="running", rec=rec)
             return think
         messages.append({"role": "assistant", "content": resp.content})
@@ -2121,7 +2126,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             rec.step("note", f"Reply had no parseable opinion ({exc}) — same-"
                              "transcript repair, tool evidence retained; JSON only.")
             loop_state["messages"].append(
-                {"role": "assistant", "content": text.strip() or "(no answer)"})
+                {"role": "assistant", "content": loop_state.pop("lastAssistantContent", None)
+                                                 or (text.strip() or "(no answer)")})
             loop_state["messages"].append(
                 {"role": "user", "content": "Your reply contained no parseable JSON "
                  "opinion object. Reply with ONLY the JSON opinion object now."})
@@ -2420,7 +2426,14 @@ class IntakeRun:
         system = REVIEW_SYSTEM + json.dumps(ReviewOpinion.model_json_schema(),
                                             separators=(",", ":"))
         _ctx_mode = str(s.get("techniques.tip.review_context", "full") or "full")
-        if _ctx_mode == "compact":
+        if _ctx_mode == "notes":
+            # cost lever 2 (2026-09-23): rulebook + pending proposals verbatim, only the shared notes scoped + trimmed
+            with contextlib.suppress(Exception):
+                from .review_context import compact_review_header, tickers_in
+                header = compact_review_header(header, tickers=tickers_in(message_text, outcomes), source=source,
+                                               notes_only=True)
+                self.step("note", f"Notes-trimmed review context ({len(header):,} chars): full rulebook, scoped notes.")
+        elif _ctx_mode == "compact":
             # ADV-04 (2026-09-23): rule headlines, scoped + trimmed notes; the same transform the frozen comparison measured
             with contextlib.suppress(Exception):
                 from .review_context import compact_review_header, tickers_in

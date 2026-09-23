@@ -244,7 +244,13 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.max_book_exposure_pct": 0,        # ADV-06: refuse NEW tip entries once open tip cost basis >= this % of the book's equity (0 = off)
     "techniques.tip.max_name_exposure_pct": 0,        # ADV-06: same, per underlying (options count under their root) (0 = off)
     "techniques.tip.review_source_budgets": {},       # ADV-05: {source: daily USD, "*": default}; a source over budget skips ONLY reviews the relevance gate judged irrelevant (never a message about a held/armed/proposed item). {} = off
-    "techniques.tip.review_context": "full",          # ADV-04: full | compact (rule headlines + ticker/source-scoped trimmed notes) for INTAKE REVIEWS only; appraisals keep the full rulebook
+    "techniques.tip.review_context": "full",          # ADV-04: full | notes (2026-09-23: full rulebook, only notes scoped + trimmed) | compact (rule headlines too - measured UNSAFE) for INTAKE REVIEWS only; appraisals keep the full rulebook
+    "techniques.tip.extraction_model": "",           # 2026-09-23: intake extraction + attachment transcription model ("" = engine extraction_model)
+    "techniques.tip.analyst_effort": "high",         # 2026-09-23: output_config.effort for analyst/digest calls (Opus 5 default = high; Opus 5.5 default = medium). "" = model default
+    "techniques.tip.extraction_effort": "high",      # 2026-09-23: same for extraction/transcription. "" = model default
+    "techniques.tip.batch_jobs": False,              # 2026-09-23: nightly digests + knowledge-audit judge calls go through the Message Batches API (50% list price); intake/appraise/retro stay live
+    "techniques.tip.batch_timeout_s": 3600,          # a batch that has not ended by then is cancelled and the call fails as a timeout
+    "techniques.tip.review_skip_nonactionable": False,  # 2026-09-23 cost lever 1: skip the intake review when the gate found nothing on the desk AND extraction marked every signal non-actionable (journaled appliedBy=nonactionable)
     "techniques.tip.prompt_cache_scope": "prefix",   # ADV-03: prefix (system+tools) | conversation (+ header and turns so far; the bulk of a multi-turn review). Only read when prompt_cache is on
     "llm.rates": {},                                  # E17-03: {"<model>": {"in": $/Mtok, "out": $/Mtok, "cacheRead": $/Mtok, "cacheWrite": $/Mtok}}; empty = usage reported UNPRICED   # E17-02: seconds of the 120 s run kept for the final answer / one repair
     # KFIN-09 (2026-09-14) experiments - ALL inert by default
