@@ -435,9 +435,10 @@ class Engine:
         the boot (400 symbols of history inside `start()` would stretch the boot past the watchdog's
         window). Bars go through `ingest_exchange_bar`, i.e. memory + the persister, by provenance."""
         from .options import occ
+        from .brokers.alpaca import is_us_share_class
         sem = asyncio.Semaphore(max(1, concurrency))
         out = {"symbols": 0, "bars": 0, "failed": 0}
-        syms = [s for s in symbols if not occ.is_occ(s) and "." not in s and "=" not in s and not s.startswith("^")]
+        syms = [s for s in symbols if not occ.is_occ(s) and ("." not in s or is_us_share_class(s)) and "=" not in s and not s.startswith("^")]
 
         async def one(sym: str) -> None:
             async with sem:

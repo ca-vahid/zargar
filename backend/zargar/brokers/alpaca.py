@@ -20,6 +20,7 @@ import datetime as dt
 import json
 import logging
 import math
+import re
 from typing import Callable
 
 import websockets
@@ -70,12 +71,28 @@ _NO_LAST_CONDS = frozenset(
 EMIT_MS = 250
 
 
+# 2026-09-22: a US share class (BRK.B, BF.B, HEI.A) is a US equity, and Alpaca spells it with the dot (verified on the
+# bars endpoint: BRK.B -> 200, BRK-B -> 400 "invalid symbol"). The old blanket "no dot" rule meant BRK.B was never
+# streamed: its only live data was the Yahoo poll, which reached its armed plans one bar in three to five minutes
+# whenever Yahoo rate-limited (42 of 113 stale-bar errors on 2026-09-22). Strictly a SINGLE-LETTER class A/B/C after a
+# 1-5 letter root, so .TO/.V/.CN/.NE and two-letter foreign suffixes (.L, .MI, .HK are single letters but not A/B/C)
+# stay on Yahoo.
+_US_SHARE_CLASS = re.compile(r"^[A-Z]{1,5}\.[ABC]$")
+
+
+def is_us_share_class(symbol: str) -> bool:
+    return bool(_US_SHARE_CLASS.match(str(symbol or "").upper()))
+
+
 def is_us_equity(symbol: str) -> bool:
     """Alpaca serves US-listed equities only — no .TO/.V listings, no =X FX, and
     no OCC option symbols (those quote from the chain / Yahoo; subscribing them
-    to the equity stream used to swallow the option's real quote)."""
+    to the equity stream used to swallow the option's real quote). A US share
+    class (BRK.B) IS a US equity."""
     s = symbol.upper()
-    if not s or "." in s or "=" in s or "/" in s:
+    if not s or "=" in s or "/" in s:
+        return False
+    if "." in s and not is_us_share_class(s):
         return False
     from ..options.occ import is_occ
     return not is_occ(s)
@@ -135,7 +152,8 @@ class AlpacaQuoteFeed(QuoteFeed):
             return None
         return {"symbol": symbol, "provider": "alpaca", "feed": self._feed,
                 **{key: state.get(key) for key in
-                   ("bid", "ask", "bid_size", "ask_size", "quote_ts", "last", "last_ts")},
+                   ("bid", "ask", "bid_size", "ask_size", "quote_ts", "last", "last_ts",
+                    "quote_received_ts", "last_received_ts")},
                 "rawBidSize":state.get('raw_bid_size'),"rawAskSize":state.get('raw_ask_size'),
                 "sizeBasis": state.get('quote_size_basis','unknown')}
 
@@ -250,6 +268,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             "bid": 0.0, "ask": 0.0, "bid_size": 0, "ask_size": 0,
             "last": 0.0, "volume": 0, "day_high": 0.0, "day_low": 0.0, "emit_ms": 0,
             "last_ts": 0, "quote_ts": 0,   # PR #204 r2: venue time of the print that set `last` / of the current bid-ask
+            "last_received_ts": 0, "quote_received_ts": 0,   # local receipt time of the same message (host clock)
             # F19 (2026-09-04): the day range/volume are SESSION-to-date, not process-to-date.
             # `day` = the ET session the running numbers belong to (reset on a new session);
             # `vol_live` = regular-session prints seen since that reset; `vol_seed` = the
@@ -292,6 +311,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             st["bid"] = float(m.get("bp") or 0)
             st["ask"] = float(m.get("ap") or 0)
             st["quote_ts"] = venue_ms(m.get("t"))               # 0 when the message carries no venue time (r3)
+            st["quote_received_ts"] = now_ms()
             st['raw_bid_size'],st['raw_ask_size']=m.get('bs'),m.get('as')
             st['bid_size'],st['quote_size_basis']=equity_quote_size(m.get('bs'),self._feed,st['quote_ts'])
             st['ask_size'],_=equity_quote_size(m.get('as'),self._feed,st['quote_ts'])
@@ -312,6 +332,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             if px > 0 and not (conds & _NO_LAST_CONDS):
                 st["last"] = px
                 st["last_ts"] = venue_ts                 # never the receipt time (PR #204 r2/r3)
+                st["last_received_ts"] = now_ms()
                 if regular:                              # F19: the day range is the regular session's
                     st["day_high"] = max(st["day_high"], px)
                     st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)

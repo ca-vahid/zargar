@@ -1543,3 +1543,81 @@ candidates into real simulated plans, and P-06 runner protection as an executed 
 difference between the books will not say which component caused it, and four sessions of history predict nothing about it. Questions it can answer after
 the declared horizon: after-cost dollars and drawdown of the bundle against the baseline; how often enforcement defers for missing evidence and what those
 entries did in the baseline; how much displayed profit was executable; whether source-conditioned plans add trades the preparation did not already arm.
+
+
+### 2026-09-21 - the first active experimental session traded nothing, and the reason was the clock
+
+The experimental book fired 13 times, deferred 9 at the first-sale gate on `venue_time_in_future` and submitted no
+order; the baseline traded normally and finished +$201.70. **The method was not tested that day.** The host clock ran
+10.5 s behind true time, so correct venue timestamps looked future-dated and a gate built to refuse them did. The
+session is retained in every chronological report and marked **operationally impaired**: it measures the environment,
+not the bundle, and must not be averaged into any judgement about selection or profit management.
+
+What the session did teach, none of it about the rules:
+
+- **A refusal row is not an opportunity.** One AVGO trigger produced 48 `max_open_trades` rows across 51 minutes
+  while the plan's own long was open. Count attempts (`TechniquePlanTriggerFired`), not rows.
+- **Sizing feasibility is a property of the book.** With a ~$9.85k book, a 2% per-trade budget and a 50% premium
+  stop, no contract priced above **$3.94** can be bought at all. NBIS at $8.00 and AVGO at $4.80 were both refused
+  correctly, and the refusal is arithmetic, not a defect.
+- **The author's ideas mostly died for want of a chart, not for want of a rule.** Six of eighteen source rows were
+  him pointing at a line on a screen the app never received. Of those that did have numbers, META and TSLA failed on
+  a stop wider than the 3% cap, and AMZN, NVDA and MU on the 3R floor. META then ran to 753 - and TSLA, MU and SNDK
+  did not reach their first stated targets, which is the half of the evidence a tuning exercise would forget.
+- **`deferred` meant terminal.** Every deferred trigger fired once and never again. A bounded one-shot retry now
+  exists as `deferral-retry-v1`, DEFAULT OFF, and is a proposal to be judged on a forward sample, not a change to
+  the frozen bundle.
+
+
+### 2026-09-22 - the midday experiment is ended; R6 stands (`technique.arm.midday_trading` true -> false)
+
+Decided on the preregistered rule in the midday section above: at least 30 scored midday fires, then compare midday R
+against the prime windows. There were 62 midday fires. The filled midday trades lost **−0.30R per trade** (total −2.40R,
+22% winners) against −0.09R per trade in the prime windows, de-duplicated across the two books.
+
+Recorded honestly: the prime windows are negative too, and midday is **not** statistically distinguishable from them
+(one-sided permutation p = 0.36, eight midday trades against twenty-eight prime). So this does not show midday is the
+cause of EM's losses. What it shows is that allowing midday adds nothing, which was the experiment's question, and the
+null answer returns the method to its own documented rule: midday is chop, watch-only. The toggle's default was always
+off. It applies to both books equally, so the A/B comparison stays fair. Rollback is the same key back to true.
+
+Context for anyone revisiting it: across all 38 EM trades to date the method has not made money (−$219.40 net, profit
+factor 0.84), and 18 of its 27 stop-outs kept moving against the position afterwards, so the losses are mostly entry
+selection rather than stop placement. Full analysis in `reviews/2026-09-22-PROFITABILITY-PLAN.md`.
+
+### 2026-09-22 (late) - the EM stop rule is adopted and the open questions are preregistered (`em-scorecard-v1`)
+
+User decision 2026-09-22, on `reviews/2026-09-22-PROFITABILITY-PLAN.md`. Nothing here changes a trade; it fixes, BEFORE
+the data exists, what will decide EM's future and each open method question.
+
+**The stop rule (`em-stop-rule-v1`).** Counted forward from 2026-09-22 in the BASELINE book (the sessions that suggested
+the rule do not get to decide it). After **20 evaluable sessions**: if cumulative R is **at or below zero** AND the
+upper end of a 95% session-resampled bootstrap of the mean trade R is **below +0.1R**, stop the paid model review
+(`techniques.enhanced_market.paid_review` → false) and keep the baseline watch-only: plans still built and scored, no
+money spent. A losing but noisy record (upper bound ≥ +0.1R) does not trip it - the rule stops a method shown to have
+no edge, not one that is merely unlucky. R = the method's own planned risk: shares |entry − stop| × qty; options the
+premium stop (premium × 100 × qty × `premium_stop_pct`). Impaired book-sessions (the 2026-09-21 experimental clock
+fault) are excluded from evaluation and kept in every report; the disputed ORCL fill is reported as booked and at the
+ask, never silently replaced. The close check writes `research/experiment/<date>-scorecard.md` daily and raises a keyed
+`stoprule` notice when it trips; setting the switch is a human step.
+
+**Preregistered tests** (thresholds fixed now; `technique/em_scorecard.py::TESTS`; a reading before the sample is
+complete is printed for transparency and is never a verdict; the copy of a baseline trade in the experimental book
+counts once):
+
+| Test | Question | Counted from | Sample | Metric |
+|---|---|---|---:|---|
+| `shares_fallback` | does the shares fallback do as well as the option leg? | 2026-09-12 | 20 trades | mean R, long shares vs long options |
+| `short_puts_prime` | do short puts pay in the prime windows, now midday is off? | 2026-09-23 | 20 trades | mean R |
+| `stop_vs_volatility` | are stops small against the stock's own range stopped by noise? | 2026-09-23 | 40 stops | share later reaching TP1, stop < 2 vs ≥ 2 average 1m ranges |
+| `one_touch_levels` | do entries off a once-touched level lose disproportionately? | 2026-09-23 | 15 trades | mean R vs the rest |
+| `rules_vs_model` | does free rules-only preparation do no worse than the paid review? | 2026-09-22 | 20 sessions | cumulative and per-session R, experimental vs baseline |
+
+Readings at adoption (NOT verdicts): stop rule collecting 1/20; shares fallback n = 14, shares −0.54R vs options +0.52R
+per trade. Until a test is ready, `stop_buffer`, the shares fallback, the put side and the level-touch floor stay as
+they are.
+
+**Measurement added the same evening:** `TechniqueExitQuote` (`exit-quote-v1`, `techniques.enhanced_market.exit_quote_capture`
+on) - the exit side of the spread becomes measured instead of estimated from 2026-09-23. **Operational fix:** BRK.B now
+streams from Alpaca (PLATFORM-RULES 2026-09-22); before it, BRK.B plans saw one bar every 3-5 minutes and could miss
+their trigger bar, so BRK.B trades before 2026-09-23 are a feed artefact as much as a method result.

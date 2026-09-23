@@ -2,7 +2,7 @@
 
 > Execution update, 2026-09-12: the user subsequently authorized implementation, commit, push and deployment while the other team was busy. The proposal text below is the original review baseline, not a continuing approval block. See RELIABILITY-RELEASE-2026-09-12.md for shipped scope and remaining validation.
 
-**Historical proposal, revised 2026-09-13 for status accuracy.** The user authorized execution on September 12. See [current work status](PLAN.md) for implemented, partial and open items.
+**Historical proposal, revised 2026-09-13 for status accuracy.** The user authorized execution on September 12. See [current work status](../../PLAN.md) for implemented, partial and open items.
 
 This records the proposed design associated with [the weekend evidence review](WEEKEND-REVIEW-2026-09-12.md), originally audited against c0eb5c3. Its acceptance criteria are not claims that every item shipped. The active backlog and release evidence take precedence; re-audit current main before future changes.
 

@@ -783,3 +783,49 @@ Six genuine entries, every fill at or inside the fresh ask (`TipFillVsQuote`): N
 **Research-book note (not Tips Practice):** the eva armed shadow book holds MU −13 sh since 09-11 (duplicated 09-08 exit executions); a 1-share MU buy there was refused as "would be short" at 09:31. Bookkeeping repair is a human step; no money involved.
 
 Owned elsewhere today: Team2 stood down its after-close deploy (PR #242 open, unmerged); the IWM/MRVL/AVGO/IREN trips in the sweep are Team2/EM books.
+
+## 2026-09-22 — observed session 2 of 5 (prospective measurement; live 0.8.31 `3ac3dac7` during the session, 0.8.32 `63613751` deployed 16:15:38 ET after the close)
+
+Observe only: no settings, policy or trading-path change during the session. `review_gate` stayed `observe`. Rev 2 of the
+September 21 package (structured checkpoint verdicts, locked replay claim, quote time-basis labels) merged as PR #250
+and was deployed after the close at Team2's request (a mid-session restart would have excluded their first synced-clock
+study session). Counts equal before/after (managed 13, resting 36, armed 9); checkpoint status v3 ran on the new build:
+NOT-YET, 1 of 5 observed, structured eligibility present.
+
+**Trading (Tips Practice, NET of matched fees).** Realized today **+$248.45**, no questioned fills.
+
+| position | gross | fees | net | how |
+|---|---:|---:|---:|---|
+| VKTX 33 sh (of the 09-21 entry @29.74) | +293.02 | 0 | **+293.02** | 13 sh mirrored the source's close 09:45 @39.32; 20 sh on the raised venue stop 38.20 → 38.16 at 10:25 (stop lifted 28.34 → 34.80 → 36.20 → 38.20 by analyst follow-ups on the +29% gap). Whole trade +295.81 |
+| ACHR 9/25 5.5c ×5 (entered 09-21 @0.14) | +19.00 | 10.40 | **+8.60** | three mirrored trims of ab's exits (09:39, 09:41, 10:01) |
+| NFLX 9/25 74c ×1 (entered 09-21 @0.62) | −10.00 | 2.08 | **−12.08** | analyst mirrored MuggZone's "OUT" at 09:37 |
+| CORZ 12/18 25c ×1 (entered 09-21 @1.00) | −39.01 | 2.08 | **−41.09** | quote-watch premium stop 09:30 (premium −39%, underlying −2%) |
+
+Three genuine entries, every fill at the fresh ask (`TipFillVsQuote`, fill-time sample recorded apart): ACHR 10/16 6c ×5
+@0.23 (fee 5.20), CRWV 12 sh @87.17, NEM 9 sh @126.87. Entry fees inside open lots today: $5.20.
+
+**Decision funnel** (`tip_outcomes --dispositions --since 2026-09-22 --until 2026-09-22`): 21 actionable ideas, 7 takes,
+3 filled, 14 declined, 3 risk-infeasible (HIMS 9/25 30.5c, COIN 10/02 220c, BABA 9/25 120c — one contract's loss at
+the stated stop exceeded the ~$92 budget; the AVGO idea arrived as a SPREAD vehicle and waited for a human by design),
+0 avoidable. Signals: 47 verification_failed / 10 shadow / 19 proposed / 2 parked. Proposals: 3 executed (auto), 12
+rejected by the analyst, 3 expired on their limits, 1 pending (BABA, until 17:48). Cold-park fast path: 1 (NEM, quote
+warm at once).
+
+**Review-gated cards:** 0 `reviewRequired`; 30 geometry records, all enforce. **Incidents / fast stops / retries /
+analyst failures / halts:** none. **Intake:** 2 transient stalls cleared; 26 intake runs without a model call (hand-offs);
+raw-message coverage: 0 failed today (the 09-21 MK-alpha-trades message stays unreplayed by decision). **Stale bars:**
+104 plan errors across EM/Tips/Team2 at 11:45–11:48 when exchange 1m bars ran ~3 min late; current again by 12:01.
+
+**P11 observed on a real exit:** the CORZ premium stop's confirmation record shows two observations 2.45 s apart, both
+OPRA poll stamps — whether they were distinct vendor prints cannot be verified (no vendor stamp on the Quote). Owner
+Team2 (accepted); not patched; no tolerance changed.
+
+**Overnight (7 positions):** SBLK 62 sh (GTC 30.58), PL 59 (15.45), IONQ 28 (37.60), CRWV 12 (79.81), NEM 9 (121.19);
+ACHR 1/15 7c ×3 and ACHR 10/16 6c ×5 app-managed. **Hold study:** 17 rows captured 15:50; Monday's 14 rows sampled at
+the open. **Plans that roll:** 9 tip plans stay armed (AAOI, AMZN, CORZ, MU, NEM, PLTR, RKT, T + one).
+
+**Model cost today (list-price estimate, apart from trading P&L):** priced **$90.07** (100 intake reviews $67.61 + 25
+appraisals $22.46); unpriced: 26 intake runs with no model call; partial: 0; lower bound: yes.
+
+**Relevance filter (observe, never enforce):** 100 decisions — **78 review / 22 skip**, 0 readErrors; the four
+management actions today (VKTX stop lifts, NFLX close, ACHR trims) all sat on the review side.

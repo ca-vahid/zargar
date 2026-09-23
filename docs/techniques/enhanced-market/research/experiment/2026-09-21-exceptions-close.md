@@ -1,0 +1,50 @@
+﻿# EM books - pre-open verification, 2026-09-21
+
+Generated 2026-09-21T20:37:03+00:00 (read-only).
+Experiment `em-experiment-v1` enabled: **True**; owner: EM desk (EM Dev session) - attends pre-open, open, close; rollback = pause this book
+
+| Item | baseline (EM Practice) | experiment (EM Experimental) |
+|---|---|---|
+| Book id | 045d8c35b3f149628ea001ae90a58edb | 07ef1e867cad4150bc81e072a8fd600a |
+| Kind | sim | sim |
+| Cash | 10051.301699999987 | 9849.6032 |
+| Last equity point | 10051.301699999987 | 9849.6032 |
+| Armed for the session | 53 {'disarmed': 53} {'auto': 53} | 107 {'disarmed': 107} {'auto': 107} |
+| Plan origins | {'promote': 38, 'preopen_replan': 15} | {'experiment': 79, 'preopen_replan': 28} |
+| Promoted candidates | none | none |
+| Experiment-tagged arms | 0 | 107 |
+| Open positions / working orders | 0 / 0 | 0 / 0 |
+| Limit: mode | auto | auto |
+| Limit: instrument | options | options |
+| Limit: riskPct | 2.0 | 2.0 |
+| Limit: maxQty | 100.0 | 100.0 |
+| Limit: contracts | None | None |
+| Limit: maxContracts | 10 | 10 |
+| Limit: singleContractExit | tp2 | tp2 |
+| Limit: maxOpenTrades | 1 | 1 |
+| Limit: entryFallback | shares | shares |
+| Limit: skipWideSpread | True | True |
+| Limit: skipElevatedIv | False | False |
+| Limit: slippagePct | 0.1 | 0.1 |
+| Limit: flattenMinutesBeforeClose | 5 | 5 |
+| Limit: allowLive | False | False |
+| Daily loss limit per plan | [393.98] | [393.98] |
+| Matches 2 x riskPct x equity | False | True |
+
+Technique-wide EM settings (must be unchanged by the experiment): {"first_sale_rr_gate": null, "preparation_policy": null, "book_snapshot_observe": null, "source_candidates_observe": null, "source_scenarios_observe": null, "shadow_exit_observe": true, "shadow_p02_candidate": true, "paused": null}
+
+Shared, not per book: {"maxOrdersPerMinute": 30, "dayNotionalPerTechnique": null, "emLossHaltPct": 10.0, "bookLossHaltPct": 15.0}
+
+Routing: {"taggedRunsArmedOutsideTheExperimentalBook": 0, "untaggedArmsInsideTheExperimentalBook": 0, "bothBooksAreSim": true}
+
+
+## Operational exceptions
+
+Anything to report: **True**. By class: {'fault': 3}. By type: {'TechniquePlanError': 3}.
+Expected protective actions: 0 | FAULTS: 3 | plan restores in the window: 0
+Shared order-rate window: 0 rejections (0 in an EM book); busiest minute 2026-09-21 19:23:00+00:00 with 4 orders, cap 30.
+Recorder: no captures; unscorable reasons: none.
+Entries the admission gate could not decide: 9 -> {"07ef1e867cad4150bc81e072a8fd600a": {"deferred_missing_evidence": {"count": 9, "symbols": ["IREN", "ON", "NBIS", "SMH", "AVGO", "AMGN", "MRVL", "APP", "QQQ"], "firstAt": "2026-09-21T13:31:02.067525+00:00", "lastAt": "2026-09-21T14:17:02.466221+00:00", "why": "first-sale gate: required evidence is missing or invalid (underlier_invalid) - entry deferred, nothing sent"}}}
+- 2026-09-21T13:30:01.898091+00:00 TechniquePlanError book=07ef1e867cad4150bc81e072a8fd600a ours=True stale bars
+- 2026-09-21T13:30:01.910576+00:00 TechniquePlanError book=045d8c35b3f149628ea001ae90a58edb ours=True stale bars
+- 2026-09-21T13:30:01.921071+00:00 TechniquePlanError book=07ef1e867cad4150bc81e072a8fd600a ours=True stale bars

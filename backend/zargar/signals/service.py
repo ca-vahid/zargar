@@ -2027,12 +2027,25 @@ class SignalService:
         if read_errors and not d["review"]:               # an incomplete desk picture never justifies a skip
             d = {**d, "review": True, "reason": f"desk state incomplete ({', '.join(read_errors)}) - reviewing"}
         skip = (mode == "enforce" and not d["review"])
+        budget_note = None
+        if not d["review"] and not skip:
+            # ADV-05: a source over its daily review budget loses ONLY the reviews the gate already judged irrelevant
+            with contextlib.suppress(Exception):
+                cap = rg.source_budget(eng.settings, content.source_name or "unknown")
+                if cap is not None:
+                    spent = await rg.source_spend_today(eng, content.source_name or "unknown")
+                    if rg.over_budget(spent, cap):
+                        skip = True
+                        budget_note = {"capUsd": cap, "spentUsd": round(spent or 0.0, 2)}
+                        d = {**d, "reason": f"{d['reason']}; source over its daily review budget "
+                                            f"(${spent:,.2f} of ${cap:,.2f})"}
         with contextlib.suppress(Exception):
             await eng.journal.append(ev.TIP_REVIEW_GATE, {
                 "version": rg.VERSION, "mode": mode, "path": path, "decision": "review" if d["review"] else "skip",
                 "applied": skip, "reason": d["reason"], "tickers": d["tickers"], "matched": d["matched"],
                 "source": content.source_name, "contentId": getattr(content, "id", None), "intakeRunId": intake.id,
-                "deskItems": len(items), "readErrors": read_errors}, aggregate_type="tip_intake", aggregate_id=intake.id or "")
+                "deskItems": len(items), "readErrors": read_errors,
+                **({"sourceBudget": budget_note} if budget_note else {})}, aggregate_type="tip_intake", aggregate_id=intake.id or "")
         if skip:
             intake.step("note", f"Review gate ({rg.VERSION}): {d['reason']} - not reviewed. The message stays in the "
                                 "mirror; nothing on the desk can be managed from it.")

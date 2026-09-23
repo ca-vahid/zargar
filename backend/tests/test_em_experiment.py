@@ -271,12 +271,39 @@ async def _clone(rig, rid):
     return new
 
 
+async def _pin_sheet_geometry(rig, sheet_id: str) -> None:
+    """Freeze the sheet row's trigger geometry so ELIGIBILITY does not drift with the calendar.
+
+    `weekdays()` builds the rig's synthetic market relative to today, so the generated levels differ
+    from week to week: on 2026-09-21 they produced reward:risk 0.57 / 1.95 / 0.86 and the deterministic
+    rules refused all three - correctly, but for a reason this test is not about. `preparation_policy`
+    reads exactly four things from a trigger (valid, stop, targets, grade), and those are what is
+    pinned. Everything downstream - minting, arming, the per-book boundary - still runs for real.
+    """
+    from zargar.models import TechniqueWalkforward
+    async with rig.eng.sf() as s:
+        rows = (await s.execute(select(TechniqueWalkforward).where(TechniqueWalkforward.sweep_id == sheet_id))).scalars().all()
+        for row in rows:
+            plan = copy.deepcopy(dict(row.plan or {}))
+            for t in (plan.get("triggers") or []):
+                t["valid"] = True
+                t["noTradeReasons"] = []
+                t.setdefault("assessment", {})["grade"] = "A"
+                if not (t.get("stop") or {}):
+                    t["stop"] = {"price": 99.0}
+                if not (t.get("targets") or []):
+                    t["targets"] = [{"price": 103.5}, {"price": 105.0}, {"price": 106.0}]
+            row.plan = plan
+        await s.commit()
+
+
 async def test_preparation_is_deterministic_duplicate_safe_and_independent_of_the_baseline_arm(rig, monkeypatch):
     from zargar.technique import service as svc_mod
     book = await _launch(rig)
     monkeypatch.setattr(svc_mod, "last_completed_session", lambda now_ms=None: rig.days[3].isoformat())
     await rig.eng.settings.set("technique.walkforward.workers", 1, journal=False)
     sheet = await rig.svc.start_plan_sheet(["TEST"], label="sheet", wait=True)
+    await _pin_sheet_geometry(rig, sheet["id"])
     plan_for = sheet["params"]["planFor"]
     base = await rig.svc.promote(sheet["id"], "TEST", sheet["rows"][0]["session"], with_vision=False)
     await rig.svc.arm_plan(base["id"], {"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"]})          # the BASELINE arms its own run in its own book

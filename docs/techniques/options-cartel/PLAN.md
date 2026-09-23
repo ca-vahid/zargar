@@ -1,6 +1,6 @@
 # Cartel work status and next changes
 
-Updated 2026-09-16. [Current capabilities](DELIVERY-STATUS.md) and [operating guide](DAILY-PREPARATION.md) are authoritative for shipped behavior. The September 12 proposal was subsequently authorized and substantially implemented; its original acceptance wish list is not a declaration that every item is complete.
+Updated 2026-09-22 (priorities); the package table below is from 2026-09-16. [Current capabilities](DELIVERY-STATUS.md) and [operating guide](DAILY-PREPARATION.md) are authoritative for shipped behavior. The September 12 proposal was subsequently authorized and substantially implemented; its original acceptance wish list is not a declaration that every item is complete.
 
 | Work package | Status | Next evidence or work |
 |---|---|---|
@@ -15,17 +15,17 @@ Updated 2026-09-16. [Current capabilities](DELIVERY-STATUS.md) and [operating gu
 
 Every future behavior change needs a concrete failing case or sourced hypothesis, immutable baseline inputs, appropriate boundary tests and a rollback path. Do not loosen unrelated gates to force entries. Keep pure research separate from active orders; never infer a profitable option result from underlying R or author marketing percentages.
 
-For implementation history use [the original detailed delivery record](archive/PLAN-PRE-2026-09-13.md), [September 12 proposal](IMPLEMENTATION-PLAN-2026-09-12.md), [weekend findings](WEEKEND-REVIEW-2026-09-12.md) and [release scope](RELIABILITY-RELEASE-2026-09-12.md). The backlog above takes precedence over superseded pending/completed labels in those records.
+For implementation history use [the original detailed delivery record](archive/PLAN-PRE-2026-09-13.md), [September 12 proposal](archive/2026-09/IMPLEMENTATION-PLAN-2026-09-12.md), [weekend findings](archive/2026-09/WEEKEND-REVIEW-2026-09-12.md) and [release scope](archive/2026-09/RELIABILITY-RELEASE-2026-09-12.md). The backlog above takes precedence over superseded pending/completed labels in those records.
 
 Develop from current origin/main in an isolated owned branch; preserve all other desk work. Follow [AGENTS.md](../../../AGENTS.md). Test only zargar_test_codex sequentially. Build/version the integrated tree when bundled Method text changes; coordinate deployment separately from editing documentation.
 
-## Current profitability priorities
+## Current priorities (2026-09-22)
 
-1. Collect the full bounded pool with usable baselines before interpreting ranking differences. Queue fairness is implemented; missing provider coverage is still a separate limitation.
-2. Compare the frozen structural-R and leader-first selections on the same denominator; keep unselected names, losers and non-entries.
-3. Review gap-open behavior as a hypothesis, not a permission change inferred from a stock's day low.
-4. Evaluate campaign-aware target and failed-break/time/weak-strength challengers with actual feasible units, timestamp-qualified quotes and explicit costs. Isolated funding estimates do not simulate portfolio-wide capital competition.
-5. Reconcile intraday source limitations and restore/resume cutoffs with the live decision record before calling something a missed trade.
+The work queue is the [2026-09-22 improvement plan](reviews/2026-09-22-plan/PLAN.md): trade flow first
+(24 plan-days, 11 touches, 0 orders). In order: activate the built Practice switches one preparation apart
+(cost ranking v2, arm gate + gap retest, dry-up rule, 5m cadence) and measure each; decide the
+end-of-bucket no-trade-minute design (P4); then the brief's open packages F6 (shares expression) and F7
+(historical data repair). Do not loosen the volume, spread or risk limits on single-day evidence.
 
 Twenty sessions is a collection checkpoint, not automatic graduation. See
 [the research protocol](PROFITABILITY-RESEARCH.md) and

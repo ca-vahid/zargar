@@ -1,8 +1,8 @@
 # EM Options (EnhancedMarket) — state of play, doc map, known gaps
 
 *Start here. Dated; the newest entry wins over any older document in this folder. Update this file
-whenever a release, an activation or a review changes what is true. Last full refresh: 2026-09-16
-09:40 PT (first session on deterministic live entry, mid-session).*
+whenever a release, an activation or a review changes what is true. Last full refresh: 2026-09-22
+evening (profitability plan implemented: stop rule, scorecard, exit quotes, BRK.B stream, recurring batch).*
 
 ## Doc map
 
@@ -20,62 +20,49 @@ whenever a release, an activation or a review changes what is true. Last full re
 | `FLOW-CONFIRMATION-PLAN.md` | T-12 flow confirmation: measured and rejected on history | closed 2026-09-09 |
 | `METHOD-REVIEW-2026-08-26.md` | the first book-vs-app audit | historical |
 | `research/` | frozen profitability cohorts, per-session profitability reports, the order-free source-candidate ledger | current, dated files |
-| `reviews/` | external review rounds, delivery responses, release verdicts, adopted regression packets | dated records; latest: `deterministic-final-review/DE-RESPONSE-2026-09-15.md` |
+| `reviews/` | external review rounds, delivery responses, release verdicts, adopted regression packets | dated records; latest: `2026-09-22-PROFITABILITY-PLAN.md` |
+| `research/experiment/` | the two-book experiment: per-session checks, reports, scorecards, reviews, build lineage | current, dated files |
 | `notes/` | author video transcripts and feed notes | dated |
 
-## State of play (2026-09-16 evening)
+## State of play (2026-09-22 evening)
 
-- **Integrated delivery, DEPLOYED 2026-09-19 as v0.8.23 build `b3cfb961` with every new switch OFF (receipt: `reviews/DEPLOYMENT-RECEIPT-0.8.23-2026-09-19.md`; FINAL candidate `2d7f51bb`; the final-completion goal answered - IR-01..05 and R2-01/02 closed): source scenarios + plan matcher, one preparation owner (baseline default; `deterministic` built, single arm across workers), order-free source continuation + requalification with `candidate-pricing-v2` (contract identity, a separate chase gate, the production risk-gate verdict as evidence; partial is never feasible), `first-sale-v2` (default OFF), the ED-04 `book-snapshot-v3` recorder with a per-trade execution ledger from durable order links (OFF) and a read-only review panel on Validation. One handback: `reviews/FINAL-COMPLETION-RESPONSE-2026-09-19.md`; frozen definitions: `research/PROSPECTIVE-DEFINITIONS-2026-09-19-R2.md`. Recommended order: deploy with everything off, then the ED-04 recorder, then first-sale OBSERVE, then the candidates; no enforcement and no rules-only preparation on four sessions. Baseline Practice preparation and trading unchanged; deployment and every activation are separate user decisions.**
-- **Handoff 2026-09-18: live v0.8.13 build `e14f9fb` (Tips desk's #209 deploy at 20:07 PT; an earlier direct task start at 19:55 PT had moved the runtime onto Team2 #204 - neither was this desk); 39 EM arms; 0.8.14 candidate `babcfb1` (P-06 partial-depth + main e8aeb25 + runtime 1150fed) tested, NOT deployed; morning review = session cron + backup task `ZargarEmTickBackup`; ED-04 design in `research/EXECUTABLE-PROFIT-RECORD-DESIGN.md`, recorder next (OFF by default).**
-- **P-06 re-review (three bounded corrections) closed and DEPLOYED 2026-09-17 18:51 PT as v0.8.13 build `46c50eb` (tested `330328c`; restoration 54/54; the reclaim observer is live as an observation-only path under the on shadow knob; P-06 rows stay proxy-only until an observation passes strict validation).**
-- **ED-01..04 delivery review closed (`reviews/2026-09-17-EOD-DELIVERY-CLOSURE.md`, tested `ad8796f`, DEPLOYED 2026-09-17 17:10 PT as v0.8.12 build `e6cb4b7`, restoration 54/54; 39 EM arms for 2026-09-18):** the OFF option spread cap scoped to OPENING orders only (stops / flattens / reducing exits never capped); P-06 bound to confirmed executions with a runtime `tp1-reclaim` observation and underlying-proxy accounting (SCHW dollars withdrawn); the ablation labelled a descriptive underlying replay with a live-vs-replay funnel reconciliation; the executable-profit basket has an owner (EM desk; Tips for the shared quote layer).
-- **2026-09-17 EOD review answered (packages A-D, `reviews/2026-09-17-EOD-RESPONSE.md`; 0.8.12):** prep ablation tool `tools/em_prep_ablation.py` (model vetoes bought +0.77 R on 09-17 for 4.25 M input tokens; 36 of 50 named vetoes argued about already-invalid triggers), ORCL fill flagged as not robust (1.12 on a 0.76/1.12 snapshot), `sim_max_option_spread_pct` built OFF, P-06 runner protection frozen + never-TP1 and `edgeAtTp1` diagnostics in the profitability report, ledger `--author`, pre-open re-plan runs render no charts.
-- **Analyse tab crash fixed + horizon correction DEPLOYED (v0.8.09 build `dd525de`, 2026-09-16 22:02 PT; restoration 72/72):** the EM page read the newest run of ANY technique - an Options Cartel research run's analysis (no `levels`) crashed `RunResult` (`reading 'map'`) seconds after opening. Every run list on the EM page is now `technique=enhanced_market` and the result view tolerates a foreign analysis shape. Same build carries the re-review follow-up (`confirmation_pair`: the report cutoff is not the session close).
-- **Validation check panel converges (v0.8.08 build `e772c42`, deployed 2026-09-16 21:43 PT):** the analyst-check panel sat at "73/114 · 0 working · 0 queued · ~2.1 h left" for hours on a batch the server had finished (all 111 promoted runs `done`) because its run-list window was crowded out by another technique's research runs (379 in 3 h) and it then fetched up to 40 full runs every 3 s - a real engine load while the page stayed open. Now list filtered to the batch's trigger, terminal runs never refetched, bounded straggler looks -> "not loaded", one poll at a time, throttled table fetches, finished when nothing is open; panel scoped to the Validation tab; a dismissed batch stays dismissed (`frontend/src/lib/scanProgress.ts`).
-- **PFU re-review answered (code `3d458d0`, 0.8.06): watchdog classes live-unhealthy / uncertain / absent with `-Force` refusing and only `-Override` replacing a live engine; paired confirmation scans from the entry bar, pending horizons, geometry-only label; the claim about confirmation is withdrawn. Closure: `reviews/2026-09-17-PFU-CLOSURE.md`.
-- **PFU-01..04 closed on the branch (code `47275c3`, integrated `e048f5a` = 0.8.03 on runtime `ed88f25`; DEPLOYED 20:25 PT as v0.8.03 build d3091ae, then v0.8.04 build 66e85f6 at 20:56 PT (two stall causes fixed) and build 662a8e6 at 21:04 PT (third: chain normalisation off-loop); restoration 72/72 each time; live runtime v0.8.04 build 662a8e6):** watchdog classification module (owner: Tips desk, waits for the user), P-04 paired confirmation comparison + P-05 clock/event labels (descriptive), CBOE cooldown setting wired. Closure: `reviews/2026-09-17-PFU-CLOSURE.md`.
-- **Sep 17 inventory:** 58 EM arms in EM Practice (86 triggers: 34 long / 52 short), all effective `deterministic`,
-  evidence off, from sheet `fc9efd65418e` (111 reviewed, 58 setup, 53 no-setup, 0 arming failures). Live runtime
-  v0.7.100 build `172ce1f` (Team2's deploy 18:50 PT); EM follow-ups on the branch at `c74df44`, NOT deployed.
-  Six unplanned restarts today (TRADING-RULES §5 "2026-09-16 evening").
-
-## State of play (2026-09-16, daytime)
-
-- **Runtime:** v0.7.96 build `4c84697` since 10:52 ET 2026-09-16, after three unplanned watchdog restarts
-  (10:40 to 10:53 ET; a converged checkout had lost the health route's build helper, PLATFORM-RULES 2026-09-16).
-  The deterministic-entry release itself was v0.7.95 build `414a86c`, deployed 22:04 PT 2026-09-15 through the
-  protocol (readiness safe, `deploy.ps1`, `ZargarRestart` task, restoration 56/56 by id). EM branch:
-  `claude/technique-review-trade-plan-fbb9ba`; PR #174 puts it on `main`.
-- **Live entry authority is DETERMINISTIC** (`techniques.enhanced_market.fire_decision_mode=deterministic`,
-  `deterministic-entry-v1`, user decision 2026-09-15): when a trigger fires, `technique/entry_decision.py`
-  judges the tracker's actual transition (saved geometry, the tracker's own window gate, volume and the confirmation
-  branch that fired, R3.2, stop intact) in well under a millisecond; no model, no chart render, no timeout on the
-  entry path. Every attempt is journaled as `TechniqueEntryDecision` with its frozen snapshot, policy and the last
-  240 one-minute bars up to the signal close. Refusals persist as `no_setup` with reason codes. `legacy` is the
-  journaled rollback to the awaited critic (`critic_mode` then applies again). The premarket LLM plan builder,
-  analyst review and sheet promotion are unchanged.
-- **After-close LLM evidence is OFF** (`fire_evidence_mode=off`). When a person turns it on,
-  `tools/em_entry_evidence.py run --date` reviews the frozen decisions of a CLOSED session, verifies each record's
-  declared identity (input hash, frozen-bar hash and count, cutoff) before rendering or calling a model, and appends
-  `TechniqueEntryEvidence` (`authority=evidence_only`). It has no path back to trading.
-- **Vehicle:** shares are EM's Practice vehicle when the option is untradeable (`entry_fallback=shares`, C2), sized by
-  risk and capped by the book's position caps; the nightly liquidity screen marks the option-tradeable names (C1).
-- **Entry chain after an `allow`:** contract pick with next-strike/next-expiry retry, one bounded provider quote
-  refresh (`entry_quote_refresh_timeout_s` 2.5 s, EM only), re-price, T5.3/T5.4 re-judgement, risk-based sizing,
-  option admission, never-chase cap, R2, final entry guard on the CURRENT quote, RiskGate. Budget bounds refuse before
-  any order (F33 daily-loss bound, FIX-03 2% trade budget) and are journaled as `TriggerSkipped`.
-- **Exits:** unchanged (stop on bar close, 0.25R quote-breach crash brake, premium stop, ladder trims). Both
-  order-free observation knobs are ON for EM Practice by user decision 2026-09-15 14:06 PT
-  (`shadow_exit_observe`, `shadow_p02_candidate`): they record `TechniqueExitShadow` candidates and never trade.
-- **Rules live:** R6 windows, C3 gap-day wait (R6.6), gap-void, shares fallback, quote refresh. Not adopted after
-  sweeps: T-11, T-12, T-13, T-14, C4, C5 (verdicts in `TRADING-RULES.md` §3/§5).
-- **First deterministic session, FINAL (2026-09-16, FOMC day; full entry in `TRADING-RULES.md` §5 "2026-09-16 close"):** 11 fires / 11 allow (median 0.4 ms), 4 fills, net -$147.55 (1 winner, 3 quote-breach stops within minutes), 7 refusals (5 budget bounds, 1 not chased, 1 CBOE 429), 0 live model calls; bar close -> order submit median 1.6 s.
-- *Interim at 09:40 PT the same day:* 7 fires, 7 `allow` decisions in
-  0.25 to 0.92 ms with 240 frozen bars each, bar close to received 44 ms to 3.3 s, bar close to order submit 1.6 to
-  2.2 s (legacy was 18 to 23 s); 3 orders, 2 fills (both stopped on the quote breach within minutes), 1 unfilled and
-  cancelled (T4.1 not chased), 4 refused by budget bounds before any order; zero EM model calls since the open. The
-  full-day read (timing percentiles, fills, profitability by policy) is the after-close measurement:
-  `research/profitability/<date>.md` plus the decision timing chain from the journal.
+- **EM has not shown an edge.** 38 closed trades over 8 sessions across the books: −$219.40 after fees (about −$336 with
+  the disputed ORCL fill at the ask), 29% winners, profit factor 0.84; 27 of 38 ended at the stop, and 18 of those
+  kept running another 1R against the position (wrong entries, not tight stops). The 95% range of the average trade
+  straddles zero. All EM trading is SIMULATED; the only real money EM spends is the baseline's nightly paid model
+  review (~$50-62 a night). Full analysis: `reviews/2026-09-22-PROFITABILITY-PLAN.md`.
+- **The EM stop rule is adopted (`em-stop-rule-v1`, user decision 2026-09-22).** Counted forward from 2026-09-22: after
+  20 evaluable sessions, if the baseline's cumulative R is at or below zero AND the session-bootstrap upper bound of
+  the average trade is below +0.1R, the paid review stops (`techniques.enhanced_market.paid_review` → false) and the
+  baseline stays watch-only. The close check reports it every day and raises a keyed `stoprule` notice when it trips;
+  flipping the switch is a human step. Code `technique/em_scorecard.py`, report `python -m zargar.tools.em_scorecard`.
+- **Two books, both needed, nothing to remove.** EM Practice (baseline, paid model review) and EM Experimental
+  (`07ef1e867cad4150bc81e072a8fd600a`, `em-experiment-v1` bundle, rules-only preparation, zero model calls). The A/B
+  between them is the preregistered `rules_vs_model` test: if the free book does no worse over 20 sessions, the paid
+  review is not earning its cost. The old shared "Practice (archived 2026-09-07)" book is already archived and holds
+  Tips positions - left alone.
+- **Midday is OFF again** (`technique.arm.midday_trading` false, 2026-09-22): the midday experiment met its
+  preregistered 30-fire threshold and its trades lost −0.30R each; R6 stands. TRADING-RULES §5 2026-09-22.
+- **Preregistered tests, thresholds fixed before the data** (`em_scorecard.TESTS`, reported at every close; a test
+  that reaches its sample raises a keyed `decision` notice, it never changes anything itself): shares fallback vs
+  options (20 trades), short puts in the prime windows (20), stop size against the 1-minute range (40 stops), one-touch
+  carried levels (15), rules vs model (20 sessions).
+- **New measurement:** `TechniqueExitQuote` (`exit-quote-v1`, on by default, observation only) records the quote each
+  exit was decided on, bound to its exit order - the exit-side spread was an estimate until now.
+- **BRK.B now streams** (a US share class `^[A-Z]{1,5}\.[ABC]$` passes `is_us_equity`; Alpaca spells it with the dot).
+  On 2026-09-22 its plans saw one Yahoo-polled bar every 3-5 minutes (42 of 113 stale-bar errors) while storage showed
+  all 390 - the record hid the gap. PLATFORM-RULES 2026-09-22.
+- **Recurring preparation:** `scripts/em-evening-batch.py` (weekday task `ZargarEmEveningBatch`, 14:05 PT: resumable,
+  one paid read at a time, one batch at a time, honours `paid_review`) and `ZargarEmAfterArming` (verifies both books
+  for the NEXT weekday). Install/refresh with `scripts/em-install-session-checks.ps1`; the per-date one-off copies are
+  superseded. Session checks: clock 06:05, pre-open 06:07, post-replan 06:32, exceptions x3, close 13:37 PT.
+- **Live entry is deterministic** (`deterministic-entry-v1`, since 2026-09-15): `technique/entry_decision.py` judges the
+  tracker's transition in under a millisecond and journals `TechniqueEntryDecision`; no model on the entry path.
+  Exits: stop on bar close, 0.25R quote-breach brake, premium stop, ladder trims (P-06 runner protection executes in
+  the experimental book only). Shares are the Practice fallback when the option is untradeable (C2).
+- **Host clock** was 10.7 s slow on 2026-09-21 (the experimental admission gate correctly refused every entry); repaired
+  that evening to +0.3 ms and checked against an NTP quorum before every open (`tools/clock_health.py`).
+- History of every earlier state (deployments, review rounds, receipts) is in `TRADING-RULES.md` §5 and `reviews/`.
 
 ## Measurement and reporting
 
@@ -86,22 +73,27 @@ whenever a release, an activation or a review changes what is true. Last full re
 - `tools/em_fire_policy_migration.py preview`: read-only effective policy over the stored arms (never writes).
 - `tools/em_source_candidates.py`: the author's morning levels as an order-free ledger, evaluated after the close;
   rows never arm.
+- `tools/em_scorecard.py` (em-scorecard-v1): FIFO track record per book, the stop rule verdict and every preregistered
+  test; written each close to `research/experiment/<date>-scorecard.md`. `tools/em_experiment_report.py` is the daily
+  two-book comparison; `tools/em_experiment_check.py` verifies both books (pre-open, post-replan, after arming).
 - The morning tick (session-local cron) reports health, the EM funnel, deterministic decisions and model calls every
   half hour from 06:20 PT.
 
 ## Known gaps, risks and what could be wrong
 
-- **One session of deterministic data.** Faster entry is a latency fact, not a profit claim; the qualitative
-  judgments the critic used to make (higher-timeframe fakeouts, opposing shelves, divergence, live chop) are recorded
-  `not_evaluated` and are NOT encoded. Any such filter is a separate versioned rule with its own sweep.
-- **Budget bounds refuse most fires on volatile names:** 4 of 7 fires today were refused by the F33 daily-loss bound or
+- **No edge shown, and the losses cluster** in short puts (reject), midday and the long-shares fallback - one
+  overlapping cluster, not three findings. Each is a preregistered test, not a change (see state of play).
+- **Friction against small option positions:** entry-side spread about $167 and fees $93.60 across 24 option trades
+  against an option gross of +$60; the exit side is measured only from 2026-09-23 (`TechniqueExitQuote`).
+- **The flat 0.5% stop floor is volatility-blind** when no invalidating structure is found (6 of 9 stops on 09-22 were
+  exactly 0.50%); the `stop_vs_volatility` test decides it - do not touch `stop_buffer` before then.
+- **Quote-time skew on option observations** in the capture recorder: OPRA `source_ts` is most likely poll time, not
+  vendor time (Team2 finding; owner in PLATFORM-RULES). It limits the executable-profit measurement, not trading.
+- **Budget bounds refuse most fires on volatile names:** 4 of 7 fires on 2026-09-16 were refused by the F33 daily-loss bound or
   the FIX-03 2% trade budget because one contract risks more than the budget. The bounds are correct; the question is
   whether a shares fallback should be tried when the option is affordable but over budget (not built; needs a decision).
-- **Quote-breach stops within minutes of entry** (CRCL, CVNA today; several on 09-14/15): the 0.25R crash brake fires
+- **Quote-breach stops within minutes of entry** (CRCL, CVNA on 2026-09-16; several on 09-14/15): the 0.25R crash brake fires
   on the underlying's live quote. Under measurement in the profitability report; no change without a cohort.
-- **Watchdog single-probe kills:** a 4 s health timeout during a load stall killed a live engine on 2026-09-16 and
-  the loop that followed was a start-path defect. The health route now tolerates a missing helper (PR #174); the probe
-  policy belongs to the start-path owner.
 - **Timing field for non-1m plans:** `barCloseTs` uses the plan's trigger timeframe, so Tips fires on 5-minute plans
   show a close in the future. Diagnostic only; EM's 1-minute timing is correct. Fix pending on the EM branch.
 - **Yahoo 1m depth (~20 sessions)** bounds how late a run can be scored; frozen bars on each decision make the

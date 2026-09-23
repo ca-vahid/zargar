@@ -51,7 +51,7 @@ Funding is an isolated estimate, not reserved capital; the research does not sim
 portfolio-wide competition among simultaneous entries. The bearish cohort is an
 engineering proxy, not the complete March source scanner. Missing quotes or costs
 remain unpriced. Promotion needs subsequent sessions, net evidence and a separate
-decision under [the protocol](PROFITABILITY-RESEARCH.md).
+decision under [the protocol](../../PROFITABILITY-RESEARCH.md).
 
 Deployment uses the shared restart guard and complete artifact manifest. Paid analyst
 work or in-flight trading defers restart; no forced restart is authorized by this

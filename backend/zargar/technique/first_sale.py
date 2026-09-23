@@ -239,7 +239,11 @@ def build_record(*, stage: str, symbol: str, run_id: str, trigger_id: str, famil
         "runId": run_id, "symbol": symbol, "trigger": trigger_id, "family": family, "direction": direction,
         "session": session,
         "underlying": {"planEntry": _f(plan_entry), "runnerEntry": run_e, "stop": _f(stop), "targets": tg,
-                       "evidence": ({k: ue.get(k) for k in ("symbol", "bid", "ask", "last", "quoteTs", "lastTs", "receivedTs", "source", "halted")} if underlier_evidence else None),
+                       # `sourceBasis` rides along deliberately (2026-09-21): `feed:HybridQuoteFeed` is the name of a
+                       # PROCESS CLASS this app substituted, not an identity the venue reported, and dropping the field
+                       # that says so left every reader of this record unable to tell the two apart.
+                       "evidence": ({k: ue.get(k) for k in ("symbol", "bid", "ask", "last", "quoteTs", "lastTs", "receivedTs",
+                                                            "source", "sourceBasis", "rawSource", "halted")} if underlier_evidence else None),
                        "validated": uv,
                        "observed": ({"price": uv["price"], "basis": uv["basis"], "ageMs": uv["ageMs"], "source": uv["source"]} if uv["status"] == "valid" else None)},
         "vehicle": {"instrument": instrument, "quantity": (float(qty) if qty is not None else None),

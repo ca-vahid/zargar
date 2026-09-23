@@ -160,6 +160,12 @@ def _rth_only(bars: list[Bar]) -> list[Bar]:
     return out
 
 
+def _alpaca_symbol(symbol: str) -> bool:
+    """A symbol Alpaca's history serves: no FX, and a dot only for a US share class (BRK.B; 2026-09-22)."""
+    from ..brokers.alpaca import is_us_share_class
+    return "=" not in symbol and ("." not in symbol or is_us_share_class(symbol))
+
+
 async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
                          http: httpx.AsyncClient, *, session: str = "rth") -> list[Bar]:
     headers = {"APCA-API-KEY-ID": _ALPACA["key"], "APCA-API-SECRET-KEY": _ALPACA["secret"]}
@@ -240,7 +246,7 @@ async def fetch_window_ex(
     own = False                                  # the shared client is never closed here
     http = client or _client_shared()
     bars: list[Bar] = []
-    if _ALPACA["key"] and tf in ALPACA_TF and "." not in symbol and "=" not in symbol:
+    if _ALPACA["key"] and tf in ALPACA_TF and _alpaca_symbol(symbol):
         try:
             bars = await _alpaca_window(symbol, tf, start_s, end_s, http, session=session)
             provider = "alpaca" if bars else None

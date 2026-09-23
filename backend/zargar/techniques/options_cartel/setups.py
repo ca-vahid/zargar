@@ -23,6 +23,11 @@ class SetupParameters(BaseModel):
     max_weekly_range_pct: float = Field(default=50, gt=0)
     max_distance_from_extreme_pct: float = Field(default=15, ge=0)
     max_volume_ratio: float = Field(default=.8, gt=0)
+    # P2 (2026-09-22): ``ratio_v1`` = base volume <= max_volume_ratio x prior base (engineering 0.8).
+    # ``non_increasing_v1`` = the archived method's qualitative contraction read literally: the base's
+    # average volume does not exceed the prior base's (ratio <= 1.0). The check keeps its name; the
+    # evaluated rule and threshold are recorded on it.
+    dry_up_rule: Literal['ratio_v1', 'non_increasing_v1'] = 'ratio_v1'
     min_impulse_pct: float = Field(default=5, ge=0)
     line_flat_pct_per_bar: float = Field(default=.10, ge=0)
     touch_tolerance_pct: float = Field(default=.5, ge=0)
@@ -131,8 +136,10 @@ def analyze_setups(history: list[DailyBar], benchmark: list[DailyBar], screen: d
     base_volume = sum(b.volume for b in base)/n
     prior_volume = sum(b.volume for b in previous)/n
     volume_ratio = base_volume/prior_volume if prior_volume > 0 else None
-    check("Volume dries up in consolidation", volume_ratio <= parameters.max_volume_ratio
+    dry_up_limit = 1.0 if parameters.dry_up_rule == 'non_increasing_v1' else parameters.max_volume_ratio
+    check("Volume dries up in consolidation", volume_ratio <= dry_up_limit
           if volume_ratio is not None else None, volume_ratio)
+    out["checks"][-1].update(rule=parameters.dry_up_rule, threshold=dry_up_limit)
     check("Daily base tightness", _range(base) <= parameters.max_base_range_pct, _range(base))
     upper = _slope([b.high for b in base])/latest.close*100
     lower = _slope([b.low for b in base])/latest.close*100

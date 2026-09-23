@@ -1,0 +1,2017 @@
+{
+ "date": "2026-09-21",
+ "generatedAt": "2026-09-21T23:22:49+00:00",
+ "experiment": {
+  "label": "EM Experimental",
+  "owner": "EM desk (EM Dev session) - attends pre-open, open, close; rollback = pause this book",
+  "enabled": true,
+  "version": "em-experiment-v1",
+  "overrides": {
+   "prep_grade_floor": "B",
+   "runner_protection": "execute",
+   "first_sale_rr_gate": "enforce",
+   "preparation_policy": "deterministic",
+   "book_snapshot_observe": true,
+   "conditional_review_fix": "apply",
+   "source_candidates_execute": true
+  },
+  "startedAt": "2026-09-19T18:18:08+00:00",
+  "portfolioId": "07ef1e867cad4150bc81e072a8fd600a",
+  "comparisonTs": "2026-09-19T18:18:02+00:00",
+  "startingEquity": 9849.6032,
+  "baselinePortfolioId": "045d8c35b3f149628ea001ae90a58edb"
+ },
+ "books": {
+  "baseline": {
+   "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+   "execution": {
+    "net": 201.6985,
+    "fees": 4.16,
+    "bySymbol": {
+     "AVGO": {
+      "net": 68.4133,
+      "fees": 0.0,
+      "qty": 13.0
+     },
+     "IREN260925C00047500": {
+      "net": 171.84,
+      "fees": 4.16,
+      "qty": 2.0
+     },
+     "MRVL": {
+      "net": -38.5548,
+      "fees": 0.0,
+      "qty": 19.0
+     }
+    },
+    "openAtCutoff": [],
+    "fills": 9,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "openExposure": [],
+   "equity": {
+    "maxDrawdown": -114.06,
+    "first": 9849.603199999987,
+    "last": 10051.301699999987,
+    "markedChange": 201.7,
+    "samples": 1834,
+    "markedPeak": 10063.69,
+    "markedTrough": 9815.05,
+    "markedPeakGain": 214.09,
+    "basis": "30 s equity samples; marked, not executable"
+   },
+   "capture": {
+    "status": "no_snapshots",
+    "snapshots": 0,
+    "coverage": null,
+    "realizedNetFinal": null,
+    "peakDisplayedNet": null,
+    "peakExecutableNet": null,
+    "givebackVsExecutablePeak": null,
+    "reconciliation": null
+   },
+   "plans": {
+    "armed": 53,
+    "byOrigin": {
+     "promote": 38,
+     "preopen_replan": 15
+    },
+    "promoted": 0,
+    "promotedByVariant": {}
+   },
+   "activity": {
+    "fired": 6,
+    "entriesFilled": 3,
+    "refusedOrSkipped": 116,
+    "refusalsByStage": {
+     "skipped": 48,
+     "gap_void": 34,
+     "invalidated": 18,
+     "gapped_past": 8,
+     "gapped_through": 3,
+     "T3.3d no volume surge (1.00x)": 1,
+     "contract skipped (T5.4 wide spread 10.6% on the NBBO (bid 1.87 / ask 2.08))": 1,
+     "contract skipped (T5.4 wide spread 11.3% on the NBBO (bid 0.75 / ask 0.84))": 1,
+     "T3.3d no volume surge (1.37x)": 1,
+     "R3.1 volume 0.26x below floor": 1
+    },
+    "missingDataRefusals": {},
+    "misses": 1,
+    "exitsByKind": {
+     "tp2": 2,
+     "stop": 1,
+     "tp1": 1,
+     "tp3": 1,
+     "flatten": 1
+    }
+   },
+   "questionableFills": [],
+   "perSymbol": {
+    "AVGO": {
+     "armed": 2,
+     "fired": 2,
+     "filled": 1,
+     "refused": 51,
+     "missingData": 0,
+     "exits": {
+      "tp2": 1,
+      "tp1": 1,
+      "tp3": 1,
+      "flatten": 1
+     },
+     "net": 68.4133,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "LRCX": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CVNA": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CSCO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "PANW": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DELL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "TXN": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "RKLB": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XOP": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MSFT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "COIN": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BA": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "INTC": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GS": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HPE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "FXI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "VST": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRWV": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "OXY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "IONQ": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRWD": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XBI": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CAT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "FCX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SMCI": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "V": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ANET": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MRVL": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 1,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -38.5548,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "IREN": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 1,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {
+      "tp2": 1
+     },
+     "net": 171.84,
+     "fees": 4.16,
+     "fills": 1
+    },
+    "WFC": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MCD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GOOGL": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BAC": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AXP": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DIS": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    }
+   },
+   "attempts": {
+    "entryAttempts": 6,
+    "rows": 116,
+    "distinctPairs": 69,
+    "repeatedGuardRows": 47,
+    "byReason": {
+     "max_open_trades": {
+      "rows": 48,
+      "distinct": 1
+     },
+     "gap_void": {
+      "rows": 34,
+      "distinct": 34
+     },
+     "invalidated": {
+      "rows": 18,
+      "distinct": 18
+     },
+     "gapped_past": {
+      "rows": 8,
+      "distinct": 8
+     },
+     "gapped_through": {
+      "rows": 3,
+      "distinct": 3
+     },
+     "skipped": {
+      "rows": 3,
+      "distinct": 3
+     },
+     "contract_quality": {
+      "rows": 2,
+      "distinct": 2
+     }
+    },
+    "note": "entryAttempts = TechniquePlanTriggerFired rows (a trigger that reached the entry path). rows = every refusal/skip event. A reason whose rows exceed its distinct (plan, trigger) pairs is a guard re-stating itself, never a fresh chance."
+   }
+  },
+  "experiment": {
+   "portfolioId": "07ef1e867cad4150bc81e072a8fd600a",
+   "execution": {
+    "net": 0,
+    "fees": 0,
+    "bySymbol": {},
+    "openAtCutoff": [],
+    "fills": 0,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "openExposure": [],
+   "equity": {
+    "maxDrawdown": 0.0,
+    "first": 9849.6032,
+    "last": 9849.6032,
+    "markedChange": 0.0,
+    "samples": 1834,
+    "markedPeak": 9849.6,
+    "markedTrough": 9849.6,
+    "markedPeakGain": 0.0,
+    "basis": "30 s equity samples; marked, not executable"
+   },
+   "capture": {
+    "status": "no_snapshots",
+    "snapshots": 0,
+    "coverage": null,
+    "realizedNetFinal": null,
+    "peakDisplayedNet": null,
+    "peakExecutableNet": null,
+    "givebackVsExecutablePeak": null,
+    "reconciliation": null
+   },
+   "plans": {
+    "armed": 107,
+    "byOrigin": {
+     "experiment": 79,
+     "preopen_replan": 28
+    },
+    "promoted": 0,
+    "promotedByVariant": {}
+   },
+   "activity": {
+    "fired": 13,
+    "entriesFilled": 0,
+    "refusedOrSkipped": 148,
+    "refusalsByStage": {
+     "contract skipped (loss budget: this entry risks ~$400 at its premium stop but only $394 of the $394 daily loss limit is left (F33))": 1,
+     "T3.3d no volume surge (0.64x)": 1,
+     "T3.3d no volume surge (0.76x)": 1,
+     "gap_void": 50,
+     "gapped_past": 20,
+     "invalidated": 33,
+     "gapped_through": 9,
+     "T3.3d no volume surge (1.00x)": 1,
+     "first_sale": 9,
+     "T3.3d no volume surge (0.81x)": 1,
+     "R3.1 volume 0.21x below floor": 1,
+     "contract skipped (T5.4 wide spread 10.6% on the NBBO (bid 1.87 / ask 2.08))": 1,
+     "T3.3d no volume surge (0.80x)": 1,
+     "T3.3b/e candle not decisive": 2,
+     "T3.3d no volume surge (0.58x)": 1,
+     "T3.3d no volume surge (1.03x)": 1,
+     "T3.3d no volume surge (1.07x)": 1,
+     "T3.3d no volume surge (0.78x)": 1,
+     "contract skipped (T5.4 wide spread 11.3% on the NBBO (bid 0.75 / ask 0.84))": 1,
+     "T3.3d no volume surge (1.44x)": 1,
+     "T3.3d no volume surge (1.33x)": 1,
+     "T3.3d no volume surge (1.37x)": 1,
+     "T3.3d no volume surge (0.54x)": 1,
+     "one contract at 4.80 risks more than the 2% trade budget at its premium stop - not sent (FIX-03: budget is a bound)": 1,
+     "T3.3c/f no follow-through / failed to hold": 2,
+     "T3.3d no volume surge (1.06x)": 1,
+     "T3.3d no volume surge (0.66x)": 1,
+     "T3.3d no volume surge (0.97x)": 1,
+     "T3.3d no volume surge (1.22x)": 1,
+     "T3.3d no volume surge (0.65x)": 1
+    },
+    "missingDataRefusals": {
+     "deferred_missing_evidence": 9
+    },
+    "misses": 2,
+    "exitsByKind": {}
+   },
+   "questionableFills": [],
+   "perSymbol": {
+    "APP": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRWD": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "LRCX": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MRVL": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AVGO": {
+     "armed": 2,
+     "fired": 2,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "VST": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SQQQ": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "OXY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XOP": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "NBIS": {
+     "armed": 2,
+     "fired": 2,
+     "filled": 0,
+     "refused": 7,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MU": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "LQD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLF": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AXP": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MRK": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "INTC": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HOOD": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BAC": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CAT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AMAT": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AMD": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GOOGL": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "IREN": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SMH": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ON": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "VOO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HPE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KLAC": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 7,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "IONQ": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "RKLB": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "APLD": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "FCX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GS": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "PLTR": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "COST": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "NFLX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BA": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ANET": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MCD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KWEB": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XBI": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "V": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KRE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MS": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "PG": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BKNG": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "WFC": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CVNA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "QQQ": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "PANW": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SNDK": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DELL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SMCI": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "VZ": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AMGN": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 1,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "FXI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KORU": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SBUX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "TXN": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SPY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "COIN": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XOM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRWV": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "TLT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "INTU": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 6,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRCL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DIA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "PFE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MSFT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CSCO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GOOG": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "UBER": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BMNR": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HYG": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    }
+   },
+   "attempts": {
+    "entryAttempts": 13,
+    "rows": 148,
+    "distinctPairs": 136,
+    "repeatedGuardRows": 12,
+    "byReason": {
+     "contract_quality": {
+      "rows": 3,
+      "distinct": 3
+     },
+     "skipped": {
+      "rows": 23,
+      "distinct": 11
+     },
+     "gap_void": {
+      "rows": 50,
+      "distinct": 50
+     },
+     "gapped_past": {
+      "rows": 20,
+      "distinct": 20
+     },
+     "invalidated": {
+      "rows": 33,
+      "distinct": 33
+     },
+     "gapped_through": {
+      "rows": 9,
+      "distinct": 9
+     },
+     "entry_gate_refused": {
+      "rows": 9,
+      "distinct": 9
+     },
+     "size_zero": {
+      "rows": 1,
+      "distinct": 1
+     }
+    },
+    "note": "entryAttempts = TechniquePlanTriggerFired rows (a trigger that reached the entry path). rows = every refusal/skip event. A reason whose rows exceed its distinct (plan, trigger) pairs is a guard re-stating itself, never a fresh chance."
+   }
+  }
+ },
+ "sharedRateLimit": {
+  "orderRateRejections": 0,
+  "byBook": {},
+  "busiestMinute": "2026-09-21 19:23:00+00:00",
+  "busiestMinuteOrders": 4,
+  "capPerMinute": 30
+ },
+ "cohorts": {
+  "common": {
+   "symbols": 37,
+   "names": [
+    "ANET",
+    "AVGO",
+    "AXP",
+    "BA",
+    "BAC",
+    "BE",
+    "CAT",
+    "COIN",
+    "CRM",
+    "CRWD",
+    "CRWV",
+    "CSCO",
+    "CVNA",
+    "DELL",
+    "FCX",
+    "FXI",
+    "GOOGL",
+    "GS",
+    "HPE",
+    "INTC",
+    "IONQ",
+    "IREN",
+    "LRCX",
+    "MCD",
+    "MRVL",
+    "MSFT",
+    "OXY",
+    "PANW",
+    "RKLB",
+    "SMCI",
+    "TXN",
+    "V",
+    "VST",
+    "WFC",
+    "XBI",
+    "XLI",
+    "XOP"
+   ],
+   "baseline": {
+    "armed": 52,
+    "fired": 6,
+    "filled": 3,
+    "refused": 115,
+    "missingDataRefusals": 0,
+    "netAfterFees": 201.6985,
+    "fees": 4.16,
+    "exits": {
+     "tp2": 2,
+     "tp1": 1,
+     "tp3": 1,
+     "flatten": 1,
+     "stop": 1
+    }
+   },
+   "experiment": {
+    "armed": 51,
+    "fired": 6,
+    "filled": 0,
+    "refused": 68,
+    "missingDataRefusals": 3,
+    "netAfterFees": 0.0,
+    "fees": 0.0,
+    "exits": {}
+   }
+  },
+  "baselineOnly": {
+   "symbols": 1,
+   "names": [
+    "DIS"
+   ],
+   "baseline": {
+    "armed": 1,
+    "fired": 0,
+    "filled": 0,
+    "refused": 1,
+    "missingDataRefusals": 0,
+    "netAfterFees": 0.0,
+    "fees": 0.0,
+    "exits": {}
+   },
+   "experiment": null
+  },
+  "experimentOnly": {
+   "symbols": 42,
+   "names": [
+    "AMAT",
+    "AMD",
+    "AMGN",
+    "APLD",
+    "APP",
+    "BKNG",
+    "BMNR",
+    "COST",
+    "CRCL",
+    "DIA",
+    "GOOG",
+    "HD",
+    "HOOD",
+    "HYG",
+    "INTU",
+    "KLAC",
+    "KO",
+    "KORU",
+    "KRE",
+    "KWEB",
+    "LQD",
+    "MRK",
+    "MS",
+    "MU",
+    "NBIS",
+    "NFLX",
+    "ON",
+    "PFE",
+    "PG",
+    "PLTR",
+    "QQQ",
+    "SBUX",
+    "SMH",
+    "SNDK",
+    "SPY",
+    "SQQQ",
+    "TLT",
+    "UBER",
+    "VOO",
+    "VZ"
+   ],
+   "baseline": null,
+   "experiment": {
+    "armed": 56,
+    "fired": 7,
+    "filled": 0,
+    "refused": 80,
+    "missingDataRefusals": 6,
+    "netAfterFees": 0.0,
+    "fees": 0.0,
+    "exits": {}
+   }
+  }
+ },
+ "matched": {
+  "matchedSymbols": 0,
+  "rows": [],
+  "matchedNet": {
+   "baseline": null,
+   "experiment": null,
+   "note": "sum over matched symbols only; None = at least one leg's money is unknown"
+  },
+  "armedBothEnteredOne": [
+   {
+    "symbol": "AVGO",
+    "enteredBy": "baseline",
+    "otherBookRefusals": 4,
+    "otherBookMissingData": 1
+   },
+   {
+    "symbol": "IREN",
+    "enteredBy": "baseline",
+    "otherBookRefusals": 3,
+    "otherBookMissingData": 1
+   },
+   {
+    "symbol": "MRVL",
+    "enteredBy": "baseline",
+    "otherBookRefusals": 3,
+    "otherBookMissingData": 1
+   }
+  ],
+  "armedBothEnteredOneCount": 3,
+  "note": "matched = both books ENTERED the same symbol this session; everything else is whole-bundle difference"
+ },
+ "sessionQuality": {
+  "operationallyImpaired": true,
+  "impairedBooks": [
+   "experiment"
+  ],
+  "reasons": [
+   "experiment: 13 attempt(s), 0 fill(s), 9 undecided at the admission gate"
+  ],
+  "faultEvents": 0,
+  "evaluableForStrategy": false,
+  "note": "an impaired session is RETAINED in every chronological report and excluded only from strategy evaluation; the numbers in it are real, they just measure the environment rather than the method"
+ },
+ "exitPolicy": {
+  "p06RunnerProtectExits": {
+   "experiment": 0,
+   "baseline": 0
+  },
+  "differingSymbols": [
+   {
+    "symbol": "AVGO",
+    "baselineExits": {
+     "tp2": 1,
+     "tp1": 1,
+     "tp3": 1,
+     "flatten": 1
+    },
+    "experimentExits": {},
+    "p06": 0,
+    "sameKinds": []
+   },
+   {
+    "symbol": "IREN",
+    "baselineExits": {
+     "tp2": 1
+    },
+    "experimentExits": {},
+    "p06": 0,
+    "sameKinds": []
+   },
+   {
+    "symbol": "MRVL",
+    "baselineExits": {
+     "stop": 1
+    },
+    "experimentExits": {},
+    "p06": 0,
+    "sameKinds": []
+   }
+  ],
+  "note": "P-06 executes only in the experimental book; the baseline keeps the production ladder and records P-06 as an observation"
+ },
+ "exceptionLog": {
+  "window": [
+   "2026-09-21T04:00:00-04:00",
+   "2026-09-21T20:00:00-04:00"
+  ],
+  "byType": {
+   "TechniquePlanError": 3,
+   "TechniquePlanRestored (other book)": 17,
+   "TechniquePlanRestored": 91
+  },
+  "items": [
+   {
+    "at": "2026-09-21T13:30:01.898091+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-21T13:30:01.910576+00:00",
+    "type": "TechniquePlanError",
+    "book": "045d8c35b3f149628ea001ae90a58edb",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-21T13:30:01.921071+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   }
+  ],
+  "rateLimit": {
+   "orderRateRejections": 0,
+   "byBook": {},
+   "ours": 0,
+   "busiestMinute": "2026-09-21 19:23:00+00:00",
+   "busiestMinuteOrders": 4,
+   "capPerMinute": 30
+  },
+  "recorder": {},
+  "unscorable": {},
+  "admissionDeferrals": {
+   "07ef1e867cad4150bc81e072a8fd600a": {
+    "deferred_missing_evidence": {
+     "count": 9,
+     "symbols": [
+      "IREN",
+      "ON",
+      "NBIS",
+      "SMH",
+      "AVGO",
+      "AMGN",
+      "MRVL",
+      "APP",
+      "QQQ"
+     ],
+     "firstAt": "2026-09-21T13:31:02.067525+00:00",
+     "lastAt": "2026-09-21T14:17:02.466221+00:00",
+     "why": "first-sale gate: required evidence is missing or invalid (underlier_invalid) - entry deferred, nothing sent"
+    }
+   }
+  },
+  "admissionDeferralCount": 9,
+  "byClass": {
+   "fault": 3
+  },
+  "faults": [
+   {
+    "at": "2026-09-21T13:30:01.898091+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-21T13:30:01.910576+00:00",
+    "type": "TechniquePlanError",
+    "book": "045d8c35b3f149628ea001ae90a58edb",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-21T13:30:01.921071+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   }
+  ],
+  "protectiveActions": [],
+  "restartsDuringSession": 108,
+  "anythingToReport": true
+ },
+ "protectiveVsFaults": {
+  "expectedProtectiveActions": {
+   "baseline": {
+    "stop": {
+     "count": 1,
+     "meaning": "the production stop"
+    },
+    "flatten": {
+     "count": 1,
+     "meaning": "the end-of-session flatten"
+    },
+    "tp1": {
+     "count": 1,
+     "meaning": "a target trim"
+    },
+    "tp2": {
+     "count": 2,
+     "meaning": "a target exit"
+    },
+    "tp3": {
+     "count": 1,
+     "meaning": "a target exit"
+    }
+   },
+   "journaled": []
+  },
+  "faults": {
+   "orderRateRejections": 0,
+   "byBook": {},
+   "recorder": {},
+   "unscorable": {},
+   "events": [
+    {
+     "at": "2026-09-21T13:30:01.898091+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-21T13:30:01.910576+00:00",
+     "type": "TechniquePlanError",
+     "book": "045d8c35b3f149628ea001ae90a58edb",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-21T13:30:01.921071+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    }
+   ],
+   "planRestoresInWindow": 108,
+   "captureStatus": {
+    "baseline": "no_snapshots",
+    "experiment": "no_snapshots"
+   },
+   "reconciliation": {
+    "baseline": null,
+    "experiment": null
+   }
+  },
+  "note": "a stop, a premium stop, a flatten, a target exit and P-06 are the policy working; a rejection, a drop, an unreconciled ledger or an unscorable capture is a fault"
+ },
+ "modelCost": {
+  "baseline": {
+   "version": "model-costs-v1",
+   "requests": 423,
+   "retries": 0,
+   "requestsWithoutCompletion": 0,
+   "tokens": {
+    "input": 3303972,
+    "output": 1293350,
+    "cacheRead": 1749334,
+    "cacheWrite": 25523
+   },
+   "invoiceVerified": {
+    "usd": null,
+    "invoices": 0
+   },
+   "estimated": {
+    "usd": 49.8878,
+    "requests": 423
+   },
+   "unknown": {
+    "requests": 0,
+    "why": {}
+   },
+   "subscriptionAllocation": null,
+   "byModel": {
+    "anthropic/claude-opus-5": {
+     "requests": 423,
+     "tokens": {
+      "input": 3303972,
+      "output": 1293350,
+      "cacheRead": 1749334,
+      "cacheWrite": 25523
+     },
+     "estimatedUsd": 49.887793,
+     "unknownRequests": 0
+    }
+   },
+   "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
+  },
+  "experiment": {
+   "modelCalls": 0,
+   "note": "deterministic preparation and promotion: zero model calls by construction"
+  }
+ }
+}

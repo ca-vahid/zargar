@@ -147,3 +147,15 @@ async def test_hybrid_routes_us_to_alpaca_and_everything_to_yahoo():
     assert "SNOW" in h.symbols and "AAPL.TO" in h.symbols
     assert await h.fetch_bars("SNOW") == ["bars"]
     assert await h.fetch_day_bars("SNOW") == ["day"]
+
+
+def test_a_us_share_class_is_streamed_and_foreign_suffixes_are_not():
+    """2026-09-22: BRK.B was never subscribed (the blanket 'no dot' rule), so its armed plans saw one Yahoo-polled bar
+    in three to five minutes. Alpaca spells the class with the dot; foreign listings stay on Yahoo."""
+    from zargar.brokers.alpaca import is_us_share_class
+    from zargar.marketstructure.history import _alpaca_symbol
+    for s in ("BRK.B", "BRK.A", "BF.B", "HEI.A", "brk.b"):
+        assert is_us_equity(s) and is_us_share_class(s) and _alpaca_symbol(s), s
+    for s in ("SHOP.TO", "ABC.V", "XYZ.CN", "NVDI.L", "3NVD.MI", "700.HK", "BRK.BB", "TOOLONG.B", ".B", "USDCAD=X", "BRK/B"):
+        assert not is_us_equity(s), s
+    assert not _alpaca_symbol("SHOP.TO") and _alpaca_symbol("AAPL")

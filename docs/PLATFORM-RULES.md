@@ -2501,6 +2501,7 @@ decision for the bar is None). EM overrides all five and resolves each FOR THE P
 experimental book reads its overrides, the baseline book and everyone else read the technique-wide settings. Rule for any desk that runs two books
 with different policies: resolve by `ap.config.portfolio_id`, never flip a technique-wide key. Loss halts, cash, exposure and position caps were
 already per book; the per-technique day-notional cap is cross-book by design and is off (0) - a desk that turns it on shares it across its books.
+
 ### Quote clock semantics have an owner: vendor time, poll time and observation identity are three things — 2026-09-22 (Tips desk; owner proposed)
 
 **Owner for resolving OPRA clock semantics: the Team2 desk — ACCEPTED 2026-09-22** (author of `Quote.quote_ts` / `last_ts`, PR #204 r2, and of the live premium basis, F129; proposed by the Tips desk, accepted the same night). Team2 confirmed in code that `options/service.py` stamps OPRA `source_ts = now` at the poll and that the vendor's own `quote_ts` / `trade_ts` never reach the `Quote` object (they are written only to the display snapshot), so every option quote carries `quote_ts = 0`. **Live defects of this class, recorded, not hot-patched:** (a) Team2's quote-watch forward-confirmation guard (DA-05, `planrunner.py`, `quote_exit_polls` = 2) compares `source_ts`, so two polls of one vendor print satisfy "two distinct observations"; (b) the SAME rule in the managed-position premium stop (`execution/positions.py::_confirm_premium_stop`, KB-06 I93-02: `obs` = per-leg `source_ts`, "forward-advanced" = confirmed) — the Tips desk's protective exits are exposed identically. Neither is a runaway (a fresh quote and a real price breach are still required), but both can confirm on one print seen twice. Fix path, owner Team2: carry the vendor stamp onto `Quote` and key observation identity on it, so a re-poll of one print is one observation everywhere; until then no desk widens a tolerance or disables the confirmation to work around it. The required semantics, whoever implements them: (1) a **vendor timestamp** (the venue/vendor's own event time) is the only basis for a verified source-event age; (2) a **poll time** (`options/service.py` stamps OPRA `source_ts = now` at the poll on this host) bounds staleness and identifies an observation but is never presented as source-event age; (3) an **observation identity** ties every consumer's evidence to one observation - a fresh host poll that returns the same vendor stamp is the SAME observation, not a new one, and a monetary decision that needs "two distinct observations" must not count two polls of one print. Tips already labels its records this way (`sourceTimeBasis` vendor / poll / source / receipt, `vendorTs`, `pollTs`, `observationId`, `ageBasisNote`) and claims `sourceAgeKnown` only from a vendor field; the shared producer (options/service.py, brokers) is the owner's to change.
@@ -2524,6 +2525,69 @@ are not relabeled. Recovery stays workspace/book scoped and respects saved polic
 market hours and retry allowance. Generic cleanup still handles other run modes.
 Regression: test_cartel_restart_recovery.py reproduces the startup-order failure.
 
+### A wrong host clock refuses correct evidence; measure it against another machine - 2026-09-21 (EM desk; additive only)
+
+On 2026-09-21 every EM experimental entry was refused with `venue_time_in_future`, all session, on quotes that were
+two-sided, sourced and correctly timed. The host clock was **10.5 s behind true time** (five independent NTP servers
+agreeing within 38 ms; Windows `w32time` Stopped, start type Manual), so every fresh venue timestamp looked
+future-dated against a 1,000 ms tolerance. The engine's producer path was clean throughout: `brokers/alpaca.py`
+parses ISO venue times with their offset into epoch ms, keeps `quote_ts` / `last_ts` as VENUE times and `Quote.ts`
+as the receipt, and builds a fresh snapshot per emission.
+
+Three rules for every desk, learned the expensive way:
+
+1. **Reading the same host clock twice proves nothing.** Comparing the app to the database understated this fault by
+   1.4 s all day, because the database is another computer with its own drift. `tools/clock_health.py` asks several
+   independent NTP servers, reports the median with its round-trip uncertainty, and calls a disagreeing quorum
+   `unknown` rather than confident. It also reports the platform's sync state: a clock that is right now but not kept
+   synchronized is still a fault, because the drift returns after the next reboot.
+2. **Never widen a freshness tolerance to work around a clock.** A gate that refuses future-dated evidence is
+   protecting money; loosening it would admit genuinely stale quotes for the sake of a host fault. Fix the clock,
+   report the failure explicitly, and let the gate keep refusing until it is fixed.
+3. **Durations use a monotonic clock; source-versus-decision comparisons use UTC epoch.** They are different
+   questions and a wrong wall clock breaks only one of them.
+4. **A source timestamp that matches the host clock proves nothing about venue time** (Tips desk, same afternoon).
+   Where a `sourceTs` is really a receipt stamped here, a host offset cancels out of every age computed from it - the
+   ages stay unbiased, and the provenance is still absent. EM found the same thing as a defect rather than a caveat:
+   the shadow recorder fell back to the receipt time when an equity carried no venue stamp, so `ageS` measured how
+   long ago WE saw the quote. It now reads `quote_ts`, then `last_ts`, then `source_ts`, and never the receipt.
+   Equities also carry `source = ""` by contract, so a recorder that reads it raw discards every share observation:
+   use the shared `research_recorder.quote_evidence` policy, and when it substitutes the feed's class name keep the
+   `sourceBasis: engine_feed` marker, because `feed:HybridQuoteFeed` names a process in this app and never a venue.
+
+Shared surfaces touched, all additive and inert for other desks: one new journal type `TechniqueAdmissionAlarm`
+(with its contract entry) and two `techniques.enhanced_market.*` settings. The detection, the alarm and the
+default-off `deferral-retry-v1` policy live entirely in EM's own `technique/arming.py` subclass and
+`technique/admission_health.py` / `technique/deferred_retry.py`; no shared runner behaviour changed, and every other
+desk's first-sale hook remains the base no-op.
+
+### An alarm's clear path is a second code path, and a PowerShell logger that writes to the pipeline breaks it - 2026-09-21 (EM desk)
+
+The clock repair above was verified by running the recovery path for real, and that is what exposed the defect:
+the EM check script raised its attention notice correctly and could never clear it. `Say` logged through
+`Tee-Object`, which EMITS into the pipeline, so the clock function returned every logged line **plus** its exit
+code, and `if ($code -eq 0)` compared against an array and evaluated false. Three lessons, in widening order:
+
+1. **In PowerShell a function returns everything it emits.** Any helper that writes to the pipeline silently
+   becomes part of the contract of every function that calls it. This is a family of bugs, not one instance
+   (Team2 desk's generalisation). Log with `Write-Host` plus an explicit `Out-File`, never `Tee-Object`, inside
+   anything whose return value is read.
+2. **A raise path and a clear path are two code paths, and testing one tests neither.** A notice that cannot
+   clear is worse than no notice: it inverts the alarm's meaning, because a permanently-raised flag trains the
+   reader to ignore it.
+3. **A verification whose failure would be invisible must not share a command with the action it verifies.**
+   The same session committed a file with conflict markers because the marker check and `git add -A` ran in one
+   compound command and the check's non-zero exit was lost behind the add's success.
+
+Known gap PARKED WITH AN OWNER, not merely recorded: an F33 loss-budget block that is rescued by the shares
+fallback writes no journal row at all (`_entry_blocked`, shared `planrunner.py`), so the durable ledger
+under-counts budget blocks. MRVL was blocked in both EM books on 2026-09-21 and neither produced an event.
+**Owner: the Team2 desk** (accepted 2026-09-21), in its own reviewed diff with a contract row for the new event,
+after its current package ships - opportunity accounting is what that desk is working on, and a budget block that
+writes no row is the same species of hole as a candidate refused before contract selection: real suppression that
+leaves no trace. Team2 is options-only and has no shares fallback to be rescued by, so the gap does not reach its
+own books; that is a reason to schedule it, not to drop it.
+
 ### 2026-09-21 - one implementation of "what the premium stop measures" (Team2 F129)
 
 `PlanRunner.live_premium_basis(trade)` is now the single place that answers "what price does the
@@ -2540,3 +2604,40 @@ price says which price, from which quote, at which source timestamp, against whi
 threshold. Model or research numbers may ride along under `model`, explicitly separate from the
 authority. Base behaviour for other desks is unchanged: no runner passes `authority` unless it wants
 to, and no defaults moved.
+
+### A US share class is a US equity: BRK.B streams from Alpaca - 2026-09-22 (EM desk; shared feed predicate)
+
+`brokers/alpaca.py::is_us_equity` refused ANY symbol with a dot, meant for `.TO`/`.V` listings. It also refused US
+share classes, so BRK.B was never subscribed to the Alpaca stream and its only live data was the Yahoo poll. On
+2026-09-22, whenever Yahoo rate-limited (72 cooldowns in the session), BRK.B bars reached its armed plans two or three
+at a time, one every 3-5 minutes: 42 of the day's 113 stale-bar errors, while `bars` held all 390 minutes (each
+successful poll back-filled what it missed, so the stored record hid the delivery gap).
+
+Change: `is_us_share_class` = `^[A-Z]{1,5}\.[ABC]$` passes `is_us_equity`; the same predicate gates Alpaca history
+(`marketstructure/history.py::_alpaca_symbol`) and the F80 boot seed. Alpaca's own spelling is the dot, verified on the
+bars endpoint 2026-09-22 (`BRK.B` 200 with bars, `BRK-B` 400 "invalid symbol", `BRK/B` 404). Foreign suffixes stay on
+Yahoo (`.TO`, `.V`, `.CN`, `.L`, `.MI`, `.HK` - single letters other than A/B/C and two-letter suffixes do not match).
+Symbols without a dot take exactly the path they took before. Pinned by
+`tests/test_alpaca_feed.py::test_a_us_share_class_is_streamed_and_foreign_suffixes_are_not`.
+
+Lesson: a stored bar series proves the data EXISTS, not that a live consumer saw it on time; the stale-bars error
+(`lastBarTs` per plan) is the live-side witness. Open, not fixed here: the Yahoo poll re-fetches every Alpaca-streamed
+symbol every 20 s for context, which drives the 429 cooldowns that hurt every Yahoo-only symbol; and `yahoo_symbol`
+dashes any single-letter suffix except V (`NVDI.L` → `NVDI-L`). Both belong to the feed owner.
+
+### `TechniqueExitQuote` (exit-quote-v1) - 2026-09-22 (EM desk; EM runner only)
+
+EM's `PlanArmer._exit` takes a synchronous quote snapshot BEFORE the exit is placed and journals it AFTER the exit order
+exists (bounded recorder `em-exit-quote`, `exitOrderId` = the first order placed by that exit). Observation only:
+nothing on a money path reads it, a capture failure never blocks an exit, `techniques.enhanced_market.exit_quote_capture`
+off writes nothing. Other desks' runners are untouched (the override lives in EM's subclass).
+### Adversarial-plan package: shared surfaces touched by the Tips desk — 2026-09-23 (0.8.34)
+
+Additive, every new behaviour behind a Tips-scoped knob that ships off or at its old value. `approvals/proposals.py`:
+`_tip_budget(..., underlying=)` consults `exposure_refusal` (book / single-name caps; 0 = off) before sizing, and
+option cards may carry `sharesAlternative` / `frictionFlag` annotations (never an order). `techniques/tip/geometry.py`
+`RiskPlan` gains those two optional fields. `signals/service.py::_review_gate` can skip a gate-irrelevant review for a
+source over its daily budget (`review_source_budgets`, off) and journals `sourceBudget`. `techniques/tip/analyst.py`
+`cache_messages` copies the last message block with a cache marker (the loop's transcript is never mutated) when
+`techniques.tip.prompt_cache_scope=conversation` (default `prefix`). New settings keys are all `techniques.tip.*`. No
+risk limit, order path, stop or other desk's knob changes.
