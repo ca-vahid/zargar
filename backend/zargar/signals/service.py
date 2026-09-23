@@ -1766,6 +1766,17 @@ class SignalService:
     # ------------------------------------------------------------- pipeline
     async def process_content(self, content_id: str, *, experiment: str | None = None,
                               stated_at: str | None = None) -> dict:
+        # 2026-09-23 (cost lever 3): every extraction/transcription request made for this message is written to
+        # `tip_llm_calls` with ref = content_id (a contextvar, so the extractor needs no new arguments)
+        from ..techniques.tip.llm_ledger import bind_ref, reset_ref
+        _tok = bind_ref(content_id)
+        try:
+            return await self._process_content(content_id, experiment=experiment, stated_at=stated_at)
+        finally:
+            reset_ref(_tok)
+
+    async def _process_content(self, content_id: str, *, experiment: str | None = None,
+                               stated_at: str | None = None) -> dict:
         eng = self.engine
         async with eng.sf() as session:
             content = await session.get(RawContent, content_id)
@@ -2027,6 +2038,15 @@ class SignalService:
         if read_errors and not d["review"]:               # an incomplete desk picture never justifies a skip
             d = {**d, "review": True, "reason": f"desk state incomplete ({', '.join(read_errors)}) - reviewing"}
         skip = (mode == "enforce" and not d["review"])
+        nonact_note = None
+        if not d["review"] and not skip and rg.skip_nonactionable_enabled(eng.settings) and rg.nonactionable(out):
+            # cost lever 1 (2026-09-23, user decision): the gate found nothing on the desk this message can reach AND
+            # extraction marked every signal non-actionable - the review is skipped on the record. Everything else
+            # stays in `observe`: an entry-shaped discard, a held/armed/proposed ticker, a source with open items or
+            # an incomplete desk read always reviews (decide() / read_errors above).
+            skip = True
+            nonact_note = True
+            d = {**d, "reason": f"{d['reason']}; extraction marked every signal non-actionable"}
         budget_note = None
         if not d["review"] and not skip:
             # ADV-05: a source over its daily review budget loses ONLY the reviews the gate already judged irrelevant
@@ -2045,7 +2065,8 @@ class SignalService:
                 "applied": skip, "reason": d["reason"], "tickers": d["tickers"], "matched": d["matched"],
                 "source": content.source_name, "contentId": getattr(content, "id", None), "intakeRunId": intake.id,
                 "deskItems": len(items), "readErrors": read_errors,
-                **({"sourceBudget": budget_note} if budget_note else {})}, aggregate_type="tip_intake", aggregate_id=intake.id or "")
+                **({"sourceBudget": budget_note} if budget_note else {}),
+                **({"appliedBy": "nonactionable"} if nonact_note else {})}, aggregate_type="tip_intake", aggregate_id=intake.id or "")
         if skip:
             intake.step("note", f"Review gate ({rg.VERSION}): {d['reason']} - not reviewed. The message stays in the "
                                 "mirror; nothing on the desk can be managed from it.")
@@ -3802,7 +3823,10 @@ async def attach_signal_layer(engine) -> None:
 
     if getattr(engine, "signals_service", None) is not None:
         return
-    extractor = Extractor(engine.config.anthropic_api_key, engine.config.extraction_model)
+    import functools as _ft
+    from ..techniques.tip import llm_ledger as _ledger
+    extractor = Extractor(engine.config.anthropic_api_key, engine.config.extraction_model,
+                          settings=engine.settings, ledger=_ft.partial(_ledger.record, engine))
     engine.signals_service = SignalService(engine, extractor)
     engine.proposals = ProposalService(engine)
     engine.proposals.start()

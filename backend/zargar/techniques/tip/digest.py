@@ -20,6 +20,8 @@ from sqlalchemy import select
 
 from ...domain import new_id
 from ...models import DiscordMessage, TipAnalystRun
+from . import batching as _batching
+from .model_policy import effort_kw as _effort_kw
 
 log = logging.getLogger("zargar.tip.digest")
 
@@ -141,10 +143,14 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
     _t0 = _time.perf_counter()
     try:
         try:
+            # 2026-09-23: through the Batch API (50% list) when techniques.tip.batch_jobs is on - a nightly job can wait
+            if _batching.enabled(eng.settings):
+                usage["batch"] = True
             resp = await asyncio.wait_for(
-                client.messages.create(model=model, max_tokens=DIGEST_MAX_TOKENS, system=system,
-                                       messages=[{"role": "user", "content": header}]),
-                timeout=DIGEST_TIMEOUT_S)
+                _batching.create(client, eng.settings, custom_id="digest", model=model, max_tokens=DIGEST_MAX_TOKENS,
+                                 system=system, messages=[{"role": "user", "content": header}],
+                                 **_effort_kw(eng.settings, "techniques.tip.analyst_effort", model)),
+                timeout=_batching.timeout_s(eng.settings, DIGEST_TIMEOUT_S))
         except asyncio.CancelledError:
             _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t0) * 1000.0,
                           error="cancelled")
@@ -189,12 +195,15 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
             _t1 = _time.perf_counter()
             try:
                 resp2 = await asyncio.wait_for(
-                    client.messages.create(model=model, max_tokens=repair_cap, system=system,
+                    _batching.create(client, eng.settings, custom_id="digest-repair", model=model, max_tokens=repair_cap,
+                                     system=system, **_effort_kw(eng.settings, "techniques.tip.analyst_effort", model),
                                            messages=[{"role": "user", "content": header},
-                                                     {"role": "assistant", "content": text.strip() or "(no answer)"},
+                                                     # replayed AS RECEIVED (thinking blocks included) - Opus 5.5
+                                                     {"role": "assistant", "content": (getattr(resp, "content", None)
+                                                                                       or text.strip() or "(no answer)")},
                                                      {"role": "user", "content": "Your reply was cut off or contained no "
                                                       "parseable JSON. Reply with ONLY the complete JSON object now."}]),
-                    timeout=DIGEST_TIMEOUT_S)
+                    timeout=_batching.timeout_s(eng.settings, DIGEST_TIMEOUT_S))
             except asyncio.CancelledError:
                 _usage_record(usage, None, latency_ms=(_time.perf_counter() - _t1) * 1000.0, attempt=2, error="cancelled")
                 raise

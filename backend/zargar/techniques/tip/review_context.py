@@ -40,11 +40,14 @@ def _section(header: str, start: str, ends: list[str]) -> tuple[int, int] | None
     return i, j
 
 
-def compact_review_header(header: str, *, tickers: list[str] | None = None, source: str | None = None) -> str:
+def compact_review_header(header: str, *, tickers: list[str] | None = None, source: str | None = None,
+                          notes_only: bool = False) -> str:
+    """`notes_only` (2026-09-23, cost lever 2): keep the rulebook AND the pending proposals verbatim and trim only the
+    shared notes - the full compact form (rule headlines) lost a disarm and changed a close in the ADV-04 comparison."""
     tick = {str(t).upper() for t in (tickers or []) if t}
     out = header
     # 1. rules -> headlines (operative block)
-    sec = _section(out, RULES_MARK, [PENDING_MARK, NOTES_MARK, HISTORY_MARK])
+    sec = None if notes_only else _section(out, RULES_MARK, [PENDING_MARK, NOTES_MARK, HISTORY_MARK])
     if sec:
         i, j = sec
         lines = out[i:j].split("\n")
@@ -52,7 +55,7 @@ def compact_review_header(header: str, *, tickers: list[str] | None = None, sour
         kept.insert(1, "(compact: each rule's headline; the full text is unchanged in the rulebook)")
         out = out[:i] + "\n".join(kept) + out[j:]
     # 2. pending proposals -> titles only
-    sec = _section(out, PENDING_MARK, [NOTES_MARK, HISTORY_MARK])
+    sec = None if notes_only else _section(out, PENDING_MARK, [NOTES_MARK, HISTORY_MARK])
     if sec:
         i, j = sec
         lines = out[i:j].split("\n")

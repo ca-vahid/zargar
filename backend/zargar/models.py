@@ -1012,6 +1012,28 @@ class TipKnowledgeBatch(Base):
     applied_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class TipLlmCall(Base):
+    """One provider call made OUTSIDE an analyst run (intake extraction, attachment transcription), with its usage
+    (2026-09-23, cost lever 3). Analyst/digest/retro runs keep their usage on `tip_analyst_runs`; before this table the
+    extraction reads lived only in the in-memory TechniqueHookStats rollup and were lost on every restart. Append-only,
+    one row per request attempt; `ref` = the raw content id the call served."""
+    __tablename__ = "tip_llm_calls"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    stage: Mapped[str] = mapped_column(String(32), index=True)              # extraction | transcribe
+    model: Mapped[str] = mapped_column(String(64), default="")
+    ref: Mapped[str | None] = mapped_column(String(64), index=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    stop_reason: Mapped[str | None] = mapped_column(String(48))
+    latency_ms: Mapped[float | None] = mapped_column(Float)
+    retried: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(String(200))                 # the call failed; usage unknown
+
+
 class TechniqueMethodNote(Base):
     """EM method ingestion (docs/techniques/enhanced-market/INGESTION-PLAN.md):
     one note per captured item from the author's channels — a watch-list post,
