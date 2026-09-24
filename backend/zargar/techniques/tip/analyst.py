@@ -1670,7 +1670,15 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     pass continues the SAME conversation instead of discarding the first
     attempt's tool evidence, and the provider metadata is on the record."""
     st = state if state is not None else {}
-    messages: list = st.setdefault("messages", [{"role": "user", "content": header}])
+    if "messages" not in st:
+        _first = header
+        with contextlib.suppress(Exception):
+            if (prompt_cache_enabled(eng) and prompt_cache_scope(eng) == "conversation"
+                    and bool(eng.settings.get("techniques.tip.prompt_cache_stable_first", False))):
+                from .review_context import stable_first_blocks
+                _first = stable_first_blocks(header)          # P-D: the rulebook is shared cache across runs
+        st["messages"] = [{"role": "user", "content": _first}]
+    messages: list = st["messages"]
     usage = st.setdefault("usage", _usage_new())
     if "promptCache" not in st:
         st["promptCache"] = prompt_cache_enabled(eng)
@@ -2315,6 +2323,7 @@ will decide.
 ("sold 40%", "stopped out", "letting it ride to 90"), act with update_exit_plan / \
 close_position (EXIT-ONLY: they can trim, tighten or close — never add exposure). \
 search_messages finds the original OPEN behind an update. Cite the message in the reason.
+- AUTHOR FLAT = CLOSE THE MIRROR: when the update shows the source has fully EXITED the position ours mirrors (listed under realized/closed, gone from their open book, "all out", "closed the rest"), close_position our mirror (fraction 1.0) and cite the line. Do not merely tighten the stop: the source's exit is the desk's best-performing exit. Keep the position only if you state a separate, evidenced reason of our own in the reason.
 - IMAGES ARE NOT OPTIONAL: whenever the message or a history line is marked \
 [images: <id>], ALWAYS view_image it — an "update" is often just a chart or a P&L \
 screenshot, and the substance lives in the picture.

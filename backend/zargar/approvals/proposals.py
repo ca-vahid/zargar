@@ -16,6 +16,35 @@ from ..models import ManagedPositionRow, Order, Proposal, Signal
 from ..orders import BracketSpec, OrderIntent
 from ..signals.schemas import TradeSignal
 
+def share_substitution_ok(*, sec_type, risk_plan, settings, portfolio_kind, verdict, direction, lotto, alt) -> bool:
+    """Pure (P-E): may an unfittable option TAKE become its equal-risk share alternative? Practice only (never a live
+    book), analyst take, long, not a lotto, the option refused ONLY for size, an available alternative, knob on."""
+    try:
+        on = bool(settings.get("techniques.tip.shares_alternative_auto", False))
+    except Exception:
+        on = False
+    return bool(on and sec_type == "OPT" and risk_plan is not None and getattr(risk_plan, "enforced", False)
+                and "no quantity" in str(getattr(risk_plan, "reviewRequired", "") or "")
+                and portfolio_kind not in ("live", "paper") and verdict == "take" and direction != "short"
+                and not lotto and (alt or {}).get("available"))
+
+
+def card_alert_text(p: dict, *, public_url=None) -> tuple[str, str]:
+    """Pure: the one-line alert for a card that waits for a human, and the deep link."""
+    ctx = p.get("context") or {}
+    src = ctx.get("sourceName") or "?"
+    why = ctx.get("reviewRequired") or "approval needed"
+    alt = (ctx.get("riskPlan") or {}).get("sharesAlternative") or {}
+    exp = str(p.get("expiresAt") or "")
+    exp_hm = exp[11:16] + " UTC" if len(exp) >= 16 else "?"
+    bits = [f"{p.get('side', 'BUY')} {p.get('qty'):g} {p.get('symbol')}" if isinstance(p.get("qty"), (int, float))
+            else f"{p.get('symbol')}", f"from {src}", f"- {why}"]
+    if alt.get("available"):
+        bits.append(f"(share alternative: {alt.get('qty')} sh, stop {alt.get('stop')})")
+    bits.append(f"expires {exp_hm}")
+    return " ".join(bits), "/inbox"
+
+
 def _event_context(eng) -> dict | None:
     """TMR-01: the verified macro-event label stamped on a card at creation (advisory)."""
     try:
@@ -627,6 +656,37 @@ class ProposalService:
             signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
         if gnote:
             explain += " " + gnote
+        # ---- P-E (2026-09-23, user decision): on a PRACTICE book an analyst TAKE whose option cannot be sized
+        # within the risk budget becomes the equal-risk SHARE proposal at the same stop, instead of a card that
+        # expires waiting for a human (HOOD, GOOGL). Long ideas only; never a lotto; never a live book.
+        alt = (getattr(risk_plan, "sharesAlternative", None) or {}) if risk_plan is not None else {}
+        if share_substitution_ok(sec_type=sec_type, risk_plan=risk_plan, settings=eng.settings,
+                                 portfolio_kind=pf.get("kind"), verdict=analyst.get("verdict"),
+                                 direction=sig.direction, lotto=lotto, alt=alt):
+            under = sig.ticker.upper()
+            await eng.ensure_symbol(under)
+            uq = eng.quotes.get(under)
+            ref = (uq.ask if uq and uq.ask and uq.ask > 0 else None) or alt.get("entryRef")
+            if ref:
+                orig = symbol
+                symbol, sec_type, side = under, "STK", "BUY"
+                limit, qty = round(float(ref), 2), int(alt["qty"])
+                vehicle = {"kind": "shares", "substitutedFor": orig,
+                           "why": "the option could not be sized within the risk budget (P-E, Practice only)"}
+                exit_plan = {**exit_plan, "underlyingStop": alt.get("stop"), "premiumStopPct": None}
+                exit_plan, qty, risk_plan, gnote2 = await self._pre_entry_geometry(
+                    underlying=under, direction=sig.direction, pid=pid, exit_plan=exit_plan, vehicle=vehicle,
+                    sec_type=sec_type, symbol=symbol, limit=limit, qty=qty, entry_hint=sig.entry_price,
+                    source=signal_row.source_name, signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
+                explain = (f"Approve = buy {qty} share{'s' if qty != 1 else ''} of {symbol} at a ${limit:.2f} limit "
+                           f"~ ${limit * qty:,.0f} in “{pf.get('name', pid)}” ({pf.get('kind', '?')}) - the "
+                           f"equal-risk SHARE alternative to {orig}, whose option could not be sized within the risk "
+                           f"budget. Stop {exit_plan.get('underlyingStop')}." + ((" " + gnote2) if gnote2 else ""))
+                with contextlib.suppress(Exception):
+                    await eng.journal.append("TipSharesSubstituted", {
+                        "signalId": signal_row.id, "option": orig, "symbol": symbol, "qty": qty, "limit": limit,
+                        "stop": exit_plan.get("underlyingStop"), "portfolioId": pid},
+                        aggregate_type="signal", aggregate_id=signal_row.id, portfolio_id=pid)
         if risk_plan is not None and risk_plan.enforced and sec_type == "STK":
             # G91-02: every protection is built from the SAME final plan — the
             # bracket carries the finalized stop, never the signal's original
@@ -730,7 +790,52 @@ class ProposalService:
                                  portfolio_id=pid)
         eng.bus.publish(topics.PROPOSALS, pdict)
         self._start_entry_study(pdict)
+        self._start_card_alert(pdict)
         return pdict
+
+    def _start_card_alert(self, pdict: dict, *, wait_s: float | None = None) -> None:
+        """P-C (2026-09-23: HOOD, GOOGL and AMAT expired unseen - a card that needs a human sent nothing). A card still
+        PENDING after `techniques.tip.card_alert_wait_s` (default 20 s, so a card the analyst auto-declines stays quiet)
+        sends ONE push + Telegram line: symbol, source, why it waits, the equal-risk share alternative, the expiry.
+        Journaled `TipCardAlert`. Never an order; a delivery failure is logged, not raised."""
+        eng = self.engine
+        if not bool(eng.settings.get("techniques.tip.card_alerts", True)):
+            return
+        wait = float(eng.settings.get("techniques.tip.card_alert_wait_s", 20) if wait_s is None else wait_s)
+
+        async def alert() -> None:
+            try:
+                await asyncio.sleep(wait)
+                async with eng.sf() as session:
+                    row = await session.get(Proposal, pdict["id"])
+                if row is None or row.status != "pending":
+                    return
+                pf = eng.positions.portfolio(row.portfolio_id) or {}
+                if pf.get("kind") == "shadow" or pf.get("book"):
+                    return                                     # research books never page a human
+                text, url = card_alert_text(proposal_dict(row), public_url=None)
+                sent = {"push": False, "telegram": False}
+                push = getattr(eng, "push", None)
+                if push is not None:
+                    with contextlib.suppress(Exception):
+                        await push.send("Tips card needs you", text, url=url, tag=f"card-{row.id}")
+                        sent["push"] = True
+                tg = getattr(eng, "telegram", None)
+                if tg is not None:
+                    with contextlib.suppress(Exception):
+                        from ..push import public_url
+                        from .telegram import open_keyboard
+                        await tg.send("🔔 " + text, open_keyboard(public_url(eng.settings), url))
+                        sent["telegram"] = True
+                await eng.journal.append("TipCardAlert", {"proposalId": row.id, "symbol": row.symbol, "text": text,
+                                                          "sent": sent}, aggregate_type="proposal",
+                                         aggregate_id=row.id, portfolio_id=row.portfolio_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("card alert failed for %s", pdict.get("id"))
+        with contextlib.suppress(RuntimeError):
+            asyncio.get_running_loop().create_task(alert(), name=f"tip-card-alert-{pdict['id']}")
 
     def _start_entry_study(self, pdict: dict) -> None:
         """PROPOSAL-TIME diagnostics, never behavior (Codex consolidated

@@ -170,6 +170,29 @@ OPEN_STATUSES = (
 )
 
 
+def market_order_age(created: dt.datetime, now: dt.datetime) -> float:
+    """Seconds a MARKET order has been live IN A REGULAR SESSION (2026-09-23, FIVN shadow order killed overnight).
+    An order placed outside 09:30-close ET is meant to wait for the next open, so its clock starts there; before that
+    open the age is negative (never stale). Inside a session it is simply now - created. Pure."""
+    from zoneinfo import ZoneInfo
+
+    from .marketstructure import market_calendar as mc
+    et = ZoneInfo("America/New_York")
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=dt.timezone.utc)
+    c = created.astimezone(et)
+    d = c.date()
+    open_t = dt.time(9, 30)
+    close_min = mc.session_close_minutes(d) if mc.is_trading_day(d) else 0
+    in_session = mc.is_trading_day(d) and open_t <= c.time() and (c.hour * 60 + c.minute) < close_min
+    if in_session:
+        start = created
+    else:
+        day = d if (mc.is_trading_day(d) and c.time() < open_t) else mc.next_trading_day(d)
+        start = dt.datetime.combine(day, open_t, tzinfo=et)
+    return (now - start).total_seconds()
+
+
 class OrderManager:
     def __init__(
         self,
@@ -688,6 +711,7 @@ class OrderManager:
         import time as _time
         restored: list[str] = []
         cancelled: list[str] = []
+        cancel_reasons: dict[str, str] = {}
         async with self._sf() as session:
             rows = (await session.execute(select(Order).where(Order.status.in_(OPEN_STATUSES)))).scalars().all()
         for order in rows:
@@ -702,11 +726,12 @@ class OrderManager:
             restore = getattr(executor, "restore", None)
             if executor is None or restore is None:
                 continue
-            age = _time.time() - order.created_at.timestamp() if order.created_at else 0.0
+            age = market_order_age(order.created_at, dt.datetime.now(dt.timezone.utc)) if order.created_at else 0.0
             if order.order_type == OrderType.MKT.value and age > stale_market_seconds:
-                await self._transition(order.id, OrderStatus.CANCELLED, ev.ORDER_CANCELLED,
-                                       reject_reason=f"market order still open {int(age)}s after submit - lost in a restart, not chased")
+                why = f"market order still open {int(age)}s into the session - lost in a restart, not chased"
+                await self._transition(order.id, OrderStatus.CANCELLED, ev.ORDER_CANCELLED, reject_reason=why)
                 cancelled.append(order.id)
+                cancel_reasons[order.id] = why
                 continue
             await restore(BrokerOrder(
                 id=order.id, symbol=order.symbol, sec_type=order.sec_type,
@@ -718,7 +743,8 @@ class OrderManager:
             restored.append(order.id)
         if restored or cancelled:
             await self._journal.append("SimBookRestored", {"restored": len(restored), "cancelled": len(cancelled),
-                                                           "restoredIds": restored[:50], "cancelledIds": cancelled[:50]})
+                                                           "restoredIds": restored[:50], "cancelledIds": cancelled[:50],
+                                                           "cancelReasons": dict(list(cancel_reasons.items())[:50])})
         return {"restored": restored, "cancelled": cancelled}
 
     async def list_orders(

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.41";
+export const APP_VERSION = "0.8.42";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.42",date:"2026-09-23",title:"Tips: cards that need you now alert you, and restarts keep overnight orders",items:[
+    {tag:"new",text:"A Tips card that is still waiting for a human 20 seconds after it appears sends one push and Telegram line: what, from whom, why it waits, the share alternative and when it expires."},
+    {tag:"improved",text:"When a source says they are out of a trade the desk mirrors, the review now closes our copy instead of only tightening the stop. In Practice, a take whose option cannot be sized within the risk budget can become the equal-risk share position at the same stop (a switch)."},
+    {tag:"fixed",text:"A market order placed after hours is no longer cancelled as lost by an overnight restart: it waits for the open like it was meant to, and every restart cancellation now records its reason. The deploy restore check waits for a large restore to finish before calling it a mismatch."},
+    {tag:"improved",text:"Reviews can share one cached copy of the desk's rulebook (a switch), so consecutive reviews read it instead of each paying to write it again."},
+  ]},
   {version:"0.8.41",date:"2026-09-23",title:"Tips: two fixes found in today's review",items:[
     {tag:"fixed",text:"A tip parked on a cold quote is no longer turned into an approval card while its analyst appraisal is still running; the card now always carries the analyst's opinion and the tip's own contract."},
     {tag:"fixed",text:"When the analyst changes only part of an open position's exit plan (for example the stop), the rest of the plan (profit targets, premium stop) is kept instead of being cleared."},
