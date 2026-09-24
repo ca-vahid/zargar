@@ -92,3 +92,22 @@ def tickers_in(message: str, outcomes: list[dict] | None = None) -> list[str]:
         if o.get("ticker"):
             found.add(str(o["ticker"]).upper())
     return sorted(found)
+
+
+def stable_first_blocks(header: str) -> list[dict] | str:
+    """P-D (2026-09-23): the run header as two content blocks - the desk's standing rulebook FIRST, carrying its own
+    cache marker, then everything message-specific. The rulebook is identical across runs, so consecutive reviews
+    READ it from cache instead of each writing ~34k tokens of fresh cache (the message used to sit in front of it).
+    Pure; every character of the header is kept, only its order changes. No rulebook section -> the header unchanged."""
+    sec = _section(header, RULES_MARK, [PENDING_MARK, NOTES_MARK, HISTORY_MARK])
+    if not sec:
+        return header
+    i, j = sec
+    rules = header[i:j].rstrip() + chr(10)
+    rest = (header[:i] + header[j:]).strip()
+    if not rest:
+        return header
+    return [{"type": "text", "text": "(The desk's standing rulebook comes first; the message and its context follow.)" + chr(10) * 2
+                                     + rules, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": rest}]
+

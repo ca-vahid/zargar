@@ -63,3 +63,17 @@ both stay off. The next cost lever is P-D (rulebook-first caching).
 2. P-C (card alerts) and P-D (rulebook-first caching, through the frozen A/B) — no trading change.
 3. P-A as a proposed rule for your approval; P-B as a study on the hold-study data.
 4. P-E and P-F only after P-C has run for a week.
+
+## 7. What was done (2026-09-23 evening, user: "do everything right now"; 0.8.41 + 0.8.42)
+
+| # | Outcome |
+|---|---|
+| fixes | 0.8.41 DEPLOYED 20:59 ET (recovery-sweep race, `update_exit_plan` field carry) |
+| P-A | BUILT: review prompt rule "AUTHOR FLAT = CLOSE THE MIRROR" (live with the 0.8.42 deploy) |
+| P-B | STUDIED, NOT BUILT: `tools/tip_gap_stop_study.py` over 21 share positions in non-quarantined books. With the stop journaled in force each morning, only ONE favourable gap >= 1 R qualified and the rule did not fire (today's IONQ stop was already above the prior close, so "stop to prior close" would not have saved the ~$55). Keeping part of a gap is a different rule with no evidence yet. |
+| P-C | BUILT + ON: `TipCardAlert` push + Telegram for a card still pending after 20 s (`techniques.tip.card_alerts`) |
+| P-D | BUILT: `techniques.tip.prompt_cache_stable_first` (rulebook first as its own cached block); switched on at deploy, cache reads/writes measured on the next session's runs |
+| P-E | BUILT: `techniques.tip.shares_alternative_auto` (Practice only: take + long + option refused only for size -> equal-risk shares, journaled `TipSharesSubstituted`); switched on at deploy |
+| P-F | NOT BUILT: the level-map cards are already auto-declined by the analyst in one inherited call and P-C only alerts cards still pending, so they cost little and page nobody; changing extraction risks losing real conditional level calls (the armed lane). |
+| P-G | BUILT: `restart.ps1` / `start.ps1` restore check passes on OK and reports a mismatch only after the missing set has stopped shrinking for 60 s (max 5 min); companion fix `orders.market_order_age` - an after-hours market order ages from the next open, and `SimBookRestored` carries each cancellation's reason |
+
