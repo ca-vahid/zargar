@@ -73,8 +73,14 @@ TESTS = [
      "registered": "2026-09-22", "countFrom": "2026-09-23", "minTrades": 15,
      "metric": "mean R of one-touch-level trades against the rest"},
     {"id": "rules_vs_model", "question": "does free rules-only preparation do no worse than the paid model review?",
-     "registered": "2026-09-19", "countFrom": "2026-09-22", "minSessions": 20,
-     "metric": "cumulative and per-session R, experimental book against baseline book"},
+     "registered": "2026-09-19", "countFrom": "2026-09-22", "minSessions": 20, "status": "decided",
+     "decision": "2026-09-23: SUPERSEDED BY DECISION, not answered - EM is fully deterministic (both books prepare by rules). "
+                 "The model-veto study (research/2026-09-23-MODEL-VETO-STUDY.md, 18 scored sessions) found no measurable value in "
+                 "the veto: approved +0.26R vs vetoed +0.12R per filled trade, overlapping intervals."},
+    {"id": "break_vs_level", "question": "do break triggers (ladder targets) lose against level-anchored bounce/reject triggers?",
+     "registered": "2026-09-23", "countFrom": "2026-09-24", "minTrades": 30,
+     "metric": "mean R of breakout/breakdown/wedge_break trades against bounce/reject trades (the veto study: -0.27R on 22 "
+               "fills vs +0.40R on 54 over 2026-08-25..09-18, NOT confirmed out of sample - hence a test, not a rule)"},
 ]
 
 _OCC = re.compile(r"\d{6}[CP]\d{8}$")
@@ -282,6 +288,12 @@ def run_tests(trades: list, *, premium_stop_pct: float = 50.0) -> list:
             n = len(a)
             reading = {"oneTouchMeanR": _mean_r(a, premium_stop_pct), "restMeanR": _mean_r(b, premium_stop_pct),
                        "oneTouch": len(a), "rest": len(b)}
+        elif tid == "break_vs_level":
+            a = [t for t in pool if t.get("kind") in ("breakout", "breakdown", "wedge_break")]
+            b = [t for t in pool if t.get("kind") in ("bounce", "reject")]
+            n = len(a)
+            reading = {"breakMeanR": _mean_r(a, premium_stop_pct), "levelMeanR": _mean_r(b, premium_stop_pct),
+                       "breaks": len(a), "levels": len(b)}
         elif tid == "rules_vs_model":
             full = [t for t in trades if t["session"] >= since and evaluable(t)]
             both = sorted({t["session"] for t in full if t["book"] == EXPERIMENT_BOOK}
