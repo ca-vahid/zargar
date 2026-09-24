@@ -540,6 +540,24 @@ class ProposalService:
             qty_hint = expr.get("contracts")
             picked_by = "tip"
 
+        # 2026-09-24 (INTC260925C130): a contract string is canonicalized before anything prices or orders it - a
+        # short spelling becomes real OCC; a string that is not a contract falls back to the tip's own expression
+        # (or no option) instead of minting a card whose contract nobody can price
+        if occ:
+            from ..options import occ as _occmod
+            _canon = _occmod.parse_loose(occ)
+            if _canon is not None:
+                if label == occ:
+                    label = _canon.display() if hasattr(_canon, "display") else _canon.symbol
+                occ = _canon.symbol
+            else:
+                log.warning("contract %r (%s) is not an option symbol - not used", occ, picked_by)
+                if picked_by == "analyst" and expr.get("vehicle") == "option" and expr.get("contract")                         and _occmod.parse_loose(str(expr["contract"])) is not None:
+                    occ = _occmod.parse_loose(str(expr["contract"])).symbol
+                    label = expr.get("display") or occ
+                    limit_hint, qty_hint, picked_by = expr.get("ask"), expr.get("contracts"), "tip"
+                else:
+                    occ = None
         bracket = None
         vehicle: dict = {}
         if occ:
