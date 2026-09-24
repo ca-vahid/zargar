@@ -1644,3 +1644,21 @@ bundle comparison. The stop rule (`em-stop-rule-v1`) keeps counting in the basel
 review - has already been taken; if it trips, the remaining decision is whether EM keeps trading in Practice at all.
 Author-note ingestion (`technique/ingest.py::_llm_extract`, ~2 notes a day at low effort, cents) still reads the author's
 free text with a model; it is the only automatic EM model call left and can be stopped with the ingestion switch if wanted.
+
+### 2026-09-23 (close) - day 2 of both books; the model veto measured; break triggers registered as a test
+
+Full record: `reviews/2026-09-23-DAY-REVIEW-AND-PLAN.md`. Baseline -120.18, experiment -105.75. On matched trades the
+experiment did better (+45.53 vs +7.96), P-06 turning LITE from -10.09 to +15.58.
+
+**The 7-trade streak.** On 09-22 and 09-23 all 7 rules-only-only admissions lost (-276, about -0.98R each, against -0.17R
+for model-approved trades the same days). Checked on 18 scored sessions (`research/2026-09-23-MODEL-VETO-STUDY.md`):
+approved +0.26R [-0.15, +0.81] (44 fills) vs vetoed +0.12R [-0.24, +0.44] (37 fills). There is no measurable value in the
+veto, and no reason family held out of sample. The deterministic decision stands; the streak is recorded as most likely
+chance.
+
+**Registered:** `break_vs_level` (em_scorecard): break triggers (ladder targets) against level-anchored bounce/reject,
+30 break fills from 2026-09-24. In-sample -0.27R (22) vs +0.40R (54); the test split was neutral, so it is NOT a rule.
+`rules_vs_model` is closed as superseded by the 2026-09-23 decision.
+
+**Defect (0.8.40):** outcome scoring had stopped after 2026-09-18 (future-session plans starved the queue). Studies that
+need outcomes for 09-21 onward waited for the backlog to drain.

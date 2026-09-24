@@ -18,7 +18,9 @@ such. No profitable strategy or exact author replication has been established.
   under a 5m pilot and receipt-time lab quotes. New switches default to legacy behaviour; activation order
   is in the [2026-09-22 plan](reviews/2026-09-22-plan/PLAN.md).
 - **2026-09-23.** Yahoo's daily series omitted 09-22, so preparation waited for the benchmark all day and
-  nothing armed. Practice now uses native Alpaca daily bars (`nativeDailyBatch=true`); see TRADING-RULES.
+  nothing armed. Since 20:26 ET Practice reads the shared Alpaca-first daily path (`nativeDailyBatch=false`)
+  and runs `executable_cost_v2`, `gap_policy=retest_v1` and `dry_up_rule=non_increasing_v1`; the arm gate and
+  5m cadence stay off. Record: [plan section 7](reviews/2026-09-22-plan/PLAN.md).
 - **Known limits.** Untrusted confirmation windows are caused by no-trade minutes at the end of a
   bucket, before a non-emission proof can exist (design decision open). Sean's daily posts cannot be
   retrieved automatically (X returns 402). Shares fallback (brief F6) and historical data repair (F7)

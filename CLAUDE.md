@@ -565,8 +565,10 @@ frontend production build runs this check automatically.
 **Cartel state 2026-09-22 (0.8.33):** start at the README's "State of play" and `reviews/2026-09-22-plan/PLAN.md`.
 Practice book = `Options Cartel Practice - Capital Experiment` (`e7b246c9…`); trade flow is the problem (24 plan-days,
 11 touches, 0 orders). Versioned switches, all legacy by default and snapshotted per arm: `contractPolicy.selectionVersion`
-(`diverse_liquidity_v1` ON in Practice), `rankingVersion` (Practice `legacy`; `executable_cost_v1` drifts to deep-ITM
-contracts - use `executable_cost_v2`, delta-bounded), `entryCadence` (`breakout_5m_v1` Practice-only, long-only, 15m matched
+(`diverse_liquidity_v1` ON in Practice), `rankingVersion` (Practice `executable_cost_v2` since 2026-09-23 20:26 ET;
+`executable_cost_v1` drifts to deep-ITM contracts), Practice also ON: `entry.gap_policy=retest_v1`, `setups.dry_up_rule=
+non_increasing_v1`; daily history via the shared Alpaca-first path (`nativeDailyBatch=false`: the native path only completes a
+day at midnight ET), `entryCadence` (`breakout_5m_v1` Practice-only, long-only, 15m matched
 control in `state.control` that outlives the executing lane; unlabelled non-15m saved entries = `legacy_timeframe`),
 `entry.gap_policy=retest_v1`, `setups.dry_up_rule=non_increasing_v1`, `minArmTargetR`. Selection deadlines bound expiry,
 chain and refresh requests (`_bounded`); a result after the deadline is recorded, never selected. Daily review attribution

@@ -26,6 +26,7 @@ evening (profitability plan implemented: stop rule, scorecard, exit quotes, BRK.
 
 ## State of play (2026-09-22 evening)
 
+- **2026-09-23 close (v0.8.40):** day review + plan in `reviews/2026-09-23-DAY-REVIEW-AND-PLAN.md`. The model-veto study (`research/2026-09-23-MODEL-VETO-STUDY.md`) found no measurable value in the paid review over 18 scored sessions, so deterministic EM stands; `break_vs_level` registered; outcome scoring (stalled since 09-18) fixed. Both books kept: they now prepare identically, so the experimental book measures the bundle's EXECUTION parts (first-sale, P-06, source candidates) on the same entries.
 - **2026-09-23: EM is fully deterministic (user decision, v0.8.37, `em-deterministic-prep-v1`).** The baseline book is
   prepared by rules inside the engine (`technique/em_deterministic_prep.py`, `trigger=prepare`, event `TechniquePrepared`,
   manual `POST /api/technique/em/prepare`) once `preparation_policy=deterministic`; the paid nightly review (which was
