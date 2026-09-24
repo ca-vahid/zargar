@@ -648,6 +648,24 @@ class ProposalService:
         # plan when it wrote one, else the tip's own stop/targets (ANALYST.md §5)
         from ..techniques.tip.lifecycle import build_exit_plan
         exit_plan = build_exit_plan(signal_row, sig, analyst, policy)
+        # 2026-09-24 (RKLB 9/25 74C): the lotto lane is decided by the contract ACTUALLY bought, not only by the
+        # tip's stated expiry. ab stated no expiry, the analyst picked a 1-DTE call, the plan was adopted as a normal
+        # option with dte_close=1 and the manager sold it 9 minutes after the fill (fees > gain).
+        if sec_type == "OPT":
+            from zoneinfo import ZoneInfo as _ZI
+
+            from ..options import occ as _occ_c
+            from ..techniques.tip.lotto import contract_lotto
+            _now_et = dt.datetime.now(_ZI("America/New_York"))
+            _cl = contract_lotto(symbol, _now_et, eng.settings)
+            if _cl == "late":
+                log.info("contract %s expires today past the flatten time - no proposal", symbol)
+                return None
+            if _cl == "lotto":
+                _dte = (_occ_c.parse(symbol).expiry - _now_et.date()).days
+                exit_plan = {**exit_plan, "lotto": True,
+                             "maxHoldSessions": min(int(exit_plan.get("maxHoldSessions") or (_dte + 1)), _dte + 1)}
+                vehicle = {**vehicle, "lotto": True}
         bits = []
         if exit_plan.get("targets"):
             fr = exit_plan.get("fractions") or []
