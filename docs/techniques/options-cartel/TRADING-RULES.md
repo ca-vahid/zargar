@@ -298,3 +298,14 @@ Native bars are raw (not split-adjusted); revert with `nativeDailyBatch=false` o
 09-22 if adjusted history is preferred. Open follow-up: a provider fallback for a single missing benchmark
 session, so one vendor hole cannot stop the desk for a day.
 
+## September 23 evening: Practice switches activated, back on the shared daily path
+
+Zero orders on 09-23: nothing armed because the benchmark waited all day (Yahoo omitted 09-22). The native
+Alpaca daily path fixed the gap but only counts a day complete at midnight ET, so evening preparations
+waited again. EM's 0.8.38 made the shared history path Alpaca-first (official 1Day bars, Yahoo fallback); at
+20:26 ET it returned SPY/QQQ through 09-23 with no hole, so Practice returned to it (`nativeDailyBatch=false`).
+Activated in Practice at the same time, each acting at a different funnel stage so its effect stays
+attributable in the daily review: contract ranking `executable_cost_v2` (contract choice), `entry.gap_policy=
+retest_v1` (entry path on gap opens), `setups.dry_up_rule=non_increasing_v1` (screen). Left off: `minArmTargetR`
+(reduces arms; evaluate after trade flow improves) and the 5-minute cadence (next step). Rollback: set each back
+to `legacy` / `none` / `ratio_v1`. No threshold, spread limit or risk setting changed.
