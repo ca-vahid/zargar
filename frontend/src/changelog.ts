@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.39";
+export const APP_VERSION = "0.8.40";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.40",date:"2026-09-23",title:"EM: plan outcomes are scored again",items:[
+    {tag:"fixed",text:"EM stopped scoring what price did after each plan from September 21: the nightly plans for the next session filled the scorer's queue before they could be scored, so finished sessions never got their turn. Finished sessions are now scored oldest first and future ones wait, so Validation outcomes and the review loop are complete again."},
+    {tag:"improved",text:"EM scorecard: a new preregistered test compares breakout trades with level bounces and rejects (30 breakout trades decide it); the rules-vs-model comparison is closed now that EM prepares by rules only."},
+  ]},
   {version:"0.8.39",date:"2026-09-23",title:"Tips: lower model cost (caching, Opus 5.5, fewer needless reviews, batch jobs)",items:[
     {tag:"improved",text:"Tips reviews reuse their cached conversation (about half the cost of a multi-turn review) and can run on Claude Opus 5.5 at the same thinking depth. Replies are replayed exactly as received when a reply has to be repaired."},
     {tag:"new",text:"A message that touches nothing the desk holds, waits on or proposes, and that extraction marked non-actionable, can skip the analyst review (a switch, recorded on every decision). Messages about positions, plans or possible entries are always reviewed."},
