@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.42";
+export const APP_VERSION = "0.8.43";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.43",date:"2026-09-23",title:"Tips: intake reads tips with Claude Opus 5.5 and catches position updates",items:[
+    {tag:"improved",text:"Intake extraction now names position updates explicitly (trims, stop-outs, closes, 'TP hit') and resolves 'friday calls' and LEAPS, so follow-ups on positions the desk mirrors are no longer dropped. Measured on 40 real messages before the switch: Claude Opus 5.5 at medium effort with this rule changed no actionable signal and costs about 18% less than Opus 5."},
+    {tag:"improved",text:"The Tips analyst runs Claude Opus 5.5 at medium effort (Anthropic's recommended starting point) with room for its thinking in every reply."},
+  ]},
   {version:"0.8.42",date:"2026-09-23",title:"Tips: cards that need you now alert you, and restarts keep overnight orders",items:[
     {tag:"new",text:"A Tips card that is still waiting for a human 20 seconds after it appears sends one push and Telegram line: what, from whom, why it waits, the share alternative and when it expires."},
     {tag:"improved",text:"When a source says they are out of a trade the desk mirrors, the review now closes our copy instead of only tightening the stop. In Practice, a take whose option cannot be sized within the risk budget can become the equal-risk share position at the same stop (a switch)."},

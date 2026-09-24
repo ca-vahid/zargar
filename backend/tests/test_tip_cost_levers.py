@@ -237,3 +237,12 @@ def test_an_exit_plan_edit_keeps_every_field_it_did_not_send():
     assert got == {"targets": [129.6, 131.0, 133.0], "fractions": [0.25, 0.4, 0.35], "underlyingStop": 122.6, "premiumStopPct": 40.0}
     assert carried_exit_fields(pol, {"exit_targets": [], "exit_fractions": []})["targets"] == []      # an explicit clear is honoured
     assert carried_exit_fields({"stop": {"kind": "none"}}, {})["underlyingStop"] is None
+
+
+def test_the_extraction_prompt_names_position_updates_for_opus_5_5():
+    """2026-09-23: Opus 5.5 read "return an empty list" literally and dropped trims/stop-outs; the rule names them."""
+    from zargar.signals.schemas import EXTRACTION_SYSTEM_PROMPT as P
+    assert "POSITION UPDATES are not empty-list content" in P
+    for cue in ('"TP hit"', "stopped out", '"friday calls"', "LEAPS", 'instrument="shares"'):
+        assert cue in P
+

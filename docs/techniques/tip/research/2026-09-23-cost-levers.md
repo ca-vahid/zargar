@@ -55,3 +55,33 @@ detailed - the tools now write every finished case immediately (`--rows`).
 Every lever is a journaled setting: `analyst_model` back to `""` (Opus 5), `review_skip_nonactionable=false`,
 `review_context=full`, `extraction_model=""`, `batch_jobs=false`, `prompt_cache=false`. `tip_llm_calls` is
 append-only bookkeeping and needs no rollback.
+
+## Addendum - Opus 5.5 re-tested properly (2026-09-23 late evening, user: "opus 5.5 should supersede 5 … try harder")
+
+**What was wrong with the first test.** It scored each model by agreement with what Opus 5 had extracted in
+production, which rewards Opus 5 for reproducing its own output (Opus 5 re-run matched itself on only 32-34 of 40).
+The re-test judged every disagreement against the MESSAGE itself.
+
+**Finding.** Opus 5.5 was not worse at random: it systematically skipped POSITION UPDATES ("Stopped break even on MU
+spreads", "3rd TP hit … QQQ puts", "cutting googl friday calls") - it read the prompt's "most content contains NO
+actionable signal … return an empty signals list" literally. Anthropic's Opus 5.5 prompting guide: start at `medium`
+effort (Opus 5.5 at medium matches or exceeds Opus 5 at high; it thinks MORE per turn at the same level), reserve
+xhigh/max for measured gains, size `max_tokens` for thinking, and name the specific behaviour wanted.
+
+**Runs (same 40 messages, estimate-based guards):**
+
+| arm | changed actionable | position updates caught | cost / 40 |
+|---|---:|---|---:|
+| Opus 5 @ high (production) | 0 | yes (noisy re-run) | $1.89-1.92 |
+| Opus 5.5 @ xhigh, old prompt | 3 | no (AMAT trim, MU stop-out, QQQ trims missed) | $1.95 |
+| Opus 5.5 @ medium, old prompt | 3 | no (same misses) | $1.51 |
+| Opus 5.5 @ high + updates rule | 1 (FSLY instrument) | yes; also fixed DLTR (production had DLR) | $1.66 |
+| **Opus 5.5 @ medium + updates rule** | **0** | **yes** (one slip: ACHR "leaps" instrument - now covered) | **$1.56** |
+| Sonnet 5 @ max | 2 invalid replies in 4 messages (thinking ate the output budget); stopped | - | - |
+| Sonnet 5 @ high + updates rule | 0 | partly (missed CIFR, QQQ close) | $0.86 |
+
+**Decision (shipped in this release):** the POSITION UPDATES rule (+ LEAPS, shares-source instrument) is in the
+production extraction prompt; extraction runs `claude-opus-5-5` at `medium`; the analyst runs `claude-opus-5-5` at
+`medium` with `analyst_max_output_tokens` 8000 (was 3000, sized for Opus 5). Sonnet 5 stays off: with the rule it
+stops making actionable errors but still misses updates the desk manages from.
+
