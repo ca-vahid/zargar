@@ -990,7 +990,9 @@ class PlanRunner(SessionListener):
                         treason = self.target_breach(tr, last)
                     if treason:
                         self._log(ap, "target_hit", f"{tr.trigger_id}: {treason}", trigger=tr.trigger_id, last=last)
-                        await self._exit(ap, tr, "tp3", tr.remaining, journal=True, force_market=False, reason=treason)
+                        await self._exit(ap, tr, "tp3", tr.remaining, journal=True, force_market=False, reason=treason,
+                                         authority={"authority": self.AUTHORITY["live_target"], "decidedBy": "live_target",
+                                                    "underlyingLast": last, "why": treason})
                         continue
                 # 3) underlying decisively through the stop
                 key = (ap.run_id, tr.trigger_id)
@@ -1005,7 +1007,9 @@ class PlanRunner(SessionListener):
                 self._quote_breaches.pop(key, None)
                 self._log(ap, "quote_stop", f"{tr.trigger_id}: {reason} (poll {n}/{need})", trigger=tr.trigger_id)
                 await self._exit(ap, tr, "stop", tr.remaining, journal=True, force_market=True,
-                                 reason=f"intra-minute quote breach: {reason}")
+                                 reason=f"intra-minute quote breach: {reason}",
+                                 authority={"authority": self.AUTHORITY["quote_stop_watch"], "decidedBy": "quote_stop_watch",
+                                            "underlyingLast": last, "polls": n, "why": reason})
 
     async def restore(self) -> int:
         """Re-arm persisted plans after a restart (armed/paused only). A plan for
@@ -3741,6 +3745,8 @@ class PlanRunner(SessionListener):
         "model_tp3": "target",
         "model_flatten": "clock exit",
         "clock_flatten": "clock exit",
+        "live_target": "target",                              # F130: the plan target on the underlying's fresh print
+        "quote_stop_watch": "structural stop",                # F130: the underlying decisively through the stop, intra-minute
     }
 
     def premium_stop_authority_record(self, tr: Trade, price: float | None, quote: dict, *, stop_pct: float,

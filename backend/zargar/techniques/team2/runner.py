@@ -1983,6 +1983,19 @@ class Team2Runner(PlanRunner):
                 if e["event"] == "exit":
                     trade.closed_ts = e.get("ts")
                 continue
+            if trade.status == "working" and trade.entry_order_id and e["event"] == "exit":
+                # F130 (2026-09-23): the read closed this setup (target, stop, clock) while our entry still rested
+                # unfilled. The order's premise is gone — cancel it. Before this, only the 15:45 flatten cancelled a
+                # working entry: Control's IWM pm_break_down@09:30#1 rested from 10:18, the read's target printed at
+                # 10:27, and the order filled at 11:08 into a move already against it (orphan stop, -$243).
+                with contextlib.suppress(Exception):
+                    await self.engine.orders.cancel(trade.entry_order_id)
+                trade.status = "cancelled"
+                trade.reason = f"setup closed before the entry filled: {e.get('why', '')} (F130)"
+                self._log(ap, "entry_cancelled_setup_closed",
+                          f"{trade.trigger_id}: the read closed the setup ({e.get('why', '')}) before the entry filled — "
+                          f"working entry cancelled (F130)", trigger=trade.trigger_id, orderId=trade.entry_order_id)
+                continue
             if trade.status != "open" or trade.remaining <= 0:
                 continue
             if kind in ("tp1", "tp2"):
@@ -2113,7 +2126,9 @@ class Team2Runner(PlanRunner):
                 self._log(ap, "clock_flatten", f"{tr.trigger_id}: flatten time {flat_hhmm} ET — "
                           f"selling {tr.remaining:g} at market whatever the read says (C3/D-1)", trigger=tr.trigger_id)
                 await self._exit(ap, tr, "flatten", tr.remaining, journal=True, force_market=True,
-                                 reason="flatten: 0DTE flatten time reached on the clock (C3/D-1)")
+                                 reason="flatten: 0DTE flatten time reached on the clock (C3/D-1)",
+                                 authority={"authority": self.AUTHORITY["clock_flatten"], "decidedBy": "clock_flatten",
+                                            "why": f"flatten time {flat_hhmm} ET reached"})
 
     # ------------------------------------------------------------- the fire's target (F72)
     def resolve_fire_target(self, e: dict, setup: dict, spot: float,
