@@ -52,6 +52,21 @@ async def _backoff_sleep(seconds: float) -> None:
     await asyncio.sleep(seconds)
 
 
+def carried_exit_fields(policy: dict, args: dict) -> dict:
+    """Pure: the exit-plan fields for an update_exit_plan call, where a field the model did NOT send keeps the
+    position's current value (ladder targets/fractions, underlying stop, premium stop). A field it sent - even an
+    explicit empty ladder - is taken as sent."""
+    pol = policy or {}
+    lad = pol.get("ladder") or {}
+    stop = pol.get("stop") or {}
+    cur_stop = stop.get("price") if isinstance(stop, dict) and stop.get("kind") in (None, "fixed") else None
+    has = lambda k: k in args and args.get(k) is not None  # noqa: E731
+    return {"targets": list(args["exit_targets"]) if has("exit_targets") else list(lad.get("targets") or []),
+            "fractions": list(args["exit_fractions"]) if has("exit_fractions") else list(lad.get("fractions") or []),
+            "underlyingStop": args["underlying_stop"] if has("underlying_stop") else cur_stop,
+            "premiumStopPct": args["premium_stop_pct"] if has("premium_stop_pct") else pol.get("premium_stop_pct")}
+
+
 def prompt_cache_scope(eng) -> str:
     """ADV-03 (2026-09-23): WHAT the cache covers when caching is on. `prefix` (E17-03) = system + tool definitions
     only (~11% of a call). `conversation` = also everything up to the latest message: the per-run header (rulebook +
@@ -344,7 +359,8 @@ TOOLS = [
                     "exposure, and a stop may only tighten. Use it when a source follow-up or "
                     "the market changes the campaign ('they sold 40%' → trim and tighten). "
                     "Args: position_id, exit_targets (underlying prices), exit_fractions, "
-                    "underlying_stop, premium_stop_pct, max_hold_sessions, reason (required).",
+                    "underlying_stop, premium_stop_pct, max_hold_sessions, reason (required). "
+                    "Send only what changes: an omitted field keeps its current value.",
      "input_schema": {"type": "object", "properties": {
          "position_id": {"type": "string"}, "exit_targets": {"type": "array", "items": {"type": "number"}},
          "exit_fractions": {"type": "array", "items": {"type": "number"}},
@@ -891,10 +907,13 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         if not reason:
             return {"error": "a reason is required — it is journaled"}
         from .lifecycle import policy_from_exit_plan
-        plan = {"targets": args.get("exit_targets") or [],
-                "fractions": args.get("exit_fractions") or [],
-                "underlyingStop": args.get("underlying_stop"),
-                "premiumStopPct": args.get("premium_stop_pct"),
+        # 2026-09-23 (NEM): an OMITTED field keeps the position's current value. A stop-only edit used to blank the
+        # profit ladder (targets defaulted to []), and the analyst spent a second paid call restoring it.
+        cur = carried_exit_fields(p.policy, args)
+        plan = {"targets": cur["targets"],
+                "fractions": cur["fractions"],
+                "underlyingStop": cur["underlyingStop"],
+                "premiumStopPct": cur["premiumStopPct"],
                 "maxHoldSessions": args.get("max_hold_sessions")
                 or p.policy.get("time_stop_sessions") or 10,
                 "avoidEarnings": bool(p.policy.get("flatten_before")),

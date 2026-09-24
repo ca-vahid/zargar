@@ -69,6 +69,15 @@ def compare(prod: list[dict], cand: list[dict]) -> dict:
             "detail": {"missed": missed, "changed": changed, "extra": rest}}
 
 
+def append_row(path: str | None, row: dict) -> None:
+    """Write one finished case immediately (JSON line, flushed) so an interrupted paid run loses nothing."""
+    if not path:
+        return
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, default=str) + chr(10))
+        fh.flush()
+
+
 def verdict(ref: dict, arm: dict) -> dict:
     checks = {"missedActionable": arm["missedActionable"] <= ref["missedActionable"],
               "changedActionable": arm["changedActionable"] <= ref["changedActionable"],
@@ -122,6 +131,7 @@ async def main() -> int:
     ap.add_argument("--effort", default="high")
     ap.add_argument("--env-file", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--rows", default=None, help="JSONL: one line per finished message, written as it completes")
     a = ap.parse_args()
     arms = [dict(zip(("name", "model"), x.split("=", 1))) for x in a.arm]
     _load_env(a.env_file)
@@ -187,6 +197,7 @@ async def main() -> int:
             g["exact"] += 1 if cmp_["exact"] else 0
             row[x["name"]] = {k: cmp_[k] for k in ("exact", "missedActionable", "changedActionable", "extra")} | {"detail": cmp_["detail"]}
         rows.append(row)
+        append_row(a.rows, {**row, "spentUsd": round(spent, 4)})
         print(m["id"][:8], m["source"], " ".join(f"{x['name']}:{'exact' if (row.get(x['name']) or {}).get('exact') else 'diff'}"
                                                  for x in arms), flush=True)
         if stopped:
