@@ -256,11 +256,17 @@ Step ("Healthy: v" + $h.version + " | armed " + $h.local.armed + " | runs in fli
 # --- 4. restoration check: what was armed / open / working before must be back (by id) ---------
 if ($stateBefore -ne $null) {
   $ok = $false; $last = $null
-  foreach ($i in 1..12) {
+  # P-G (2026-09-23): a large restore (EM arms ~200 plans a night) outlasts a fixed 60 s window. Pass as soon as the
+  # check is OK; call it a MISMATCH only once the missing set has stopped shrinking for 60 s (12 polls), max 5 min.
+  $sig = $null; $still = 0
+  foreach ($i in 1..60) {
     try {
       $cmp = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restore-check" -Method Post -ContentType "application/json" -Body ($stateBefore | ConvertTo-Json -Depth 6 -Compress) -TimeoutSec 8
       $last = $cmp
       if ($cmp.ok) { $ok = $true; break }
+      $now = ($cmp.missing | ConvertTo-Json -Depth 6 -Compress)
+      if ($now -eq $sig) { $still++ } else { $still = 0; $sig = $now }
+      if ($still -ge 12) { break }
     } catch { }
     Start-Sleep -Seconds 5
   }

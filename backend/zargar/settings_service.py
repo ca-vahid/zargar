@@ -250,6 +250,10 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.extraction_effort": "high",      # 2026-09-23: same for extraction/transcription. "" = model default
     "techniques.tip.batch_jobs": False,              # 2026-09-23: nightly digests + knowledge-audit judge calls go through the Message Batches API (50% list price); intake/appraise/retro stay live
     "techniques.tip.batch_timeout_s": 3600,          # a batch that has not ended by then is cancelled and the call fails as a timeout
+    "techniques.tip.prompt_cache_stable_first": False,  # P-D 2026-09-23: rulebook first as its own cached block, so runs share it (conversation caching only)
+    "techniques.tip.card_alerts": True,              # P-C 2026-09-23: push + Telegram line for a card still pending (needs a human) after card_alert_wait_s
+    "techniques.tip.card_alert_wait_s": 20,
+    "techniques.tip.shares_alternative_auto": False,  # P-E 2026-09-23: PRACTICE only - an analyst TAKE whose option cannot be sized becomes the equal-risk SHARE proposal (never live)
     "techniques.tip.review_skip_nonactionable": False,  # 2026-09-23 cost lever 1: skip the intake review when the gate found nothing on the desk AND extraction marked every signal non-actionable (journaled appliedBy=nonactionable)
     "techniques.tip.prompt_cache_scope": "prefix",   # ADV-03: prefix (system+tools) | conversation (+ header and turns so far; the bulk of a multi-turn review). Only read when prompt_cache is on
     "llm.rates": {},                                  # E17-03: {"<model>": {"in": $/Mtok, "out": $/Mtok, "cacheRead": $/Mtok, "cacheWrite": $/Mtok}}; empty = usage reported UNPRICED   # E17-02: seconds of the 120 s run kept for the final answer / one repair

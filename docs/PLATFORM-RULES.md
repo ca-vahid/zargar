@@ -2687,3 +2687,15 @@ is on AND the gate found nothing on the desk AND extraction marked every signal 
 `llm.rates` table gained `claude-opus-5-5` and `claude-sonnet-5` (official page, journaled PATCH). No risk limit, order
 path, stop or other desk's knob changed; EM/Team2/Cartel model settings are untouched.
 
+### A restart never cancels an after-hours market order as "lost"; the restore check waits for a restore to settle - 2026-09-23 (Tips desk, 0.8.42)
+
+`orders.restore_sim_book` used to cancel any open MARKET order older than 60 s after a restart. An order placed outside
+the regular session is meant to wait for the next open (the 2026-09-22 FIVN shadow entry was killed by an overnight
+restart; 22 of 22 such orders in 30 days filled at the open when no restart intervened). `orders.market_order_age` now
+counts a market order's age from the session it waits for (in-session orders are unchanged), and `SimBookRestored`
+carries `cancelReasons`. `scripts/restart.ps1` and `scripts/start.ps1`: the restore check passes as soon as it is OK and
+reports RESTORE MISMATCH (exit 6) only after the missing set has stopped shrinking for 60 s (up to 5 minutes) - a
+206-plan EM restore outlasted the old fixed 60 s window on 0.8.40 and marked a clean deploy failed. Tips-only in the
+same release: card alerts (`TipCardAlert`), the author-flat review rule, rulebook-first cache blocks, the Practice share
+substitution (`TipSharesSubstituted`).
+
