@@ -256,3 +256,43 @@ async def test_error_content_retries_exactly_once(rig):
     assert out2["retried"] == 0 and svc.extractor.calls == 1
 
 
+
+
+def test_appraisal_pending_is_a_fresh_park_with_no_verdict_while_the_analyst_is_on():
+    """2026-09-23 AMAT: the sweep promoted a park 16 s before the live appraisal said skip - a card with no opinion."""
+    from types import SimpleNamespace as NS
+
+    from zargar.signals.service import appraisal_pending
+    now = dt.datetime(2026, 9, 23, 18, 4, tzinfo=dt.timezone.utc)
+    fresh = NS(extraction={"signal": {}}, created_at=now - dt.timedelta(seconds=30))
+    assert appraisal_pending(fresh, analyst_available=True, now=now) is True
+    assert appraisal_pending(fresh, analyst_available=False, now=now) is False
+    done = NS(extraction={"analyst": {"verdict": "skip"}}, created_at=now - dt.timedelta(seconds=30))
+    assert appraisal_pending(done, analyst_available=True, now=now) is False
+    stale = NS(extraction={}, created_at=now - dt.timedelta(minutes=20))       # the intake died: the sweep may act
+    assert appraisal_pending(stale, analyst_available=True, now=now) is False
+
+
+async def test_the_sweep_leaves_a_park_the_live_intake_is_still_appraising(rig, monkeypatch):
+    eng = rig
+    svc = eng.signals_service
+    svc._analyst_client = object()                    # the analyst is available
+    sig = _tip(ticker="AAPL")
+    row_id = new_id()
+    async with eng.sf() as session:
+        session.add(Signal(
+            id=row_id, source_name="ColdSrc", ticker="AAPL", direction="long",
+            action="open", entry_type="limit", timeframe="swing",
+            confidence="explicit_call", is_actionable=True, status="parked",
+            entry_price=231.5, target_price=260.0, stop_price=220.0,
+            extraction={"signal": sig.model_dump()},
+            verification={"passed": False, "park": True, "shadow_only": False,
+                          "checks": [{"name": "ticker_resolves", "passed": False, "fatal": False,
+                                      "detail": "no market data yet"}]},
+            created_at=dt.datetime.now(dt.timezone.utc), seen_count=1))
+        await session.commit()
+    out = await svc.recovery_sweep()
+    assert out["reverified"] == 0 and out["promoted"] == 0
+    async with eng.sf() as session:
+        assert (await session.get(Signal, row_id)).status == "parked"
+    assert not [p for p in await eng.proposals.list_pending() if p["signalId"] == row_id]

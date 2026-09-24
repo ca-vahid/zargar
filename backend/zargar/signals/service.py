@@ -85,6 +85,24 @@ def experiment_tag(extraction: dict | None) -> str | None:
     return str(tag) if tag else None
 
 
+APPRAISAL_GRACE_S = 900.0     # an intake appraisal (120 s run + repair) never legitimately takes this long
+
+
+def appraisal_pending(row, *, analyst_available: bool, now: dt.datetime, grace_s: float = APPRAISAL_GRACE_S) -> bool:
+    """Pure: is the live intake still appraising this signal? True when the analyst is available, the signal carries
+    no analyst verdict yet and it is younger than the grace window. The recovery sweep must not act on it."""
+    if not analyst_available:
+        return False
+    if ((row.extraction or {}).get("analyst") or {}).get("verdict"):
+        return False
+    created = getattr(row, "created_at", None)
+    if created is None:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=dt.timezone.utc)
+    return (now - created).total_seconds() < grace_s
+
+
 class SignalService:
     _extract_retry_delays = (5.0, 20.0)   # transient-API backoff; tests set (0, 0)
 
@@ -3465,11 +3483,21 @@ class SignalService:
         async with eng.sf() as session:
             parked = (await session.execute(select(Signal).where(
                 Signal.status == "parked"))).scalars().all()
+        analyst_available = (bool(eng.settings.get("techniques.tip.analyst_enabled", True))
+                             and (self._analyst_client is not None
+                                  or bool(getattr(eng.config, "anthropic_api_key", ""))))
+        now_utc = dt.datetime.now(dt.timezone.utc)
         for row in parked:
             checks = (row.verification or {}).get("checks") or []
             failed = [c for c in checks if not c.get("passed")]
             if not failed or any(c.get("name") != "ticker_resolves" for c in failed):
                 continue        # price-position parks are the level watch's job
+            if appraisal_pending(row, analyst_available=analyst_available, now=now_utc):
+                # 2026-09-23 (AMAT): the live intake is still appraising this park and re-checks it itself when the
+                # analyst finishes (SignalColdParkRecheck). Promoting it here raced the appraisal and minted a card
+                # with no opinion and the book's default vehicle (shares for a call tip). A later sweep takes it only
+                # if the intake died.
+                continue
             sym = row.ticker.upper()
             q = eng.quotes.get(sym)
             if q is None or not (q.last and q.last > 0):
