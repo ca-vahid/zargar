@@ -2036,39 +2036,63 @@ class TechniqueService:
             "premarketLlmAvailable": self.llm_config().available,
         }
 
-    async def score_pending(self, *, limit: int = 25) -> dict:
+    async def score_pending(self, *, limit: int = 60) -> dict:
         """Score every finished run that has no outcome yet or a still-open one.
         Called by the outcome loop and `POST /api/technique/outcomes/score`."""
+        # 2026-09-23 (outcome starvation): the loop used to take the 400 NEWEST runs and score 25 of them newest-first. Since
+        # EM mints ~300 plan runs a night for a session that has not started (sheet reads, the experimental and the
+        # deterministic preparation, pre-open re-plans), those unscoreable future-session runs took every slot on every pass
+        # and NOTHING after 2026-09-18 was ever scored. Now: a plan whose session has not opened is skipped (it cannot be
+        # scored yet), and finished sessions are scored OLDEST first, so a backlog always drains.
+        from ..marketstructure.sessions import session_bounds
+        fails: dict = self.__dict__.setdefault("_score_failures", {})
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=25)
+        plan_for = TechniqueRun.result["plan"]["planFor"].as_string()
         async with self.engine.sf() as session:
             runs = (await session.execute(
-                select(TechniqueRun.id, TechniqueRun.as_of, TechniqueRun.created_at)
+                select(TechniqueRun.id, TechniqueRun.as_of, TechniqueRun.created_at, plan_for.label("plan_for"))
                 .where(TechniqueRun.status == "done", TechniqueRun.mode.in_(("full", "plan")),
                        TechniqueRun.technique == "enhanced_market",     # F107 (2026-09-10): EM scores EM's runs only
                        TechniqueRun.created_at >= cutoff)
-                .order_by(TechniqueRun.created_at.desc()).limit(400))).all()
+                .order_by(TechniqueRun.created_at.asc()).limit(4000))).all()
             ids = [x.id for x in runs]
-            outs = (await session.execute(
-                select(TechniqueOutcome).where(TechniqueOutcome.run_id.in_(ids)))).scalars().all() if ids else []
-        by_run: dict[str, list[TechniqueOutcome]] = {}
-        for o in outs:
-            by_run.setdefault(o.run_id, []).append(o)
+            outs = []
+            for i in range(0, len(ids), 500):
+                outs += (await session.execute(
+                    select(TechniqueOutcome.run_id, TechniqueOutcome.status).where(TechniqueOutcome.run_id.in_(ids[i:i + 500])))).all()
+        by_run: dict[str, list[str]] = {}
+        for rid, st in outs:
+            by_run.setdefault(rid, []).append(st)
         todo: list[str] = []
         now_ms = time.time() * 1000
+        opens: dict[str, int] = {}
         for x in runs:
             as_of = x.as_of or int(x.created_at.timestamp() * 1000)
             if now_ms - as_of < 5 * 60 * 1000:
                 continue                        # give the first bars a chance to print
-            rows = by_run.get(x.id, [])
-            if not rows or any(o.status in ("pending", "partial") for o in rows):
-                todo.append(x.id)
+            pf = str(x.plan_for or "")[:10]
+            if pf:
+                try:
+                    o = opens.get(pf)
+                    if o is None:
+                        o = opens[pf] = int(session_bounds(pf)[0])
+                    if now_ms < o + 5 * 60 * 1000:
+                        continue                # the planned session has not opened: nothing to score yet
+                except Exception:               # noqa: BLE001 - an unreadable date is scored as before
+                    pass
+            sts = by_run.get(x.id, [])
+            if not sts or any(st in ("pending", "partial") for st in sts):
+                if fails.get(x.id, 0) < 3:      # oldest-first must not let one broken run hold the head of the queue
+                    todo.append(x.id)
         scored, failed = [], []
         for rid in todo[:limit]:
             try:
                 await self.score_run(rid)
                 scored.append(rid)
+                fails.pop(rid, None)
             except Exception as exc:
                 log.warning("score_run %s failed: %s", rid, exc)
+                fails[rid] = fails.get(rid, 0) + 1
                 failed.append({"runId": rid, "error": str(exc)})
         return {"scored": scored, "failed": failed, "remaining": max(0, len(todo) - limit)}
 
