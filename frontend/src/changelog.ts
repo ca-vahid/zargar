@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.44";
+export const APP_VERSION = "0.8.46";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.46",date:"2026-09-24",title:"Tips: a short-dated option is handled as a lotto even when the tip gave no expiry",items:[
+    {tag:"fixed",text:"When the analyst picks a contract that expires within the lotto window, the position is held into expiry day and flattened at the lotto time. Before, a tip without a stated expiry was treated as an ordinary option, and the day-before-expiry rule sold a 1-day call nine minutes after it filled (fees larger than the gain)."},
+  ]},
   {version:"0.8.44",date:"2026-09-24",title:"Tips: option contracts are always valid option symbols",items:[
     {tag:"fixed",text:"An option contract written in a short form (for example INTC260925C130) is converted to the standard option symbol before a card is priced; a string that is not a contract is never used. The first such card waited for a human with no risk estimate."},
   ]},
