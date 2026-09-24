@@ -6,8 +6,9 @@ such. No profitable strategy or exact author replication has been established.
 
 ## State of play (2026-09-22)
 
-- **Book.** Practice runs on `Options Cartel Practice - Capital Experiment` (`e7b246c9…`, $1m virtual
-  capital, $25k per plan, 20 focus slots) since 2026-09-19. The old $10k book is archived with its history.
+- **Book.** Since 2026-09-23 22:10 ET Practice runs on `Options Cartel Practice 10k` (`297d8b39…`, $10,000;
+  $1,000 per plan, contracts up to $10, 10 focus slots). The $1m capital-experiment book (09-19..09-23, no
+  trades) and the older $10k book are archived with their history.
 - **Results.** Zero orders on 2026-09-21 and 2026-09-22. Across 24 automatic plan-days since 09-14, 11
   touched their trigger and none reached an order. One trade since 09-14 (APA, -$61.13). The binding
   problem is trade flow, not position management.

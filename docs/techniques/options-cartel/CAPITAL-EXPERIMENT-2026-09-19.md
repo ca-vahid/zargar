@@ -1,5 +1,8 @@
 # Options Cartel Practice: expanded-capital experiment
 
+> Ended 2026-09-23 22:10 ET by user decision: Practice moved to `Options Cartel Practice 10k`
+> (`297d8b39d1c4418199f24c2331b14c11`). This book never traded and is archived. See TRADING-RULES.
+
 User authorized September 19: remove funding constraints that prevent the Practice
 experiment; virtual money is not scarce. This supersedes the earlier recommendation
 to keep the $500 budget and the shares-fallback proposal as the immediate next step.
