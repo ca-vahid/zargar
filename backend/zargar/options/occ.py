@@ -87,6 +87,33 @@ def parse(symbol: str | None) -> Occ | None:
     return Occ(m.group("root"), expiry, m.group("cp"), int(m.group("strike")) / 1000.0)
 
 
+_LOOSE_RE = re.compile(r"^(?P<root>[A-Z]{1,6})(?P<date>\d{6})(?P<cp>[CP])(?P<strike>\d+(?:\.\d+)?)$")
+
+
+def parse_loose(symbol: str | None) -> Occ | None:
+    """Strict OCC first; else the common SHORT spelling `ROOT YYMMDD C|P STRIKE` with the strike in dollars
+    ("INTC260925C130", "SPY260925P742.5") - how a model writes a contract when it drops the 8-digit strike field
+    (2026-09-24, Opus 5.5). None when neither parses: the caller must never trade a string it cannot read."""
+    o = parse(symbol)
+    if o is not None:
+        return o
+    if not symbol:
+        return None
+    s = symbol.strip().upper().replace(" ", "")
+    m = _LOOSE_RE.match(s)
+    if not m:
+        return None
+    d = m.group("date")
+    try:
+        expiry = dt.date(2000 + int(d[0:2]), int(d[2:4]), int(d[4:6]))
+        strike = float(m.group("strike"))
+    except ValueError:
+        return None
+    if strike <= 0:
+        return None
+    return Occ(m.group("root"), expiry, m.group("cp"), strike)
+
+
 def is_occ(symbol: str | None) -> bool:
     return parse(symbol) is not None
 
