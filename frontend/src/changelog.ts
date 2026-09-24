@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.43";
+export const APP_VERSION = "0.8.44";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.44",date:"2026-09-24",title:"Tips: option contracts are always valid option symbols",items:[
+    {tag:"fixed",text:"An option contract written in a short form (for example INTC260925C130) is converted to the standard option symbol before a card is priced; a string that is not a contract is never used. The first such card waited for a human with no risk estimate."},
+  ]},
   {version:"0.8.43",date:"2026-09-23",title:"Tips: intake reads tips with Claude Opus 5.5 and catches position updates",items:[
     {tag:"improved",text:"Intake extraction now names position updates explicitly (trims, stop-outs, closes, 'TP hit') and resolves 'friday calls' and LEAPS, so follow-ups on positions the desk mirrors are no longer dropped. Measured on 40 real messages before the switch: Claude Opus 5.5 at medium effort with this rule changed no actionable signal and costs about 18% less than Opus 5."},
     {tag:"improved",text:"The Tips analyst runs Claude Opus 5.5 at medium effort (Anthropic's recommended starting point) with room for its thinking in every reply."},
