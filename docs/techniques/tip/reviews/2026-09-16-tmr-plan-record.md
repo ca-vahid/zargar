@@ -884,3 +884,55 @@ deploys (`tip_llm_calls`).
 **User decisions today (cost package, `research/2026-09-23-cost-levers.md`):** caching ON; items 1-4, batching and
 Opus 5.5 approved. The paid A/B for the notes trim and Sonnet 5 extraction was stopped by the host for low memory
 after 22 of 30 review cases (about $15 estimated, detailed results not saved). Its re-run is waiting on the user.
+
+## 2026-09-24 (Thu) - end of session (observed session 4 of 5)
+
+**Build:** 0.8.43 (`1fbf4955`) all session: Tips on Claude Opus 5.5 at medium effort for the analyst and extraction,
+conversation caching with the rulebook-first block, the non-actionable review skip, batching, card alerts and the
+Practice share substitution. Fixes 0.8.44 (option-symbol canonicalization) and 0.8.46 (lotto lane from the contract
+bought) are merged and ship tonight in EM's combined 0.8.47 build.
+
+**Fills and exits, Tips Practice (net of `executions.commission`):**
+
+| position | how it ended | gross | fees | net |
+|---|---|---:|---:|---:|
+| CRWV 4 of 12 sh | trimmed at 90.78 (entry 87.17) | +14.45 | 0.00 | **+14.45** |
+| RKLB 9/25 74C x1 | bought 0.56, sold 0.58 nine minutes later by the day-before-expiry rule (fixed in 0.8.46) | +2.00 | 2.08 | **-0.08** |
+| U 23 sh | bought 43.88 (14:19), venue GTC stop 39.84 (14:55) - the planned ~$92 risk | -92.87 | 0.00 | **-92.87** |
+| **total** | | -76.42 | 2.08 | **-78.50** |
+
+No questioned fills (subtotal the same). The book's marked change was +$8.62 (9,132.89 -> 9,141.51): open positions
+(COIN, CRWV, JELD, PL) marked up by about the realized loss.
+
+**Decision funnel:** 19 ideas, 7 takes, 3 filled, 12 declined, 2 risk-infeasible, 2 pending, 0 avoidable misses.
+ab 6/3 takes/2 fills; neal 3/1/1; eva 3/1/0; muggzone 4/2 takes/0 fills (both takes risk-infeasible); tt 2/0;
+MK-alpha-trades 1/0.
+
+**Review-gated cards:** 10. Most were auto-declined on the analyst's watch/skip. **Three card alerts** went out as
+pushes (the first live P-C deliveries; Telegram is not configured). Two of them were `INTC...C130/C135` cards whose
+contract was written in the analyst's short form: canonicalized from tonight (0.8.44). META 9/25 800C (a take in the
+lotto lane, so not share-substituted by design) waited for a human.
+
+**Incidents / fast-stop diagnostics / halts / analyst failures:** none.
+
+**Execution cost on genuine entries (fill vs decision quote):** COIN at the ask (+12c vs mid), RKLB at the ask (+0.5c),
+U at the ask (+1c).
+
+**Carried overnight:** COIN 10 sh (GTC stop 10 @ 190.50), CRWV 8 sh (8 @ 79.81), JELD 369 sh (369 @ 1.67), PL 59 sh
+(59 @ 15.45); two ACHR call positions on app-managed option exits.
+
+**Hold study:** the 15:50 capture wrote 18 fresh rows; the 09-23 rows all got their next-open sample.
+
+**Plans rolling to 09-25:** AAOI, AMZN (x2), CRML, CRWV, DAL, GOOGL, HOOD, MU (quarantined eva book), PLTR, T, U.
+
+**Model cost today (calendar day, list-price estimate, apart from trading P&L):** priced **$20.69** - intake reviews
+$10.30, appraisals $5.98, extraction $4.35 (now recorded per call in `tip_llm_calls`; before today it was invisible),
+transcription $0.06; unpriced: 38 intake runs with no model call; partial: 0. This week: Mon $115.65, Tue $100.46,
+Wed $61.16, **Thu $20.69** (Monday had no extraction figure, so the real drop is larger than 82%).
+
+**Relevance filter (observe; the only skips it applies are the approved non-actionable ones):** 82 decisions - **70
+review / 12 skip** (10 applied by the non-actionable rule), 0 readErrors.
+
+**Also today:** rulebook-first caching cut cache writes per review to about a third; the author-flat rule disarmed a
+waiting IONQ plan on neal's exit; an 11:32-11:34 market-data stall affected no Tips position; EM's CBOE 429 fix
+(#274) is in the combined build.
