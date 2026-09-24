@@ -226,3 +226,14 @@ def test_the_notes_only_trim_keeps_every_rule_and_proposal_verbatim():
     out = compact_review_header(h, tickers=["ACHR"], source="ab", notes_only=True)
     assert "x" * 900 in out and "y" * 400 in out
     assert "[ticker:ACHR]" in out and "[ticker:NVDA]" not in out and len(out) < len(h)
+
+
+def test_an_exit_plan_edit_keeps_every_field_it_did_not_send():
+    """2026-09-23 NEM: a stop-only edit blanked the ladder; the analyst paid a second call to restore it."""
+    from zargar.techniques.tip.analyst import carried_exit_fields
+    pol = {"stop": {"kind": "fixed", "price": 121.19}, "ladder": {"targets": [129.6, 131.0, 133.0], "fractions": [0.25, 0.4, 0.35]},
+           "premium_stop_pct": 40.0}
+    got = carried_exit_fields(pol, {"underlying_stop": 122.6, "max_hold_sessions": 4})
+    assert got == {"targets": [129.6, 131.0, 133.0], "fractions": [0.25, 0.4, 0.35], "underlyingStop": 122.6, "premiumStopPct": 40.0}
+    assert carried_exit_fields(pol, {"exit_targets": [], "exit_fractions": []})["targets"] == []      # an explicit clear is honoured
+    assert carried_exit_fields({"stop": {"kind": "none"}}, {})["underlyingStop"] is None

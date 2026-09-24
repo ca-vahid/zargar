@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.40";
+export const APP_VERSION = "0.8.41";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.41",date:"2026-09-23",title:"Tips: two fixes found in today's review",items:[
+    {tag:"fixed",text:"A tip parked on a cold quote is no longer turned into an approval card while its analyst appraisal is still running; the card now always carries the analyst's opinion and the tip's own contract."},
+    {tag:"fixed",text:"When the analyst changes only part of an open position's exit plan (for example the stop), the rest of the plan (profit targets, premium stop) is kept instead of being cleared."},
+  ]},
   {version:"0.8.40",date:"2026-09-23",title:"EM: plan outcomes are scored again",items:[
     {tag:"fixed",text:"EM stopped scoring what price did after each plan from September 21: the nightly plans for the next session filled the scorer's queue before they could be scored, so finished sessions never got their turn. Finished sessions are now scored oldest first and future ones wait, so Validation outcomes and the review loop are complete again."},
     {tag:"improved",text:"EM scorecard: a new preregistered test compares breakout trades with level bounces and rejects (30 breakout trades decide it); the rules-vs-model comparison is closed now that EM prepares by rules only."},
