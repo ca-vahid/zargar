@@ -135,3 +135,27 @@ def test_quiet_window_is_09_29_to_09_34_et_on_weekdays():
     assert c._in_open_quiet(at(9, 29)) and c._in_open_quiet(at(9, 33)) and not c._in_open_quiet(at(9, 34))
     assert not c._in_open_quiet(at(9, 28)) and not c._in_open_quiet(at(9, 31, d=26)), "Saturday"
     _ = ch
+
+
+def test_normal_priority_is_never_stood_down_in_the_quiet_window(monkeypatch):
+    """Tips' condition (2026-09-24): reads at the default ("normal") priority - Tips' refresh_now path, Cartel's untagged
+    contract reads - are not background and are never held back by the open quiet window."""
+    calls = []
+
+    def ok(request):
+        calls.append(1)
+        return httpx.Response(200, json=PAYLOAD)
+    monkeypatch.setattr(CboeClient, "_in_open_quiet", lambda self, now=None: True)
+    assert ch.CBOE_PRIORITY.get() == "normal" and "normal" not in CboeClient.BACKGROUND
+
+    async def run():
+        return await _client(ok)._payload("AMD")                # no cboe_priority(): the default
+    assert asyncio.run(run())["options"] and calls == [1]
+
+
+def test_refresh_now_reads_the_live_quote_source_not_cboe():
+    """refresh_now -> _refresh_live reads the real-time quote source (Alpaca OPRA); it has no CBOE call to hold back."""
+    import inspect
+    from zargar.options.service import OptionsService
+    src = inspect.getsource(OptionsService._refresh_live)
+    assert "cboe" not in src.lower() and "all_rows" not in src and "quote_source" in src
