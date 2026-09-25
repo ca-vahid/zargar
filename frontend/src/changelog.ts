@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.51";
+export const APP_VERSION = "0.8.52";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.52",date:"2026-09-25",title:"Tips: one reaction to a source's exit",items:[
+    {tag:"fixed",text:"When the desk has already copied a source's trim, the analyst no longer trims the same position again for the same message (a full close stays its own call)."},
+  ]},
   {version:"0.8.51",date:"2026-09-25",title:"Tips: trade what has worked - shares first, copy the source exit, calm opening stops",items:[
     {tag:"major",text:"Tips ideas are bought as shares at the same stop on the Practice book unless a source has earned options; short ideas still use puts and short-dated lottos stay small ($50, one per source a day)."},
     {tag:"new",text:"When a source reports closing or trimming a trade the desk copied, the desk closes or trims its copy right away instead of waiting for the analyst."},
