@@ -126,3 +126,29 @@ analyst declining 106 of 108 eva ideas is right; there is no eva edge to chase a
 
 **Target:** trading ≥ +$105/week (break-even after model cost) within two weeks of P1-P4; the model bill stays ≤ $25
 per weekday.
+
+## 7. Found the same night, and the EM desk's cross-desk review (2026-09-24 late)
+
+**Defects fixed tonight (0.8.48):**
+
+| # | Defect | Fix |
+|---|---|---|
+| D1 | **JELD after-hours stop-out.** An after-hours 1.60 print under a 1.6708 stop fired the underlying crash brake every ~4 s from 16:57 to 18:01 ET (305 exits), released the venue GTC stop and left a MKT DAY sell for the open. | Crash brake acts only in the regular session (`sessions.in_regular_session`) and never while an exit order is working; chaos test added. |
+| D2 | **save_note full scopes filed as `general`** (EM P2.1: 135 of 701 saves). | `note_scope_from_args` honours `source:<name>` / `ticker:<SYM>` as written. The mis-filed notes are NOT re-scoped (propose-only knowledge; a reviewed batch can do it from the run traces). |
+| D3 | **A new HTTP client per Discord image** plus a synchronous file write, both on the event loop (EM P0.4, a top stall stack). | One shared media client; the write moves off the loop. |
+| D4 | **The extraction system prompt was not cached** (EM P2.5). | Cached block when Tips prompt caching is on. |
+
+**Reported, not changed:** the position manager's roll-up gate compares `session_window(now) == "regular"`, but
+`session_window` returns prime_open / midday / prime_close / extended, so **roll-ups have never run since v0.6.2**.
+Fixing the comparison would switch on option rolls for the first time: a trading decision, listed as P13.
+
+**EM's cross-desk items that agree with this plan:** P1.1 (hold vs next-open exit; the 10 positions sold within
+10 minutes of the next open lost -$880) = F2/P3 here; P1.3 (judge sources excluding each source's top 3 trades; eva
+is +$122k with them, -$69k without) = the eva finding and P4/P12; P2.2 relevance-based note retrieval and P2.3 settle
+the 29 pending rules = P7/P8; P2.4 enforce the gate and per-source budgets = P4/P5. EM's estimate for its P2 set:
+about $13-15 per weekday, down from $21.
+
+| # | Added decision | Note |
+|---|---|---|
+| P13 | Switch on option roll-ups (fix the gate) | never live; needs a replay on held winners first |
+

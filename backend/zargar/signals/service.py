@@ -1050,6 +1050,15 @@ class SignalService:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def _media_http(self):
+        """The shared media client (lazy; closed with the service if it has a stop hook)."""
+        http = getattr(self, "_media_client", None)
+        if http is None or getattr(http, "is_closed", False):
+            import httpx
+            http = httpx.AsyncClient(timeout=30, limits=httpx.Limits(max_connections=8, max_keepalive_connections=4))
+            self._media_client = http
+        return http
+
     async def _download_media(self, message_id: str, urls: list[str],
                               offset: int = 0) -> list[str]:
         """CDN URLs -> local files (message-id-based names). Best-effort; only
@@ -1065,10 +1074,11 @@ class SignalService:
                 if fetch is not None:
                     blob = await fetch(url)
                 else:
-                    import httpx
-                    async with httpx.AsyncClient(timeout=30) as http:
-                        r = await http.get(url)
-                        blob = r.content if r.status_code == 200 else None
+                    # ONE shared client (2026-09-24, EM cross-desk review P0.4: a client per image - pool + TLS
+                    # setup each time - showed up in the event loop's top stall stacks)
+                    http = self._media_http()
+                    r = await http.get(url)
+                    blob = r.content if r.status_code == 200 else None
                 if not blob or len(blob) > self.MEDIA_MAX_BYTES:
                     continue
                 try:
@@ -1076,7 +1086,7 @@ class SignalService:
                 except ValueError:
                     continue                        # not an image we understand
                 name = f"{message_id}-{i}.{ext_for[mt]}"
-                (d / name).write_bytes(blob)
+                await asyncio.to_thread((d / name).write_bytes, blob)   # disk I/O off the event loop
                 out.append(name)
             except Exception:
                 log.debug("media download failed for %s image %d", message_id, i)

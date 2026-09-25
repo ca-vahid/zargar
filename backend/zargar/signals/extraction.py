@@ -249,6 +249,17 @@ class Extractor:
         from ..techniques.tip.model_policy import effort_kw
         return effort_kw(self.settings, "techniques.tip.extraction_effort", model)
 
+    def _system_param(self, system: str):
+        """The extraction system prompt (rules + JSON schema, identical on every call) as a cached block when
+        Tips prompt caching is on (2026-09-24, EM cross-desk review P2.5); the plain string otherwise."""
+        try:
+            on = bool(self.settings.get("techniques.tip.prompt_cache", False)) if self.settings is not None else False
+        except Exception:
+            on = False
+        if not on:
+            return system
+        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
     async def _ledger(self, stage: str, model: str, **kw) -> None:
         if self.ledger is None:
             return
@@ -386,7 +397,7 @@ class Extractor:
             _t0 = _time.perf_counter()
             try:
                 response = await client.messages.create(
-                    model=model, max_tokens=16000, system=system, messages=messages,
+                    model=model, max_tokens=16000, system=self._system_param(system), messages=messages,
                     **self._effort_kw(model))
             except Exception as exc:
                 # a FAILED attempt is measured too (Codex M1) — the caller's
