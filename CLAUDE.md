@@ -563,10 +563,13 @@ frontend production build runs this check automatically.
 
 **Options Cartel documentation:** current guide in `docs/techniques/options-cartel/README.md`; operating policy in `DAILY-PREPARATION.md`, source/pilot distinction in `IGNITION.md`, current implementation limits in `DELIVERY-STATUS.md`. Historical plan/test/deployment records are not live state. Prospective studies and fair baseline scheduling are documented in `PROFITABILITY-RESEARCH.md`; actual daily accounting is separate from research proxies. Use `RELEASE-HANDOFF.md` for reviewed-source, full-artifact and restoration checks.
 **Cartel state 2026-09-22 (0.8.33):** start at the README's "State of play" and `reviews/2026-09-22-plan/PLAN.md`.
-Practice book = `Options Cartel Practice - Capital Experiment` (`e7b246c9…`); trade flow is the problem (24 plan-days,
+Practice book = `Options Cartel Practice 10k` (`297d8b39…`, since 2026-09-23; $1,000/plan, ask cap $10, 10 slots; the
+$1m `e7b246c9…` is archived); trade flow is the problem (24 plan-days,
 11 touches, 0 orders). Versioned switches, all legacy by default and snapshotted per arm: `contractPolicy.selectionVersion`
-(`diverse_liquidity_v1` ON in Practice), `rankingVersion` (Practice `legacy`; `executable_cost_v1` drifts to deep-ITM
-contracts - use `executable_cost_v2`, delta-bounded), `entryCadence` (`breakout_5m_v1` Practice-only, long-only, 15m matched
+(`diverse_liquidity_v1` ON in Practice), `rankingVersion` (Practice `executable_cost_v2` since 2026-09-23 20:26 ET;
+`executable_cost_v1` drifts to deep-ITM contracts), Practice also ON: `entry.gap_policy=retest_v1`, `setups.dry_up_rule=
+non_increasing_v1`; daily history via the shared Alpaca-first path (`nativeDailyBatch=false`: the native path only completes a
+day at midnight ET), `entryCadence` (`breakout_5m_v1` Practice-only, long-only, 15m matched
 control in `state.control` that outlives the executing lane; unlabelled non-15m saved entries = `legacy_timeframe`),
 `entry.gap_policy=retest_v1`, `setups.dry_up_rule=non_increasing_v1`, `minArmTargetR`. Selection deadlines bound expiry,
 chain and refresh requests (`_bounded`); a result after the deadline is recorded, never selected. Daily review attribution

@@ -192,3 +192,13 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - Per-source daily review budget (`review_source_budgets`, `{}` = off; only gate-irrelevant messages are skipped,
   journaled `sourceBudget`) and book / single-name exposure caps (`max_book_exposure_pct`, `max_name_exposure_pct`,
   0 = off; refuse new entries only). Values are a user decision; no evidence window is claimed for either.
+
+## `extraction-model-ab` and `review-model-ab` (2026-09-23, cost levers 2 + 4) - REJECTED
+
+- **Extraction** (40 messages, $4.39, reference Opus 5): Opus 5.5 changed 1 actionable signal (dropped an expiry),
+  Sonnet 5 changed 3 (two real calls read as non-actionable). Both fail; extraction stays Opus 5.
+- **Reviews** (8 of 15 cases before a host low-memory stop, $4.75, reference Opus 5.5): missed-or-changed management
+  2 (reference) vs 4 (notes-only trim) vs 5 (Sonnet 5). Both fail; review context stays full.
+- Tools: `tools/tip_extraction_ab.py`, `tools/tip_review_ab.py` (`--rows` saves each case). Record:
+  `2026-09-23-cost-levers.md`.
+

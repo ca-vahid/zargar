@@ -213,7 +213,7 @@ def render(d: dict) -> str:
           "|---|---|---|---|---:|---|---|"]
     for t in d["tests"]:
         if t.get("status") == "decided":
-            L.append(f"| {t['id']} | {t['question']} | {t['registered']} | {t['threshold']} | - | **decided** | {t['decision']} |")
+            L.append(f"| {t['id']} | {t['question']} | {t['registered']} | {t.get('threshold') or (str(t.get('minSessions') or t.get('minTrades') or '') + ' (superseded)')} | - | **decided** | {t['decision']} |")
         else:
             L.append(f"| {t['id']} | {t['question']} | {t['registered']} | {t['need']} from {t['countFrom']} | "
                      f"{t['n']} | {t['status']} | {json.dumps(t['reading'], default=str)[:220]} |")

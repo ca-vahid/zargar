@@ -85,6 +85,24 @@ def experiment_tag(extraction: dict | None) -> str | None:
     return str(tag) if tag else None
 
 
+APPRAISAL_GRACE_S = 900.0     # an intake appraisal (120 s run + repair) never legitimately takes this long
+
+
+def appraisal_pending(row, *, analyst_available: bool, now: dt.datetime, grace_s: float = APPRAISAL_GRACE_S) -> bool:
+    """Pure: is the live intake still appraising this signal? True when the analyst is available, the signal carries
+    no analyst verdict yet and it is younger than the grace window. The recovery sweep must not act on it."""
+    if not analyst_available:
+        return False
+    if ((row.extraction or {}).get("analyst") or {}).get("verdict"):
+        return False
+    created = getattr(row, "created_at", None)
+    if created is None:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=dt.timezone.utc)
+    return (now - created).total_seconds() < grace_s
+
+
 class SignalService:
     _extract_retry_delays = (5.0, 20.0)   # transient-API backoff; tests set (0, 0)
 
@@ -1032,6 +1050,15 @@ class SignalService:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def _media_http(self):
+        """The shared media client (lazy; closed with the service if it has a stop hook)."""
+        http = getattr(self, "_media_client", None)
+        if http is None or getattr(http, "is_closed", False):
+            import httpx
+            http = httpx.AsyncClient(timeout=30, limits=httpx.Limits(max_connections=8, max_keepalive_connections=4))
+            self._media_client = http
+        return http
+
     async def _download_media(self, message_id: str, urls: list[str],
                               offset: int = 0) -> list[str]:
         """CDN URLs -> local files (message-id-based names). Best-effort; only
@@ -1047,10 +1074,11 @@ class SignalService:
                 if fetch is not None:
                     blob = await fetch(url)
                 else:
-                    import httpx
-                    async with httpx.AsyncClient(timeout=30) as http:
-                        r = await http.get(url)
-                        blob = r.content if r.status_code == 200 else None
+                    # ONE shared client (2026-09-24, EM cross-desk review P0.4: a client per image - pool + TLS
+                    # setup each time - showed up in the event loop's top stall stacks)
+                    http = self._media_http()
+                    r = await http.get(url)
+                    blob = r.content if r.status_code == 200 else None
                 if not blob or len(blob) > self.MEDIA_MAX_BYTES:
                     continue
                 try:
@@ -1058,7 +1086,7 @@ class SignalService:
                 except ValueError:
                     continue                        # not an image we understand
                 name = f"{message_id}-{i}.{ext_for[mt]}"
-                (d / name).write_bytes(blob)
+                await asyncio.to_thread((d / name).write_bytes, blob)   # disk I/O off the event loop
                 out.append(name)
             except Exception:
                 log.debug("media download failed for %s image %d", message_id, i)
@@ -3465,11 +3493,21 @@ class SignalService:
         async with eng.sf() as session:
             parked = (await session.execute(select(Signal).where(
                 Signal.status == "parked"))).scalars().all()
+        analyst_available = (bool(eng.settings.get("techniques.tip.analyst_enabled", True))
+                             and (self._analyst_client is not None
+                                  or bool(getattr(eng.config, "anthropic_api_key", ""))))
+        now_utc = dt.datetime.now(dt.timezone.utc)
         for row in parked:
             checks = (row.verification or {}).get("checks") or []
             failed = [c for c in checks if not c.get("passed")]
             if not failed or any(c.get("name") != "ticker_resolves" for c in failed):
                 continue        # price-position parks are the level watch's job
+            if appraisal_pending(row, analyst_available=analyst_available, now=now_utc):
+                # 2026-09-23 (AMAT): the live intake is still appraising this park and re-checks it itself when the
+                # analyst finishes (SignalColdParkRecheck). Promoting it here raced the appraisal and minted a card
+                # with no opinion and the book's default vehicle (shares for a call tip). A later sweep takes it only
+                # if the intake died.
+                continue
             sym = row.ticker.upper()
             q = eng.quotes.get(sym)
             if q is None or not (q.last and q.last > 0):

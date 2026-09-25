@@ -298,3 +298,32 @@ Native bars are raw (not split-adjusted); revert with `nativeDailyBatch=false` o
 09-22 if adjusted history is preferred. Open follow-up: a provider fallback for a single missing benchmark
 session, so one vendor hole cannot stop the desk for a day.
 
+## September 23 evening: Practice switches activated, back on the shared daily path
+
+Zero orders on 09-23: nothing armed because the benchmark waited all day (Yahoo omitted 09-22). The native
+Alpaca daily path fixed the gap but only counts a day complete at midnight ET, so evening preparations
+waited again. EM's 0.8.38 made the shared history path Alpaca-first (official 1Day bars, Yahoo fallback); at
+20:26 ET it returned SPY/QQQ through 09-23 with no hole, so Practice returned to it (`nativeDailyBatch=false`).
+Activated in Practice at the same time, each acting at a different funnel stage so its effect stays
+attributable in the daily review: contract ranking `executable_cost_v2` (contract choice), `entry.gap_policy=
+retest_v1` (entry path on gap opens), `setups.dry_up_rule=non_increasing_v1` (screen). Left off: `minArmTargetR`
+(reduces arms; evaluate after trade flow improves) and the 5-minute cadence (next step). Rollback: set each back
+to `legacy` / `none` / `ratio_v1`. No threshold, spread limit or risk setting changed.
+
+## September 23 late: back to a $10k Practice book (user decision)
+
+User asked to run Cartel on $10k like the other Practice books. At 22:10 ET: the ten 09-24 arms on the $1m
+book were disarmed (none held or working: AI, MIR, BBY, TSLA, NOW, CNH, NTAP, NTNX, NVT, VRNS; ranking v2
+had chosen near-the-money contracts, e.g. NOW 140C where v1 chose 60C). New sim book `Options Cartel
+Practice 10k` (`297d8b39d1c4418199f24c2331b14c11`, $10,000) is `techniques.options_cartel.default_portfolio`;
+Practice preparation now uses budget $1,000 (10% risk), contract ask cap $10, 10 contracts, 10 focus slots.
+The $1m capital-experiment book (`e7b246c9…`) never traded and is archived with its history; its results
+and the old $10k book's (`0b48ed48…`, -$61.13) stay separate. Expect affordability refusals on high-priced
+names (for example TSLA 400C): at $1,000 per plan a contract above $10 cannot be bought. Recorded, not a bug.
+
+Source note, 2026-09-23 (read through the user's logged-in browser): Sean posted his favourite entry as a
+pullback on a leading stock to the 8/21 EMA with tightening candles and falling selling volume, entering on a
+break of the first green 30-minute candle ("30-minute pivot") off those averages; plus watchlist levels STX
+(break over 937, inside day in a daily base) and TXN (break through 274, weekly flag off the 50-week EMA).
+No trades or P&L were posted. The method lab's `pivot_30m_5m_v1` shadow variant is the closest existing model;
+promoting a pullback/30m-pivot entry to Practice is a candidate next experiment, not adopted.

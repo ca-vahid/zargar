@@ -6,8 +6,9 @@ such. No profitable strategy or exact author replication has been established.
 
 ## State of play (2026-09-22)
 
-- **Book.** Practice runs on `Options Cartel Practice - Capital Experiment` (`e7b246c9…`, $1m virtual
-  capital, $25k per plan, 20 focus slots) since 2026-09-19. The old $10k book is archived with its history.
+- **Book.** Since 2026-09-23 22:10 ET Practice runs on `Options Cartel Practice 10k` (`297d8b39…`, $10,000;
+  $1,000 per plan, contracts up to $10, 10 focus slots). The $1m capital-experiment book (09-19..09-23, no
+  trades) and the older $10k book are archived with their history.
 - **Results.** Zero orders on 2026-09-21 and 2026-09-22. Across 24 automatic plan-days since 09-14, 11
   touched their trigger and none reached an order. One trade since 09-14 (APA, -$61.13). The binding
   problem is trade flow, not position management.
@@ -18,7 +19,9 @@ such. No profitable strategy or exact author replication has been established.
   under a 5m pilot and receipt-time lab quotes. New switches default to legacy behaviour; activation order
   is in the [2026-09-22 plan](reviews/2026-09-22-plan/PLAN.md).
 - **2026-09-23.** Yahoo's daily series omitted 09-22, so preparation waited for the benchmark all day and
-  nothing armed. Practice now uses native Alpaca daily bars (`nativeDailyBatch=true`); see TRADING-RULES.
+  nothing armed. Since 20:26 ET Practice reads the shared Alpaca-first daily path (`nativeDailyBatch=false`)
+  and runs `executable_cost_v2`, `gap_policy=retest_v1` and `dry_up_rule=non_increasing_v1`; the arm gate and
+  5m cadence stay off. Record: [plan section 7](reviews/2026-09-22-plan/PLAN.md).
 - **Known limits.** Untrusted confirmation windows are caused by no-trade minutes at the end of a
   bucket, before a non-emission proof can exist (design decision open). Sean's daily posts cannot be
   retrieved automatically (X returns 402). Shares fallback (brief F6) and historical data repair (F7)

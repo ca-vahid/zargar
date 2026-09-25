@@ -1,0 +1,154 @@
+﻿{
+ "date": "2026-09-23",
+ "generatedAt": "2026-09-23T13:07:04+00:00",
+ "experiment": {
+  "enabled": true,
+  "portfolioId": "07ef1e867cad4150bc81e072a8fd600a",
+  "version": "em-experiment-v1",
+  "label": "EM Experimental",
+  "owner": "EM desk (EM Dev session) - attends pre-open, open, close; rollback = pause this book",
+  "startedAt": "2026-09-19T18:18:08+00:00",
+  "comparisonTs": "2026-09-19T18:18:02+00:00",
+  "startingEquity": 9849.6032,
+  "overrides": {
+   "preparation_policy": "deterministic",
+   "conditional_review_fix": "apply",
+   "prep_grade_floor": "B",
+   "first_sale_rr_gate": "enforce",
+   "book_snapshot_observe": true,
+   "source_candidates_execute": true,
+   "runner_protection": "execute"
+  }
+ },
+ "techniqueWide": {
+  "first_sale_rr_gate": null,
+  "preparation_policy": null,
+  "book_snapshot_observe": null,
+  "source_candidates_observe": null,
+  "source_scenarios_observe": null,
+  "shadow_exit_observe": true,
+  "shadow_p02_candidate": true,
+  "paused": null
+ },
+ "shared": {
+  "maxOrdersPerMinute": 30,
+  "dayNotionalPerTechnique": null,
+  "emLossHaltPct": 10.0,
+  "bookLossHaltPct": 15.0
+ },
+ "books": [
+  {
+   "label": "baseline (EM Practice)",
+   "portfolio": {
+    "id": "045d8c35b3f149628ea001ae90a58edb",
+    "name": "EM Practice",
+    "kind": "sim",
+    "cash": 9876.761699999985,
+    "starting_cash": 10000.0,
+    "archived": false,
+    "quarantined": false
+   },
+   "lastEquityPoint": 9876.761699999985,
+   "armedForSession": {
+    "count": 41,
+    "byStatus": {
+     "armed": 41
+    },
+    "byMode": {
+     "auto": 41
+    },
+    "byRunTrigger": {
+     "promote": 41
+    },
+    "promoted": {}
+   },
+   "openPositions": [],
+   "workingOrders": 0,
+   "effectiveLimits": {
+    "mode": "auto",
+    "instrument": "options",
+    "riskPct": 2.0,
+    "maxQty": 100.0,
+    "contracts": null,
+    "maxContracts": 10,
+    "singleContractExit": "tp2",
+    "maxOpenTrades": 1,
+    "entryFallback": "shares",
+    "skipWideSpread": true,
+    "skipElevatedIv": false,
+    "slippagePct": 0.1,
+    "flattenMinutesBeforeClose": 5,
+    "allowLive": false
+   },
+   "dailyLossLimits": [
+    395.07
+   ],
+   "dailyLossRule": "2 x riskPct x the book's equity at arm time",
+   "dailyLossExpectedNow": [
+    395.07
+   ],
+   "dailyLossMatchesRule": true,
+   "experimentTagged": 0,
+   "perTechniqueLossHaltPct": null
+  },
+  {
+   "label": "experiment (EM Experimental)",
+   "portfolio": {
+    "id": "07ef1e867cad4150bc81e072a8fd600a",
+    "name": "EM Experimental",
+    "kind": "sim",
+    "cash": 9580.526499999998,
+    "starting_cash": 9849.6032,
+    "archived": false,
+    "quarantined": false
+   },
+   "lastEquityPoint": 9580.526499999998,
+   "armedForSession": {
+    "count": 101,
+    "byStatus": {
+     "armed": 101
+    },
+    "byMode": {
+     "auto": 101
+    },
+    "byRunTrigger": {
+     "experiment": 101
+    },
+    "promoted": {}
+   },
+   "openPositions": [],
+   "workingOrders": 0,
+   "effectiveLimits": {
+    "mode": "auto",
+    "instrument": "options",
+    "riskPct": 2.0,
+    "maxQty": 100.0,
+    "contracts": null,
+    "maxContracts": 10,
+    "singleContractExit": "tp2",
+    "maxOpenTrades": 1,
+    "entryFallback": "shares",
+    "skipWideSpread": true,
+    "skipElevatedIv": false,
+    "slippagePct": 0.1,
+    "flattenMinutesBeforeClose": 5,
+    "allowLive": false
+   },
+   "dailyLossLimits": [
+    383.22
+   ],
+   "dailyLossRule": "2 x riskPct x the book's equity at arm time",
+   "dailyLossExpectedNow": [
+    383.22
+   ],
+   "dailyLossMatchesRule": true,
+   "experimentTagged": 101,
+   "perTechniqueLossHaltPct": null
+  }
+ ],
+ "routing": {
+  "taggedRunsArmedOutsideTheExperimentalBook": 0,
+  "untaggedArmsInsideTheExperimentalBook": 0,
+  "bothBooksAreSim": true
+ }
+}

@@ -226,3 +226,43 @@ def test_the_notes_only_trim_keeps_every_rule_and_proposal_verbatim():
     out = compact_review_header(h, tickers=["ACHR"], source="ab", notes_only=True)
     assert "x" * 900 in out and "y" * 400 in out
     assert "[ticker:ACHR]" in out and "[ticker:NVDA]" not in out and len(out) < len(h)
+
+
+def test_an_exit_plan_edit_keeps_every_field_it_did_not_send():
+    """2026-09-23 NEM: a stop-only edit blanked the ladder; the analyst paid a second call to restore it."""
+    from zargar.techniques.tip.analyst import carried_exit_fields
+    pol = {"stop": {"kind": "fixed", "price": 121.19}, "ladder": {"targets": [129.6, 131.0, 133.0], "fractions": [0.25, 0.4, 0.35]},
+           "premium_stop_pct": 40.0}
+    got = carried_exit_fields(pol, {"underlying_stop": 122.6, "max_hold_sessions": 4})
+    assert got == {"targets": [129.6, 131.0, 133.0], "fractions": [0.25, 0.4, 0.35], "underlyingStop": 122.6, "premiumStopPct": 40.0}
+    assert carried_exit_fields(pol, {"exit_targets": [], "exit_fractions": []})["targets"] == []      # an explicit clear is honoured
+    assert carried_exit_fields({"stop": {"kind": "none"}}, {})["underlyingStop"] is None
+
+
+def test_the_extraction_prompt_names_position_updates_for_opus_5_5():
+    """2026-09-23: Opus 5.5 read "return an empty list" literally and dropped trims/stop-outs; the rule names them."""
+    from zargar.signals.schemas import EXTRACTION_SYSTEM_PROMPT as P
+    assert "POSITION UPDATES are not empty-list content" in P
+    for cue in ('"TP hit"', "stopped out", '"friday calls"', "LEAPS", 'instrument="shares"'):
+        assert cue in P
+
+
+
+def test_a_full_note_scope_written_by_the_model_is_honoured():
+    """EM cross-desk review P2.1: 135 of 701 saves with a full scope were stored as `general`."""
+    from zargar.techniques.tip.analyst import note_scope_from_args
+    ctx = {"ticker": "", "source": "ab", "signal_id": "s1"}
+    assert note_scope_from_args("source:🌟｜common-stock", ctx) == "source:🌟｜common-stock"
+    assert note_scope_from_args("ticker:$amzn", ctx) == "ticker:AMZN"
+    assert note_scope_from_args("source", ctx) == "source:ab"
+    assert note_scope_from_args("tip", ctx) == "signal:s1"
+    assert note_scope_from_args("rule", ctx) == "rule"
+    assert note_scope_from_args("whatever", ctx) == "general"
+    assert note_scope_from_args("ticker:", ctx) == "ticker:"          # no entity -> refused downstream as before
+
+
+def test_the_extraction_system_prompt_is_a_cached_block_only_when_caching_is_on():
+    on = Extractor("k", "m", settings=_S({"techniques.tip.prompt_cache": True}))
+    off = Extractor("k", "m", settings=_S({}))
+    assert on._system_param("SYS") == [{"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}]
+    assert off._system_param("SYS") == "SYS"

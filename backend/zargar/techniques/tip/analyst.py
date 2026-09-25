@@ -52,6 +52,44 @@ async def _backoff_sleep(seconds: float) -> None:
     await asyncio.sleep(seconds)
 
 
+def carried_exit_fields(policy: dict, args: dict) -> dict:
+    """Pure: the exit-plan fields for an update_exit_plan call, where a field the model did NOT send keeps the
+    position's current value (ladder targets/fractions, underlying stop, premium stop). A field it sent - even an
+    explicit empty ladder - is taken as sent."""
+    pol = policy or {}
+    lad = pol.get("ladder") or {}
+    stop = pol.get("stop") or {}
+    cur_stop = stop.get("price") if isinstance(stop, dict) and stop.get("kind") in (None, "fixed") else None
+    has = lambda k: k in args and args.get(k) is not None  # noqa: E731
+    return {"targets": list(args["exit_targets"]) if has("exit_targets") else list(lad.get("targets") or []),
+            "fractions": list(args["exit_fractions"]) if has("exit_fractions") else list(lad.get("fractions") or []),
+            "underlyingStop": args["underlying_stop"] if has("underlying_stop") else cur_stop,
+            "premiumStopPct": args["premium_stop_pct"] if has("premium_stop_pct") else pol.get("premium_stop_pct")}
+
+
+def note_scope_from_args(raw: str, ctx: dict) -> str:
+    """save_note scope. Bare words resolve against the run ("ticker" -> this run's ticker, "source" -> this run's
+    source); a FULL scope the model wrote ("source:<name>", "ticker:AMZN") is honoured as written (2026-09-24,
+    EM cross-desk review P2.1: 135 of 701 saves with a full scope were stored as `general` because the lookup only
+    knew the bare words). Anything else is `general`."""
+    r = (raw or "general").strip()
+    fam, sep, ent = r.partition(":")
+    fam = fam.strip().lower()
+    ent = ent.strip()
+    if sep and ent:
+        if fam == "ticker":
+            return f"ticker:{ent.upper().lstrip('$')}"
+        if fam == "source":
+            return f"source:{ent}"
+        if fam in ("tip", "signal"):
+            return f"signal:{ent}"
+    return {"ticker": f"ticker:{str(ctx.get('ticker') or '').upper()}",
+            "source": f"source:{ctx.get('source') or 'unknown'}",
+            "tip": f"signal:{ctx.get('signal_id') or ''}",
+            "rule": "rule",                       # the analyst's own rulebook
+            }.get(fam, "general")
+
+
 def prompt_cache_scope(eng) -> str:
     """ADV-03 (2026-09-23): WHAT the cache covers when caching is on. `prefix` (E17-03) = system + tool definitions
     only (~11% of a call). `conversation` = also everything up to the latest message: the per-run header (rulebook +
@@ -344,7 +382,8 @@ TOOLS = [
                     "exposure, and a stop may only tighten. Use it when a source follow-up or "
                     "the market changes the campaign ('they sold 40%' → trim and tighten). "
                     "Args: position_id, exit_targets (underlying prices), exit_fractions, "
-                    "underlying_stop, premium_stop_pct, max_hold_sessions, reason (required).",
+                    "underlying_stop, premium_stop_pct, max_hold_sessions, reason (required). "
+                    "Send only what changes: an omitted field keeps its current value.",
      "input_schema": {"type": "object", "properties": {
          "position_id": {"type": "string"}, "exit_targets": {"type": "array", "items": {"type": "number"}},
          "exit_fractions": {"type": "array", "items": {"type": "number"}},
@@ -891,10 +930,13 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         if not reason:
             return {"error": "a reason is required — it is journaled"}
         from .lifecycle import policy_from_exit_plan
-        plan = {"targets": args.get("exit_targets") or [],
-                "fractions": args.get("exit_fractions") or [],
-                "underlyingStop": args.get("underlying_stop"),
-                "premiumStopPct": args.get("premium_stop_pct"),
+        # 2026-09-23 (NEM): an OMITTED field keeps the position's current value. A stop-only edit used to blank the
+        # profit ladder (targets defaulted to []), and the analyst spent a second paid call restoring it.
+        cur = carried_exit_fields(p.policy, args)
+        plan = {"targets": cur["targets"],
+                "fractions": cur["fractions"],
+                "underlyingStop": cur["underlyingStop"],
+                "premiumStopPct": cur["premiumStopPct"],
                 "maxHoldSessions": args.get("max_hold_sessions")
                 or p.policy.get("time_stop_sessions") or 10,
                 "avoidEarnings": bool(p.policy.get("flatten_before")),
@@ -959,12 +1001,7 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                                 str(args.get("source") or ""))
     if name == "save_note":
         ctx = ctx or {}
-        kind = str(args.get("scope") or "general").lower()
-        scope = {"ticker": f"ticker:{str(ctx.get('ticker') or '').upper()}",
-                 "source": f"source:{ctx.get('source') or 'unknown'}",
-                 "tip": f"signal:{ctx.get('signal_id') or ''}",
-                 "rule": "rule",                       # the analyst's own rulebook
-                 }.get(kind, "general")
+        scope = note_scope_from_args(str(args.get("scope") or "general"), ctx)
         text = str(args.get("text") or "")
         # Knowledge hygiene (daily review 2026-09-01: 100 notes in one day, 18 of
         # them numbering a source's "message families" — every "wow" and emoji
@@ -1651,7 +1688,15 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     pass continues the SAME conversation instead of discarding the first
     attempt's tool evidence, and the provider metadata is on the record."""
     st = state if state is not None else {}
-    messages: list = st.setdefault("messages", [{"role": "user", "content": header}])
+    if "messages" not in st:
+        _first = header
+        with contextlib.suppress(Exception):
+            if (prompt_cache_enabled(eng) and prompt_cache_scope(eng) == "conversation"
+                    and bool(eng.settings.get("techniques.tip.prompt_cache_stable_first", False))):
+                from .review_context import stable_first_blocks
+                _first = stable_first_blocks(header)          # P-D: the rulebook is shared cache across runs
+        st["messages"] = [{"role": "user", "content": _first}]
+    messages: list = st["messages"]
     usage = st.setdefault("usage", _usage_new())
     if "promptCache" not in st:
         st["promptCache"] = prompt_cache_enabled(eng)
@@ -2296,6 +2341,7 @@ will decide.
 ("sold 40%", "stopped out", "letting it ride to 90"), act with update_exit_plan / \
 close_position (EXIT-ONLY: they can trim, tighten or close — never add exposure). \
 search_messages finds the original OPEN behind an update. Cite the message in the reason.
+- AUTHOR FLAT = CLOSE THE MIRROR: when the update shows the source has fully EXITED the position ours mirrors (listed under realized/closed, gone from their open book, "all out", "closed the rest"), close_position our mirror (fraction 1.0) and cite the line. Do not merely tighten the stop: the source's exit is the desk's best-performing exit. Keep the position only if you state a separate, evidenced reason of our own in the reason.
 - IMAGES ARE NOT OPTIONAL: whenever the message or a history line is marked \
 [images: <id>], ALWAYS view_image it — an "update" is often just a chart or a P&L \
 screenshot, and the substance lives in the picture.

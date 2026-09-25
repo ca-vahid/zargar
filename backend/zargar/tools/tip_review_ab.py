@@ -65,6 +65,15 @@ def arm_summary(reps: list[dict], rate: dict | None) -> dict:
             "cost": round(sum(price(r.get("tokens") or {}, rate) for r in reps if rate), 4) if rate else None}
 
 
+def append_row(path: str | None, row: dict) -> None:
+    """Write one finished case immediately (JSON line, flushed) so an interrupted paid run loses nothing."""
+    if not path:
+        return
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, default=str) + chr(10))
+        fh.flush()
+
+
 def verdict(ref: dict, arm: dict) -> dict:
     """Pure: the pre-registered rule above."""
     checks = {"management": arm["missedOrChangedManagement"] <= ref["missedOrChangedManagement"],
@@ -108,6 +117,7 @@ async def main() -> int:
     ap.add_argument("--env-file", default=None)
     ap.add_argument("--ledger", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--rows", default=None, help="JSONL: one line per finished case (with each arm's compare), written as it completes")
     a = ap.parse_args()
     arms = [parse_arm(x) for x in a.arm]
     _load_env(a.env_file)
@@ -140,8 +150,10 @@ async def main() -> int:
                                        header_transform=transform(x["context"], case), extra_kw=kw)
             reps[x["name"]].append(r)
             row[x["name"]] = {"outcome": (r.get("compare") or {}).get("outcome"), "instructions": r.get("instructions"),
-                              "missedTip": r.get("missedTip"), "error": r.get("error")}
+                              "missedTip": r.get("missedTip"), "error": r.get("error"), "compare": r.get("compare"),
+                              "tokens": r.get("tokens")}
         rows.append(row)
+        append_row(a.rows, {**row, "budget": budget.summary()})
         print(case["runId"][:8], case["source"], " ".join(f"{x['name']}:{row[x['name']]['outcome']}" for x in arms), flush=True)
     summ = {x["name"]: {**arm_summary(reps[x["name"]], rates.get(x["model"])), "model": x["model"], "context": x["context"]}
             for x in arms}

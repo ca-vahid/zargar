@@ -69,6 +69,28 @@ def compare(prod: list[dict], cand: list[dict]) -> dict:
             "detail": {"missed": missed, "changed": changed, "extra": rest}}
 
 
+def append_row(path: str | None, row: dict) -> None:
+    """Write one finished case immediately (JSON line, flushed) so an interrupted paid run loses nothing."""
+    if not path:
+        return
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, default=str) + chr(10))
+        fh.flush()
+
+
+def parse_arm(spec: str, default_effort: str) -> dict:
+    """`name=model[@effort][+addendum.txt]` - per-arm effort and an optional prompt ADDENDUM appended to the
+    production extraction system prompt (a candidate prompt change, measured before it ships)."""
+    name, _, rest = spec.partition("=")
+    addendum = None
+    if "+" in rest:
+        rest, path = rest.split("+", 1)
+        with open(path, encoding="utf-8") as fh:
+            addendum = fh.read().strip()
+    model, _, effort = rest.partition("@")
+    return {"name": name, "model": model, "effort": effort or default_effort, "addendum": addendum}
+
+
 def verdict(ref: dict, arm: dict) -> dict:
     checks = {"missedActionable": arm["missedActionable"] <= ref["missedActionable"],
               "changedActionable": arm["changedActionable"] <= ref["changedActionable"],
@@ -122,8 +144,9 @@ async def main() -> int:
     ap.add_argument("--effort", default="high")
     ap.add_argument("--env-file", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--rows", default=None, help="JSONL: one line per finished message, written as it completes")
     a = ap.parse_args()
-    arms = [dict(zip(("name", "model"), x.split("=", 1))) for x in a.arm]
+    arms = [parse_arm(x, a.effort) for x in a.arm]
     _load_env(a.env_file)
     key = os.environ.get("ZARGAR_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
@@ -163,7 +186,11 @@ async def main() -> int:
             class _S(dict):
                 def get(self, k, d=None):
                     return super().get(k, d)
-            ex = Extractor(key, x["model"], settings=_S({"techniques.tip.extraction_effort": a.effort}), ledger=ledger)
+            ex = Extractor(key, x["model"], settings=_S({"techniques.tip.extraction_effort": x["effort"]}), ledger=ledger)
+            from ..signals import extraction as _exmod
+            _orig_prompt = _exmod.EXTRACTION_SYSTEM_PROMPT
+            if x["addendum"]:
+                _exmod.EXTRACTION_SYSTEM_PROMPT = _orig_prompt + chr(10) * 2 + x["addendum"]
             try:
                 out = await ex.extract(m["text"], subject=m["subject"], source_name=m["source"] or "",
                                        received_at=m["receivedAt"], image=m["image"])
@@ -171,6 +198,8 @@ async def main() -> int:
             except Exception as exc:                          # a provider failure is a measured outcome
                 cand, out = None, None
                 row[x["name"] + "Error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
+            finally:
+                _exmod.EXTRACTION_SYSTEM_PROMPT = _orig_prompt
             cost = sum(usd(u, rates[x["model"]]) for u in calls)
             spent += cost
             biggest = max(biggest, cost)
@@ -187,6 +216,7 @@ async def main() -> int:
             g["exact"] += 1 if cmp_["exact"] else 0
             row[x["name"]] = {k: cmp_[k] for k in ("exact", "missedActionable", "changedActionable", "extra")} | {"detail": cmp_["detail"]}
         rows.append(row)
+        append_row(a.rows, {**row, "spentUsd": round(spent, 4)})
         print(m["id"][:8], m["source"], " ".join(f"{x['name']}:{'exact' if (row.get(x['name']) or {}).get('exact') else 'diff'}"
                                                  for x in arms), flush=True)
         if stopped:
@@ -194,7 +224,8 @@ async def main() -> int:
     ref = arms[0]["name"]
     verdicts = {x["name"]: verdict(res[ref], res[x["name"]]) for x in arms[1:]}
     outp = {"version": VERSION, "at": dt.datetime.now(dt.timezone.utc).isoformat(), "effort": a.effort, "messages": len(rows),
-            "arms": {x["name"]: {**res[x["name"]], "model": x["model"]} for x in arms}, "verdicts": verdicts,
+            "arms": {x["name"]: {**res[x["name"]], "model": x["model"], "effort": x["effort"],
+                                 "addendum": bool(x["addendum"])} for x in arms}, "verdicts": verdicts,
             "spentUsd": round(spent, 4), "capUsd": a.cap, "stopped": stopped, "rows": rows}
     if a.out:
         with open(a.out, "w", encoding="utf-8") as fh:

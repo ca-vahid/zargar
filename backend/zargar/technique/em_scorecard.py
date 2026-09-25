@@ -61,8 +61,10 @@ TESTS = [
      "decision": "2026-09-22: OFF. 62 fires; filled midday trades lost −0.30R each against −0.09R in the prime "
                  "windows (not statistically separable, p = 0.36). No evidence FOR midday, so the book's R6 stands."},
     {"id": "shares_fallback", "question": "does the shares fallback do as well as the option leg?",
-     "registered": "2026-09-12", "countFrom": "2026-09-12", "minTrades": 20,
-     "metric": "mean R of long-shares trades against long-option trades"},
+     "registered": "2026-09-12", "countFrom": "2026-09-12", "minTrades": 20, "status": "decided",
+     "decision": "2026-09-24: OFF (techniques.enhanced_market.entry_fallback=off). Ready at 22 share trades: shares -0.52R "
+                 "per trade against options +0.05R (15). The pre-written decision applied; plans armed before the change "
+                 "keep their frozen fallback, so it takes effect from the 2026-09-25 evening arming (session 2026-09-28) onward."},
     {"id": "short_puts_prime", "question": "do short puts pay in the prime windows, now that midday is off?",
      "registered": "2026-09-22", "countFrom": "2026-09-23", "minTrades": 20,
      "metric": "mean R of short trades entered in prime_open or prime_close"},
@@ -73,8 +75,14 @@ TESTS = [
      "registered": "2026-09-22", "countFrom": "2026-09-23", "minTrades": 15,
      "metric": "mean R of one-touch-level trades against the rest"},
     {"id": "rules_vs_model", "question": "does free rules-only preparation do no worse than the paid model review?",
-     "registered": "2026-09-19", "countFrom": "2026-09-22", "minSessions": 20,
-     "metric": "cumulative and per-session R, experimental book against baseline book"},
+     "registered": "2026-09-19", "countFrom": "2026-09-22", "minSessions": 20, "status": "decided",
+     "decision": "2026-09-23: SUPERSEDED BY DECISION, not answered - EM is fully deterministic (both books prepare by rules). "
+                 "The model-veto study (research/2026-09-23-MODEL-VETO-STUDY.md, 18 scored sessions) found no measurable value in "
+                 "the veto: approved +0.26R vs vetoed +0.12R per filled trade, overlapping intervals."},
+    {"id": "break_vs_level", "question": "do break triggers (ladder targets) lose against level-anchored bounce/reject triggers?",
+     "registered": "2026-09-23", "countFrom": "2026-09-24", "minTrades": 30,
+     "metric": "mean R of breakout/breakdown/wedge_break trades against bounce/reject trades (the veto study: -0.27R on 22 "
+               "fills vs +0.40R on 54 over 2026-08-25..09-18, NOT confirmed out of sample - hence a test, not a rule)"},
 ]
 
 _OCC = re.compile(r"\d{6}[CP]\d{8}$")
@@ -282,6 +290,12 @@ def run_tests(trades: list, *, premium_stop_pct: float = 50.0) -> list:
             n = len(a)
             reading = {"oneTouchMeanR": _mean_r(a, premium_stop_pct), "restMeanR": _mean_r(b, premium_stop_pct),
                        "oneTouch": len(a), "rest": len(b)}
+        elif tid == "break_vs_level":
+            a = [t for t in pool if t.get("kind") in ("breakout", "breakdown", "wedge_break")]
+            b = [t for t in pool if t.get("kind") in ("bounce", "reject")]
+            n = len(a)
+            reading = {"breakMeanR": _mean_r(a, premium_stop_pct), "levelMeanR": _mean_r(b, premium_stop_pct),
+                       "breaks": len(a), "levels": len(b)}
         elif tid == "rules_vs_model":
             full = [t for t in trades if t["session"] >= since and evaluable(t)]
             both = sorted({t["session"] for t in full if t["book"] == EXPERIMENT_BOOK}

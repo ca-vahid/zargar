@@ -75,6 +75,13 @@ class CboeClient:
     delayed = True
     CACHE_TTL = 60.0
     RATE_LIMIT_RETRIES = (0.6, 1.2)      # bounded back-off on HTTP 429 (2026-09-16: one 429 killed a live entry with no retry)
+    # 2026-09-24: at the 09:31 ET burst four EM short entries (SLV, VRT - puts only, no shares fallback) died after the two
+    # retries above (~2 s). An ENTRY now retries for ~4.3 s; a 1-minute-bar method's decision is still well inside its bar,
+    # and the final entry guard judges the CURRENT quote regardless. Position reads keep the short schedule.
+    ENTRY_RETRIES = (0.6, 1.2, 2.5)
+    # Background requests (enrichment, research) stand down around the open, when entries need the provider most:
+    # the 09:31 bar is where most EM triggers fire (options.cboe_open_quiet, on by default; ET minutes [start, end)).
+    OPEN_QUIET_ET = (9 * 60 + 29, 9 * 60 + 34)
     COOLDOWN_S = 20.0                    # background fetches stand down this long after any 429 (settings: options.cboe_cooldown_seconds)
     BACKGROUND = ("background",)
 
@@ -85,6 +92,16 @@ class CboeClient:
         self.cooldown_s = float(cooldown_s) if cooldown_s is not None else float(self.COOLDOWN_S)   # options.cboe_cooldown_seconds
         self._cooldown_until = 0.0
         self.rate_limited = 0            # 429s seen (diagnostic)
+        self.open_quiet = True           # options.cboe_open_quiet (the service keeps it in step with the setting)
+        self._inflight: dict[str, asyncio.Future] = {}
+        self.shared_fetches = 0          # requests answered by another caller's in-flight fetch (diagnostic)
+
+    def _in_open_quiet(self, now: float | None = None) -> bool:
+        import datetime as _dt
+        from zoneinfo import ZoneInfo
+        t = _dt.datetime.fromtimestamp(time.time() if now is None else now, ZoneInfo("America/New_York"))
+        m = t.hour * 60 + t.minute
+        return t.weekday() < 5 and self.OPEN_QUIET_ET[0] <= m < self.OPEN_QUIET_ET[1]
 
     @property
     def available(self) -> bool:
@@ -110,13 +127,46 @@ class CboeClient:
         background = prio in self.BACKGROUND
         if background and self.cooling_down() > 0:
             raise OptionsError(f"CBOE cooling down after a rate limit ({self.cooling_down():.0f}s left) - background fetch for {sym} skipped")
+        if background and self.open_quiet and self._in_open_quiet():
+            raise OptionsError(f"CBOE open quiet window (09:29-09:34 ET) - background fetch for {sym} skipped, entries first")
+        # single flight (2026-09-24): two books firing the same symbol in the same second used to send two requests
+        pending = self._inflight.get(sym)
+        if pending is not None:
+            try:
+                data = await asyncio.shield(pending)
+                self.shared_fetches += 1
+                return data
+            except OptionsError:
+                if background:
+                    raise
+                # a background fetch that failed fast is not an entry's answer: make our own attempt below
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        self._inflight[sym] = fut
+        try:
+            data = await self._fetch(sym, prio, background, now)
+        except BaseException as exc:
+            if not fut.done():
+                fut.set_exception(exc if isinstance(exc, OptionsError) else OptionsError(str(exc)))
+                fut.exception()                           # mark retrieved: nobody may be waiting on it
+            raise
+        else:
+            if not fut.done():
+                fut.set_result(data)
+            return data
+        finally:
+            if self._inflight.get(sym) is fut:
+                self._inflight.pop(sym, None)
+
+    async def _fetch(self, sym: str, prio: str, background: bool, now: float) -> dict:
         r = await self._http.get(CBOE_URL.format(symbol=sym))
         if r.status_code == 429:
             self.rate_limited += 1
             self._cooldown_until = time.time() + self.cooldown_s
             if background:                # never retry from the back of the queue - leave the budget to entries / positions
                 raise OptionsError("CBOE HTTP 429 (rate limited; background fetch not retried)")
-        for i, pause in enumerate(self.RATE_LIMIT_RETRIES):
+        schedule = self.ENTRY_RETRIES if prio == "entry" else self.RATE_LIMIT_RETRIES
+        for i, pause in enumerate(schedule):
             if r.status_code != 429:
                 break
             # CBOE's free endpoint rate-limits bursts (several desks share it). A live entry has a latency budget
@@ -126,7 +176,7 @@ class CboeClient:
                 pause = min(float(ra), 2.0) if ra else pause
             except ValueError:
                 pass
-            log.info("CBOE 429 for %s - retry %d/%d after %.1fs", sym, i + 1, len(self.RATE_LIMIT_RETRIES), pause)
+            log.info("CBOE 429 for %s - retry %d/%d after %.1fs", sym, i + 1, len(schedule), pause)
             await asyncio.sleep(pause)
             r = await self._http.get(CBOE_URL.format(symbol=sym))
             if r.status_code == 429:
@@ -135,7 +185,7 @@ class CboeClient:
         if r.status_code == 404:
             raise OptionsError(f"no US-listed options for {sym} (CBOE 404)")
         if r.status_code == 429:
-            raise OptionsError(f"CBOE HTTP 429 (rate limited; {len(self.RATE_LIMIT_RETRIES)} retries)")
+            raise OptionsError(f"CBOE HTTP 429 (rate limited; {len(schedule)} retries)")
         if r.status_code >= 400:
             raise OptionsError(f"CBOE HTTP {r.status_code}")
         data = ((await asyncio.to_thread(r.json)) or {}).get("data") or {}   # multi-MB chain JSON: never parse it on the loop (stall #3, 2026-09-16)

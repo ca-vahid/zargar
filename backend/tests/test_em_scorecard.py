@@ -85,9 +85,10 @@ def test_tests_stay_collecting_below_their_threshold_and_never_call_a_reading_a_
     base = [_t(s, -1.0, direction="long", window="prime_open", trigger="b1", underlying="AAA") for s in _sessions(5)]
     rows = {r["id"]: r for r in sc.run_tests(base)}
     assert rows["midday"]["status"] == "decided" and "OFF" in rows["midday"]["decision"]
-    for tid in ("shares_fallback", "short_puts_prime", "stop_vs_volatility", "one_touch_levels", "rules_vs_model"):
+    assert rows["rules_vs_model"]["status"] == "decided", "superseded by the 2026-09-23 decision"
+    assert rows["shares_fallback"]["status"] == "decided" and "OFF" in rows["shares_fallback"]["decision"]
+    for tid in ("short_puts_prime", "stop_vs_volatility", "one_touch_levels", "break_vs_level"):
         assert rows[tid]["status"] == "collecting" and rows[tid]["readingIsVerdict"] is False, tid
-    assert rows["shares_fallback"]["n"] == 5 and rows["shares_fallback"]["reading"]["sharesMeanR"] == -1.0
     shorts = [_t(s, -0.5, direction="short", window=w, trigger=f"r{i}", underlying=f"S{i}")
               for i, (s, w) in enumerate(zip(_sessions(25) * 1, ["prime_open", "prime_close", "midday"] * 9))]
     rows = {r["id"]: r for r in sc.run_tests(shorts)}
@@ -100,5 +101,19 @@ def test_ready_needs_the_full_sample_and_the_copy_of_a_trade_counts_once():
         for book in (B, X):                                                       # the same decision in both books
             trades.append(_t(s, -1.0, book=book, direction="long", trigger="b1", underlying=f"U{i}"))
     rows = {r["id"]: r for r in sc.run_tests(trades)}
-    assert rows["shares_fallback"]["n"] == 20 and rows["shares_fallback"]["status"] == "ready", "deduped to one per decision"
-    assert rows["rules_vs_model"]["status"] == "ready" and rows["rules_vs_model"]["reading"]["sessionsWithBoth"] == 20
+    assert rows["one_touch_levels"]["status"] == "collecting" and rows["shares_fallback"]["status"] == "decided"
+    breaks = [_t(sess, -1.0, kind="breakout", trigger=f"k{i}", underlying=f"B{i}") for i, sess in enumerate(_sessions(30, start=24))]
+    rows = {r["id"]: r for r in sc.run_tests(breaks)}
+    assert rows["break_vs_level"]["status"] == "ready" and rows["break_vs_level"]["reading"]["breakMeanR"] == -1.0
+
+
+def test_the_report_renders_every_decided_test_even_without_a_threshold_field():
+    """2026-09-24 close: rules_vs_model was closed without a 'threshold' key and render() crashed (KeyError), so the close
+    check reported 'stop rule: unknown'. Every decided row must render."""
+    from zargar.tools.em_scorecard import render
+    d = {"version": sc.VERSION, "generatedAt": "x", "allBooks": sc.summary([]), "allBooksCorrected": sc.summary([]), "deduplicated": sc.summary([]),
+         "books": {}, "stopRule": sc.stop_rule([]), "tests": sc.run_tests([]), "premiumStopPct": 50.0,
+         "friction": {"fees": 0, "entrySpread": 0, "entrySpreadTrades": 0, "exitSpread": None, "exitSpreadTrades": 0, "optionGross": 0},
+         "impaired": {}, "disputed": [], "trades": 0, "openLots": 0}
+    text = render(d)
+    assert "rules_vs_model" in text and "STOP-RULE: collecting" in text

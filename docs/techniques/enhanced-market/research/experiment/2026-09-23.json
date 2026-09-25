@@ -1,0 +1,3606 @@
+{
+ "date": "2026-09-23",
+ "generatedAt": "2026-09-23T20:37:02+00:00",
+ "experiment": {
+  "label": "EM Experimental",
+  "owner": "EM desk (EM Dev session) - attends pre-open, open, close; rollback = pause this book",
+  "enabled": true,
+  "version": "em-experiment-v1",
+  "overrides": {
+   "prep_grade_floor": "B",
+   "runner_protection": "execute",
+   "first_sale_rr_gate": "enforce",
+   "preparation_policy": "deterministic",
+   "book_snapshot_observe": true,
+   "conditional_review_fix": "apply",
+   "source_candidates_execute": true
+  },
+  "startedAt": "2026-09-19T18:18:08+00:00",
+  "portfolioId": "07ef1e867cad4150bc81e072a8fd600a",
+  "comparisonTs": "2026-09-19T18:18:02+00:00",
+  "startingEquity": 9849.6032,
+  "baselinePortfolioId": "045d8c35b3f149628ea001ae90a58edb"
+ },
+ "books": {
+  "baseline": {
+   "portfolioId": "045d8c35b3f149628ea001ae90a58edb",
+   "execution": {
+    "net": -120.1843,
+    "fees": 18.72,
+    "bySymbol": {
+     "AMZN260923C00250000": {
+      "net": -104.32,
+      "fees": 8.32,
+      "qty": 4.0
+     },
+     "GOOGL260925C00342500": {
+      "net": -136.08,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "HOOD260925P00126000": {
+      "net": 177.92,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "LITE": {
+      "net": -10.093,
+      "fees": 0.0,
+      "qty": 5.0
+     },
+     "OKLO260925C00039500": {
+      "net": -66.24,
+      "fees": 6.24,
+      "qty": 3.0
+     },
+     "SNDK": {
+      "net": -23.7898,
+      "fees": 0.0,
+      "qty": 2.0
+     },
+     "VZ": {
+      "net": 42.4185,
+      "fees": 0.0,
+      "qty": 100.0
+     }
+    },
+    "openAtCutoff": [],
+    "fills": 19,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "openExposure": [],
+   "equity": {
+    "maxDrawdown": -772.31,
+    "first": 9876.761699999985,
+    "last": 9756.577399999982,
+    "markedChange": -120.18,
+    "samples": 1501,
+    "markedPeak": 10365.59,
+    "markedTrough": 9593.28,
+    "markedPeakGain": 488.83,
+    "basis": "30 s equity samples; marked, not executable"
+   },
+   "capture": {
+    "status": "no_snapshots",
+    "snapshots": 0,
+    "coverage": null,
+    "realizedNetFinal": null,
+    "peakDisplayedNet": null,
+    "peakExecutableNet": null,
+    "givebackVsExecutablePeak": null,
+    "reconciliation": null
+   },
+   "plans": {
+    "armed": 49,
+    "byOrigin": {
+     "promote": 41,
+     "preopen_replan": 8
+    },
+    "promoted": 0,
+    "promotedByVariant": {}
+   },
+   "activity": {
+    "fired": 11,
+    "entriesFilled": 7,
+    "refusedOrSkipped": 139,
+    "refusalsByStage": {
+     "invalidated": 22,
+     "gap_void": 26,
+     "gapped_past": 7,
+     "R3.1 volume 0.46x below floor": 1,
+     "T3.3d no volume surge (0.66x)": 1,
+     "T3.3d no volume surge (1.18x)": 1,
+     "observed": 9,
+     "contract skipped (T5.4 wide spread 42.4% on the NBBO (bid 0.78 / ask 1.2))": 1,
+     "R3.1 volume 0.30x below floor": 1,
+     "observed_midday": 48,
+     "contract skipped (T5.4 wide spread 49.1% on the NBBO (bid 1.09 / ask 1.8))": 1,
+     "T3.3b/e candle not decisive": 4,
+     "T3.3d no volume surge (0.52x)": 1,
+     "contract skipped (T5.4 wide spread 17.4% on the NBBO (bid 4.2 / ask 5.0))": 1,
+     "T3.3d no volume surge (0.94x)": 1,
+     "T3.3d no volume surge (0.58x)": 1,
+     "T3.3d no volume surge (1.42x)": 1,
+     "T3.3d no volume surge (0.50x)": 1,
+     "T3.3d no volume surge (0.54x)": 1,
+     "contract skipped (T5.4 wide spread 15.1% on the NBBO (bid 0.49 / ask 0.57))": 1,
+     "T3.3d no volume surge (1.16x)": 1,
+     "T3.3d no volume surge (0.96x)": 1,
+     "T3.3d no volume surge (1.13x)": 1,
+     "T3.3d no volume surge (0.89x)": 1,
+     "T3.3c/f no follow-through / failed to hold": 1,
+     "T3.3d no volume surge (0.47x)": 1,
+     "T3.3d no volume surge (0.45x)": 1,
+     "T3.3d no volume surge (1.44x)": 1,
+     "T3.3d no volume surge (0.85x)": 1
+    },
+    "missingDataRefusals": {},
+    "misses": 30,
+    "exitsByKind": {
+     "tp1": 3,
+     "stop": 5,
+     "tp2": 2,
+     "tp3": 1,
+     "flatten": 1
+    }
+   },
+   "questionableFills": [],
+   "perSymbol": {
+    "XLF": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CAT": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MRVL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ADBE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AXTI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 7,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DELL": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 19,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SQQQ": {
+     "armed": 2,
+     "fired": 2,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "NKE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MRNA": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AMZN": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -104.32,
+     "fees": 8.32,
+     "fills": 1
+    },
+    "COIN": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "META": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BMNR": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ORCL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GOOGL": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -136.08,
+     "fees": 2.08,
+     "fills": 1
+    },
+    "MU": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KWEB": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "WBD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SMH": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "WFC": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "NFLX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 12,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HOOD": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 1,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {
+      "tp2": 1
+     },
+     "net": 177.92,
+     "fees": 2.08,
+     "fills": 1
+    },
+    "VRT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ANET": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BABA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SNDK": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -23.7898,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "VZ": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {
+      "tp1": 1,
+      "tp2": 1,
+      "tp3": 1,
+      "flatten": 1
+     },
+     "net": 42.4185,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "TSLA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 13,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ARM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "OXY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CVNA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "PYPL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "LLY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "OKLO": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 9,
+     "missingData": 0,
+     "exits": {
+      "tp1": 1,
+      "stop": 1
+     },
+     "net": -66.24,
+     "fees": 6.24,
+     "fills": 1
+    },
+    "LITE": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {
+      "tp1": 1,
+      "stop": 1
+     },
+     "net": -10.093,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "MSTR": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 7,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "COHR": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DIS": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "INTU": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    }
+   },
+   "attempts": {
+    "entryAttempts": 11,
+    "rows": 139,
+    "distinctPairs": 85,
+    "repeatedGuardRows": 54,
+    "byReason": {
+     "invalidated": {
+      "rows": 22,
+      "distinct": 22
+     },
+     "gap_void": {
+      "rows": 26,
+      "distinct": 26
+     },
+     "gapped_past": {
+      "rows": 7,
+      "distinct": 7
+     },
+     "skipped": {
+      "rows": 23,
+      "distinct": 9
+     },
+     "observed": {
+      "rows": 9,
+      "distinct": 9
+     },
+     "contract_quality": {
+      "rows": 4,
+      "distinct": 4
+     },
+     "observed_midday": {
+      "rows": 48,
+      "distinct": 8
+     }
+    },
+    "note": "entryAttempts = TechniquePlanTriggerFired rows (a trigger that reached the entry path). rows = every refusal/skip event. A reason whose rows exceed its distinct (plan, trigger) pairs is a guard re-stating itself, never a fresh chance."
+   }
+  },
+  "experiment": {
+   "portfolioId": "07ef1e867cad4150bc81e072a8fd600a",
+   "execution": {
+    "net": -105.749,
+    "fees": 10.4,
+    "bySymbol": {
+     "GOOGL260925C00342500": {
+      "net": -136.08,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "HOOD260925P00126000": {
+      "net": 177.92,
+      "fees": 2.08,
+      "qty": 1.0
+     },
+     "INTC260923C00121000": {
+      "net": -102.27,
+      "fees": 6.24,
+      "qty": 3.0
+     },
+     "KORU": {
+      "net": -21.43,
+      "fees": 0.0,
+      "qty": 100.0
+     },
+     "LITE": {
+      "net": 15.5819,
+      "fees": 0.0,
+      "qty": 5.0
+     },
+     "SNDK": {
+      "net": -11.8949,
+      "fees": 0.0,
+      "qty": 1.0
+     },
+     "XLK": {
+      "net": -27.576,
+      "fees": 0.0,
+      "qty": 24.0
+     }
+    },
+    "openAtCutoff": [],
+    "fills": 15,
+    "unknownInstrument": [],
+    "complete": true
+   },
+   "openExposure": [],
+   "equity": {
+    "maxDrawdown": -386.01,
+    "first": 9580.526499999998,
+    "last": 9474.7775,
+    "markedChange": -105.75,
+    "samples": 1501,
+    "markedPeak": 9681.45,
+    "markedTrough": 9295.43,
+    "markedPeakGain": 100.92,
+    "basis": "30 s equity samples; marked, not executable"
+   },
+   "capture": {
+    "status": "ok",
+    "snapshots": 789,
+    "coverage": {
+     "scorable": 627,
+     "unscorable": 162,
+     "ratio": 0.7947,
+     "unscorableReasons": {
+      "pending_exit_reserved": 9,
+      "unknown": 169,
+      "quote_time_skew": 146,
+      "partial": 5
+     },
+     "gaps": [],
+     "recorderDrops": 0,
+     "recorderInstances": 1,
+     "dropsByInstance": {
+      "e4d197a83b854120985e4ea829865139": 0
+     },
+     "revisedByLateExecutions": [],
+     "lateObservedExecutions": []
+    },
+    "realizedNetFinal": -105.749,
+    "peakDisplayedNet": {
+     "value": 97.8443,
+     "at": 1790172667370,
+     "seq": 89,
+     "reason": "periodic",
+     "captureId": "fa3436418f2b6cf5a14884c10831bb96b6454186"
+    },
+    "peakExecutableNet": {
+     "value": 84.1819,
+     "at": 1790172667370,
+     "seq": 89,
+     "reason": "periodic",
+     "captureId": "fa3436418f2b6cf5a14884c10831bb96b6454186"
+    },
+    "givebackVsExecutablePeak": 189.9309,
+    "reconciliation": {
+     "executionBackedNet": -105.749,
+     "snapshotRealizedNet": -105.749,
+     "difference": 0.0,
+     "feesDifference": 0.0,
+     "sumOfClosedTrades": -105.749,
+     "cashMinusLedgerFlow": 0.0,
+     "transfersExcluded": 0.0,
+     "comparisonsUnavailable": [],
+     "status": "ok"
+    }
+   },
+   "plans": {
+    "armed": 127,
+    "byOrigin": {
+     "experiment": 103,
+     "preopen_replan": 24
+    },
+    "promoted": 2,
+    "promotedByVariant": {
+     "requalification": 2
+    }
+   },
+   "activity": {
+    "fired": 17,
+    "entriesFilled": 7,
+    "refusedOrSkipped": 262,
+    "refusalsByStage": {
+     "gap_void": 58,
+     "invalidated": 69,
+     "gapped_past": 12,
+     "R3.1 volume 0.46x below floor": 1,
+     "T3.3d no volume surge (0.66x)": 2,
+     "observed": 14,
+     "contract skipped (T5.4 wide spread 15.9% on the NBBO (bid 1.79 / ask 2.1))": 1,
+     "T3.3d no volume surge (1.18x)": 1,
+     "first_sale": 5,
+     "T3.3d no volume surge (0.58x)": 3,
+     "contract skipped (T5.4 wide spread 42.4% on the NBBO (bid 0.78 / ask 1.2))": 1,
+     "R3.1 volume 0.30x below floor": 1,
+     "observed_midday": 57,
+     "contract skipped (T5.4 wide spread 49.1% on the NBBO (bid 1.09 / ask 1.8))": 1,
+     "T3.3b/e candle not decisive": 5,
+     "T3.3d no volume surge (0.52x)": 1,
+     "T3.3d no volume surge (0.64x)": 1,
+     "contract skipped (T5.4 wide spread 17.4% on the NBBO (bid 4.2 / ask 5.0))": 1,
+     "T3.3d no volume surge (0.56x)": 1,
+     "T3.3d no volume surge (1.28x)": 1,
+     "T3.3d no volume surge (0.85x)": 2,
+     "T3.3d no volume surge (0.94x)": 1,
+     "T3.3d no volume surge (0.61x)": 1,
+     "T3.3d no volume surge (0.62x)": 1,
+     "T3.3d no volume surge (1.42x)": 1,
+     "T3.3d no volume surge (0.50x)": 1,
+     "T3.3d no volume surge (0.54x)": 1,
+     "contract skipped (T5.4 wide spread 15.1% on the NBBO (bid 0.49 / ask 0.57))": 1,
+     "T3.3d no volume surge (1.16x)": 1,
+     "T3.3d no volume surge (0.96x)": 1,
+     "T3.3d no volume surge (0.33x)": 1,
+     "T3.3d no volume surge (1.45x)": 1,
+     "T3.3d no volume surge (1.07x)": 1,
+     "T3.3d no volume surge (1.13x)": 1,
+     "T3.3d no volume surge (0.73x)": 1,
+     "T3.3d no volume surge (0.28x)": 1,
+     "T3.3d no volume surge (0.89x)": 1,
+     "T3.3c/f no follow-through / failed to hold": 1,
+     "T3.3d no volume surge (0.47x)": 1,
+     "T3.3d no volume surge (0.77x)": 1,
+     "T3.3d no volume surge (0.71x)": 1,
+     "T3.3d no volume surge (0.45x)": 1,
+     "T3.3d no volume surge (1.44x)": 1,
+     "T3.3d no volume surge (0.78x)": 1,
+     "T3.3d no volume surge (0.87x)": 1
+    },
+    "missingDataRefusals": {},
+    "misses": 73,
+    "exitsByKind": {
+     "tp1": 1,
+     "runner_protect": 1,
+     "stop": 4,
+     "tp2": 1,
+     "flatten": 1
+    }
+   },
+   "questionableFills": [],
+   "perSymbol": {
+    "META": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HYG": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SOXS": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AMGN": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "VRT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MS": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "HPE": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "WBD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "NVO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SCHW": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AMZN": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "COHR": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GLD": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "PYPL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SLV": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SHOP": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SMH": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "JPM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SPY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CAT": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "T": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "JNJ": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GDX": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MU": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "USO": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KWEB": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "V": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ABT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLK": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {
+      "flatten": 1
+     },
+     "net": -27.576,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "SMCI": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRWV": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AVGO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KORU": {
+     "armed": 2,
+     "fired": 2,
+     "filled": 1,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -21.43,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "SQQQ": {
+     "armed": 2,
+     "fired": 2,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "INTC": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -102.27,
+     "fees": 6.24,
+     "fills": 1
+    },
+    "CVNA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "COIN": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ADBE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MRNA": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "OXY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "VOO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SNDK": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -11.8949,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "XOM": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLP": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "FCX": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "EEM": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GOOG": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SCHD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "EWY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRCL": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BMNR": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 8,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SKHY": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MSTR": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 7,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DAL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SOXX": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "LITE": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {
+      "tp1": 1,
+      "runner_protect": 1
+     },
+     "net": 15.5819,
+     "fees": 0.0,
+     "fills": 1
+    },
+    "HOOD": {
+     "armed": 3,
+     "fired": 1,
+     "filled": 1,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {
+      "tp2": 1
+     },
+     "net": 177.92,
+     "fees": 2.08,
+     "fills": 1
+    },
+    "XLF": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "WFC": {
+     "armed": 2,
+     "fired": 1,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "QCOM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SPCX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "OKLO": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 10,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CRDO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ORCL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 0,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ARM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "TSLA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 13,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DIS": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "NFLX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 12,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "IREN": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SOXL": {
+     "armed": 2,
+     "fired": 0,
+     "filled": 0,
+     "refused": 8,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "KLAC": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "IBIT": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XOP": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "UBER": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 13,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DIA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 6,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "LQD": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 5,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "LLY": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BABA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 3,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "ANET": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "SBUX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 14,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BRK.B": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "BA": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "GOOGL": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 1,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {
+      "stop": 1
+     },
+     "net": -136.08,
+     "fees": 2.08,
+     "fills": 1
+    },
+    "VZ": {
+     "armed": 1,
+     "fired": 1,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XBI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CVX": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "NKE": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "XLV": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "DELL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "FSLR": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "AXTI": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 7,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "TSM": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "IONQ": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "INTU": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 4,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "CSCO": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "COST": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 1,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    },
+    "MRVL": {
+     "armed": 1,
+     "fired": 0,
+     "filled": 0,
+     "refused": 2,
+     "missingData": 0,
+     "exits": {},
+     "net": 0.0,
+     "fees": 0.0,
+     "fills": 0
+    }
+   },
+   "attempts": {
+    "entryAttempts": 17,
+    "rows": 262,
+    "distinctPairs": 191,
+    "repeatedGuardRows": 71,
+    "byReason": {
+     "gap_void": {
+      "rows": 58,
+      "distinct": 58
+     },
+     "invalidated": {
+      "rows": 69,
+      "distinct": 69
+     },
+     "gapped_past": {
+      "rows": 12,
+      "distinct": 12
+     },
+     "skipped": {
+      "rows": 42,
+      "distinct": 16
+     },
+     "observed": {
+      "rows": 14,
+      "distinct": 14
+     },
+     "contract_quality": {
+      "rows": 5,
+      "distinct": 5
+     },
+     "entry_gate_refused": {
+      "rows": 5,
+      "distinct": 5
+     },
+     "observed_midday": {
+      "rows": 57,
+      "distinct": 12
+     }
+    },
+    "note": "entryAttempts = TechniquePlanTriggerFired rows (a trigger that reached the entry path). rows = every refusal/skip event. A reason whose rows exceed its distinct (plan, trigger) pairs is a guard re-stating itself, never a fresh chance."
+   }
+  }
+ },
+ "sharedRateLimit": {
+  "orderRateRejections": 0,
+  "byBook": {},
+  "busiestMinute": "2026-09-23 13:19:00+00:00",
+  "busiestMinuteOrders": 6,
+  "capPerMinute": 30
+ },
+ "cohorts": {
+  "common": {
+   "symbols": 41,
+   "names": [
+    "ADBE",
+    "AMZN",
+    "ANET",
+    "ARM",
+    "AXTI",
+    "BA",
+    "BABA",
+    "BMNR",
+    "CAT",
+    "COHR",
+    "COIN",
+    "CVNA",
+    "DELL",
+    "DIS",
+    "GM",
+    "GOOGL",
+    "HOOD",
+    "INTU",
+    "KWEB",
+    "LITE",
+    "LLY",
+    "META",
+    "MRNA",
+    "MRVL",
+    "MSTR",
+    "MU",
+    "NFLX",
+    "NKE",
+    "OKLO",
+    "ORCL",
+    "OXY",
+    "PYPL",
+    "SMH",
+    "SNDK",
+    "SQQQ",
+    "TSLA",
+    "VRT",
+    "VZ",
+    "WBD",
+    "WFC"
+   ],
+   "baseline": {
+    "armed": 49,
+    "fired": 11,
+    "filled": 7,
+    "refused": 139,
+    "missingDataRefusals": 0,
+    "netAfterFees": -120.1843,
+    "fees": 18.72,
+    "exits": {
+     "stop": 5,
+     "tp2": 2,
+     "tp1": 3,
+     "tp3": 1,
+     "flatten": 1
+    }
+   },
+   "experiment": {
+    "armed": 51,
+    "fired": 11,
+    "filled": 4,
+    "refused": 131,
+    "missingDataRefusals": 0,
+    "netAfterFees": 45.527,
+    "fees": 4.16,
+    "exits": {
+     "stop": 2,
+     "tp2": 1,
+     "tp1": 1,
+     "runner_protect": 1
+    }
+   }
+  },
+  "baselineOnly": {
+   "symbols": 0,
+   "names": [],
+   "baseline": {
+    "armed": 0,
+    "fired": 0,
+    "filled": 0,
+    "refused": 0,
+    "missingDataRefusals": 0,
+    "netAfterFees": 0,
+    "fees": 0,
+    "exits": {}
+   },
+   "experiment": null
+  },
+  "experimentOnly": {
+   "symbols": 60,
+   "names": [
+    "ABT",
+    "AMGN",
+    "AVGO",
+    "BRK.B",
+    "COST",
+    "CRCL",
+    "CRDO",
+    "CRWV",
+    "CSCO",
+    "CVX",
+    "DAL",
+    "DIA",
+    "EEM",
+    "EWY",
+    "FCX",
+    "FSLR",
+    "GDX",
+    "GLD",
+    "GOOG",
+    "HD",
+    "HPE",
+    "HYG",
+    "IBIT",
+    "INTC",
+    "IONQ",
+    "IREN",
+    "JNJ",
+    "JPM",
+    "KLAC",
+    "KORU",
+    "LQD",
+    "MS",
+    "NVO",
+    "QCOM",
+    "SBUX",
+    "SCHD",
+    "SCHW",
+    "SHOP",
+    "SKHY",
+    "SLV"
+   ],
+   "baseline": null,
+   "experiment": {
+    "armed": 76,
+    "fired": 6,
+    "filled": 3,
+    "refused": 131,
+    "missingDataRefusals": 0,
+    "netAfterFees": -151.276,
+    "fees": 6.24,
+    "exits": {
+     "stop": 2,
+     "flatten": 1
+    }
+   }
+  }
+ },
+ "matched": {
+  "matchedSymbols": 4,
+  "rows": [
+   {
+    "symbol": "GOOGL",
+    "baseline": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "stop": 1
+     },
+     "net": -136.08,
+     "fees": 2.08
+    },
+    "experiment": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "stop": 1
+     },
+     "net": -136.08,
+     "fees": 2.08
+    },
+    "netDifference": 0.0,
+    "exitsDiffer": false
+   },
+   {
+    "symbol": "HOOD",
+    "baseline": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "tp2": 1
+     },
+     "net": 177.92,
+     "fees": 2.08
+    },
+    "experiment": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "tp2": 1
+     },
+     "net": 177.92,
+     "fees": 2.08
+    },
+    "netDifference": 0.0,
+    "exitsDiffer": false
+   },
+   {
+    "symbol": "LITE",
+    "baseline": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "tp1": 1,
+      "stop": 1
+     },
+     "net": -10.093,
+     "fees": 0.0
+    },
+    "experiment": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "tp1": 1,
+      "runner_protect": 1
+     },
+     "net": 15.5819,
+     "fees": 0.0
+    },
+    "netDifference": 25.6749,
+    "exitsDiffer": true
+   },
+   {
+    "symbol": "SNDK",
+    "baseline": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "stop": 1
+     },
+     "net": -23.7898,
+     "fees": 0.0
+    },
+    "experiment": {
+     "filled": 1,
+     "fired": 1,
+     "exits": {
+      "stop": 1
+     },
+     "net": -11.8949,
+     "fees": 0.0
+    },
+    "netDifference": 11.8949,
+    "exitsDiffer": false
+   }
+  ],
+  "matchedNet": {
+   "baseline": 7.9572,
+   "experiment": 45.527,
+   "note": "sum over matched symbols only; None = at least one leg's money is unknown"
+  },
+  "armedBothEnteredOne": [
+   {
+    "symbol": "AMZN",
+    "enteredBy": "baseline",
+    "otherBookRefusals": 2,
+    "otherBookMissingData": 0
+   },
+   {
+    "symbol": "OKLO",
+    "enteredBy": "baseline",
+    "otherBookRefusals": 10,
+    "otherBookMissingData": 0
+   },
+   {
+    "symbol": "VZ",
+    "enteredBy": "baseline",
+    "otherBookRefusals": 2,
+    "otherBookMissingData": 0
+   }
+  ],
+  "armedBothEnteredOneCount": 3,
+  "note": "matched = both books ENTERED the same symbol this session; everything else is whole-bundle difference"
+ },
+ "sessionQuality": {
+  "operationallyImpaired": false,
+  "impairedBooks": [],
+  "reasons": [
+   "none found"
+  ],
+  "faultEvents": 0,
+  "evaluableForStrategy": true,
+  "note": "an impaired session is RETAINED in every chronological report and excluded only from strategy evaluation; the numbers in it are real, they just measure the environment rather than the method"
+ },
+ "exitPolicy": {
+  "p06RunnerProtectExits": {
+   "experiment": 1,
+   "baseline": 0
+  },
+  "differingSymbols": [
+   {
+    "symbol": "AMZN",
+    "baselineExits": {
+     "stop": 1
+    },
+    "experimentExits": {},
+    "p06": 0,
+    "sameKinds": []
+   },
+   {
+    "symbol": "LITE",
+    "baselineExits": {
+     "tp1": 1,
+     "stop": 1
+    },
+    "experimentExits": {
+     "tp1": 1,
+     "runner_protect": 1
+    },
+    "p06": 1,
+    "sameKinds": [
+     "tp1"
+    ]
+   },
+   {
+    "symbol": "OKLO",
+    "baselineExits": {
+     "tp1": 1,
+     "stop": 1
+    },
+    "experimentExits": {},
+    "p06": 0,
+    "sameKinds": []
+   },
+   {
+    "symbol": "VZ",
+    "baselineExits": {
+     "tp1": 1,
+     "tp2": 1,
+     "tp3": 1,
+     "flatten": 1
+    },
+    "experimentExits": {},
+    "p06": 0,
+    "sameKinds": []
+   }
+  ],
+  "note": "P-06 executes only in the experimental book; the baseline keeps the production ladder and records P-06 as an observation"
+ },
+ "exceptionLog": {
+  "window": [
+   "2026-09-23T04:00:00-04:00",
+   "2026-09-23T20:00:00-04:00"
+  ],
+  "byType": {
+   "TechniquePlanError": 103,
+   "OpsQuiesce (other book)": 3,
+   "TechniquePlanRestored (other book)": 7
+  },
+  "items": [
+   {
+    "at": "2026-09-23T13:30:22.451769+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T14:43:17.789707+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "b2: premium stop: bid 0.31 is 51% below the 0.63 paid (limit 50%) \u2014 theta/IV bleed the underlying stop cannot see \u2014 selling at market",
+    "ours": true,
+    "class": "protective"
+   },
+   {
+    "at": "2026-09-23T16:49:46.112083+00:00",
+    "type": "TechniquePlanError",
+    "book": "045d8c35b3f149628ea001ae90a58edb",
+    "why": "b2: premium stop: bid 0.22 is 51% below the 0.45 paid (limit 50%) \u2014 theta/IV bleed the underlying stop cannot see \u2014 selling at market",
+    "ours": true,
+    "class": "protective"
+   },
+   {
+    "at": "2026-09-23T19:14:46.307089+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:48.508225+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:50.557420+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:51.668648+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:52.773279+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:53.540481+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:54.334012+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:55.774497+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:56.924072+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:58.226797+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:58.526702+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:58.978311+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:59.775632+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:00.192805+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:00.715916+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:01.433475+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:01.597148+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:02.669560+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:02.852695+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.001880+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.044813+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.081527+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.142858+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.176879+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.218829+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.334593+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.361271+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.400376+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.620964+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.025725+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.044789+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.060743+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.099467+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.143051+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.178450+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:05.593487+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:06.258820+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   }
+  ],
+  "rateLimit": {
+   "orderRateRejections": 0,
+   "byBook": {},
+   "ours": 0,
+   "busiestMinute": "2026-09-23 13:19:00+00:00",
+   "busiestMinuteOrders": 6,
+   "capPerMinute": 30
+  },
+  "recorder": {
+   "07ef1e867cad4150bc81e072a8fd600a": {
+    "snapshots": 789,
+    "instances": 1,
+    "drops": 0
+   }
+  },
+  "unscorable": {
+   "07ef1e867cad4150bc81e072a8fd600a": {
+    "LITE": 2,
+    "HOOD260925P00126000": 114,
+    "quote_time_skew_21780ms": 1,
+    "quote_time_skew_19825ms": 1,
+    "quote_time_skew_16424ms": 1,
+    "quote_time_skew_12894ms": 1,
+    "quote_time_skew_12094ms": 1,
+    "quote_time_skew_9341ms": 1,
+    "quote_time_skew_6566ms": 1,
+    "quote_time_skew_23883ms": 1,
+    "quote_time_skew_19160ms": 1,
+    "quote_time_skew_11734ms": 1,
+    "INTC260923C00121000": 14,
+    "quote_time_skew_19926ms": 1,
+    "quote_time_skew_13906ms": 1,
+    "quote_time_skew_8644ms": 1,
+    "KORU": 1,
+    "GOOGL260925C00342500": 46,
+    "quote_time_skew_15577ms": 1,
+    "quote_time_skew_11988ms": 1,
+    "quote_time_skew_8028ms": 1,
+    "quote_time_skew_27869ms": 1,
+    "quote_time_skew_8204ms": 1,
+    "quote_time_skew_20692ms": 1,
+    "quote_time_skew_13546ms": 1,
+    "quote_time_skew_7072ms": 1,
+    "quote_time_skew_8916ms": 1,
+    "quote_time_skew_22404ms": 1,
+    "quote_time_skew_18391ms": 1,
+    "quote_time_skew_14438ms": 1,
+    "quote_time_skew_12274ms": 1,
+    "quote_time_skew_23115ms": 1,
+    "quote_time_skew_17469ms": 1,
+    "quote_time_skew_14721ms": 1,
+    "quote_time_skew_10807ms": 1,
+    "quote_time_skew_22995ms": 1,
+    "quote_time_skew_17820ms": 1,
+    "quote_time_skew_13594ms": 1,
+    "quote_time_skew_8336ms": 1,
+    "quote_time_skew_22544ms": 1,
+    "quote_time_skew_15564ms": 1,
+    "quote_time_skew_9396ms": 1,
+    "quote_time_skew_20836ms": 1,
+    "quote_time_skew_17653ms": 1,
+    "quote_time_skew_11838ms": 1,
+    "quote_time_skew_5072ms": 1,
+    "quote_time_skew_9113ms": 1,
+    "quote_time_skew_22241ms": 1,
+    "quote_time_skew_17384ms": 1,
+    "quote_time_skew_11174ms": 1,
+    "quote_time_skew_8301ms": 1,
+    "quote_time_skew_20754ms": 1,
+    "quote_time_skew_17454ms": 1,
+    "quote_time_skew_12606ms": 1,
+    "SNDK": 1,
+    "quote_time_skew_6574ms": 1,
+    "quote_time_skew_22949ms": 1,
+    "quote_time_skew_17951ms": 1,
+    "quote_time_skew_14255ms": 1,
+    "quote_time_skew_9979ms": 1,
+    "quote_time_skew_5651ms": 1,
+    "quote_time_skew_20949ms": 1,
+    "quote_time_skew_15922ms": 1,
+    "quote_time_skew_12945ms": 1,
+    "quote_time_skew_6377ms": 1,
+    "quote_time_skew_19171ms": 1,
+    "quote_time_skew_15512ms": 1,
+    "quote_time_skew_11335ms": 1,
+    "quote_time_skew_23504ms": 1,
+    "quote_time_skew_15150ms": 1,
+    "quote_time_skew_26736ms": 1,
+    "quote_time_skew_20110ms": 1,
+    "quote_time_skew_13719ms": 1,
+    "quote_time_skew_8505ms": 1,
+    "quote_time_skew_21266ms": 1,
+    "quote_time_skew_14130ms": 1,
+    "quote_time_skew_8614ms": 1,
+    "quote_time_skew_5798ms": 1,
+    "quote_time_skew_23711ms": 1,
+    "quote_time_skew_18887ms": 1,
+    "quote_time_skew_24515ms": 1,
+    "quote_time_skew_18221ms": 1,
+    "quote_time_skew_11050ms": 1,
+    "quote_time_skew_5518ms": 1,
+    "quote_time_skew_17576ms": 1,
+    "quote_time_skew_15852ms": 1,
+    "quote_time_skew_5202ms": 1,
+    "quote_time_skew_26100ms": 1,
+    "quote_time_skew_17436ms": 1,
+    "quote_time_skew_9161ms": 1,
+    "quote_time_skew_22001ms": 1,
+    "quote_time_skew_15471ms": 1,
+    "quote_time_skew_6856ms": 1,
+    "quote_time_skew_20812ms": 1,
+    "quote_time_skew_15043ms": 1,
+    "quote_time_skew_8231ms": 1,
+    "quote_time_skew_19012ms": 1,
+    "quote_time_skew_9194ms": 1,
+    "quote_time_skew_6660ms": 1,
+    "quote_time_skew_29207ms": 1,
+    "quote_time_skew_18219ms": 1,
+    "quote_time_skew_27855ms": 1,
+    "quote_time_skew_13729ms": 1,
+    "quote_time_skew_9378ms": 1,
+    "quote_time_skew_37270ms": 1,
+    "quote_time_skew_20126ms": 1,
+    "quote_time_skew_13880ms": 1,
+    "quote_time_skew_8441ms": 1,
+    "quote_time_skew_24656ms": 1,
+    "quote_time_skew_12426ms": 1,
+    "quote_time_skew_6267ms": 1,
+    "quote_time_skew_22599ms": 1,
+    "quote_time_skew_31166ms": 1,
+    "quote_time_skew_6347ms": 1,
+    "quote_time_skew_18967ms": 1,
+    "quote_time_skew_19751ms": 1,
+    "quote_time_skew_12136ms": 1,
+    "quote_time_skew_5014ms": 1,
+    "quote_time_skew_12488ms": 1,
+    "quote_time_skew_45634ms": 1,
+    "quote_time_skew_26578ms": 1,
+    "quote_time_skew_9936ms": 1,
+    "quote_time_skew_23268ms": 1,
+    "quote_time_skew_14812ms": 1,
+    "quote_time_skew_8401ms": 1,
+    "quote_time_skew_21469ms": 1,
+    "quote_time_skew_14319ms": 1,
+    "quote_time_skew_7741ms": 1,
+    "quote_time_skew_20643ms": 1,
+    "quote_time_skew_16551ms": 1,
+    "quote_time_skew_8362ms": 1,
+    "quote_time_skew_20060ms": 1,
+    "quote_time_skew_13855ms": 1,
+    "quote_time_skew_43856ms": 1,
+    "XLK": 5,
+    "quote_time_skew_19359ms": 1,
+    "quote_time_skew_13527ms": 1,
+    "quote_time_skew_6550ms": 1,
+    "quote_time_skew_29699ms": 1,
+    "quote_time_skew_14099ms": 1,
+    "quote_time_skew_18022ms": 1,
+    "quote_time_skew_24177ms": 1,
+    "quote_time_skew_20369ms": 1,
+    "quote_time_skew_14928ms": 1,
+    "quote_time_skew_23074ms": 1,
+    "quote_time_skew_17970ms": 1,
+    "quote_time_skew_10261ms": 1,
+    "quote_time_skew_21161ms": 1,
+    "quote_time_skew_16067ms": 1,
+    "quote_time_skew_18805ms": 1,
+    "quote_time_skew_9556ms": 1,
+    "quote_time_skew_16246ms": 1,
+    "quote_time_skew_9141ms": 1
+   }
+  },
+  "admissionDeferrals": {},
+  "admissionDeferralCount": 0,
+  "byClass": {
+   "fault": 38,
+   "protective": 2
+  },
+  "faults": [
+   {
+    "at": "2026-09-23T13:30:22.451769+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:46.307089+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:48.508225+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:50.557420+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:51.668648+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:52.773279+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:53.540481+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:54.334012+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:55.774497+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:56.924072+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:58.226797+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:58.526702+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:58.978311+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:14:59.775632+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:00.192805+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:00.715916+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:01.433475+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:01.597148+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:02.669560+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:02.852695+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.001880+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.044813+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.081527+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.142858+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.176879+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.218829+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.334593+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.361271+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.400376+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:03.620964+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.025725+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.044789+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.060743+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.099467+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.143051+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:04.178450+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:05.593487+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   },
+   {
+    "at": "2026-09-23T19:15:06.258820+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "stale bars",
+    "ours": true,
+    "class": "fault"
+   }
+  ],
+  "protectiveActions": [
+   {
+    "at": "2026-09-23T14:43:17.789707+00:00",
+    "type": "TechniquePlanError",
+    "book": "07ef1e867cad4150bc81e072a8fd600a",
+    "why": "b2: premium stop: bid 0.31 is 51% below the 0.63 paid (limit 50%) \u2014 theta/IV bleed the underlying stop cannot see \u2014 selling at market",
+    "ours": true,
+    "class": "protective"
+   },
+   {
+    "at": "2026-09-23T16:49:46.112083+00:00",
+    "type": "TechniquePlanError",
+    "book": "045d8c35b3f149628ea001ae90a58edb",
+    "why": "b2: premium stop: bid 0.22 is 51% below the 0.45 paid (limit 50%) \u2014 theta/IV bleed the underlying stop cannot see \u2014 selling at market",
+    "ours": true,
+    "class": "protective"
+   }
+  ],
+  "restartsDuringSession": 7,
+  "anythingToReport": true
+ },
+ "protectiveVsFaults": {
+  "expectedProtectiveActions": {
+   "baseline": {
+    "stop": {
+     "count": 5,
+     "meaning": "the production stop"
+    },
+    "flatten": {
+     "count": 1,
+     "meaning": "the end-of-session flatten"
+    },
+    "tp1": {
+     "count": 3,
+     "meaning": "a target trim"
+    },
+    "tp2": {
+     "count": 2,
+     "meaning": "a target exit"
+    },
+    "tp3": {
+     "count": 1,
+     "meaning": "a target exit"
+    }
+   },
+   "experiment": {
+    "stop": {
+     "count": 4,
+     "meaning": "the production stop"
+    },
+    "flatten": {
+     "count": 1,
+     "meaning": "the end-of-session flatten"
+    },
+    "runner_protect": {
+     "count": 1,
+     "meaning": "P-06 runner protection (experiment only)"
+    },
+    "tp1": {
+     "count": 1,
+     "meaning": "a target trim"
+    },
+    "tp2": {
+     "count": 1,
+     "meaning": "a target exit"
+    }
+   },
+   "journaled": [
+    {
+     "at": "2026-09-23T14:43:17.789707+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "b2: premium stop: bid 0.31 is 51% below the 0.63 paid (limit 50%) \u2014 theta/IV bleed the underlying stop cannot see \u2014 selling at market"
+    },
+    {
+     "at": "2026-09-23T16:49:46.112083+00:00",
+     "type": "TechniquePlanError",
+     "book": "045d8c35b3f149628ea001ae90a58edb",
+     "why": "b2: premium stop: bid 0.22 is 51% below the 0.45 paid (limit 50%) \u2014 theta/IV bleed the underlying stop cannot see \u2014 selling at market"
+    }
+   ]
+  },
+  "faults": {
+   "orderRateRejections": 0,
+   "byBook": {},
+   "recorder": {
+    "07ef1e867cad4150bc81e072a8fd600a": {
+     "snapshots": 789,
+     "instances": 1,
+     "drops": 0
+    }
+   },
+   "unscorable": {
+    "07ef1e867cad4150bc81e072a8fd600a": {
+     "LITE": 2,
+     "HOOD260925P00126000": 114,
+     "quote_time_skew_21780ms": 1,
+     "quote_time_skew_19825ms": 1,
+     "quote_time_skew_16424ms": 1,
+     "quote_time_skew_12894ms": 1,
+     "quote_time_skew_12094ms": 1,
+     "quote_time_skew_9341ms": 1,
+     "quote_time_skew_6566ms": 1,
+     "quote_time_skew_23883ms": 1,
+     "quote_time_skew_19160ms": 1,
+     "quote_time_skew_11734ms": 1,
+     "INTC260923C00121000": 14,
+     "quote_time_skew_19926ms": 1,
+     "quote_time_skew_13906ms": 1,
+     "quote_time_skew_8644ms": 1,
+     "KORU": 1,
+     "GOOGL260925C00342500": 46,
+     "quote_time_skew_15577ms": 1,
+     "quote_time_skew_11988ms": 1,
+     "quote_time_skew_8028ms": 1,
+     "quote_time_skew_27869ms": 1,
+     "quote_time_skew_8204ms": 1,
+     "quote_time_skew_20692ms": 1,
+     "quote_time_skew_13546ms": 1,
+     "quote_time_skew_7072ms": 1,
+     "quote_time_skew_8916ms": 1,
+     "quote_time_skew_22404ms": 1,
+     "quote_time_skew_18391ms": 1,
+     "quote_time_skew_14438ms": 1,
+     "quote_time_skew_12274ms": 1,
+     "quote_time_skew_23115ms": 1,
+     "quote_time_skew_17469ms": 1,
+     "quote_time_skew_14721ms": 1,
+     "quote_time_skew_10807ms": 1,
+     "quote_time_skew_22995ms": 1,
+     "quote_time_skew_17820ms": 1,
+     "quote_time_skew_13594ms": 1,
+     "quote_time_skew_8336ms": 1,
+     "quote_time_skew_22544ms": 1,
+     "quote_time_skew_15564ms": 1,
+     "quote_time_skew_9396ms": 1,
+     "quote_time_skew_20836ms": 1,
+     "quote_time_skew_17653ms": 1,
+     "quote_time_skew_11838ms": 1,
+     "quote_time_skew_5072ms": 1,
+     "quote_time_skew_9113ms": 1,
+     "quote_time_skew_22241ms": 1,
+     "quote_time_skew_17384ms": 1,
+     "quote_time_skew_11174ms": 1,
+     "quote_time_skew_8301ms": 1,
+     "quote_time_skew_20754ms": 1,
+     "quote_time_skew_17454ms": 1,
+     "quote_time_skew_12606ms": 1,
+     "SNDK": 1,
+     "quote_time_skew_6574ms": 1,
+     "quote_time_skew_22949ms": 1,
+     "quote_time_skew_17951ms": 1,
+     "quote_time_skew_14255ms": 1,
+     "quote_time_skew_9979ms": 1,
+     "quote_time_skew_5651ms": 1,
+     "quote_time_skew_20949ms": 1,
+     "quote_time_skew_15922ms": 1,
+     "quote_time_skew_12945ms": 1,
+     "quote_time_skew_6377ms": 1,
+     "quote_time_skew_19171ms": 1,
+     "quote_time_skew_15512ms": 1,
+     "quote_time_skew_11335ms": 1,
+     "quote_time_skew_23504ms": 1,
+     "quote_time_skew_15150ms": 1,
+     "quote_time_skew_26736ms": 1,
+     "quote_time_skew_20110ms": 1,
+     "quote_time_skew_13719ms": 1,
+     "quote_time_skew_8505ms": 1,
+     "quote_time_skew_21266ms": 1,
+     "quote_time_skew_14130ms": 1,
+     "quote_time_skew_8614ms": 1,
+     "quote_time_skew_5798ms": 1,
+     "quote_time_skew_23711ms": 1,
+     "quote_time_skew_18887ms": 1,
+     "quote_time_skew_24515ms": 1,
+     "quote_time_skew_18221ms": 1,
+     "quote_time_skew_11050ms": 1,
+     "quote_time_skew_5518ms": 1,
+     "quote_time_skew_17576ms": 1,
+     "quote_time_skew_15852ms": 1,
+     "quote_time_skew_5202ms": 1,
+     "quote_time_skew_26100ms": 1,
+     "quote_time_skew_17436ms": 1,
+     "quote_time_skew_9161ms": 1,
+     "quote_time_skew_22001ms": 1,
+     "quote_time_skew_15471ms": 1,
+     "quote_time_skew_6856ms": 1,
+     "quote_time_skew_20812ms": 1,
+     "quote_time_skew_15043ms": 1,
+     "quote_time_skew_8231ms": 1,
+     "quote_time_skew_19012ms": 1,
+     "quote_time_skew_9194ms": 1,
+     "quote_time_skew_6660ms": 1,
+     "quote_time_skew_29207ms": 1,
+     "quote_time_skew_18219ms": 1,
+     "quote_time_skew_27855ms": 1,
+     "quote_time_skew_13729ms": 1,
+     "quote_time_skew_9378ms": 1,
+     "quote_time_skew_37270ms": 1,
+     "quote_time_skew_20126ms": 1,
+     "quote_time_skew_13880ms": 1,
+     "quote_time_skew_8441ms": 1,
+     "quote_time_skew_24656ms": 1,
+     "quote_time_skew_12426ms": 1,
+     "quote_time_skew_6267ms": 1,
+     "quote_time_skew_22599ms": 1,
+     "quote_time_skew_31166ms": 1,
+     "quote_time_skew_6347ms": 1,
+     "quote_time_skew_18967ms": 1,
+     "quote_time_skew_19751ms": 1,
+     "quote_time_skew_12136ms": 1,
+     "quote_time_skew_5014ms": 1,
+     "quote_time_skew_12488ms": 1,
+     "quote_time_skew_45634ms": 1,
+     "quote_time_skew_26578ms": 1,
+     "quote_time_skew_9936ms": 1,
+     "quote_time_skew_23268ms": 1,
+     "quote_time_skew_14812ms": 1,
+     "quote_time_skew_8401ms": 1,
+     "quote_time_skew_21469ms": 1,
+     "quote_time_skew_14319ms": 1,
+     "quote_time_skew_7741ms": 1,
+     "quote_time_skew_20643ms": 1,
+     "quote_time_skew_16551ms": 1,
+     "quote_time_skew_8362ms": 1,
+     "quote_time_skew_20060ms": 1,
+     "quote_time_skew_13855ms": 1,
+     "quote_time_skew_43856ms": 1,
+     "XLK": 5,
+     "quote_time_skew_19359ms": 1,
+     "quote_time_skew_13527ms": 1,
+     "quote_time_skew_6550ms": 1,
+     "quote_time_skew_29699ms": 1,
+     "quote_time_skew_14099ms": 1,
+     "quote_time_skew_18022ms": 1,
+     "quote_time_skew_24177ms": 1,
+     "quote_time_skew_20369ms": 1,
+     "quote_time_skew_14928ms": 1,
+     "quote_time_skew_23074ms": 1,
+     "quote_time_skew_17970ms": 1,
+     "quote_time_skew_10261ms": 1,
+     "quote_time_skew_21161ms": 1,
+     "quote_time_skew_16067ms": 1,
+     "quote_time_skew_18805ms": 1,
+     "quote_time_skew_9556ms": 1,
+     "quote_time_skew_16246ms": 1,
+     "quote_time_skew_9141ms": 1
+    }
+   },
+   "events": [
+    {
+     "at": "2026-09-23T13:30:22.451769+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:46.307089+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:48.508225+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:50.557420+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:51.668648+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:52.773279+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:53.540481+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:54.334012+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:55.774497+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:56.924072+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:58.226797+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:58.526702+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:58.978311+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:14:59.775632+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:15:00.192805+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:15:00.715916+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:15:01.433475+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:15:01.597148+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:15:02.669560+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    },
+    {
+     "at": "2026-09-23T19:15:02.852695+00:00",
+     "type": "TechniquePlanError",
+     "book": "07ef1e867cad4150bc81e072a8fd600a",
+     "why": "stale bars"
+    }
+   ],
+   "planRestoresInWindow": 7,
+   "captureStatus": {
+    "baseline": "no_snapshots",
+    "experiment": "ok"
+   },
+   "reconciliation": {
+    "baseline": null,
+    "experiment": "ok"
+   }
+  },
+  "note": "a stop, a premium stop, a flatten, a target exit and P-06 are the policy working; a rejection, a drop, an unreconciled ledger or an unscorable capture is a fault"
+ },
+ "modelCost": {
+  "baseline": {
+   "version": "model-costs-v1",
+   "requests": 534,
+   "retries": 0,
+   "requestsWithoutCompletion": 0,
+   "tokens": {
+    "input": 4341744,
+    "output": 1673525,
+    "cacheRead": 2169942,
+    "cacheWrite": 94400
+   },
+   "invoiceVerified": {
+    "usd": null,
+    "invoices": 0
+   },
+   "estimated": {
+    "usd": 65.2218,
+    "requests": 534
+   },
+   "unknown": {
+    "requests": 0,
+    "why": {}
+   },
+   "subscriptionAllocation": null,
+   "byModel": {
+    "anthropic/claude-opus-5": {
+     "requests": 534,
+     "tokens": {
+      "input": 4341744,
+      "output": 1673525,
+      "cacheRead": 2169942,
+      "cacheWrite": 94400
+     },
+     "estimatedUsd": 65.221819,
+     "unknownRequests": 0
+    }
+   },
+   "note": "the four categories are never added together; unknown is not zero; R multiples are never converted into cost"
+  },
+  "experiment": {
+   "modelCalls": 0,
+   "note": "deterministic preparation and promotion: zero model calls by construction"
+  }
+ }
+}
