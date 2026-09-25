@@ -105,3 +105,15 @@ def test_ready_needs_the_full_sample_and_the_copy_of_a_trade_counts_once():
     breaks = [_t(sess, -1.0, kind="breakout", trigger=f"k{i}", underlying=f"B{i}") for i, sess in enumerate(_sessions(30, start=24))]
     rows = {r["id"]: r for r in sc.run_tests(breaks)}
     assert rows["break_vs_level"]["status"] == "ready" and rows["break_vs_level"]["reading"]["breakMeanR"] == -1.0
+
+
+def test_the_report_renders_every_decided_test_even_without_a_threshold_field():
+    """2026-09-24 close: rules_vs_model was closed without a 'threshold' key and render() crashed (KeyError), so the close
+    check reported 'stop rule: unknown'. Every decided row must render."""
+    from zargar.tools.em_scorecard import render
+    d = {"version": sc.VERSION, "generatedAt": "x", "allBooks": sc.summary([]), "allBooksCorrected": sc.summary([]), "deduplicated": sc.summary([]),
+         "books": {}, "stopRule": sc.stop_rule([]), "tests": sc.run_tests([]), "premiumStopPct": 50.0,
+         "friction": {"fees": 0, "entrySpread": 0, "entrySpreadTrades": 0, "exitSpread": None, "exitSpreadTrades": 0, "optionGross": 0},
+         "impaired": {}, "disputed": [], "trades": 0, "openLots": 0}
+    text = render(d)
+    assert "rules_vs_model" in text and "STOP-RULE: collecting" in text

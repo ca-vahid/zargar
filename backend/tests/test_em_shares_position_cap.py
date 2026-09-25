@@ -48,3 +48,14 @@ def test_research_shadow_books_keep_only_the_dollar_cap_like_the_gate():
     qty, basis = asyncio.run(r._shares_position_cap(ap, 330.2))
     assert qty == int(25000 // 330.2) == 75 and "risk.max_position_notional" in basis   # no equity-share cap on a shadow book
 
+
+
+def test_the_cap_reference_is_the_higher_of_limit_and_mid():
+    """2026-09-24 HOOD: sized at the 120.60 limit, valued by the gate at a higher mid -> 50.2% vs the 50% cap."""
+    r, ap = rig({})
+    r.engine.quotes = SimpleNamespace(get=lambda sym: SimpleNamespace(bid=121.00, ask=121.16))
+    assert r._cap_reference(ap, 120.60) == 121.08
+    r.engine.quotes = SimpleNamespace(get=lambda sym: SimpleNamespace(bid=119.0, ask=119.2))
+    assert r._cap_reference(ap, 120.60) == 120.60, "a mid below the limit never loosens the cap"
+    r.engine.quotes = SimpleNamespace(get=lambda sym: None)
+    assert r._cap_reference(ap, 120.60) == 120.60, "no quote: the limit, as before"

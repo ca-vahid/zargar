@@ -3149,6 +3149,17 @@ class PlanRunner(SessionListener):
                     f"(risk.max_option_premium_pct)")
         return None
 
+    def _cap_reference(self, ap: ArmedPlan, limit: float) -> float:
+        """The price a new share position is capped at: the higher of the order's limit and the live quote MID, because the
+        RiskGate values the resulting position at the mid (2026-09-24, HOOD: 40 shares sized at the 120.60 limit were 50.2%
+        of equity at the mid against the 50% cap)."""
+        with contextlib.suppress(Exception):
+            q = self.engine.quotes.get(ap.symbol)
+            bid, ask = float(getattr(q, "bid", 0) or 0), float(getattr(q, "ask", 0) or 0)
+            if bid > 0 and ask >= bid:
+                return max(float(limit), (bid + ask) / 2)
+        return float(limit)
+
     async def _shares_position_cap(self, ap: ArmedPlan, limit: float) -> tuple[int | None, str]:
         """The largest share quantity the RiskGate's per-position and gross caps admit at `limit` (2026-09-15):
         `risk.max_position_notional`, `risk.max_position_pct` of equity and the room left under
@@ -3370,7 +3381,10 @@ class PlanRunner(SessionListener):
                               f"${cfg.premium_budget:,.0f} plan budget", trigger=trade.trigger_id)
                     qty = float(afford)
             limit = round(trade.entry * (1 + cfg.slippage_pct / 100), 2)
-            afford, basis = await self._shares_position_cap(ap, limit)
+            # 2026-09-24 (HOOD 09:31): the RiskGate values a new position at the quote MID, the sizer at the limit - after a
+            # fast bar the mid was above the limit and 40 shares came out at 50.2% of equity against the 50% cap. Size
+            # against the higher of the two so the gate's own arithmetic admits what is sent.
+            afford, basis = await self._shares_position_cap(ap, self._cap_reference(ap, limit))
             if afford is not None and qty > afford:
                 # size DOWN to what the book's own caps admit instead of sending a refusal (2026-09-15)
                 if afford < 1:
