@@ -67,17 +67,14 @@ if ($armedLine) {
   $baseArmed = ($cells[2].Trim() -split ' ')[0]
   $expArmed = ($cells[3].Trim() -split ' ')[0]
   Say "armed after the batch: baseline $baseArmed, experiment $expArmed"
-  # paid review switched off (the EM stop rule's action): an empty BASELINE is the intended state, not a failure
-  $batchLog = Join-Path $logDir ("em-evening-batch-$((Get-Date).ToString('yyyy-MM-dd')).log")
-  $paidOff = (Test-Path $batchLog) -and [bool](Select-String -LiteralPath $batchLog -Pattern 'paid review is OFF' -Quiet)
-  if ($paidOff) { Say 'paid review is OFF: the baseline is watch-only by decision, only the experiment is judged' }
-  if (($baseArmed -eq '0' -and -not $paidOff) -or $expArmed -eq '0') {
+  # 2026-09-24: the baseline is prepared deterministically inside the engine, so an empty baseline is always a failure;
+  # EM Experimental is retired (paused, experiment disabled) and is not required to be armed
+  if ($baseArmed -eq '0') {
     $body = @("baseline armed: $baseArmed ; experiment armed: $expArmed", "",
-              "The evening batch has stopped and a book is still empty. The batch is RESUMABLE: re-running it",
-              "pays only for the reads that have not completed. Do NOT arm anything by hand to fill the gap.",
-              "    Get-ScheduledTaskInfo -TaskName ZargarEmEveningBatch*",
-              "    Get-Content C:\ProgramData\Zargar\logs\em-evening-batch-*.log -Tail 5") -join "`r`n"
-    @("# EM needs attention - a book has NOTHING armed for $Date", "", "Key: armed",
+              "EM Practice is empty after the evening. It is prepared deterministically inside the engine once the",
+              "16:15 ET sheet exists; check the newest TechniquePrepared event (GET /api/events?type=TechniquePrepared)",
+              "and re-run it if needed (idempotent, zero model calls): POST /api/technique/em/prepare. Never arm by hand.") -join "`r`n"
+    @("# EM needs attention - EM Practice has NOTHING armed for $Date", "", "Key: armed",
       "Raised $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) by the after-arming check for session $Date.",
       "Owner: EM desk (attending); backup: the Zargar operator", "", $body) -join "`r`n" |
       Out-File -FilePath $attention -Encoding utf8
@@ -87,7 +84,7 @@ if ($armedLine) {
     if (Test-Path $attention) {
       $held = (Get-Content -LiteralPath $attention | Where-Object { $_ -like 'Key: *' } | Select-Object -First 1)
       $heldKey = if ($held) { ($held -replace '^Key: ', '').Trim() } else { '' }
-      if ($heldKey -eq 'armed') { Remove-Item $attention -Force; Say 'attention cleared [armed]: both books armed' }
+      if ($heldKey -eq 'armed') { Remove-Item $attention -Force; Say 'attention cleared [armed]: EM Practice armed' }
       else { Say "attention kept: held by [$heldKey], not [armed]" }
     }
   }
