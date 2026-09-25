@@ -936,3 +936,74 @@ review / 12 skip** (10 applied by the non-actionable rule), 0 readErrors.
 **Also today:** rulebook-first caching cut cache writes per review to about a third; the author-flat rule disarmed a
 waiting IONQ plan on neal's exit; an 11:32-11:34 market-data stall affected no Tips position; EM's CBOE 429 fix
 (#274) is in the combined build.
+
+## 2026-09-25 (Fri) - end of session (observed session 5 of 5)
+
+**Build:** 0.8.51 (`fe96ab83`) all session - the sharp-pencil plan P1-P10 switched on before the open (shares first,
+mirror the source's exit, opening grace for option quote stops, lotto cap $50 / 1 per source a day, rule labels +
+reliance, relied-first notes, source cache block, `review_gate=enforce` by the user's decision). **0.8.52** (`8a77cac5`,
+PR #287) deployed 16:06 ET after the close: the analyst no longer trims a position again after the desk mirrored the same
+source exit (finding below). Receipt verified; stops restored for every held quantity.
+
+**Fills and exits, Tips Practice (net of `executions.commission`; all shares today, so no fees):**
+
+| position | how it ended | gross | fees | net |
+|---|---|---:|---:|---:|
+| JELD 369 sh | carried sell at the open, 1.679 (entry 1.92) | -88.93 | 0.00 | **-88.93** |
+| COIN 5 + 2 of 10 sh | two mirrored ab trims at 194.48 / 194.87 (entry 196.95); 3 held | -16.50 | 0.00 | **-16.50** |
+| SPY 1 of 2 sh | mirrored ab trim at 771.76 (entry 767.83); 1 held | +3.93 | 0.00 | **+3.93** |
+| XLU 18 of 36 sh | mirrored jon-and-kian trim at 39.53 (entry 39.38) | +2.74 | 0.00 | **+2.74** |
+| XLU 4 sh | **questioned**: the analyst trimmed again on the same message | +0.61 | 0.00 | **+0.61** |
+| **total** | | -98.15 | 0.00 | **-98.15** |
+
+Subtotal excluding the questioned XLU fill: **-98.76**. The day's loss is the JELD carry (entered 09-23).
+
+**Decision funnel (signals today -> proposals -> fills):** ab 11 -> 3 (SPY take, filled; COIN, LITE skip); eva 10 -> 5 (all
+skip: MSFT/TSLA calls, MSTR shares + put, MU); jon-and-kian 3 -> 1 (XLU take, filled); neal 1 -> 1 (SYM skip); tt 1 -> 1
+(NBIS take, filled); muggzone 3 -> 0 (shadow-only since today). 11 proposals, 3 takes, **3 fills**, 8 declined, no
+avoidable misses. **All three entries were shares** (P1): SPY and NBIS came from option tips, XLU from a 45C tip.
+
+**Review-gated cards (geometry, pre-entry):** 6 - five "no risk estimate: no stop" and one "$365 per unit against the $92
+budget". None reached an order.
+
+**Incidents / fast-stop diagnostics / halts / analyst failures / retries:** none. No option position existed at the open,
+so P3 (opening grace) did not get its first test.
+
+**Execution cost on genuine entries (fill vs decision quote, fresh OPRA/venue quotes):** SPY 1c inside the ask (+0.5c vs
+mid), NBIS at the ask (+10c vs mid), XLU at the ask (+0.5c vs mid).
+
+**Mirror exits (P2, first day):** 4 mirrored trims (COIN x2, SPY, XLU), each journaled `TipSourceExitMirrored`, the venue
+GTC stop resized to the held quantity every time.
+- **FINDING (fixed, 0.8.52):** on XLU the analyst's own run on the same message trimmed 4 more shares 12 s after the
+  mirror (18 + 4). The analyst's `close_position` now refuses a PARTIAL trim for 15 minutes after a mirror on that
+  position; a full close stays its own decision.
+- **OPEN QUESTION (no change):** the mirror matches by source + symbol. ab's two COIN messages were about two different
+  option contracts (197.5C, 10/16 220C) and both trimmed our COIN shares. Under shares-first that is the only possible
+  match; whether an option-contract trim should move a share position is a policy question for the weekly review.
+
+**Carried overnight (all venue GTC stops, quantity = held):** COIN 3 (190.50), CRWV 8 (79.81), NBIS 6 (225.71), PL 59
+(15.45), SPY 1 (766.00, raised after the trim), XLU 14 (38.50); ACHR 261016C6 x5 and 270115C7 x3 on app-managed option
+exits.
+
+**Hold study:** the 15:50 capture wrote 19 fresh rows (9 sim, 10 shadow); every 09-21..09-24 row has its next-open
+sample (14/17/18/18).
+
+**Plans rolling to Monday 09-28:** AAOI, AMZN, AVGO, CRML, CRWV, DAL, GOOGL, MU (eva shadow, see below), NEM, PLTR, T, U.
+
+**Model cost today (calendar day to 16:10 ET, list-price estimate, apart from trading P&L):** priced **$6.79** - intake
+reviews $3.80, appraisals $1.89, extraction $1.10; unpriced: 29 intake runs with no model call (the relevance gate's
+skips under enforce); partial: 0. Retro, digest and audit run tonight. Week: Mon $115.65, Tue $100.46, Wed $61.16, Thu
+$20.69, **Fri $6.79**.
+
+**Relevance gate (ENFORCE today by the user's decision; the tick template's "observe" is superseded):** 40 decisions -
+**20 review / 20 skip**, 0 readErrors. The five-session checkpoint (`ZargarTipsFiveSession`, first run 09-26 02:00 PT)
+counts observe decisions only, so it will see 09-25 as an enforce day - expected, not a gap.
+
+**Also today:**
+- **Research shadow books hold 13 phantom SHORT share positions** (ab/eva/common-stock/muggzone, e.g. eva MU -13,
+  ab APLD -40,600), left by duplicate exit fills 09-04..09-15; none newer. The never-list correctly rejects every re-entry
+  that would leave the book short (MU every morning since 09-21), but the armed-book scorecards include those rows. A
+  repair needs a reviewed data correction (never a synthetic fill) - for the weekly review.
+- A 12:07 ET market-data stall raised one "stale bars" warning on all 121 armed plans (EM 102, Team2 9, Tips 10);
+  recovered by itself, no Tips position affected.
+- The Discord gateway reconnected three times during the day; nothing was lost (pending returned to 0 each time).
