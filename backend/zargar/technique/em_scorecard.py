@@ -61,8 +61,10 @@ TESTS = [
      "decision": "2026-09-22: OFF. 62 fires; filled midday trades lost −0.30R each against −0.09R in the prime "
                  "windows (not statistically separable, p = 0.36). No evidence FOR midday, so the book's R6 stands."},
     {"id": "shares_fallback", "question": "does the shares fallback do as well as the option leg?",
-     "registered": "2026-09-12", "countFrom": "2026-09-12", "minTrades": 20,
-     "metric": "mean R of long-shares trades against long-option trades"},
+     "registered": "2026-09-12", "countFrom": "2026-09-12", "minTrades": 20, "status": "decided",
+     "decision": "2026-09-24: OFF (techniques.enhanced_market.entry_fallback=off). Ready at 22 share trades: shares -0.52R "
+                 "per trade against options +0.05R (15). The pre-written decision applied; plans armed before the change "
+                 "keep their frozen fallback, so it takes effect from the 2026-09-25 evening arming (session 2026-09-28) onward."},
     {"id": "short_puts_prime", "question": "do short puts pay in the prime windows, now that midday is off?",
      "registered": "2026-09-22", "countFrom": "2026-09-23", "minTrades": 20,
      "metric": "mean R of short trades entered in prime_open or prime_close"},
