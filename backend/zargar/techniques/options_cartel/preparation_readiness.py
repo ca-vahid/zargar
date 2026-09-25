@@ -78,14 +78,30 @@ def retain_decisions(previous, observation):
     return sorted(rows.values(), key=lambda r: r.get('at', 0))[-500:]
 
 
+def recovery_client(engine):
+    """One pooled client per engine: building a client per call (a fresh SSL context) stalled the event loop."""
+    import httpx
+
+    from ...marketstructure.history import UA
+    client = getattr(engine, '_cartel_recovery_http', None)
+    if client is None or client.is_closed:
+        client = engine._cartel_recovery_http = httpx.AsyncClient(headers={'User-Agent': UA}, timeout=20.)
+    return client
+
+
+async def close_recovery_client(engine):
+    client = getattr(engine, '_cartel_recovery_http', None)
+    if client is not None and not client.is_closed:
+        await client.aclose()
+
+
 async def load_session_context(engine, plan, now, *, fetch=None):
     """Bounded read-only recovery; returned bars seed this plan, not another runner."""
     import asyncio
 
-    import httpx
     from sqlalchemy import select
 
-    from ...marketstructure.history import UA, fetch_window
+    from ...marketstructure.history import fetch_window
     from ...models import BarRow
     from .history_cache import cached_bars, read_cache, write_cache
     opens, closes = session_bounds(session_date(now))
@@ -103,8 +119,7 @@ async def load_session_context(engine, plan, now, *, fetch=None):
     expected = range(opens, now//60_000*60_000, 60_000)
     simulated = getattr(getattr(engine, 'config', None), 'quote_source', None) == 'sim'
     if any(t not in tape or not trusted(tape[t]) for t in expected) and (fetch is not None or not simulated):
-        async with httpx.AsyncClient(headers={'User-Agent': UA}, timeout=20.) as client:
-            recovered = await asyncio.wait_for((fetch or fetch_window)(plan.symbol, '1m', opens, now, client=client), 25.)
+        recovered = await asyncio.wait_for((fetch or fetch_window)(plan.symbol, '1m', opens, now, client=recovery_client(engine)), 25.)
         for b in recovered:
             if (b.symbol == plan.symbol and b.tf == '1m' and b.ts % 60_000 == 0 and opens <= b.ts and b.ts+60_000 <= now
                     and (b.ts not in tape or (trusted(b) and not trusted(tape[b.ts])))):

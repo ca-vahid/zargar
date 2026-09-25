@@ -807,7 +807,7 @@ async def _submit_preparation(engine, *, scheduled=False, workspace=None, **kwar
         async with engine.sf() as session:
             latest = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
                 TechniqueRun.mode == 'preparation', TechniqueRun.status == 'done', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
-        if latest and not latest.result.get('marketDataErrors') and PreparationPolicy.model_validate(latest.config.get('policy', {})) == policy and latest.config.get('session') == next_session_date(now) and 0 <= now-latest.as_of < 12*3_600_000:
+        if latest and not latest.result.get('marketDataErrors') and PreparationPolicy.model_validate(latest.config.get('policy', {})) == policy and latest.config.get('session') == next_session_date(now) and 0 <= now-latest.as_of < PREPARED_WINDOW_MS:
             if resumable(latest, policy, now):
                 if not recovery_due(latest, now):
                     return {'status': 'recovery_waiting', 'runId': latest.id, 'recovery': latest.result.get('recovery', {})}
@@ -864,6 +864,11 @@ async def recover_interrupted_preparations(engine):
                           'message': 'Preparation interrupted; saved work and existing plans are preserved'}
 
 
+BENCHMARK_RETRY_MS = 20*60_000
+# A complete 20:20 run stands for the 08:45 dispatch (12h25m later); daily bars do not change overnight.
+PREPARED_WINDOW_MS = 14*3_600_000
+
+
 async def automatic_recovery(engine, *, clock=now_ms):
     """Bounded retry on the owning runtime; never resumes a cancelled/disabled job."""
     if getattr(engine, 'cartel_observer', None) is None:
@@ -892,6 +897,9 @@ async def automatic_recovery(engine, *, clock=now_ms):
     if row is None or row.result.get('userCancelled'):
         return
     if row.result.get('phase') == 'waiting_for_benchmark' and row.config.get('session') == next_session_date(now):
+        # Each retry repeats discovery and stores a new run; space them (127 rows on 2026-09-23 at 5 minutes).
+        if 0 <= now-(row.as_of or 0) < BENCHMARK_RETRY_MS:
+            return
         await submit_preparation(engine, workspace=policy.workspace, clock=clock)
     elif resumable(row, policy, now) and row.status == 'failed' and row.result.get('phase') == 'interrupted' and recovery_due(row, now) or resumable(row, policy, now) and row.status == 'done' and recovery_due(row, now):
         await submit_preparation(engine, workspace=policy.workspace, resume_run_id=row.id, recovery_attempt=True, clock=clock)

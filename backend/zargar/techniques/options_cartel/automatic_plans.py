@@ -36,7 +36,7 @@ class PreparationPolicy(WireModel):
     native_daily_batch: bool = False  # explicit provider/session switch, not a silent speed optimization
     require_exchange_history: bool = True
     coverage_policy: Literal['legacy', 'opening_and_broad', 'full_session'] = 'opening_and_broad'
-    ignition_research: bool = True
+    ignition_research: bool = False
     auto_resume: bool = True
     scan_all: bool = True
     history_concurrency: int = Field(default=6, ge=1, le=12)
