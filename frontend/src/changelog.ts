@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.48";
+export const APP_VERSION = "0.8.49";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.49",date:"2026-09-24",title:"Team2: an entry order never outlives its decision",items:[
+    {tag:"fixed",text:"A Team2 entry or add that has not filled within four minutes of its decision is cancelled instead of resting; on September 24 an add rested 33 minutes and filled into a falling market (-$444 across two books)."},
+    {tag:"fixed",text:"When Team2's read closes a setup, any entry order of that setup still waiting to fill is cancelled; on September 23 one filled 40 minutes after its target printed (-$243)."},
+    {tag:"improved",text:"Team2 exits by target, intra-minute stop and the 15:45 flatten now record which rule sold, like the premium stop, and Team2 option picks at the open get the same retry schedule as other desks' entries."},
+  ]},
   {version:"0.8.48",date:"2026-09-24",title:"Tips: stops never fire after hours; notes filed where they belong; lighter intake",items:[
     {tag:"fixed",text:"A position quote-stop no longer fires on an after-hours print; the venue stop remains the protection outside the session. On 09-24 an after-hours print sold JELD for the next open and released its stop."},
     {tag:"fixed",text:"A knowledge note the analyst files under a named source or ticker is kept there instead of landing in general notes."},

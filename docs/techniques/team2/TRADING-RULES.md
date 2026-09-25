@@ -3845,3 +3845,46 @@ Also corrected under the same rule: an X5 add is refused when the desk's book ha
 size than the method describes. Trace, table of evidence and the audit of every other
 model-generated monetary instruction:
 `notes/research/2026-09-21-premium-stop-authority-incident.md`.
+
+### F130 (2026-09-23) - a working entry does not outlive the setup it was sent for
+
+Incident: `Team2 Control`, IWM `pm_break_down@09:30#1` (run `bea1707f`). BUY 40 `IWM260923P00283000` LMT **0.25**
+(the ask) was submitted at 10:18:02 ET and rested unfilled. The read's target printed at 10:27 and the read closed
+the setup; the selection study closed the opportunity at 10:48. The order was still live and filled at 11:08:50,
+when price had moved back against the trade, and was orphan-stopped at 11:10:01: **-$243.20** after fees, the
+only Team2 loss of the day. First occurrence in 22 Team2 fills since 2026-09-08.
+
+Cause: Team2 overrides `_on_bar` and never ran the shared entry-window expiry, and `_exit_from_event` skipped a
+trade in status `working` (`if trade.status != "open": continue`). The only thing that ever cancelled a Team2
+working entry was the 15:45 flatten.
+
+Rule: **when the read fully exits a setup, every working entry of that setup is cancelled** (journaled as
+`entry_cancelled_setup_closed`). A trim does not cancel it; another setup's exit does not; a held trade of the
+same setup keeps its own exit path; replays (`journal=False`) cancel nothing. No fill window was added: how long
+an entry may rest is a method question, and this fix only removes an order whose premise is gone. A fill that
+races the cancel is caught by the existing orphan guard, exactly as today.
+
+Also recorded under F129's vocabulary: the live target (`live_target` -> "target"), the intra-minute underlying
+quote stop (`quote_stop_watch` -> "structural stop") and the clock flatten (`clock_flatten` -> "clock exit") now
+carry an `authority` record on `TechniquePlanExit`; before, they said so only in prose.
+Tests: `tests/test_team2_stale_working_entry.py`.
+
+### F131 (2026-09-24) - an unfilled entry or add is cancelled after two 2m decisions
+
+Incident: `SPY pm_break_up@12:15#1+add1` (Control and Sizing 0.5). The X5 add was sent at 12:46:02 ET as LMT 0.60,
+rested unfilled for 33 minutes while the runner gave back its gains, filled at 13:19:38 at 0.56 into a falling
+market, and was premium-stopped at 13:25 (0.41): **-$444 after fees** across the two books. It also pushed
+Sizing 0.5 past its $800 sampled-drawdown threshold (paused 15:00:21, $1,096 from its $10,681 high water). The setup
+was still held, so F130 (cancel on the read's exit) could not apply.
+
+Rule: **a working Team2 entry or add that has not filled within `techniques.team2.entry_rest_max_seconds` (240 s)
+of its decision is cancelled** (`entry_expired_unfilled`); a partial fill keeps what filled and cancels the rest; a
+`SubmitUncertain` submission is left to the venue's report; 0 switches it off. The value was fixed from the
+method's cadence (a decision is made on one closed 2m bar; two more closes and the price it judged is gone) before
+any saving was measured. The execution record agrees it only touches stale orders: 28 of 30 Team2 entries since
+2026-09-08 filled within 15 s; the other two rested 3,048 s (F130's) and 2,017 s (this one), and both lost.
+Tests: `tests/test_team2_entry_rest_limit.py`.
+
+Also 2026-09-24: Team2's live entry pick now asks the option chain at `cboe_priority("entry")`, the retry schedule
+EM's entries use (PR #274), instead of the default; and `tests/test_team2_no_model_on_order_path.py` pins that no
+model reaches Team2's decision path.
