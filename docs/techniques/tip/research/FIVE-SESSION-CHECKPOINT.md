@@ -2,7 +2,7 @@
 
 **Owner:** the Tips desk (whoever holds the desk on the due date — a person or an assistant session; this file, not a
 coding session's timer, is the commitment). **Deliverable:** ONE report to the user and the review team after five
-ACTUAL observed sessions. **Opened:** 2026-09-19. **Status:** collecting.
+ACTUAL observed sessions. **Opened:** 2026-09-19. **Status:** delivered 2026-09-25 - state INVALID (four observe sessions 09-21..24; 09-25 ran on enforce by the user's decision); report [2026-09-25-five-session-report.md](2026-09-25-five-session-report.md), appendix [2026-09-25-five-session-appendix.md](2026-09-25-five-session-appendix.md). Task `ZargarTipsFiveSession` unregistered.
 
 ## What counts
 
