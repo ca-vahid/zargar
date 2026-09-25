@@ -587,6 +587,8 @@ class CartelRuntime(CartelObserver):
             await asyncio.gather(task, return_exceptions=True)
         from .preparation import stop_preparation
         await stop_preparation(self.engine)
+        from .preparation_readiness import close_recovery_client
+        await close_recovery_client(self.engine)
         if self.preparation_activation_task is not None and not self.preparation_activation_task.done():
             self.preparation_activation_task.cancel()
             await asyncio.gather(self.preparation_activation_task, return_exceptions=True)
