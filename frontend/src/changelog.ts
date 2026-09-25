@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.49";
+export const APP_VERSION = "0.8.50";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.50",date:"2026-09-24",title:"Cartel: lighter preparation and no background research load",items:[
+    {tag:"improved",text:"Options Cartel's order-free research collectors (profitability, intraday and ignition research) are off by default; they never fed an order and added load to the engine during the session."},
+    {tag:"fixed",text:"When benchmark history is late, Cartel preparation retries every 20 minutes instead of every 5 (each retry repeated the whole market discovery), and a complete evening preparation now stands for the 08:45 run instead of being redone."},
+  ]},
   {version:"0.8.49",date:"2026-09-24",title:"Team2: an entry order never outlives its decision",items:[
     {tag:"fixed",text:"A Team2 entry or add that has not filled within four minutes of its decision is cancelled instead of resting; on September 24 an add rested 33 minutes and filled into a falling market (-$444 across two books)."},
     {tag:"fixed",text:"When Team2's read closes a setup, any entry order of that setup still waiting to fill is cancelled; on September 23 one filled 40 minutes after its target printed (-$243)."},
