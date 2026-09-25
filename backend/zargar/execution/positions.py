@@ -55,7 +55,7 @@ from sqlalchemy import select
 
 from .. import bus as topics
 from ..domain import Bar, new_id
-from ..marketstructure.sessions import ET, session_date, session_window
+from ..marketstructure.sessions import ET, in_regular_session, session_date, session_window
 from ..models import ManagedPositionRow, Order
 from ..options import occ as occ_mod
 from .exits import reduce_only_exit_intent
@@ -1825,7 +1825,16 @@ class PositionManager:
                         self._log(p, "premium_floor",
                                   f"ratchet floor -> +{new_state.premium_floor_gain:.0f}% "
                                   f"(peak {((new_state.premium_peak or 0) / p.entry_mark - 1) * 100:+.0f}%)")
-        # crash brake on the underlying
+        # crash brake on the underlying - REGULAR SESSION ONLY, and never while an exit is already working
+        # (2026-09-24 JELD: an after-hours print of 1.60 under a 1.6708 stop fired this brake every ~4 s from
+        # 16:57 to 18:01 ET - 305 exits - released the venue GTC stop and left a market sell resting for the
+        # open. PLATFORM-RULES F-HOLD-01: stop triggers happen only in the regular session, on a plausible quote.
+        # The venue-side GTC stop remains the protection outside the session.)
+        if not in_regular_session(now):
+            self._breaches.pop((p.id, "quote"), None)
+            return
+        if any(x.get("status") not in self._EXIT_DEAD + ("FILLED",) for x in p.exits if x.get("orderId")):
+            return
         stop = stop_price(p.policy, p.state)
         q = self.engine.quotes.get(p.symbol)
         fresh = q is not None and (now - q.ts) <= stale_ms
