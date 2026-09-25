@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.47";
+export const APP_VERSION = "0.8.51";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,26 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.51",date:"2026-09-25",title:"Tips: trade what has worked - shares first, copy the source exit, calm opening stops",items:[
+    {tag:"major",text:"Tips ideas are bought as shares at the same stop on the Practice book unless a source has earned options; short ideas still use puts and short-dated lottos stay small ($50, one per source a day)."},
+    {tag:"new",text:"When a source reports closing or trimming a trade the desk copied, the desk closes or trims its copy right away instead of waiting for the analyst."},
+    {tag:"improved",text:"Option stops no longer fire on the first minutes of wide opening quotes unless the loss is already severe."},
+    {tag:"improved",text:"The analyst cites the trading rules it relied on so unused rules can be retired, picks the notes past runs relied on first, and shares each source's notes in the cache."},
+  ]},
+  {version:"0.8.50",date:"2026-09-24",title:"Cartel: lighter preparation and no background research load",items:[
+    {tag:"improved",text:"Options Cartel's order-free research collectors (profitability, intraday and ignition research) are off by default; they never fed an order and added load to the engine during the session."},
+    {tag:"fixed",text:"When benchmark history is late, Cartel preparation retries every 20 minutes instead of every 5 (each retry repeated the whole market discovery), and a complete evening preparation now stands for the 08:45 run instead of being redone."},
+  ]},
+  {version:"0.8.49",date:"2026-09-24",title:"Team2: an entry order never outlives its decision",items:[
+    {tag:"fixed",text:"A Team2 entry or add that has not filled within four minutes of its decision is cancelled instead of resting; on September 24 an add rested 33 minutes and filled into a falling market (-$444 across two books)."},
+    {tag:"fixed",text:"When Team2's read closes a setup, any entry order of that setup still waiting to fill is cancelled; on September 23 one filled 40 minutes after its target printed (-$243)."},
+    {tag:"improved",text:"Team2 exits by target, intra-minute stop and the 15:45 flatten now record which rule sold, like the premium stop, and Team2 option picks at the open get the same retry schedule as other desks' entries."},
+  ]},
+  {version:"0.8.48",date:"2026-09-24",title:"Tips: stops never fire after hours; notes filed where they belong; lighter intake",items:[
+    {tag:"fixed",text:"A position quote-stop no longer fires on an after-hours print; the venue stop remains the protection outside the session. On 09-24 an after-hours print sold JELD for the next open and released its stop."},
+    {tag:"fixed",text:"A knowledge note the analyst files under a named source or ticker is kept there instead of landing in general notes."},
+    {tag:"improved",text:"Discord images are downloaded through one shared connection and written off the main loop, and the extraction instructions are cached between reads."},
+  ]},
   {version:"0.8.47",date:"2026-09-24",title:"Option picks survive the opening-minute rush",items:[
     {tag:"fixed",text:"At the open the free options-chain provider rate-limits bursts, and on September 24 four EM short entries were dropped after about two seconds of retries. Two books firing the same symbol now share one request, a live entry retries for about four seconds, and background chain requests pause from 9:29 to 9:34 ET (a setting) so entries get the provider first. Held positions and your own reads are never held back."},
     {tag:"fixed",text:"A share entry is sized against the same price the risk check uses (the higher of the limit and the live mid), so an order is no longer refused for landing a fraction over the position cap after a fast bar."},

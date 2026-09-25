@@ -116,7 +116,7 @@ same shape EM and Tip plans use, so replay / sweep / audit work unchanged.
 ### P4 — Review loop (the desk's own)
 - [ ] (dropped by choice) `technique_review` CLI for `--technique team2` — Team2 scores in premium terms through its own `replay`/`sweep`; dump / score / review / diff / replay /
       counterfactual) — generic where it already is, Team2 prompt + rubric where it is not.
-- [x] (done differently) the review loop is the 30-minute watch job (`notes/market-watch.md`, findings F13–F122 in TRADING-RULES), EOD author-vs-desk notes and dated research notes; no `/team2-review` skill: replay what the pipeline saw, why each
+- [x] (done differently) the review loop was the 30-minute watch job (retired 2026-09-24; log `notes/archive/market-watch-2026-09-03-to-09-14.md`, findings F13–F122 in TRADING-RULES), EOD author-vs-desk notes and dated research notes; no `/team2-review` skill: replay what the pipeline saw, why each
       step happened, what price did, classify root cause (data / rule / threshold / expression /
       execution), plan the fix. Findings land in `TRADING-RULES.md`.
 - [ ] Nightly soak line in the morning desk report (`zargar/desk.py`) for Team2: plans built, fires,

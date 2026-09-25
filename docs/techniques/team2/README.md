@@ -34,7 +34,7 @@ fetched again**, plus our codification of it.
 | `notes/x/images/` | 145 tweet images (jpg, local only) + JSON metadata + `INDEX.md` describing the ones read |
 | `AUTHOR-STUDY.md` | Codex's independent source study of the author (2026-09-08): explicit / demonstrated / interpretation / unresolved labels per rule |
 | `CODEX-REVIEW-SCRATCHPAD.md` | Codex's review charter and baseline notes for its independent Team2 review task |
-| `notes/market-watch.md` | the 30-minute market-hours watch log (scheduled task `team2-market-watch`; one section per run, findings mirror into TRADING-RULES) |
+| `notes/archive/market-watch-2026-09-03-to-09-14.md` | the 30-minute market-hours watch log, RETIRED 2026-09-24 (replaced by the end-of-day receipt, `team2_exit_review` and the opportunity audit; findings mirrored into TRADING-RULES) |
 | `notes/research/` | dated research notes: author-study evidence (09-08), review feedback, the week-37 review + change plan (09-12) with its addendum, the C2 key-levels spec (09-13), the C1/sizing controlled comparisons and the sizing-cap experiment sheet rev. 2 with its §2b parallel design (09-15). `c6-evidence.json` is the reviewed C6 record the readiness receipt reads (`satisfied`, `reviewedBy`, `date`, `datasetVersion`, `reference`) — absent until C6 lands |
 | `notes/research/2026-09-17-premarket-input-reconciliation.md` | the 09-17 frozen-vs-bank reconciliation: the private tape accepted exchange corrections the bank never kept (SPY 660.65, IWM 283.92, QQQ 716.76); mechanism, evidence, C6 consequence |
 | `notes/research/2026-09-16-c6-completion-plan.md` | C6 (one tape) — definition, what is measured today, the completion steps with owners and evidence, the receipt path; never waived |

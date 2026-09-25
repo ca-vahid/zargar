@@ -16,6 +16,13 @@ from ..models import ManagedPositionRow, Order, Proposal, Signal
 from ..orders import BracketSpec, OrderIntent
 from ..signals.schemas import TradeSignal
 
+def shares_first_applies(expression: str, *, direction: str, lotto: bool, portfolio_kind) -> bool:
+    """Pure (P1): express this idea in shares? Only for expression=shares, long ideas, not the lotto lane, and never
+    on a live or paper book."""
+    return (str(expression) == "shares" and str(direction) != "short" and not lotto
+            and portfolio_kind not in ("live", "paper"))
+
+
 def share_substitution_ok(*, sec_type, risk_plan, settings, portfolio_kind, verdict, direction, lotto, alt) -> bool:
     """Pure (P-E): may an unfittable option TAKE become its equal-risk share alternative? Practice only (never a live
     book), analyst take, long, not a lotto, the option refused ONLY for size, an available alternative, knob on."""
@@ -446,6 +453,9 @@ class ProposalService:
         # only, and no 0-DTE entries once the expiry-day flatten time has passed
         from ..techniques.tip.lotto import is_lotto, lotto_budget, past_flatten_time
         lotto = is_lotto(signal_row, eng.settings)
+        if lotto and await self._lotto_cap_reached(signal_row.source_name, pid):
+            log.info("lotto %s: the source's daily lotto cap is reached - no proposal", signal_row.id)
+            return None
         if lotto:
             budget = lotto_budget(eng.settings, budget)
             from zoneinfo import ZoneInfo
@@ -526,14 +536,22 @@ class ProposalService:
         # ---- vehicle: the analyst's contract beats the book's, both beat shares
         occ = label = None
         limit_hint = qty_hint = None
-        if analyst.get("verdict") == "take" and analyst.get("contract") \
+        # P1 (2026-09-24 review, user decision): SHARES-FIRST on a Practice book - option cohorts lost -$1,033 over
+        # the record while shares made +$243; a long idea is expressed in shares at the same underlying stop unless
+        # the source earned options (per-source `expression: as_tip`). Shorts stay puts (never share shorting); the
+        # lotto lane stays options (capped by its own budget).
+        shares_first = shares_first_applies(policy.expression, direction=sig.direction, lotto=lotto,
+                                            portfolio_kind=pf.get("kind"))
+        if shares_first:
+            analyst = {**analyst, "_optionSkipped": "shares-first"}
+        if not shares_first and analyst.get("verdict") == "take" and analyst.get("contract") \
                 and analyst.get("instrument", "option") == "option":
             occ = str(analyst["contract"]).upper()
             label = analyst.get("contract_label") or occ
             limit_hint = analyst.get("limit_price")
             qty_hint = analyst.get("quantity")
             picked_by = "analyst"
-        elif expr.get("vehicle") == "option" and expr.get("contract"):
+        elif not shares_first and expr.get("vehicle") == "option" and expr.get("contract"):
             occ = str(expr["contract"]).upper()
             label = expr.get("display") or occ
             limit_hint = expr.get("ask")
@@ -660,6 +678,9 @@ class ProposalService:
             _cl = contract_lotto(symbol, _now_et, eng.settings)
             if _cl == "late":
                 log.info("contract %s expires today past the flatten time - no proposal", symbol)
+                return None
+            if _cl == "lotto" and not lotto and await self._lotto_cap_reached(signal_row.source_name, pid):
+                log.info("contract %s is a lotto and the source's daily lotto cap is reached - no proposal", symbol)
                 return None
             if _cl == "lotto":
                 _dte = (_occ_c.parse(symbol).expiry - _now_et.date()).days
@@ -828,6 +849,25 @@ class ProposalService:
         self._start_entry_study(pdict)
         self._start_card_alert(pdict)
         return pdict
+
+    async def _lotto_cap_reached(self, source: str | None, pid: str) -> bool:
+        """P6 (2026-09-24 review): at most `techniques.tip.lotto_max_per_source_day` lotto cards per source per ET
+        day (pending or executed); 0 = no cap."""
+        eng = self.engine
+        cap = int(eng.settings.get("techniques.tip.lotto_max_per_source_day", 0) or 0)
+        if cap <= 0:
+            return False
+        from zoneinfo import ZoneInfo
+        from sqlalchemy import select as _sel
+        et = ZoneInfo("America/New_York")
+        day0 = dt.datetime.now(et).replace(hour=0, minute=0, second=0, microsecond=0)
+        async with eng.sf() as session:
+            rows = (await session.execute(_sel(Proposal, Signal.source_name).join(
+                Signal, Signal.id == Proposal.signal_id).where(
+                Proposal.portfolio_id == pid, Proposal.created_at >= day0,
+                Proposal.status.in_(("pending", "approved", "executed"))))).all()
+        n = sum(1 for pr, src in rows if src == source and ((pr.context or {}).get("vehicle") or {}).get("lotto"))
+        return n >= cap
 
     def _start_card_alert(self, pdict: dict, *, wait_s: float | None = None) -> None:
         """P-C (2026-09-23: HOOD, GOOGL and AMAT expired unseen - a card that needs a human sent nothing). A card still

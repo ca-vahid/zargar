@@ -82,7 +82,7 @@ async def save(engine, key, mode, prep, at, result, config=None):
 
 async def collect(runtime):
     engine=runtime.engine; now=runtime.clock()
-    if not engine.settings.get(SETTING,True):
+    if not engine.settings.get(SETTING,False):
         runtime._intraday_research_started=None
         return
     policy=read_policy(engine,'practice')
@@ -119,7 +119,7 @@ async def collect(runtime):
         plans=[]
         async with httpx.AsyncClient(timeout=20,headers={'User-Agent':UA},follow_redirects=True) as client:
             for candidate in candidates:
-                if runtime.stopping or not engine.settings.get(SETTING,True):
+                if runtime.stopping or not engine.settings.get(SETTING,False):
                     return
                 try:
                     async with engine.sf() as session:
@@ -152,7 +152,7 @@ async def collect(runtime):
                     plans.append({'symbol':candidate['symbol'],'plan':plan.model_dump(mode='json'),'baseline':baseline})
                 except (*DATA_ERRORS,httpx.HTTPError) as exc:
                     plans.append({'symbol':candidate['symbol'],'error':str(exc)[:250]})
-        if runtime.stopping or not engine.settings.get(SETTING,True) or read_policy(engine,'practice')!=policy:
+        if runtime.stopping or not engine.settings.get(SETTING,False) or read_policy(engine,'practice')!=policy:
             return
         await save(engine,context_id,'watch_context',prep,runtime.clock(),{'plans':plans,'watchStartedAt':runtime.clock()})
         async with engine.sf() as session:
@@ -195,7 +195,7 @@ async def collect(runtime):
                 entryRead=result,entryAfter=after,sourceEvidence=evidence({str(b.ts):pack(b) for b in bars if b.symbol==symbol}), sourceBars=[pack(b) for b in bars if b.symbol==symbol])
         observations.append(item)
     # Recheck cancellation immediately before recording; no result is trading authority in any case.
-    if runtime.stopping or not engine.settings.get(SETTING,True) or read_policy(engine,'practice')!=policy:
+    if runtime.stopping or not engine.settings.get(SETTING,False) or read_policy(engine,'practice')!=policy:
         return
     await save(engine,key,'intraday_watch',prep,now,{'market':market,'candidates':observations,'boundary':boundary,
         'note':'Research only. Two consecutive observed 15-minute closes against frozen daily EMAs; no automatic unlock, contract eligibility or P&L claim.'})

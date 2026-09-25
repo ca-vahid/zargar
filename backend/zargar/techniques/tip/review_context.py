@@ -94,7 +94,7 @@ def tickers_in(message: str, outcomes: list[dict] | None = None) -> list[str]:
     return sorted(found)
 
 
-def stable_first_blocks(header: str) -> list[dict] | str:
+def stable_first_blocks(header: str, *, source_block: bool = False) -> list[dict] | str:
     """P-D (2026-09-23): the run header as two content blocks - the desk's standing rulebook FIRST, carrying its own
     cache marker, then everything message-specific. The rulebook is identical across runs, so consecutive reviews
     READ it from cache instead of each writing ~34k tokens of fresh cache (the message used to sit in front of it).
@@ -107,6 +107,25 @@ def stable_first_blocks(header: str) -> list[dict] | str:
     rest = (header[:i] + header[j:]).strip()
     if not rest:
         return header
+    src_lines: list[str] = []
+    if source_block:
+        # P9 (2026-09-24 review): this SOURCE's notes are the same for every message from it - they move into a second
+        # cached block after the rulebook, so consecutive reviews of one source share them. Each line keeps its own
+        # N-label, so `used_notes` still resolves; the notes section keeps the ticker/general notes of this message.
+        ns = _section(rest, NOTES_MARK, [HISTORY_MARK])
+        if ns:
+            a, b = ns
+            body = rest[a:b].split(chr(10))
+            keep = [ln for ln in body if "[source:" not in ln]
+            src_lines = [ln for ln in body if "[source:" in ln]
+            if src_lines:
+                rest = rest[:a] + chr(10).join(keep) + rest[b:]
+    if src_lines:
+        return [{"type": "text", "text": "(The desk's standing rulebook comes first; the message and its context follow.)" + chr(10) * 2
+                                         + rules, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": "SOURCE NOTES (this source; labels as in SHARED NOTES):" + chr(10)
+                                         + chr(10).join(src_lines) + chr(10), "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": rest}]
     return [{"type": "text", "text": "(The desk's standing rulebook comes first; the message and its context follow.)" + chr(10) * 2
                                      + rules, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": rest}]

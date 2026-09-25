@@ -92,3 +92,29 @@ async def test_pre_attachment_recovery_does_not_consume_throttle(engine):
     engine.cartel_observer=None
     await prep.automatic_recovery(engine,clock=lambda:123456789)
     assert not hasattr(engine,'_cartel_auto_recovery_at')
+
+
+async def test_benchmark_wait_retries_are_spaced(engine,monkeypatch):
+    at,_=inputs();day=next_session_date(at)
+    book=next(p['id'] for p in engine.positions.portfolios() if p['kind']=='sim')
+    policy=PreparationPolicy(enabled=True,portfolio_id=book)
+    await engine.settings.set(SETTING,policy.model_dump(mode='json'))
+    async with engine.sf() as s,s.begin():
+        s.add(TechniqueRun(id='waiting',technique='options_cartel',mode='preparation',symbol='MULTI',status='done',
+            as_of=at,config={'coverageVersion':7,'session':day,'workspace':'practice','portfolioId':book,
+            'policy':policy.model_dump(mode='json')},result={'phase':'waiting_for_benchmark'}))
+    submit=AsyncMock();monkeypatch.setattr(prep,'submit_preparation',submit)
+    engine.cartel_observer=object()
+    await prep.automatic_recovery(engine,clock=lambda:at+5*60_000)
+    submit.assert_not_awaited()
+    engine._cartel_auto_recovery_at=0
+    await prep.automatic_recovery(engine,clock=lambda:at+prep.BENCHMARK_RETRY_MS)
+    submit.assert_awaited_once()
+
+
+def test_order_free_research_defaults_off():
+    from zargar.settings_service import DEFAULTS
+    assert DEFAULTS['techniques.options_cartel.intraday_research'] is False
+    assert DEFAULTS['techniques.options_cartel.profitability_research'] is False
+    assert DEFAULTS['techniques.options_cartel.method_lab'] is False
+    assert PreparationPolicy().ignition_research is False

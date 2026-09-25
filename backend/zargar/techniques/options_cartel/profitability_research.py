@@ -61,7 +61,7 @@ def identity(preparation_id, suffix):
 
 
 def settings(engine):
-    return {'enabled': bool(engine.settings.get(SETTING, True)),
+    return {'enabled': bool(engine.settings.get(SETTING, False)),
         'candidateCap': max(1, min(100, int(engine.settings.get(SETTING+'.candidate_cap', 50)))),
         'bearishEnabled': bool(engine.settings.get(SETTING+'.bearish_enabled', True))}
 

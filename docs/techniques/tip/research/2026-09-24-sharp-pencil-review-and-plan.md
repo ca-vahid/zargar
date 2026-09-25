@@ -126,3 +126,54 @@ analyst declining 106 of 108 eva ideas is right; there is no eva edge to chase a
 
 **Target:** trading ≥ +$105/week (break-even after model cost) within two weeks of P1-P4; the model bill stays ≤ $25
 per weekday.
+
+## 7. Found the same night, and the EM desk's cross-desk review (2026-09-24 late)
+
+**Defects fixed tonight (0.8.48):**
+
+| # | Defect | Fix |
+|---|---|---|
+| D1 | **JELD after-hours stop-out.** An after-hours 1.60 print under a 1.6708 stop fired the underlying crash brake every ~4 s from 16:57 to 18:01 ET (305 exits), released the venue GTC stop and left a MKT DAY sell for the open. | Crash brake acts only in the regular session (`sessions.in_regular_session`) and never while an exit order is working; chaos test added. |
+| D2 | **save_note full scopes filed as `general`** (EM P2.1: 135 of 701 saves). | `note_scope_from_args` honours `source:<name>` / `ticker:<SYM>` as written. The mis-filed notes are NOT re-scoped (propose-only knowledge; a reviewed batch can do it from the run traces). |
+| D3 | **A new HTTP client per Discord image** plus a synchronous file write, both on the event loop (EM P0.4, a top stall stack). | One shared media client; the write moves off the loop. |
+| D4 | **The extraction system prompt was not cached** (EM P2.5). | Cached block when Tips prompt caching is on. |
+
+**Reported, not changed:** the position manager's roll-up gate compares `session_window(now) == "regular"`, but
+`session_window` returns prime_open / midday / prime_close / extended, so **roll-ups have never run since v0.6.2**.
+Fixing the comparison would switch on option rolls for the first time: a trading decision, listed as P13.
+
+**EM's cross-desk items that agree with this plan:** P1.1 (hold vs next-open exit; the 10 positions sold within
+10 minutes of the next open lost -$880) = F2/P3 here; P1.3 (judge sources excluding each source's top 3 trades; eva
+is +$122k with them, -$69k without) = the eva finding and P4/P12; P2.2 relevance-based note retrieval and P2.3 settle
+the 29 pending rules = P7/P8; P2.4 enforce the gate and per-source budgets = P4/P5. EM's estimate for its P2 set:
+about $13-15 per weekday, down from $21.
+
+| # | Added decision | Note |
+|---|---|---|
+| P13 | Switch on option roll-ups (fix the gate) | never live; needs a replay on held winners first |
+
+## 8. Implemented for Friday 2026-09-25 (user: "do all the recommendations right now … restart when ready")
+
+| # | State from 09-25 | How to roll back |
+|---|---|---|
+| P1 shares-first | `techniques.tip.expression_default=shares` (Practice, long ideas, not lotto; shorts stay puts). Per-source `expression: as_tip` restores options for a source that earns them. | `expression_default=as_tip` |
+| P2 mirror the source's exit | `techniques.tip.mirror_source_exits=true`: the author's own grounded close/trim closes (trims 50%) our mirrored Practice position, journaled `TipSourceExitMirrored`. | `mirror_source_exits=false` |
+| P3 opening grace | `techniques.tip.open_stop_grace_s=300`, catastrophe floor 60%: option quote stops (premium stop, crash brake) wait out 09:30-09:35 ET; technique-scoped (EM/Team2 keys unset = off). **Shipped without the planned replay** at the user's instruction; watch the first sessions. | `open_stop_grace_s=0` |
+| P4 source allocation | muggzone -> `shadow`, florida-man -> `proposal`, common-stock budget $3,000 (journaled 09-25 06:0x ET) | the `techniques.tip.sources` map |
+| P5 relevance gate | `review_gate=enforce` (from 09-25; the last of the five observed sessions is therefore measured under enforce) | `review_gate=observe` |
+| P6 lotto cap | `lotto_budget` $50, `lotto_max_per_source_day` 1 | budget 1500 / cap 0 |
+| P7 rule ids + reliance | rules render as `R1..Rn`; replies carry `used_rules`; reliance recorded (`mark_notes_used`) | code (rendering is harmless) |
+| P8 notes | `notes_relied_first=true` (relied-on notes before newest inside each scope's slots). Weekly compaction and the 14-day retirement stay propose-only (a human applies the manifest). | `notes_relied_first=false` |
+| P9 source cache block | `prompt_cache_source_block=true` (3 cache markers: rulebook, source notes, last turn) | `prompt_cache_source_block=false` |
+| P10 nightly verify | `scripts/tips-verify.ps1` + task `ZargarTipsVerify` (22:40 PT, own DB, >= 2 GB free) -> `C:/ProgramData/Zargar/tips-verify/STATUS.json` | unregister the task |
+| P11 Telegram | needs the user's bot token (one-time setup) - not done | - |
+| P12 promotion rule | written here; applied at each weekly review | - |
+| P13 roll-ups | NOT changed (never ran live; needs its own replay and decision) | - |
+
+**The risk budget question (29% of takes could not be sized as options).** Do not raise it now. The budget is 1% of
+the book (~$92) per idea; the ideas that did not fit were options, and options are the vehicle that lost -$1,033 while
+shares made +$243. Shares-first (P1) sizes the same idea in shares at the same stop - any budget fits shares - so the
+"infeasible" class mostly disappears without taking more risk per idea. Raising the budget would mainly buy more of the
+losing vehicle. Revisit after 10 sessions of P1: if a source earns options (P12), give that source a larger option
+budget through its own `risk_pct`, not the whole book.
+

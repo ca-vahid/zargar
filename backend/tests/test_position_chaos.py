@@ -638,3 +638,42 @@ async def test_live_and_simulated_policy_decisions_match(engine):
     assert (p.state.stop is None) == (sim["finalStop"] is None)
     if p.state.stop is not None:
         assert abs(p.state.stop - sim["finalStop"]) < 1e-6
+
+
+async def test_the_crash_brake_never_fires_on_an_after_hours_print(engine, monkeypatch):
+    """2026-09-24 JELD: an after-hours 1.60 print under a 1.6708 stop fired the brake 305 times (16:57-18:01 ET),
+    released the venue GTC stop and left a market sell for the open. Stop triggers are regular-session only."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": "JELDX", "direction": "long", "techniqueId": "tip",
+        "entry": 100.0, "risk": 1.0, "overnight": "app_managed", "overnightAck": True,
+        "policy": {"timeframe": "5m", "stop": {"kind": "fixed", "price": 99.0}},
+        "legs": [{"symbol": "JELDX", "secType": "STK", "qty": 10, "avgFill": 100.0}],
+    })
+    p = pm.get(d["id"])
+    et = ZoneInfo("America/New_York")
+    clock = [int(dt.datetime(2026, 9, 24, 17, 0, tzinfo=et).timestamp() * 1000)]
+    pm.now_ms = lambda: clock[0]
+
+    class Q:
+        bid = ask = 0.0
+        last = 90.0                                      # decisively through the stop
+
+        @property
+        def ts(self):
+            return clock[0]                              # and fresh
+    engine.quotes.get = lambda s: Q()
+    n = len(fo.placed)
+    for _ in range(6):
+        await pm._watch_once()
+        clock[0] += 2000
+    assert len(fo.placed) == n, "an after-hours print must never fire the crash brake"
+    clock[0] = int(dt.datetime(2026, 9, 24, 11, 0, tzinfo=et).timestamp() * 1000)
+    monkeypatch.setenv("ZARGAR_TEST_NOW", "2026-09-24T11:00:00-04:00")   # the whole engine agrees it is 11:00 ET
+    for _ in range(6):
+        await pm._watch_once()
+        clock[0] += 2000
+    assert len(fo.placed) == n + 1, "inside the session the same print fires ONE exit (not one per poll)"

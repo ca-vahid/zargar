@@ -327,3 +327,18 @@ break of the first green 30-minute candle ("30-minute pivot") off those averages
 (break over 937, inside day in a daily base) and TXN (break through 274, weekly flag off the 50-week EMA).
 No trades or P&L were posted. The method lab's `pivot_30m_5m_v1` shadow variant is the closest existing model;
 promoting a pullback/30m-pivot entry to Practice is a candidate next experiment, not adopted.
+
+## September 24: entry grid replay - keep the entry rule; the limits are supply and thin names
+
+Read-only replay (`tools/cartel_entry_grid.py`, record `reviews/2026-09-24-sharp-pencil/PLAN.md` §3) of 98 unique
+long candidate-days 09-08..09-24 on native SIP minutes, 16 predeclared variants (breakout 5m/15m x volume
+1.0/1.2/1.5 x gap none/retest, pivot_30m, undercut reclaim), outcome = stop or first target within 5 sessions,
+underlying R net of 2 bp/side. 65/98 never touched the trigger. Current rule: 3 signals, -2.28R. No variant was
+positive; the extra signals from 5m or 1.0x lost; gap retest never fired; the 30-minute pivot fired once (-1.06R).
+Decision: keep 15m/1.5x; do NOT activate `breakout_5m_v1` or a lower multiple. 19 of 33 touched days were data
+refusals in replay (median 22 quiet minutes per day; KODK/SAIC/TBBB 136-198) - a minute-liquidity screen (C0) and
+wider candidate supply (C1b) are the next experiments. Small sample (3-5 trades per variant): no variant is proven
+bad, none earned promotion.
+
+Same evening: order-free research collectors (method lab, profitability, intraday, ignition) switched off in runtime
+and by default in 0.8.50 - they fed no order and loaded a memory-starved engine.

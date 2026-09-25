@@ -58,7 +58,8 @@ async def test_hypothetical_confirmation_persists_without_arming_or_changing_pre
     database=make_engine(make_test_config().database_url)
     sf=async_sessionmaker(database,expire_on_commit=False)
     policy=PreparationPolicy(enabled=True,portfolio_id='research-book')
-    settings={'techniques.options_cartel.preparation':policy.model_dump(mode='json')}
+    settings={'techniques.options_cartel.preparation':policy.model_dump(mode='json'),
+              'techniques.options_cartel.intraday_research':True}  # off by default since 0.8.50
     engine=SimpleNamespace(sf=sf,settings=settings,feed=SimpleNamespace(watch=AsyncMock()))
     now=OPEN+STEP+60000
     runtime=SimpleNamespace(engine=engine,clock=lambda:now,stopping=False,_intraday_research_started=None,

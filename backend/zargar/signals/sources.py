@@ -30,6 +30,7 @@ class SourcePolicy:
     horizon_sessions: int = 15        # tip expires unfilled/unresolved after N sessions
     min_conviction: str = "implied"   # below this: shadow-only, no proposal
     max_open_tips: int = 5
+    expression: str = "as_tip"        # as_tip | shares  (P1 2026-09-24: shares-first unless a source earns options)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -68,4 +69,7 @@ def resolve_policy(settings, source_name: str | None) -> SourcePolicy:
         horizon_sessions=int(pick("horizon_sessions", 15)),
         min_conviction=str(pick("min_conviction", "implied")),
         max_open_tips=int(pick("max_open_tips", 5)),
+        expression=(lambda e: e if e in ("as_tip", "shares") else "as_tip")(str(pick("expression_default", "as_tip")
+                                                                             if o.get("expression") is None
+                                                                             else o.get("expression"))),
     )

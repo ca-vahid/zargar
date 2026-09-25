@@ -101,4 +101,4 @@ trades earn after fees? A healthy app with zero trades is not progress.
 | 2026-09-22 22:15 | `rankingVersion` v1 -> `legacy` | v1 picked deep in-the-money contracts |
 | 2026-09-23 13:52 | `nativeDailyBatch=true` | Yahoo daily omitted 09-22; benchmark waited all day |
 | 2026-09-23 20:26 | `nativeDailyBatch=false`; `rankingVersion=executable_cost_v2`; `entry.gap_policy=retest_v1`; `setups.dry_up_rule=non_increasing_v1` | Shared daily path is now Alpaca-first and complete by the evening; three switches act at separate funnel stages |
-| pending | `minArmTargetR=0.5`; `entryCadence=breakout_5m_v1` | After the first sessions under the switches above |
+| 2026-09-24 | `entryCadence=breakout_5m_v1` NOT activated (entry grid: no variant beat the current rule); `minArmTargetR=0.5` moved to the 09-24 plan (C2) | `reviews/2026-09-24-sharp-pencil/PLAN.md` |

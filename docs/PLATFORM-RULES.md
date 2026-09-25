@@ -2699,3 +2699,13 @@ reports RESTORE MISMATCH (exit 6) only after the missing set has stopped shrinki
 same release: card alerts (`TipCardAlert`), the author-flat review rule, rulebook-first cache blocks, the Practice share
 substitution (`TipSharesSubstituted`).
 
+### Option quote stops can wait out the opening minutes (technique-scoped) - 2026-09-25 (Tips desk, 0.8.51)
+
+`execution/positions.py::_open_grace`: an OPTION position's quote-driven stops (premium stop, underlying crash brake)
+wait `techniques.<technique>.open_stop_grace_s` seconds after 09:30 ET unless the premium is already past
+`techniques.<technique>.open_stop_catastrophe_pct`. Unset for a technique = off, so EM and Team2 behaviour is unchanged
+until their desks opt in. Evidence (Tips record): 6 of 6 exits in the first seconds of a session lost -$830, all on
+the widest quotes of the day. The crash brake also no longer runs a second time while the premium grace applies, and
+(0.8.48) never outside the regular session. Also in this release, Tips-only: source-exit mirroring
+(`TipSourceExitMirrored`), shares-first expression, lotto daily cap, rule labels with recorded reliance.
+
