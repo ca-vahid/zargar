@@ -29,6 +29,17 @@ def session_window(ts_ms: int) -> str:
     return "extended"
 
 
+def in_regular_session(ts_ms: int) -> bool:
+    """True inside 09:30-16:00 ET on an NYSE trading day (session_window names the parts; it never says
+    "regular" - 2026-09-24: a `== "regular"` comparison silently disabled the roll-up gate since v0.6.2)."""
+    from .market_calendar import is_trading_day, session_close_minutes
+    t = dt.datetime.fromtimestamp(ts_ms / 1000, ET)
+    if not is_trading_day(t.date()):
+        return False
+    m = t.hour * 60 + t.minute
+    return 9 * 60 + 30 <= m < session_close_minutes(t.date())
+
+
 def is_prime(ts_ms: int) -> bool:
     return session_window(ts_ms) in PRIME_WINDOWS
 

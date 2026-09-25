@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.47";
+export const APP_VERSION = "0.8.48";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.48",date:"2026-09-24",title:"Tips: stops never fire after hours; notes filed where they belong; lighter intake",items:[
+    {tag:"fixed",text:"A position quote-stop no longer fires on an after-hours print; the venue stop remains the protection outside the session. On 09-24 an after-hours print sold JELD for the next open and released its stop."},
+    {tag:"fixed",text:"A knowledge note the analyst files under a named source or ticker is kept there instead of landing in general notes."},
+    {tag:"improved",text:"Discord images are downloaded through one shared connection and written off the main loop, and the extraction instructions are cached between reads."},
+  ]},
   {version:"0.8.47",date:"2026-09-24",title:"Option picks survive the opening-minute rush",items:[
     {tag:"fixed",text:"At the open the free options-chain provider rate-limits bursts, and on September 24 four EM short entries were dropped after about two seconds of retries. Two books firing the same symbol now share one request, a live entry retries for about four seconds, and background chain requests pause from 9:29 to 9:34 ET (a setting) so entries get the provider first. Held positions and your own reads are never held back."},
     {tag:"fixed",text:"A share entry is sized against the same price the risk check uses (the higher of the limit and the live mid), so an order is no longer refused for landing a fraction over the position cap after a fast bar."},
