@@ -166,21 +166,19 @@ if ($Phase -eq 'clock') {
     $cells = $armedLine.ToString().Split('|')
     $baseArmed = ($cells[2].Trim() -split ' ')[0]
     $expArmed = ($cells[3].Trim() -split ' ')[0]
-    $prev = Get-ChildItem $logDir -Filter 'em-evening-batch-*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    $paidOff = $prev -and [bool](Select-String -LiteralPath $prev.FullName -Pattern 'paid review is OFF' -Quiet)
-    if ($paidOff) { Say 'paid review is OFF: an empty baseline is the decided state' }
-    if (($baseArmed -eq '0' -and -not $paidOff) -or $expArmed -eq '0') {
-      Raise-Attention 'armed' "a book has NOTHING armed for $Date" (
-        "baseline armed: $baseArmed ; experiment armed: $expArmed`r`n`r`n" +
-        "One book being empty means its preparation did not complete. The comparison has no control without`r`n" +
-        "the baseline, and the experiment cannot trade without its own plans.`r`n`r`n" +
-        "Check first: is the evening batch still running or did it die?`r`n" +
-        "    Get-ScheduledTaskInfo -TaskName ZargarEmEveningBatch*`r`n" +
-        "    Get-Content C:\ProgramData\Zargar\logs\em-evening-batch-*.log -Tail 5`r`n" +
-        "The batch is RESUMABLE: re-running it pays only for the reads that have not completed.`r`n" +
-        "Do NOT arm anything by hand to fill the gap.")
+    # 2026-09-24: EM prepares the baseline deterministically INSIDE the engine (em-deterministic-prep-v1), so an empty
+    # baseline is always a failure - the batch's nightly 'paid review is OFF' line no longer excuses it. EM Experimental
+    # was retired the same day (book paused, experiment disabled): it is no longer required to be armed.
+    if ($baseArmed -eq '0') {
+      Raise-Attention 'armed' "EM Practice has NOTHING armed for $Date" (
+        "baseline armed: $baseArmed`r`n`r`n" +
+        "EM prepares this book deterministically inside the engine (em-deterministic-prep-v1) once the 16:15 ET`r`n" +
+        "sheet exists. An empty book means that preparation did not run or failed. Check the journal:`r`n" +
+        "    GET /api/events?type=TechniquePrepared   (the newest row: planFor, armed, errors)`r`n" +
+        "Re-run it (idempotent, zero model calls):   POST /api/technique/em/prepare`r`n" +
+        "Do NOT arm anything by hand.")
     } else {
-      Clear-Attention 'armed' "both books armed for $Date (baseline $baseArmed, experiment $expArmed)"
+      Clear-Attention 'armed' "EM Practice armed for $Date ($baseArmed plans)"
     }
   }
   $text | Tee-Object -FilePath $log -Append | Out-Null

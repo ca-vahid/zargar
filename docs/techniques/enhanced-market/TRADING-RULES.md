@@ -1662,3 +1662,15 @@ chance.
 
 **Defect (0.8.40):** outcome scoring had stopped after 2026-09-18 (future-session plans starved the queue). Studies that
 need outcomes for 09-21 onward waited for the backlog to drain.
+
+### 2026-09-24 - the shares fallback is switched OFF (preregistered test `shares_fallback` decided)
+
+The test registered 2026-09-12 (C2) reached its sample: 22 long-shares trades at **-0.52R** per trade against 15 long-option
+trades at **+0.05R** (de-duplicated, method-own R). The decision written in advance (`reviews/2026-09-23-DAY-REVIEW-AND-PLAN.md`)
+was applied through the journaled settings API: `techniques.enhanced_market.entry_fallback` shares -> **off**. When the option
+is untradeable the trigger is now skipped instead of buying shares. `entry_fallback` is frozen on each arm, so the plans
+armed for 2026-09-25 keep `shares`; the change applies from the 2026-09-25 evening arming (session 2026-09-28) onward.
+Rollback = the same key back to `shares`.
+
+Context the same day: 2026-09-24 was the worst EM session so far (baseline -439.42, experiment -660.92, 9 of 9 trades
+stopped). Record to date 61 trades, -1,545.67, profit factor 0.50; the stop rule is at 3 of 20 sessions.
