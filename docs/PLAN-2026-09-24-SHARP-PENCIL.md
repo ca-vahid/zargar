@@ -65,8 +65,9 @@ Order is by money at stake per unit of effort.
 | 0.1 | No test suites or research tools on the host during market hours; close idle agent sessions from 09-22 | 0.6 GB free; the engine is not the memory user (252 MB) | all desks |
 | 0.2 | Split the database pool: money paths (loss monitor, journal, orders) get their own reserved connections; cap concurrent research jobs | the pool ran dry at 11:28 ET and the daily loss monitor failed | EM (platform) |
 | 0.3 | Gate the options enrichment loop to market hours (plus a pre-open warm-up) | ~1,700 overnight skips, CBOE cooldown already hot at 06:00 PT | EM (platform) |
-| 0.4 | Reuse one HTTP client in the 4 functions that create one per call | top cause of the 167 stalls | Cartel (3), Tips (1) |
-| 0.5 | Research/replay tools stop writing `technique_runs` on the runtime DB | Cartel wrote ~17,000 runs (~1 GB) in three days; the table is 4.7 GB | Cartel |
+| 0.4 | Reuse one HTTP client in the 4 functions that create one per call | top cause of the 167 stalls | Cartel (3), Tips (1). Cartel switched its three order-free collectors OFF at 19:54 ET 09-24 (journaled); `preparation_readiness` gets a shared client in its next PR |
+| 0.5 | Cartel preparation stops writing a full `analysis` run for every evaluated listing (screen passes only), checks the benchmark before discovery and caps the `waiting_for_benchmark` retries, and does not redo a complete evening preparation in the morning | ~3,090 runs per preparation (140-310 MB a day) plus 127 retry rows on 09-23. CORRECTED 2026-09-24 20:00 ET by the Cartel desk: the research tools (`cartel_entry_grid`, the historical lab) only read; the volume is preparation itself | Cartel (reviewed PR) |
+| 0.5b | Restart readiness must count an active Cartel preparation | on 09-23 restart-check said safe while one ran (auto-resume covered it) | EM (platform) + Cartel |
 | 0.6 | An Alpaca option-chain provider behind CBOE (the paid feed already serves OPRA quotes) | CBOE is a free, no-guarantee single point of failure for every option entry | EM (platform), User approves |
 
 ### P1 - where profit can actually come from
