@@ -22,6 +22,11 @@ such. No profitable strategy or exact author replication has been established.
   nothing armed. Since 20:26 ET Practice reads the shared Alpaca-first daily path (`nativeDailyBatch=false`)
   and runs `executable_cost_v2`, `gap_policy=retest_v1` and `dry_up_rule=non_increasing_v1`; the arm gate and
   5m cadence stay off. Record: [plan section 7](reviews/2026-09-22-plan/PLAN.md).
+- **2026-09-24 (0.8.50).** The $10k Practice book (`297d8b39…`) is the only Cartel book. Order-free research
+  collectors (method lab, profitability, intraday, ignition) are off. An entry-grid replay over 98 candidate-days
+  found no entry variant worth activating (65/98 never touched the trigger; the 5m pilot and lower volume
+  multiples add losing signals), so the entry rule stays. Next levers are a minute-liquidity screen, wider
+  candidate supply and the first-target arm gate: [2026-09-24 plan](reviews/2026-09-24-sharp-pencil/PLAN.md).
 - **Known limits.** Untrusted confirmation windows are caused by no-trade minutes at the end of a
   bucket, before a non-emission proof can exist (design decision open). Sean's daily posts cannot be
   retrieved automatically (X returns 402). Shares fallback (brief F6) and historical data repair (F7)
@@ -35,7 +40,9 @@ such. No profitable strategy or exact author replication has been established.
 3. [2026-09-22 improvement plan](reviews/2026-09-22-plan/PLAN.md): funnel evidence, switches, activation
    order and rollback. The [September 21 brief](IMPLEMENTATION-BRIEF-2026-09-21.md) is the specification it
    implements (F1-F4 plus the plan items; F5-F8 partly open).
-4. [Trading decisions log](TRADING-RULES.md): every method decision with its date and evidence.
+4. [2026-09-24 sharp-pencil plan](reviews/2026-09-24-sharp-pencil/PLAN.md): what was removed, the entry-grid
+   verdict, the ordered Cartel plan and cross-desk LLM/knowledge findings.
+5. [Trading decisions log](TRADING-RULES.md): every method decision with its date and evidence.
 
 In the app: Plans for preparation, Armed for monitored campaigns, History/Validation for research,
 Method for the bundled chapters. An armed plan is not a filled position; entries still pass closed-bar,
