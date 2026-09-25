@@ -120,7 +120,10 @@ def evaluate(candidate, day, history, minutes, frozen_at):
             row.update(entry=signal["referencePrice"], stop=signal["stop"], volumeRatio=signal.get("volumeRatio"),
                        outcome=outcome(signal, targets, minutes, horizon_end=end))
         rows.append(row)
+    sign = 1 if candidate.get("direction", "long") == "long" else -1
+    touch = next((b.ts for b in day_minutes if ((b.high if sign == 1 else b.low)-candidate["trigger"])*sign >= 0), None)
     return {"symbol": candidate["symbol"], "session": day, "setup": candidate["setup"], "trigger": candidate["trigger"],
+            "touchedAt": touch, "absentMinutes": (closed-opened)//60_000-len(day_minutes),
             "minuteCount": len(day_minutes), "baselineSlots": {tf: len(m["baselines"]) for tf, m in matrices.items()}, "rows": rows}
 
 

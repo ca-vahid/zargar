@@ -1012,10 +1012,18 @@ class SignalService:
             alloc.append((f"signal:{signal_id}", 3))
         picked: list[dict] = []
         seen: set[str] = set()
+        relied_first = as_of is None and bool(self.engine.settings.get("techniques.tip.notes_relied_first", False))
         for scope, cap in alloc:
             if len(picked) >= limit:
                 break                       # explicit: the tail scope is trimmed
-            for note in await self.tip_notes([scope], limit=cap, as_of=as_of):
+            pool = await self.tip_notes([scope], limit=(cap * 5 if relied_first else cap), as_of=as_of)
+            if relied_first:
+                # P8/EM P2.2 (2026-09-24 review): within a scope's slots, notes past runs RELIED on come first
+                # (then the newest) - 603 of 1,068 source notes were never relied on and newest-first kept feeding
+                # fresh chatter over proven context
+                pool = sorted(pool, key=lambda n: (int(n.get("citedCount") or 0) > 0, n.get("createdAt") or ""),
+                              reverse=True)[:cap]
+            for note in pool:
                 if note["id"] not in seen and len(picked) < limit:
                     seen.add(note["id"])
                     picked.append(note)
@@ -2104,6 +2112,39 @@ class SignalService:
             intake.step("note", f"Review gate ({rg.VERSION}, observe): would skip - {d['reason']}. Reviewing anyway.")
         return True
 
+    async def _mirror_source_exit(self, source: str, row, sig, grounding: dict) -> list[str]:
+        """P2: close (or trim) the tip positions we hold from `source` on this ticker when the AUTHOR reports their
+        own exit. Knob `techniques.tip.mirror_source_exits`; fraction for a trim `techniques.tip.mirror_trim_fraction`.
+        Never a live/paper book, never an open, never on an ungrounded or third-party line."""
+        eng = self.engine
+        if not bool(eng.settings.get("techniques.tip.mirror_source_exits", False)):
+            return []
+        if sig.action not in ("trim", "close") or not (grounding or {}).get("passed"):
+            return []
+        if str(getattr(sig, "actor", "") or "") == "third_party" or not getattr(sig, "is_actionable", False):
+            return []
+        mgr = getattr(eng, "position_manager", None)
+        if mgr is None:
+            return []
+        frac = 1.0 if sig.action == "close" else float(eng.settings.get("techniques.tip.mirror_trim_fraction", 0.5) or 0.5)
+        done = []
+        for p in mgr.positions(status="open"):
+            if p.get("technique") != "tip" or f"source:{source}" not in (p.get("tags") or []):
+                continue
+            if str(p.get("symbol") or "").upper() != str(row.ticker or "").upper():
+                continue
+            pf = eng.positions.portfolio(p.get("portfolioId")) or {}
+            if pf.get("kind") in ("live", "paper"):
+                continue
+            reason = f"source {sig.action}: mirrored ({source}, signal {row.id})"
+            await mgr.close(p["id"], fraction=min(1.0, max(0.05, frac)), reason=reason[:200])
+            await eng.journal.append("TipSourceExitMirrored", {
+                "positionId": p["id"], "symbol": p.get("symbol"), "source": source, "action": sig.action,
+                "fraction": frac, "signalId": row.id}, aggregate_type="position", aggregate_id=p["id"],
+                portfolio_id=p.get("portfolioId"))
+            done.append(p["id"])
+        return done
+
     async def _source_has_open_items(self, source: str | None) -> bool:
         """Does this source have anything OPEN on the desk (tips, waiting armed
         plans, managed positions)? Gates the no-ticker follow-up review (D1)."""
@@ -2432,6 +2473,14 @@ class SignalService:
             # the stop") deterministically reaches everything it invalidates
             # BEFORE any human or auto mode can act on a stale card
             if sig.action in ("trim", "close", "update_stop"):
+                # P2 (2026-09-24 review): the source's OWN exit is mirrored on the positions we hold from that
+                # source - deterministically, not left to the analyst's judgement (mirrored exits are the desk's
+                # best exit class, +$417 over the record; NEM 09-23 was missed). Practice books only; exits only.
+                with contextlib.suppress(Exception):
+                    mirrored = await self._mirror_source_exit(content.source_name or "unknown", row, sig, grounding)
+                    if mirrored:
+                        istep("note", f"{row.ticker}: mirrored the source's {sig.action} on "
+                                      f"{len(mirrored)} held position(s).")
                 if eng.proposals is not None:
                     with contextlib.suppress(Exception):
                         n_exp = await eng.proposals.expire_for_followup(
