@@ -2138,6 +2138,8 @@ class SignalService:
                 continue
             reason = f"source {sig.action}: mirrored ({source}, signal {row.id})"
             await mgr.close(p["id"], fraction=min(1.0, max(0.05, frac)), reason=reason[:200])
+            from ..techniques.tip.analyst import note_source_mirror
+            note_source_mirror(eng, p["id"], sig.action, row.id)
             await eng.journal.append("TipSourceExitMirrored", {
                 "positionId": p["id"], "symbol": p.get("symbol"), "source": source, "action": sig.action,
                 "fraction": frac, "signalId": row.id}, aggregate_type="position", aggregate_id=p["id"],
