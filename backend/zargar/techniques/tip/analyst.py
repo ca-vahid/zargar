@@ -67,6 +67,29 @@ def carried_exit_fields(policy: dict, args: dict) -> dict:
             "premiumStopPct": args["premium_stop_pct"] if has("premium_stop_pct") else pol.get("premium_stop_pct")}
 
 
+def note_scope_from_args(raw: str, ctx: dict) -> str:
+    """save_note scope. Bare words resolve against the run ("ticker" -> this run's ticker, "source" -> this run's
+    source); a FULL scope the model wrote ("source:<name>", "ticker:AMZN") is honoured as written (2026-09-24,
+    EM cross-desk review P2.1: 135 of 701 saves with a full scope were stored as `general` because the lookup only
+    knew the bare words). Anything else is `general`."""
+    r = (raw or "general").strip()
+    fam, sep, ent = r.partition(":")
+    fam = fam.strip().lower()
+    ent = ent.strip()
+    if sep and ent:
+        if fam == "ticker":
+            return f"ticker:{ent.upper().lstrip('$')}"
+        if fam == "source":
+            return f"source:{ent}"
+        if fam in ("tip", "signal"):
+            return f"signal:{ent}"
+    return {"ticker": f"ticker:{str(ctx.get('ticker') or '').upper()}",
+            "source": f"source:{ctx.get('source') or 'unknown'}",
+            "tip": f"signal:{ctx.get('signal_id') or ''}",
+            "rule": "rule",                       # the analyst's own rulebook
+            }.get(fam, "general")
+
+
 def prompt_cache_scope(eng) -> str:
     """ADV-03 (2026-09-23): WHAT the cache covers when caching is on. `prefix` (E17-03) = system + tool definitions
     only (~11% of a call). `conversation` = also everything up to the latest message: the per-run header (rulebook +
@@ -978,12 +1001,7 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                                 str(args.get("source") or ""))
     if name == "save_note":
         ctx = ctx or {}
-        kind = str(args.get("scope") or "general").lower()
-        scope = {"ticker": f"ticker:{str(ctx.get('ticker') or '').upper()}",
-                 "source": f"source:{ctx.get('source') or 'unknown'}",
-                 "tip": f"signal:{ctx.get('signal_id') or ''}",
-                 "rule": "rule",                       # the analyst's own rulebook
-                 }.get(kind, "general")
+        scope = note_scope_from_args(str(args.get("scope") or "general"), ctx)
         text = str(args.get("text") or "")
         # Knowledge hygiene (daily review 2026-09-01: 100 notes in one day, 18 of
         # them numbering a source's "message families" — every "wow" and emoji
