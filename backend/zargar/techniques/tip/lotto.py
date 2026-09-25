@@ -61,3 +61,19 @@ def flatten_time_et(settings) -> tuple[int, int]:
 def past_flatten_time(settings, now_et: dt.datetime) -> bool:
     hh, mm = flatten_time_et(settings)
     return now_et.hour * 60 + now_et.minute >= hh * 60 + mm
+
+
+def contract_lotto(symbol: str, now_et: dt.datetime, settings) -> str | None:
+    """Pure (2026-09-24): is the contract ACTUALLY bought in the lotto window? Returns "lotto", "late" (expires today
+    and the flatten time has passed - never buy it), or None (not a lotto / not an option)."""
+    from ...options import occ as _occ
+    o = _occ.parse(symbol)
+    if o is None:
+        return None
+    dte = (o.expiry - now_et.date()).days
+    if not 0 <= dte <= lotto_max_dte(settings):
+        return None
+    if dte == 0 and past_flatten_time(settings, now_et):
+        return "late"
+    return "lotto"
+

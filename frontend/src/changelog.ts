@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.43";
+export const APP_VERSION = "0.8.47";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.47",date:"2026-09-24",title:"Option picks survive the opening-minute rush",items:[
+    {tag:"fixed",text:"At the open the free options-chain provider rate-limits bursts, and on September 24 four EM short entries were dropped after about two seconds of retries. Two books firing the same symbol now share one request, a live entry retries for about four seconds, and background chain requests pause from 9:29 to 9:34 ET (a setting) so entries get the provider first. Held positions and your own reads are never held back."},
+    {tag:"fixed",text:"A share entry is sized against the same price the risk check uses (the higher of the limit and the live mid), so an order is no longer refused for landing a fraction over the position cap after a fast bar."},
+  ]},
+  {version:"0.8.46",date:"2026-09-24",title:"Tips: a short-dated option is handled as a lotto even when the tip gave no expiry",items:[
+    {tag:"fixed",text:"When the analyst picks a contract that expires within the lotto window, the position is held into expiry day and flattened at the lotto time. Before, a tip without a stated expiry was treated as an ordinary option, and the day-before-expiry rule sold a 1-day call nine minutes after it filled (fees larger than the gain)."},
+  ]},
+  {version:"0.8.44",date:"2026-09-24",title:"Tips: option contracts are always valid option symbols",items:[
+    {tag:"fixed",text:"An option contract written in a short form (for example INTC260925C130) is converted to the standard option symbol before a card is priced; a string that is not a contract is never used. The first such card waited for a human with no risk estimate."},
+  ]},
   {version:"0.8.43",date:"2026-09-23",title:"Tips: intake reads tips with Claude Opus 5.5 and catches position updates",items:[
     {tag:"improved",text:"Intake extraction now names position updates explicitly (trims, stop-outs, closes, 'TP hit') and resolves 'friday calls' and LEAPS, so follow-ups on positions the desk mirrors are no longer dropped. Measured on 40 real messages before the switch: Claude Opus 5.5 at medium effort with this rule changed no actionable signal and costs about 18% less than Opus 5."},
     {tag:"improved",text:"The Tips analyst runs Claude Opus 5.5 at medium effort (Anthropic's recommended starting point) with room for its thinking in every reply."},

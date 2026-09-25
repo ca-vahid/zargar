@@ -65,6 +65,8 @@ class OptionsService:
             self._cboe = CboeClient(cooldown_s=cooldown)
         elif hasattr(self._cboe, "cooldown_s"):
             self._cboe.cooldown_s = cooldown             # the setting is live-editable; the client follows it
+        if hasattr(self._cboe, "open_quiet"):
+            self._cboe.open_quiet = bool(s.get("options.cboe_open_quiet", True))
         return self._cboe
 
     def use_client(self, client) -> None:
