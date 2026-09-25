@@ -1717,6 +1717,34 @@ class PositionManager:
                     if not t.cancelled() and t.exception() is not None:
                         log.error("position watch step failed: %r", t.exception())
 
+    def _open_grace(self, p: Managed, now: int, *, mark: float | None = None) -> bool:
+        """P3 (2026-09-24 review): an OPTION position's quote-driven stops (premium stop, underlying crash brake)
+        wait out the first `techniques.<technique>.open_stop_grace_s` seconds after the 09:30 ET open, when option
+        spreads are widest (6 of 6 first-seconds exits lost -$830 over the Tips record) - unless the premium is
+        already down past `open_stop_catastrophe_pct`. Technique-scoped (0 = off); venue stops are untouched."""
+        if not p.has_options:
+            return False
+        try:
+            g = float(self.engine.settings.get(f"techniques.{p.technique}.open_stop_grace_s", 0) or 0)
+            cat = float(self.engine.settings.get(f"techniques.{p.technique}.open_stop_catastrophe_pct", 60) or 60)
+        except Exception:
+            return False
+        if g <= 0 or not in_regular_session(now):
+            return False
+        t = dt.datetime.fromtimestamp(now / 1000, ET)
+        opened = t.replace(hour=9, minute=30, second=0, microsecond=0)
+        if (t - opened).total_seconds() >= g:
+            return False
+        if mark is not None and p.entry_mark and (mark / p.entry_mark - 1.0) * 100.0 <= -cat:
+            return False                               # a catastrophe is never waited out
+        key = (p.id, t.date().isoformat())
+        seen = self.__dict__.setdefault("_grace_logged", set())
+        if key not in seen:
+            seen.add(key)
+            self._log(p, "open_grace", f"opening quotes: option stops wait {g:.0f}s after 09:30 ET "
+                                       f"(catastrophe floor -{cat:.0f}%)")
+        return True
+
     async def _watch_position(self, p: Managed, *, now: int, excess: float, need: int, stale_ms: int) -> None:
         """The per-position step of `_watch_once` (adapter watch, failed-exit
         watchdog, expiry-day clock flatten, roll-up, premium watch, the
@@ -1792,6 +1820,8 @@ class PositionManager:
                     # no breach, or a NON-stop outcome (a take): an earlier
                     # adverse sighting must not be preserved by accident
                     self._premium_confirm.pop(p.id, None)
+                if d is not None and d.kind == "premium_stop" and self._open_grace(p, now, mark=mark):
+                    d = None                          # P3: the opening quote does not decide an option stop
                 if d is not None and d.kind == "premium_stop":
                     d = self._confirm_premium_stop(p, d, now)
                 if d is not None and d.kind == "premium_take" \
@@ -1832,6 +1862,9 @@ class PositionManager:
         # The venue-side GTC stop remains the protection outside the session.)
         if not in_regular_session(now):
             self._breaches.pop((p.id, "quote"), None)
+            return
+        if p.has_options and self._open_grace(p, now, mark=self._fresh_net_mark(p) if p.entry_mark else None):
+            self._breaches.pop((p.id, "quote"), None)   # P3: no option exit on the first minutes' quotes
             return
         if any(x.get("status") not in self._EXIT_DEAD + ("FILLED",) for x in p.exits if x.get("orderId")):
             return
