@@ -63,13 +63,50 @@ Tool: `backend/zargar/tools/cartel_entry_grid.py` (read-only; no orders, no writ
 - Limits: underlying R only (no historical option quotes); retrospective minutes, not receipt-time evidence;
   an exploratory grid on a small sample, not a held-out test; signals within one session are correlated.
 
-RESULTS_PLACEHOLDER
+### Results (run 2026-09-24 evening; 119 candidate-days, 98 unique after removing pools that sat in two books)
+
+| Variant (all gap variants identical to their no-gap twin) | Signals | Target | Stop | Time | Net R |
+|---|---:|---:|---:|---:|---:|
+| breakout 15m, volume 1.0 | 4 | 1 | 2 | 1 | -1.91 |
+| breakout 15m, volume 1.2 / 1.5 (current rule = 1.5) | 3 | 0 | 2 | 1 | -2.28 |
+| breakout 5m, volume 1.0 / 1.2 | 5 | 1 | 3 | 1 | -3.49 |
+| breakout 5m, volume 1.5 | 4 | 1 | 2 | 1 | -1.71 |
+| pivot_30m 5m (Sean's pullback) | 1 | 0 | 1 | 0 | -1.06 |
+| pivot_30m 15m, undercut_reclaim 5m/15m | 0 | - | - | - | - |
+
+Where the 98 unique candidate-days ended under the current rule (15m, 1.5x):
+
+| | Touched the trigger | Never touched |
+|---|---:|---:|
+| Signalled | 3 (APA -1.03R, BOX -1.24R, OKTA -0.02R) | - |
+| Invalidated before a signal | 6 | 19 |
+| Still waiting at the close | 5 | 7 |
+| Data refusal (a minute with no trades in the bucket / since the open) | 19 | 39 |
+| **Total** | **33** | **65** |
+
+**Reading.**
+
+1. **The entry rule is not what stops Cartel from making money.** Two thirds of candidate-days (65/98) never
+   reached their trigger, so no entry variant can act on them. Loosening volume (1.5 -> 1.0) or moving to 5m adds
+   one or two signals, and the added signals lost. Gap retest never fired on this sample. Sean's 30-minute pivot
+   entry fired once and lost. **Verdict: keep the current entry; do not activate the 5m pilot or a lower volume
+   multiple.** Every variant is negative, but on 3-5 trades nothing here is a significant result either way.
+2. **Thin names are the data problem.** The median candidate-day had 22 regular-session minutes with no SIP trade;
+   KODK, SAIC and TBBB had 136-198. A bucket or a since-open stop cannot be judged across an unproven quiet minute, so
+   19 of the 33 touched days ended as data refusals in replay. Live has non-emission proofs on
+   (`verified_intervals`), which rescue some of these; replay cannot, so the replay overstates the loss. Still, a
+   name that trades in fewer than ~97% of minutes is hard to confirm and expensive to fill in options.
+3. **Candidate supply and trigger placement dominate.** With ~9-13 long candidates a day and a one-in-three touch
+   rate, Cartel sees about one touched plan per session. More candidates (breadth) and plans closer to price
+   (geometry) are the levers, not the confirmation rule.
 
 ## 4. Cartel plan, ordered by expected effect on profitable trades
 
 | # | Action | Evidence / reason | When |
 |---|---|---|---|
-| C1 | Apply the grid's verdict only if a variant beats the current rule on BOTH signal count and net R with at least 10 scored trades; otherwise keep the rule and let the prospective record grow | Section 3 | after review of section 3 |
+| C0 | **Minute-liquidity screen:** require the baseline sessions to have trades in >= 97% of regular-session minutes (a versioned `setups` check, Practice first) | 19/33 touched candidate-days were data refusals in replay; KODK/SAIC/TBBB 136-198 quiet minutes; thin names also have wide option spreads | reviewed PR, then Practice |
+| C1 | **Keep the entry rule** (15m, 1.5x, gap retest on); do not activate `breakout_5m_v1` or a lower volume multiple. Re-run the grid monthly; promote a variant only with >= 10 scored trades beating the current rule on both count and net R | Section 3: every variant negative; the added signals lost | decided 2026-09-24 |
+| C1b | **Widen candidate supply:** long pools average ~10/day; test the screen's ADR and weekly-extreme limits in a sweep (`tools/cartel_entry_grid.py` over a wider saved pool) before changing any live threshold | 65/98 never touched; ~1 touched plan per session | next |
 | C2 | `minArmTargetR=0.5` in Practice | NTAP 09-24 refused at 0.14R; 8/24 plan-days under 0.25R: the arm slot is wasted on geometry that can never pass the entry rule | next preparation after C1 is settled |
 | C3 | Persist full analyses only for screen passes; store screen-outs as the compact row already in the preparation result | ~3,090 analysis runs (140-310 MB) per preparation; the table is 4.7 GB and append-only (EM P0.5) | reviewed PR |
 | C4 | Check benchmark freshness BEFORE discovery | a late benchmark still pays for discovery on every retry | same PR |
@@ -116,7 +153,9 @@ Practice record (cross-desk P1.5).
 
 ## 7. Operating rules for the desk (from tonight)
 
-- Heavy replay/research tools run after the close, only with > 2 GB free, and load the minimum rows.
+- Heavy replay/research tools run after the close under a kill guard (working set <= 350 MB, host available
+  memory >= 400 MB; `\Memory\Available MBytes`, not free pages), and load the minimum rows. The host runs at
+  ~72/80 GB committed (WSL/Docker ~12 GB).
 - Every Cartel switch change goes through the journaled endpoints and is recorded in section 8.
 - A day with zero trades is reported as zero trades, with the funnel stage that stopped each plan.
 
@@ -125,4 +164,5 @@ Practice record (cross-desk P1.5).
 | When | Change | Why |
 |---|---|---|
 | 2026-09-24 19:54 PT | settings `techniques.options_cartel.{intraday_research,profitability_research,method_lab}` -> false; Practice `ignitionResearch` -> false | order-free load on a memory-starved engine (section 2) |
-| 2026-09-24 | PR #283 merged (0.8.50): defaults off, spaced benchmark retries, 14 h prepared window, pooled recovery client, grid tool | section 2 |
+| 2026-09-24 20:32 PT | PR #283 merged (0.8.50): defaults off, spaced benchmark retries, 14 h prepared window, pooled recovery client, grid tool. Deployed via `deploy.ps1` (deploy commit 64fe46df = runtime head + main), receipt verified, restoration ok | section 2 |
+| 2026-09-24 | Entry rule kept; 5m pilot and lower volume multiple NOT activated | section 3 |
