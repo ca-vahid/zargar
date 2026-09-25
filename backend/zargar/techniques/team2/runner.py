@@ -624,16 +624,19 @@ class Team2Runner(PlanRunner):
         rules = self.rules_for(ap)
         try:
             from ...options.pick import select_by_premium
+            from ...options.chain import cboe_priority
             provider = opts.provider()
             today = dt.datetime.now(ET).date()
-            expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
+            with cboe_priority("entry"):                  # 2026-09-24: a live entry pick gets the entry retry schedule (PR #274)
+                expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
             if expiry is None:
                 trade.errors.append(why or "no expiry")
                 await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", why or "no expiry",
                                   trigger=trade.trigger_id, verdict="deferred", stage="expiry", examined=[], direction=trade.direction)
                 self._record_unfilled(ap, trade.trigger_id)
                 return None
-            chain, listing_meta = await self._listing(provider, ap.symbol, expiry)
+            with cboe_priority("entry"):
+                chain, listing_meta = await self._listing(provider, ap.symbol, expiry)
             spot = float(trade.entry)
             q = self.engine.quotes.get(ap.symbol)
             if q is not None and q.last and q.last > 0:
@@ -1673,6 +1676,7 @@ class Team2Runner(PlanRunner):
         # never re-priced — and the flatten was clamped by that pending quantity. Re-price stuck exits here.
         if journal and bar_session(bar.ts) == "rth":
             await self._reprice_stuck_exits(ap)
+            await self._expire_resting_entries(ap, bar)
         # the contract's own price first: premium-% trims on the live bid (every minute, money modes)
         if journal and bar_session(bar.ts) == "rth":
             try:
@@ -2090,6 +2094,42 @@ class Team2Runner(PlanRunner):
             self._log(ap, "exit_reprice", f"{tr.trigger_id}: {stale['kind']} not filled in {EXIT_REPRICE_BARS} bars — re-sending at market",
                       trigger=tr.trigger_id, kind=stale["kind"])
             await self._exit(ap, tr, stale["kind"], float(stale.get("qty") or tr.remaining), journal=True, force_market=True)
+
+    async def _expire_resting_entries(self, ap: ArmedPlan, bar: Bar) -> None:
+        """F131 (2026-09-24): a Team2 entry or X5 add is a decision on ONE closed 2m bar, sent as a limit at the ask.
+        If it has not filled by the time two more decision bars have closed, the price it was judged at is gone -
+        cancel it instead of letting it fill later into a different market. Before this, Team2 never ran the
+        shared entry window: the 09-24 SPY add rested 33 minutes (12:46 -> 13:19) and was stopped six minutes after
+        it filled (-$444 after fees across two books); the 09-23 IWM entry rested 50 minutes. The limit is
+        `techniques.team2.entry_rest_max_seconds` (240 s = two 2m decisions), fixed from the method's decision
+        cadence before any saving was measured. A partial fill keeps what filled and cancels the rest."""
+        try:
+            limit_s = float(self.rt("entry_rest_max_seconds", 240) or 0)
+        except Exception:  # noqa: BLE001 - a rig without settings runs on the default
+            limit_s = 240.0
+        if limit_s <= 0:
+            return
+        now = int(bar.ts) + 60_000                                      # this bar's close
+        for tr in list(ap.trades.values()):
+            if tr.status != "working" or not tr.entry_order_id or getattr(tr, "submit_uncertain", False):
+                continue
+            sent = int(tr.fired_ts or 0)
+            if sent < 1_000_000_000_000 or now - sent <= limit_s * 1000:  # no real fire time on record: leave it
+                continue
+            with contextlib.suppress(Exception):
+                await self.engine.orders.cancel(tr.entry_order_id)
+            rested = (now - sent) // 1000
+            if float(tr.filled_qty or 0) > 0:
+                tr.status = "open"                                      # manage what filled; the rest is cancelled
+                tr.reason = f"entry partly filled; the rest cancelled after {rested}s unfilled (F131)"
+            else:
+                tr.status = "cancelled"
+                tr.reason = f"entry not filled within {limit_s:g}s of the decision - cancelled, not chased (F131)"
+            kind = "add" if "+add" in str(tr.trigger_id) else "entry"
+            self._log(ap, "entry_expired_unfilled",
+                      f"{tr.trigger_id}: {kind} limit rested {rested}s without filling (limit {limit_s:g}s) - cancelled (F131)",
+                      trigger=tr.trigger_id, orderId=tr.entry_order_id, restedS=rested, limitS=limit_s,
+                      filledQty=float(tr.filled_qty or 0))
 
     async def _end_session(self, ap: ArmedPlan, *, journal: bool, reason: str = "session closed") -> None:
         """Nothing of a 0DTE book survives the close: flatten on the way out, then the shared close."""

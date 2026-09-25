@@ -3868,3 +3868,23 @@ Also recorded under F129's vocabulary: the live target (`live_target` -> "target
 quote stop (`quote_stop_watch` -> "structural stop") and the clock flatten (`clock_flatten` -> "clock exit") now
 carry an `authority` record on `TechniquePlanExit`; before, they said so only in prose.
 Tests: `tests/test_team2_stale_working_entry.py`.
+
+### F131 (2026-09-24) - an unfilled entry or add is cancelled after two 2m decisions
+
+Incident: `SPY pm_break_up@12:15#1+add1` (Control and Sizing 0.5). The X5 add was sent at 12:46:02 ET as LMT 0.60,
+rested unfilled for 33 minutes while the runner gave back its gains, filled at 13:19:38 at 0.56 into a falling
+market, and was premium-stopped at 13:25 (0.41): **-$444 after fees** across the two books. It also pushed
+Sizing 0.5 past its $800 sampled-drawdown threshold (paused 15:00:21, $1,096 from its $10,681 high water). The setup
+was still held, so F130 (cancel on the read's exit) could not apply.
+
+Rule: **a working Team2 entry or add that has not filled within `techniques.team2.entry_rest_max_seconds` (240 s)
+of its decision is cancelled** (`entry_expired_unfilled`); a partial fill keeps what filled and cancels the rest; a
+`SubmitUncertain` submission is left to the venue's report; 0 switches it off. The value was fixed from the
+method's cadence (a decision is made on one closed 2m bar; two more closes and the price it judged is gone) before
+any saving was measured. The execution record agrees it only touches stale orders: 28 of 30 Team2 entries since
+2026-09-08 filled within 15 s; the other two rested 3,048 s (F130's) and 2,017 s (this one), and both lost.
+Tests: `tests/test_team2_entry_rest_limit.py`.
+
+Also 2026-09-24: Team2's live entry pick now asks the option chain at `cboe_priority("entry")`, the retry schedule
+EM's entries use (PR #274), instead of the default; and `tests/test_team2_no_model_on_order_path.py` pins that no
+model reaches Team2's decision path.

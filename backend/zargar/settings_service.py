@@ -182,6 +182,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.first_entry_min": "09:45",     # D6 (first 15m close)
     "techniques.team2.last_entry_min": "15:30",
     "techniques.team2.flatten_min": "15:45",         # C3
+    "techniques.team2.entry_rest_max_seconds": 240,  # F131: an unfilled entry/add limit is cancelled after two 2m decisions; 0 = off
     "techniques.team2.setup_target": "inherit",      # setup-target-v1 (2026-09-21): inherit (DEFAULT = today's path, resolver never runs) | resolve. A setup's destination is resolved from ITS source at confirmation instead of inheriting the day's global target; nearest valid candidate wins, refusal is explicit. Trading-policy experiment - activation is a separate decision
     "techniques.team2.premium_stop_pct": 25.0,       # D13/P1
     "techniques.team2.trim_1_pct": 50.0,             # V2
