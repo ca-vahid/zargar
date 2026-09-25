@@ -152,3 +152,28 @@ about $13-15 per weekday, down from $21.
 |---|---|---|
 | P13 | Switch on option roll-ups (fix the gate) | never live; needs a replay on held winners first |
 
+## 8. Implemented for Friday 2026-09-25 (user: "do all the recommendations right now … restart when ready")
+
+| # | State from 09-25 | How to roll back |
+|---|---|---|
+| P1 shares-first | `techniques.tip.expression_default=shares` (Practice, long ideas, not lotto; shorts stay puts). Per-source `expression: as_tip` restores options for a source that earns them. | `expression_default=as_tip` |
+| P2 mirror the source's exit | `techniques.tip.mirror_source_exits=true`: the author's own grounded close/trim closes (trims 50%) our mirrored Practice position, journaled `TipSourceExitMirrored`. | `mirror_source_exits=false` |
+| P3 opening grace | `techniques.tip.open_stop_grace_s=300`, catastrophe floor 60%: option quote stops (premium stop, crash brake) wait out 09:30-09:35 ET; technique-scoped (EM/Team2 keys unset = off). **Shipped without the planned replay** at the user's instruction; watch the first sessions. | `open_stop_grace_s=0` |
+| P4 source allocation | muggzone -> `shadow`, florida-man -> `proposal`, common-stock budget $3,000 (journaled 09-25 06:0x ET) | the `techniques.tip.sources` map |
+| P5 relevance gate | `review_gate=enforce` (from 09-25; the last of the five observed sessions is therefore measured under enforce) | `review_gate=observe` |
+| P6 lotto cap | `lotto_budget` $50, `lotto_max_per_source_day` 1 | budget 1500 / cap 0 |
+| P7 rule ids + reliance | rules render as `R1..Rn`; replies carry `used_rules`; reliance recorded (`mark_notes_used`) | code (rendering is harmless) |
+| P8 notes | `notes_relied_first=true` (relied-on notes before newest inside each scope's slots). Weekly compaction and the 14-day retirement stay propose-only (a human applies the manifest). | `notes_relied_first=false` |
+| P9 source cache block | `prompt_cache_source_block=true` (3 cache markers: rulebook, source notes, last turn) | `prompt_cache_source_block=false` |
+| P10 nightly verify | `scripts/tips-verify.ps1` + task `ZargarTipsVerify` (22:40 PT, own DB, >= 2 GB free) -> `C:/ProgramData/Zargar/tips-verify/STATUS.json` | unregister the task |
+| P11 Telegram | needs the user's bot token (one-time setup) - not done | - |
+| P12 promotion rule | written here; applied at each weekly review | - |
+| P13 roll-ups | NOT changed (never ran live; needs its own replay and decision) | - |
+
+**The risk budget question (29% of takes could not be sized as options).** Do not raise it now. The budget is 1% of
+the book (~$92) per idea; the ideas that did not fit were options, and options are the vehicle that lost -$1,033 while
+shares made +$243. Shares-first (P1) sizes the same idea in shares at the same stop - any budget fits shares - so the
+"infeasible" class mostly disappears without taking more risk per idea. Raising the budget would mainly buy more of the
+losing vehicle. Revisit after 10 sessions of P1: if a source earns options (P12), give that source a larger option
+budget through its own `risk_pct`, not the whole book.
+

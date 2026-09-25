@@ -251,6 +251,14 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.extraction_effort": "high",      # 2026-09-23: same for extraction/transcription. "" = model default
     "techniques.tip.batch_jobs": False,              # 2026-09-23: nightly digests + knowledge-audit judge calls go through the Message Batches API (50% list price); intake/appraise/retro stay live
     "techniques.tip.batch_timeout_s": 3600,          # a batch that has not ended by then is cancelled and the call fails as a timeout
+    "techniques.tip.notes_relied_first": False,     # P8 2026-09-24: within each scope's note slots, relied-on notes before newest
+    "techniques.tip.prompt_cache_source_block": False,  # P9 2026-09-24: the source's notes as a second cached block after the rulebook
+    "techniques.tip.lotto_max_per_source_day": 0,    # P6 2026-09-24: at most N lotto cards per source per ET day (0 = no cap)
+    "techniques.tip.open_stop_grace_s": 0,          # P3 2026-09-24: option quote stops wait this many seconds after 09:30 ET (0 = off)
+    "techniques.tip.open_stop_catastrophe_pct": 60,  # ...unless the premium is already down this much
+    "techniques.tip.mirror_source_exits": False,     # P2 2026-09-24: the author's own trim/close closes (trims) our mirrored Practice position deterministically
+    "techniques.tip.mirror_trim_fraction": 0.5,      # fraction sold on a mirrored "trim" (the source rarely states one)
+    "techniques.tip.expression_default": "as_tip",  # P1 2026-09-24: as_tip | shares - default vehicle for LONG ideas on Practice books (per-source `expression` overrides; shorts stay puts, lotto stays options)
     "techniques.tip.prompt_cache_stable_first": False,  # P-D 2026-09-23: rulebook first as its own cached block, so runs share it (conversation caching only)
     "techniques.tip.card_alerts": True,              # P-C 2026-09-23: push + Telegram line for a card still pending (needs a human) after card_alert_wait_s
     "techniques.tip.card_alert_wait_s": 20,

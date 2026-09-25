@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.50";
+export const APP_VERSION = "0.8.51";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.51",date:"2026-09-25",title:"Tips: trade what has worked - shares first, copy the source exit, calm opening stops",items:[
+    {tag:"major",text:"Tips ideas are bought as shares at the same stop on the Practice book unless a source has earned options; short ideas still use puts and short-dated lottos stay small ($50, one per source a day)."},
+    {tag:"new",text:"When a source reports closing or trimming a trade the desk copied, the desk closes or trims its copy right away instead of waiting for the analyst."},
+    {tag:"improved",text:"Option stops no longer fire on the first minutes of wide opening quotes unless the loss is already severe."},
+    {tag:"improved",text:"The analyst cites the trading rules it relied on so unused rules can be retired, picks the notes past runs relied on first, and shares each source's notes in the cache."},
+  ]},
   {version:"0.8.50",date:"2026-09-24",title:"Cartel: lighter preparation and no background research load",items:[
     {tag:"improved",text:"Options Cartel's order-free research collectors (profitability, intraday and ignition research) are off by default; they never fed an order and added load to the engine during the session."},
     {tag:"fixed",text:"When benchmark history is late, Cartel preparation retries every 20 minutes instead of every 5 (each retry repeated the whole market discovery), and a complete evening preparation now stands for the 08:45 run instead of being redone."},

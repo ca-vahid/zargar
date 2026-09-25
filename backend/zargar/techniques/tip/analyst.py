@@ -264,6 +264,10 @@ class AnalystOpinion(BaseModel):
         description='Labels of the SHARED NOTES you actually relied on for this '
                     'verdict (e.g. ["N2", "N5"]). Empty when none mattered - '
                     'being shown a note is not using it.')
+    used_rules: list[str] = Field(
+        default_factory=list,
+        description='Labels of YOUR TRADING RULES you actually applied to this decision (e.g. ["R3", "R7"]). '
+                    'Empty when none mattered - being shown a rule is not using it.')
     legs: list[dict] = Field(
         default_factory=list,
         description='DEFINED-RISK SPREAD expression (exactly 2 legs, one buy one sell, '
@@ -1338,7 +1342,9 @@ async def _rules_text(eng, *, as_of=None, core_only: bool = False, stamp_supply:
     supplied = selected_ids | pending_ids
     ordered = [r for r in reversed(rules) if str(r["id"]) in supplied]
     rules = ordered
-    lines = "\n".join(f"- {n['text']} ({(n['createdAt'] or '')[:10]})" for n in ordered_operative)
+    # P7 (2026-09-24 review): operative rules carry a citable label (R1..Rn) so a run can say which rules it relied
+    # on (`used_rules`) - until now rule reliance was never recorded and no rule's value could be measured
+    lines = "\n".join(f"- R{i + 1}: {n['text']} ({(n['createdAt'] or '')[:10]})" for i, n in enumerate(ordered_operative))
     if ordered_pending:
         lines += ("\n\n" + PENDING_HEADER + "\n" + "\n".join(
             "- [PENDING REVIEW — proposed or disputed, NOT operative policy: do not apply it as a rule] "
@@ -1353,6 +1359,7 @@ async def _rules_text(eng, *, as_of=None, core_only: bool = False, stamp_supply:
         "revisionNos": [int(n.get("revisionNo") or 1) for n in ordered],
         "selection": selection,
         "rulesHash": hashlib.sha1(canon.encode("utf-8")).hexdigest()[:12],
+        "ruleLabels": {f"R{i + 1}": str(n["id"]) for i, n in enumerate(ordered_operative)},
         "rules": [{"id": str(n["id"]), "text": n["text"],
                    "disputed": bool(n.get("needsHuman")),
                    "core": bool(n.get("core")),          # KFIN-09: the compact (core-only) variant reads this
@@ -1365,6 +1372,25 @@ async def _rules_text(eng, *, as_of=None, core_only: bool = False, stamp_supply:
         with contextlib.suppress(Exception):
             await eng.signals_service.refresh_notes_cited([str(n["id"]) for n in ordered], used_ids=[])
     return lines, len(rules), snapshot
+
+
+async def mark_rules_used(eng, labels, snapshot: dict | None) -> list[str]:
+    """P7: map the reply's rule labels (R3, ...) to rule ids through the run's own snapshot and record reliance."""
+    ids = rule_ids_from_labels(labels, snapshot)
+    if ids:
+        await eng.signals_service.mark_notes_used(ids)
+    return ids
+
+
+def rule_ids_from_labels(labels, snapshot: dict | None) -> list[str]:
+    """Pure: ["R3", "r7", "N2", "R99"] -> the rule ids those labels named in this run (unknown labels dropped)."""
+    table = (snapshot or {}).get("ruleLabels") or {}
+    out = []
+    for lab in labels or []:
+        key = str(lab).strip().upper()
+        if key in table and table[key] not in out:
+            out.append(table[key])
+    return out
 
 
 def parse_single_object(raw: str, model_cls, *, what: str = "reply"):
@@ -1694,7 +1720,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
             if (prompt_cache_enabled(eng) and prompt_cache_scope(eng) == "conversation"
                     and bool(eng.settings.get("techniques.tip.prompt_cache_stable_first", False))):
                 from .review_context import stable_first_blocks
-                _first = stable_first_blocks(header)          # P-D: the rulebook is shared cache across runs
+                _first = stable_first_blocks(                 # P-D: the rulebook is shared cache across runs
+                    header, source_block=bool(eng.settings.get("techniques.tip.prompt_cache_source_block", False)))
+                if isinstance(_first, list):
+                    st["stableFirst"] = True                  # the block markers cover tools+system (max 4 markers)
         st["messages"] = [{"role": "user", "content": _first}]
     messages: list = st["messages"]
     usage = st.setdefault("usage", _usage_new())
@@ -1753,7 +1782,8 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                          deadline={"kind": "reserve", "stage": stage, "remainingS": round(remaining, 1), "reserveS": reserve})
                 messages.append({"role": "user", "content":
                                  "Time is nearly up. Reply with ONLY the JSON object now — request no more tools."})
-        _sys_param, _tools_param = cacheable_request(system, TOOLS, enabled=st.get("promptCache", False))
+        _sys_param, _tools_param = cacheable_request(system, TOOLS, enabled=bool(st.get("promptCache", False))
+                                                     and not st.get("stableFirst"))
         _msgs = cache_messages(messages, enabled=bool(st.get("promptCache")) and st.get("promptCacheScope") == "conversation")
         create_kw = dict(model=model, max_tokens=turn_cap, system=_sys_param, messages=_msgs, tools=_tools_param)
         from .model_policy import effort_kw as _effort_kw
@@ -2301,6 +2331,10 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 if 0 <= idx < len(notes):
                     used_ids.append(notes[idx]["id"])
             await eng.signals_service.mark_notes_used(used_ids)   # reliance only (supply was stamped pre-call)
+    if experiment is None:
+        import contextlib as _ctx
+        with _ctx.suppress(Exception):
+            await mark_rules_used(eng, getattr(opinion, "used_rules", None), snap)
     return result
 
 
@@ -2322,6 +2356,10 @@ class ReviewOpinion(BaseModel):
                                   "actionable trade that verification discarded, say "
                                   "which and why; else null")
     confidence: float = Field(default=0.5)
+    used_rules: list[str] = Field(
+        default_factory=list,
+        description='Labels of YOUR TRADING RULES you actually applied to this decision (e.g. ["R3", "R7"]). '
+                    'Empty when none mattered - being shown a rule is not using it.')
 
 
 REVIEW_SYSTEM = """You are the tips-desk analyst. This message from a tip source \
@@ -2534,6 +2572,8 @@ class IntakeRun:
                   "toolsUsed": tools_used, "usage": review_state.get("usage"),
                   **({"receipts": tool_ctx["receipts"]}
                      if tool_ctx.get("receipts") else {})}
+        with contextlib.suppress(Exception):                    # P7: which rules this review relied on
+            await mark_rules_used(eng, getattr(op, "used_rules", None), _snap)
         await self.finish("review", f"Review: {op.headline}"
                           + (f" Watch: {', '.join(op.watch)}." if op.watch else "")
                           + (f" POSSIBLE MISSED TIP: {op.missed_tip}" if op.missed_tip else ""),
