@@ -31,15 +31,21 @@ DEFAULT_WATCHLIST = ["AAPL", "MSFT", "NVDA", "TSLA", "AMD", "SPY", "SHOP.TO", "T
 class Engine:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.db = make_engine(config.database_url, echo=config.db_echo)
+        self.db = make_engine(config.database_url, echo=config.db_echo,
+                              pool_size=config.db_pool_size, max_overflow=config.db_max_overflow)
         self.sf = make_session_factory(self.db)
+        # P0.2 (2026-09-24): a RESERVED pool for the money paths - the journal (write-ahead decisions), the position ledger
+        # and the daily loss monitor - so a burst of research or API queries can never starve them again
+        self.db_critical = make_engine(config.database_url, echo=config.db_echo,
+                                       pool_size=config.db_critical_pool_size, max_overflow=config.db_critical_max_overflow)
+        self.sf_critical = make_session_factory(self.db_critical)
         self.bus = Bus()
-        self.journal = Journal(self.sf, self.bus)
+        self.journal = Journal(self.sf_critical, self.bus)
         self.settings = SettingsService(self.sf, self.bus, self.journal)
         self.quotes = QuoteCache(self.bus)
         self.bars = BarAggregator(self.bus)
         self.halt = HaltState()
-        self.positions = PositionKeeper(self.sf, self.bus, self.journal, self.quotes)
+        self.positions = PositionKeeper(self.sf_critical, self.bus, self.journal, self.quotes)
         self.risk = RiskGate(self.settings, self.quotes, self.positions, self.halt)
         from .scheduler import Scheduler
         self.scheduler = Scheduler(self)   # engine-level daily jobs (techniques register scans here)
@@ -317,6 +323,7 @@ class Engine:
         from . import delivery_health
         await delivery_health.shutdown(self)
         await self.db.dispose()
+        await self.db_critical.dispose()
 
     # ------------------------------------------------------------- seeding
     async def _seed(self) -> None:
@@ -707,7 +714,7 @@ class Engine:
     async def _traded_today(self) -> set[str]:
         """Portfolio ids with zargar-originated orders placed today (ET)."""
         start_et = dt.datetime.now(tz=ET).replace(hour=0, minute=0, second=0, microsecond=0)
-        async with self.sf() as session:
+        async with self.sf_critical() as session:       # the daily loss monitor's own read: reserved pool (P0.2)
             rows = (await session.execute(
                 select(Order.portfolio_id).distinct().where(
                     Order.created_at >= start_et.astimezone(dt.timezone.utc),

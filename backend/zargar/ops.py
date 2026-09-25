@@ -180,6 +180,7 @@ async def restart_state(engine) -> dict:
             pass
     now = now_ms()
     q_until = int(getattr(engine, "quiesce_until_ms", 0) or 0)
+    cartel_prep = await _cartel_preparation(engine)
     return {
         "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "marketOpen": bool(is_market_minute(now)),
@@ -203,7 +204,39 @@ async def restart_state(engine) -> dict:
         "quiesced": q_until > now,
         "quiesceUntil": q_until or None,
         "pausedBooks": sorted(getattr(getattr(engine, "halt", None), "pauses", {}) or {}),
+        "cartelPreparation": cartel_prep,
     }
+
+
+CARTEL_PREP_BLOCK_MINUTES = 15
+
+
+async def _cartel_preparation(engine) -> dict | None:
+    """P0.5b (2026-09-24, Cartel desk's signal): a running Options Cartel preparation. In process the authoritative check
+    is the engine's `_cartel_preparation_task` (the same check `preparation.py` uses); its start time comes from the durable
+    row - the newest options_cartel `technique_runs` row with mode 'preparation' still 'running' - which also covers a
+    crashed process. None = none running."""
+    t = getattr(engine, "_cartel_preparation_task", None)
+    live = t is not None and not t.done()
+    started = None
+    try:
+        from sqlalchemy import select as _sel
+        from .models import TechniqueRun
+        async with engine.sf() as session:
+            row = (await session.execute(_sel(TechniqueRun.id, TechniqueRun.created_at).where(
+                TechniqueRun.technique == "options_cartel", TechniqueRun.mode == "preparation",
+                TechniqueRun.status == "running").order_by(TechniqueRun.created_at.desc()).limit(1))).first()
+        if row is not None:
+            started = row.created_at
+    except Exception:  # noqa: BLE001 - a failed lookup only loses the age
+        row = None
+    if not live and started is None:
+        return None
+    age_min = None
+    if started is not None:
+        st = started if started.tzinfo else started.replace(tzinfo=dt.timezone.utc)
+        age_min = round((dt.datetime.now(dt.timezone.utc) - st).total_seconds() / 60.0, 1)
+    return {"live": bool(live), "startedAt": started.isoformat() if started is not None else None, "ageMinutes": age_min}
 
 
 def readiness_from_state(state: dict) -> dict:
@@ -228,7 +261,23 @@ def readiness_from_state(state: dict) -> dict:
     if state.get("inflightOrders"):
         reasons.append(f"{len(state['inflightOrders'])} venue order(s) in flight (submitted / partially filled, outcome unknown): "
                        + ", ".join(state["inflightOrders"][:5]))
-    return {"safe": not reasons, "reasons": reasons, "state": state}
+    warnings: list[str] = []
+    cp = state.get("cartelPreparation")
+    if cp and cp.get("live"):
+        # WAIT, not a hard block (Cartel desk): a preparation resumes from its checkpoint after a restart. A normal one takes
+        # ~6 minutes; the uncapped waiting_for_benchmark retry loop can keep one 'running' much longer, so past
+        # CARTEL_PREP_BLOCK_MINUTES it is reported and no longer holds a restart back.
+        age = cp.get("ageMinutes")
+        if age is None or age < CARTEL_PREP_BLOCK_MINUTES:
+            reasons.append(f"an Options Cartel preparation is running ({age if age is not None else '?'} min) - wait for it; "
+                           "it would resume from its checkpoint, but a normal one finishes in ~6 min")
+        else:
+            warnings.append(f"an Options Cartel preparation has been running {age} min (likely the waiting_for_benchmark "
+                            "retry loop); a restart resumes it from its checkpoint")
+    elif cp and not cp.get("live"):
+        warnings.append("a Cartel preparation row is still 'running' with no live task (crashed or another process) - "
+                        "it resumes from its checkpoint")
+    return {"safe": not reasons, "reasons": reasons, "warnings": warnings, "state": state}
 
 
 async def restart_readiness(engine, *, journal: bool = True, caller: str = "") -> dict:

@@ -17,7 +17,9 @@ Normalized row shape (every provider):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
+import datetime as dt
 import logging
 import time
 
@@ -462,3 +464,251 @@ class AlpacaOptionsData:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+
+# --- Alpaca OPRA option CHAIN (fallback behind CBOE, P0.6 2026-09-24) --------------
+
+ALPACA_TRADING_BASES = ("https://paper-api.alpaca.markets", "https://api.alpaca.markets")
+
+
+class AlpacaChainClient:
+    """A chain provider with CBOE's interface (expirations / chain / all_rows / spot / underlying_quote) built from the
+    PAID Alpaca feed: `/v1beta1/options/snapshots/{underlying}` (real-time OPRA NBBO, last trade, greeks/IV) and
+    `/v2/options/contracts` (the listing + open interest, on the trading API). Used as the FALLBACK when CBOE's free
+    endpoint rate-limits an entry (2026-09-24: four EM short entries died to CBOE 429s at the open). Rows are REAL-TIME,
+    unlike CBOE's delayed rows, and carry `provider: "alpaca"`. Volume is today's only (the snapshot's daily bar counts
+    when it is from today, as CBOE's volume is)."""
+
+    name = "alpaca"
+    delayed = False
+    CACHE_TTL = 30.0
+    PAGE = 1000
+
+    def __init__(self, key_id: str, secret: str, client: httpx.AsyncClient | None = None, *, feed: str = "opra") -> None:
+        self._http = client or httpx.AsyncClient(timeout=20, headers={"APCA-API-KEY-ID": key_id, "APCA-API-SECRET-KEY": secret})
+        self._feed = feed
+        self._cache: dict[tuple, tuple[float, object]] = {}
+        self._inflight: dict[tuple, asyncio.Future] = {}
+        self._trading_base: str | None = None
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def _once(self, key: tuple, fn):
+        """Short cache + single flight per key (the same discipline as the CBOE client)."""
+        hit = self._cache.get(key)
+        if hit and time.time() - hit[0] < self.CACHE_TTL:
+            return hit[1]
+        pending = self._inflight.get(key)
+        if pending is not None:
+            return await asyncio.shield(pending)
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        self._inflight[key] = fut
+        try:
+            val = await fn()
+        except BaseException as exc:
+            if not fut.done():
+                fut.set_exception(exc if isinstance(exc, OptionsError) else OptionsError(str(exc)))
+                fut.exception()
+            raise
+        else:
+            self._cache[key] = (time.time(), val)
+            if not fut.done():
+                fut.set_result(val)
+            return val
+        finally:
+            if self._inflight.get(key) is fut:
+                self._inflight.pop(key, None)
+
+    async def _snapshots(self, sym: str, expiry: str | None) -> dict:
+        out: dict = {}
+        params = {"feed": self._feed, "limit": self.PAGE}
+        if expiry:
+            params["expiration_date"] = expiry
+        else:
+            params["expiration_date_gte"] = dt.date.today().isoformat()
+        token = None
+        for _ in range(30):
+            if token:
+                params["page_token"] = token
+            r = await self._http.get(f"{ALPACA_DATA_BASE}/v1beta1/options/snapshots/{sym}", params=params)
+            if r.status_code in (401, 403):
+                raise OptionsError(f"Alpaca option chain refused ({r.status_code}) - subscription?")
+            if r.status_code >= 400:
+                raise OptionsError(f"Alpaca option chain HTTP {r.status_code}")
+            d = (await asyncio.to_thread(r.json)) or {}
+            out.update(d.get("snapshots") or {})
+            token = d.get("next_page_token")
+            if not token:
+                break
+        return out
+
+    async def _contracts(self, sym: str, expiry: str | None) -> dict:
+        """occ -> {openInterest, expiry, strike, type} from the trading API's contract listing (paper or live base,
+        whichever this key is for)."""
+        params = {"underlying_symbols": sym, "status": "active", "limit": 10000}
+        if expiry:
+            params["expiration_date"] = expiry
+        else:
+            params["expiration_date_gte"] = dt.date.today().isoformat()
+        bases = [self._trading_base] if self._trading_base else list(ALPACA_TRADING_BASES)
+        last = None
+        for base in bases:
+            out: dict = {}
+            token = None
+            ok = True
+            for _ in range(20):
+                if token:
+                    params["page_token"] = token
+                r = await self._http.get(f"{base}/v2/options/contracts", params=params)
+                if r.status_code in (401, 403):
+                    ok = False
+                    last = r.status_code
+                    break
+                if r.status_code >= 400:
+                    raise OptionsError(f"Alpaca option contracts HTTP {r.status_code}")
+                d = (await asyncio.to_thread(r.json)) or {}
+                for c in d.get("option_contracts") or []:
+                    out[str(c.get("symbol"))] = {"openInterest": int(_f(c.get("open_interest"))), "expiry": c.get("expiration_date")}
+                token = d.get("next_page_token")
+                if not token:
+                    break
+            if ok:
+                self._trading_base = base
+                return out
+            params.pop("page_token", None)
+        raise OptionsError(f"Alpaca option contracts refused ({last}) on every trading base")
+
+    @staticmethod
+    def _row(occ_sym: str, snap: dict, meta: dict | None, underlying: str, today: str) -> dict | None:
+        o = occ.parse(occ_sym)
+        if o is None:
+            return None
+        q = snap.get("latestQuote") or {}
+        t = snap.get("latestTrade") or {}
+        bar = snap.get("dailyBar") or {}
+        g = snap.get("greeks") or {}
+        vol = int(_f(bar.get("v"))) if str(bar.get("t") or "")[:10] == today else 0
+        return {
+            "symbol": o.symbol, "underlying": underlying, "expiry": o.expiry.isoformat(), "option_type": o.option_type,
+            "strike": o.strike, "bid": _f(q.get("bp")), "ask": _f(q.get("ap")), "last": _f(t.get("p")),
+            "volume": vol, "open_interest": int((meta or {}).get("openInterest") or 0),
+            "greeks": {"delta": g.get("delta"), "gamma": g.get("gamma"), "theta": g.get("theta"), "vega": g.get("vega"),
+                       "mid_iv": snap.get("impliedVolatility") or None},
+            "provider": "alpaca",
+        }
+
+    async def _rows(self, symbol: str, expiry: str | None) -> list[dict]:
+        sym = symbol.upper().strip()
+        if "." in sym:
+            raise OptionsError(f"{sym}: Alpaca lists US options only")
+
+        async def build():
+            snaps, meta = await asyncio.gather(self._snapshots(sym, expiry), self._contracts(sym, expiry))
+            from zoneinfo import ZoneInfo
+            today = dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+            rows = [r for r in (self._row(k, v, meta.get(k), sym, today) for k, v in snaps.items()) if r]
+            if not rows:
+                raise OptionsError(f"Alpaca returned no contracts for {sym}")
+            return rows
+        return await self._once((sym, expiry), build)
+
+    async def expirations(self, symbol: str) -> list[str]:
+        sym = symbol.upper().strip()
+
+        async def build():
+            meta = await self._contracts(sym, None)
+            return sorted({str(m.get("expiry")) for m in meta.values() if m.get("expiry")})
+        return await self._once((sym, "expirations"), build)
+
+    async def chain(self, symbol: str, expiry: str) -> list[dict]:
+        return await self._rows(symbol, expiry)
+
+    async def all_rows(self, symbol: str) -> list[dict]:
+        return await self._rows(symbol, None)
+
+    async def _stock(self, symbol: str) -> dict:
+        sym = symbol.upper().strip()
+
+        async def build():
+            r = await self._http.get(f"{ALPACA_DATA_BASE}/v2/stocks/{sym}/snapshot", params={"feed": "sip"})
+            if r.status_code >= 400:
+                raise OptionsError(f"Alpaca stock snapshot HTTP {r.status_code}")
+            return (await asyncio.to_thread(r.json)) or {}
+        return await self._once((sym, "stock"), build)
+
+    async def spot(self, symbol: str) -> float | None:
+        d = await self._stock(symbol)
+        v = (d.get("latestTrade") or {}).get("p") or (d.get("dailyBar") or {}).get("c")
+        return float(v) if v else None
+
+    async def underlying_quote(self, symbol: str) -> dict:
+        d = await self._stock(symbol)
+        q = d.get("latestQuote") or {}
+        return {"spot": _f((d.get("latestTrade") or {}).get("p")) or None, "prevClose": _f((d.get("prevDailyBar") or {}).get("c")) or None,
+                "iv30": None, "bid": _f(q.get("bp")) or None, "ask": _f(q.get("ap")) or None}
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+
+
+class FallbackChain:
+    """The primary chain provider (CBOE) with the Alpaca chain behind it (P0.6, 2026-09-24). A PRIMARY failure on an
+    entry, a held position or a normal read (a 429 after the retries, a cooldown, the open quiet window, any HTTP error)
+    is answered by the secondary instead. BACKGROUND requests never fall back: the quiet window and the cooldown exist
+    to stand them down. Everything else (name, cooldown state, test seams) is the primary's."""
+
+    def __init__(self, primary, secondary) -> None:
+        self.primary = primary
+        self.secondary = secondary
+        self.fallbacks = 0          # requests the secondary answered (diagnostic)
+
+    def __getattr__(self, item):
+        return getattr(self.primary, item)
+
+    @property
+    def name(self) -> str:
+        return getattr(self.primary, "name", "?")
+
+    @property
+    def delayed(self) -> bool:
+        return bool(getattr(self.primary, "delayed", True))
+
+    async def _call(self, method: str, *args):
+        try:
+            return await getattr(self.primary, method)(*args)
+        except OptionsError as exc:
+            if CBOE_PRIORITY.get() in CboeClient.BACKGROUND or self.secondary is None:
+                raise
+            text = str(exc)
+            if "404" in text or "lists US options only" in text:
+                raise                                   # the primary answered: the symbol has no options
+            try:
+                out = await getattr(self.secondary, method)(*args)
+            except OptionsError as exc2:
+                raise OptionsError(f"{text}; Alpaca fallback also failed: {exc2}") from exc
+            self.fallbacks += 1
+            log.info("option chain: %s(%s) answered by Alpaca after the primary failed (%s)", method, args[0] if args else "", text[:80])
+            return out
+
+    async def expirations(self, symbol: str) -> list[str]:
+        return await self._call("expirations", symbol)
+
+    async def chain(self, symbol: str, expiry: str) -> list[dict]:
+        return await self._call("chain", symbol, expiry)
+
+    async def all_rows(self, symbol: str) -> list[dict]:
+        return await self._call("all_rows", symbol)
+
+    async def spot(self, symbol: str) -> float | None:
+        return await self._call("spot", symbol)
+
+    async def underlying_quote(self, symbol: str) -> dict:
+        return await self._call("underlying_quote", symbol)
+
+    async def aclose(self) -> None:
+        for p in (self.primary, self.secondary):
+            if p is not None:
+                with contextlib.suppress(Exception):
+                    await p.aclose()

@@ -11,8 +11,15 @@ from .models import Base
 log = logging.getLogger("zargar.db")
 
 
-def make_engine(url: str, echo: bool = False) -> AsyncEngine:
-    return create_async_engine(url, echo=echo, pool_pre_ping=True)
+def make_engine(url: str, echo: bool = False, *, pool_size: int | None = None, max_overflow: int | None = None) -> AsyncEngine:
+    """`pool_size` / `max_overflow` None = SQLAlchemy's defaults (5 + 10), which is what every caller got before
+    2026-09-24; the runtime engine now passes its configured sizes (P0.2 of the 2026-09-24 plan)."""
+    kw = {}
+    if pool_size is not None:
+        kw["pool_size"] = int(pool_size)
+    if max_overflow is not None:
+        kw["max_overflow"] = int(max_overflow)
+    return create_async_engine(url, echo=echo, pool_pre_ping=True, **kw)
 
 
 def make_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

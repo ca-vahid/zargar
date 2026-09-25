@@ -13,6 +13,14 @@ class AppConfig(BaseSettings):
     # --- database -------------------------------------------------------
     database_url: str = "postgresql+asyncpg://zargar:zargar@127.0.0.1:5432/zargar"
     db_echo: bool = False
+    # 2026-09-24 (P0.2): the shared pool (SQLAlchemy's default 5 + 10 = 15) ran dry at 11:28 ET and the daily loss monitor,
+    # the equity snapshot and a journal write failed for two minutes. The general pool is larger, and the money paths
+    # (journal, position ledger, daily loss monitor) get a RESERVED pool that research and API load cannot drain.
+    # Postgres max_connections is 100; 30 + 10 per process leaves room for tools and tests.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_critical_pool_size: int = 5
+    db_critical_max_overflow: int = 5
 
     # --- api server ------------------------------------------------------
     host: str = "127.0.0.1"
