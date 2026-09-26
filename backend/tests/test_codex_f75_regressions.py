@@ -150,6 +150,12 @@ async def test_backfill_does_not_zero_history_after_alpaca_falls_back(fresh_db, 
     monkeypatch.setattr(history, "_ALPACA", {"key": "", "secret": ""})
     monkeypatch.setattr(history, "_cache", {})
     monkeypatch.setattr(repair, "get_config", lambda: SimpleNamespace(alpaca_key_id="fixture", alpaca_secret="fixture"))
+    # 2026-09-25: pin the clock to the day this regression was adopted. Its session (2026-09-01) left Yahoo's 20-day 1m depth
+    # around 09-21, after which the (correct) Yahoo clip made the fallback send no request and the test failed on every
+    # tree. Pinning keeps the reviewer's assertion exactly as written.
+    import datetime as _dt
+    _pinned = _dt.datetime(2026, 9, 9, 16, 0, tzinfo=_dt.timezone.utc).timestamp()
+    monkeypatch.setattr(history.time, "time", lambda: _pinned)
     try:
         await persist_bars(sf, [bar("SPY", TUE_1000 + MINUTE_MS, 100, 101, 99, 100, 500, "sampled")])
         result = await repair.cmd_backfill(sf, symbols=["SPY"], all_symbols=False,

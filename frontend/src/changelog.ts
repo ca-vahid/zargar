@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.51";
+export const APP_VERSION = "0.8.52";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.52",date:"2026-09-25",title:"Platform: money paths can no longer be starved, and option chains have a paid backup",items:[
+    {tag:"fixed",text:"The journal, the position ledger and the daily loss check now use their own reserved database connections, and the shared pool is twice as large. On September 24 the shared pool ran dry for two minutes and the daily loss check failed in that window."},
+    {tag:"new",text:"When the free options-chain provider rate-limits or fails an entry or a held position's read, the paid real-time Alpaca chain answers instead (setting options.chain_fallback). Background research still waits its turn."},
+    {tag:"improved",text:"Option chains are refreshed at full speed only from 9:00 to 16:15 ET on trading days (setting options.enrich_market_hours_only); overnight they are refreshed every 15 minutes instead of every few seconds, which kept the provider rate-limiting us before the open."},
+    {tag:"improved",text:"A restart waits while an Options Cartel preparation is running (up to 15 minutes), and only warns after that."},
+  ]},
   {version:"0.8.51",date:"2026-09-25",title:"Tips: trade what has worked - shares first, copy the source exit, calm opening stops",items:[
     {tag:"major",text:"Tips ideas are bought as shares at the same stop on the Practice book unless a source has earned options; short ideas still use puts and short-dated lottos stay small ($50, one per source a day)."},
     {tag:"new",text:"When a source reports closing or trimming a trade the desk copied, the desk closes or trims its copy right away instead of waiting for the analyst."},

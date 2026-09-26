@@ -2709,3 +2709,31 @@ the widest quotes of the day. The crash brake also no longer runs a second time 
 (0.8.48) never outside the regular session. Also in this release, Tips-only: source-exit mirroring
 (`TipSourceExitMirrored`), shares-first expression, lotto daily cap, rule labels with recorded reliance.
 
+### P0 of the 2026-09-24 plan: reserved DB pool, market-hours option enrichment, Cartel-aware restarts, Alpaca chain fallback - 2026-09-25 (EM desk; shared)
+
+Plan: `docs/PLAN-2026-09-24-SHARP-PENCIL.md` P0.2 / P0.3 / P0.5b / P0.6. Tests: `tests/test_p0_platform.py`.
+
+- **Reserved pool (P0.2).** `Engine.sf_critical` (config `db_critical_pool_size` 5 + `db_critical_max_overflow` 5) serves
+  the Journal, the PositionKeeper and the daily loss monitor; the general pool is `db_pool_size` 10 + `db_max_overflow` 20
+  (was SQLAlchemy's 5 + 10). Evidence: 2026-09-24 11:28 ET the shared pool ran dry for ~2 minutes; the daily loss monitor,
+  the equity snapshot and a journal write failed, and a Team2 decision-inputs row was lost (Team2 desk). Rule: a new
+  money-path writer uses `engine.sf_critical`; research and API reads stay on `engine.sf`. Postgres allows 100 connections.
+- **Market-hours enrichment (P0.3).** `OptionsService._enrich_loop` runs at full cadence only 09:00-16:15 ET on trading days
+  (`OptionsService.active_window`), one pass per 15 minutes outside (`options.enrich_market_hours_only`). It had polled CBOE all
+  night (~1,700 skipped refreshes, ~150 overnight 429s, the cooldown hot at the open).
+- **Cartel-aware restart readiness (P0.5b).** `ops.restart_state` reports `cartelPreparation` (the engine's
+  `_cartel_preparation_task` plus the durable `technique_runs` row); readiness WAITS while one runs for under 15 minutes and
+  only WARNS after (its `waiting_for_benchmark` retry loop can run long; a restart resumes from the checkpoint). New
+  `warnings` list beside `reasons`; `compare_states` is unchanged.
+- **Alpaca option chain behind CBOE (P0.6).** `options.chain.AlpacaChainClient` (OPRA `/v1beta1/options/snapshots/{u}`
+  paginated + open interest from the trading API's `/v2/options/contracts`; today-only volume; single flight; 30 s cache)
+  wrapped with CBOE in `FallbackChain` by `OptionsService.provider()` when `options.chain_fallback=alpaca` and Alpaca keys
+  exist. It answers a primary failure on entry / position / normal reads, never a background read (the quiet window and
+  cooldown stand those down on purpose) and never a real 404. Rows carry `provider: "alpaca"`; the wrapper's `name` stays the
+  primary's. Verified live 2026-09-24 on VRT (17 expiries, a put picked with live NBBO, OI 217).
+- **A reviewer regression that was a time bomb.** `test_codex_f75_regressions::test_backfill_does_not_zero_history_after_alpaca_falls_back`
+  hard-coded session 2026-09-01; once that left Yahoo's 20-day 1m depth (~09-21) the correct Yahoo clip sent no request and
+  the test failed on every tree. The clock is now pinned to its adoption day; the assertion is unchanged. Lesson: a test that
+  names a calendar date must pin the clock.
+- **Still open for the platform owner:** the simulated executor fills a marketable limit SELL above its limit after the 15 s
+  freshness gate delays it (Team2: ~$365 of improvement a venue would not give; e.g. 09-24 limits 0.95/1.29 filled 1.02/1.49).
