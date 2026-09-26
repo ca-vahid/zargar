@@ -100,6 +100,29 @@ async def test_the_authors_own_exit_closes_our_mirror_and_nothing_else():
     await svc._mirror_source_exit("ab", row, NS(action="close", actor="third_party", is_actionable=True), {"passed": True})
     await svc._mirror_source_exit("ab", row, own, {"passed": False})                     # ungrounded
     await svc._mirror_source_exit("ab", row, NS(action="update_stop", actor="author", is_actionable=True), {"passed": True})
+    from zargar.techniques.tip.analyst import recent_source_mirror
+    assert recent_source_mirror(eng, "a")["signalId"] == "sig1" and recent_source_mirror(eng, "c") is None
     eng.settings["techniques.tip.mirror_source_exits"] = False
     await svc._mirror_source_exit("ab", row, own, {"passed": True})
     assert closed == []
+
+
+async def test_the_analyst_does_not_trim_again_after_the_desk_mirrored_the_same_exit(monkeypatch):
+    """XLU 2026-09-25: the mirror trimmed 18 and the analyst's run on the same message trimmed 4 more."""
+    from zargar.techniques.tip import analyst as an
+    closed = []
+
+    class PM:
+        async def close(self, pid, fraction=1.0, reason=""):
+            closed.append((pid, fraction))
+            return {"status": "ok"}
+    eng = NS(settings=_S({}), position_manager=PM())
+    monkeypatch.setattr(an, "_manage_guard", lambda e, pid: (NS(id=pid, portfolio_id="sim"), None))
+    an.note_source_mirror(eng, "x", "trim", "sig9", now=100.0)
+    assert an.recent_source_mirror(eng, "x", now=160.0) is not None
+    assert an.recent_source_mirror(eng, "x", now=100.0 + an.SOURCE_MIRROR_WINDOW_S + 1) is None
+    an.note_source_mirror(eng, "x", "trim", "sig9")
+    out = await an._run_tool(eng, "close_position", {"position_id": "x", "fraction": 0.25, "reason": "mirror"}, {})
+    assert "error" in out and closed == []
+    out = await an._run_tool(eng, "close_position", {"position_id": "x", "fraction": 1.0, "reason": "exit all"}, {})
+    assert out.get("closed") and closed == [("x", 1.0)]

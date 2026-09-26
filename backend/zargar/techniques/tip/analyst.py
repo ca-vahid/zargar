@@ -688,6 +688,26 @@ async def _open_tips(eng, ticker: str = "", source: str = "") -> dict:
     return {"tips": tips} if tips else {"note": "no open tips match"}
 
 
+SOURCE_MIRROR_WINDOW_S = 900
+
+
+def note_source_mirror(eng, pos_id: str, action: str, signal_id: str, now: float | None = None) -> None:
+    """P2 follow-up (2026-09-25, XLU): remember that the source's own exit was mirrored on this position, so the
+    analyst's run on the SAME message does not trim it a second time (in memory; the window is minutes)."""
+    book = getattr(eng, "_tip_source_mirrors", None)
+    if book is None:
+        book = {}
+        with contextlib.suppress(Exception):
+            setattr(eng, "_tip_source_mirrors", book)
+    book[pos_id] = {"at": time.monotonic() if now is None else now, "action": action, "signalId": signal_id}
+
+
+def recent_source_mirror(eng, pos_id: str, now: float | None = None) -> dict | None:
+    m = (getattr(eng, "_tip_source_mirrors", None) or {}).get(pos_id)
+    t = time.monotonic() if now is None else now
+    return m if m and t - float(m.get("at") or 0) < SOURCE_MIRROR_WINDOW_S else None
+
+
 def _manage_guard(eng, pid: str) -> tuple:
     """(position, error) — the cage around the position-management tools:
     only OPEN, tip-technique managed positions, only when the knob allows."""
@@ -973,6 +993,13 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             return {"error": "a reason is required — it is journaled"}
         frac = float(args.get("fraction") or 1.0)
         frac = min(1.0, max(0.05, frac))
+        mirrored = recent_source_mirror(eng, p.id)
+        if mirrored and frac < 1.0:
+            # the desk already mirrored the source's own exit on this position (P2); a second partial trim for the same
+            # message compounds it (XLU 2026-09-25: mirror 18 + analyst 4). A FULL close stays the analyst's decision.
+            return {"error": f"the source's {mirrored.get('action')} was already mirrored on this position by the desk "
+                             f"(signal {mirrored.get('signalId')}) - do not trim again for the same message; close it "
+                             f"fully (fraction 1.0) only if your own judgement says exit everything"}
         out = await eng.position_manager.close(
             p.id, fraction=frac, reason=f"analyst: {reason}"[:200])
         return {"closed": True, "fraction": frac, "positionId": p.id,
