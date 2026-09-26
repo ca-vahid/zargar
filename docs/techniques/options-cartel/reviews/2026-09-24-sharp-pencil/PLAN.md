@@ -166,3 +166,4 @@ Practice record (cross-desk P1.5).
 | 2026-09-24 19:54 PT | settings `techniques.options_cartel.{intraday_research,profitability_research,method_lab}` -> false; Practice `ignitionResearch` -> false | order-free load on a memory-starved engine (section 2) |
 | 2026-09-24 20:32 PT | PR #283 merged (0.8.50): defaults off, spaced benchmark retries, 14 h prepared window, pooled recovery client, grid tool. Deployed via `deploy.ps1` (deploy commit 64fe46df = runtime head + main), receipt verified, restoration ok | section 2 |
 | 2026-09-24 | Entry rule kept; 5m pilot and lower volume multiple NOT activated | section 3 |
+| 2026-09-26 | Practice `minArmTargetR` 0 -> 0.5 (plan C2; due for the 09-25 preparation, applied late). Existing arms keep their snapshot: of the five 09-28 arms, AI (0.42R), NTAP (0.37R) and TSLA (0.24R) sit under the gate | 09-25: 9 arms, 0 orders; BBY/CNH/VRNS invalidated at the open, NTNX touched on 0.27x volume |
