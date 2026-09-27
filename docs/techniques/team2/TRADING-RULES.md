@@ -3888,3 +3888,28 @@ Tests: `tests/test_team2_entry_rest_limit.py`.
 Also 2026-09-24: Team2's live entry pick now asks the option chain at `cboe_priority("entry")`, the retry schedule
 EM's entries use (PR #274), instead of the default; and `tests/test_team2_no_model_on_order_path.py` pins that no
 model reaches Team2's decision path.
+
+### F132 (2026-09-27) - books acting on one decision price the same spot; every Team2 sale names its rule
+
+**P0.1.** On 2026-09-23 two books acted on the same IWM decision two seconds apart and read 284.000 and 284.005.
+`strike < spot` then gave Control the 283P at $0.25 and Sizing 0.5 the 284P at $0.61, so the experiment's books
+differed by contract, not by their registered difference. `_shared_fire_spot` fixes this: the first book to pick a
+decision (symbol, direction, 2m decision bar) records its spot, and the others reuse it (`spotSource` on
+`contract_picked`). Selection only: every quote, order and fill stays live.
+
+**P0.2.** Live and model trims (`live_trim` / `model_trim` → "trim") and the X2 runner trail (`model_trail` →
+"structural stop") now carry the F129 authority record. These labels are Team2's own (`Team2Runner.AUTHORITY`); the
+shared vocabulary is unchanged.
+
+**P0.4.** Every plan stamps `methodVersion` (sha256 of METHOD.md) and `rulesHash` (sha256 of the effective
+thresholds), so a session can be attributed to the exact method that traded.
+
+Tests: `tests/test_team2_p0_2026_09_27.py`.
+
+**Measured the same day (order-free).**
+- P1.1: applying the premium stop the way it runs live (every ~2 s on the mid) instead of on 2m closes changes the
+  replay by **−0.13 points per trade (P-close) to −0.61 (P-low)**, both inside the registered 3-point line. The stop's
+  sampling is not the leak (`notes/research/2026-09-27-p1-premium-stop-parity-results.md`).
+- P1.2 (`zargar.tools.team2_cost_lines`): Team2's closed trades since 2026-09-08 are **−$2,856 gross** (no
+  commission), −$3,831 at IBKR ~$0.65 and −$4,416 at the sim's $1.04. Fees make it much worse, but the live price edge
+  is negative on its own. A cheaper venue or dearer contracts can only narrow the loss.
