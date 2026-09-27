@@ -84,6 +84,9 @@ def _kind_for(reason: str, trims_done: int) -> str:
 
 
 class Team2Runner(PlanRunner):
+    # P0.2 (2026-09-27): every Team2 sale names its rule — trims and the X2 runner trail joined the F129 vocabulary
+    AUTHORITY = {**PlanRunner.AUTHORITY, "live_trim": "trim", "model_trim": "trim", "model_trail": "structural stop"}
+
     TECHNIQUE_ID = "team2"
 
     def __init__(self, engine) -> None:
@@ -531,6 +534,26 @@ class Team2Runner(PlanRunner):
         return list(h["rows"]), {"listingSource": src, "listingAgeMs": int(time.time() * 1000) - int(h["ts"]),
                                  "listingFetchedAt": int(h["ts"]), "listingAttempts": attempts}
 
+    def _shared_fire_spot(self, symbol: str, trade, rules, spot: float) -> tuple[float, str]:
+        """P0.1 (2026-09-27): every book that acts on the SAME decision prices it from the SAME spot. The books fire
+        a second or two apart and each read the live print, so on 2026-09-23 a whole-dollar tie (284.000 vs 284.005)
+        gave Control the 283P at $0.25 and Sizing 0.5 the 284P at $0.61 on one IWM decision — the experiment's
+        books then differed by contract, not by their registered difference. The first book to pick a decision
+        (symbol, direction, decision bar) records its spot; the others reuse it. Selection only: every quote,
+        order and fill stays live."""
+        step = max(1, int(getattr(rules, "entry_tf_min", 2) or 2)) * 60_000
+        fired = int(getattr(trade, "fired_ts", 0) or 0)
+        if fired < 1_000_000_000_000:
+            return spot, "live"
+        key = (symbol, str(getattr(trade, "direction", "")), fired - fired % step)
+        cache = self.__dict__.setdefault("_fire_spots", {})
+        for k in [k for k in cache if k[2] < key[2] - 30 * 60_000]:
+            cache.pop(k, None)                                           # a decision is only shared within its bar
+        if key in cache:
+            return cache[key], "shared_fire_snapshot"
+        cache[key] = float(spot)
+        return float(spot), "live"
+
     def _chain_knob(self, key: str, default: float) -> float:
         try:
             return float(self.rt(key, default) or 0)
@@ -641,6 +664,7 @@ class Team2Runner(PlanRunner):
             q = self.engine.quotes.get(ap.symbol)
             if q is not None and q.last and q.last > 0:
                 spot = float(q.last)
+            spot, spot_source = self._shared_fire_spot(ap.symbol, trade, rules, spot)
             want = "call" if trade.direction == "long" else "put"
             band_hi = float(rules.target_premium) * MAX_OVER_TARGET
             floor = float(rules.premium_floor)
@@ -704,8 +728,8 @@ class Team2Runner(PlanRunner):
             await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_picked",
                               f"{c.get('symbol')} ask {c.get('ask')} bid {c.get('bid')} ({priced})", trigger=trade.trigger_id,
                               verdict="picked", contract=c.get("symbol"), strike=c.get("strike"), ask=c.get("ask"), bid=c.get("bid"),
-                              priced=priced, examined=examined, spot=round(spot, 4), listed=len(otm), expiry=expiry,
-                              direction=trade.direction, listing=listing_meta)
+                              priced=priced, examined=examined, spot=round(spot, 4), spotSource=spot_source,
+                              listed=len(otm), expiry=expiry, direction=trade.direction, listing=listing_meta)
             return c
         except Exception as exc:  # noqa: BLE001 - reported on the trade, never raised into the bar loop
             trade.errors.append(f"contract pick failed: {exc}")
@@ -2021,7 +2045,10 @@ class Team2Runner(PlanRunner):
                 if qty <= 0:
                     continue
                 trade.trims_done = level
-                await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")))
+                await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")),
+                                 authority={"authority": self.AUTHORITY["model_trim"], "decidedBy": "model_trim",
+                                            "confirmed": True, "livePct": round(live, 1) if live is not None else None,
+                                            "thresholdPct": float(need), "why": str(e.get("why", ""))})
                 continue
             why = str(e.get("why", ""))
             authority: dict | None = None
@@ -2040,7 +2067,7 @@ class Team2Runner(PlanRunner):
                                       trigger=trade.trigger_id, decisionTs=int(time.time() * 1000), authority=authority)
                     continue
                 why = str(authority.get("why") or why)
-            elif kind in ("stop", "flatten", "tp3"):
+            elif kind in ("stop", "flatten", "tp3", "trail"):
                 # the underlying's own reads: the model and the desk share the tape, so the instruction
                 # stands — but the journal still says which authority took the position out (F129)
                 by = f"model_{'structural' if kind == 'stop' else kind}"
@@ -2306,7 +2333,10 @@ class Team2Runner(PlanRunner):
             reason = (f"live premium {pct:+.0f}% ≥ +{need:.0f}% on the bid — {'first' if level == 1 else 'second'} trim "
                       f"on the contract's own quote (V2)")
             self._log(ap, "live_trim", f"{tr.trigger_id}: {reason}", trigger=tr.trigger_id, livePct=round(pct, 1), qty=qty)
-            await self._exit(ap, tr, "tp1" if level == 1 else "tp2", qty, journal=True, reason=reason)
+            await self._exit(ap, tr, "tp1" if level == 1 else "tp2", qty, journal=True, reason=reason,
+                             authority={"authority": self.AUTHORITY["live_trim"], "decidedBy": "live_trim", "confirmed": True,
+                                        "livePct": round(pct, 1), "thresholdPct": float(need),
+                                        "fillBasis": float(tr.avg_fill) if tr.avg_fill else None, "why": reason})
 
     async def _add_from_event(self, ap: ArmedPlan, e: dict, bar: Bar, *, halted: bool, journal: bool) -> None:
         """X5 trim-and-add: buy the SAME contract again for the trimmed fraction. Auto mode only —
