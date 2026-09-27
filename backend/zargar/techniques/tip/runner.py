@@ -624,16 +624,24 @@ class TipRunner(PlanRunner):
         return rid
 
     async def note_followup(self, *, source: str, ticker: str, action: str,
-                            signal_id: str | None = None) -> list[str]:
+                            signal_id: str | None = None, disarm: bool = False) -> list[str]:
         """A source follow-up ("sold 40%", "I'm out") landed while plans WAIT
         (ARM-GAPS D1/D9 wiring): flag every live waiting plan of that
-        source+ticker — loudly. Disarming stays the analyst's/human's call."""
+        source+ticker — loudly. Q3 (2026-09-27): when the caller says the AUTHOR's
+        own grounded CLOSE arrived (`disarm`), a plan that holds nothing is
+        disarmed (journaled; re-arm restores it); a trim still only flags."""
         out: list[str] = []
         for ap in list(self._armed.values()):
             ctx = ap.plan.get("context") or {}
             if ap.symbol != ticker.upper() or (ctx.get("source") or "") != source \
                     or ap.status not in ("armed", "paused"):
                 continue
+            if disarm and action == "close" and not any(t.remaining > 0 for t in ap.trades.values()):
+                with contextlib.suppress(Exception):
+                    if await self.disarm(ap.run_id, reason=f"source closed {ticker} (signal {signal_id}) - "
+                                                           f"the author left the trade this plan waits to enter"):
+                        out.append(ap.run_id)
+                        continue
             self._log(ap, "source_followup",
                       f"the source posted a '{action}' on {ticker} while this plan waits "
                       f"for its level — review it (the analyst can disarm_plan)")

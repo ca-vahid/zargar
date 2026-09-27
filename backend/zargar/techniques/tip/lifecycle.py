@@ -226,6 +226,14 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
     policy["trailing"] = {"mode": "structure",
                           "after_r": float(settings.get("techniques.tip.trailing_after_r", 1.0))}
     policy["time_stop_sessions"] = max(1, int(plan.get("maxHoldSessions") or 10))
+    if not is_option:
+        # Q1 (2026-09-27): shares that have not earned min_r after N sessions free the slot (0 = off)
+        _st = int(settings.get("techniques.tip.stale_after_sessions", 0) or 0)
+        if _st > 0:
+            policy["stale"] = {"sessions": _st, "min_r": float(settings.get("techniques.tip.stale_min_r", 0.5))}
+        # Q5 (2026-09-27): the ladder is also judged on the live bid (exit-only quote watch)
+        if bool(settings.get("techniques.tip.share_target_watch", False)) and policy.get("ladder"):
+            policy["target_watch"] = True
     if is_option:
         if bool(settings.get("techniques.tip.bleed_exit_enabled", True)):
             # BBAI 2026-09-04: -61% on the contract while the stock sat within

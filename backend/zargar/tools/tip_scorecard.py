@@ -82,7 +82,10 @@ def attribute(kind: str, op: dict, *, analyst_model_configured: str | None) -> t
 
 
 async def trading(conn, since: str, until: dt.date, book: str, registry: dict) -> dict:
-    d = await tip_outcomes.build_census(conn, since_text=since, portfolio=book)
+    # Q14 (2026-09-27): FIFO from the book's FIRST execution, only the window summed - a census cut at `since` dropped
+    # every sale of a lot bought before the window (09-25 alone printed +7.27 instead of -98.15: JELD, COIN)
+    d = await tip_outcomes.build_census(conn, since_text=SHADOW_HISTORY_START, portfolio=book)
+    since_d = dt.date.fromisoformat(since)
     q_exec = {e for f in registry.get("fills", []) if f.get("book") == book for e in f.get("executions", [])}
     repair_orders = {r["id"]: r for r in await conn.fetch(
         "select id, tags from orders where portfolio_id = $1 and source = 'manual'", book)}
@@ -92,7 +95,7 @@ async def trading(conn, since: str, until: dt.date, book: str, registry: dict) -
                                                   "closedIdeas": set(), "trades": 0})
     for r in d["realizations"]:
         sd = session_of(r["ts"])
-        if sd > until:
+        if sd > until or sd < since_d:
             continue
         net = r["gross"] - r["fees"]
         bucket = days[sd]
@@ -106,7 +109,7 @@ async def trading(conn, since: str, until: dt.date, book: str, registry: dict) -
     for e in d["execs"]:
         if e["order_id"] in repair_ids and e["side"] == "BUY":
             over = next((u for u in d["unallocated"] if u["symbol"] == e["symbol"] and abs(u["qty"] - float(e["qty"])) < 1e-9), None)
-            if over is not None:
+            if over is not None and session_of(e["ts"]) >= since_d:
                 amt = over["proceeds"] - float(e["qty"]) * float(e["price"]) * mult(e["symbol"]) - over["fee"] - float(e["commission"] or 0)
                 repairs.append({"session": session_of(e["ts"]), "symbol": e["symbol"], "qty": float(e["qty"]), "net": amt,
                                 "tag": [t for t in (J(repair_orders[e["order_id"]]["tags"]) or []) if str(t).startswith("reconcile:")]})

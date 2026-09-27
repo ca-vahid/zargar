@@ -399,6 +399,14 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
     ts = policy.get("time_stop_sessions")
     if ts and view.sessions_held >= int(ts):
         return [Decision("time", 1.0, f"held {view.sessions_held} trading sessions (time stop {ts})")], moves
+    # Q1 (2026-09-27 review): a position that has not earned min_r after N sessions frees its slot - capital is the
+    # binding constraint once positions are shares. Judged on a CLOSED bar of the policy timeframe, never a quote.
+    stale = policy.get("stale") or {}
+    if stale and int(stale.get("sessions") or 0) > 0 and view.sessions_held >= int(stale["sessions"]):
+        fav_r = view.favorable(bar.close) / risk
+        if fav_r < float(stale.get("min_r", 0.5)):
+            return [Decision("time", 1.0, f"stale: {view.sessions_held} sessions held at {fav_r:+.2f}R "
+                                          f"(< {float(stale.get('min_r', 0.5)):g}R) - freeing the slot")], moves
     fb = policy.get("flatten_before") or {}
     if fb and view.days_to_event is not None and view.days_to_event <= int(fb.get("days", 1)):
         return [Decision("event", 1.0, f"{fb.get('event', 'event')} in {view.days_to_event} day(s) — flattening")], moves
@@ -460,6 +468,28 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
                 if better:
                     moves.append(StopMove(float(new_stop), f"trailing ({mode}) -> {float(new_stop):.4f}"))
     return decisions, moves
+
+
+def quote_target_decision(policy: dict, state: PolicyState, direction: str, price: float | None) -> Decision | None:
+    """Q5 (2026-09-27 review): the next ladder rung judged on a LIVE quote (the exit side: bid for a long, ask for a
+    short) instead of waiting for the policy bar to close. Same fraction arithmetic as `evaluate`; the caller advances
+    `trims_done` BEFORE sending so the bar path cannot take the same rung twice."""
+    if price is None or price <= 0:
+        return None
+    targets, fractions = _ladder(policy)
+    k = state.trims_done
+    if k >= len(targets):
+        return None
+    t = targets[k]
+    hit = (price <= t) if direction == "short" else (price >= t)
+    if not hit:
+        return None
+    frac = fractions[k] if k < len(fractions) else 0.0
+    remaining_frac = 1.0 - sum(fractions[:k])
+    rel = min(1.0, frac / remaining_frac) if remaining_frac > 1e-9 else 1.0
+    if rel <= 0:
+        return None
+    return Decision("trim", rel, f"TP{k + 1} {t:.4f} reached (quote {price:g})")
 
 
 def apply_moves(state: PolicyState, view: PositionView, decisions: list[Decision],
