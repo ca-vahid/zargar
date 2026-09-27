@@ -94,7 +94,7 @@ def tickers_in(message: str, outcomes: list[dict] | None = None) -> list[str]:
     return sorted(found)
 
 
-def stable_first_blocks(header: str, *, source_block: bool = False) -> list[dict] | str:
+def stable_first_blocks(header: str, *, source_block: bool = False, rulebook_ttl: str = "5m") -> list[dict] | str:
     """P-D (2026-09-23): the run header as two content blocks - the desk's standing rulebook FIRST, carrying its own
     cache marker, then everything message-specific. The rulebook is identical across runs, so consecutive reviews
     READ it from cache instead of each writing ~34k tokens of fresh cache (the message used to sit in front of it).
@@ -120,13 +120,16 @@ def stable_first_blocks(header: str, *, source_block: bool = False) -> list[dict
             src_lines = [ln for ln in body if "[source:" in ln]
             if src_lines:
                 rest = rest[:a] + chr(10).join(keep) + rest[b:]
+    # Q9 (2026-09-27): the rulebook may carry the 1-hour TTL (reviews arrive 5-60 min apart, so the 5-minute entry
+    # expired before most reads); a 1-hour entry must precede every 5-minute one - it is the first block here.
+    rb_cc = {"type": "ephemeral", "ttl": "1h"} if rulebook_ttl == "1h" else {"type": "ephemeral"}
     if src_lines:
         return [{"type": "text", "text": "(The desk's standing rulebook comes first; the message and its context follow.)" + chr(10) * 2
-                                         + rules, "cache_control": {"type": "ephemeral"}},
+                                         + rules, "cache_control": rb_cc},
                 {"type": "text", "text": "SOURCE NOTES (this source; labels as in SHARED NOTES):" + chr(10)
                                          + chr(10).join(src_lines) + chr(10), "cache_control": {"type": "ephemeral"}},
                 {"type": "text", "text": rest}]
     return [{"type": "text", "text": "(The desk's standing rulebook comes first; the message and its context follow.)" + chr(10) * 2
-                                     + rules, "cache_control": {"type": "ephemeral"}},
+                                     + rules, "cache_control": rb_cc},
             {"type": "text", "text": rest}]
 
