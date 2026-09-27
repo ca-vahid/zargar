@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.54";
+export const APP_VERSION = "0.8.55";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.55",date:"2026-09-27",title:"Team2: every book prices a decision the same way, and every sale says why",items:[
+    {tag:"fixed",text:"Books acting on the same Team2 decision now choose the contract from the same underlying price. On September 23 a half-cent difference gave two books different contracts on one signal."},
+    {tag:"improved",text:"Team2 trims and the runner exit now record which rule sold, and every Team2 plan records the method and thresholds it traded."},
+    {tag:"new",text:"A read-only report restates Team2 results at gross, IBKR and Webull costs."},
+  ]},
   {version:"0.8.54",date:"2026-09-27",title:"Tips: free up the book, copy the right exits, a smaller rulebook",items:[
     {tag:"new",text:"Share positions that have not earned half their risk after five sessions are closed on a finished bar so the money can go to new ideas; the Practice book holds at most seven Tips positions."},
     {tag:"improved",text:"A source's exit is copied automatically only when it names the leg our position came from; a close from the source also cancels our plan that is still waiting to enter."},

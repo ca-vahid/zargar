@@ -157,3 +157,26 @@ defect-excluded view next to the registered one. Do not replace the registered o
    it needs no new book.
 2. **Sizing 0.5 stays paused** (P2.2). Recommended, and applied: nothing was changed.
 3. **Target venue for cost reporting:** Webull CA (current), IBKR (pending), or both lines (recommended).
+
+---
+
+## Status 2026-09-27
+
+| item | status |
+|---|---|
+| P0.1 shared fire spot | **built** (F132, tests). Deploys with the next release |
+| P0.2 trim / trail authority | **built** (F132) |
+| P0.3 bar-queue lag alert | open. Needs the platform's per-runner queue metric; asked of the EM desk with cross-desk P0.2 |
+| P0.4 method version on plans | **built** (F132) |
+| P0.5 retire market-watch | **done** 09-24 |
+| P1.1 premium-stop parity | **done: not the leak** (−0.13 / −0.61 points, both inside the 3-point line) |
+| P1.2 venue-cost lines | **built**: `zargar.tools.team2_cost_lines`. Since 09-08: gross −$2,856, IBKR −$3,831, Webull −$4,416 |
+| P1.3 Greeks source | open |
+| P2.1 H5-P dearer contracts | **reassessed, recommendation changed to HOLD** (below) |
+
+**Why H5-P is on hold.** The live price edge is negative before any commission (−$2,856 gross), and the premium-stop
+sampling is ruled out. Dearer contracts cut the per-contract fee share, which at best recovers part of the
+$1,560–2,600 of costs. They cannot turn a gross loss into a profit. Building the role also means changing the
+reviewed experiment schema and the readiness receipt, and lifting C1's registered pause. That is worth doing only as
+a reviewed PR with the Codex reviewer, and only if you still want it after the 20-session review. Until then, the
+money-relevant question is **which setups have a gross edge at all**, and that is S1's job (5 of 60 sessions).
