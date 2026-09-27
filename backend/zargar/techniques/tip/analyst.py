@@ -708,6 +708,16 @@ def recent_source_mirror(eng, pos_id: str, now: float | None = None) -> dict | N
     return m if m and t - float(m.get("at") or 0) < SOURCE_MIRROR_WINDOW_S else None
 
 
+async def _pending_rule_count(eng) -> int:
+    """Q7: live rule proposals still waiting for a person (needs_human, not superseded, not deleted)."""
+    from sqlalchemy import func, select
+    from ...models import TipNote
+    async with eng.sf() as session:
+        return int((await session.execute(select(func.count()).select_from(TipNote).where(
+            TipNote.scope == "rule", TipNote.needs_human.is_(True), TipNote.superseded_by.is_(None),
+            TipNote.deleted_at.is_(None)))).scalar() or 0)
+
+
 def _manage_guard(eng, pid: str) -> tuple:
     """(position, error) — the cage around the position-management tools:
     only OPEN, tip-technique managed positions, only when the knob allows."""
@@ -886,6 +896,10 @@ def _exec_cost(eng, *, is_shares: bool, symbol: str, qty: int) -> dict:
 
 
 async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
+    if (ctx or {}).get("dry") and name in MUTATING_TOOLS:
+        # Q12 (2026-09-27): a gate-audit review runs DRY - a management or note tool is recorded as what the review
+        # WOULD have done (the receipt carries it), never executed
+        return {"dryRun": True, "wouldHave": name, "note": "gate audit: recorded, not executed"}
     sym = str(args.get("symbol") or "").upper()
     exp = bool((ctx or {}).get("experiment"))
     as_of_ms = (ctx or {}).get("asOfMs")
@@ -1067,6 +1081,16 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         # an analyst cannot self-certify that a reviewed hypothesis is policy
         staged = scope == "rule" and not bool(
             eng.settings.get("techniques.tip.knowledge_apply_enabled", False))
+        _qmax = int(eng.settings.get("techniques.tip.rule_proposal_queue_max", 0) or 0)
+        if staged and _qmax > 0:
+            # Q7 (2026-09-27 review): 29 unreviewed rule proposals piled up while 36 live rules were never cited -
+            # new proposals wait until a person has worked the queue down
+            pending = await _pending_rule_count(eng)
+            if pending >= _qmax:
+                ctx["_saves"] = saves              # the refused save does not spend the run's note budget
+                return {"saved": False, "error": f"{pending} rule proposals already wait for human review "
+                                                 f"(queue max {_qmax}) - save the lesson as a source/ticker note "
+                                                 "or cite the existing rule it refines"}
         note = await eng.signals_service.add_tip_note(
             scope, text,
             author=f"analyst:{str(ctx.get('run_id') or '')[:8]}",
@@ -1689,10 +1713,14 @@ def _usage_record(usage: dict, resp, *, latency_ms: float, attempt: int = 1,
         o_tok = int(getattr(u, "output_tokens", 0) or 0)
         c_read = int(getattr(u, "cache_read_input_tokens", 0) or 0)
         c_write = int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+        _cc = getattr(u, "cache_creation", None)
+        c_write1h = int(getattr(_cc, "ephemeral_1h_input_tokens", 0) or 0) if _cc is not None else 0
         usage["in"] += i_tok
         usage["out"] += o_tok
         usage["cacheRead"] += c_read
         usage["cacheWrite"] += c_write
+        if c_write1h:
+            usage["cacheWrite1h"] = int(usage.get("cacheWrite1h") or 0) + c_write1h
         # per-turn contribution (Codex 2026-09-12: run totals are summed
         # across calls — consolidation decisions need the per-turn shape)
         usage["inPerCall"].append(i_tok)
@@ -1748,7 +1776,8 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                     and bool(eng.settings.get("techniques.tip.prompt_cache_stable_first", False))):
                 from .review_context import stable_first_blocks
                 _first = stable_first_blocks(                 # P-D: the rulebook is shared cache across runs
-                    header, source_block=bool(eng.settings.get("techniques.tip.prompt_cache_source_block", False)))
+                    header, source_block=bool(eng.settings.get("techniques.tip.prompt_cache_source_block", False)),
+                    rulebook_ttl=str(eng.settings.get("techniques.tip.prompt_cache_rulebook_ttl", "5m") or "5m"))
                 if isinstance(_first, list):
                     st["stableFirst"] = True                  # the block markers cover tools+system (max 4 markers)
         st["messages"] = [{"role": "user", "content": _first}]
@@ -2428,6 +2457,8 @@ class IntakeRun:
         # E17-03: the extraction model's identity (set by the intake service) rides every
         # persisted intake record, so usage can be joined to a rate - not only on review runs
         self.model: str | None = None
+        # Q12: a gate-audit review (a sampled enforced skip reviewed DRY - nothing it proposes is executed)
+        self.dry: bool = False
 
     async def start(self, *, source: str, chars: int, has_image: bool,
                     preview: str = "", experiment: str | None = None) -> None:
@@ -2561,7 +2592,7 @@ class IntakeRun:
         tools_used: list[dict] = []
         tool_ctx = {"ticker": (outcomes[0].get("ticker") if outcomes else ""),
                     "source": source, "signal_id": None, "run_id": self.id,
-                    "stage": "review"}
+                    "stage": "review", **({"dry": True} if self.dry else {})}
         review_state: dict = _arm_deadline({}, eng)
         try:
             text = await asyncio.wait_for(run_agent_loop(

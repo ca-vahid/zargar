@@ -142,3 +142,25 @@ weekday; rulebook <= 5k tokens; zero false trims from mirroring.
 Three sessions of shares-first and one of the mirror are not evidence of an edge. The shares cohort (+$145) and the
 mirrored-exit class (+$417 on 8) are the only positive lines in the record; both are small samples. Every Tier 1
 change is framed to protect those lines and to stop paying for the lines that have lost.
+
+## 8. Implemented (0.8.54, 2026-09-27; user: "go for all your recommendations")
+
+| # | Built | Switch (journaled setting) | Rollback |
+|---|---|---|---|
+| Q1 | `policies.evaluate` stale exit (pure, closed bar) + adoption policy for SHARES; book slot cap in `_tip_budget` (refusal on the record) | `techniques.tip.stale_after_sessions` 5, `stale_min_r` 0.5, `max_open_positions` 7 | 0 / 0 |
+| Q2 | `mirror_instrument_matches` + `_position_origin` (position -> proposal -> signal); a non-matching leg journals `TipSourceExitNotMirrored` and goes to the analyst | `techniques.tip.mirror_match_instrument` true | false |
+| Q3 | `TipRunner.note_followup(disarm=)`: the author's own grounded CLOSE disarms a waiting plan that holds nothing; a trim still flags | `techniques.tip.followup_close_disarms` true | false |
+| Q4 | settings only | `techniques.tip.lotto_enabled` false | true |
+| Q5 | **Changed from the plan:** instead of a resting venue limit (a resting limit + the GTC stop could together sell more than held - the phantom-short class), share ladder rungs are judged on the live BID in the exit-only quote watch (`quote_target_decision`, rung marked taken before the order) | `techniques.tip.share_target_watch` true | false |
+| Q6/Q8 | `zargar.tools.tip_knowledge_prune` (plan / `--apply --confirm <hash>` through the audited consolidation path). Draft: 66 rules -> 13 (18.7k chars), 29 pending proposals released inside the batch, 3 lotto rules expired; 983 notes expired (source scopes keep their 15 most relied-on; general never-cited after 20 supplies) | **human confirm** | receipt rollback plan |
+| Q7 | save_note refuses a new rule proposal while the queue is at/over the max | `techniques.tip.rule_proposal_queue_max` 5 | 0 |
+| Q9 | rulebook block `cache_control.ttl=1h`; `cacheWrite1h` recorded per run and priced at 1.6x the card's cacheWrite (2x input) in `tip_llm_cost.price` (scorecard included) | `techniques.tip.prompt_cache_rulebook_ttl` 1h | 5m |
+| Q10 | **Changed:** retros are tool loops (not batchable). The real defect found: the rule audit's judge replies were truncated by `max_tokens` 3000 because Opus 5.x thinking counts inside it (09-14..09-26: most chunks `partial`/`failed`). Cap 8000, ceiling 16000 | `techniques.tip.audit_max_output_tokens` 8000 | 3000 |
+| Q11 | settings only | giul-heatseeker, eva -> `shadow` | the sources map |
+| Q12 | a sampled ENFORCED skip is reviewed DRY (mutating tools recorded, never executed; `TipReviewGateAudit`); a management proposal or missed-tip flag sets `review_gate=observe` | `techniques.tip.gate_audit_rate` 0.1 | 0 |
+| Q13 | eva immediate shadow book quarantined (API); the phantom-short correction is folded into the reset decision | - | unquarantine |
+| Q14 | scorecard census from the book's first execution, only the window summed (09-25 now -98.16, was +7.27) | code | - |
+| Q15 | the bar, written before the data: at the 10th session of shares-first (about 10-09) - shares cohort net after fees >= 0 AND above the option cohort's shadow; mirrored exits >= 60% winners; zero option stop-outs in 09:30-09:35 that the grace would have avoided; model bill <= $10/weekday. A miss on any line is reported, not re-scoped. | - | - |
+| Q16 | open: book size (with the reset) | - | - |
+| stop | at-level plans wait at most 5 sessions | `techniques.tip.horizon_sessions` 5 | 15 |
+

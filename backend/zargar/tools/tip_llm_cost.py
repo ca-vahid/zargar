@@ -38,6 +38,11 @@ def price(tokens: dict, rate: dict | None) -> dict:
         if n and r is None:
             return {"usd": None, "priced": False, "note": f"unpriced: rate card lacks '{rk}'"}
         usd += n / 1_000_000.0 * float(r or 0)
+    # Q9 (2026-09-27): `cacheWrite1h` is the SUBSET of cacheWrite written with the 1-hour TTL. The card's cacheWrite
+    # rate is the 5-minute price (1.25x input); a 1-hour write bills 2x input = 1.6x that rate -> the 0.6x surcharge.
+    n1h = float(tokens.get("cacheWrite1h") or 0)
+    if n1h and rate.get("cacheWrite") is not None:
+        usd += n1h / 1_000_000.0 * float(rate["cacheWrite"]) * 0.6
     return {"usd": round(usd, 4), "priced": True}
 
 
@@ -49,7 +54,7 @@ def rollup(runs: list[dict], rates: dict) -> dict:
         batch = bool(u.get("batch"))                    # 2026-09-23: Message Batches bill 50% of list
         key = (r["day"], r["kind"], (r.get("model") or "unknown-model") + (" (batch)" if batch else ""))
         g = groups.setdefault(key, {"day": key[0], "kind": key[1], "model": key[2], "batch": batch, "runs": 0, "calls": 0,
-                                    "in": 0, "out": 0, "cacheRead": 0, "cacheWrite": 0,
+                                    "in": 0, "out": 0, "cacheRead": 0, "cacheWrite": 0, "cacheWrite1h": 0,
                                     "unknownCalls": 0, "partialRuns": 0, "runsWithoutUsage": 0, "failed": 0})
         g["runs"] += 1
         if r.get("status") == "failed":
@@ -57,7 +62,7 @@ def rollup(runs: list[dict], rates: dict) -> dict:
         if not u:
             g["runsWithoutUsage"] += 1
             continue
-        for k in ("calls", "in", "out", "cacheRead", "cacheWrite", "unknownCalls"):
+        for k in ("calls", "in", "out", "cacheRead", "cacheWrite", "cacheWrite1h", "unknownCalls"):
             g[k] += int(u.get(k) or 0)
         if u.get("partial"):
             g["partialRuns"] += 1
