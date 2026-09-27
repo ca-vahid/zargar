@@ -576,4 +576,9 @@ chain and refresh requests (`_bounded`); a result after the deadline is recorded
 (`review_attribution.py`) names the first KNOWN blocker; later windows are not proven counterfactuals. Reviewer probes
 `tests/test_pr246_review_boundaries.py` and the end-to-end fixture `tests/test_cartel_end_to_end.py` must stay green.
 Dated one-off records live in `docs/techniques/options-cartel/archive/2026-09/`.
+**Cartel 2026-09-24..27 (0.8.50/0.8.53):** research collectors OFF (method lab, profitability, intraday, ignition);
+entry-grid replay (`tools/cartel_entry_grid.py [--near-miss]`, read-only; run under a memory guard) kept the entry rule
+(5m pilot NOT activated). A PREREGISTERED 20-session Practice experiment runs from 2026-09-28: dry-up `ratio_v1` 1.5x,
+`minMinuteCoverage` 0.95 (C0 screen), `minArmTargetR` 0.5 - fewer than 8 trades or net <= 0 after fees stops
+development (`reviews/2026-09-24-sharp-pencil/PLAN.md` §9). Don't tune its thresholds mid-sample.
 
