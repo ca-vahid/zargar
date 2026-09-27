@@ -36,9 +36,16 @@ from ..techniques.options_cartel.entry import read_entry
 from ..techniques.options_cartel.method_lab import build_specs, freeze_candidates
 from ..techniques.options_cartel.prepare import build_volume_baseline
 from ..techniques.options_cartel.profitability_research import candidate_from_analysis, make_plan
+from ..techniques.options_cartel.service import ResearchInput
+from ..techniques.options_cartel.setups import analyze_setups
 from ..techniques.options_cartel.shadow_entries import ShadowEntrySpec, read_shadow_entry
 from .cartel_historical_lab import choose_preparations, legacy_analysis, load, native_history
 
+DRY_UP_CHECK = "Volume dries up in consolidation"
+NEAR_MISS = "dryup_near_miss"
+# Declared 2026-09-27: a name that failed ONLY the dry-up check is re-judged with base volume allowed up to
+# 1.5x the prior base (ratio_v1); every other screen, setup, review and entry rule is unchanged.
+NEAR_MISS_MAX_VOLUME_RATIO = 1.5
 HORIZON_SESSIONS = 5
 COST_BPS = 2.0
 VOLUMES = (1.0, 1.2, 1.5)
@@ -83,6 +90,18 @@ def outcome(signal, targets, minutes, *, horizon_end, direction="long"):
     return {"exit": "time", "at": after[-1].ts, "price": price, "r": gross, "rNet": gross-(entry+price)*COST_BPS/1e4/risk}
 
 
+def near_miss_candidate(saved, policy):
+    """Pure: recompute the setups with the relaxed dry-up limit on the saved inputs, then the same review."""
+    body = ResearchInput.model_validate(saved["config"]["inputs"])
+    params = body.parameters.model_copy(update={"dry_up_rule": "ratio_v1", "max_volume_ratio": NEAR_MISS_MAX_VOLUME_RATIO})
+    body = body.model_copy(update={"parameters": params})
+    analysis = analyze_setups(body.history, body.indices.get("SPY", []), saved["result"]["screen"], params,
+                              body.as_of_ms, direction=body.direction)
+    relaxed = {**saved, "config": {**saved["config"], "inputs": body.model_dump(mode="json")},
+               "result": {**saved["result"], "analysis": analysis}}
+    return candidate_from_analysis(relaxed, policy, NEAR_MISS)
+
+
 def horizon_close(day):
     d = dt.date.fromisoformat(day)
     for _ in range(HORIZON_SESSIONS-1):
@@ -123,16 +142,28 @@ def evaluate(candidate, day, history, minutes, frozen_at):
     sign = 1 if candidate.get("direction", "long") == "long" else -1
     touch = next((b.ts for b in day_minutes if ((b.high if sign == 1 else b.low)-candidate["trigger"])*sign >= 0), None)
     return {"symbol": candidate["symbol"], "session": day, "setup": candidate["setup"], "trigger": candidate["trigger"],
-            "touchedAt": touch, "absentMinutes": (closed-opened)//60_000-len(day_minutes),
+            "cohort": candidate.get("cohort", "primary"), "touchedAt": touch, "absentMinutes": (closed-opened)//60_000-len(day_minutes),
             "minuteCount": len(day_minutes), "baselineSlots": {tf: len(m["baselines"]) for tf, m in matrices.items()}, "rows": rows}
 
 
 def summarize(results):
-    per = defaultdict(lambda: {"candidateDays": 0, "signals": 0, "targets": 0, "stops": 0, "time": 0, "rNet": []})
+    """Per cohort; a candidate-day that sat in two books' pools counts once."""
+    out, seen = {}, set()
+    for res in results:
+        key = (res.get("cohort", "primary"), res["symbol"], res["session"], res["trigger"])
+        if key not in seen:
+            seen.add(key)
+            out.setdefault(key[0], []).append(res)
+    return {cohort: _table(rows) for cohort, rows in out.items()}
+
+
+def _table(results):
+    per = defaultdict(lambda: {"candidateDays": 0, "touched": 0, "signals": 0, "targets": 0, "stops": 0, "time": 0, "rNet": []})
     for res in results:
         for row in res["rows"]:
             s = per[row["variant"]]
             s["candidateDays"] += 1
+            s["touched"] += bool(res.get("touchedAt"))
             if row.get("signalAt"):
                 s["signals"] += 1
                 o = row.get("outcome") or {}
@@ -190,12 +221,28 @@ async def run(args):
                                 candidates.append(c)
                         except (ValueError, KeyError, TypeError) as exc:
                             errors.append({"session": day, "symbol": r["symbol"], "reason": str(exc)[:160]})
-                    if not candidates:
-                        pools.append((day, portfolio, int(res["finishedAt"]), []))
-                        continue
-                    frozen = freeze_candidates(candidates, at=int(res["finishedAt"]), day=day, cap=100)
-                    pools.append((day, portfolio, int(res["finishedAt"]), frozen["candidates"]))
-                    print(json.dumps({"session": day, "portfolio": portfolio[:8], "candidates": len(frozen["candidates"])}), flush=True)
+                    near = []
+                    if args.near_miss:
+                        ids = [r["analysisId"] for r in res.get("rows", []) if r.get("analysisId") and r.get("status") == "filtered"
+                               and (r.get("reasons") or []) == [DRY_UP_CHECK]]
+                        for r in await conn.fetch("select id,symbol,config,result from technique_runs where technique='options_cartel' "
+                                                  "and mode='analysis' and id=any($1::text[])", ids):
+                            body = load(r["config"])
+                            if body.get("inputs", {}).get("direction") != "long":
+                                continue
+                            try:
+                                c = near_miss_candidate({"runId": r["id"], "symbol": r["symbol"], "config": body,
+                                                         "result": legacy_analysis(load(r["result"]))}, policy)
+                                if c:
+                                    near.append(c)
+                            except (ValueError, KeyError, TypeError) as exc:
+                                errors.append({"session": day, "symbol": r["symbol"], "reason": "near-miss: "+str(exc)[:150]})
+                    for cohort, pool in (("primary", candidates), (NEAR_MISS, near)):
+                        if not pool:
+                            continue
+                        frozen = freeze_candidates(pool, at=int(res["finishedAt"]), day=day, cap=100)
+                        pools.append((day, portfolio, int(res["finishedAt"]), [{**c, "cohort": cohort} for c in frozen["candidates"]]))
+                        print(json.dumps({"session": day, "portfolio": portfolio[:8], "cohort": cohort, "candidates": len(frozen["candidates"])}), flush=True)
     finally:
         await conn.close()
     by_symbol = defaultdict(list)
@@ -228,14 +275,16 @@ async def run(args):
               "start": args.start, "end": args.end, "portfolios": args.portfolio, "horizonSessions": HORIZON_SESSIONS,
               "costBpsPerSide": COST_BPS, "summary": summarize(results), "candidateDays": len(results), "results": results,
               "errors": errors, "placesOrders": False,
+              "nearMiss": {"enabled": bool(args.near_miss), "check": DRY_UP_CHECK, "maxVolumeRatio": NEAR_MISS_MAX_VOLUME_RATIO},
               "limitations": ["Underlying R only; option P&L is not modeled (no historical option quotes).",
                               "Retrospective native minutes, not receipt-time evidence; data refusals may differ from live.",
                               "Candidate pools are the saved pre-open long pools; the screen was not re-run under new rules.",
                               "Exploratory grid on a small sample; not a held-out test. Signals within one session are correlated."]}
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output).write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
-    for row in report["summary"]:
-        print(json.dumps(row), flush=True)
+    for cohort, table in report["summary"].items():
+        for row in table:
+            print(json.dumps({"cohort": cohort, **row}), flush=True)
 
 
 if __name__ == "__main__":
@@ -245,4 +294,6 @@ if __name__ == "__main__":
     p.add_argument("--portfolio", action="append", required=True)
     p.add_argument("--env-file", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--near-miss", action="store_true",
+                   help="also replay names that failed ONLY the dry-up check, re-judged at 1.5x (reported as a separate cohort)")
     asyncio.run(run(p.parse_args()))

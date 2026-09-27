@@ -51,6 +51,11 @@ class PreparationPolicy(WireModel):
     # at the planned stop. 0 = off (legacy). Nearby resistance is never skipped to raise the ratio; the
     # plan is simply not armed and the refusal is recorded.
     min_arm_target_r: float = Field(default=0, ge=0, le=10)
+    # C0 (2026-09-27): do not plan a name whose baseline sessions had SIP trades in fewer than this share of
+    # regular-session minutes. Quiet minutes cannot confirm a bucket or a session-extreme stop, and thin names
+    # carry wide option spreads (entry-grid replay 2026-09-24: 19/33 touched days were data refusals).
+    # 0 = off (legacy).
+    min_minute_coverage: float = Field(default=0, ge=0, le=1)
     focus_count: int = Field(default=5, ge=1, le=20)
     horizon_sessions: int = Field(default=1, ge=1, le=20)
     budget: float = Field(default=500, gt=0, le=100000)

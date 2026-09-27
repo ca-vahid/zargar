@@ -31,6 +31,16 @@ def test_time_exit_and_no_data():
     assert outcome({**SIGNAL, "stop": 101.}, [110.], [], horizon_end=10**9) is None
 
 
+def test_summary_splits_cohorts_and_counts_a_shared_pool_once():
+    from zargar.tools.cartel_entry_grid import summarize
+    signalled = {"variant": "breakout_15m_v1.5_nogap", "signalAt": 1, "outcome": {"exit": "target", "r": 1.0, "rNet": .99}}
+    day = {"symbol": "T", "session": "2026-09-24", "trigger": 10., "touchedAt": 5, "rows": [signalled]}
+    got = summarize([{**day, "cohort": "primary"}, {**day, "cohort": "primary"}, {**day, "cohort": "dryup_near_miss"}])
+    assert set(got) == {"primary", "dryup_near_miss"}
+    row = got["primary"][0]
+    assert row["candidateDays"] == 1 and row["touched"] == 1 and row["targets"] == 1 and row["totalRNet"] == .99
+
+
 def test_grid_is_predeclared_and_complete():
     names = [v[0] for v in variants()]
     assert len(names) == len(set(names)) == 16
