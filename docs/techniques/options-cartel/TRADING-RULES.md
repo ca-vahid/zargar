@@ -342,3 +342,12 @@ bad, none earned promotion.
 
 Same evening: order-free research collectors (method lab, profitability, intraday, ignition) switched off in runtime
 and by default in 0.8.50 - they fed no order and loaded a memory-starved engine.
+
+## September 27: Practice flow experiment and a 20-session stop rule
+
+Week of 09-21: zero trades (09-25: 9 arms, 0 orders; BBY/CNH/VRNS invalidated at the open, NTNX touched on 0.27x
+volume). Applied the 0.5R arm gate (disarmed AI/NTAP/TSLA for 09-28). Replay: names failing only the dry-up check
+are 3x the pool; with the entry rule unchanged they gave 8 trades, +5.52R, but one trade (FRO +7.33R) carries it -
+roughly neutral otherwise. Practice now runs dry-up `ratio_v1` 1.5x plus a 0.95 minute-liquidity screen (0.8.53) for
+a preregistered 20-session sample from 09-28; decision table in `reviews/2026-09-24-sharp-pencil/PLAN.md` section 9
+(< 8 trades or net <= 0 after fees = stop development).
