@@ -1674,3 +1674,18 @@ Rollback = the same key back to `shares`.
 
 Context the same day: 2026-09-24 was the worst EM session so far (baseline -439.42, experiment -660.92, 9 of 9 trades
 stopped). Record to date 61 trades, -1,545.67, profit factor 0.50; the stop rule is at 3 of 20 sessions.
+
+### 2026-09-27 - correction: the shares-fallback decision had only half taken effect; completed
+
+The 2026-09-24 entry said switching `techniques.enhanced_market.entry_fallback` to `off` would apply from the 2026-09-25
+evening arming. It did not, for most plans: a second rule, **`technique.universe.untradeable = shares`** (C1, 2026-09-12),
+gives every name whose options the nightly liquidity screen marks untradeable a shares fallback at ARM time, whatever the
+fallback setting says. Those names ARE the shares-fallback population the test measured (-0.52R per trade over 22). Monday
+2026-09-28 had 91 plans armed, **67 of them shares-only**.
+
+Completed 2026-09-27 (Sunday) through the journaled paths: `technique.universe.untradeable` -> **`skip`** (an option-untradeable
+name is not armed at all) and the 67 shares-only plans for 2026-09-28 **disarmed** (`DELETE /api/technique/runs/{id}/arm`).
+Monday trades the 24 option-tradeable plans. Side effect to know: the deterministic preparation now records each skipped
+untradeable name in its `TechniquePrepared.errors` list (refused at arm); that is expected, not a failure. Lesson: a
+decision about a behaviour must be traced to EVERY switch that produces it, and the first armed session after the change
+must be checked, not assumed.
