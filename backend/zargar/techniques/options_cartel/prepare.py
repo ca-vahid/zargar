@@ -60,6 +60,16 @@ def build_volume_baseline(minutes: list[Bar], symbol: str, timeframe_minutes: in
             "definition": "Engineering: median of complete same-time buckets; excludes unfinished sessions."}
 
 
+def minute_liquidity(baseline: dict) -> dict:
+    """Share of regular-session minutes with a trusted SIP trade across the baseline's source sessions (C0)."""
+    sessions = baseline.get("minuteCoverage") or {}
+    present = sum(s["present"] for s in sessions.values())
+    expected = sum(s["expected"] for s in sessions.values())
+    return {"sessions": len(sessions), "present": present, "expected": expected,
+            "ratio": present/expected if expected else 0.0,
+            "definition": "Engineering (C0, 2026-09-27): trusted regular-session minutes with a trade / all regular-session minutes."}
+
+
 def prepare_plan(*, plan_id: str, history: list[DailyBar], indices: dict[str, list[DailyBar]],
                  facts: ListingFacts, rules: CartelRules, parameters: SetupParameters,
                  entry_policy: EntryPolicy, minute_history: list[Bar], as_of_ms: int,

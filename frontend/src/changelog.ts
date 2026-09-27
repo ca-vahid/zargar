@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.52";
+export const APP_VERSION = "0.8.54";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.54",date:"2026-09-27",title:"Tips: free up the book, copy the right exits, a smaller rulebook",items:[
+    {tag:"new",text:"Share positions that have not earned half their risk after five sessions are closed on a finished bar so the money can go to new ideas; the Practice book holds at most seven Tips positions."},
+    {tag:"improved",text:"A source's exit is copied automatically only when it names the leg our position came from; a close from the source also cancels our plan that is still waiting to enter."},
+    {tag:"improved",text:"Share targets are taken on the live price instead of at the next 15-minute bar."},
+    {tag:"improved",text:"The weekly knowledge audit no longer cuts off mid-answer, the rulebook can use a one-hour cache, and a small sample of skipped messages is re-checked; a miss turns the relevance gate back to observe."},
+    {tag:"fixed",text:"The scorecard counts sales of positions bought before its date range (Friday showed +$7.27 instead of -$98.16)."},
+  ]},
+  {version:"0.8.53",date:"2026-09-27",title:"Cartel: skip thinly traded stocks (Practice setting)",items:[
+    {tag:"new",text:"Options Cartel preparation can skip stocks that trade in too few minutes of the session (Settings, 0 = off). Quiet minutes cannot confirm an entry candle and thin names carry wide option spreads; a skipped name is listed as thin trading with its measured share."},
+  ]},
   {version:"0.8.52",date:"2026-09-25",title:"Tips: one reaction to a source's exit",items:[
     {tag:"fixed",text:"When the desk has already copied a source's trim, the analyst no longer trims the same position again for the same message (a full close stays its own call)."},
   ]},

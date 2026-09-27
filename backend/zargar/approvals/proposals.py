@@ -254,6 +254,13 @@ class ProposalService:
                                              underlying=underlying)
                 if _why:
                     return 0.0, None, _why
+        # Q1 (2026-09-27 review): a book-wide cap on open tip positions (0 = off)
+        _cap = int(eng.settings.get("techniques.tip.max_open_positions", 0) or 0)
+        if _cap > 0:
+            _n_book = await self._book_open_count(pid)
+            if _n_book >= _cap:
+                return 0.0, None, (f"book slots full: {_n_book} open tip positions in {pf.get('name', pid)} "
+                                   f"(max_open_positions {_cap}); the stale-exit rule frees slots")
         n_open, open_cost = await self._source_open(pid, policy.name)
         if int(policy.max_open_tips or 0) > 0 and n_open >= int(policy.max_open_tips):
             return 0.0, None, (f"source cap: {policy.name} already has {n_open} open tips "
@@ -270,6 +277,14 @@ class ProposalService:
                 note = ((note + " ") if note else "") + \
                     f"Capped to {policy.name}'s remaining open budget ${room:,.0f}."
         return budget, note, None
+
+    async def _book_open_count(self, pid: str) -> int:
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(ManagedPositionRow.id).where(
+                ManagedPositionRow.technique == "tip",
+                ManagedPositionRow.portfolio_id == pid,
+                ManagedPositionRow.status.in_(("open", "attention"))))).all()
+        return len(rows)
 
     async def _source_open(self, pid: str, source: str) -> tuple[int, float]:
         """(count, cost basis $) of the source's OPEN managed tip positions in

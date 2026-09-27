@@ -2026,9 +2026,10 @@ class SignalService:
                                     if not c.get("passed")]}
                         for o in out]
             if await self._review_gate(intake, content, out, outcomes, path="discarded"):
-                await intake.review(source=content.source_name or "unknown",
-                                    message_text=source_text, outcomes=outcomes,
-                                    client=self._analyst_client)
+                _rv = await intake.review(source=content.source_name or "unknown",
+                                          message_text=source_text, outcomes=outcomes,
+                                          client=self._analyst_client)
+                await self._gate_audit_verdict(intake, _rv)
         else:
             n_trade = len(tradable)
             if not sigs and await self._source_has_open_items(content.source_name):
@@ -2037,9 +2038,10 @@ class SignalService:
                 # follow-up, not noise — the analyst reviews it against what we
                 # hold and wait for
                 if await self._review_gate(intake, content, out, [], path="followup"):
-                    await intake.review(source=content.source_name or "unknown",
-                                        message_text=source_text, outcomes=[],
-                                        client=self._analyst_client)
+                    _rv = await intake.review(source=content.source_name or "unknown",
+                                              message_text=source_text, outcomes=[],
+                                              client=self._analyst_client)
+                    await self._gate_audit_verdict(intake, _rv)
             else:
                 await intake.finish(
                     f"{n_trade} tip{'s' if n_trade != 1 else ''}" if sigs else "no signals",
@@ -2103,6 +2105,19 @@ class SignalService:
                 "deskItems": len(items), "readErrors": read_errors,
                 **({"sourceBudget": budget_note} if budget_note else {}),
                 **({"appliedBy": "nonactionable"} if nonact_note else {})}, aggregate_type="tip_intake", aggregate_id=intake.id or "")
+        if skip and mode == "enforce" and not nonact_note and not budget_note:
+            # Q12 (2026-09-27): a sampled enforced skip is still reviewed, DRY (proposals recorded, nothing executed);
+            # the caller's review returns it to `_gate_audit_verdict`, which flips the gate back to observe on a miss
+            with contextlib.suppress(Exception):
+                import random as _random
+                rate = float(eng.settings.get("techniques.tip.gate_audit_rate", 0) or 0)
+                if rate > 0 and _random.random() < rate:
+                    intake.dry = True
+                    intake.step("note", f"Review gate ({rg.VERSION}): would skip - {d['reason']}. Sampled for the "
+                                        "gate audit: reviewed DRY (nothing is executed).")
+                    self.__dict__.setdefault("_gate_audits", {})[intake.id] = {"reason": d["reason"], "source": content.source_name,
+                                                   "contentId": getattr(content, "id", None)}
+                    return True
         if skip:
             intake.step("note", f"Review gate ({rg.VERSION}): {d['reason']} - not reviewed. The message stays in the "
                                 "mirror; nothing on the desk can be managed from it.")
@@ -2111,6 +2126,29 @@ class SignalService:
         if not d["review"]:
             intake.step("note", f"Review gate ({rg.VERSION}, observe): would skip - {d['reason']}. Reviewing anyway.")
         return True
+
+    async def _gate_audit_verdict(self, intake, review: dict | None) -> None:
+        """Q12: judge a DRY review of a sampled enforced skip. A management proposal (update/close/disarm) or a
+        missed-tip flag is a FALSE NEGATIVE of the gate: journaled, and the gate goes back to `observe` (a settings
+        change, journaled by the settings service) until a person looks. A failed review is inconclusive."""
+        meta = self.__dict__.setdefault("_gate_audits", {}).pop(getattr(intake, "id", None), None)
+        if meta is None:
+            return
+        eng = self.engine
+        mgmt = [r.get("tool") for r in ((review or {}).get("receipts") or [])
+                if r.get("tool") in ("update_exit_plan", "close_position", "disarm_plan")]
+        missed = (review or {}).get("missedTip")
+        verdict = "inconclusive" if review is None else ("false_negative" if (mgmt or missed) else "clean")
+        with contextlib.suppress(Exception):
+            await eng.journal.append("TipReviewGateAudit", {
+                "intakeRunId": intake.id, "verdict": verdict, "wouldHave": mgmt, "missedTip": missed, **meta},
+                aggregate_type="tip_intake", aggregate_id=intake.id or "")
+        if verdict == "false_negative" and \
+                str(eng.settings.get("techniques.tip.review_gate", "observe")) == "enforce":
+            with contextlib.suppress(Exception):
+                await eng.settings.set("techniques.tip.review_gate", "observe")
+                log.warning("gate audit: a sampled skip would have managed %s / flagged a missed tip - "
+                            "review_gate set back to observe", mgmt)
 
     async def _mirror_source_exit(self, source: str, row, sig, grounding: dict) -> list[str]:
         """P2: close (or trim) the tip positions we hold from `source` on this ticker when the AUTHOR reports their
@@ -2127,6 +2165,9 @@ class SignalService:
         if mgr is None:
             return []
         frac = 1.0 if sig.action == "close" else float(eng.settings.get("techniques.tip.mirror_trim_fraction", 0.5) or 0.5)
+        match_on = bool(eng.settings.get("techniques.tip.mirror_match_instrument", True))
+        follow = {"instrument": getattr(row, "instrument", None), "strike": getattr(row, "strike", None),
+                  "expiry": getattr(row, "expiry", None)}
         done = []
         for p in mgr.positions(status="open"):
             if p.get("technique") != "tip" or f"source:{source}" not in (p.get("tags") or []):
@@ -2136,6 +2177,20 @@ class SignalService:
             pf = eng.positions.portfolio(p.get("portfolioId")) or {}
             if pf.get("kind") in ("live", "paper"):
                 continue
+            if match_on:
+                # Q2 (2026-09-27 review): only the leg our position came from is mirrored deterministically; an exit on
+                # another leg of the same ticker (ab COIN 197.5C vs our 10/16 220C idea, 09-25) goes to the analyst.
+                names_contract = follow.get("strike") not in (None, "") or follow.get("expiry") not in (None, "")
+                origin = await self._position_origin(p) if names_contract else None
+                ok, why = mirror_instrument_matches(origin, follow)
+                if not ok:
+                    with contextlib.suppress(Exception):
+                        await eng.journal.append("TipSourceExitNotMirrored", {
+                            "positionId": p["id"], "symbol": p.get("symbol"), "source": source, "action": sig.action,
+                            "signalId": row.id, "reason": why, "origin": origin, "followUp": {
+                                k: (str(v) if v is not None else None) for k, v in follow.items()}},
+                            aggregate_type="position", aggregate_id=p["id"], portfolio_id=p.get("portfolioId"))
+                    continue
             reason = f"source {sig.action}: mirrored ({source}, signal {row.id})"
             await mgr.close(p["id"], fraction=min(1.0, max(0.05, frac)), reason=reason[:200])
             from ..techniques.tip.analyst import note_source_mirror
@@ -2146,6 +2201,22 @@ class SignalService:
                 portfolio_id=p.get("portfolioId"))
             done.append(p["id"])
         return done
+
+    async def _position_origin(self, p: dict) -> dict | None:
+        """The tip a managed position came from: legs[0].entryOrderId -> proposal -> signal (instrument/strike/expiry)."""
+        from ..models import Proposal
+        oid = next((lg.get("entryOrderId") for lg in (p.get("legs") or []) if lg.get("entryOrderId")), None)
+        if not oid:
+            return None
+        async with self.engine.sf() as session:
+            r = (await session.execute(
+                select(Signal.instrument, Signal.strike, Signal.expiry)
+                .join(Proposal, Proposal.signal_id == Signal.id)
+                .where(Proposal.order_id == oid).limit(1))).first()
+        if r is None:
+            return None
+        return {"instrument": r[0], "strike": (float(r[1]) if r[1] is not None else None),
+                "expiry": (str(r[2]) if r[2] is not None else None)}
 
     async def _source_has_open_items(self, source: str | None) -> bool:
         """Does this source have anything OPEN on the desk (tips, waiting armed
@@ -2494,9 +2565,13 @@ class SignalService:
                 runner = getattr(eng, "tip_runner", None)
                 if runner is not None:
                     with contextlib.suppress(Exception):
+                        _own_close = (sig.action == "close" and (grounding or {}).get("passed")
+                                      and str(getattr(sig, "actor", "") or "") != "third_party"
+                                      and bool(getattr(sig, "is_actionable", False))
+                                      and bool(eng.settings.get("techniques.tip.followup_close_disarms", False)))
                         flagged = await runner.note_followup(
                             source=content.source_name or "unknown", ticker=row.ticker,
-                            action=sig.action, signal_id=row.id)
+                            action=sig.action, signal_id=row.id, disarm=_own_close)
                         if flagged:
                             istep("note", f"{row.ticker}: {len(flagged)} waiting armed plan(s) "
                                           f"flagged for review (source follow-up).")
@@ -3943,3 +4018,31 @@ async def attach_signal_layer(engine) -> None:
     with _ctx.suppress(Exception):
         from ..techniques.tip.analyst import reconcile_stale_runs
         await reconcile_stale_runs(engine, older_than_s=0)
+
+
+def mirror_instrument_matches(origin: dict | None, follow: dict) -> tuple[bool, str]:
+    """Q2 (2026-09-27): does the author's exit refer to the leg our position mirrors?
+    A follow-up that names no contract (no strike, no expiry) is a whole-ticker exit -> match. An unknown origin keeps
+    the pre-Q2 behaviour -> match. An option origin matches an option follow-up of the same right whose stated strike
+    and expiry (when both sides state them) agree. A share origin never matches a named option contract."""
+    f_inst = str((follow or {}).get("instrument") or "").lower()
+    f_strike = (follow or {}).get("strike")
+    f_exp = (follow or {}).get("expiry")
+    if f_strike in (None, "") and f_exp in (None, ""):
+        return True, "follow-up names no contract (whole-ticker exit)"
+    if not origin:
+        return True, "origin unknown (pre-Q2 behaviour)"
+    o_inst = str(origin.get("instrument") or "").lower()
+    if o_inst not in ("call", "put"):
+        return False, f"our position came from a {o_inst or 'share'} idea; the author's exit names an option contract"
+    if f_inst in ("call", "put") and f_inst != o_inst:
+        return False, f"right differs ({f_inst} vs our {o_inst})"
+    o_strike, o_exp = origin.get("strike"), origin.get("expiry")
+    try:
+        if f_strike not in (None, "") and o_strike not in (None, "") and abs(float(f_strike) - float(o_strike)) > 1e-6:
+            return False, f"strike differs ({float(f_strike):g} vs our {float(o_strike):g})"
+    except (TypeError, ValueError):
+        pass
+    if f_exp not in (None, "") and o_exp not in (None, "") and str(f_exp)[:10] != str(o_exp)[:10]:
+        return False, f"expiry differs ({str(f_exp)[:10]} vs our {str(o_exp)[:10]})"
+    return True, "same leg"

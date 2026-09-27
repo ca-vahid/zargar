@@ -2709,3 +2709,14 @@ the widest quotes of the day. The crash brake also no longer runs a second time 
 (0.8.48) never outside the regular session. Also in this release, Tips-only: source-exit mirroring
 (`TipSourceExitMirrored`), shares-first expression, lotto daily cap, rule labels with recorded reliance.
 
+### Stale exit, quote-watch ladder for shares, 1-hour cache pricing - 2026-09-27 (Tips desk, 0.8.54)
+
+- `execution/policies.py`: a `stale` policy block ({sessions, min_r}) exits a position that has not reached `min_r`
+  after N sessions, judged on a CLOSED policy bar (pure; the simulator follows). Only Tips sets it (shares).
+- `execution/policies.quote_target_decision` + `positions._watch_position`: a policy with `target_watch` (Tips shares
+  only) takes its next ladder rung on the live exit-side quote in the regular session; the rung is marked taken before
+  the order, so the bar path never takes it twice. No resting target orders: the venue GTC stop stays the only resting
+  sell (a resting limit beside it could oversell - the phantom-short class).
+- `tools/tip_llm_cost.price`: `cacheWrite1h` (the 1-hour-TTL subset of cacheWrite) adds 0.6x the card's cacheWrite rate
+  (1h write = 2x input, the card's rate is the 5-minute 1.25x). Unset for every other desk.
+
