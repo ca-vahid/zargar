@@ -42,7 +42,7 @@ from .preparation_scope import (
     require_execution_scope,
     workspace_filter,
 )
-from .prepare import build_volume_baseline
+from .prepare import build_volume_baseline, minute_liquidity
 from .quality import quality_key, ranking_evidence, target_room
 from .rules import CartelRules
 from .screen import _latest_session, market_regime
@@ -537,6 +537,16 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                     minutes = await history_reader.baseline(symbol, at, client)
                     baseline = build_volume_baseline(minutes, symbol, review.entry_policy.timeframe_minutes, at, require_exchange=policy.require_exchange_history)
                     control = control_block(policy, symbol, minutes, at, direction=direction)
+                    liquidity = minute_liquidity(baseline)
+                    if policy.min_minute_coverage and liquidity['ratio'] < policy.min_minute_coverage:
+                        # C0: a decided exclusion, not a data error - never retried by recovery.
+                        thin = {'symbol': symbol, 'analysisId': saved_id, 'status': 'thin_trading', 'minuteLiquidity': liquidity,
+                                'reason': f"Trades in {liquidity['ratio']:.1%} of regular-session minutes over {liquidity['sessions']} sessions; "
+                                          f"the plan needs {policy.min_minute_coverage:.0%} to confirm candles and fill options"}
+                        result['shortlist'].append(thin)
+                        await record_attempt(engine, run_id, portfolio_id, thin, clock(), policy=policy)
+                        await checkpoint('preparing_plans')
+                        continue
                     if not baseline['baselines']:
                         raise ValueError('No supported same-time volume baseline; plan cannot be armed')
                     inputs = ResearchInput.model_validate(saved['config']['inputs']).model_copy(update={
