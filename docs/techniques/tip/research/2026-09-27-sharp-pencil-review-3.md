@@ -164,3 +164,22 @@ change is framed to protect those lines and to stop paying for the lines that ha
 | Q16 | open: book size (with the reset) | - | - |
 | stop | at-level plans wait at most 5 sessions | `techniques.tip.horizon_sessions` 5 | 15 |
 
+## 9. Fresh start for Monday 2026-09-28 (user decision 2026-09-27: "reset things ... remove extra practice books related to us")
+
+Nothing was deleted; every step is journaled and reversible.
+
+- **Knowledge (Q6/Q8 applied):** manifest `a050327b…` through the audited consolidation path, 25 batch receipts. Rules
+  66 (29 pending) -> **13** operative (18.7k chars, 0 pending); source notes 1,102 -> 200 (22 disputed kept);
+  general notes 246 -> 165. Rollback: `consolidation.rollback_plan` on the receipts.
+- **New Practice book `Tips Practice 09-28`** ($10,000, `88aa8a26…`); `techniques.tip.default_portfolio` points at it.
+- **Old `Tips Practice` (`4611946d…`) runs off:** its 8 open positions (COIN 3, CRWV 8, NBIS 6, PL 59, SPY 1, XLU 14,
+  ACHR 7C x3, ACHR 6C x5) keep their stops and management - no forced sale on an opening quote (the -$830 class).
+  It gets NO new ideas. **Archive it once it is flat** (an archived book is not managed after a restart, so never
+  before). Its record (09-08 .. 09-25) stays the baseline for Q15.
+- **All 20 Tips shadow books archived** (immediate + armed per source, incl. flow-scan; this also retires the 13
+  phantom-short rows). Fresh $10k shadow books are created on the next tip per source (`shadow_portfolio`).
+- **13 waiting Tips plans disarmed** (12 on shadow books, CRML on the old Practice book).
+- **379 open Tips ideas soft-dismissed** (verified/proposed/parked/shadow, 08-29 .. 09-25): hidden from lists, kept
+  on the audit trail, never re-armed into the fresh books.
+- **Other desks untouched** (EM, Team2, Options Cartel are inside preregistered measurement windows).
+
