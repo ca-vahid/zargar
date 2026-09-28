@@ -22,7 +22,7 @@ from .. import bus as topics
 from .. import events as ev
 from ..domain import Quote, now_ms
 from . import occ
-from .chain import AlpacaOptionsData, CboeClient, OptionsError, TradierClient
+from .chain import AlpacaChainClient, AlpacaOptionsData, CboeClient, FallbackChain, OptionsError, TradierClient
 
 log = logging.getLogger("zargar.options")
 
@@ -67,6 +67,19 @@ class OptionsService:
             self._cboe.cooldown_s = cooldown             # the setting is live-editable; the client follows it
         if hasattr(self._cboe, "open_quiet"):
             self._cboe.open_quiet = bool(s.get("options.cboe_open_quiet", True))
+        # P0.6 (2026-09-24): the paid Alpaca OPRA chain answers when CBOE's free endpoint fails an entry / position / normal
+        # read (never a background one). Off = CBOE alone, exactly as before.
+        if str(s.get("options.chain_fallback", "alpaca")) == "alpaca":
+            fb = getattr(self, "_fallback", None)
+            if fb is None or fb.primary is not self._cboe:
+                cfg = self.engine.config
+                key, sec = getattr(cfg, "alpaca_key_id", "") or "", getattr(cfg, "alpaca_secret", "") or ""
+                if key and sec:
+                    alp = getattr(self, "_alpaca_chain", None) or AlpacaChainClient(key, sec)
+                    self._alpaca_chain = alp
+                    fb = self._fallback = FallbackChain(self._cboe, alp)
+            if fb is not None and fb.primary is self._cboe:
+                return fb
         return self._cboe
 
     def use_client(self, client) -> None:
@@ -158,6 +171,9 @@ class OptionsService:
             await self._tradier.aclose()
         if self._alpaca is not None:
             await self._alpaca.aclose()
+        if getattr(self, "_alpaca_chain", None) is not None:
+            with contextlib.suppress(Exception):
+                await self._alpaca_chain.aclose()
 
     # ------------------------------------------------------------ chain API
     async def expiries(self, underlying: str) -> dict:
@@ -341,7 +357,19 @@ class OptionsService:
                 volume=int(snap.get("volume") or 0), ts=now_ms(), session="regular",
                 source=src, source_ts=src_ts))
 
+    @staticmethod
+    def active_window(now: dt.datetime | None = None) -> bool:
+        """P0.3 (2026-09-24): the enrichment loop runs at full cadence only when option quotes can change - a trading
+        day from 09:00 ET (a pre-open warm-up, so the first entries find warm chains) to 16:15 ET (the close plus the
+        settle). Outside it the loop was polling CBOE all night: ~1,700 skipped refreshes and ~150 rate limits overnight
+        on 2026-09-23/24, with the provider's cooldown already hot at the open."""
+        from ..marketstructure.market_calendar import is_trading_day
+        t = (now or dt.datetime.now(ET)).astimezone(ET)
+        m = t.hour * 60 + t.minute
+        return is_trading_day(t.date()) and 9 * 60 <= m < 16 * 60 + 15
+
     async def _enrich_loop(self) -> None:
+        last_idle_pass = 0.0
         while True:
             try:
                 interval = float(self.engine.settings.get("options.enrich_seconds", 5))
@@ -350,6 +378,11 @@ class OptionsService:
             await asyncio.sleep(max(ENRICH_FLOOR_SECONDS, interval))
             if not self._tracked:
                 continue
+            if not self.active_window() and bool(self.engine.settings.get("options.enrich_market_hours_only", True)):
+                # outside market hours: one pass every 15 minutes keeps snapshots and the UI honest without hammering CBOE
+                if time.time() - last_idle_pass < 900:
+                    continue
+                last_idle_pass = time.time()
             try:
                 await self.refresh_tracked()
             except Exception:  # pragma: no cover - defensive
