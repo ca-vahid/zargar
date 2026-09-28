@@ -63,7 +63,7 @@ P04_CONFIRM_WINDOW_BARS = 10                # paired comparison: a confirming co
 P04_MIN_RR = 3.0                            # frozen copy of the R2 bar (technique.min_risk_reward at freeze time) - never read live, the comparison must not drift
 ROOM_BINS = (("<1R", 0.0, 1.0), ("1-3R", 1.0, 3.0), (">=3R", 3.0, float("inf")))
 NY = ZoneInfo("America/New_York")
-EM_BOOK = "045d8c35b3f149628ea001ae90a58edb"
+EM_BOOK = "0d379ffc94744a78bb54be92da519221"   # 2026-09-28: fresh EM Practice book (the old 045d8c35 is archived)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 OUT_DIR = os.path.join(ROOT, "docs", "techniques", "enhanced-market", "research", "profitability")
 LEDGER = os.path.join(ROOT, "docs", "techniques", "enhanced-market", "research", "source-candidates.json")

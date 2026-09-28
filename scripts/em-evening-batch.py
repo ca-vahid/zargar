@@ -31,7 +31,7 @@ import httpx
 VERSION = "em-evening-batch-v1"
 RUNTIME_ENV = r"C:\Cursor\zargar\backend\.env"
 BASE = "http://127.0.0.1:8420"
-EM_BOOK = "045d8c35b3f149628ea001ae90a58edb"
+EM_BOOK = "0d379ffc94744a78bb54be92da519221"   # 2026-09-28: fresh EM Practice book (the old 045d8c35 is archived)
 MAX_INFLIGHT = 1
 WAIT_S = 5400
 LOCK = r"C:\ProgramData\Zargar\em-evening-batch.lock"

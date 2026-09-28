@@ -22,6 +22,11 @@ import statistics as st
 VERSION = "em-scorecard-v1"
 BASELINE_BOOK = "045d8c35b3f149628ea001ae90a58edb"
 EXPERIMENT_BOOK = "07ef1e867cad4150bc81e072a8fd600a"
+# 2026-09-28: every Practice book started fresh (user decision 2026-09-27; the old books are archived, history kept).
+# The fresh book continues the SAME method, so it continues the same line: the stop rule and the tests count EM Practice
+# across both books. A fresh book resets the money, not the evidence.
+PRACTICE_0928 = "0d379ffc94744a78bb54be92da519221"
+PRACTICE_BOOKS = (BASELINE_BOOK, PRACTICE_0928)
 
 # ---- the stop rule, adopted 2026-09-22 on the user's decision --------------------------------------------------
 # Counted FORWARD from its adoption, deliberately. The sessions that motivated the rule are not allowed to decide it:
@@ -225,10 +230,11 @@ def upper_mean_r(trades: list, *, draws: int = 5000, level: float = 0.95, seed: 
     return round(means[min(len(means) - 1, int(level * len(means)))], 3)
 
 
-def stop_rule(trades: list, *, book: str = BASELINE_BOOK, premium_stop_pct: float = 50.0) -> dict:
+def stop_rule(trades: list, *, book: str | tuple = PRACTICE_BOOKS, premium_stop_pct: float = 50.0) -> dict:
     """The rule EM is held to. It does not stop anything by itself: it says whether the stop condition is met."""
     rule = STOP_RULE
-    mine = [t for t in trades if t["book"] == book and t["session"] >= rule["countFrom"] and evaluable(t)]
+    books = (book,) if isinstance(book, str) else tuple(book)
+    mine = [t for t in trades if t["book"] in books and t["session"] >= rule["countFrom"] and evaluable(t)]
     sessions = sorted({t["session"] for t in mine})
     s = summary(mine, premium_stop_pct=premium_stop_pct)
     upper = upper_mean_r(mine, premium_stop_pct=premium_stop_pct)
