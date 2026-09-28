@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.53";
+export const APP_VERSION = "0.8.56";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,11 +17,26 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.8.53",date:"2026-09-26",title:"Platform: money paths can no longer be starved, and option chains have a paid backup",items:[
+  {version:"0.8.56",date:"2026-09-27",title:"Platform: money paths can no longer be starved, and option chains have a paid backup",items:[
     {tag:"fixed",text:"The journal, the position ledger and the daily loss check now use their own reserved database connections, and the shared pool is twice as large. On September 24 the shared pool ran dry for two minutes and the daily loss check failed in that window."},
     {tag:"new",text:"When the free options-chain provider rate-limits or fails an entry or a held position's read, the paid real-time Alpaca chain answers instead (setting options.chain_fallback). Background research still waits its turn."},
     {tag:"improved",text:"Option chains are refreshed at full speed only from 9:00 to 16:15 ET on trading days (setting options.enrich_market_hours_only); overnight they are refreshed every 15 minutes instead of every few seconds, which kept the provider rate-limiting us before the open."},
     {tag:"improved",text:"A restart waits while an Options Cartel preparation is running (up to 15 minutes), and only warns after that."},
+  ]},
+  {version:"0.8.55",date:"2026-09-27",title:"Team2: every book prices a decision the same way, and every sale says why",items:[
+    {tag:"fixed",text:"Books acting on the same Team2 decision now choose the contract from the same underlying price. On September 23 a half-cent difference gave two books different contracts on one signal."},
+    {tag:"improved",text:"Team2 trims and the runner exit now record which rule sold, and every Team2 plan records the method and thresholds it traded."},
+    {tag:"new",text:"A read-only report restates Team2 results at gross, IBKR and Webull costs."},
+  ]},
+  {version:"0.8.54",date:"2026-09-27",title:"Tips: free up the book, copy the right exits, a smaller rulebook",items:[
+    {tag:"new",text:"Share positions that have not earned half their risk after five sessions are closed on a finished bar so the money can go to new ideas; the Practice book holds at most seven Tips positions."},
+    {tag:"improved",text:"A source's exit is copied automatically only when it names the leg our position came from; a close from the source also cancels our plan that is still waiting to enter."},
+    {tag:"improved",text:"Share targets are taken on the live price instead of at the next 15-minute bar."},
+    {tag:"improved",text:"The weekly knowledge audit no longer cuts off mid-answer, the rulebook can use a one-hour cache, and a small sample of skipped messages is re-checked; a miss turns the relevance gate back to observe."},
+    {tag:"fixed",text:"The scorecard counts sales of positions bought before its date range (Friday showed +$7.27 instead of -$98.16)."},
+  ]},
+  {version:"0.8.53",date:"2026-09-27",title:"Cartel: skip thinly traded stocks (Practice setting)",items:[
+    {tag:"new",text:"Options Cartel preparation can skip stocks that trade in too few minutes of the session (Settings, 0 = off). Quiet minutes cannot confirm an entry candle and thin names carry wide option spreads; a skipped name is listed as thin trading with its measured share."},
   ]},
   {version:"0.8.52",date:"2026-09-25",title:"Tips: one reaction to a source's exit",items:[
     {tag:"fixed",text:"When the desk has already copied a source's trim, the analyst no longer trims the same position again for the same message (a full close stays its own call)."},

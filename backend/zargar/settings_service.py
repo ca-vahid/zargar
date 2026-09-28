@@ -252,6 +252,16 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.batch_jobs": False,              # 2026-09-23: nightly digests + knowledge-audit judge calls go through the Message Batches API (50% list price); intake/appraise/retro stay live
     "techniques.tip.batch_timeout_s": 3600,          # a batch that has not ended by then is cancelled and the call fails as a timeout
     "techniques.tip.notes_relied_first": False,     # P8 2026-09-24: within each scope's note slots, relied-on notes before newest
+    # --- sharp-pencil review #3 (2026-09-27, docs/techniques/tip/research/2026-09-27-sharp-pencil-review-3.md)
+    "techniques.tip.stale_after_sessions": 0,       # Q1: share positions below stale_min_r after N sessions exit on a closed bar (0 = off)
+    "techniques.tip.stale_min_r": 0.5,              # Q1: the R a position must have earned by then
+    "techniques.tip.max_open_positions": 0,         # Q1: book-wide cap on open tip positions per Practice book (0 = off)
+    "techniques.tip.mirror_match_instrument": True, # Q2: the author's exit is mirrored only on the leg our position came from
+    "techniques.tip.followup_close_disarms": False,  # Q3: the author's own grounded close disarms that source's waiting plan on the ticker
+    "techniques.tip.share_target_watch": False,     # Q5: share ladder rungs judged on the live bid (exit-only quote watch)
+    "techniques.tip.rule_proposal_queue_max": 0,    # Q7: refuse new model rule proposals while N wait for review (0 = off)
+    "techniques.tip.prompt_cache_rulebook_ttl": "5m",  # Q9: 5m | 1h cache TTL for the rulebook block (1h writes bill 2x input)
+    "techniques.tip.gate_audit_rate": 0.0,          # Q12: share of ENFORCED gate skips reviewed DRY; a miss flips the gate to observe
     "techniques.tip.prompt_cache_source_block": False,  # P9 2026-09-24: the source's notes as a second cached block after the rulebook
     "techniques.tip.lotto_max_per_source_day": 0,    # P6 2026-09-24: at most N lotto cards per source per ET day (0 = no cap)
     "techniques.tip.open_stop_grace_s": 0,          # P3 2026-09-24: option quote stops wait this many seconds after 09:30 ET (0 = off)
@@ -289,7 +299,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.knowledge_maintenance_at": "17:25", # ET, EVERY day incl. weekends; runs the audit on rule_audit_day or as catch-up (KB-01)
     "techniques.tip.knowledge_audit_max_groups": 12,    # scope groups per maintenance run; the rest are deferred VISIBLY, least-recently-audited first (KB-04)
     "techniques.tip.knowledge_apply_enabled": False,     # PROPOSE-ONLY by default (Codex 2026-09-13): audits validate + journal proposals and flag disputes; merges/expiries apply only when this is on
-    "techniques.tip.audit_max_output_tokens": 3000,      # audit reply cap; doubled once on a max_tokens stop with no JSON (the first live run returned an empty reply)  # per-turn output cap; doubled (max 8192) after a max_tokens stop (RKLB truncation, 2026-09-11)
+    "techniques.tip.audit_max_output_tokens": 8000,      # Q10 2026-09-27: thinking counts inside max_tokens on Opus 5.x (3000 truncated every judge call); audit reply cap; doubled once on a max_tokens stop with no JSON (the first live run returned an empty reply)  # per-turn output cap; doubled (max 8192) after a max_tokens stop (RKLB truncation, 2026-09-11)
     # KFIN-02 (2026-09-14): bounded, resumable audit judgments — a scope is judged in deterministic note-boundary chunks
     "techniques.tip.audit_chunk_notes": 40,              # notes per judge request (chunk closes at this count...)
     "techniques.tip.audit_chunk_chars": 60000,           # ...or at this many characters of note text; chunk ids = hash of (note id, revision) — progress persists on the cycle, resumes across restarts

@@ -30,7 +30,7 @@ import os
 from ..technique import model_costs as mc
 
 VERSION = "prep-reconcile-v1"
-BOOKS = {"baseline": "045d8c35b3f149628ea001ae90a58edb", "experiment": "07ef1e867cad4150bc81e072a8fd600a"}
+BOOKS = {"baseline": "0d379ffc94744a78bb54be92da519221", "baseline_archived": "045d8c35b3f149628ea001ae90a58edb", "experiment": "07ef1e867cad4150bc81e072a8fd600a"}   # 2026-09-28: fresh EM Practice book
 
 
 def _j(v):

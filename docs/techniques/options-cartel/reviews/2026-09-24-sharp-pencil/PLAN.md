@@ -166,3 +166,31 @@ Practice record (cross-desk P1.5).
 | 2026-09-24 19:54 PT | settings `techniques.options_cartel.{intraday_research,profitability_research,method_lab}` -> false; Practice `ignitionResearch` -> false | order-free load on a memory-starved engine (section 2) |
 | 2026-09-24 20:32 PT | PR #283 merged (0.8.50): defaults off, spaced benchmark retries, 14 h prepared window, pooled recovery client, grid tool. Deployed via `deploy.ps1` (deploy commit 64fe46df = runtime head + main), receipt verified, restoration ok | section 2 |
 | 2026-09-24 | Entry rule kept; 5m pilot and lower volume multiple NOT activated | section 3 |
+| 2026-09-26 | Practice `minArmTargetR` 0 -> 0.5 (plan C2; due for the 09-25 preparation, applied late). Existing arms keep their snapshot: of the five 09-28 arms, AI (0.42R), NTAP (0.37R) and TSLA (0.24R) sit under the gate | 09-25: 9 arms, 0 orders; BBY/CNH/VRNS invalidated at the open, NTNX touched on 0.27x volume |
+| 2026-09-27 | Disarmed AI (0.42R), NTAP (0.37R), TSLA (0.24R) for 09-28 under the 0.5R gate (journaled disarm); BBY and SNOW stay | C2 |
+| 2026-09-27 | 0.8.53 deployed (C0 thin-stock screen, off by default; replay near-miss cohort). Practice: `minMinuteCoverage` 0.95, `setups.dry_up_rule` `non_increasing_v1` -> `ratio_v1` with `max_volume_ratio` 1.5 | section 9 |
+
+## 9. Practice experiment and stop rule (2026-09-27, preregistered)
+
+**Why.** Cartel is not producing evidence: one trade since 09-14. The replay (`cartel_entry_grid --near-miss`, 09-08..09-25)
+showed that names failing ONLY the volume dry-up check were 3x the candidate pool (362 vs 112 candidate-days, 115 vs 36
+touched). Under the unchanged entry rule they produced 8 trades, +5.52R net, but +7.33R of that is one trade (FRO 09-14);
+without it -1.81R over 7 trades. So this is a **flow** change with roughly neutral expectancy on the sample, not an edge
+claim. The thin-stock screen (0.95) keeps slots on names that can confirm and fill; all 8 near-miss trades passed it.
+
+**Settings (Practice only; everything else unchanged):** dry-up `ratio_v1` at 1.5x (was `non_increasing_v1` = 1.0x);
+`minMinuteCoverage` 0.95; `minArmTargetR` 0.5; entry 15m / 1.5x / gap retest; $10k book, $1,000 per plan, 10 slots.
+
+**Sample:** the next 20 trading sessions from 2026-09-28 (through 2026-10-23). No threshold changes during the sample
+except rollbacks for a defect.
+
+**Decision at the end (fixed now):**
+
+| Result after 20 sessions (Practice book `297d8b39…`, after fees) | Decision |
+|---|---|
+| Fewer than 8 closed trades | Cartel as built cannot produce evidence: stop development; keep it running only if the user wants it as an observer |
+| >= 8 trades and net P&L <= 0 | Stop development; roll the experiment back to the 09-26 settings |
+| >= 8 trades and net P&L > 0 | Keep; the next step is a longer sample, never live money on this evidence alone |
+
+A partial reading is never a verdict. Rollback of the experiment = `setups.dry_up_rule` back to `non_increasing_v1`
+and `minMinuteCoverage` back to 0 through the preparation config endpoint.

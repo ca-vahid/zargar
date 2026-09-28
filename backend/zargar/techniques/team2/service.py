@@ -199,6 +199,8 @@ class Team2Service:
                                    # provenance the readiness receipt checks (PR #168 review): the APP release and build that
                                    # minted this plan — `codeVersion` above is the strategy/model schema id, not a release
                                    "appVersion": _app_version(), "build": _build_sha(),
+                                   # P0.4 (2026-09-27): WHICH method traded - the written rulebook and the effective thresholds
+                                   "methodVersion": method_version(), "rulesHash": rules_hash(rules.to_dict()),
                                    **({"experiment": dict(experiment)} if experiment else {})})
         async with self.engine.sf() as session:
             session.add(run)
@@ -714,3 +716,24 @@ def _group_field(trades: list[dict], field: str) -> dict:
 
 
 __all__ = ["Team2Service", "CODE_VERSION"]
+
+
+def method_version() -> str:
+    """sha256 (16 hex) of docs/techniques/team2/METHOD.md as the minting checkout has it; 'unavailable' without it."""
+    import functools, hashlib, pathlib
+
+    @functools.lru_cache(maxsize=1)
+    def _h(path: str, mtime: float) -> str:
+        return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()[:16]
+
+    p = pathlib.Path(__file__).resolve().parents[4] / "docs" / "techniques" / "team2" / "METHOD.md"
+    try:
+        return _h(str(p), p.stat().st_mtime)
+    except OSError:
+        return "unavailable"
+
+
+def rules_hash(rules: dict) -> str:
+    """sha256 (16 hex) of the effective thresholds, key-sorted: two plans with the same hash ran the same numbers."""
+    import hashlib, json
+    return hashlib.sha256(json.dumps(rules, sort_keys=True, default=str).encode()).hexdigest()[:16]

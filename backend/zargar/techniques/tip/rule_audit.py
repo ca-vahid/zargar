@@ -44,7 +44,7 @@ AUDIT_TIMEOUT_S = 90.0
 MIN_RULES = 3          # nothing to consolidate below this — skip silently
 MAX_GROUP_ATTEMPTS = 3          # per cycle; then the scope is set aside, visibly
 BACKOFF_HOURS = (23, 47, 95)    # after attempt 1, 2, 3 (just under the daily tick)
-MAX_TOKENS_CEILING = 8192       # the one doubled retry never exceeds this
+MAX_TOKENS_CEILING = 16000      # the one doubled retry never exceeds this (Q10 2026-09-27: Opus 5.x thinking counts inside max_tokens)
 
 
 class RuleMerge(BaseModel):
@@ -704,7 +704,7 @@ async def run_rule_audit(eng, *, client=None, report: dict | None = None,
 
     system = AUDIT_SYSTEM + json.dumps(RuleAuditOpinion.model_json_schema(),
                                        separators=(",", ":"))
-    cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
+    cap = int(s.get("techniques.tip.audit_max_output_tokens", 8000) or 8000)
     chunk_cfg = _chunk_settings(s)
     mode = _apply_mode(s)
     # ---- judge (bounded chunks, resumable) + deterministic apply (KB-02) ------
@@ -858,7 +858,7 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None,
                "groupsEligible": len(eligible), "groupsFailed": [], "groupsChunkDeferred": [],
                "chunks": {}}
     usage_all: list[dict] = []
-    cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
+    cap = int(s.get("techniques.tip.audit_max_output_tokens", 8000) or 8000)
     chunk_cfg = _chunk_settings(s)
     budget = {"chunks": chunk_cfg[2]}                     # paid calls per run, across scopes
     system = AUDIT_SYSTEM + json.dumps(RuleAuditOpinion.model_json_schema(), separators=(",", ":"))

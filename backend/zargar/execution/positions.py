@@ -69,6 +69,7 @@ from .policies import (
     apply_premium_decision,
     evaluate,
     evaluate_premium,
+    quote_target_decision,
     has_no_stop,
     stop_price,
     validate_policy,
@@ -1871,6 +1872,18 @@ class PositionManager:
         stop = stop_price(p.policy, p.state)
         q = self.engine.quotes.get(p.symbol)
         fresh = q is not None and (now - q.ts) <= stale_ms
+        if p.policy.get("target_watch") and not p.has_options and fresh:
+            # Q5 (2026-09-27): a share ladder rung is taken on the live exit-side quote (bid for a long), not a
+            # closed 15m bar later. Exit-only; the rung is marked taken BEFORE the order so the bar path cannot
+            # take it again; no resting orders, so the venue stop stays the only resting sell.
+            side_px = (q.ask if p.direction == "short" else q.bid) or None
+            d = quote_target_decision(p.policy, p.state, p.direction, float(side_px) if side_px else None)
+            if d is not None:
+                p.state = replace(p.state, trims_done=p.state.trims_done + 1)
+                await self._persist(p)
+                self._log(p, "trim", f"{d.reason} (quote watch)")
+                await self.close(p.id, fraction=d.fraction, reason=f"{d.reason} (quote watch)", kind="trim")
+                return
         if stop is not None and fresh and q.last and q.last > 0:
             short = p.direction == "short"
             beyond = (float(q.last) - stop) if short else (stop - float(q.last))

@@ -2737,3 +2737,29 @@ Plan: `docs/PLAN-2026-09-24-SHARP-PENCIL.md` P0.2 / P0.3 / P0.5b / P0.6. Tests: 
   names a calendar date must pin the clock.
 - **Still open for the platform owner:** the simulated executor fills a marketable limit SELL above its limit after the 15 s
   freshness gate delays it (Team2: ~$365 of improvement a venue would not give; e.g. 09-24 limits 0.95/1.29 filled 1.02/1.49).
+### Stale exit, quote-watch ladder for shares, 1-hour cache pricing - 2026-09-27 (Tips desk, 0.8.54)
+
+- `execution/policies.py`: a `stale` policy block ({sessions, min_r}) exits a position that has not reached `min_r`
+  after N sessions, judged on a CLOSED policy bar (pure; the simulator follows). Only Tips sets it (shares).
+- `execution/policies.quote_target_decision` + `positions._watch_position`: a policy with `target_watch` (Tips shares
+  only) takes its next ladder rung on the live exit-side quote in the regular session; the rung is marked taken before
+  the order, so the bar path never takes it twice. No resting target orders: the venue GTC stop stays the only resting
+  sell (a resting limit beside it could oversell - the phantom-short class).
+- `tools/tip_llm_cost.price`: `cacheWrite1h` (the 1-hour-TTL subset of cacheWrite) adds 0.6x the card's cacheWrite rate
+  (1h write = 2x input, the card's rate is the 5-minute 1.25x). Unset for every other desk.
+
+### Fresh Practice books for Tips, EM and Team2 - 2026-09-27 evening (user decision; done by the Tips desk)
+
+The user asked for every Practice book to start fresh on Monday 2026-09-28 (Options Cartel excepted: that desk resets its
+own). Nothing was deleted: old books are ARCHIVED (history kept, out of lists, not managed after a restart), every step
+journaled. New books are $10,000.
+
+| desk | new book(s) | settings moved | plans | old book(s) |
+|---|---|---|---|---|
+| Tips | `Tips Practice 09-28` 88aa8a26 | `techniques.tip.default_portfolio` | 13 waiting plans disarmed; 379 old ideas soft-dismissed; 20 shadow books archived (recreated per source on demand) | `Tips Practice` 4611946d RUNS OFF its 8 positions, archived when flat |
+| EM | `EM Practice 09-28` 0d379ffc | `techniques.enhanced_market.default_portfolio`, `technique.arm.default_portfolio`, `execution.default_portfolio` | all 24 Monday plans re-armed on the new book with their Friday config (loss limit recomputed $400 = 4%); 12 of them needed `technique.universe.untradeable=ignore` for the re-arm only (the weekend liquidity screen reads stale CBOE quotes as 24-84% spreads), restored to `skip` at once | `EM Practice` 045d8c35 and `EM Experimental` 07ef1e86 archived (both empty) |
+| Team2 | `Team2 Control 09-28` 53139dc3, `Team2 Sizing 0.5 09-28` 363f1934, `Team2 C1 Conjunction 09-28` bf259522 | `techniques.team2.experiments` (same roles/labels/overrides, new ids), `techniques.team2.default_portfolio` | Monday plans re-minted (`/api/team2/plan-now` force): 3 per book; the Sizing and C1 PAUSES carried over (never auto-revert) - the Team2 desk decides any unpause | Control 4b28156b, Sizing 012f595c, C1 2eaa3d96 archived (all empty) |
+
+Measurement consequence: each desk's session counters restart on its new book (EM stop-rule sessions, Team2 cohort,
+Tips Q15). The archived books remain the record for 09-08 .. 09-25.
+

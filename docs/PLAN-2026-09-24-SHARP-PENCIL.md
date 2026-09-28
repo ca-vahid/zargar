@@ -60,7 +60,7 @@ Order is by money at stake per unit of effort.
 
 ### P0 - protect what runs (this week, after the close)
 
-**Status 2026-09-26 (0.8.53):** 0.2, 0.3, 0.5b and 0.6 BUILT and shipped by the EM desk (PLATFORM-RULES 2026-09-25). 0.4: Cartel switched its collectors off; Tips fixed its media client (0.8.48). 0.5: Cartel, reviewed PR pending. New 0.7: the simulated executor fills marketable limit sells above their limit (Team2 finding) - platform, open.
+**Status 2026-09-27 (0.8.56, not yet deployed):** 0.2, 0.3, 0.5b and 0.6 BUILT and shipped by the EM desk (PLATFORM-RULES 2026-09-25). 0.4: Cartel switched its collectors off; Tips fixed its media client (0.8.48). 0.5: Cartel, reviewed PR pending. New 0.7: the simulated executor fills marketable limit sells above their limit (Team2 finding) - platform, open.
 
 | # | Action | Why | Owner |
 |---|---|---|---|

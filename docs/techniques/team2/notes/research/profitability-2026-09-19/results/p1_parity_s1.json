@@ -1,0 +1,63 @@
+{
+  "replay": "C:/Users/vispe/AppData/Local/Temp/claude/C--Cursor-zargar--claude-worktrees-trading-pipeline-review-skill-bf2238/ac3e2ab8-c9f7-4bdc-8bd2-ae032b79d377/scratchpad/h6/train_base_s1.json",
+  "replayMeta": {
+    "harness": "v2",
+    "codeCommit": "fed759889d0ba615c83aedaf44a6404bb41b4532",
+    "zargarPath": "C:\\Cursor\\zargar\\.claude\\worktrees\\team2-h6\\backend\\zargar",
+    "window": [
+      "2026-05-07",
+      "2026-08-14"
+    ],
+    "overrides": {
+      "slippage_ticks": 1
+    },
+    "harnessOptions": {},
+    "underlyingSha256": {
+      "SPY": "f4b42a5e94d649ac749c070f78feae0e0bed3aae6a204a2a40243abccefb394c",
+      "QQQ": "b3172e5ff7e1d487a8cb8078d1a7332ffd0f08879d5bc5dcaebaf2055d4bd6b5",
+      "IWM": "13b1c2aacb25b8dcec764bea0e8fd66260e3625f6365bbf679b63204ac8bae9a"
+    },
+    "pricing": "real_prints_v2",
+    "conventions": {
+      "selAgeMin": 2,
+      "execWindowMin": 2,
+      "exitWindowMin": 5,
+      "touchMode": "proxy"
+    }
+  },
+  "trades": 279,
+  "excludedAdds": 16,
+  "missingPrints": 0,
+  "reconstructionMaxErr": 13.737338095238101,
+  "proxies": {
+    "close": {
+      "meanDiffPts": 0.26,
+      "ci95": [
+        0.01,
+        0.53
+      ],
+      "baselineMeanPct": -6.97,
+      "variantMeanPct": -6.71,
+      "outcomes": {
+        "no_trigger": 211,
+        "earlier_stop": 52
+      },
+      "sessions": 59
+    },
+    "low": {
+      "meanDiffPts": -0.06,
+      "ci95": [
+        -1.06,
+        0.76
+      ],
+      "baselineMeanPct": -6.97,
+      "variantMeanPct": -7.03,
+      "outcomes": {
+        "no_trigger": 171,
+        "earlier_stop": 92
+      },
+      "sessions": 59
+    }
+  },
+  "usable": 263
+}
