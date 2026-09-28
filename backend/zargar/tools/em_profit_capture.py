@@ -21,7 +21,7 @@ from ..technique.profit_capture import instrument_of, reduce_session
 
 NY = ZoneInfo("America/New_York")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-EM_BOOK = "045d8c35b3f149628ea001ae90a58edb"
+EM_BOOK = "0d379ffc94744a78bb54be92da519221"   # 2026-09-28: fresh EM Practice book (the old 045d8c35 is archived)
 OUT_DIR = os.path.join(ROOT, "docs", "techniques", "enhanced-market", "research", "profit-capture")
 PROFITABILITY_DIR = os.path.join(ROOT, "docs", "techniques", "enhanced-market", "research", "profitability")
 DISPUTED = {"2026-09-17": ["ORCL: the 09-17 simulated fill is questioned by the 09-17 review (E17-01 derived-quote producer); "

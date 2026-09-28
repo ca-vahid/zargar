@@ -24,7 +24,7 @@ from ..technique import em_scorecard as sc
 
 NY = dt.timezone(dt.timedelta(hours=-4))          # sessions in this record are all EDT; the label is the ET date
 ARCHIVED_SHARED_BOOK = "ff3c29d46d07415c94573429b482ea2f"
-EM_BOOKS = {sc.BASELINE_BOOK: "EM Practice", sc.EXPERIMENT_BOOK: "EM Experimental",
+EM_BOOKS = {sc.PRACTICE_0928: "EM Practice 09-28", sc.BASELINE_BOOK: "EM Practice (archived 09-27)", sc.EXPERIMENT_BOOK: "EM Experimental (archived)",
             ARCHIVED_SHARED_BOOK: "Practice (archived, shared)"}
 
 
