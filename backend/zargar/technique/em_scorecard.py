@@ -36,6 +36,11 @@ STOP_RULE = {
     "adopted": "2026-09-22",
     "countFrom": "2026-09-22",            # the first session in which both books actually traded
     "minEvaluableSessions": 20,
+    # 2026-09-28 (user decision, "option 2"): a session COUNTS when EM Practice was armed for it, traded or not. With the
+    # shares fallback off, EM trades options only on a $10k book and many sessions refuse every fire at the order checks
+    # (spread, premium budget); counting only traded sessions would have stretched 20 sessions into months. A session in
+    # which every setup was refused is evidence about the method too.
+    "sessionBasis": "armed",
     "maxCumulativeR": 0.0,                # at or below zero ...
     "upperMeanRBelow": 0.10,              # ... AND the optimistic end of the average trade below +0.1R
     "decides": "the paid model review that prepares the baseline book",
@@ -230,12 +235,21 @@ def upper_mean_r(trades: list, *, draws: int = 5000, level: float = 0.95, seed: 
     return round(means[min(len(means) - 1, int(level * len(means)))], 3)
 
 
-def stop_rule(trades: list, *, book: str | tuple = PRACTICE_BOOKS, premium_stop_pct: float = 50.0) -> dict:
-    """The rule EM is held to. It does not stop anything by itself: it says whether the stop condition is met."""
+def stop_rule(trades: list, *, book: str | tuple = PRACTICE_BOOKS, premium_stop_pct: float = 50.0,
+              armed_sessions: dict | None = None) -> dict:
+    """The rule EM is held to. It does not stop anything by itself: it says whether the stop condition is met.
+    `armed_sessions` = {book: [session, ...]} for which EM was armed; with it, an armed session counts whether or not it
+    traded (`sessionBasis: armed`, 2026-09-28). Without it (older callers), only sessions with a closed trade count."""
     rule = STOP_RULE
     books = (book,) if isinstance(book, str) else tuple(book)
     mine = [t for t in trades if t["book"] in books and t["session"] >= rule["countFrom"] and evaluable(t)]
-    sessions = sorted({t["session"] for t in mine})
+    sessions = {t["session"] for t in mine}
+    if armed_sessions:
+        for b in books:
+            for sess in armed_sessions.get(b) or []:
+                if sess >= rule["countFrom"] and evaluable({"session": sess, "book": b}):
+                    sessions.add(sess)
+    sessions = sorted(sessions)
     s = summary(mine, premium_stop_pct=premium_stop_pct)
     upper = upper_mean_r(mine, premium_stop_pct=premium_stop_pct)
     enough = len(sessions) >= rule["minEvaluableSessions"]

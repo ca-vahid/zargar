@@ -126,3 +126,15 @@ def test_the_fresh_practice_book_continues_the_same_stop_rule_line():
     new = [_t(s, -1.0, book=sc.PRACTICE_0928) for s in _sessions(3, start=28)]
     assert sc.stop_rule(old + new)["evaluableSessions"] == 7
     assert sc.stop_rule(old + new, book=sc.PRACTICE_0928)["evaluableSessions"] == 3, "one book on request"
+
+
+def test_armed_sessions_count_even_when_nothing_traded():
+    """2026-09-28 (user decision, option 2): a session in which EM Practice was armed counts toward the stop rule whether or
+    not any fire became a trade - the order checks refusing every setup is evidence about the method too."""
+    traded = [_t(s, -1.0) for s in _sessions(2, start=22)]                        # 09-22, 09-23 traded
+    armed = {sc.BASELINE_BOOK: ["2026-09-22", "2026-09-23", "2026-09-24"], sc.PRACTICE_0928: ["2026-09-28", "2026-09-29"]}
+    v = sc.stop_rule(traded, armed_sessions=armed)
+    assert v["evaluableSessions"] == 5 and v["rule"]["sessionBasis"] == "armed"
+    assert sc.stop_rule(traded)["evaluableSessions"] == 2, "without the armed list: traded sessions only (older callers)"
+    early = {sc.BASELINE_BOOK: ["2026-09-18"]}
+    assert sc.stop_rule([], armed_sessions=early)["evaluableSessions"] == 0, "before countFrom never counts"
