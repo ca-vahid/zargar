@@ -169,6 +169,7 @@ Practice record (cross-desk P1.5).
 | 2026-09-26 | Practice `minArmTargetR` 0 -> 0.5 (plan C2; due for the 09-25 preparation, applied late). Existing arms keep their snapshot: of the five 09-28 arms, AI (0.42R), NTAP (0.37R) and TSLA (0.24R) sit under the gate | 09-25: 9 arms, 0 orders; BBY/CNH/VRNS invalidated at the open, NTNX touched on 0.27x volume |
 | 2026-09-27 | Disarmed AI (0.42R), NTAP (0.37R), TSLA (0.24R) for 09-28 under the 0.5R gate (journaled disarm); BBY and SNOW stay | C2 |
 | 2026-09-27 | 0.8.53 deployed (C0 thin-stock screen, off by default; replay near-miss cohort). Practice: `minMinuteCoverage` 0.95, `setups.dry_up_rule` `non_increasing_v1` -> `ratio_v1` with `max_volume_ratio` 1.5 | section 9 |
+| 2026-09-29 19:46 ET | `techniques.options_cartel.recovery_enabled` false -> true (journaled). First held position of the trial (DHT, 5 x Nov-20 22C at $1.80, entry 11:30 ET, stop 21.70): at the close the position's own minute buffer only starts at entry, so the daily-EMA exit logged "Incomplete session tape" and could not evaluate. Recovery (20:10 / 09:05 ET) fills completed daily candles from shared history and queues missed daily closes for catch-up, which acts only on a reviewed batch at a fresh live quote in session | held positions need it; it was off only because Cartel had never held one |
 
 ## 9. Practice experiment and stop rule (2026-09-27, preregistered)
 
