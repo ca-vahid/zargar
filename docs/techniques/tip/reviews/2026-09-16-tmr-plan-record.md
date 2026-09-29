@@ -1007,3 +1007,63 @@ counts observe decisions only, so it will see 09-25 as an enforce day - expected
 - A 12:07 ET market-data stall raised one "stale bars" warning on all 121 armed plans (EM 102, Team2 9, Tips 10);
   recovered by itself, no Tips position affected.
 - The Discord gateway reconnected three times during the day; nothing was lost (pending returned to 0 each time).
+
+## 2026-09-28 (Mon) - end of session (session 6 counted from 09-21; fresh-start day 1 = Q15 evaluation session 1 of 10)
+
+**Build:** 0.8.55 (`f5cf4d5f` = Team2 0.8.55 + docs; contains the Tips 0.8.54 review-3 package) all session. First day
+on the fresh books: new ideas to `Tips Practice 09-28` ($10,000); the old `Tips Practice` runs off. Review-3 switches
+on (stale exit, 7-slot cap, share targets on the bid, instrument-matched mirror, the author's close disarms, lotto off,
+1-hour rulebook cache, 10% dry gate audit, 5-session horizon); 13-rule knowledge base.
+
+**Realized today (net of `executions.commission`):**
+
+| book | position | how it ended | gross | fees | net |
+|---|---|---|---:|---:|---:|
+| old | ACHR 10/16 6C x5 | premium bleed exit 09:47 at the 0.14 bid (entry 0.23; -39% premium, underlying -3%), after the 5-minute opening grace | -45.00 | 10.40 | **-55.40** |
+| old | SPY 1 sh (runner) | venue GTC stop 765.85 (entry 767.83; +3.93 was banked on 09-25) | -1.98 | 0.00 | **-1.98** |
+| new | DAL 22 of 24 sh (ab 83C idea) | four mirrored ab trims 83.41 / 83.94 / 83.98 / 84.04 (entry 82.94); 2 held, stop at breakeven | +15.93 | 0.00 | **+15.93** |
+| | **total** | | -31.05 | 10.40 | **-41.45** |
+
+No questioned fills (subtotal the same).
+
+**Decision funnel:** ab 12 signals -> 5 cards (DAL, DAL, MO taken and filled; DAL "watch", AMZN "skip" declined); tt 2 ->
+MU taken/filled; neal 1 -> ON taken/filled; jon-and-kian 1 -> KWEB taken/filled; MK-alpha-trades 1 -> RKT skip; eva 21,
+muggzone 11, giul 1 -> shadow only (their policy since 09-27). **9 cards, 6 fills, 3 declined, 0 avoidable misses.**
+All six entries were SHARES. **Review-held cards:** 2 (no stop given) - neither reached an order.
+
+**Incidents / fast-stop diagnostics / halts / analyst failures / retries:** none.
+
+**Execution cost (fill vs decision quote, all fresh):** KWEB, DAL, DAL, MU, MO at the ask; ON 1c inside the ask; vs mid
++0.5c .. +16c (MU at $1,055).
+
+**Review-3 behaviour seen live:**
+- **Q2 instrument-matched mirror worked:** 14:41 ab trimmed "DAL 10/2 83C" - the desk trimmed the DAL position that came
+  from the 83C idea and journaled `TipSourceExitNotMirrored` for the second DAL position (from the 85C idea: "strike
+  differs (83 vs our 85)").
+- **Q12 dry gate audit:** 3 sampled enforced skips reviewed dry - all `clean`; the gate stays on enforce.
+- P3 opening grace: the ACHR bleed exit came at 09:47, after the grace window (not an opening-quote exit).
+- Q1 stale exit and the 7-slot cap: not triggered (new book holds 7 positions incl. 2 DAL; cap counts positions).
+
+**Carried overnight:**
+- New book (all venue GTC stops, qty = held): DAL 23 (80.94), DAL 2 (82.94 = breakeven), KWEB 80 (23.90), MO 16 (68.00),
+  MU 1 (1,030.68), ON 19 (71.20). **7 positions = the slot cap: tomorrow's first new idea is refused until one exits.**
+- Old book (runs off): COIN 3 (190.50), CRWV 8 (79.81), NBIS 6 (225.71), PL 59 (15.45), XLU 14 (38.50); ACHR 1/15/27 7C x3
+  on app-managed option exits.
+
+**Hold study:** 15:50 capture wrote 14 fresh rows (sim). **Finding:** of the 19 rows from 09-25, only 6 got a fresh
+next-open sample (11 `missed`, 2 `missing`) - the shadow-book rows belong to books archived in the 09-27 reset and the
+engine's event loop was stalling at the open (see below). Recorded, not changed.
+
+**Plans rolling:** 1 Tips plan (MO).
+
+**Model cost today (calendar day, list-price estimate, apart from trading P&L):** priced **$6.25** - appraisals $2.66
+(23 runs), extraction $1.99, intake reviews $1.60; unpriced: 41 intake runs with no model call (gate skips); partial: 0.
+
+**Relevance gate (enforce, the user's decision):** 33 decisions - **12 review / 21 skip**, 0 readErrors; 3 dry audits clean.
+
+**Platform finding (open, owner: this desk):** host memory fell to ~0.6-0.7 GB twice today; the engine's event loop
+stalled 250+ times (up to 31 s), every sample inside the Alpaca market-data stream handler (`brokers/alpaca.py` handle ->
+timestamp parsing). Consequences: 12 Alpaca stream drops (keepalive ping timeouts), "stale bars" on every armed plan
+12:59-13:39 ET, and brief Discord delivery backlogs (`TipIntakeStalled` x4, nothing lost - the gateway ledger is
+durable). No restart mid-session (the app was never dead). Next: free the WSL memory (Docker restart, user) and profile
+the stream handler after the close.

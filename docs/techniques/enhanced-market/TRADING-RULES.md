@@ -1689,3 +1689,26 @@ Monday trades the 24 option-tradeable plans. Side effect to know: the determinis
 untradeable name in its `TechniquePrepared.errors` list (refused at arm); that is expected, not a failure. Lesson: a
 decision about a behaviour must be traced to EVERY switch that produces it, and the first armed session after the change
 must be checked, not assumed.
+
+### 2026-09-28 (evening) - the stop rule counts ARMED sessions (user decision), and the tradeability screen stops refusing liquid names
+
+**Stop rule, `sessionBasis: armed` (user decision, "option 2").** A session counts toward the 20 evaluable sessions when
+an EM Practice book was armed for it, whether or not a fire became a trade (`em_scorecard.stop_rule(armed_sessions=)`,
+`tools/em_scorecard.py::_armed_sessions` from `technique_armed`; test
+`test_armed_sessions_count_even_when_nothing_traded`). Why: with the shares fallback off, EM trades options only on a $10k
+book and whole sessions refuse every fire at the order checks (09-28: 5 fires, 0 fills - spreads 13-47%, TSLA's single
+contract above the 2% budget). Counting only traded sessions would stretch 20 sessions into months, and a session in which
+every setup is refused is evidence about the method too. Reading on 09-28: 5 of 20 evaluable sessions.
+
+**Correction: `technique.universe.untradeable` `skip` -> `ignore` (set 09-27, reverted 09-28).** The C1 screen
+(`technique.universe.option_liquidity`) takes the median spread of contracts whose mid is $0.50-5 in the latest DELAYED
+chain snapshot - for a large-cap those are far-OTM contracts, so it marked AAPL (14.0%), META (16.5), MSFT (17.1), MU (34.9)
+untradeable. Under `skip` the 09-29 preparation refused 131 of 148 rows (17 armed). Under `ignore` the fire-time pick judges
+the ACTUAL contract on the live NBBO (T5.4), which is the check that matters: re-prepared 09-29 -> 91 plans armed (auto,
+options, fallback off). My error: I set `skip` without validating the screen's input. The screen stays as a report until
+it measures near-the-money contracts.
+
+**Missed trade 09-28 (author board / EvaPanda):** the day's best call was TSLA short < 367.67 -> 356.80 (-2.96%). EM had
+TSLA as a bounce, and the 2% budget with a 50% premium stop caps option premium at about $4/share on a $10k book, which
+excludes near-the-money TSLA/NVDA/META/MSFT contracts outright. That cap is a structural question for the user (budget,
+book size, premium stop), not a tuning knob - no change made.

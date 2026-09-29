@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.55";
+export const APP_VERSION = "0.8.57";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.57",date:"2026-09-28",title:"Platform: a lighter market-data stream",items:[
+    {tag:"improved",text:"The live market-data stream costs about a third of what it did per message, so the app stays responsive at the open and when the machine is short of memory."},
+  ]},
   {version:"0.8.55",date:"2026-09-27",title:"Team2: every book prices a decision the same way, and every sale says why",items:[
     {tag:"fixed",text:"Books acting on the same Team2 decision now choose the contract from the same underlying price. On September 23 a half-cent difference gave two books different contracts on one signal."},
     {tag:"improved",text:"Team2 trims and the runner exit now record which rule sold, and every Team2 plan records the method and thresholds it traded."},

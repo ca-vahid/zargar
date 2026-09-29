@@ -24,7 +24,7 @@ from ..technique import em_scorecard as sc
 
 NY = dt.timezone(dt.timedelta(hours=-4))          # sessions in this record are all EDT; the label is the ET date
 ARCHIVED_SHARED_BOOK = "ff3c29d46d07415c94573429b482ea2f"
-EM_BOOKS = {sc.BASELINE_BOOK: "EM Practice", sc.EXPERIMENT_BOOK: "EM Experimental",
+EM_BOOKS = {sc.PRACTICE_0928: "EM Practice 09-28", sc.BASELINE_BOOK: "EM Practice (archived 09-27)", sc.EXPERIMENT_BOOK: "EM Experimental (archived)",
             ARCHIVED_SHARED_BOOK: "Practice (archived, shared)"}
 
 
@@ -38,6 +38,20 @@ def _ms(x) -> int:
 
 def _session(ms: int) -> str:
     return dt.datetime.fromtimestamp(ms / 1000, NY).date().isoformat()
+
+
+async def _armed_sessions(c) -> dict:
+    """{book: [session, ...]} - every session an EM Practice book had at least one plan armed for, up to today (the
+    stop rule's `sessionBasis: armed`, 2026-09-28). Future sessions (armed tonight for tomorrow) are not counted."""
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    today = _dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    rows = await c.fetch("select portfolio_id, plan_for from technique_armed where technique='enhanced_market' "
+                         "and portfolio_id = any($1::text[]) and plan_for <= $2 group by 1, 2", list(sc.PRACTICE_BOOKS), today)
+    out: dict = {}
+    for r in rows:
+        out.setdefault(r["portfolio_id"], []).append(str(r["plan_for"])[:10])
+    return out
 
 
 async def load(c) -> dict:
@@ -173,7 +187,7 @@ async def build() -> dict:
                 "premiumStopPct": psp, "trades": len(trades), "openLots": len(open_lots),
                 "allBooks": allb, "allBooksCorrected": sc.summary(trades, fair=True, premium_stop_pct=psp),
                 "deduplicated": sc.summary(dd, premium_stop_pct=psp), "books": books,
-                "stopRule": sc.stop_rule(trades, premium_stop_pct=psp),
+                "stopRule": sc.stop_rule(trades, premium_stop_pct=psp, armed_sessions=await _armed_sessions(c)),
                 "tests": sc.run_tests(trades, premium_stop_pct=psp),
                 "friction": friction, "impaired": {f"{k[0]} {EM_BOOKS.get(k[1], k[1])}": v for k, v in sc.IMPAIRED.items()},
                 "disputed": [d["why"] for d in sc.DISPUTED_FILLS.values()]}
