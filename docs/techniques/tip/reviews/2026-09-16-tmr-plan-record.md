@@ -1067,3 +1067,52 @@ timestamp parsing). Consequences: 12 Alpaca stream drops (keepalive ping timeout
 12:59-13:39 ET, and brief Discord delivery backlogs (`TipIntakeStalled` x4, nothing lost - the gateway ledger is
 durable). No restart mid-session (the app was never dead). Next: free the WSL memory (Docker restart, user) and profile
 the stream handler after the close.
+
+## 2026-09-29 (Tue) - end of session (session 7 counted from 09-21; fresh-start / Q15 evaluation session 2 of 10)
+
+**Build:** 0.8.57 (`e4b29c2a`: the Alpaca stream fast path + EM #300/#303 tools) all session.
+
+**Realized today (all shares, `executions.commission` = 0):**
+
+| book | position | how it ended | net today | position total |
+|---|---|---|---:|---:|
+| new | MU 1 sh | opened above TP1 1,063; taken on the live bid at 1,077.97 (Q5 quote watch) | **+22.47** | +22.47 |
+| new | DAL 2 sh (83C idea, breakeven runner) | TP1 84.90 on the quote watch, filled 84.78 | **+3.69** | +19.62 |
+| new | MO 16 sh | venue GTC stop 67.96 at 09:31 | **-20.70** | -20.70 |
+| new | DAL 23 sh (85C idea) | mirrored ab trim (no contract named) 11 @ 84.02, then the breakeven stop 12 @ 84.00 | **-0.86** | -0.86 |
+| old | XLU 14 sh | 7 @ 39.56, then the (raised) venue stop 7 @ 39.37 | **+1.22** | +4.57 |
+| old | CRWV 8 sh | **Q1 stale exit** (5 sessions at +0.33R < 0.5R) 89.52 | **+18.82** | +33.27 |
+| old | COIN 3 sh | venue GTC stop 190.46 | **-19.47** | -35.96 |
+| | **total** | | **+5.17** | |
+
+No questioned fills. Equity: new book 9,994.13 -> 9,990.93 (-3.20: open UBER/ON/KWEB marks); old book 8,837.15 -> 8,863.58.
+
+**Decision funnel:** ab 9 signals -> 3 cards (UBER taken/filled; MSTR skip; AMZN watch); common-stock 6, jon-and-kian 3,
+neal 3, tt 1 -> no cards; muggzone 22, eva 15, giul 1 -> shadow only. **3 cards, 1 fill, 2 declined, 0 avoidable misses.**
+**Review-held cards:** 2 (no stop) - neither reached an order.
+
+**Incidents / fast-stop diagnostics / halts / retries:** none. One pre-open `TipIntakeStalled` (host memory, see
+below); nothing lost.
+
+**Execution cost:** UBER filled 2c inside the ask (fresh quote).
+
+**Review-3 behaviour seen live:** Q5 took two targets on the live quote at the open (MU sold above its target); Q1
+freed its first slot (CRWV, +$18.82 on the day); Q2 mirrored 9 exits and refused 4 other-leg trims (83C / 10/16 / 11/20
+90C named against our 85C idea); Q12 dry audits: 2 clean.
+
+**Carried overnight (venue GTC stops, qty = held):** new book KWEB 80 (23.90), ON 19 (71.20), UBER 28 (67.00); old book
+NBIS 6 (225.71), PL 59 (15.45), ACHR 1/15/27 7C x3 (app-managed option exits).
+
+**Hold study:** 15:50 capture 16 fresh rows (13 sim, 3 shadow); all 14 rows from 09-28 got their next-open sample.
+
+**Plans rolling:** 2 Tips plans, both research (KWEB on jon-and-kian's armed shadow book, MO on ab's).
+
+**Model cost today (calendar day, list-price estimate, apart from trading P&L):** priced **$9.87** - intake reviews $5.36
+(55 runs; the busiest message day since the reset), appraisals $2.30, extraction $2.21; unpriced: 55 intake runs with no
+model call (gate skips); partial: 0 (2 runs failed - 1 appraisal, 1 intake review).
+
+**Relevance gate (enforce, the user's decision):** 89 decisions - **53 review / 36 skip**, 0 readErrors.
+
+**Platform:** the pre-open host memory squeeze (1.4 GB free of 32 GB; 12 Claude sessions, WSL, Java, Edge, ChatGPT) caused
+stalls spread across unrelated code - no single hot spot after 0.8.57. After the user freed memory (3.5-5.6 GB) loop lag
+stayed at 1-6 ms for the rest of the day.
