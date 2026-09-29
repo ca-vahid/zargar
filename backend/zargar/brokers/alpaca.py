@@ -110,8 +110,16 @@ def venue_ms(t) -> int:
         return 0
 
 
+_SECOND_CACHE: dict[str, int] = {}     # "YYYY-MM-DDTHH:MM:SS+00:00" -> epoch seconds (2026-09-28: stream fast path)
+
+
 def parse_rfc3339_ms(t: str) -> int:
-    """Alpaca timestamps are RFC3339, sometimes with nanosecond precision."""
+    """Alpaca timestamps are RFC3339, sometimes with nanosecond precision.
+
+    Fast path (2026-09-28, event-loop stalls inside the stream handler): messages in the same second share the
+    expensive date part, so the whole-second epoch is cached per (second, offset) and the microseconds are added with
+    the same arithmetic `datetime.timestamp()` uses ((seconds * 10**6 + micro) / 10**6) - bit-identical results.
+    A stamp without an explicit offset keeps the original path (local-time semantics)."""
     s = t.replace("Z", "+00:00")
     if "." in s:
         head, rest = s.split(".", 1)
@@ -120,7 +128,17 @@ def parse_rfc3339_ms(t: str) -> int:
             if ch in "+-":
                 rest, off = rest[:i], rest[i:]
                 break
-        s = f"{head}.{rest[:6].ljust(6, '0')}{off}"
+        frac = rest[:6].ljust(6, "0")
+        if off and frac.isdigit():
+            key = head + off
+            sec = _SECOND_CACHE.get(key)
+            if sec is None:
+                if len(_SECOND_CACHE) > 20000:
+                    _SECOND_CACHE.clear()
+                sec = int(dt.datetime.fromisoformat(key).timestamp())
+                _SECOND_CACHE[key] = sec
+            return int(((sec * 10**6 + int(frac)) / 10**6) * 1000)
+        s = f"{head}.{frac}{off}"
     return int(dt.datetime.fromisoformat(s).timestamp() * 1000)
 
 
@@ -282,17 +300,33 @@ class AlpacaQuoteFeed(QuoteFeed):
     def _et(ts_ms: int) -> dt.datetime:
         return dt.datetime.fromtimestamp(ts_ms / 1000, _ET)
 
+    _MINUTE_INFO: dict[int, tuple[str, bool]] = {}
+
+    @classmethod
+    def _minute_info(cls, ts_ms: int) -> tuple[str, bool]:
+        """(ET session day, regular session?) for the minute holding ts_ms. Both are constant inside a minute (ET offset
+        changes fall on whole hours), so one time-zone conversion per minute replaces two per trade message
+        (2026-09-28: the stream handler dominated the event-loop stall samples)."""
+        k = ts_ms // 60_000
+        v = cls._MINUTE_INFO.get(k)
+        if v is None:
+            if len(cls._MINUTE_INFO) > 4096:
+                cls._MINUTE_INFO.clear()
+            t = cls._et(k * 60_000)
+            m = t.hour * 60 + t.minute
+            v = (t.strftime("%Y-%m-%d"), t.weekday() < 5 and 9 * 60 + 30 <= m < 16 * 60)
+            cls._MINUTE_INFO[k] = v
+        return v
+
     @classmethod
     def _session_day(cls, ts_ms: int) -> str:
-        return cls._et(ts_ms).strftime("%Y-%m-%d")
+        return cls._minute_info(ts_ms)[0]
 
     @classmethod
     def _is_regular(cls, ts_ms: int) -> bool:
         """09:30–16:00 ET on a weekday — the only prints that belong to the day range/volume
         brokers show (pre/post moves are reported separately via `session`)."""
-        t = cls._et(ts_ms)
-        m = t.hour * 60 + t.minute
-        return t.weekday() < 5 and 9 * 60 + 30 <= m < 16 * 60
+        return cls._minute_info(ts_ms)[1]
 
     @classmethod
     def _roll_day(cls, st: dict, ts_ms: int) -> None:

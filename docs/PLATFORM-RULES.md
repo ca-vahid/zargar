@@ -2735,3 +2735,12 @@ journaled. New books are $10,000.
 Measurement consequence: each desk's session counters restart on its new book (EM stop-rule sessions, Team2 cohort,
 Tips Q15). The archived books remain the record for 09-08 .. 09-25.
 
+### Alpaca stream handler fast path - 2026-09-28 (Tips desk, platform)
+
+Every event-loop stall sample on 09-27/28 (250+ stalls, up to 31 s, host at ~0.6 GB free) sat inside
+`brokers/alpaca.py` `handle`: per trade message one RFC3339 parse plus two ET time-zone conversions (session day,
+regular session). Now `parse_rfc3339_ms` caches the whole-second epoch per (second, offset) and adds microseconds with
+`datetime.timestamp()`'s own arithmetic, and `_session_day` / `_is_regular` read one cached conversion per minute.
+Bit-identical results (`tests/test_alpaca_fastpath.py`: 20k random stamps, both DST switches); 15.9 -> 6.1 us per trade
+message. It does not fix host memory pressure - that is still the first cause.
+
