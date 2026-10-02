@@ -41,6 +41,9 @@ class AppConfig(BaseSettings):
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 4002  # 4002 gateway paper, 4001 gateway live, 7497 TWS paper
     ibkr_client_id: int = 17
+    # 2026-10-02: IBKR is an EXECUTOR only by default - the app's market-data feed (Alpaca/Yahoo) serves every desk.
+    # True = IBKR market data replaces the feed (delayed without an IBKR data subscription).
+    ibkr_quotes: bool = False
 
     # --- sim engine ------------------------------------------------------
     sim_tick_interval: float = 0.35  # seconds between simulated ticks per symbol batch

@@ -2175,8 +2175,9 @@ class SignalService:
             if str(p.get("symbol") or "").upper() != str(row.ticker or "").upper():
                 continue
             pf = eng.positions.portfolio(p.get("portfolioId")) or {}
-            if pf.get("kind") in ("live", "paper"):
-                continue
+            from ..approvals.proposals import policy_kind as _policy_kind
+            if _policy_kind(eng.settings, pf) in ("live", "paper"):
+                continue                         # a live/paper book only with techniques.tip.live_parity (IBKR)
             if match_on:
                 # Q2 (2026-09-27 review): only the leg our position came from is mirrored deterministically; an exit on
                 # another leg of the same ticker (ab COIN 197.5C vs our 10/16 220C idea, 09-25) goes to the analyst.

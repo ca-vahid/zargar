@@ -16,6 +16,44 @@ from ..models import ManagedPositionRow, Order, Proposal, Signal
 from ..orders import BracketSpec, OrderIntent
 from ..signals.schemas import TradeSignal
 
+def policy_kind(settings, pf: dict | None) -> str | None:
+    """The book kind the Tips POLICY treats this book as (live go-live 2026-10-02, user decision: "auto trade the same
+    as the practice account"). With `techniques.tip.live_parity` on, an IBKR live/paper book runs the Practice policy
+    (shares-first, share substitution, the adoption-geometry gate, the source-exit mirror) and so reads as "sim" here.
+    A SnapTrade book (Wealthsimple / Webull) never does. The real kind still decides venue, the live gates and RiskGate."""
+    kind = (pf or {}).get("kind")
+    if kind in ("live", "paper") and (pf or {}).get("venue") != "snaptrade":
+        try:
+            if bool(settings.get("techniques.tip.live_parity", False)):
+                return "sim"
+        except Exception:
+            pass
+    return kind
+
+
+def live_vehicle_refusal(settings, pf: dict | None, sec_type: str) -> str | None:
+    """Pure: a live/paper book trades SHARES only while `techniques.tip.live_shares_only` is on (the IBKR adapter has no
+    option or multi-leg path). Returns the refusal reason, or None."""
+    kind = (pf or {}).get("kind")
+    if kind not in ("live", "paper"):
+        return None
+    try:
+        on = bool(settings.get("techniques.tip.live_shares_only", True))
+    except Exception:
+        on = True
+    if on and str(sec_type).upper() != "STK":
+        return (f"live book trades shares only (techniques.tip.live_shares_only): this tip's vehicle is {sec_type} - "
+                "a short idea needs a put and is not traded on the live book")
+    return None
+
+
+def live_capital_room(cap: float, open_cost: float) -> float | None:
+    """Pure: dollars left under the live book's capital cap (None = no cap)."""
+    if not cap or cap <= 0:
+        return None
+    return max(0.0, float(cap) - float(open_cost))
+
+
 def shares_first_applies(expression: str, *, direction: str, lotto: bool, portfolio_kind) -> bool:
     """Pure (P1): express this idea in shares? Only for expression=shares, long ideas, not the lotto lane, and never
     on a live or paper book."""
@@ -254,6 +292,18 @@ class ProposalService:
                                              underlying=underlying)
                 if _why:
                     return 0.0, None, _why
+        # live go-live (2026-10-02): a hard dollar cap on what the live/paper book may have open (cost basis of its
+        # open tip positions) - the user's "$3k is the limit"
+        if pf.get("kind") in ("live", "paper"):
+            _room = live_capital_room(float(eng.settings.get("techniques.tip.live_capital_cap", 0) or 0),
+                                      await self._book_open_cost(pid))
+            if _room is not None:
+                if _room < 50.0:
+                    return 0.0, None, (f"live capital cap reached: ${float(eng.settings.get('techniques.tip.live_capital_cap')):,.0f} "
+                                       f"is already committed in {pf.get('name', pid)} (techniques.tip.live_capital_cap)")
+                if _room < budget:
+                    budget = _room
+                    note = ((note + " ") if note else "") + f"Capped to the live book's remaining ${_room:,.0f}."
         # Q1 (2026-09-27 review): a book-wide cap on open tip positions (0 = off)
         _cap = int(eng.settings.get("techniques.tip.max_open_positions", 0) or 0)
         if _cap > 0:
@@ -277,6 +327,20 @@ class ProposalService:
                 note = ((note + " ") if note else "") + \
                     f"Capped to {policy.name}'s remaining open budget ${room:,.0f}."
         return budget, note, None
+
+    async def _book_open_cost(self, pid: str) -> float:
+        """Cost basis $ of every OPEN managed tip position in this book (all sources)."""
+        cost = 0.0
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(ManagedPositionRow).where(
+                ManagedPositionRow.technique == "tip",
+                ManagedPositionRow.portfolio_id == pid,
+                ManagedPositionRow.status.in_(("open", "attention", "opening", "closing"))))).scalars().all()
+        for r in rows:
+            for leg in (r.legs or []):
+                cost += abs(float(leg.get("avgFill") or 0) * float(leg.get("qty") or 0)
+                            * float(leg.get("multiplier") or 1.0))
+        return cost
 
     async def _book_open_count(self, pid: str) -> int:
         async with self.engine.sf() as session:
@@ -508,6 +572,10 @@ class ProposalService:
                            f"“{pf.get('name', pid)}” ({pf.get('kind', '?')}). The long leg fills "
                            f"FIRST, then the short leg — risk is defined at every instant.")
                 ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
+                _why_live = live_vehicle_refusal(eng.settings, pf, "SPREAD")
+                if _why_live:
+                    await self._refuse(signal_id=signal_row.id, reason=_why_live)
+                    return None
                 row = Proposal(
                     id=new_id(), signal_id=signal_row.id, portfolio_id=pid,
                     symbol=sig.ticker.upper(), sec_type="SPREAD",
@@ -556,7 +624,7 @@ class ProposalService:
         # the source earned options (per-source `expression: as_tip`). Shorts stay puts (never share shorting); the
         # lotto lane stays options (capped by its own budget).
         shares_first = shares_first_applies(policy.expression, direction=sig.direction, lotto=lotto,
-                                            portfolio_kind=pf.get("kind"))
+                                            portfolio_kind=policy_kind(eng.settings, pf))
         if shares_first:
             analyst = {**analyst, "_optionSkipped": "shares-first"}
         if not shares_first and analyst.get("verdict") == "take" and analyst.get("contract") \
@@ -733,7 +801,7 @@ class ProposalService:
         # expires waiting for a human (HOOD, GOOGL). Long ideas only; never a lotto; never a live book.
         alt = (getattr(risk_plan, "sharesAlternative", None) or {}) if risk_plan is not None else {}
         if share_substitution_ok(sec_type=sec_type, risk_plan=risk_plan, settings=eng.settings,
-                                 portfolio_kind=pf.get("kind"), verdict=analyst.get("verdict"),
+                                 portfolio_kind=policy_kind(eng.settings, pf), verdict=analyst.get("verdict"),
                                  direction=sig.direction, lotto=lotto, alt=alt):
             under = sig.ticker.upper()
             await eng.ensure_symbol(under)
@@ -790,6 +858,10 @@ class ProposalService:
         except Exception:                                # advisory only
             log.debug("proposal preflight cap check failed", exc_info=True)
 
+        _why_live = live_vehicle_refusal(eng.settings, pf, sec_type)
+        if _why_live:
+            await self._refuse(signal_id=signal_row.id, reason=_why_live)
+            return None
         ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
         # a newer tip for the SAME contract replaces the one still waiting —
         # the re-arm rule, applied to proposals (2026-09-03: muggzone re-posted
@@ -1019,7 +1091,7 @@ class ProposalService:
         if mode == "off":
             return None
         pf = self.engine.positions.portfolio(pid) or {}
-        if pf.get("kind") != "sim":
+        if policy_kind(self.engine.settings, pf) != "sim":
             return None
         return mode
 
