@@ -233,3 +233,22 @@ def test_tips_live_book_rules():
     assert live_vehicle_refusal(_S({}), ibkr_live, "STK") is None
     assert live_vehicle_refusal(_S({}), {"kind": "sim"}, "OPT") is None
     assert live_capital_room(3000, 2500) == 500 and live_capital_room(3000, 3200) == 0 and live_capital_room(0, 10) is None
+
+
+async def test_account_state_reads_the_ledger_prefixed_cash_rows():
+    """IB Gateway with "Use $LEDGER- prefix" (the paper account, 2026-10-02): the per-currency rows are $LEDGER-*."""
+    fake = FakeIB()
+
+    async def summary(account=""):
+        return [NS(account="DUR1", tag="$LEDGER-CashBalance", value="1000000.00", currency="CAD"),
+                NS(account="DUR1", tag="$LEDGER-CashBalance", value="-2.0269", currency="USD"),
+                NS(account="DUR1", tag="$LEDGER-CashBalance", value="999997.11", currency="BASE"),
+                NS(account="DUR1", tag="$LEDGER-TotalCashBalance", value="1000000.00", currency="CAD"),
+                NS(account="DUR1", tag="TotalCashValue", value="999997.11", currency="CAD")]
+    fake.accountSummaryAsync = summary
+    b, _ = await _broker(fake)
+    st = await b.account_state(cash_currency="CAD")
+    assert st["cash"] == 1000000.0 and st["cashByCurrency"] == {"CAD": 1000000.0, "USD": -2.0269}
+    assert (await b.account_state(cash_currency="USD"))["cash"] == -2.0269
+    await b.stop()
+
