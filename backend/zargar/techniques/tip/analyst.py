@@ -1081,7 +1081,7 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         # an analyst cannot self-certify that a reviewed hypothesis is policy
         staged = scope == "rule" and not bool(
             eng.settings.get("techniques.tip.knowledge_apply_enabled", False))
-        _qmax = int(eng.settings.get("techniques.tip.rule_proposal_queue_max", 0) or 0)
+        _qmax = int(eng.settings.get("techniques.tip.rule_proposal_queue_max", 0) or 0) if staged else 0
         if staged and _qmax > 0:
             # Q7 (2026-09-27 review): 29 unreviewed rule proposals piled up while 36 live rules were never cited -
             # new proposals wait until a person has worked the queue down

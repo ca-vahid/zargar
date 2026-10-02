@@ -252,6 +252,13 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.batch_jobs": False,              # 2026-09-23: nightly digests + knowledge-audit judge calls go through the Message Batches API (50% list price); intake/appraise/retro stay live
     "techniques.tip.batch_timeout_s": 3600,          # a batch that has not ended by then is cancelled and the call fails as a timeout
     "techniques.tip.notes_relied_first": False,     # P8 2026-09-24: within each scope's note slots, relied-on notes before newest
+    # --- live go-live on IBKR (2026-10-02, user decision: Tips only, auto like Practice, $3k)
+    "techniques.tip.live_parity": False,            # IBKR live/paper books run the Practice policy (shares-first, substitution, geometry gate, mirror)
+    "techniques.tip.live_shares_only": True,        # live/paper books trade SHARES only (no IBKR option / multi-leg path)
+    "techniques.tip.live_capital_cap": 0.0,         # $ cap on the cost basis of open tip positions in a live/paper book (0 = off)
+    "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
+    "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
+    "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)
     # --- sharp-pencil review #3 (2026-09-27, docs/techniques/tip/research/2026-09-27-sharp-pencil-review-3.md)
     "techniques.tip.stale_after_sessions": 0,       # Q1: share positions below stale_min_r after N sessions exit on a closed bar (0 = off)
     "techniques.tip.stale_min_r": 0.5,              # Q1: the R a position must have earned by then
