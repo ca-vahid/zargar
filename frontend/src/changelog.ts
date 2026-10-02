@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.57";
+export const APP_VERSION = "0.8.58";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.58",date:"2026-10-02",title:"Tips: ready for IBKR (paper first, then live)",items:[
+    {tag:"new",text:"Tips can trade an Interactive Brokers account automatically, the same way as the Practice book: shares only, a hard dollar cap, settled US-dollar cash, the same daily loss stop."},
+    {tag:"improved",text:"The IBKR connection reports rejected orders with IBKR's own reason, records real commissions, never counts a fill twice, reconnects on its own and catches up after a restart."},
+    {tag:"fixed",text:"The rule-proposal queue check no longer runs on every note the analyst saves."},
+  ]},
   {version:"0.8.57",date:"2026-09-28",title:"Platform: a lighter market-data stream",items:[
     {tag:"improved",text:"The live market-data stream costs about a third of what it did per message, so the app stays responsive at the open and when the machine is short of memory."},
   ]},

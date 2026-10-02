@@ -107,14 +107,19 @@ class Engine:
         if self.config.broker == "ibkr":
             try:
                 from .brokers.ibkr import IBKRBroker
+                quotes = bool(getattr(self.config, "ibkr_quotes", False))
                 self.ibkr = IBKRBroker(
                     host=self.config.ibkr_host, port=self.config.ibkr_port,
-                    client_id=self.config.ibkr_client_id, on_quote=self.quotes.on_quote)
-                await self.ibkr.start()
-                self.feed = self.ibkr
-                await self.journal.append(ev.BROKER_CONNECTED, {"broker": "ibkr"})
+                    client_id=self.config.ibkr_client_id, on_quote=self.quotes.on_quote,
+                    quotes=quotes, exec_seen=self._execution_exists, on_state=self._ibkr_state)
+                if quotes:
+                    # legacy: IBKR market data replaces the feed (must connect before the feed starts)
+                    await self.ibkr.start()
+                    self.feed = self.ibkr
+                # executor-only (default): connects after the order manager is wired (below), so execution reports
+                # caught up at connect time have a receiver
             except Exception as exc:  # pragma: no cover - depends on gateway
-                log.error("IBKR connection failed (%s); falling back to sim feed", exc)
+                log.error("IBKR adapter setup failed (%s)", exc)
                 await self.journal.append(ev.BROKER_DISCONNECTED, {"broker": "ibkr", "error": str(exc)})
         # SnapTrade venue (Wealthsimple / Webull through the aggregator)
         snaptrade_configured = bool(
@@ -201,6 +206,10 @@ class Engine:
         await self.orders.restore_sim_book()
         if self.ibkr is not None:
             self.ibkr.on_report = self.orders.on_report
+            if not bool(getattr(self.config, "ibkr_quotes", False)):
+                await self.ibkr.start()          # retries in the background when no gateway is logged in yet
+            else:
+                await self.ibkr.catch_up()       # the early connect could not deliver its catch-up
         if self.snaptrade is not None:
             self.snaptrade.on_report = self.orders.on_report
             await self.snaptrade.start()
@@ -255,6 +264,8 @@ class Engine:
             self.loop_watch = None
         if isinstance(self.feed, HybridQuoteFeed):
             self._tasks.append(asyncio.create_task(self._feed_monitor(), name="feed-monitor"))
+        if self.ibkr is not None:
+            self._tasks.append(asyncio.create_task(self._ibkr_sync_loop(), name="ibkr-sync"))
         if self.snaptrade_sync is not None:
             self._tasks.append(
                 asyncio.create_task(self.snaptrade_sync.run(), name="snaptrade-sync"))
@@ -458,6 +469,56 @@ class Engine:
         return out
 
     # ------------------------------------------------------------- routing
+    async def _execution_exists(self, exec_id: str) -> bool:
+        """IBKR fill dedupe: has this execution id been applied already (any earlier process)?"""
+        from .models import Execution
+        async with self.sf() as session:
+            return (await session.get(Execution, exec_id)) is not None
+
+    async def _ibkr_state(self, kind: str, data: dict) -> None:
+        etype = {"connected": ev.BROKER_CONNECTED, "disconnected": ev.BROKER_DISCONNECTED}.get(kind, "IbkrCaughtUp")
+        await self.journal.append(etype, {"broker": "ibkr", **data})
+        if kind == "connected":
+            with contextlib.suppress(Exception):
+                await self.sync_ibkr_account()
+
+    async def sync_ibkr_account(self) -> dict | None:
+        """Level-set the linked app book (`ibkr.portfolio_id`) to the IBKR account: the cash balance in
+        `ibkr.cash_currency` and the stock positions. A broker sync is a level-set, not P&L."""
+        pid = str(self.settings.get("ibkr.portfolio_id", "") or "")
+        pf = self.positions.portfolio(pid) if pid else None
+        if self.ibkr is None or not self.ibkr.connected or pf is None or pf.get("kind") not in ("live", "paper"):
+            return None
+        cur = str(self.settings.get("ibkr.cash_currency", "USD") or "USD")
+        st = await self.ibkr.account_state(cash_currency=cur)
+        if st is None:
+            return None
+        # a CASH account may only spend settled cash (re-using unsettled sale proceeds is a good-faith violation):
+        # the book's spendable cash is the lower of the currency balance and the settled cash IBKR reports for it
+        spend = float(st["cash"])
+        if st.get("settledCash") is not None:
+            spend = min(spend, float(st["settledCash"]))
+        st = {**st, "spendable": spend}
+        await self.positions.sync_portfolio_state(pid, cash=spend, positions=st["positions"], source="ibkr")
+        key = (round(spend, 2), tuple(sorted((p["symbol"], p["qty"]) for p in st["positions"])))
+        if key != getattr(self, "_ibkr_last_sync", None):
+            self._ibkr_last_sync = key
+            await self.journal.append("IbkrAccountSynced", {
+                "portfolioId": pid, "account": st.get("account"), "cash": round(float(st["cash"]), 2),
+                "cashCurrency": cur, "settledCash": st.get("settledCash"), "spendable": round(spend, 2),
+                "cashByCurrency": st.get("cashByCurrency"),
+                "positions": [{"symbol": p["symbol"], "qty": p["qty"]} for p in st["positions"]]},
+                portfolio_id=pid)
+        return st
+
+    async def _ibkr_sync_loop(self) -> None:
+        while True:
+            await asyncio.sleep(max(15, int(self.settings.get("ibkr.sync_seconds", 60) or 60)))
+            try:
+                await self.sync_ibkr_account()
+            except Exception:  # noqa: BLE001 - the next pass retries
+                log.exception("IBKR account sync failed")
+
     def executor_for(self, portfolio: dict | None):
         kind = (portfolio or {}).get("kind", "sim")
         if kind in ("sim", "shadow"):
