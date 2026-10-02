@@ -363,12 +363,14 @@ class IBKRBroker(QuoteFeed, Executor):
         account = None
         for r in rows or []:
             account = account or getattr(r, "account", None)
-            if r.tag == "CashBalance" and r.currency and r.currency != "BASE":
+            # per-currency cash: "CashBalance", or "$LEDGER-CashBalance" when the gateway's "Use $LEDGER- prefix for
+            # per-currency keys" is on (IB Gateway default; seen on the paper account 2026-10-02)
+            if r.tag in ("CashBalance", "$LEDGER-CashBalance") and r.currency and r.currency != "BASE":
                 try:
                     by_cur[r.currency] = by_cur.get(r.currency, 0.0) + float(r.value)
                 except (TypeError, ValueError):
                     pass
-            if r.tag == "SettledCash" and r.currency == cash_currency:
+            if r.tag in ("SettledCash", "$LEDGER-SettledCash") and r.currency == cash_currency:
                 try:
                     settled = float(r.value)
                 except (TypeError, ValueError):
