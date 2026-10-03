@@ -1289,13 +1289,26 @@ class ProposalService:
         option_type = None
         currency = str((vehicle or {}).get("currency") or "USD")
         if sec_type == "OPT":
-            raw_mult = (vehicle or {}).get("multiplier")
-            if raw_mult is None:
-                problems.append(("contract_metadata", "contract multiplier unknown (no contract metadata on the vehicle)"))
+            # W1.3: a missing multiplier on a standard US contract is the standard
+            # 100; only a positively non-standard deliverable is refused
+            from ..options import occ as _occ_res
+            v = vehicle or {}
+            deliverable = v.get("deliverable")
+            non_std = bool(v.get("nonStandard") or v.get("adjusted")
+                           or (deliverable not in (None, "", 100, 100.0, "100")))
+            res_mult, mult_src = _occ_res.resolve_multiplier(
+                symbol, v.get("multiplier"), non_standard=non_std)
+            quote_meta["multiplierSource"] = mult_src
+            if res_mult is None:
+                problems.append(("contract_metadata", f"contract multiplier unknown ({mult_src})"))
                 multiplier = 0.0
             else:
-                multiplier = float(raw_mult)
-            option_type = (vehicle or {}).get("optionType")
+                multiplier = float(res_mult)
+            option_type = v.get("optionType")
+            if option_type not in ("call", "put"):
+                _po = _occ_res.parse_loose(symbol)
+                if _po is not None:
+                    option_type = _po.option_type
             if option_type not in ("call", "put"):
                 problems.append(("contract_metadata", "option type unknown"))
             snap = None

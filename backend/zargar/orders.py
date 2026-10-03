@@ -163,6 +163,10 @@ def derive_option_action(side: str, position_qty: float, qty: float) -> str:
     return "SELL_TO_CLOSE" if position_qty > 1e-9 else "SELL_TO_OPEN"
 
 
+# W1.8: marks a shadow book's CLOSING sell (shares, reduce-only, *_TO_CLOSE) so
+# the fill-time clamp can tell it from an opening option leg
+SHADOW_CLOSE_TAG = "shadow:close"
+
 OPEN_STATUSES = (
     OrderStatus.SUBMITTED.value,
     OrderStatus.ACCEPTED.value,
@@ -223,6 +227,18 @@ class OrderManager:
         # the engine points this at OptionsService.allows_options
         self.option_gate: Callable[[str], tuple[bool, str]] | None = None
 
+    def _held_long(self, portfolio_id: str, symbol: str, sec_type: str) -> float:
+        sym = occ.normalize(symbol) if sec_type == "OPT" else symbol
+        return max(0.0, float(self._positions.position_qty(portfolio_id, sym, sec_type) or 0.0))
+
+    async def _shadow_sell_room(self, portfolio_id: str, symbol: str, sec_type: str) -> float:
+        """W1.8: what a shadow book can sell of a symbol at placement — the
+        held long quantity. Resting sells are deliberately NOT subtracted: an
+        exit manager's stop must never be refused because a target limit is
+        resting; a second fill past the lot is clamped at fill time instead
+        (`_shadow_clamp_fill`) and a flat lot cancels its resting sells."""
+        return self._held_long(portfolio_id, symbol, sec_type)
+
     def option_action(self, portfolio_id: str, symbol: str, side: str, qty: float) -> str:
         pos = self._positions.position_qty(portfolio_id, occ.normalize(symbol), "OPT")
         return derive_option_action(side.upper(), pos, qty)
@@ -246,6 +262,30 @@ class OrderManager:
                 raise ValueError(
                     f"closing {intent.qty:g} contracts but only {held:g} held - "
                     "split into a close and a separate open")
+        # W1.8 (2026-10-02 review, D9): a SHADOW book never goes short through a
+        # sell that has no lot behind it ("Shadow: tt" 1 sell / 11 units, "Shadow:
+        # ab (armed)" 2 sells / 16 units). A shadow closing sell (shares — shadow
+        # books never short shares — a reduce-only exit, or an option *_TO_CLOSE)
+        # is capped at the held quantity; zero held = no order, journaled (a
+        # second resting sell is clamped at fill time). Opening option legs (a spread's short leg,
+        # SELL_TO_OPEN) are untouched.
+        shadow_close = (portfolio.get("kind") == "shadow" and intent.side == "SELL"
+                        and (intent.sec_type == "STK" or intent.reduce_only
+                             or (option_action or "").endswith("_TO_CLOSE")))
+        shadow_capped_from = None
+        shadow_refused = None
+        if shadow_close:
+            room = await self._shadow_sell_room(intent.portfolio_id, intent.symbol, intent.sec_type)
+            if room <= 1e-9:
+                shadow_refused = {
+                    "symbol": intent.symbol, "secType": intent.sec_type, "qty": intent.qty,
+                    "held": self._held_long(intent.portfolio_id, intent.symbol, intent.sec_type),
+                    "room": max(room, 0.0), "signalId": intent.signal_id, "source": intent.source,
+                    "phase": "place",
+                    "reason": "shadow book holds no lot to sell - nothing ordered (never a phantom short)"}
+            elif intent.qty > room + 1e-9:
+                shadow_capped_from = float(intent.qty)
+                intent = intent.model_copy(update={"qty": float(room)})
         order = Order(
             id=new_id(),
             portfolio_id=intent.portfolio_id,
@@ -256,7 +296,7 @@ class OrderManager:
             order_type=intent.order_type,
             limit_price=intent.limit_price,
             technique=intent.technique_id,
-            tags=list(intent.tags or []),
+            tags=list(intent.tags or []) + ([SHADOW_CLOSE_TAG] if shadow_close else []),
             stop_price=intent.stop_price,
             tif=intent.tif,
             status=OrderStatus.NEW.value,
@@ -269,9 +309,19 @@ class OrderManager:
             session.add(order)
             await session.commit()
         await self._journal.append(
-            ev.ORDER_INTENT_CREATED, {**order_dict(order), "optionAction": option_action},
+            ev.ORDER_INTENT_CREATED, {**order_dict(order), "optionAction": option_action,
+                                      **({"shadowCappedFrom": shadow_capped_from}
+                                         if shadow_capped_from is not None else {})},
             aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
         extra_out = {"optionAction": option_action} if option_action else {}
+        if shadow_refused is not None:
+            await self._journal.append(
+                ev.SHADOW_SELL_REFUSED, {**shadow_refused, "orderId": order.id},
+                aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
+            return await self._transition(
+                order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
+                reject_reason="shadow book holds no lot to sell (no phantom short)",
+                extra=extra_out or None)
 
         # ---- risk gate -----------------------------------------------------
         class _P:  # RiskGate expects .kind
@@ -513,8 +563,14 @@ class OrderManager:
         # holding the non-reentrant lock deadlocked the whole report pipeline
         # (found 2026-08-27 by the tip-runner rig; latent since day one).
         bracket_parent = None
+        shadow_cancels: list[str] = []
         async with self._report_lock:
-            if report.kind == "accepted":
+            if report.kind == "fill":
+                # W1.8: a shadow closing sell can never fill past the held lot
+                report, shadow_cancels = await self._shadow_clamp_fill(report)
+            if report is None:
+                pass
+            elif report.kind == "accepted":
                 await self._transition(report.order_id, OrderStatus.ACCEPTED, ev.ORDER_ACCEPTED)
             elif report.kind == "fill":
                 bracket_parent = await self._apply_fill(report)
@@ -532,6 +588,10 @@ class OrderManager:
                 if order is not None:
                     await self._journal.append("SimFillWaiting", {"reason": report.reason, "evidence": report.evidence},
                         aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
+        # outside the lock: a sim cancel emits its report in-band (re-enters here)
+        for oid in shadow_cancels:
+            with contextlib.suppress(Exception):
+                await self.cancel(oid)
         if bracket_parent is not None:
             guard = self.bracket_guard
             owned = False
@@ -546,6 +606,55 @@ class OrderManager:
                     aggregate_type="order", aggregate_id=bracket_parent.id, portfolio_id=bracket_parent.portfolio_id)
             else:
                 await self._spawn_bracket_children(bracket_parent)
+
+    async def _shadow_clamp_fill(self, report: ExecReport) -> tuple[ExecReport | None, list[str]]:
+        """W1.8 fill-time guarantee for SHADOW books: a closing sell (shares,
+        a bracket child, or one tagged `shadow:close` at placement) fills at
+        most the held long quantity. Nothing held = the fill is not booked
+        (journaled `ShadowSellRefused`) and the order is cancelled; a partial
+        excess is clamped and the remainder cancelled. When a closing sell
+        takes the lot flat, the book's other resting sells of that symbol are
+        cancelled too (a dangling bracket child would otherwise short later).
+        Returns the (possibly clamped) report — None when nothing is booked —
+        and the order ids to cancel OUTSIDE the report lock."""
+        async with self._sf() as session:
+            order = await session.get(Order, report.order_id)
+        if order is None or order.side != "SELL":
+            return report, []
+        portfolio = self._positions.portfolio(order.portfolio_id) or {}
+        if portfolio.get("kind") != "shadow":
+            return report, []
+        closing = (order.sec_type == "STK" or bool(order.parent_id)
+                   or SHADOW_CLOSE_TAG in (order.tags or []))
+        if not closing:
+            return report, []
+        held = self._held_long(order.portfolio_id, order.symbol, order.sec_type)
+        cancels: list[str] = []
+        if report.fill_qty > held + 1e-9:
+            await self._journal.append(
+                ev.SHADOW_SELL_REFUSED,
+                {"orderId": order.id, "symbol": order.symbol, "secType": order.sec_type,
+                 "fillQty": report.fill_qty, "held": held, "bookedQty": held,
+                 "parentId": order.parent_id, "phase": "fill",
+                 "reason": ("shadow book holds no lot to sell - fill not booked" if held <= 1e-9
+                            else "fill clamped to the held lot - remainder cancelled")},
+                aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
+            cancels.append(order.id)
+            if held <= 1e-9:
+                return None, cancels
+            import dataclasses
+            report = dataclasses.replace(report, fill_qty=held)
+        if held - report.fill_qty <= 1e-9:
+            async with self._sf() as session:
+                rows = (await session.execute(select(Order).where(
+                    Order.portfolio_id == order.portfolio_id, Order.symbol == order.symbol,
+                    Order.side == "SELL", Order.id != order.id,
+                    Order.status.in_(OPEN_STATUSES)))).scalars().all()
+            for o in rows:
+                if (o.sec_type == "STK" or o.parent_id or SHADOW_CLOSE_TAG in (o.tags or [])) \
+                        and o.id not in cancels:
+                    cancels.append(o.id)
+        return report, cancels
 
     async def _apply_fill(self, report: ExecReport) -> Order | None:
         """Apply one fill. Returns the parent Order when its bracket children
