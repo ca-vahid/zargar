@@ -153,3 +153,120 @@ async def monitor_loop(eng, *, interval_s: float = 120.0) -> None:
         except Exception:
             log.exception("intake liveness check failed")
         await asyncio.sleep(interval_s)
+
+
+# --------------------------------------------------------------------------- W3.4 paging
+# 2026-10-02 Tips review (W3.4): `TipIntakeStalled` fired 59 times and a 3.3 h gateway outage on 09-14 still went
+# unnoticed - a journal line is not a page. Inside RTH a gateway that delivers no proof of life for
+# `techniques.tip.intake_page_idle_minutes` (3) ESCALATES through push + Telegram + desk alert, once per stall,
+# and says so again when it recovers.
+
+def in_rth(now: dt.datetime) -> bool:
+    """Regular session on a trading day: 09:30 ET to the (possibly early) close."""
+    from zoneinfo import ZoneInfo
+    from ...marketstructure.market_calendar import is_trading_day, session_close_minutes
+    t = now.astimezone(ZoneInfo("America/New_York"))
+    m = t.hour * 60 + t.minute
+    return is_trading_day(t.date()) and 9 * 60 + 30 <= m < session_close_minutes(t.date())
+
+
+def idle_seconds(status: dict | None, now: dt.datetime) -> float | None:
+    """Pure: how long the gateway has gone without proof that it is delivering. The larger of the status file's age
+    (the process writes it every 30 s - an old file = hung or gone) and the last Discord frame's age (a connected
+    socket with no frames = a stuck pipe); a state other than `connected` counts from the last frame (or the
+    connection / status write when there is none). None = no status file (no gateway has ever run from this
+    checkout - reported by `liveness` as unknown, never paged)."""
+    if not status:
+        return None
+    written = _parse(status.get("at"))
+    frame = _parse(status.get("lastFrameAt"))
+    ages = [(now - t).total_seconds() for t in (written, frame) if t is not None]
+    if not ages:
+        return None
+    idle = max(ages)
+    if status.get("state") not in ("connected",):
+        anchor = frame or _parse(status.get("connectedAt")) or written
+        if anchor is not None:
+            idle = max(idle, (now - anchor).total_seconds())
+    return max(0.0, idle)
+
+
+class StallPager:
+    """Debounced page state machine: one `page` when idle crosses the threshold inside RTH, then silence until the
+    gateway is delivering again (`recover`, sent only after a page). Outside RTH nothing new pages; a stall paged
+    during RTH still reports its recovery."""
+
+    def __init__(self) -> None:
+        self.paged = False
+        self.paged_at: dt.datetime | None = None
+        self.max_idle_s = 0.0
+
+    def observe(self, now: dt.datetime, idle_s: float | None, *, threshold_s: float, rth: bool) -> str | None:
+        if threshold_s <= 0 or idle_s is None:
+            return None
+        if self.paged:
+            self.max_idle_s = max(self.max_idle_s, idle_s)
+            if idle_s < threshold_s:
+                self.paged = False
+                return "recover"
+            return None
+        if rth and idle_s >= threshold_s:
+            self.paged = True
+            self.paged_at = now
+            self.max_idle_s = idle_s
+            return "page"
+        return None
+
+
+async def page_tick(eng, pager: StallPager, *, now: dt.datetime | None = None, base: Path | None = None) -> str | None:
+    """One evaluation: read the status file, step the pager, journal + escalate on a transition."""
+    import contextlib
+
+    from ... import events as ev
+    from ...desk_alert import escalate
+    now = now or dt.datetime.now(dt.timezone.utc)
+    minutes = float(eng.settings.get("techniques.tip.intake_page_idle_minutes", 3) or 0)
+    st = read_status(base)
+    idle = idle_seconds(st, now)
+    action = pager.observe(now, idle, threshold_s=minutes * 60.0, rth=in_rth(now))
+    if action is None:
+        return None
+    gw = {k: (st or {}).get(k) for k in ("pid", "state", "note", "lastFrameAt", "at", "connectedAt", "reconnects")}
+    if action == "page":
+        title = "Tips intake DOWN"
+        text = (f"The Discord gateway has delivered nothing for {(idle or 0) / 60:.1f} min during market hours "
+                f"(state {gw.get('state')!r}{', ' + str(gw.get('note')) if gw.get('note') else ''}). Tips are not "
+                "reaching the desk - check the gateway window (scripts/discord-intake.ps1).")
+    else:
+        mins = (now - pager.paged_at).total_seconds() / 60 if pager.paged_at else pager.max_idle_s / 60
+        title = "Tips intake recovered"
+        text = (f"The Discord gateway is delivering again (~{mins:.0f} min after the page). Gap recovery "
+                "refetches what the watched channels posted meanwhile.")
+    try:
+        sent = await escalate(eng, title, text, tag="tip-intake-stall",
+                              level="critical" if action == "page" else "info", url="/inbox")
+    except Exception:
+        log.warning("intake page escalation failed", exc_info=True)
+        sent = {}
+    with contextlib.suppress(Exception):
+        await eng.journal.append(getattr(ev, "TIP_INTAKE_PAGED", "TipIntakePaged"),
+                                 {"phase": "stalled" if action == "page" else "recovered",
+                                  "idleSeconds": round(idle or 0, 1), "thresholdMinutes": minutes,
+                                  "maxIdleSeconds": round(pager.max_idle_s, 1), "sent": sent, "gateway": gw},
+                                 aggregate_type="technique", aggregate_id="tip")
+    (log.warning if action == "page" else log.info)("tips intake %s: %s", action, text)
+    return action
+
+
+async def page_loop(eng, *, interval_s: float = 30.0) -> None:
+    """W3.4's own cadence (30 s - the 120 s liveness monitor would add up to two minutes to a 3-minute page)."""
+    pager = StallPager()
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await page_tick(eng, pager)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("intake page check failed")
+        await asyncio.sleep(interval_s)

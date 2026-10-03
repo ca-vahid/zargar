@@ -222,6 +222,15 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.intake_max_images": 4,             # attachments stored + transcribed per message
     "techniques.tip.intake_max_image_bytes": 8 * 1024 * 1024,  # per-attachment size cap (bytes)
     "techniques.tip.intake_vision_calls_per_message": 4,  # paid vision calls per message (primary read + per-image transcriptions)
+    # W1.5 (2026-10-02): the gateway's ingest returns once the signals are RECORDED; the appraisal + lane decisions
+    # run as a tracked background task (off = the old synchronous ingest, the rollback). Orphaned stages (a restart
+    # between record and appraisal) are resumed by the recovery sweep while younger than the max age, else abandoned.
+    "techniques.tip.intake_async_appraisal": True,
+    "techniques.tip.deferred_recovery_max_minutes": 30,
+    "techniques.tip.deferred_recovery_min_age_seconds": 60,
+    # W3.4 (2026-10-02): a gateway idle this long inside RTH (09:30-16:00 ET, trading days) pages push + Telegram +
+    # desk alert, once per stall, with a recovery message (0 = off)
+    "techniques.tip.intake_page_idle_minutes": 3,
     "techniques.tip.discord.watch": [],      # allowlist of DMs/channels the gateway monitors (UI-managed)
     "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
@@ -256,6 +265,27 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.live_parity": False,            # IBKR live/paper books run the Practice policy (shares-first, substitution, geometry gate, mirror)
     "techniques.tip.live_shares_only": True,        # live/paper books trade SHARES only (no IBKR option / multi-leg path)
     "techniques.tip.live_capital_cap": 0.0,         # $ cap on the cost basis of open tip positions in a live/paper book (0 = off)
+    # W6 (2026-10-03): the Tips method bound to several books at once - [] = the single legacy book
+    # (techniques.tip.default_portfolio). Each entry: {portfolioId, role practice|live, enabled, primary, mode auto|proposal,
+    # allowLiveAuto, armAtLevel, mirror, sharesOnly, budgetPerTip, maxOpenPositions, capitalCap, reserveSlots, minBudget,
+    # riskPct, riskBudgetPerTip, maxPremiumPerTip}. Design: docs/techniques/tip/research/2026-10-02-tips-review/E-architecture.md
+    "techniques.tip.books": [],
+    "research.market_events_boot_refresh": True,
+    "ops.host_memory_alert_gb": 1.5,               # W7.2: page below this much free host memory (0 = off)
+    "ops.host_memory_alert_every_min": 30,    # W4.2: an empty event store fetches the official calendars at boot
+    # W4.4 / W1.7 (2026-10-03): earnings by report time. session = BMO/unknown flat at the cutoff of the session before
+    # the report, AMC at the cutoff of the report day; days = the old whole-day rule. A new entry whose earnings exit
+    # is ALREADY due is refused (it would be bought and force-sold minutes later - ORCL 09-09/09-10).
+    "techniques.tip.earnings_exit_timing": "session",
+    "techniques.tip.earnings_flatten_at": "15:45",
+    "techniques.tip.earnings_entry_block": True,
+    "techniques.tip.watch_arms": True,
+    "techniques.tip.live_unattended": True,         # user 2026-10-03: a live book with its own allowLiveAuto decides its cards
+    "techniques.tip.observe_fast_lane": True,       # W3.5: journal TipFastLaneShadow at signal time (no orders)
+    "techniques.tip.decline_without_card_siblings": 3,  # W3.3: a post with >= N branch signals records a skip/watch per branch instead of minting a card to decline (0 = off)              # W2.3: a watch with entry_level + underlying_stop arms at that level
+    "techniques.tip.entry_band_option": 1.10,       # W3.1: option BUY limit <= this x the source's stated premium (0 = off)
+    "techniques.tip.card_ttl_short_minutes": 15,    # W3.2: life of a card on a contract expiring within card_ttl_short_dte
+    "techniques.tip.card_ttl_short_dte": 7,
     "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)
@@ -299,6 +329,13 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.hold_next_open_window_minutes": 15,  # HOLD142-01: first qualified quote inside 09:30 + N min of the EXPECTED next session
     "techniques.tip.hold_next_open_attempts": 40,        # in-window retries (20 s apart, from 09:30) for that first qualified quote
     "techniques.tip.analyst_feasibility_gate": "annotate",  # PROF-01: annotate (record the expression check beside the verdict) | downgrade (an unfittable TAKE becomes WATCH; thesis verdict kept) - a reviewed method decision flips it
+    "techniques.tip.geometry_refit_once": True,          # W1.2 2026-10-02: a pre-entry plan refused ONLY for size gets one automatic re-fit on refreshed evidence (same limit; journaled TipGeometryRefit)
+    "techniques.tip.find_alternatives_enabled": True,    # W2.1 2026-10-02: the analyst's find_alternatives tool (cheaper strike / later expiry / debit vertical / shares that FIT the risk budget; deterministic, no model calls)
+    "techniques.tip.alternatives_strikes_otm": 2,        # W2.1: how many further-OTM strikes of the stated expiry are tried
+    "techniques.tip.alternatives_later_expiries": 2,     # W2.1: how many later expiries (same strike) are tried
+    "techniques.tip.budget_skip_reask": True,            # W2.2: a budget/size skip of a verified priced BTO without find_alternatives (or without a reason per alternative) is re-asked ONCE in the same run
+    "techniques.tip.analyst_prefetch": True,             # W2.4: quote / chain slice / bars summary / positions / earnings fetched in parallel and seeded into the appraisal header
+    "techniques.tip.analyst_prefetch_timeout_s": 6.0,    # W2.4: per-fetch bound (all fetches run concurrently); a timed-out item is labelled, never invented
     "techniques.tip.entry_cohort_delay_tolerance_seconds": 60.0,  # KF83-03: a delayed sample observed later than due + tolerance is LATE (diagnostic, never the delay variant's evidence)
     "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
     "techniques.tip.analyst_max_pending_rules": 6,      # D4 (2026-09-19): pending/disputed rule PROPOSALS shown per run in a separate NON-operative channel (newest first; 0 = none). They never consume the operative budget below
@@ -629,6 +666,14 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
     "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
     "ops.loop_stall_seconds": 2.0,             # event-loop stall watch: log the blocking call site when the loop is silent this long (0 = off)
+    # W1.6 (2026-10-02): host clock vs an HTTP Date reference (HEAD) at startup + daily; journaled ClockSkew,
+    # desk alert (toast + push + Telegram) above the threshold; the system time is never changed
+    "ops.clock_skew_check": True,
+    "ops.clock_skew_at": "08:00",              # ET, every day
+    "ops.clock_skew_alert_ms": 2000,           # |skew| above this escalates (the quote-age guard is 10 s)
+    "ops.clock_skew_ntp_servers": ["time.windows.com", "time.google.com", "time.cloudflare.com",
+                                   "pool.ntp.org", "time.nist.gov"],   # median of a quorum; [] = HTTP only
+    "ops.clock_skew_references": ["https://www.google.com", "https://www.cloudflare.com"],  # HTTP Date fallback
     "options.cboe_cooldown_seconds": 20.0,     # after a CBOE 429, BACKGROUND chain fetches (enrich, research) skip requests this long; entry/position reads are not subject to it (they retry briefly, then the normal refusals apply)
     "technique.arm.quote_exit": True,          # intra-minute safety: exit when the live quote is decisively through the stop
     "technique.arm.quote_exit_excess_r": 0.25,  # "decisively" = beyond the stop by this x planned risk
@@ -786,6 +831,10 @@ class SettingsService:
         if key not in DEFAULTS and not key.startswith("system.") \
                 and _technique_override_canonical(key) is None:
             raise KeyError(f"unknown setting: {key}")
+        if key == "techniques.tip.books" and getattr(self, "books_validator", None) is not None:
+            errs = self.books_validator(value)
+            if errs:
+                raise KeyError("techniques.tip.books: " + "; ".join(errs))
         if key == "trading.mode":
             value = MODE_ALIASES.get(value, value)
             if value not in ("practice", "live"):

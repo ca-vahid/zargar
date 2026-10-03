@@ -122,6 +122,7 @@ class PositionView:
     dte_min: int | None = None           # min days-to-expiry across option legs
     sessions_held: int = 0               # closed TRADING sessions since open
     days_to_event: int | None = None     # e.g. days to earnings (None = unknown)
+    event_due: str | None = None         # W4.4: the timing-aware event exit is due (the reason), None = not due/unknown
     min_dte_floor: int = 1               # execution.min_dte — the platform floor
     iv_ratio: float | None = None        # options: contract IV now / IV at entry (vega-driven gain marker)
 
@@ -408,7 +409,13 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
             return [Decision("time", 1.0, f"stale: {view.sessions_held} sessions held at {fav_r:+.2f}R "
                                           f"(< {float(stale.get('min_r', 0.5)):g}R) - freeing the slot")], moves
     fb = policy.get("flatten_before") or {}
-    if fb and view.days_to_event is not None and view.days_to_event <= int(fb.get("days", 1)):
+    if fb and fb.get("timing") == "session":
+        # W4.4 (2026-10-03): report-time aware - BMO/unknown flattens at the cutoff of the session BEFORE the report,
+        # AMC at the cutoff of the report day (the whole-day rule held Friday longs through Monday-BMO reports and
+        # flattened AMC names a full session early)
+        if view.event_due:
+            return [Decision("event", 1.0, view.event_due)], moves
+    elif fb and view.days_to_event is not None and view.days_to_event <= int(fb.get("days", 1)):
         return [Decision("event", 1.0, f"{fb.get('event', 'event')} in {view.days_to_event} day(s) — flattening")], moves
 
     # ---- 3. profit taking -------------------------------------------------------
@@ -522,3 +529,41 @@ def apply_moves(state: PolicyState, view: PositionView, decisions: list[Decision
     out = advance_premium_state(policy or {}, out, view.net_mark, view.entry_mark,
                                 dte=view.dte_min, iv_ratio=view.iv_ratio)
     return out
+
+
+# ---- W4.4 (2026-10-03): the earnings exit by report time -------------------------------------------------------
+def earnings_exit_at(date_iso: str, timing: str | None, *, at: str = "15:45"):
+    """The ET instant a position must be flat for an earnings report on `date_iso`: BMO (or unknown timing - the
+    conservative read) -> the cutoff of the previous trading session; AMC -> the cutoff of the report day. The cutoff
+    is `at` (HH:MM ET), pulled 15 minutes inside an early close."""
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+
+    from ..marketstructure import market_calendar as mc
+    d = _dt.date.fromisoformat(str(date_iso))
+    if str(timing or "").upper() == "AMC":
+        day = d if mc.is_trading_day(d) else mc.previous_trading_day(d)
+    else:
+        day = mc.previous_trading_day(d)
+    hh, mm = (int(x) for x in str(at or "15:45").split(":"))
+    cut = min(hh * 60 + mm, mc.session_close_minutes(day) - 15)
+    return _dt.datetime.combine(day, _dt.time(cut // 60, cut % 60), tzinfo=ZoneInfo("America/New_York"))
+
+
+def earnings_exit_due(now_et, date_iso: str | None, timing: str | None, *, at: str = "15:45") -> str | None:
+    """Pure: the reason the earnings exit is due at `now_et`, or None. Due from the cutoff until the report has
+    passed (an AMC report day ends at midnight; BMO at that day's open)."""
+    if not date_iso:
+        return None
+    import datetime as _dt
+    try:
+        cut = earnings_exit_at(date_iso, timing, at=at)
+    except Exception:                                  # noqa: BLE001 - a bad date is unknown, never a crash
+        return None
+    d = _dt.date.fromisoformat(str(date_iso))
+    end = _dt.datetime.combine(d + _dt.timedelta(days=1), _dt.time(0, 0), tzinfo=cut.tzinfo)
+    if cut <= now_et < end:
+        tm = str(timing or "unknown").upper()
+        return (f"earnings {date_iso} ({tm}{', timing unknown - treated as before the open' if tm not in ('AMC', 'BMO') else ''})"
+                f" - flat by {cut.strftime('%m-%d %H:%M')} ET")
+    return None

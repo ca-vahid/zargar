@@ -725,9 +725,18 @@ async def detect_incidents(eng, *, portfolio_id: str | None = None, strict: bool
                 ManagedPositionRow.updated_at >= sod))).scalars().all()
             seen = set((await session.execute(
                 select(Event.aggregate_id).where(Event.type == ev.TIP_FAST_STOP_DIAGNOSTIC))).scalars().all())
+        # W6 (2026-10-03): every BOUND Tips book is watched and each incident is scoped to the book that produced it
+        # (a live-book defect pauses the live book, a Practice defect pauses Practice)
+        from . import books as _books
+        _bound = {b.portfolioId for b in _books.resolve_books(eng.settings, eng.positions.portfolio)}
         for r in rows:
             pf = eng.positions.portfolio(r.portfolio_id) or {}
-            if pf.get("kind") != "sim" or (scope_base.get("portfolioId") and r.portfolio_id != scope_base["portfolioId"]):
+            if portfolio_id and r.portfolio_id != portfolio_id:
+                continue
+            if r.portfolio_id in _bound:
+                if pf.get("kind") not in ("sim", "live", "paper") or pf.get("book"):
+                    continue
+            elif pf.get("kind") != "sim" or (scope_base.get("portfolioId") and r.portfolio_id != scope_base["portfolioId"]):
                 continue                                    # research/shadow books and other books: never
             if r.id in seen:
                 continue

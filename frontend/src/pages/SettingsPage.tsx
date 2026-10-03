@@ -6,6 +6,7 @@ import { InfoTip } from "../components/InfoTip";
 import type { Watchlist } from "../types";
 import { Modal } from "../components/Modal";
 import { signOut } from "../lib/auth";
+import { TipBooksEditor } from "../components/TipBooksEditor";
 
 function usePatch() {
   const toast = useStore((s) => s.toast);
@@ -593,6 +594,8 @@ export function SettingsPage() {
             <ToggleRow k="techniques.tip.retro_enabled" label="Nightly self-review" hint="position retros + unfilled-tip batches + lane grading, 17:10 ET" />
             <ToggleRow k="techniques.tip.seen_again_reappraise" label="Re-appraise repeats" hint="a re-posted tip with a live waiting plan gets a fresh appraisal" />
             <ToggleRow k="techniques.tip.seen_again_extends" label="Repeats extend the wait" hint="a re-post pushes the waiting plan's horizon window forward" />
+            <Group>Books - Practice and live together</Group>
+            <TipBooksEditor />
             <Group>Safety</Group>
             <Cells>
               <NumCell k="techniques.tip.auto_min_graded" label="Auto: graded tips needed"

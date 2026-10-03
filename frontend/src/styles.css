@@ -196,6 +196,15 @@ button.brand { background: none; border: 0; padding: 0 4px 0 0; min-height: 40px
   border-radius: var(--radius-sm); padding: 4px 8px; font-size: var(--fs-1);
   width: auto; flex: 0 0 auto;
 }
+/* W6.5: real-order routing is its own switch beside HALT (the workspace select is only a view) */
+.routing-chip {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer;
+  background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 4px 10px; font-size: var(--fs-1);
+}
+.routing-chip .mode-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.routing-chip.on { color: var(--text-1); border-color: var(--down); }
+.routing-chip.on .mode-dot { background: var(--down); }
 .halt-btn {
   background: var(--down); color: var(--on-down); border: none; border-radius: var(--radius-sm);
   font-weight: 700; padding: 6px 14px; cursor: pointer; letter-spacing: 0.4px;
@@ -2771,3 +2780,12 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .risk-grid > span { color: var(--text-2); }
 .risk-grid > b { font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
 .risk-grid .note { font-size: var(--fs-0); margin-top: 4px; }
+
+/* W6: Settings - Tips books (one row per bound account) */
+.tip-books { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.tip-book-row { border-bottom: 1px solid var(--border); padding: var(--sp-2) 0; }
+.tip-book-row.off { opacity: 0.6; }
+.tip-book-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.tip-book-main select { width: auto; }
+.tip-book-main .chk { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-1); white-space: nowrap; }
+.tip-book-actions { display: flex; gap: var(--sp-2); align-items: center; }

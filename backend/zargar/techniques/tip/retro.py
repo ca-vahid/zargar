@@ -234,6 +234,12 @@ async def run_tip_retros(eng, *, client=None, limit: int = 5) -> dict:
     todo: list[dict] = []
     backlog = 0
     oldest_unreviewed = None
+    # W6: one retro per IDEA - a position in a non-primary bound book is the sibling of the primary book's position
+    # (same appraisal, same exit plan); it is tagged without a paid retro
+    from . import books as _books
+    _bs = _books.resolve_books(eng.settings, eng.positions.portfolio)
+    sibling_pids = {b.portfolioId for b in _bs if not b.primary} if not (len(_bs) == 1 and _bs[0].legacy) else set()
+    siblings: list[str] = []
     cursor = None                                     # (updated_at, id) — R2:
     scan_complete = False                             # timestamp ties must not drop rows
     async with eng.sf() as session:
@@ -254,6 +260,9 @@ async def run_tip_retros(eng, *, client=None, limit: int = 5) -> dict:
             for r in rows:
                 if "retro-done" in (r.tags or []):
                     continue
+                if r.portfolio_id in sibling_pids:
+                    siblings.append(r.id)
+                    continue
                 backlog += 1
                 if oldest_unreviewed is None:
                     oldest_unreviewed = r.updated_at
@@ -262,6 +271,13 @@ async def run_tip_retros(eng, *, client=None, limit: int = 5) -> dict:
                                  "tags": list(r.tags or []),
                                  "config": r.config or {}, "state": r.state or {},
                                  "legs": r.legs or []})
+    if siblings:
+        async with eng.sf() as session:
+            for sid in siblings:
+                db = await session.get(ManagedPositionRow, sid)
+                if db is not None:
+                    db.tags = list(db.tags or []) + ["retro-done", "retro-sibling"]
+            await session.commit()
     done = failed = 0
     for row in todo:
         res = await retro_position(eng, row, client=client)

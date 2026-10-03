@@ -202,3 +202,24 @@ is called proof. Documentation and reporting only - nothing here allocates, prom
 - Tools: `tools/tip_extraction_ab.py`, `tools/tip_review_ab.py` (`--rows` saves each case). Record:
   `2026-09-23-cost-levers.md`.
 
+
+## Pre-live observe lanes (2026-10-03, 0.8.59 - plan `2026-10-02-tips-review/PLAN.md`) - OBSERVE, no orders
+
+Every lane journals what it WOULD do; none changes an order. Promotion is a separate user decision on these criteria,
+judged on real fills (never the shadow buy-and-hold proxy) with date-clustered 90% intervals.
+
+- **`fast-lane` (W3.5, `TipFastLaneShadow`)** - a deterministic pre-check at signal time (long open, verification passed,
+  earned source, stated price, live ask <= 1.15x it). Promote when, over >= 30 would-enter signals on >= 10 sessions,
+  (a) the analyst also took >= 70% of them and (b) the ask at signal time beat our actual fill by a mean >= 1% of premium
+  on option fills, net of the extra takes' graded outcome.
+- **`starter-lot` (W2.6, `TipStarterShadow`)** - the 1-lot entry when only the stop width blocked sizing. Promote when
+  >= 25 cases graded on the armed/immediate shadow marks show mean R > 0 with the interval excluding 0.
+- **`second-opinion` (W2.5, `TipSecondOpinionCandidate`)** - judgement skips of verified buys (geometry / reach / chase
+  / identity). Next step is a frozen-replay A/B (`tools/tip_experiment.py`) with an opposite-framing prompt; promote when
+  >= 15 flips grade positive and flips do not lower the take cohort's mean outcome.
+- **`event-policies` E1-E3 (W4.5, `TipEventPolicyShadow`)** - Tier-1 entry window, size-down across Tier-1, short-dated
+  options across Tier-1/earnings. Promote per rule at >= 25 affected trades AND >= 6 distinct Tier-1 events, improving
+  mean R or the worst-decile R without lowering mean R by more than 0.05R (D-events.md §4.4).
+- **Enforced now (fixes, not experiments):** earnings exit by report time + no entry inside the due window (W4.4/W1.7),
+  watch-with-a-level arms (W2.3), option entry band 1.10x the source premium (W3.1), 15-minute cards for <= 7 DTE (W3.2),
+  multi-branch posts decline without minting cards (W3.3), per-book risk keys (W6.6).

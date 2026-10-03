@@ -49,6 +49,9 @@ def build_signal_routes(app, eng, auth, config) -> None:
         # (failed / skipped-over-budget / absent); one whose bytes do not decode
         # as an image is stored as unreadable. Beats imageDataUrl when present.
         attachments: list[dict] | None = None
+        # W1.5 (2026-10-02): return once the signals are recorded; the appraisal runs in the background
+        # (the Discord gateway sets it so its per-channel order is held through extraction only)
+        asyncAppraisal: bool = False
 
     @app.post("/api/ingest/manual", dependencies=[auth])
     async def ingest_manual(body: ManualIngest):
@@ -93,7 +96,7 @@ def build_signal_routes(app, eng, auth, config) -> None:
             image=image, image_media_type=media_type,
             message_id=body.messageId, posted_at=body.postedAt,
             edited_at=body.editedAt, image_count=body.imageCount,
-            attachments=attachments)
+            attachments=attachments, async_appraisal=bool(body.asyncAppraisal))
 
     @app.get("/api/signals/sources", dependencies=[auth])
     async def source_scorecards():

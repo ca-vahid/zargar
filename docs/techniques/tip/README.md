@@ -28,6 +28,28 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 | `HISTORY.md` | superseded state-of-play and "what changed" text from older refreshes | archive |
 | `reviews/` | external review rounds, responses, deploy and incident records | dated records; `2026-09-14-kfin-response.md` (0.7.83–0.7.87, HOLD142, R147, the 2026-09-15 incidents) and `2026-09-16-tmr-plan-record.md` (TMR, INTRA, I175, the 2026-09-16 incident) are the current ledgers |
 
+## State of play (2026-10-03, 0.8.59 - the pre-live build)
+
+Review: `research/2026-10-02-tips-review/FINDINGS.md` (+ appendices A-F); plan with checkboxes: `PLAN.md` there.
+What 0.8.59 changes for the desk:
+- **One method, several books** (`techniques.tip.books`, Settings -> Tips technique -> Books): the analyst appraises
+  once, every bound book (Practice + IBKR paper/live) gets its own card/plan sized by its own budget and caps; trust,
+  retros and the entry study count each idea once (primary book). The Practice/LIVE switch is a VIEW; "Real orders
+  on/off" beside HALT is the routing switch. Runbook: `LIVE-IBKR-RUNBOOK.md`.
+- **Fixes enforced now:** earnings exit by report time (BMO -> flat 15:45 the session before, AMC -> 15:45 report day)
+  and no entry inside that window (armed fires too); a watch that names a level + stop arms it; option buy limit
+  <= 1.10x the source's premium; <= 7 DTE cards live 15 minutes; multi-branch level maps decline without minting a
+  card per branch; per-book RiskGate rate/notional keys; unsettled IBKR sale proceeds never fund a buy; host memory
+  alert below 1.5 GB.
+- **Event calendar v2** (`research/market_events.py`, shared): append-only, tiered, coverage-aware store from the Fed,
+  BEA (fetched) and BLS (official schedule shipped; bls.gov blocks scripts) + two-source earnings (Yahoo + Nasdaq).
+  The analyst header shows tier 1-2 events and the next tier-1 week; every card carries `eventExposure`.
+- **Observe lanes (no orders):** fast lane, starter lot, second-opinion candidates, event policies E1-E3 - criteria in
+  `research/EXPERIMENT-REGISTER.md`.
+- Built in parallel PRs: intake fixes (units check, multiplier, rule-audit errors, shadow-book phantom sells), gateway
+  head-of-line + clock skew + liveness paging, simulated option fill realism, and the analyst's "find another way"
+  (`find_alternatives`, one feasibility authority, prefetched context).
+
 ## State of play (2026-09-23)
 
 - **Live:** 0.8.32 build `63613751` (S21 rev 2, deployed 2026-09-22 16:15 ET after the close); this package is

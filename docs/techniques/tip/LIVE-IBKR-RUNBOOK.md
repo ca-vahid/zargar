@@ -20,7 +20,8 @@ cleared the trust bar). The user chose to go live anyway with a hard cap; this r
 | Auto | analyst "take" self-approves | the same on PAPER; on LIVE it also needs `techniques.tip.allow_live_auto`; "skip"/"watch" cards wait (not declined) |
 | Daily loss | per-book halt `risk.daily_loss_halt_pct` 3% | same: ~$90/day on $3,000 halts new buys on that book only |
 | Stops | venue GTC stop | venue GTC stop at IBKR (regular session only), quantity = held |
-| At-level plans | arm on the book | do NOT arm on live (needs `technique.arm.allow_live_auto`, shared with EM - left off); immediate entries only |
+| At-level plans | arm on the book | arm in the bound book when its binding says `armAtLevel` (PAPER: its own `allowLiveAuto`; LIVE: also the master `techniques.tip.allow_live_auto`) |
+| Both at once (0.8.59, W6) | - | **`techniques.tip.books`**: the analyst appraises each tip ONCE and every bound book gets its own card, sized by its own budget and caps. Practice keeps trading while paper/live trade. The top-bar Practice/LIVE switch is only a VIEW; real-order routing is the separate "Real orders on/off" switch beside HALT (`trading.mode`). |
 
 IBKR adapter (`brokers/ibkr.py`): executor only (the app's Alpaca/Yahoo feed keeps serving every desk), shares only,
 orderRef = our order id, venue rejections reported with IBKR's own error text, fills carry the real commission and a
@@ -42,11 +43,19 @@ executions after every (re)connect. Tests: `tests/test_ibkr_adapter.py`.
 
 1. Confirm the connection: `/api/health` -> `ibkrConnected: true`; journal `BrokerConnected` (accounts: DU...).
 2. Create the book `Tips IBKR Paper` (kind `paper`, venue ibkr) and set, through the journaled `PATCH /api/settings`:
-   `ibkr.portfolio_id` = that book; `techniques.tip.live_parity` = true; `techniques.tip.live_capital_cap` = 3000;
-   `techniques.tip.budget_per_tip` = 500 (PRE-LIVE-PROFILE); `techniques.tip.default_portfolio` = that book.
-3. **`trading.mode` = `live`** (practice mode routes only to simulated books; a paper book needs `live`) - **the user's
+   `ibkr.portfolio_id` = that book; `ibkr.cash_currency` = CAD (the paper account holds CAD; live will be USD);
+   `techniques.tip.live_parity` = true; and bind BOTH books (Settings -> Tips technique -> Books):
+   ```json
+   "techniques.tip.books": [
+     {"portfolioId": "<Tips Practice 09-28>", "role": "practice", "primary": true},
+     {"portfolioId": "<Tips IBKR Paper>", "role": "live", "enabled": true, "allowLiveAuto": true,
+      "budgetPerTip": 500, "capitalCap": 3000, "maxOpenPositions": 6, "armAtLevel": true}
+   ]
+   ```
+   `techniques.tip.default_portfolio` stays on the Practice book (legacy fallback). Practice keeps its own budget.
+3. **Real orders ON** (`trading.mode` = `live`; practice routing sends nothing to a paper/live book) - **the user's
    explicit go is required for this switch.** It does not let any desk auto-trade a live account: those need their own
-   `allow_live_auto` switches, all off.
+   `allow_live_auto` switches, all off. The view switch can stay on Practice or LIVE - it changes nothing.
 4. Watch the session: every entry's IBKR fill + commission, the venue GTC stop appearing in the gateway with the held
    quantity, a stop/target/mirror exit filling, the account sync matching the gateway, no duplicate fills after a
    gateway reconnect (pull the network for 30 s once).
@@ -59,13 +68,16 @@ order; the kill switch, pressed once, blocks a new entry.
 
 1. The user logs IB Gateway into the **live** account (port **4001**); this desk sets `ZARGAR_IBKR_PORT=4001` in
    `backend/.env` and restarts through ZargarRestart (market closed).
-2. Create `Tips IBKR Live` (kind `live`); `ibkr.portfolio_id` and `techniques.tip.default_portfolio` -> it.
-3. **`techniques.tip.allow_live_auto` = true** - the user's explicit go. The Practice book stops receiving Tips ideas.
+2. Create `Tips IBKR Live` (kind `live`); `ibkr.portfolio_id` -> it; `ibkr.cash_currency` = USD; in the books list
+   replace the paper binding with the live one (same caps; `allowLiveAuto` true on the binding).
+3. **`techniques.tip.allow_live_auto` = true** - the user's explicit go (the master switch a kind=live account needs on
+   top of its binding). **The Practice book keeps receiving every Tips idea** - same method, both books.
 4. First day: watch every fill; any `needsAttention`, an unexplained fill or a stuck order -> kill switch, then explain.
 
 ## Rollback (any time)
 
 - Stop new live entries now: the kill switch (HALT) or `techniques.tip.allow_live_auto` = false. Exits keep running
   (reduce-only exits are exempt from the mode gate and the halt).
-- Back to Practice: `techniques.tip.default_portfolio` -> `Tips Practice 09-28`, `trading.mode` -> practice.
+- Back to Practice only: disable the live binding (Settings -> Tips books -> off) or "Real orders off"
+  (`trading.mode` -> practice). Practice never stops.
 - Disconnect IBKR entirely: `ZARGAR_BROKER=sim` + restart (open IBKR stops stay resting at IBKR - manage them in IBKR).

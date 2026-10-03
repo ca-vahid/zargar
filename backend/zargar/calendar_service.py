@@ -125,6 +125,13 @@ class EventCalendar:
             return None
         return (dt.date.fromisoformat(future[0]) - today).days
 
+    async def next_earnings(self, symbol: str) -> tuple[str, str] | None:
+        """(next report date ISO >= today ET, BMO|AMC|unknown), or None when unknown."""
+        rec = await self.get(symbol)
+        today = dt.datetime.now(ET).date()
+        future = [d for d in rec["earnings"] if dt.date.fromisoformat(d) >= today]
+        return (future[0], rec.get("earningsTiming") or "unknown") if future else None
+
     async def days_to_ex_dividend(self, symbol: str) -> int | None:
         rec = await self.get(symbol)
         if not rec["exDividend"]:
