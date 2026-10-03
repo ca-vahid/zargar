@@ -75,6 +75,10 @@ export interface AppState {
       book's total on top"). */
   dashBook: string;
   setDashBook: (id: string) => void;
+  // W6.5 (2026-10-03): the Practice/LIVE switch is a VIEW (this browser); real-order routing is trading.mode on
+  // the server. null = follow trading.mode (the pre-split behaviour) until the viewer picks a view.
+  viewWorkspace: "practice" | "live" | null;
+  setViewWorkspace: (ws: "practice" | "live") => void;
   openOrders: Record<string, Order>;
   recentOrders: Order[];
   executions: Execution[];
@@ -196,6 +200,14 @@ export const useStore = create<AppState>((set, get) => ({
   setDashBook: (id) => {
     try { localStorage.setItem("zargar_dash_curve_book", id); } catch { /* private mode */ }
     set({ dashBook: id });
+  },
+  viewWorkspace: (() => {
+    try { const v = localStorage.getItem("zargar_workspace_view"); return v === "live" || v === "practice" ? v : null; }
+    catch { return null; }
+  })(),
+  setViewWorkspace: (ws) => {
+    try { localStorage.setItem("zargar_workspace_view", ws); } catch { /* private mode */ }
+    set({ viewWorkspace: ws });
   },
   openOrders: {},
   recentOrders: [],

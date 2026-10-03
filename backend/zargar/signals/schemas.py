@@ -277,6 +277,41 @@ class TradeSignal(BaseModel):
                      "unspecified")
 
 
+# A stated price below this fraction of the underlying cannot be an underlying
+# level for a tip (a stock target/stop/entry 75%+ away) — it is a contract's
+# premium (W1.1, 2026-10-02 review: MSFT 1.30 vs 506.62, MU 990, SPY 775 ...).
+PREMIUM_SCALE_FRACTION = 0.25
+
+
+def has_contract_identity(sig: "TradeSignal") -> bool:
+    return bool(sig.strike or sig.expiry or sig.premium or sig.legs
+                or sig.instrument in ("call", "put"))
+
+
+def underlying_scale_ref(sig: "TradeSignal", live_underlying: float | None) -> float | None:
+    """A reference on the UNDERLYING's scale — the live quote, else the strike.
+    Never the stated entry: that is the very value that may be a premium."""
+    if live_underlying and live_underlying > 0:
+        return float(live_underlying)
+    if sig.strike and sig.strike > 0:
+        return float(sig.strike)
+    return None
+
+
+def is_premium_scale(value: float | None, ref: float | None) -> bool:
+    return bool(value and ref and 0 < value < PREMIUM_SCALE_FRACTION * ref)
+
+
+def entry_price_is_underlying(sig: "TradeSignal", live_underlying: float | None) -> bool:
+    """Can `entry_price` be compared with the underlying (price_deviation,
+    price_ordering)? It is underlying by schema contract, but an extraction
+    that put a contract's price there (instrument unspecified, "1.00" on a
+    506 stock) must not be judged against the stock (W1.1)."""
+    if not sig.entry_price:
+        return True
+    return not is_premium_scale(sig.entry_price, underlying_scale_ref(sig, live_underlying))
+
+
 def underlying_price_checks_ok(sig: "TradeSignal",
                                live_underlying: float | None) -> tuple[bool, str]:
     """Can this tip's targets/stop be judged against the UNDERLYING's price?
@@ -284,14 +319,31 @@ def underlying_price_checks_ok(sig: "TradeSignal",
     had 98.87 compared with 1.75 — wrong rejections that then taught the
     analyst wrong lessons.) False = skip every underlying-price check and say
     so; ambiguous units are never guessed."""
+    first = sig.target_price or (sig.target_prices[0] if sig.target_prices else None)
+    vals = [v for v in (first, sig.stop_price) if v]
     if sig.instrument not in ("call", "put"):
+        # W1.1 (2026-10-02 review, D1): "MSFT 505 0dte 1.00 sl .65 tp 1.30"
+        # extracted as instrument=unspecified was parked with "live price
+        # 506.62 already at/past target 1.30" — a premium target judged
+        # against the stock. Undeclared instruments get the same protection:
+        # a stated premium domain, or targets/stop on a premium scale relative
+        # to the underlying (live quote, else the strike), are the contract's
+        # prices and never meet the stock price.
+        if sig.price_domain == "premium":
+            return False, "targets/stop are premium-denominated (the contract's own price)"
+        if sig.price_domain == "underlying" or not vals:
+            return True, ""
+        ref = underlying_scale_ref(sig, live_underlying)
+        if ref and any(is_premium_scale(v, ref) for v in vals):
+            what = ("the tip names a contract (strike/expiry/premium) and its "
+                    if has_contract_identity(sig) else "")
+            return False, (f"{what}target/stop are premium-scale vs the underlying "
+                           f"({ref:g}) — treated as the contract's prices")
         return True, ""
     if sig.price_domain == "underlying":
         return True, ""
     if sig.price_domain == "premium":
         return False, "targets/stop are premium-denominated (the contract's own price)"
-    first = sig.target_price or (sig.target_prices[0] if sig.target_prices else None)
-    vals = [v for v in (first, sig.stop_price) if v]
     if not vals:
         return True, ""                       # no targets/stop: nothing to misjudge
     # null domain (Codex follow-up R4, 2026-09-08): a DOCUMENTED compatibility
@@ -302,7 +354,8 @@ def underlying_price_checks_ok(sig: "TradeSignal",
     # levels unlabeled ("stop 102" on a 100.50 stock) and dropping those threw
     # away real stated stops. Finding 1 stays PARTIALLY OPEN on this point
     # until extraction labels dominate the flow.
-    anchor = sig.entry_price or live_underlying
+    anchor = (sig.entry_price if entry_price_is_underlying(sig, live_underlying)
+              else None) or live_underlying or sig.strike
     und = bool(anchor) and all(0.5 * anchor <= v <= 2.0 * anchor for v in vals)
     prem = bool(sig.premium) and all(0.2 * sig.premium <= v <= 5.0 * sig.premium
                                      for v in vals)

@@ -24,30 +24,40 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
 - [ ] **W1.1 Units check (D1).** `not_past_target` / price-position checks compare a premium target with the stock price
   when `instrument=unspecified`. Rule: if the tip carries a strike or contract and the stated prices are premium-scale
   (below a fraction of the underlying), treat them as premium. Test with the MSFT 505 0DTE message (09-28).
-- [ ] **W1.2 One feasibility authority (D2).** `check_feasibility` (analyst tool) and the geometry gate compute the same
+- [x] **W1.2 One feasibility authority (D2).** `check_feasibility` (analyst tool) and the geometry gate compute the same
   thing through ONE pure function (stop finalisation + per-unit risk + qty). The analyst sees the exact qty the gate
   will allow. If the gate still refuses at submission (quote moved), it returns the fitting qty/stop for one automatic
   re-size instead of expiring the card.
-- [ ] **W1.3 Contract multiplier unknown (D8).** Default 100 for standard US equity options when the chain omits it;
+- [x] **W1.3 Contract multiplier unknown (D8).** (PR #313) Default 100 for standard US equity options when the chain omits it;
   refuse only on a known non-standard deliverable.
 - [ ] **W1.4 Sim option fill realism (D3).** A simulated option BUY never fills below the decision bid/ask band that the
   live NBBO would allow (fill at the ask-side quote seen after latency, never below the limit by more than the live
   spread allows). Re-mark the three affected fills in the review notes (not in the books - books are append-only).
-- [ ] **W1.5 Gateway head-of-line blocking (D4).** Per-channel lock held through extraction only; the appraisal runs
+- [x] **W1.5 Gateway head-of-line blocking (D4).** Per-channel lock held through extraction only; the appraisal runs
   async after the signal is recorded (ordering stays per channel at extraction). Workers 2 → 6.
-- [ ] **W1.6 Clock (D5).** Startup + 08:00 ET skew check against an NTP/HTTP Date reference, journaled `ClockSkew`;
+  *Built 2026-10-02 (branch claude/tips-w1-gateway):* the gateway sends `asyncAppraisal` and runs `--workers 6`;
+  `/api/ingest/manual` answers once extraction + verification + the signal rows are recorded (content `extracted`
+  = the ACK point) and the post-record stage (shadow books, appraisal, lane, auto-approve, cohort, review/finish)
+  runs as one tracked task per message (`TipAppraisalDeferred` / `...Done`). Durable marker
+  `extraction.deferredStage`; the recovery sweep resumes an orphan (< 30 min, never a second card) or abandons it
+  (`TipDeferredStageRecovered`). A close/trim/update_stop recorded while the appraisal ran refuses the card
+  (`TipLaneDecided lane=refused`). Rollback: `techniques.tip.intake_async_appraisal=false` or `--sync-appraisal`.
+- [x] **W1.6 Clock (D5).** Startup + 08:00 ET skew check against an NTP/HTTP Date reference, journaled `ClockSkew`;
   desk alert above 2 s; runbook step to enable Windows time sync (user, one command).
-- [ ] **W1.7 Earnings entry consistency (D7 / E0).** No new tip entry when the exit policy would flatten it before the
+  *Built 2026-10-02:* `zargar/clockskew.py` (NTP quorum via `tools/clock_health`, HTTP `Date` HEAD fallback),
+  `ops.clock_skew_*` settings, `/api/health` `local.clockSkewMs`, escalation via `zargar/desk_alert.py`; runbook in
+  docs/OPERATIONS.md "Host clock" (the w32time step is still the user's).
+- [x] **W1.7 Earnings entry consistency (D7 / E0).** (tip-time, armed-fire and armed auto entries) No new tip entry when the exit policy would flatten it before the
   next session (`days_to_earnings <= flatten_before.days`); journaled `TipLaneDecided lane=refused reason=earnings_window`.
-- [ ] **W1.8 Shadow book quarantine (D9).** Quarantine "Shadow: tt" and "Shadow: ab (armed)"; fix the cause (sells
+- [x] **W1.8 Shadow book quarantine (D9).** (cause fixed in PR #313; quarantine at deploy) Quarantine "Shadow: tt" and "Shadow: ab (armed)"; fix the cause (sells
   without a matching lot) so FIFO never goes short in a shadow book.
-- [ ] **W1.9 Recovery-sweep gates (D10).** The recovery sweep and the main intake share one `_decide_auto` helper (trust,
+- [x] **W1.9 Recovery-sweep gates (D10).** The recovery sweep and the main intake share one `_decide_auto` helper (trust,
   geometry, integrity). Integrity incidents scoped to the order's own book.
 - [ ] **W1.10 Rule-audit judge failures (D12).** Surface the real error (empty message today), retry with backoff.
 
 ## W2 - Analyst: find another way to take the trade
 
-- [ ] **W2.1 Fit-or-reshape before a budget skip.** When the stated contract does not fit the risk budget, the
+- [x] **W2.1 Fit-or-reshape before a budget skip.** When the stated contract does not fit the risk budget, the
   application (deterministically, no extra model turns) builds the alternatives and hands them to the analyst in one
   tool result `find_alternatives`:
   1. same expiry, cheaper strikes (one-two strikes further OTM, liquid, spread within the fill band);
@@ -57,47 +67,50 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
   Each with qty that fits, max loss, break-even, spread %, and `preview_payoff` numbers. The analyst picks one or skips
   with a concrete reason against each. Live books receive the shares alternative (shares-only policy). Journaled
   `TipAlternativesOffered` / chosen alternative on the opinion (`opinion.reshapedFrom`).
-- [ ] **W2.2 Prompt contract.** A verified, priced BTO may be skipped for budget only after `find_alternatives`; the
+- [x] **W2.2 Prompt contract.** A verified, priced BTO may be skipped for budget only after `find_alternatives`; the
   verdict JSON carries `alternativesConsidered`. Missing → one automatic re-ask (no human).
-- [ ] **W2.3 Watch becomes an armed level.** A `watch` with a named level + stop is armed at-level (ARM-PLAN `at_level`)
+- [x] **W2.3 Watch becomes an armed level.** A `watch` with a named level + stop is armed at-level (ARM-PLAN `at_level`)
   until the tip horizon; a watch without a level stays a note. Re-appraisal on touch is the normal fire path.
-- [ ] **W2.4 Prefetch + seeded context.** Quote, chain slice, bars summary, positions and earnings for the extracted
+- [x] **W2.4 Prefetch + seeded context.** Quote, chain slice, bars summary, positions and earnings for the extracted
   ticker are fetched in parallel with extraction and seeded into the prompt (saves 1-2 turns, ~8-15 s; earnings checked
   on 100% of appraisals instead of 5%).
-- [ ] **W2.5 Second opinion on judgement skips (observe).** For a verified BTO skipped on geometry/reach/chase/identity
+- [x] **W2.5 Second opinion on judgement skips (observe: candidates journaled; the frozen-replay A/B is the next step).** For a verified BTO skipped on geometry/reach/chase/identity
   while "passing filters", a short opposite-framing re-check runs in frozen replay first (A/B on the frozen capture);
   promotion = flips with positive graded outcome on >= 15 cases.
-- [ ] **W2.6 Starter lane (observe).** Where only stop width fails, journal the 1-lot "starter" alternative as a shadow
+- [x] **W2.6 Starter lane (observe).** Where only stop width fails, journal the 1-lot "starter" alternative as a shadow
   decision; graded before it can trade.
-- [ ] **W2.7 Do not raise `analyst_max_tools`** (evidence: 1 of 369 runs hit it).
+- [x] **W2.7 Do not raise `analyst_max_tools`** (evidence: 1 of 369 runs hit it).
 
 ## W3 - Timing and entries
 
-- [ ] **W3.1 Entry limit referenced to the source.** Option BUY limit = min(decision ask, source price × 1.10 (options)
+- [x] **W3.1 Entry limit referenced to the source.** (option band 1.10x; no cancel-reprice - 49 of 51 fills came within 3.5 s) Option BUY limit = min(decision ask, source price × 1.10 (options)
   / 1.02 (shares), decision ask + 1 tick); cancel-and-reprice once after 20 s; never market. Removes the >5% overpays.
-- [ ] **W3.2 Card TTL by lane.** 0DTE/weekly cards live 15 min, swings 2 h; push at creation with a one-tap approve link;
+- [x] **W3.2 Card TTL by lane.** 0DTE/weekly cards live 15 min, swings 2 h; push at creation with a one-tap approve link;
   expire on the source's own trim/close (exists). Practice unattended keeps auto-deciding.
-- [ ] **W3.3 Pre-market level maps.** A multi-branch map post becomes ONE watch-map record (no per-branch proposal rows);
+- [x] **W3.3 Pre-market level maps.** (posts with >= 3 branch signals decline on the record without a card per branch) A multi-branch map post becomes ONE watch-map record (no per-branch proposal rows);
   its levels arm after 09:30 through W2.3 when the analyst names them.
-- [ ] **W3.4 Intake liveness paging.** Gateway idle > 3 min in RTH → push + Telegram + desk alert (escalation, not just
+- [x] **W3.4 Intake liveness paging.** Gateway idle > 3 min in RTH → push + Telegram + desk alert (escalation, not just
   a journal line).
-- [ ] **W3.5 Fast lane (observe).** Deterministic pre-check for clean priced BTOs from earned-auto sources, booked as a
+  *Built 2026-10-02:* `intake_liveness.page_loop` (30 s; `StallPager` = one page per stall + a recovery message),
+  `techniques.tip.intake_page_idle_minutes` (3), journaled `TipIntakePaged`. (The old monitor's `eng.alert` call
+  never existed on the engine - that is why 59 `TipIntakeStalled` rows reached nobody.)
+- [x] **W3.5 Fast lane (observe).** Deterministic pre-check for clean priced BTOs from earned-auto sources, booked as a
   shadow decision beside the analyst's; promotion criteria preregistered (fill-vs-quote gain net of extra takes).
 
 ## W4 - Event calendar v2 (shared platform store)
 
-- [ ] **W4.1 Append-only `market_events` store** with revisions, tiers, per-source coverage windows (`unknown` outside
+- [x] **W4.1 Append-only `market_events` store** with revisions, tiers, per-source coverage windows (`unknown` outside
   coverage, never "no event"), `as_of` reads. Backfill the three journaled verified-event versions + 09-11 CPI + 09-16
   FOMC.
-- [ ] **W4.2 Fetchers** (nightly + 08:00 ET): Fed FOMC calendar, BLS iCal (CPI/NFP/PPI/JOLTS), BEA (GDP/PCE), Treasury
+- [x] **W4.2 Fetchers** (BLS ships as the official 2026 schedule: bls.gov blocks scripted downloads) (nightly + 08:00 ET): Fed FOMC calendar, BLS iCal (CPI/NFP/PPI/JOLTS), BEA (GDP/PCE), Treasury
   (tier 3 label only), earnings from two sources (`confirmed` when they agree within a day, BMO/AMC kept). Journaled
   `MarketEventsFetched`.
-- [ ] **W4.3 Horizon-aware exposure** `TipEventExposure` on every proposal/arm/adoption: tier-1/2 events and earnings
+- [x] **W4.3 Horizon-aware exposure** (`event_ack` in the opinion schema still open) `TipEventExposure` on every proposal/arm/adoption: tier-1/2 events and earnings
   inside the position's planned life. Analyst header shows tier 1-2 + the ticker's earnings only (fixes the 221/236
   label noise). Opinion field `event_ack`.
-- [ ] **W4.4 Timing-aware earnings flatten (E4, enforce).** BMO → flatten 15:45 prior session; AMC → 15:45 same day.
+- [x] **W4.4 Timing-aware earnings flatten (E4, enforce).** BMO → flatten 15:45 prior session; AMC → 15:45 same day.
   This *removes* today's premature full-day-early exits.
-- [ ] **W4.5 Event policies E1-E3, E5 (observe).** Tier-1 entry window, size-down across tier-1, short-dated options
+- [x] **W4.5 Event policies E1-E3 (observe; E5 open).** Tier-1 entry window, size-down across tier-1, short-dated options
   across tier-1, arms carry their event (re-appraise before the window). Journal `TipEventPolicyShadow`; promote per the
   D-appendix rule (>= 25 affected trades and >= 6 tier-1 events).
 
@@ -106,7 +119,7 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
 - [ ] **W5.1 Premium bleed exit review.** 0 wins in 11. Replace the fixed bleed with a thesis-anchored rule: the
   underlying's stop governs; the premium stop becomes a catastrophic floor (e.g. -60%) plus theta/time cap. Ship the
   current rule beside the new one in observe for 10 sessions, then switch (Practice); live is shares-only anyway.
-- [ ] **W5.2 Size toward budget.** Find why median planned risk is 57% of budget (integer floors, notional/name caps,
+- [x] **W5.2 Size toward budget - investigated 2026-10-03: capital-bound, not arithmetic.** The reserve glide (free cash / 3 slots) and the $2,000/tip cap bind before the $100 risk budget (MSTR: risk allowed 24 sh, cash 10); a $1,000+ share is an integer floor. Sizing up is a capital decision for the user (e.g. size to risk with notional capped by max_position_pct). Find why median planned risk is 57% of budget (integer floors, notional/name caps,
   analyst qty hints) and fix the arithmetic; report utilisation per trade on the desk report.
 - [ ] **W5.3 Per-source option permission earned on graded outcomes** (options allowed for a source only after its
   graded record clears the bar; default shares). Practice keeps measuring every source in shadow.
@@ -115,22 +128,22 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
 ## W6 - One method, many books (Practice + live together)
 
 Design in appendix E §5. Items:
-- [ ] **W6.1 `techniques.tip.books` bindings** + validator + `resolve_books`/`knob` (empty = today).
-- [ ] **W6.2 Fan-out**: appraise once; `create_from_signal` per binding with per-book budget, qty rescale, geometry,
+- [x] **W6.1 `techniques.tip.books` bindings** + validator + `resolve_books`/`knob` (empty = today).
+- [x] **W6.2 Fan-out**: appraise once; `create_from_signal` per binding with per-book budget, qty rescale, geometry,
   caps, vehicle policy; `TipBookFanOut` journaled; `_decide_auto` per proposal.
-- [ ] **W6.3 Armed plans keyed `(signal, book)`**; live arms carry the binding's acknowledgement.
-- [ ] **W6.4 Dedupe once-per-idea work**: trust, retros, entry study, card alerts, cohort rows count the primary book.
-- [ ] **W6.5 Routing split**: `trading.live_routing` (server switch) + per-binding `enabled`; the toggle becomes a client
+- [x] **W6.3 Armed plans keyed `(signal, book)`**; live arms carry the binding's acknowledgement.
+- [x] **W6.4 Dedupe once-per-idea work**: trust, retros, entry study, card alerts, cohort rows count the primary book.
+- [x] **W6.5 Routing split** (`trading.mode` stays the routing key; the UI switch became a per-browser view): `trading.live_routing` (server switch) + per-binding `enabled`; the toggle becomes a client
   view; reduce-only exemption on the multi-leg gate too. `trading.mode` kept in sync for Options Cartel (their code
   untouched).
-- [ ] **W6.6 Per-book risk keys**: order-rate and technique day-notional keyed per book.
-- [ ] **W6.7 UI**: Tips cards show a book chip + sibling outcome; Settings "Tips books" editor; routing indicator by HALT.
+- [x] **W6.6 Per-book risk keys**: order-rate and technique day-notional keyed per book.
+- [x] **W6.7 UI**: Tips cards show a book chip + sibling outcome; Settings "Tips books" editor; routing indicator by HALT.
 
 ## W7 - Live readiness
 
-- [ ] **W7.1 Cash-account settlement guard**: spendable = settled cash (T+1); no buy funded by unsettled proceeds that
+- [x] **W7.1 Cash-account settlement guard** (sync = settled cash; sale proceeds since the last sync are excluded; IBKR Canada rules still to confirm with IBKR): spendable = settled cash (T+1); no buy funded by unsettled proceeds that
   would be sold before settlement (good-faith rule) - enforced on the live book; confirm IBKR Canada specifics (user).
-- [ ] **W7.2 Host**: memory guard + alert below 1.5 GB free; checklist to move the runtime off the crowded machine.
+- [x] **W7.2 Host** (alert below 1.5 GB; moving the runtime is the user's call): memory guard + alert below 1.5 GB free; checklist to move the runtime off the crowded machine.
 - [ ] **W7.3 Paper session** (runbook): Practice + IBKR paper bound together, both auto, pass criteria in the runbook.
 - [ ] **W7.4 Go-live**: live binding, $3k cap, shares only, user's explicit go for routing + live auto.
 

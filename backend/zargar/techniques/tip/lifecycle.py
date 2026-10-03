@@ -294,7 +294,11 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
         else:
             policy["dte_close"] = max(1, int(settings.get("execution.min_dte", 1)))
     if plan.get("avoidEarnings", True):
-        policy["flatten_before"] = {"event": "earnings", "days": 1}
+        if str(settings.get("techniques.tip.earnings_exit_timing", "session")) == "session":
+            policy["flatten_before"] = {"event": "earnings", "days": 1, "timing": "session",
+                                        "at": str(settings.get("techniques.tip.earnings_flatten_at", "15:45"))}
+        else:
+            policy["flatten_before"] = {"event": "earnings", "days": 1}
     return policy
 
 

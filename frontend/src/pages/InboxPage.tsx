@@ -12,6 +12,7 @@ import type { AnalystRun, AnalystStep, Proposal, RawContentItem, Signal, SourceS
 import { useViewport } from "../lib/viewport";
 import { Sheet } from "../components/Sheet";
 import { Modal } from "../components/Modal";
+import { useWorkspace, workspaceOf } from "../lib/workspace";
 
 /* The Tips page (redesigned 2026-08-28): the composer is the product — paste
    text or a screenshot, the app extracts the trade AND the source, verifies it
@@ -479,22 +480,32 @@ function ApprovalsTab() {
   const hit = (p: any) => !needle
     || [p.symbol, p.context?.sourceName, p.context?.vehicle?.display, p.rationale, p.status]
       .some((x) => String(x ?? "").toUpperCase().includes(needle));
-  const hist = ((histState.data ?? []) as any[]).filter((p) => p.status !== "pending");
-  const rows: any[] = show === "pending" ? pending
-    : show === "decided" ? hist : [...pending, ...hist];
+  // W6.5: cards follow the workspace VIEW (Practice / LIVE); every book keeps trading in the background
+  const ws = useWorkspace();
+  const portfolios = useStore((s) => s.portfolios);
+  const inView = (p: any) => {
+    const kind = portfolios.find((x) => x.id === p.portfolioId)?.kind;
+    return !kind || workspaceOf(kind) === ws;
+  };
+  const hist = ((histState.data ?? []) as any[]).filter((p) => p.status !== "pending" && inView(p));
+  const pendingInView = pending.filter(inView);
+  const otherPending = pending.length - pendingInView.length;
+  const rows: any[] = show === "pending" ? pendingInView
+    : show === "decided" ? hist : [...pendingInView, ...hist];
   const shown = rows.filter(hit);
   // an approval must never just VANISH: with nothing pending, the freshest
   // decided cards stay in view so "where did it go?" answers itself
-  const recent = show === "pending" && pending.length === 0 && !needle
+  const recent = show === "pending" && pendingInView.length === 0 && !needle
     ? hist.slice(0, 5) : [];
   return (
     <div className="panel mb">
       <div className="panel-head">Approvals
-        <span className="sub">nothing piles up — pending proposals expire on their TTL; the decided ones are history below</span>
+        <span className="sub">nothing piles up — pending proposals expire on their TTL; the decided ones are history below
+          {otherPending > 0 ? ` · ${otherPending} pending in the ${ws === "live" ? "Practice" : "LIVE"} view` : ""}</span>
         <div className="seg sm" role="group" aria-label="Show" style={{ marginLeft: "auto" }}>
           {(["pending", "decided", "all"] as const).map((k) => (
             <button key={k} className={show === k ? "on" : ""} onClick={() => setShow(k)}>
-              {k}{k === "pending" && pending.length ? ` · ${pending.length}` : ""}
+              {k}{k === "pending" && pendingInView.length ? ` · ${pendingInView.length}` : ""}
             </button>
           ))}
         </div>
@@ -605,6 +616,8 @@ function ProposalCard({ p }: { p: Proposal }) {
   const rp = p.context?.riskPlan;
   const rd = p.context?.readiness;
   const openAnalystRun = useStore((s) => s.openAnalystRun);
+  const book = (p.context as any)?.book as { role?: string; primary?: boolean } | undefined;
+  const bookName = useStore((s) => s.portfolios.find((x) => x.id === p.portfolioId)?.name);
   const isOpt = p.secType === "OPT";
   const mult = isOpt || p.secType === "SPREAD" ? 100 : 1;
   const cost = p.limitPrice ? p.limitPrice * p.qty * mult : null;
@@ -662,6 +675,12 @@ function ProposalCard({ p }: { p: Proposal }) {
       <div className="head">
         <SymIcon sym={vehicle?.underlying ?? p.symbol} size={26} />
         <span className="sym">{vehicle?.underlying ?? p.symbol}</span>
+        {book && (
+          <span className={`status-pill ${book.role === "live" ? "bad" : "dim"}`}
+            title={`This card trades in ${bookName ?? p.portfolioId}. The same idea may have a card in each bound book (Settings - Tips books).`}>
+            {book.role === "live" ? "LIVE" : "Practice"}{bookName ? ` · ${bookName}` : ""}
+          </span>
+        )}
         {isOpt && vehicle?.optionType && (
           <span className={`status-pill ${vehicle.optionType === "call" ? "ok" : "bad"}`}>
             {vehicle.optionType === "call" ? "call · bullish" : "put · bearish"}

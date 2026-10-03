@@ -110,6 +110,40 @@ class JudgeCancelled(asyncio.CancelledError):
         self.calls = list(calls)
 
 
+# W1.10: transient provider failures (timeouts, 5xx, overloaded, rate limits,
+# dropped connections) get a bounded in-call retry with backoff before the
+# chunk is recorded failed (the cycle's daily backoff is the next layer).
+TRANSIENT_BACKOFF_S = (5.0, 20.0)
+_TRANSIENT_STATUS = {408, 409, 429, 500, 502, 503, 504, 529}
+_TRANSIENT_NAMES = {"APITimeoutError", "APIConnectionError", "InternalServerError",
+                    "OverloadedError", "RateLimitError", "ServiceUnavailableError",
+                    "ConnectError", "ReadTimeout", "RemoteProtocolError"}
+
+
+def describe_error(exc: BaseException) -> str:
+    """Type + repr (+ HTTP status): never an empty string, whatever str() says."""
+    status = getattr(exc, "status_code", None)
+    return (f"{type(exc).__name__}"
+            f"{f' [{status}]' if status else ''}: {exc!r}")
+
+
+def is_transient_error(exc: BaseException, *, batched: bool = False) -> bool:
+    """Worth retrying now? A batch-WAIT timeout is not (it already waited
+    the batch window; another round would hold the maintenance tick for an
+    hour) — the cycle's scope backoff retries it on its own terms."""
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return not batched
+    if isinstance(exc, ConnectionError):
+        return True
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and status in _TRANSIENT_STATUS:
+        return True
+    if type(exc).__name__ in _TRANSIENT_NAMES:
+        return True
+    msg = str(exc).lower()
+    return "overloaded" in msg or "timed out" in msg
+
+
 async def _judge(client, *, model: str, system: str, header: str, cap: int,
                  max_tokens_ceiling: int = MAX_TOKENS_CEILING, settings=None) -> tuple[RuleAuditOpinion, list[dict]]:
     """One audit judgement, measured (KB-08): returns the parsed opinion and
@@ -127,35 +161,55 @@ async def _judge(client, *, model: str, system: str, header: str, cap: int,
     last_error: str = ""
     ceiling = max(1, int(max_tokens_ceiling))
     cap = min(max(1, int(cap)), ceiling)
+    from . import batching as _batching
+    from .model_policy import effort_kw as _effort_kw
+    batched = _batching.enabled(settings)
+    # W1.10: the outer guard sits ABOVE the batch wait so the batch's own
+    # descriptive TimeoutError wins the race (the bare wait_for timeout has an
+    # EMPTY str() — 2026-09-29: 20 of 22 judge calls journaled "judge call failed: ")
+    wait_s = _batching.timeout_s(settings, AUDIT_TIMEOUT_S) + (
+        2 * float(_batching.POLL_S) + 30.0 if batched else 0.0)
     for attempt in (1, 2):
-        try:
-            with llm_stats.timed() as _t:
-                # 2026-09-23: through the Batch API (50% list) when techniques.tip.batch_jobs is on - maintenance can wait
-                from . import batching as _batching
-                from .model_policy import effort_kw as _effort_kw
-                resp = await asyncio.wait_for(
-                    _batching.create(client, settings, custom_id=f"audit-{attempt}", model=model, max_tokens=cap,
-                                     system=system, messages=[{"role": "user", "content": header}],
-                                     **_effort_kw(settings, "techniques.tip.analyst_effort", model)),
-                    timeout=_batching.timeout_s(settings, AUDIT_TIMEOUT_S))
-        except asyncio.CancelledError as exc:          # shutdown/restart mid-call
-            calls.append({"attempt": attempt, "maxTokens": cap, "error": "cancelled", "model": model})
-            raise JudgeCancelled(calls) from exc
-        except Exception as exc:                       # timeout / provider error
-            calls.append({"attempt": attempt, "maxTokens": cap, "error": str(exc)[:160], "model": model})
-            raise JudgeError(f"judge call failed: {exc}", calls) from exc
+        transient_try = 0
+        while True:
+            try:
+                with llm_stats.timed() as _t:
+                    # 2026-09-23: through the Batch API (50% list) when techniques.tip.batch_jobs is on - maintenance can wait
+                    resp = await asyncio.wait_for(
+                        _batching.create(client, settings, custom_id=f"audit-{attempt}", model=model, max_tokens=cap,
+                                         system=system, messages=[{"role": "user", "content": header}],
+                                         **_effort_kw(settings, "techniques.tip.analyst_effort", model)),
+                        timeout=wait_s)
+                break
+            except asyncio.CancelledError as exc:          # shutdown/restart mid-call
+                calls.append({"attempt": attempt, "maxTokens": cap, "error": "cancelled", "model": model})
+                raise JudgeCancelled(calls) from exc
+            except Exception as exc:                       # timeout / provider error
+                desc = describe_error(exc)
+                transient = is_transient_error(exc, batched=batched)
+                calls.append({"attempt": attempt, "maxTokens": cap, "error": desc[:300], "model": model,
+                              "errorType": type(exc).__name__, "transient": transient,
+                              **({"transientRetry": transient_try} if transient_try else {})})
+                if transient and transient_try < len(TRANSIENT_BACKOFF_S):
+                    delay = TRANSIENT_BACKOFF_S[transient_try]
+                    transient_try += 1
+                    log.warning("rule audit judge transient failure (%s) - retry %d/%d in %.0fs",
+                                desc, transient_try, len(TRANSIENT_BACKOFF_S), delay)
+                    await asyncio.sleep(delay)
+                    continue
+                raise JudgeError(f"judge call failed: {desc}", calls) from exc
         llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms, retried=attempt > 1)
         u = getattr(resp, "usage", None)
         stop = getattr(resp, "stop_reason", None)
         calls.append({"attempt": attempt, "model": model,                       # COST-R3: stamped on every attempt
-                      **({"batch": True} if _batching.enabled(settings) else {}),
+                      **({"batch": True} if batched else {}),
                       "inputTokens": int(getattr(u, "input_tokens", 0) or 0) if u else None,
                       "outputTokens": int(getattr(u, "output_tokens", 0) or 0) if u else None,
                       "cacheReadTokens": int(getattr(u, "cache_read_input_tokens", 0) or 0) if u else None,
                       "cacheWriteTokens": int(getattr(u, "cache_creation_input_tokens", 0) or 0) if u else None,
                       "stopReason": str(stop) if stop else None, "latencyMs": round(_t.ms, 1),
-                      "maxTokens": cap})
-        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+                      "maxTokens": cap, **({"transientRetries": transient_try} if transient_try else {})})
+        text ="".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         i, j = text.find("{"), text.rfind("}")
         try:
             return RuleAuditOpinion.model_validate_json(text[i:j + 1]), calls

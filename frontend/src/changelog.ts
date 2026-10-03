@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.58";
+export const APP_VERSION = "0.8.59";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,18 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.59",date:"2026-10-03",title:"Tips: Practice and live together, and the fixes from the month review",items:[
+    {tag:"improved",text:"More decisions without you: a live book that has its own auto approval decides its cards the way Practice does, and a defined-risk spread is sized by the risk budget so it can approve itself instead of waiting."},
+    {tag:"major",text:"Tips can trade several books at once: the analyst judges each tip once, and the Practice book and a linked IBKR account each get their own card, sized by that book's own budget and caps (Settings > Tips technique > Books)."},
+    {tag:"improved",text:"The Practice/LIVE switch now only changes what you see. Sending real orders is its own switch next to HALT, so Practice keeps running while live trades."},
+    {tag:"new",text:"When the first option is too expensive for the risk budget, the analyst is shown cheaper strikes, a later expiry, a debit spread and shares that do fit, and must weigh them before skipping. Its size check and the app's now use the same arithmetic."},
+    {tag:"new",text:"A shared event calendar from official sources (Fed, BEA, BLS) plus two-source earnings dates. The analyst sees the coming week's major releases, and every card lists the events inside the trade's planned life."},
+    {tag:"improved",text:"Earnings exits follow the report time: before-the-open reports flatten at 15:45 the session before, after-the-close reports at 15:45 that day. No new entry is made once that exit is due."},
+    {tag:"improved",text:"A 'watch' that names a price and a stop now waits at that price. Cards on contracts expiring within a week live 15 minutes. Option buys pay at most 10% over the tipster's price. Level maps with many branches no longer create a card per branch."},
+    {tag:"fixed",text:"Option buys with an unstated instrument were rejected by comparing the option's price with the stock's price. Standard contracts with no multiplier listed now price at 100. Simulated option fills can no longer fill far below the ask."},
+    {tag:"improved",text:"Discord intake no longer queues messages behind another tip's appraisal (6 workers). The app now checks its clock, pages you when intake goes quiet in market hours, and warns when the machine is low on memory."},
+    {tag:"fixed",text:"Research shadow books can no longer sell shares they do not hold. Rule-audit failures show their real error and retry. Each book now has its own order-rate and daily-notional limits."},
+  ]},
   {version:"0.8.58",date:"2026-10-02",title:"Tips: ready for IBKR (paper first, then live)",items:[
     {tag:"new",text:"Tips can trade an Interactive Brokers account automatically, the same way as the Practice book: shares only, a hard dollar cap, settled US-dollar cash, the same daily loss stop."},
     {tag:"improved",text:"The IBKR connection reports rejected orders with IBKR's own reason, records real commissions, never counts a fill twice, reconnects on its own and catches up after a restart."},

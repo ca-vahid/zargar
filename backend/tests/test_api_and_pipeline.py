@@ -1773,3 +1773,34 @@ async def test_health_reports_unknown_when_build_identity_is_unavailable(app_cli
     assert result.status_code == 200
     assert result.json()['ok'] is True and result.json()['build'] == 'unknown'
     assert result.json()['version'] == zargar.__version__
+
+
+class _FakeAnthropicWatchLevel(_FakeAnthropicAtLevel):
+    """Scripted analyst: WATCH, naming the level it would buy and the stop (W2.3)."""
+
+    async def create(self, **kw):
+        self.calls += 1
+        return _FakeAnthropicResp([_Block(type="text", text=(
+            '{"verdict": "watch", "instrument": "option",'
+            ' "contract": "AAPL261016C00240000", "contract_label": "AAPL 240C 2026-10-16",'
+            ' "limit_price": 4.6, "quantity": 2, "entry_level": 225.0,'
+            ' "exit_targets": [245.0], "exit_fractions": [0.5],'
+            ' "underlying_stop": 220.0, "max_hold_sessions": 7,'
+            ' "rationale": "Right idea, wrong price - I would buy the 225 retest.",'
+            ' "confidence": 0.5}'))])
+
+
+async def test_watch_with_a_level_and_stop_arms_that_level(app_client):
+    """W2.3 (2026-10-03): 23 watches produced 0 arms; a watch that names its level + stop now arms it."""
+    client, eng = app_client
+    from zargar.techniques.tip.runner import attach_tip_runner
+    await attach_tip_runner(eng)
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    eng.signals_service._analyst_client = _FakeAnthropicWatchLevel()
+    out = await run_pipeline(eng, canned_extraction())
+    item = out[0]
+    assert item["proposal"] is None and item["armed"] is not None
+    assert [t["entry"] for t in item["armed"]["triggers"]] == [225.0]
+    an = item["signal"]["extraction"]["analyst"]
+    assert an["verdict"] == "watch" and an["watchArmed"] is True

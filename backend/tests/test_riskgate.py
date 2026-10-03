@@ -213,9 +213,11 @@ async def test_order_rate_limit():
     quotes.set("AAPL", 100.0)
     gate = make_gate(quotes=quotes)
     for i in range(10):
-        gate.note_submission("SYM" + str(i), "BUY", 1, "LMT")
+        gate.note_submission("SYM" + str(i), "BUY", 1, "LMT", portfolio_id="p1")
     verdict = await gate.evaluate(intent(), P)
     assert not check(verdict, "order_rate").passed
+    # W6 (2026-10-03): the rate is per BOOK - another book's burst never starves this one
+    assert check(await gate.evaluate(intent(portfolio_id="p2"), P), "order_rate").passed
 
 
 async def test_daily_loss_halt():

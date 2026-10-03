@@ -290,3 +290,48 @@ replay variant (request-assembly parity proven unpaid) before any change.
 **Knobs added since the charter:** `techniques.tip.analyst_feasibility_gate`, `verified_events`,
 `recap_route`, `recap_max_tools`, `entry_cohort_*`, `frozen_capture_context`, `frozen_variants`,
 `hold_study_enabled` + windows, `mk_ownbook_mode` / `mk_ownbook_sources` (README "State of play").
+
+## 11. Fit or reshape before a budget skip (2026-10-02, W1.2 / W2.1 / W2.2 / W2.4)
+
+From the 2026-10-02 review (`research/2026-10-02-tips-review/`, appendix B): 15 of 90 takes expired on the
+risk budget, 9 of them after passing the analyst's own `check_feasibility`, and among budget skips the
+analyst almost never looked for another expression. User direction: look for another way to take the trade;
+no new blockers.
+
+- **One feasibility authority (W1.2).** `check_feasibility`, `preview_payoff`, `find_alternatives` and the
+  pre-entry geometry gate gather their inputs through ONE function (`techniques/tip/risk_evidence.py::gather`:
+  reference price + freshness, 15m bars, the proposal book's risk budget, contract multiplier, delta of known
+  age) and compute through ONE pure function (`geometry.fit_expression`: geometry rules -> FINAL stop -> unit
+  loss -> floor(B / unit)); `plan_risk` is built on it. The analyst sees `declaredStop` vs `finalStop` and the
+  quantity the gate will allow (purchase/premium/contract caps included); evidence problems the gate would
+  review-gate are listed as `gateEvidence`.
+- **Re-fit once at the gate.** A pre-entry plan refused ONLY for size (proposal time, submission, armed fire)
+  is recomputed once on refreshed evidence at the same limit (`techniques.tip.geometry_refit_once`, journaled
+  `TipGeometryRefit`). A quantity that now fits proceeds resized; otherwise the refusal stands as before, with
+  the stop at which one unit WOULD fit recorded as a diagnostic - never applied (tightening the analyst's
+  invalidation is a different trade; W2.6 observes it).
+- **`find_alternatives` (W2.1).** Deterministic, no model call: the stated expiry 1-2 strikes further OTM
+  (liquid: two-sided, spread <= 10 %, OI >= 100; limit at the ask inside the price collar = the fill band), the
+  same strike at the next 1-2 expiries, a debit vertical of the stated contract (short leg at/after the first
+  target; venue-dependent; under the Practice geometry gate a spread card waits for a person), shares at the
+  structure stop (long ideas). Each: qty, planned risk, max loss, break-even, spread %, fill band, payoff
+  scenarios and the exact `vehicle` fields. Live shares-only books (and shares-first sources) get the shares
+  alternative only. `check_feasibility` with qty 0 points at it and attaches its result when it can.
+- **Choosing.** A take of an alternative carries `alternativeChosen`; the desk copies its vehicle into the
+  opinion exactly as a normal take (the proposal path trades it - an analyst SHARES take of an option tip is
+  now proposed as shares) and records `reshapedFrom` + `reshape`; `TipAlternativesOffered` journals the list,
+  `alternativesConsidered` and the choice.
+- **Prompt contract (W2.2).** A verified, priced buy-to-open may be skipped/watched for budget or size only
+  after `find_alternatives`, with `alternativesConsidered` naming every fitting id and a concrete reason.
+  A budget skip without it is re-asked ONCE inside the same run, with the desk-built alternatives in the
+  message (`techniques.tip.budget_skip_reask`); the re-ask is recorded as `budgetReask` on the opinion.
+- **Prefetch (W2.4).** Quote, a chain slice around the stated contract, a 1h bars summary, our positions in the
+  ticker and the earnings date are fetched concurrently while the run assembles its knowledge, each bounded by
+  `techniques.tip.analyst_prefetch_timeout_s`, and seeded as `PREFETCHED MARKET CONTEXT` between VERIFICATION
+  and the rulebook (per-run text: after the cached rulebook block in the stable-first order; kept verbatim by
+  the frozen rebuild, `manifest.seededText`). The earnings line is always present (date, none known, or why
+  unknown); `opinion.prefetch` records what arrived. Never in historical mode.
+
+**Knobs:** `geometry_refit_once`, `find_alternatives_enabled`, `alternatives_strikes_otm`,
+`alternatives_later_expiries`, `budget_skip_reask`, `analyst_prefetch`, `analyst_prefetch_timeout_s`
+(all `techniques.tip.*`, defaults on).

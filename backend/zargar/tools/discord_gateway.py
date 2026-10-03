@@ -540,7 +540,7 @@ class Gateway:
                  *, ingest: bool, dump: bool, bots_only: bool,
                  author_id: str, channel_id: str, include_self: bool = False,
                  status_minutes: float = 15.0, all_dms: bool = False,
-                 backfill: int = 25) -> None:
+                 backfill: int = 25, workers: int = 6) -> None:
         self.token = token
         self.api = api
         self.session_token = session_token
@@ -575,6 +575,11 @@ class Gateway:
         self._queue: asyncio.Queue | None = None
         self._chan_locks: dict[str, asyncio.Lock] = {}
         self._dropped = 0
+        # W1.5 (2026-10-02 Tips review): the per-channel lock is held only until the app has RECORDED the signal
+        # (the ingest asks for `asyncAppraisal` - the analyst runs after the app answers), so one slow appraisal no
+        # longer queues the next message; 6 workers keep a burst across channels moving (was 2)
+        self.workers = max(1, int(workers))
+        self.async_appraisal = True
         # EOD-01 (2026-09-14): LIVENESS is a first-class fact. A user-token
         # session receives dispatch frames continuously (presence, typing,
         # messages across every guild); a connected socket that delivers no
@@ -631,7 +636,7 @@ class Gateway:
                 self._http = http
                 self._queue = asyncio.Queue(500)
                 workers = [asyncio.create_task(self._worker(http, headers))
-                           for _ in range(2)]
+                           for _ in range(self.workers)]
                 retry = asyncio.create_task(self._retry_loop(http, headers))
                 poll = asyncio.create_task(self._watch_loop(http, headers))
                 peek = asyncio.create_task(self._peek_loop(http, headers))
@@ -1250,12 +1255,15 @@ class Gateway:
         print(f"[{dt.datetime.now():%H:%M:%S}] EM #{rec['channelName'] or rec['channelId']}: "
               f"{tag} {flatten_message(msg)[:80]!r}")
 
-    async def _ingest_message(self, http, headers, msg: dict, source_name: str) -> dict:
+    async def _ingest_message(self, http, headers, msg: dict, source_name: str, *,
+                              async_appraisal: bool | None = None) -> dict:
         """Post one message (text + its supported attachment set) to
         /api/ingest/manual — the shared path for live alerts AND 'process last
         message'. Every attachment travels with a stable id and either its
         bytes or an explicit failed/skipped status (KFIN-07). Returns a
-        summary of what the pipeline did (for the process-result report)."""
+        summary of what the pipeline did (for the process-result report).
+        `async_appraisal` (W1.5): the app answers once the signals are recorded and appraises in the background -
+        the live path's default; 'process last message' passes False so its report carries the analyst's run."""
         text = flatten_message(msg)
         attachments = await fetch_attachments_for_ingest(http, collect_attachments(msg))
         has_bytes = any(a.get("dataUrl") for a in attachments)
@@ -1282,7 +1290,8 @@ class Gateway:
                     "messageId": str(msg.get("id") or "") or None,
                     "postedAt": str(msg.get("timestamp") or "") or None,
                     "editedAt": str(msg.get("edited_timestamp") or "") or None,
-                    "imageCount": len(attachments) or None}
+                    "imageCount": len(attachments) or None,
+                    "asyncAppraisal": bool(self.async_appraisal if async_appraisal is None else async_appraisal)}
             if attachments:
                 body["attachments"] = [{k: v for k, v in a.items() if k != "url"}
                                        for a in attachments]
@@ -1351,7 +1360,7 @@ class Gateway:
         print(f"[{dt.datetime.now():%H:%M:%S}] processing last message of {channel_id} as {src}")
         await self._mirror(http, headers,
                            [mirror_record(msgs[0], src, entry.get("guildName") or None)])
-        res = await self._ingest_message(http, headers, msgs[0], src)
+        res = await self._ingest_message(http, headers, msgs[0], src, async_appraisal=False)
         await report({"author": describe_author(msgs[0]),
                       "text": flatten_message(msgs[0])[:200], **res})
 
@@ -1408,6 +1417,10 @@ def main() -> None:
                    help="mirror this many recent messages per WATCHED channel on startup (0 = off)")
     p.add_argument("--status-minutes", type=float, default=15.0,
                    help="proof-of-life line every N minutes (0 = off)")
+    p.add_argument("--workers", type=int, default=int(os.environ.get("ZARGAR_GATEWAY_WORKERS", "6") or 6),
+                   help="delivery workers (W1.5: 6; per-channel order is kept by the channel lock)")
+    p.add_argument("--sync-appraisal", action="store_true",
+                   help="ask the app to appraise BEFORE answering (the pre-W1.5 behaviour; rollback)")
     p.add_argument("--idle-seconds", type=float, default=180.0,
                    help="force a reconnect when no frame arrives for this long (EOD-01; 0 = off)")
     p.add_argument("--log-file", default=os.environ.get("ZARGAR_GATEWAY_LOG", "logs/discord-gateway.log"),
@@ -1433,7 +1446,8 @@ def main() -> None:
                  bots_only=a.from_bots_only, author_id=a.author_id,
                  channel_id=a.channel_id, include_self=a.include_self,
                  status_minutes=a.status_minutes, all_dms=a.all_dms,
-                 backfill=a.backfill)
+                 backfill=a.backfill, workers=a.workers)
+    gw.async_appraisal = not a.sync_appraisal
     gw.idle_seconds = float(a.idle_seconds or 0) or 10 ** 9
     try:
         asyncio.run(gw.run())

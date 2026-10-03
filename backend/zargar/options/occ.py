@@ -157,3 +157,29 @@ def contract_multiplier(symbol: str | None) -> int | None:
     and return None: unknown metadata, which the geometry gate review-gates
     instead of assuming 100."""
     return MULTIPLIER if parse(symbol) is not None else None
+
+
+def resolve_multiplier(symbol: str | None, stated=None, *,
+                       non_standard: bool = False) -> tuple[float | None, str]:
+    """The multiplier to price a contract with, and where it came from (W1.3,
+    2026-10-02 review: two INTC takes expired on "contract multiplier unknown"
+    because the vehicle carried no metadata).
+
+    A positive stated multiplier wins. Otherwise a standard US equity/ETF
+    contract (an OCC symbol whose root is letters only — strict or the short
+    `ROOT YYMMDD C|P STRIKE` spelling) is the standard 100. Unknown (None)
+    only when the data POSITIVELY says the deliverable is non-standard
+    (`non_standard`, or an adjusted root such as ``AAPL1`` that is not a
+    standard OCC identity) or the symbol cannot be read as a contract."""
+    if stated is not None:
+        try:
+            m = float(stated)
+        except (TypeError, ValueError):
+            m = 0.0
+        if m > 0:
+            return m, "stated"
+    if non_standard:
+        return None, "non-standard deliverable"
+    if parse_loose(symbol) is None:
+        return None, "not a standard OCC contract (adjusted root or unreadable symbol)"
+    return float(MULTIPLIER), "standard-us-default"

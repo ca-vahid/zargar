@@ -2744,3 +2744,74 @@ regular session). Now `parse_rfc3339_ms` caches the whole-second epoch per (seco
 Bit-identical results (`tests/test_alpaca_fastpath.py`: 20k random stamps, both DST switches); 15.9 -> 6.1 us per trade
 message. It does not fix host memory pressure - that is still the first cause.
 
+
+### Practice and live books at once; the mode switch is a view; per-book risk keys - 2026-10-03 (Tips desk, 0.8.59)
+
+- **`techniques.tip.books`** binds the Tips method to several books (design: `docs/techniques/tip/research/2026-10-02-tips-review/E-architecture.md`).
+  The analyst appraises once; each bound book gets its own proposal / armed plan, sized and gated by that book's own knobs
+  (`techniques/tip/books.py`; a `contextvars` binding lets deep helpers - the geometry risk budget - read per-book values).
+  Empty list = the old single book. Journal `TipBookFanOut` records what every book got and why.
+- **The top-bar Practice/LIVE switch is a VIEW** (per browser, `localStorage`). Real-order routing is still `trading.mode`
+  on the server, now shown as its own "Real orders on/off" switch beside HALT. With routing on, sim/shadow books keep
+  filling exactly as before. Other desks that read `trading.mode` (Options Cartel's arming gate) see the same value as
+  before - their code is untouched; the only change is that the UI no longer flips it when someone changes the view.
+- **RiskGate keys per book:** `risk.max_orders_per_minute` counts orders per BOOK, and the technique / tag day-notional
+  caps are keyed `tech:<id>@<pid>` / `tag:<t>@<pid>`. One technique running Practice + live must not let Practice (or a
+  burst of shadow-book orders) consume the live book's budget. Each book keeps its own runaway brake.
+- **Multi-leg routing gate**: a pair of reduce-only legs (closing a held spread) is exempt from the mode gate, as single
+  reduce-only orders already were.
+- **Earnings exit by report time** (`execution/policies.py::earnings_exit_at/earnings_exit_due`, opt-in per position via
+  `flatten_before.timing = "session"`; only Tips sets `flatten_before`): BMO / unknown -> flat at 15:45 ET of the session
+  before the report, AMC -> 15:45 of the report day (early closes pull it inside the close). The whole-day rule it
+  replaces held a Friday long through a Monday-BMO report and sold AMC names a session early.
+
+### A shadow book never sells a lot it does not hold - 2026-10-02 (Tips desk, platform; W1.8)
+
+The 2026-10-02 review found two live shadow books ("Shadow: tt", "Shadow: ab (armed)") with SELL executions and no
+matching lot. `OrderManager` now guards every SHADOW portfolio: a closing sell (shares - shadow books never short
+shares -, a reduce-only exit, or an option `*_TO_CLOSE`) is capped at place time to the held quantity (tagged
+`shadow:close`; resting sells are not subtracted so an exit stop is never refused because a target limit rests); zero
+held = `REJECTED_RISK` with `ShadowSellRefused` journaled. At fill
+time a closing sell or bracket child fills at most the held lot (an excess is not booked, journaled, the order
+cancelled), and a sell that takes the lot flat cancels the book's other resting sells of that symbol (the dangling
+bracket child that would otherwise short later). Opening option legs (a spread's `SELL_TO_OPEN`) and every non-shadow
+book are untouched. Tests: `tests/test_tips_w1_intake.py`. Existing books are quarantined by a human step.
+
+### Intake answers once recorded; host clock skew; desk escalation - 2026-10-02 (Tips desk, W1.5/W1.6/W3.4)
+
+- **`/api/ingest/manual` `asyncAppraisal`** (Tips only): the Discord gateway's per-channel order now covers extraction
+  + verification + the signal row; the analyst appraisal and every lane decision after it run as a tracked background
+  task with a durable `extraction.deferredStage` marker that the tips recovery sweep resumes or abandons. The gateway
+  ACK point is unchanged in meaning (the app answered 200 = the message is durably recorded) and the EM forward path
+  (`/api/technique/ingest/message`, per-destination `emDone`) is untouched. Gateway workers 2 -> 6 (`--workers`).
+- **`ClockSkew`** (platform, `zargar/clockskew.py`): engine startup + daily `ops.clock_skew_at`, NTP quorum first,
+  HTTP `Date` fallback, alert above `ops.clock_skew_alert_ms`; `/api/health` `local.clockSkewMs`. Measurement only -
+  the app never sets the clock and no freshness tolerance moved (rule 2 of the 2026-09-21 entry above stands).
+  `AppConfig.clock_skew_probe` (tests: False) keeps suites off the network.
+- **`zargar/desk_alert.escalate`** (platform): toast (`technique` topic `alert`) + web push + Telegram in one call; the
+  bus message carries `pushed: true` so `PushService` does not push it twice. Used by `ClockSkew` and the Tips intake
+  pager (`TipIntakePaged`, RTH idle > `techniques.tip.intake_page_idle_minutes`).
+
+### Simulated option fills: the root cause of the three "below the limit" Tips fills, plus a latency hole - 2026-10-03 (Tips desk, W1.4; shared `brokers/sim.py`)
+
+The 2026-10-02 Tips review flagged three Practice option BUYs filled far under their limit and the decision ask (MRNA
+165C 0.75 vs ask 2.01 on 09-17; AAOI 09-11 120C 2.90 vs limit 3.30 on 09-08; DAL 11-20 90C 1.56 vs limit 1.76 on
+09-10). Read-only check of the runtime rows: MRNA's fill receipt shows `opra` 0.65 / 0.75 seconds after a 1.90 / 2.00
+OPRA band (the E17-01 audit, `docs/techniques/tip/reviews/2026-09-17-mrna-quote-audit.md`); AAOI and DAL predate the
+fill-receipt table (no evidence row), but DAL's own minute bars traded 1.72-1.83 then, another book's market buy one
+minute earlier paid 1.7604 (= ask 1.76 + 2 bps), and the following sampled bars carry a 1.55 print that never traded
+on the exchange bars; AAOI's 10:52 ET minute opened 3.35 and closed 3.50 (closes 3.00-3.50 for the next eight minutes) with an
+earlier 2.89 print at 10:26 - a reconstruction for AAOI/DAL, not a receipt. Same mechanism in all
+three: `QuoteCache._apply_overlay` recentred the real-time OPRA band on a stale chart-feed `last` and kept
+`source="opra"`; the simulator then filled the marketable-looking limit at the bent ask. **Fixed 2026-09-17 by E17-01
+(v0.8.11)**: venue bands are never recentred and a recentred chain estimate is `derived:` and refused. Every Practice
+option limit filled > 5% better than its limit since then was checked: each was priced on a raw OPRA band (a gap at
+the open, or a wide one-lot book - the latter is the separate `sim_max_option_spread_pct` knob, still off).
+The ledger is NOT rewritten (append-only); the three results are re-marked in the review notes.
+
+Residual hole closed here (options only; shares unchanged): the sim fill lane is a queue, so a quote RECEIVED before
+the order's latency window ended (the decision quote itself) still priced the fill whenever it was dequeued after
+`eligible_at`. Now an option order is priced only by a quote with `ts >= eligible_at` - the NBBO observed after
+latency; a BUY limit fills at that ask capped at the limit, a SELL at that bid floored at the limit, and every
+identity / freshness check of `quote_rejection` still applies. Tests: `tests/test_w14_sim_option_fill_realism.py`
+(the three cases replayed through QuoteCache -> SimExecutor, the SELL mirror, the latency rule).

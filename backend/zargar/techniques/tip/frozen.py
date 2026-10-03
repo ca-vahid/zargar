@@ -73,7 +73,8 @@ def manifest_from_components(*, header: str, system: str, today_line: str,
                              lotto_line: str, verification: dict, tip: dict, policy,
                              siblings=None, historical_note=None, header_mode: str | None = None,
                              recap_read: dict | None = None, max_tools: int | None = None,
-                             candidate: str | None = None, compact_prefix: str | None = None) -> dict:
+                             candidate: str | None = None, compact_prefix: str | None = None,
+                             seeded_text: str | None = None) -> dict:
     """The EXACT context of one live appraisal, kept as components so a
     frozen replay rebuilds the header verbatim and can swap ONE block
     (rules / notes) for a knowledge variant. Called by the analyst behind
@@ -84,6 +85,9 @@ def manifest_from_components(*, header: str, system: str, today_line: str,
         "system": system, "systemSha": _sha(system),
         "todayLine": today_line, "rulesText": rules_text, "notesText": notes_text,
         "historyText": history_text, "lottoLine": lotto_line,
+        # W2.4: the per-run prefetched market block (between VERIFICATION and the rulebook; kept verbatim by the
+        # exact rebuild, re-inserted by the reconstructed one)
+        "seededText": seeded_text or None,
         "verification": {"passed": verification.get("passed"),
                          "park": verification.get("park"),
                          "shadow_only": verification.get("shadow_only"),
@@ -187,6 +191,7 @@ def _rebuild_header(manifest: dict, *, rules_text: str, notes_text: str,
     header += (f"TIP: {json.dumps(tip)}\n"
                f"VERIFICATION: {json.dumps({k: ver.get(k) for k in ('passed', 'park', 'shadow_only')})} "
                f"failed checks: {ver.get('failedChecks') or []}\n"
+               + str(manifest.get("seededText") or "")
                + _RULES_MARK + rules_text
                + _NOTES_MARK + notes_text
                + "\nTHIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "

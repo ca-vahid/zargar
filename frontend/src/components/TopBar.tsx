@@ -5,7 +5,7 @@ import { netWorthByCurrency, useStore } from "../store";
 import { ConfirmDialog, PromptDialog } from "./Modal";
 import { SymbolSearch, type SymbolHit } from "./SymbolSearch";
 import { useLiveTotal } from "../lib/liveEquity";
-import { workspaceOf } from "../lib/workspace";
+import { useLiveRouting, useWorkspace, workspaceOf } from "../lib/workspace";
 import { useViewport } from "../lib/viewport";
 import { Sheet } from "./Sheet";
 import { IconSearch } from "./icons";
@@ -18,13 +18,17 @@ const MODES = [
   { value: "practice", label: "Practice" },
   { value: "live", label: "LIVE" },
 ];
-// The switch is a WORKSPACE: it scopes every account-shaped view (money, accounts,
-// blotter, armed plans) AND gates order routing (practice rejects real-account orders).
+// The switch is a WORKSPACE VIEW (W6.5, 2026-10-03): it scopes every account-shaped view (money, accounts,
+// blotter, armed plans) in this browser only. Real-order routing is its own switch next to HALT (trading.mode on
+// the server) - Practice and the live books keep trading whichever view is on screen.
 
 export function TopBar() {
   const connected = useStore((s) => s.connected);
   const halt = useStore((s) => s.halt);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();                       // the VIEW
+  const routing = useLiveRouting();                  // real orders route to live/paper accounts
+  const setView = useStore((s) => s.setViewWorkspace);
+  const [confirmRoutingOff, setConfirmRoutingOff] = useState(false);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const portfolios = useStore((s) => s.portfolios);
   const broker = useStore((s) => s.broker);
@@ -69,16 +73,13 @@ export function TopBar() {
   const applyMode = async (value: string) => {
     try {
       await api.patchSettings({ "trading.mode": value });
-      toast("info", `Trading mode: ${value}`);
+      toast("info", value === "live" ? "Real-order routing ON" : "Real-order routing OFF");
     } catch (e: any) {
       toast("error", e.message);
     }
   };
 
-  const changeMode = (value: string) => {
-    if (value === "live") setConfirmLive(true);
-    else void applyMode(value);
-  };
+  const changeMode = (value: string) => setView(value === "live" ? "live" : "practice");
 
   const doHalt = async (reason: string) => {
     setPromptHalt(false);
@@ -142,18 +143,31 @@ export function TopBar() {
     <>
       {confirmLive && (
         <ConfirmDialog
-          title="Switch to LIVE mode?"
+          title="Turn on real-order routing?"
           danger
-          confirmLabel="Go live"
+          confirmLabel="Route real orders"
           body={
             <p style={{ margin: 0 }}>
-              Real orders will route to your brokerage accounts (SnapTrade / IBKR).
-              Every order still passes the risk gate, and real-money submits ask
-              for confirmation.
+              Orders for live and paper accounts (SnapTrade / IBKR) will route to the broker. Every order still
+              passes the risk gate. This does not change which workspace you see.
             </p>
           }
           onConfirm={() => { setConfirmLive(false); void applyMode("live"); }}
           onCancel={() => setConfirmLive(false)}
+        />
+      )}
+      {confirmRoutingOff && (
+        <ConfirmDialog
+          title="Turn off real-order routing?"
+          confirmLabel="Stop real orders"
+          body={
+            <p style={{ margin: 0 }}>
+              New orders for live and paper accounts are refused. Exits that only close a position still route.
+              Practice keeps trading.
+            </p>
+          }
+          onConfirm={() => { setConfirmRoutingOff(false); void applyMode("practice"); }}
+          onCancel={() => setConfirmRoutingOff(false)}
         />
       )}
       {confirmResume && (
@@ -215,7 +229,14 @@ export function TopBar() {
           onClick={() => setSearchOpen(true)}>
           <IconSearch size={20} />
         </button>
-        <button className={`halt-btn ${halt.engaged ? "halted" : ""}`} onClick={toggleHalt}
+        <button type="button" className={`routing-chip ${routing ? "on" : ""}`}
+        onClick={() => (routing ? setConfirmRoutingOff(true) : setConfirmLive(true))}
+        title={routing ? "Real orders route to live/paper accounts — click to turn off"
+                       : "Real orders to live/paper accounts are blocked — click to turn on"}
+        aria-label={routing ? "Real-order routing on" : "Real-order routing off"}>
+        <span className="mode-dot" />{routing ? "Real orders on" : "Real orders off"}
+      </button>
+      <button className={`halt-btn ${halt.engaged ? "halted" : ""}`} onClick={toggleHalt}
           aria-label={halt.engaged ? "Resume trading" : "Halt trading"}>
           {halt.engaged ? "RESUME" : "HALT"}
         </button>
@@ -326,8 +347,8 @@ export function TopBar() {
       )}
       <div className={`mode-indicator mode-indicator--${mode}`}
         title={mode === "live"
-          ? "LIVE workspace — you see real accounts only, and real orders route to your brokerages. Switch to Practice to see the simulator."
-          : "Practice workspace — you see the simulator only, and orders to real accounts are blocked. Switch to LIVE for real accounts."}>
+          ? "LIVE view — you see real accounts. Switching the view never stops or starts trading."
+          : "Practice view — you see the simulator. Switching the view never stops or starts trading."}>
         <select className="mode-select" value={mode} onChange={(e) => changeMode(e.target.value)}
           aria-label="Workspace">
           {MODES.map((m) => (
@@ -335,6 +356,13 @@ export function TopBar() {
           ))}
         </select>
       </div>
+      <button type="button" className={`routing-chip ${routing ? "on" : ""}`}
+        onClick={() => (routing ? setConfirmRoutingOff(true) : setConfirmLive(true))}
+        title={routing ? "Real orders route to live/paper accounts — click to turn off"
+                       : "Real orders to live/paper accounts are blocked — click to turn on"}
+        aria-label={routing ? "Real-order routing on" : "Real-order routing off"}>
+        <span className="mode-dot" />{routing ? "Real orders on" : "Real orders off"}
+      </button>
       <button className={`halt-btn ${halt.engaged ? "halted" : ""}`} onClick={toggleHalt}
         aria-label={halt.engaged ? "Resume trading" : "Halt trading"}>
         {halt.engaged ? "RESUME" : "HALT"}

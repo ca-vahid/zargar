@@ -292,6 +292,11 @@ class SimExecutor(Executor):
                             evidence=self.quote_evidence(q, now)))
                     w.waiting_reason = reason
                     continue
+                if sec == "OPT" and q.ts < w.eligible_at:
+                    # W1.4 (2026-10-03): an option fill is priced only by a quote OBSERVED after the simulated
+                    # latency. The fill lane is a queue: a quote received before (or at) submission - i.e. the
+                    # decision quote itself - used to price the fill whenever it was dequeued after eligible_at.
+                    continue
                 reason = self.quote_rejection(o, q, now)
                 if reason:
                     if reason != w.waiting_reason:
