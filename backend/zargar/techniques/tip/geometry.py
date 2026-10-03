@@ -170,6 +170,101 @@ def size_to_budget(*, budget: float, unit_loss: float | None, qty_requested: int
     return fit, f"resized {q} → {fit} so that {fit} × ${unit_loss:,.0f} ≤ ${budget:,.0f} risk budget"
 
 
+FIT_VERSION = "fit-v1"
+
+
+def fit_expression(*, direction: str, vehicle: str, entry_ref: float, exit_plan: dict, bars: list, settings,
+                   premium: float, multiplier: float = 1.0, option_type: str | None = None,
+                   delta: float | None = None, budget: float) -> tuple[dict, dict]:
+    """W1.2 (2026-10-02): THE feasibility authority - one pure function for the analyst's `check_feasibility` /
+    `find_alternatives` AND the pre-entry geometry gate (`plan_risk`). The 2026-10-02 review found 9 analyst takes
+    that passed the analyst's own feasibility check and were then refused by the gate: the analyst sized at the stop
+    it DECLARED, the gate at the stop it FINALIZED (the adoption-geometry rules re-place a stop inside the width floor
+    or inside recent structure). Both now call this: geometry (sign, width, structure) -> FINAL stop -> unit loss
+    (explicit units) -> how many units fit B. Returns (final_exit_plan, fit) where `fit` carries the final stop, the
+    repairs, the unit loss, its basis and `qtyByRisk` (floor(B / unitLoss), None without an estimate)."""
+    from .lifecycle import check_exit_geometry
+    plan = dict(exit_plan or {})
+    fit: dict = {"version": FIT_VERSION, "estimatorVersion": ESTIMATOR_VERSION, "direction": direction,
+                 "vehicle": vehicle, "entryRef": float(entry_ref or 0.0), "budget": float(budget or 0.0),
+                 "multiplier": float(multiplier or 0.0), "premium": float(premium or 0.0), "decisions": [],
+                 "meta": {}}
+    fit["originalStop"] = float(plan["underlyingStop"]) if plan.get("underlyingStop") else None
+    final, repairs = check_exit_geometry(plan, direction=direction, entry_ref=float(entry_ref or 0.0),
+                                         bars=bars or [], settings=settings)
+    fit["repairs"] = list(repairs)
+    fit["finalStop"] = float(final["underlyingStop"]) if final.get("underlyingStop") else None
+    dist = stop_distance(direction, entry_ref, fit["finalStop"])
+    fit["stopDistance"] = dist
+    fit["widenPct"], fit["severity"] = None, "log"
+    if fit["originalStop"] is not None and fit["finalStop"] is not None:
+        d0 = stop_distance(direction, entry_ref, fit["originalStop"])
+        if d0 and d0 > 0 and dist and dist > d0:
+            fit["widenPct"] = round((dist - d0) / d0 * 100.0, 2)
+            mat = float(settings.get("techniques.tip.geometry_resize_threshold_pct", DEFAULT_MATERIALITY_PCT) or 0)
+            fit["severity"] = "review" if fit["widenPct"] >= mat else "log"
+    if vehicle == "option":
+        ul, basis, meta = option_unit_loss(
+            premium=float(premium or 0.0), delta=delta, dist=dist, multiplier=float(multiplier or 0.0),
+            option_type=str(option_type or ("put" if direction == "short" else "call")),
+            direction=direction, premium_stop_pct=plan.get("premiumStopPct"))
+        fit["meta"] = meta
+        fit["stressUnitLoss"] = round(float(premium or 0.0) * float(multiplier or 0.0), 4)
+        if basis == "delta-linear" and not meta.get("thesisMatch", True):
+            fit["decisions"].append(f"vehicle/thesis mismatch: a {option_type} for a {direction} thesis")
+    else:
+        if dist is None:
+            ul, basis = None, "none"
+        elif dist <= 0:
+            ul, basis = None, "none"
+            fit["decisions"].append("stop on the wrong side after repair — no size")
+        else:
+            ul, basis = round(float(dist), 4), "stop-distance"
+        fit["stressUnitLoss"] = round(float(entry_ref or 0.0), 4)      # theoretical maximum: to zero
+    fit["unitLoss"], fit["unitLossBasis"] = ul, basis
+    if ul is None or ul <= 0:
+        fit["qtyByRisk"] = None
+        fit["reason"] = "no risk estimate: " + str(fit["meta"].get("reason") or "no stop")
+    elif float(budget or 0) <= 0:
+        fit["qtyByRisk"] = 0
+        fit["reason"] = "no budget available"
+    else:
+        fit["qtyByRisk"] = int(math.floor(float(budget) / float(ul) + 1e-9))
+        fit["reason"] = (None if fit["qtyByRisk"] >= 1 else
+                         f"no quantity satisfies the ${float(budget):,.0f} risk budget: one unit risks "
+                         f"${float(ul):,.0f} at the final stop")
+    return final, fit
+
+
+def fitting_stop(*, direction: str, vehicle: str, entry_ref: float, exit_plan: dict, bars: list, settings,
+                 premium: float = 0.0, multiplier: float = 1.0, delta: float | None = None, budget: float) -> dict:
+    """Diagnostic (pure): the stop at which ONE unit would fit B, and whether the geometry rules would ADMIT it
+    (a stop the gate would re-place is not admissible). Never applied - the gate never tightens a stop past the
+    analyst's invalidation (W2.6 journals such a 'starter' as a shadow decision only)."""
+    b = float(budget or 0.0)
+    if b <= 0 or not entry_ref:
+        return {"available": False, "reason": "no budget or reference"}
+    sgn = 1.0 if direction != "short" else -1.0
+    if vehicle == "option":
+        if delta is None or not premium or not multiplier:
+            return {"available": False, "reason": "no delta / premium for the estimate"}
+        if PREMIUM_LOSS_FLOOR * float(premium) * float(multiplier) > b + 1e-9:
+            return {"available": False, "reason": (f"even the {int(PREMIUM_LOSS_FLOOR * 100)}% premium floor "
+                                                   f"(${PREMIUM_LOSS_FLOOR * float(premium) * float(multiplier):,.0f}) "
+                                                   f"exceeds the ${b:,.0f} budget at any stop")}
+        max_dist = b / (abs(float(delta)) * float(multiplier))
+    else:
+        max_dist = b
+    stop = round(float(entry_ref) - sgn * max_dist, 4)
+    from .lifecycle import check_exit_geometry
+    _final, repairs = check_exit_geometry({**dict(exit_plan or {}), "underlyingStop": stop}, direction=direction,
+                                          entry_ref=float(entry_ref), bars=bars or [], settings=settings)
+    stop_repairs = [r for r in repairs if "stop" in r]
+    return {"available": True, "stop": stop, "stopDistance": round(max_dist, 4), "admissible": not stop_repairs,
+            "why": (stop_repairs[0] if stop_repairs else "inside the geometry rules"),
+            "note": "diagnostic only - never applied automatically"}
+
+
 def plan_risk(*, mode: str, direction: str, vehicle: str, entry_ref: float,
               exit_plan: dict, bars: list, settings, limit: float, qty_requested: int,
               multiplier: float = 1.0, option_type: str | None = None,
@@ -179,47 +274,28 @@ def plan_risk(*, mode: str, direction: str, vehicle: str, entry_ref: float,
     """The pre-entry plan: geometry gate (same rules as adoption — sign, width,
     structure) → FINAL stop → unit loss → size against B → invariant.
     Returns (final_exit_plan, RiskPlan). In 'shadow' mode the RiskPlan says
-    what WOULD happen (enforced=False) and the caller keeps its sizes."""
-    from .lifecycle import check_exit_geometry
+    what WOULD happen (enforced=False) and the caller keeps its sizes.
+    The geometry + unit loss come from `fit_expression` (W1.2: the analyst's
+    feasibility tools call the same function)."""
     rp = RiskPlan(mode=mode, direction=direction, vehicle=vehicle, multiplier=float(multiplier),
                   currency=currency, entryRef=float(entry_ref), budget=float(budget),
                   budgetSource=budget_source, qtyRequested=int(qty_requested),
                   quote=dict(quote_meta or {}), greeks=dict(greeks_meta or {}))
-    plan = dict(exit_plan or {})
-    rp.originalStop = float(plan["underlyingStop"]) if plan.get("underlyingStop") else None
-    final, repairs = check_exit_geometry(plan, direction=direction, entry_ref=float(entry_ref),
-                                         bars=bars or [], settings=settings)
-    rp.repairs = list(repairs)
-    rp.finalStop = float(final["underlyingStop"]) if final.get("underlyingStop") else None
+    final, fit = fit_expression(direction=direction, vehicle=vehicle, entry_ref=entry_ref, exit_plan=exit_plan,
+                                bars=bars, settings=settings, premium=float(limit), multiplier=float(multiplier),
+                                option_type=option_type, delta=delta, budget=float(budget))
+    rp.originalStop = fit["originalStop"]
+    rp.repairs = list(fit["repairs"])
+    rp.finalStop = fit["finalStop"]
     rp.targets = list(final.get("targets") or [])
     rp.fractions = list(final.get("fractions") or [])
-    dist = stop_distance(direction, entry_ref, rp.finalStop)
-    rp.stopDistance = dist
-    if rp.originalStop is not None and rp.finalStop is not None:
-        d0 = stop_distance(direction, entry_ref, rp.originalStop)
-        if d0 and d0 > 0 and dist and dist > d0:
-            rp.widenPct = round((dist - d0) / d0 * 100.0, 2)
-            mat = float(settings.get("techniques.tip.geometry_resize_threshold_pct", DEFAULT_MATERIALITY_PCT) or 0)
-            rp.severity = "review" if rp.widenPct >= mat else "log"
-    # ---- unit loss (explicit units) ------------------------------------------
+    rp.stopDistance = fit["stopDistance"]
+    rp.widenPct, rp.severity = fit["widenPct"], fit["severity"]
+    rp.unitLoss, rp.unitLossBasis = fit["unitLoss"], fit["unitLossBasis"]
     if vehicle == "option":
-        rp.unitLoss, rp.unitLossBasis, meta = option_unit_loss(
-            premium=float(limit), delta=delta, dist=dist, multiplier=float(multiplier),
-            option_type=str(option_type or ("put" if direction == "short" else "call")),
-            direction=direction, premium_stop_pct=plan.get("premiumStopPct"))
-        rp.greeks = {**rp.greeks, **meta}
-        rp.stressUnitLoss = round(float(limit) * float(multiplier), 4)
-        if rp.unitLossBasis == "delta-linear" and not meta.get("thesisMatch", True):
-            rp.decisions.append(f"vehicle/thesis mismatch: a {option_type} for a {direction} thesis")
-    else:
-        if dist is None:
-            rp.unitLoss, rp.unitLossBasis = None, "none"
-        elif dist <= 0:
-            rp.unitLoss, rp.unitLossBasis = None, "none"
-            rp.decisions.append("stop on the wrong side after repair — no size")
-        else:
-            rp.unitLoss, rp.unitLossBasis = round(float(dist), 4), "stop-distance"
-        rp.stressUnitLoss = round(float(entry_ref), 4)      # theoretical maximum: to zero
+        rp.greeks = {**rp.greeks, **fit["meta"]}
+    rp.stressUnitLoss = fit["stressUnitLoss"]
+    rp.decisions.extend(fit["decisions"])
     # ---- size against B ------------------------------------------------------
     if rp.unitLoss is None:
         rp.reviewRequired = ("no risk estimate: " + str(rp.greeks.get("reason") or "no stop"))
