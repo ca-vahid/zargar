@@ -212,3 +212,12 @@ TIP_OWNBOOK_CLASSIFIED = "TipOwnBookClassified"
 TIP_FROZEN_BUNDLE = "TipFrozenBundle"          # an immutable case bundle was captured (id = content hash)
 TIP_FROZEN_REPLAY = "TipFrozenReplay"          # one isolated replay under one knowledge variant
 TIP_ENTRY_COHORT = "TipEntryCohort"            # one eligible idea recorded at its decision (all dispositions)
+
+# W1.5 (2026-10-02 Tips review): the appraisal runs after the ingest returns (gateway head-of-line fix)
+TIP_APPRAISAL_DEFERRED = "TipAppraisalDeferred"            # a message's post-record stage scheduled (signals recorded)
+TIP_APPRAISAL_DEFERRED_DONE = "TipAppraisalDeferredDone"    # ...and completed (done/failed counts, seconds)
+TIP_DEFERRED_STAGE_RECOVERED = "TipDeferredStageRecovered"  # the recovery sweep resumed (or abandoned) an orphaned stage
+# W1.6: host clock vs an HTTP Date reference (startup + 08:00 ET); the system time is never changed
+CLOCK_SKEW = "ClockSkew"
+# W3.4: an RTH intake stall escalated through push + Telegram + desk alert (once per stall) and its recovery
+TIP_INTAKE_PAGED = "TipIntakePaged"

@@ -222,6 +222,15 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.intake_max_images": 4,             # attachments stored + transcribed per message
     "techniques.tip.intake_max_image_bytes": 8 * 1024 * 1024,  # per-attachment size cap (bytes)
     "techniques.tip.intake_vision_calls_per_message": 4,  # paid vision calls per message (primary read + per-image transcriptions)
+    # W1.5 (2026-10-02): the gateway's ingest returns once the signals are RECORDED; the appraisal + lane decisions
+    # run as a tracked background task (off = the old synchronous ingest, the rollback). Orphaned stages (a restart
+    # between record and appraisal) are resumed by the recovery sweep while younger than the max age, else abandoned.
+    "techniques.tip.intake_async_appraisal": True,
+    "techniques.tip.deferred_recovery_max_minutes": 30,
+    "techniques.tip.deferred_recovery_min_age_seconds": 60,
+    # W3.4 (2026-10-02): a gateway idle this long inside RTH (09:30-16:00 ET, trading days) pages push + Telegram +
+    # desk alert, once per stall, with a recovery message (0 = off)
+    "techniques.tip.intake_page_idle_minutes": 3,
     "techniques.tip.discord.watch": [],      # allowlist of DMs/channels the gateway monitors (UI-managed)
     "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
@@ -629,6 +638,14 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
     "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
     "ops.loop_stall_seconds": 2.0,             # event-loop stall watch: log the blocking call site when the loop is silent this long (0 = off)
+    # W1.6 (2026-10-02): host clock vs an HTTP Date reference (HEAD) at startup + daily; journaled ClockSkew,
+    # desk alert (toast + push + Telegram) above the threshold; the system time is never changed
+    "ops.clock_skew_check": True,
+    "ops.clock_skew_at": "08:00",              # ET, every day
+    "ops.clock_skew_alert_ms": 2000,           # |skew| above this escalates (the quote-age guard is 10 s)
+    "ops.clock_skew_ntp_servers": ["time.windows.com", "time.google.com", "time.cloudflare.com",
+                                   "pool.ntp.org", "time.nist.gov"],   # median of a quorum; [] = HTTP only
+    "ops.clock_skew_references": ["https://www.google.com", "https://www.cloudflare.com"],  # HTTP Date fallback
     "options.cboe_cooldown_seconds": 20.0,     # after a CBOE 429, BACKGROUND chain fetches (enrich, research) skip requests this long; entry/position reads are not subject to it (they retry briefly, then the normal refusals apply)
     "technique.arm.quote_exit": True,          # intra-minute safety: exit when the live quote is decisively through the stop
     "technique.arm.quote_exit_excess_r": 0.25,  # "decisively" = beyond the stop by this x planned risk

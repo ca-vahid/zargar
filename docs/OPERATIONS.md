@@ -79,6 +79,21 @@ record; every other check applies).
 | IBKR session drops daily / weekly 2FA | Expected gateway behavior — see notes in [IBKR_SETUP.md](./IBKR_SETUP.md). Sim keeps running; paper/live orders reject cleanly while disconnected. |
 | Chart is blank for a new symbol | First watch of a symbol synthesizes history (sim) or needs a few ticks (IBKR delayed) — give it a few seconds. |
 | Windows: `running scripts is disabled` | Use the commands as written (`-ExecutionPolicy Bypass -File …`). |
+| "Host clock skew" alert / `ClockSkew` journal row / `/api/health` `local.clockSkewMs` beyond ±2000 | See **Host clock** below. |
+| "Tips intake DOWN" page (push + Telegram + toast) | The Discord gateway delivered nothing for `techniques.tip.intake_page_idle_minutes` (3) during RTH. Check the gateway window (`scripts\discord-intake.ps1`) and `GET /api/tip/intake/liveness`; a "recovered" message follows once frames flow again (gap recovery refetches what was missed). |
+
+## Host clock
+
+The app measures the host clock at startup and daily at `ops.clock_skew_at` (08:00 ET) against an NTP quorum
+(`ops.clock_skew_ntp_servers`) or, when UDP 123 is blocked, the HTTP `Date` of `ops.clock_skew_references`; it
+journals `ClockSkew` and escalates above `ops.clock_skew_alert_ms`. It **never changes the system time** - that is a
+one-time user step from an elevated PowerShell (the host drifted ~1 s/day with `w32time` stopped, 2026-09-21):
+
+```powershell
+Set-Service w32time -StartupType Automatic; Start-Service w32time
+w32tm /config /manualpeerlist:"time.windows.com,0x9 time.google.com,0x9" /syncfromflags:manual /update
+w32tm /resync /force; w32tm /query /status        # then: python -m zargar.tools.clock_health
+```
 
 ## Data & reset
 

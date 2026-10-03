@@ -2744,3 +2744,17 @@ regular session). Now `parse_rfc3339_ms` caches the whole-second epoch per (seco
 Bit-identical results (`tests/test_alpaca_fastpath.py`: 20k random stamps, both DST switches); 15.9 -> 6.1 us per trade
 message. It does not fix host memory pressure - that is still the first cause.
 
+### Intake answers once recorded; host clock skew; desk escalation - 2026-10-02 (Tips desk, W1.5/W1.6/W3.4)
+
+- **`/api/ingest/manual` `asyncAppraisal`** (Tips only): the Discord gateway's per-channel order now covers extraction
+  + verification + the signal row; the analyst appraisal and every lane decision after it run as a tracked background
+  task with a durable `extraction.deferredStage` marker that the tips recovery sweep resumes or abandons. The gateway
+  ACK point is unchanged in meaning (the app answered 200 = the message is durably recorded) and the EM forward path
+  (`/api/technique/ingest/message`, per-destination `emDone`) is untouched. Gateway workers 2 -> 6 (`--workers`).
+- **`ClockSkew`** (platform, `zargar/clockskew.py`): engine startup + daily `ops.clock_skew_at`, NTP quorum first,
+  HTTP `Date` fallback, alert above `ops.clock_skew_alert_ms`; `/api/health` `local.clockSkewMs`. Measurement only -
+  the app never sets the clock and no freshness tolerance moved (rule 2 of the 2026-09-21 entry above stands).
+  `AppConfig.clock_skew_probe` (tests: False) keeps suites off the network.
+- **`zargar/desk_alert.escalate`** (platform): toast (`technique` topic `alert`) + web push + Telegram in one call; the
+  bus message carries `pushed: true` so `PushService` does not push it twice. Used by `ClockSkew` and the Tips intake
+  pager (`TipIntakePaged`, RTH idle > `techniques.tip.intake_page_idle_minutes`).

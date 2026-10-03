@@ -1499,7 +1499,8 @@ class SignalService:
                             posted_at: str | None = None,
                             edited_at: str | None = None,
                             image_count: int | None = None,
-                            attachments: list[dict] | None = None) -> dict:
+                            attachments: list[dict] | None = None,
+                            async_appraisal: bool = False) -> dict:
         """Paste-in path — text, or a screenshot of the user's own client (the
         model transcribes it; the image is kept as evidence in chat_assets).
         `message_id`/`posted_at` (gateway envelope 2026-09-09): the Discord
@@ -1521,8 +1522,14 @@ class SignalService:
         when its processing finished or is freshly in flight; a row abandoned
         mid-processing (status "new", stale claim) is RESUMED, not dropped.
         Claim failures raise — the gateway spools and retries; a broken dedupe
-        check must never silently proceed to a paid extraction."""
+        check must never silently proceed to a paid extraction.
+
+        `async_appraisal` (W1.5, 2026-10-02): the caller (the Discord gateway) wants the answer once the
+        signals are RECORDED - extraction, verification and the signal rows stay inline (that is the order the
+        gateway preserves per channel), the appraisal and everything after it run as a tracked background task.
+        Honoured only while `techniques.tip.intake_async_appraisal` is on (the rollback switch)."""
         eng = self.engine
+        defer = bool(async_appraisal) and bool(eng.settings.get("techniques.tip.intake_async_appraisal", True))
         meta: dict = {}
         if message_id:
             meta["messageId"] = str(message_id)
@@ -1586,7 +1593,7 @@ class SignalService:
                                         f"(content {dup.id[:8]}) — no re-extraction"}
             if resume_id:
                 return await self.process_content(resume_id,
-                                                  stated_at=posted_at or None)
+                                                  stated_at=posted_at or None, defer_appraisal=defer)
         if image is not None:
             asset = ChatAsset(id=new_id(), thread_id=None, media_type=image_media_type,
                               data=image, meta={"kind": "tip_screenshot"})
@@ -1619,7 +1626,7 @@ class SignalService:
             aggregate_type="content", aggregate_id=row.id)
         # the authoritative posting time reaches processing (Codex G1): a
         # recovered old message keeps its original age → replay/expiry apply
-        return await self.process_content(row.id, stated_at=posted_at or None)
+        return await self.process_content(row.id, stated_at=posted_at or None, defer_appraisal=defer)
 
     async def _stage_attachments(self, attachments: list[dict]) -> list[dict]:
         """Attachment set → coverage manifest (KFIN-07). Stable ids, message
@@ -1801,18 +1808,19 @@ class SignalService:
 
     # ------------------------------------------------------------- pipeline
     async def process_content(self, content_id: str, *, experiment: str | None = None,
-                              stated_at: str | None = None) -> dict:
+                              stated_at: str | None = None, defer_appraisal: bool = False) -> dict:
         # 2026-09-23 (cost lever 3): every extraction/transcription request made for this message is written to
         # `tip_llm_calls` with ref = content_id (a contextvar, so the extractor needs no new arguments)
         from ..techniques.tip.llm_ledger import bind_ref, reset_ref
         _tok = bind_ref(content_id)
         try:
-            return await self._process_content(content_id, experiment=experiment, stated_at=stated_at)
+            return await self._process_content(content_id, experiment=experiment, stated_at=stated_at,
+                                               defer_appraisal=defer_appraisal)
         finally:
             reset_ref(_tok)
 
     async def _process_content(self, content_id: str, *, experiment: str | None = None,
-                               stated_at: str | None = None) -> dict:
+                               stated_at: str | None = None, defer_appraisal: bool = False) -> dict:
         eng = self.engine
         async with eng.sf() as session:
             content = await session.get(RawContent, content_id)
@@ -1996,11 +2004,35 @@ class SignalService:
                         db_content.body_text = result.source_transcript
                         await session.commit()
 
+        deferred: list | None = ([] if (defer_appraisal and experiment is None) else None)
         out = await self.handle_extraction(content, result, source_text=source_text,
                                            intake=intake, experiment=experiment,
-                                           blocks=blocks)
+                                           blocks=blocks, deferred=deferred)
         await self._set_content_status(content_id, "extracted")
 
+        if deferred is not None:
+            # W1.5: the signals are durably recorded and the content is "extracted" - the caller (the gateway)
+            # may acknowledge and release its per-channel order now. The appraisal, the lane decisions and the
+            # discarded/follow-up review run as ONE tracked background task per message, signals in order.
+            self._spawn_deferred_stage(content_id, intake=intake, content=content, out=list(out), stages=deferred,
+                                       sigs=sigs, source_text=source_text)
+        else:
+            await self._intake_tail(intake, content, out, sigs, source_text, experiment)
+
+        async with eng.sf() as session:               # source may have been auto-detected
+            refreshed = await session.get(RawContent, content_id)
+        return {"contentId": content_id, "status": "extracted",
+                "sourceType": result.source_type, "signals": out,
+                "intakeRunId": intake.id,
+                "source": (refreshed.source_name if refreshed else content.source_name),
+                "sourceDetected": bool((refreshed.meta or {}).get("sourceDetected")) if refreshed else False,
+                **({"appraisal": "deferred", "deferredSignals": len(deferred)} if deferred is not None else {})}
+
+    async def _intake_tail(self, intake, content, out: list[dict], sigs, source_text: str,
+                           experiment: str | None) -> None:
+        """The message-level close of an intake run: the analyst's review of discarded signals / source
+        follow-ups (against the desk's own book) and the run's finish line. Inline for a synchronous intake,
+        at the end of the background stage for a deferred one (W1.5)."""
         # any signal that verification discarded -> the analyst reviews the
         # update against the desk's own book (positions, open tips, notes) in
         # this same run, so a recap/exit note is bookkept instead of dropped
@@ -2048,13 +2080,197 @@ class SignalService:
                     f"Done — {n_trade} of {len(sigs)} signal(s) entered the tip pipeline."
                     if sigs else "Done — no trade signals in this message.")
 
-        async with eng.sf() as session:               # source may have been auto-detected
-            refreshed = await session.get(RawContent, content_id)
-        return {"contentId": content_id, "status": "extracted",
-                "sourceType": result.source_type, "signals": out,
-                "intakeRunId": intake.id,
-                "source": (refreshed.source_name if refreshed else content.source_name),
-                "sourceDetected": bool((refreshed.meta or {}).get("sourceDetected")) if refreshed else False}
+    # ------------------------------------------------ W1.5 deferred appraisal
+    def _deferred_inflight(self) -> dict:
+        """signal id -> monotonic time its stage was handed to an in-process task (the recovery sweep's skip set)."""
+        return self.__dict__.setdefault("_deferred_inflight_ids", {})
+
+    async def _mark_deferred(self, signal_id: str, **fields) -> Signal | None:
+        """Merge `fields` into `extraction.deferredStage` (the durable marker of a post-record stage: pending ->
+        shadowDone -> done | failed | abandoned). A `pending` marker registers the id as in-flight BEFORE the commit,
+        so a concurrent recovery sweep never mistakes a just-scheduled stage for an orphan."""
+        eng = self.engine
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        if fields.get("state") == "pending":
+            self._deferred_inflight()[signal_id] = _time.monotonic()
+        async with eng.sf() as session:
+            db = await session.get(Signal, signal_id)
+            if db is None:
+                return None
+            st = dict((db.extraction or {}).get("deferredStage") or {})
+            if fields.get("state") == "pending" and not st.get("at"):
+                st["at"] = now
+            st.update(fields)
+            st["updatedAt"] = now
+            db.extraction = {**(db.extraction or {}), "deferredStage": st}
+            await session.commit()
+            return db
+
+    async def _deferred_lane_block(self, row, *, resume: bool) -> str | None:
+        """Why a DEFERRED stage must not mint a proposal / arm (None = the lane is open). A synchronous intake
+        handled a later follow-up by expiring the pending card; a deferred card did not exist yet when the follow-up
+        was recorded, so the stage checks for it here (same actions `expire_for_followup` honours). A resumed stage
+        (crash recovery) never mints a second card or arm."""
+        eng = self.engine
+        from ..models import Proposal as ProposalRow
+        op = (row.extraction or {}).get("analyst") or {}
+        async with eng.sf() as session:
+            if resume:
+                if op.get("armedRunId"):
+                    return "resumed stage: the plan was already armed before the restart"
+                had = (await session.execute(select(ProposalRow.id).where(
+                    ProposalRow.signal_id == row.id).limit(1))).scalars().first()
+                if had:
+                    return "resumed stage: a proposal for this signal already exists"
+            created = row.created_at
+            if created is None:
+                return None
+            later = (await session.execute(select(Signal).where(
+                Signal.source_name == row.source_name, Signal.ticker == row.ticker,
+                Signal.action.in_(("trim", "close", "update_stop")),
+                Signal.created_at > created, Signal.id != row.id)
+                .order_by(Signal.created_at).limit(1))).scalars().first()
+        if later is not None:
+            return (f"the source posted '{later.action}' on {row.ticker} before this appraisal finished "
+                    f"(signal {later.id[:8]})")
+        return None
+
+    def _spawn_deferred_stage(self, content_id: str, *, intake, content, out: list[dict], stages: list[dict],
+                              sigs, source_text: str, resume: bool = False) -> asyncio.Task:
+        tasks = self.__dict__.setdefault("_deferred_tasks", set())
+        for kw in stages:
+            self._deferred_inflight()[kw["row"].id] = _time.monotonic()
+        t = asyncio.create_task(
+            self._run_deferred_stage(content_id, intake=intake, content=content, out=out, stages=stages,
+                                     sigs=sigs, source_text=source_text, resume=resume),
+            name=f"tip-deferred-{content_id[:8]}")
+        tasks.add(t)
+        t.add_done_callback(tasks.discard)
+        return t
+
+    async def wait_deferred(self, timeout: float = 30.0) -> None:
+        """Await every in-process deferred stage (tests, orderly shutdown)."""
+        tasks = list(self.__dict__.get("_deferred_tasks") or ())
+        if tasks:
+            await asyncio.wait(tasks, timeout=timeout)
+
+    async def _run_deferred_stage(self, content_id: str, *, intake, content, out: list[dict], stages: list[dict],
+                                  sigs, source_text: str, resume: bool = False) -> None:
+        """The background half of a deferred intake: each recorded signal's post-record stage in message order
+        (fan-in shares one appraisal), then the message's review/finish. Journaled start and end; a crash leaves
+        `deferredStage.state=pending` on the signal for the recovery sweep."""
+        eng = self.engine
+        t0 = _time.monotonic()
+        ids = [kw["row"].id for kw in stages]
+        with contextlib.suppress(Exception):
+            await eng.journal.append(ev.TIP_APPRAISAL_DEFERRED,
+                                     {"contentId": content_id, "signalIds": ids, "resume": resume},
+                                     aggregate_type="content", aggregate_id=content_id)
+        done = failed = 0
+        for kw in stages:
+            sid = kw["row"].id
+            try:
+                entry = await self._post_record_stage(**kw, resume=resume)
+                for i, o in enumerate(out):
+                    if ((o.get("signal") or {}).get("id")) == sid:
+                        out[i] = entry
+                await self._mark_deferred(sid, state="done")
+                done += 1
+            except asyncio.CancelledError:
+                raise                         # shutdown: the marker stays pending; recovery resumes it
+            except Exception as exc:
+                log.exception("deferred post-record stage failed for %s", sid)
+                failed += 1
+                with contextlib.suppress(Exception):
+                    await self._mark_deferred(sid, state="failed", error=str(exc)[:300])
+            finally:
+                self._deferred_inflight().pop(sid, None)
+        if intake is not None:
+            try:
+                await self._intake_tail(intake, content, out, sigs, source_text, None)
+            except Exception:
+                log.exception("deferred intake tail failed for %s", content_id)
+        with contextlib.suppress(Exception):
+            await eng.journal.append(ev.TIP_APPRAISAL_DEFERRED_DONE,
+                                     {"contentId": content_id, "done": done, "failed": failed, "resume": resume,
+                                      "seconds": round(_time.monotonic() - t0, 2)},
+                                     aggregate_type="content", aggregate_id=content_id)
+
+    async def recover_deferred_stages(self) -> dict:
+        """Recovery-sweep leg (W1.5): a signal whose deferred stage is still `pending` and is not owned by an
+        in-process task (the process died between recording the signal and finishing its appraisal) is RESUMED -
+        skipping a shadow fill / appraisal already on the record and never minting a second card - while it is
+        younger than `techniques.tip.deferred_recovery_max_minutes`; older ones are marked `abandoned` on the
+        record (a stale tip is not traded late). Grouped per message so fan-in still shares one appraisal."""
+        eng = self.engine
+        out = {"resumed": 0, "abandoned": 0}
+        max_min = float(eng.settings.get("techniques.tip.deferred_recovery_max_minutes", 30) or 0)
+        min_age = float(eng.settings.get("techniques.tip.deferred_recovery_min_age_seconds", 60) or 0)
+        now = dt.datetime.now(dt.timezone.utc)
+        cutoff = now - dt.timedelta(hours=24)
+        async with eng.sf() as session:
+            rows = (await session.execute(select(Signal).where(
+                Signal.created_at >= cutoff,
+                Signal.extraction.op("->")("deferredStage").op("->>")("state") == "pending")
+                .order_by(Signal.created_at))).scalars().all()
+        inflight = self._deferred_inflight()
+        groups: dict[str, list] = {}
+        for row in rows:
+            started = inflight.get(row.id)
+            if started is not None and (_time.monotonic() - started) < 3600:
+                continue                              # owned by a live task in this process
+            created = row.created_at
+            if created is not None and created.tzinfo is None:
+                created = created.replace(tzinfo=dt.timezone.utc)
+            age_s = (now - created).total_seconds() if created else 0.0
+            if age_s < min_age:
+                continue
+            if max_min > 0 and age_s > max_min * 60:
+                await self._mark_deferred(row.id, state="abandoned",
+                                          error=f"orphaned stage older than {max_min:g} min - not traded late")
+                await eng.journal.append(ev.TIP_DEFERRED_STAGE_RECOVERED,
+                                         {"signalId": row.id, "ticker": row.ticker, "action": "abandoned",
+                                          "ageSeconds": round(age_s)},
+                                         aggregate_type="signal", aggregate_id=row.id)
+                out["abandoned"] += 1
+                continue
+            groups.setdefault(row.raw_content_id or row.id, []).append(row)
+        fan_min = int(eng.settings.get("techniques.tip.fan_in_min", 3))
+        for cid, grp in groups.items():
+            async with eng.sf() as session:
+                content = await session.get(RawContent, cid) if cid else None
+            stages = []
+            sigs = []
+            for row in grp:
+                try:
+                    sig = TradeSignal(**((row.extraction or {}).get("signal") or {}))
+                except Exception:
+                    await self._mark_deferred(row.id, state="failed", error="unreadable signal on resume")
+                    continue
+                sigs.append(sig)
+                stages.append(dict(row=row, sig=sig, content=content, verification=row.verification or {},
+                                   status=row.status, policy=resolve_policy(eng.settings, row.source_name),
+                                   experiment=None, intake=None,
+                                   stated_at=(row.extraction or {}).get("statedAt"),
+                                   fan_in=False, branch_lines=None, fan={"opinion": None, "deferred": True},
+                                   recap_route="full", recap_read=None))
+            if not stages:
+                continue
+            if len(stages) >= fan_min:
+                fan = {"opinion": None, "deferred": True}
+                lines = [f"{s.ticker} {s.direction} {s.instrument}" for s in sigs]
+                for kw in stages:
+                    kw.update(fan_in=True, branch_lines=lines, fan=fan)
+            for kw in stages:
+                await eng.journal.append(ev.TIP_DEFERRED_STAGE_RECOVERED,
+                                         {"signalId": kw["row"].id, "ticker": kw["row"].ticker,
+                                          "action": "resumed", "contentId": cid},
+                                         aggregate_type="signal", aggregate_id=kw["row"].id)
+            out["resumed"] += len(stages)
+            self._spawn_deferred_stage(cid or "", intake=None, content=content,
+                                       out=[{"signal": signal_dict(kw["row"])} for kw in stages],
+                                       stages=stages, sigs=sigs, source_text="", resume=True)
+        return out
 
     async def _review_gate(self, intake, content, out: list[dict], outcomes: list[dict], *, path: str) -> bool:
         """review-gate-v1 (2026-09-19): may this message reach anything the desk holds or waits on?
@@ -2338,7 +2554,8 @@ class SignalService:
     async def handle_extraction(self, content: RawContent, result: ExtractionResult,
                                 *, source_text: str, intake=None,
                                 experiment: str | None = None,
-                                blocks: list | None = None) -> list[dict]:
+                                blocks: list | None = None,
+                                deferred: list | None = None) -> list[dict]:
         """Grounding → dedupe → persistence → verification → proposal, per signal.
         Split out so tests can drive it with a canned ExtractionResult (no API).
         `blocks` (KFIN-07): the sectioned grounding corpus — caption + one block
@@ -2391,7 +2608,7 @@ class SignalService:
                         + (f" exp {s.expiry}" if s.expiry else "")
                         + (f" @ {s.premium:g}" if s.premium else "")
                         for s in result.signals]
-        shared_opinion: dict | None = None
+        fan: dict = {"opinion": None, "deferred": deferred is not None}   # fan-in shared opinion
         # INTRA-03 (2026-09-16): a cheap deterministic read of the message shape BEFORE the
         # paid appraisal - journaled always; it routes to the compact context only when
         # techniques.tip.recap_route == "compact" and the read is confident with no
@@ -2716,298 +2933,344 @@ class SignalService:
                 istep("note", f"{row.ticker}: own-book classifier (observe) says {ob['class']} — "
                               "pipeline unchanged.")
 
-            proposal = None
-            shadow_order = None
-            if status in ("verified", "shadow"):
-                # the shadow books ALWAYS trade a verified/shadow signal — the
-                # per-source track record exists regardless of the human decision
-                shadow_order = await self._shadow_execute(row, sig)
-                async with eng.sf() as session:   # pick up the recorded expression
-                    row = await session.get(Signal, row.id) or row
-            appraise = status in ("verified", "shadow", "parked") or (
-                # KNOWLEDGE Phase 2: a historical experiment sample is appraised
-                # even though it is replayed — the appraisal itself is the
-                # evidence the batch review grades
-                experiment is not None and status == "replayed")
-            # was an appraisal actually possible? (enabled + client/key). Needed
-            # below: an ATTEMPTED appraisal with no verdict fails auto-approve
-            # CLOSED, while "analyst not configured" legitimately means auto.
-            analyst_available = (bool(eng.settings.get("techniques.tip.analyst_enabled", True))
-                                 and (self._analyst_client is not None
-                                      or bool(getattr(eng.config, "anthropic_api_key", ""))))
-            if appraise:
-                # the tips analyst appraises the tip with market tools —
-                # strictly advisory, fail-open (POC 2026-08-28)
-                istep("note", f"Appraising {row.ticker} with market tools — its own "
-                              "run starts now (watch it in the runs list).")
-                historical_note = None
-                if experiment is not None:
-                    when = ((row.extraction or {}).get("statedAt")
-                            or result.stated_at or "an earlier date")
-                    historical_note = (
-                        f"⚠ HISTORICAL APPRAISAL — experiment batch {experiment}. "
-                        f"This tip was posted {when}; your live tools (quotes, chains, "
-                        "positions) show TODAY's market, NOT the tip's market. Appraise "
-                        "the DECISION as of the tip's own time — the tip's replay block "
-                        "holds the outcome evidence; do not treat today's prices as its "
-                        "context and do not let hindsight grade the call. save_note ONLY "
-                        "for timeless lessons (source habits, structural reads) — "
-                        f"anything date-bound goes to scope experiment:{experiment}.")
-                if fan_in and shared_opinion is not None:
-                    # sibling branch of an already-appraised message
-                    opinion = dict(shared_opinion)
-                    if opinion.get("verdict") == "take":
-                        opinion["verdict"] = "watch"
-                        for k in ("contract", "contract_label", "limit_price", "quantity",
-                                  "entry_mode", "entry_level", "exit_targets", "exit_fractions"):
-                            opinion.pop(k, None)
-                    opinion["rationale"] = ("[sibling branch — this message was appraised once; "
-                                            "verdict inherited] " + str(opinion.get("rationale") or ""))
-                    opinion["fanIn"] = True
-                    istep("note", f"{row.ticker}: sibling branch of the same message — "
-                                  f"inherits the appraisal ({opinion['verdict']}), no new run.")
-                else:
-                    try:
-                        from ..techniques.tip.analyst import analyze_tip
-                        opinion = await analyze_tip(eng, row, verification, policy,
-                                                    client=self._analyst_client,
-                                                    parent_run_id=(intake.id if intake else None),
-                                                    experiment=experiment,
-                                                    historical_note=historical_note,
-                                                    siblings=(branch_lines if fan_in else None),
-                                                    header_mode=recap_route, recap_read=recap_read)
-                    except Exception:                  # never block the pipeline
-                        log.exception("tip analyst crashed for %s", row.id)
-                        opinion = None
-                    if fan_in and opinion is not None:
-                        shared_opinion = opinion
-                if opinion is None and experiment is not None:
-                    # F1 (batch-1): no signal may end SILENT — a failed
-                    # appraisal leaves its mark for the batch review
-                    async with eng.sf() as session:
-                        db_row = await session.get(Signal, row.id)
-                        db_row.extraction = {**(db_row.extraction or {}),
-                                             "analystError": "appraisal produced no "
-                                             "opinion (run failed — see failed runs)"}
-                        await session.commit()
-                        row = db_row
-                if opinion is not None:
-                    istep("handoff",
-                          f"Appraisal done: {str(opinion.get('verdict', '?')).upper()}"
-                          + (f" — {opinion.get('contractLabel') or opinion.get('contract_label') or opinion.get('contract') or ''}"),
-                          runId=opinion.get("runId"), ticker=row.ticker)
-                if opinion is not None:
-                    async with eng.sf() as session:
-                        db_row = await session.get(Signal, row.id)
-                        db_row.extraction = {**(db_row.extraction or {}),
-                                             "analyst": opinion}
-                        await session.commit()
-                        row = db_row
-                    await eng.journal.append(
-                        ev.SIGNAL_ANALYZED,
-                        {k: opinion.get(k) for k in ("verdict", "contract",
-                                                     "contractLabel", "limit_price",
-                                                     "quantity", "rationale")},
-                        aggregate_type="signal", aggregate_id=row.id)
-                    eng.bus.publish(topics.SIGNALS, signal_dict(row))
-            # cold-park fast path (2026-09-19): a tip parked ONLY because its ticker had no quote yet used to wait for
-            # the 15-minute recovery sweep (SBLK 5 min, RKT 13 min after a TAKE). Now that the appraisal is on the
-            # record, re-run the SAME recovery path as soon as the quote is warm - nothing else changes.
-            if status == "parked" and experiment is None:
-                self._spawn_cold_park_recheck(row.id, row.ticker, verification)
-            # ---- lane decision (ARM-PLAN P1): a take that says at_level ARMS a
-            # plan waiting for the analyst's price instead of proposing at market
-            armed = None
-            op = (row.extraction or {}).get("analyst") or {}
-            wants_arm = (op.get("verdict") == "take" and op.get("entry_mode") == "at_level"
-                         and status in ("verified", "parked")
-                         and getattr(eng, "tip_runner", None) is not None)
-            if wants_arm:
+            stage_kw = dict(row=row, sig=sig, content=content, verification=verification, status=status,
+                            policy=policy, experiment=experiment, intake=intake, stated_at=result.stated_at,
+                            fan_in=fan_in, branch_lines=branch_lines, fan=fan,
+                            recap_route=recap_route, recap_read=recap_read)
+            if deferred is not None and experiment is None:
+                # W1.5: the signal is recorded; the rest runs after the ingest returns. The durable marker is
+                # written FIRST so a crash before the stage completes is found by the recovery sweep.
+                row = await self._mark_deferred(row.id, state="pending") or row
+                stage_kw["row"] = row
+                deferred.append(stage_kw)
+                out.append({"signal": signal_dict(row), "proposal": None, "armed": None,
+                            "shadowOrder": None, "appraisal": "pending"})
+                continue
+            out.append(await self._post_record_stage(**stage_kw))
+        return out
+
+    async def _post_record_stage(self, *, row, sig, content, verification: dict, status: str, policy,
+                                 experiment, intake, stated_at, fan_in: bool, branch_lines, fan: dict,
+                                 recap_route: str, recap_read, resume: bool = False) -> dict:
+        """Everything AFTER a signal is durably recorded (status + verification on the row): the shadow books, the
+        analyst appraisal, the lane decision (arm / proposal / auto-approve) and the cohort row. Split out of
+        `handle_extraction` (W1.5, 2026-10-02) so the gateway's intake can return - and release its per-channel
+        order - once the signal is recorded, with this stage running as a tracked background task. `fan` carries
+        the fan-in shared opinion across sibling branches and `deferred` (the stage runs after the ingest
+        returned). `resume` (recovery after a crash): skips a shadow fill / appraisal already on the record and
+        never mints a second proposal or arm."""
+        eng = self.engine
+
+        def istep(kind: str, text: str, **extra) -> None:
+            if intake is not None:
+                intake.step(kind, text, **extra)
+        shared_opinion = fan.get("opinion")
+        done = ((row.extraction or {}).get("deferredStage") or {})
+        proposal = None
+        shadow_order = None
+        if status in ("verified", "shadow") and not (resume and done.get("shadowDone")):
+            # the shadow books ALWAYS trade a verified/shadow signal — the
+            # per-source track record exists regardless of the human decision
+            shadow_order = await self._shadow_execute(row, sig)
+            async with eng.sf() as session:   # pick up the recorded expression
+                row = await session.get(Signal, row.id) or row
+            if fan.get("deferred"):
+                row = await self._mark_deferred(row.id, shadowDone=True) or row
+        appraise = status in ("verified", "shadow", "parked") or (
+            # KNOWLEDGE Phase 2: a historical experiment sample is appraised
+            # even though it is replayed — the appraisal itself is the
+            # evidence the batch review grades
+            experiment is not None and status == "replayed")
+        # was an appraisal actually possible? (enabled + client/key). Needed
+        # below: an ATTEMPTED appraisal with no verdict fails auto-approve
+        # CLOSED, while "analyst not configured" legitimately means auto.
+        analyst_available = (bool(eng.settings.get("techniques.tip.analyst_enabled", True))
+                             and (self._analyst_client is not None
+                                  or bool(getattr(eng.config, "anthropic_api_key", ""))))
+        if appraise and not (resume and ((row.extraction or {}).get("analyst") or {}).get("verdict")):
+            # the tips analyst appraises the tip with market tools —
+            # strictly advisory, fail-open (POC 2026-08-28)
+            istep("note", f"Appraising {row.ticker} with market tools — its own "
+                          "run starts now (watch it in the runs list).")
+            historical_note = None
+            if experiment is not None:
+                when = ((row.extraction or {}).get("statedAt")
+                        or stated_at or "an earlier date")
+                historical_note = (
+                    f"⚠ HISTORICAL APPRAISAL — experiment batch {experiment}. "
+                    f"This tip was posted {when}; your live tools (quotes, chains, "
+                    "positions) show TODAY's market, NOT the tip's market. Appraise "
+                    "the DECISION as of the tip's own time — the tip's replay block "
+                    "holds the outcome evidence; do not treat today's prices as its "
+                    "context and do not let hindsight grade the call. save_note ONLY "
+                    "for timeless lessons (source habits, structural reads) — "
+                    f"anything date-bound goes to scope experiment:{experiment}.")
+            if fan_in and shared_opinion is not None:
+                # sibling branch of an already-appraised message
+                opinion = dict(shared_opinion)
+                if opinion.get("verdict") == "take":
+                    opinion["verdict"] = "watch"
+                    for k in ("contract", "contract_label", "limit_price", "quantity",
+                              "entry_mode", "entry_level", "exit_targets", "exit_fractions"):
+                        opinion.pop(k, None)
+                opinion["rationale"] = ("[sibling branch — this message was appraised once; "
+                                        "verdict inherited] " + str(opinion.get("rationale") or ""))
+                opinion["fanIn"] = True
+                istep("note", f"{row.ticker}: sibling branch of the same message — "
+                              f"inherits the appraisal ({opinion['verdict']}), no new run.")
+            else:
                 try:
-                    armed = await eng.tip_runner.arm_from_analyst(row, op, policy)
-                    async with eng.sf() as session:      # link the arm onto the opinion
-                        db_row = await session.get(Signal, row.id)
-                        db_row.extraction = {**(db_row.extraction or {}),
-                                             "analyst": {**op, "armedRunId": armed.get("runId")}}
-                        # ...and onto the analyst RUN itself, so its header can
-                        # link the plan it created (ARM-GAPS F3)
-                        if op.get("runId"):
-                            from ..models import TipAnalystRun
-                            arun = await session.get(TipAnalystRun, op["runId"])
-                            if arun is not None:
-                                arun.opinion = {**(arun.opinion or {}),
-                                                "armedRunId": armed.get("runId")}
-                        await session.commit()
-                        row = db_row
-                    armed_mode = (armed.get("config") or {}).get("mode") or armed.get("mode")
+                    from ..techniques.tip.analyst import analyze_tip
+                    opinion = await analyze_tip(eng, row, verification, policy,
+                                                client=self._analyst_client,
+                                                parent_run_id=(intake.id if intake else None),
+                                                experiment=experiment,
+                                                historical_note=historical_note,
+                                                siblings=(branch_lines if fan_in else None),
+                                                header_mode=recap_route, recap_read=recap_read)
+                except Exception:                  # never block the pipeline
+                    log.exception("tip analyst crashed for %s", row.id)
+                    opinion = None
+                if fan_in and opinion is not None:
+                    fan["opinion"] = opinion
+            if opinion is None and experiment is not None:
+                # F1 (batch-1): no signal may end SILENT — a failed
+                # appraisal leaves its mark for the batch review
+                async with eng.sf() as session:
+                    db_row = await session.get(Signal, row.id)
+                    db_row.extraction = {**(db_row.extraction or {}),
+                                         "analystError": "appraisal produced no "
+                                         "opinion (run failed — see failed runs)"}
+                    await session.commit()
+                    row = db_row
+            if opinion is not None:
+                istep("handoff",
+                      f"Appraisal done: {str(opinion.get('verdict', '?')).upper()}"
+                      + (f" — {opinion.get('contractLabel') or opinion.get('contract_label') or opinion.get('contract') or ''}"),
+                      runId=opinion.get("runId"), ticker=row.ticker)
+            if opinion is not None:
+                async with eng.sf() as session:
+                    db_row = await session.get(Signal, row.id)
+                    db_row.extraction = {**(db_row.extraction or {}),
+                                         "analyst": opinion}
+                    await session.commit()
+                    row = db_row
+                await eng.journal.append(
+                    ev.SIGNAL_ANALYZED,
+                    {k: opinion.get(k) for k in ("verdict", "contract",
+                                                 "contractLabel", "limit_price",
+                                                 "quantity", "rationale")},
+                    aggregate_type="signal", aggregate_id=row.id)
+                eng.bus.publish(topics.SIGNALS, signal_dict(row))
+        # cold-park fast path (2026-09-19): a tip parked ONLY because its ticker had no quote yet used to wait for
+        # the 15-minute recovery sweep (SBLK 5 min, RKT 13 min after a TAKE). Now that the appraisal is on the
+        # record, re-run the SAME recovery path as soon as the quote is warm - nothing else changes.
+        if status == "parked" and experiment is None:
+            self._spawn_cold_park_recheck(row.id, row.ticker, verification)
+        # ---- lane decision (ARM-PLAN P1): a take that says at_level ARMS a
+        # plan waiting for the analyst's price instead of proposing at market
+        armed = None
+        op = (row.extraction or {}).get("analyst") or {}
+        lane_open = True
+        if fan.get("deferred"):
+            # W1.5: the appraisal ran AFTER the ingest returned, so later messages in the channel were already
+            # recorded. A follow-up the source posted meanwhile (close/trim/update_stop) expired nothing - this card
+            # did not exist yet. Honour it now; and a resumed stage never mints a second card/arm.
+            lane_block = await self._deferred_lane_block(row, resume=resume)
+            if lane_block:
+                lane_open = False
+                istep("note", f"{row.ticker}: {lane_block} — no proposal, no arm.")
+                await eng.journal.append(ev.TIP_LANE_DECIDED, {"signalId": row.id, "lane": "refused",
+                                                               "reason": lane_block, "deferred": True},
+                                         aggregate_type="signal", aggregate_id=row.id)
+        wants_arm = (lane_open and op.get("verdict") == "take" and op.get("entry_mode") == "at_level"
+                     and status in ("verified", "parked")
+                     and getattr(eng, "tip_runner", None) is not None)
+        if wants_arm:
+            try:
+                armed = await eng.tip_runner.arm_from_analyst(row, op, policy)
+                async with eng.sf() as session:      # link the arm onto the opinion
+                    db_row = await session.get(Signal, row.id)
+                    db_row.extraction = {**(db_row.extraction or {}),
+                                         "analyst": {**op, "armedRunId": armed.get("runId")}}
+                    # ...and onto the analyst RUN itself, so its header can
+                    # link the plan it created (ARM-GAPS F3)
+                    if op.get("runId"):
+                        from ..models import TipAnalystRun
+                        arun = await session.get(TipAnalystRun, op["runId"])
+                        if arun is not None:
+                            arun.opinion = {**(arun.opinion or {}),
+                                            "armedRunId": armed.get("runId")}
+                    await session.commit()
+                    row = db_row
+                armed_mode = (armed.get("config") or {}).get("mode") or armed.get("mode")
+                await eng.journal.append(
+                    ev.TIP_LANE_DECIDED,
+                    {"signalId": row.id, "lane": "arm", "mode": armed_mode,
+                     "armedRunId": armed.get("runId"),
+                     "entryLevel": op.get("entry_level")},
+                    aggregate_type="signal", aggregate_id=row.id)
+                istep("handoff",
+                      f"{row.ticker}: analyst chose AT-LEVEL — armed a plan waiting for "
+                      f"{op.get('entry_level') or row.entry_price} "
+                      f"({armed_mode} mode, run {str(armed.get('runId'))[:8]}). "
+                      f"No tip-time proposal.", ticker=row.ticker,
+                      armedRunId=armed.get("runId"))
+                eng.bus.publish(topics.SIGNALS, signal_dict(row))
+            except Exception as exc:
+                log.exception("analyst arm failed for %s — falling back to the proposal lane",
+                              row.id)
+                istep("note", f"{row.ticker}: at-level arm failed ({exc}) — "
+                              "falling back to the proposal lane.")
+                armed = None
+        # an analyst TAKE on an implied ("shadow") tip whose only failed check
+        # was the extraction's actionability call is PROMOTED to a proposal
+        # that waits for the human — never self-approves (the promotion rule
+        # from the recovery sweep). 2026-09-02 15:22: neal "GME ape now, got
+        # starter" + a position screenshot — extraction said not actionable,
+        # the analyst said take 264 sh, and nothing at all reached Practice.
+        promoted = False
+        if (lane_open and status == "shadow" and armed is None and op.get("verdict") == "take"
+                and eng.proposals is not None and policy.mode in ("proposal", "auto")
+                and all(c.get("passed") or not c.get("fatal")
+                        for c in (verification.get("checks") or []))):
+            status = "verified"
+            promoted = True
+            istep("note", f"{row.ticker}: the analyst says TAKE on a tip the extractor "
+                          "called implied — promoted to a proposal that waits for you.")
+        if status == "verified" and armed is None and lane_open:
+            # proposals need an explicit call (status "shadow" never proposes
+            # on its own — see the promotion above)
+            if (eng.proposals is not None and policy.mode in ("proposal", "auto")
+                    and policy.meets_conviction(sig.confidence)):
+                proposal = await eng.proposals.create_from_signal(row, sig, verification)
+                if proposal is not None and promoted:
+                    with contextlib.suppress(Exception):
+                        from ..models import Proposal as ProposalRow
+                        from ..approvals.proposals import proposal_dict as _pdict
+                        async with eng.sf() as session:
+                            prow = await session.get(ProposalRow, proposal["id"])
+                            if prow is not None:
+                                prow.context = {**(prow.context or {}),
+                                                "promoted": "analyst take on an implied tip",
+                                                "autoGate": "promoted from shadow — a human approves"}
+                                await session.commit()
+                                proposal = _pdict(prow)
+                if proposal is not None and op:
                     await eng.journal.append(
                         ev.TIP_LANE_DECIDED,
-                        {"signalId": row.id, "lane": "arm", "mode": armed_mode,
-                         "armedRunId": armed.get("runId"),
-                         "entryLevel": op.get("entry_level")},
+                        {"signalId": row.id, "lane": "proposal",
+                         "entryMode": op.get("entry_mode") or "now",
+                         **({"promoted": True} if promoted else {})},
                         aggregate_type="signal", aggregate_id=row.id)
-                    istep("handoff",
-                          f"{row.ticker}: analyst chose AT-LEVEL — armed a plan waiting for "
-                          f"{op.get('entry_level') or row.entry_price} "
-                          f"({armed_mode} mode, run {str(armed.get('runId'))[:8]}). "
-                          f"No tip-time proposal.", ticker=row.ticker,
-                          armedRunId=armed.get("runId"))
-                    eng.bus.publish(topics.SIGNALS, signal_dict(row))
-                except Exception as exc:
-                    log.exception("analyst arm failed for %s — falling back to the proposal lane",
-                                  row.id)
-                    istep("note", f"{row.ticker}: at-level arm failed ({exc}) — "
-                                  "falling back to the proposal lane.")
-                    armed = None
-            # an analyst TAKE on an implied ("shadow") tip whose only failed check
-            # was the extraction's actionability call is PROMOTED to a proposal
-            # that waits for the human — never self-approves (the promotion rule
-            # from the recovery sweep). 2026-09-02 15:22: neal "GME ape now, got
-            # starter" + a position screenshot — extraction said not actionable,
-            # the analyst said take 264 sh, and nothing at all reached Practice.
-            promoted = False
-            if (status == "shadow" and armed is None and op.get("verdict") == "take"
-                    and eng.proposals is not None and policy.mode in ("proposal", "auto")
-                    and all(c.get("passed") or not c.get("fatal")
-                            for c in (verification.get("checks") or []))):
-                status = "verified"
-                promoted = True
-                istep("note", f"{row.ticker}: the analyst says TAKE on a tip the extractor "
-                              "called implied — promoted to a proposal that waits for you.")
-            if status == "verified" and armed is None:
-                # proposals need an explicit call (status "shadow" never proposes
-                # on its own — see the promotion above)
-                if (eng.proposals is not None and policy.mode in ("proposal", "auto")
-                        and policy.meets_conviction(sig.confidence)):
-                    proposal = await eng.proposals.create_from_signal(row, sig, verification)
-                    if proposal is not None and promoted:
+            # full auto: a "take" from the analyst self-approves the proposal —
+            # same path a human click takes (RiskGate inside OrderManager.place).
+            # A live portfolio additionally needs techniques.tip.allow_live_auto.
+            if proposal is not None and policy.mode == "auto":
+                verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
+                pf = eng.positions.portfolio(proposal["portfolioId"]) or {}
+                live_ok = (pf.get("kind") != "live"
+                           or bool(eng.settings.get("techniques.tip.allow_live_auto", False)))
+                # UNATTENDED practice (user 2026-09-04: "I won't be monitoring —
+                # approvals aren't useful"): the analyst's verdict IS the
+                # decision. Skips/watches are declined on the record instead of
+                # waiting for a click that never comes; promoted implied takes
+                # trade like any take. Live portfolios always keep the human.
+                unattended = (bool(eng.settings.get("techniques.tip.unattended", True))
+                              and pf.get("kind") != "live")
+                if promoted and not unattended:
+                    log.info("auto mode: proposal %s was promoted from an implied tip — "
+                             "a human approves", proposal["id"])
+                elif verdict is None and appraise and analyst_available:
+                    # the analyst was supposed to gate this and DIDN'T deliver a
+                    # verdict (crashed / unparseable reply). Fail CLOSED: a missing
+                    # gatekeeper is not permission (TSLA 2026-08-31 — a failed
+                    # appraisal auto-bought 15 two-DTE puts). The morning triage
+                    # re-appraises it; a second failure expires on the TTL.
+                    log.warning("auto mode: analyst enabled but no verdict for %s "
+                                "(run failed?) — leaving proposal %s pending",
+                                row.id, proposal["id"])
+                    istep("note", f"{row.ticker}: analyst produced no verdict — auto-approve "
+                                  "FAILS CLOSED; the morning triage re-appraises it.")
+                elif verdict not in (None, "take"):
+                    if unattended:
+                        why = (f"analyst said {verdict}: "
+                               f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
+                        with contextlib.suppress(Exception):
+                            proposal = await eng.proposals.reject(proposal["id"], via="analyst",
+                                                                  reason=why)
+                        istep("note", f"{row.ticker}: analyst said {verdict} — declined on the "
+                                      "record (unattended practice; no card waits for you).")
+                    else:
+                        log.info("auto mode: analyst said %r — leaving proposal %s for the human",
+                                 verdict, proposal["id"])
+                elif not live_ok:
+                    log.warning("auto mode: live portfolio without allow_live_auto — "
+                                "leaving proposal %s pending", proposal["id"])
+                else:
+                    # earned auto (POST-SOAK Phase 2): the platform-default
+                    # `auto` graduates per source on its closed tip positions;
+                    # an EXPLICIT per-source `mode: auto` bypasses (human said so)
+                    gate = None
+                    explicit_auto = (((eng.settings.get("techniques.tip.sources") or {})
+                                      .get(row.source_name or "", {}) or {}).get("mode") == "auto")
+                    if not explicit_auto:
+                        trust = await self.source_trust(row.source_name or "unknown")
+                        need_n = int(eng.settings.get("techniques.tip.auto_min_graded", 5))
+                        need_hit = float(eng.settings.get("techniques.tip.auto_min_hit", 0.4))
+                        if trust["graded"] < need_n:
+                            gate = f"auto not yet earned: {trust['graded']}/{need_n} graded tips"
+                        elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
+                            gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
+                                    f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
+                    if not gate and (proposal.get("context") or {}).get("reviewRequired"):
+                        # GEOMETRY rev 2: a review-gated card never auto-approves
+                        gate = f"geometry review required: {(proposal.get('context') or {}).get('reviewRequired')}"
+                    if not gate:
+                        # KB-06 (2026-09-14): the entry pause — the clock gate (the
+                        # 2026-09-04 nine-strike clause, default), execution-integrity
+                        # incidents, or both (techniques.tip.entry_pause_mode); detection
+                        # runs first so a fresh defect pauses this very card
+                        with contextlib.suppress(Exception):
+                            from ..techniques.tip import integrity as _ig
+                            await _ig.detect_incidents(eng)
+                            ks = await _ig.gate_reason(eng, portfolio_id=proposal.get("portfolioId"),
+                                                       entry_path="proposal")
+                            if ks:
+                                gate = ks
+                                await eng.journal.append(
+                                    ev.TIP_AUTO_PAUSED, {"reason": ks,
+                                                         "proposalId": proposal["id"]},
+                                    aggregate_type="signal", aggregate_id=row.id)
+                    if gate:
+                        log.info("auto mode: %s (%s) — leaving proposal %s pending",
+                                 gate, row.source_name, proposal["id"])
+                        istep("note", f"{row.ticker}: {gate} — the proposal waits for you.")
                         with contextlib.suppress(Exception):
                             from ..models import Proposal as ProposalRow
                             from ..approvals.proposals import proposal_dict as _pdict
                             async with eng.sf() as session:
                                 prow = await session.get(ProposalRow, proposal["id"])
                                 if prow is not None:
-                                    prow.context = {**(prow.context or {}),
-                                                    "promoted": "analyst take on an implied tip",
-                                                    "autoGate": "promoted from shadow — a human approves"}
+                                    prow.context = {**(prow.context or {}), "autoGate": gate}
                                     await session.commit()
                                     proposal = _pdict(prow)
-                    if proposal is not None and op:
-                        await eng.journal.append(
-                            ev.TIP_LANE_DECIDED,
-                            {"signalId": row.id, "lane": "proposal",
-                             "entryMode": op.get("entry_mode") or "now",
-                             **({"promoted": True} if promoted else {})},
-                            aggregate_type="signal", aggregate_id=row.id)
-                # full auto: a "take" from the analyst self-approves the proposal —
-                # same path a human click takes (RiskGate inside OrderManager.place).
-                # A live portfolio additionally needs techniques.tip.allow_live_auto.
-                if proposal is not None and policy.mode == "auto":
-                    verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
-                    pf = eng.positions.portfolio(proposal["portfolioId"]) or {}
-                    live_ok = (pf.get("kind") != "live"
-                               or bool(eng.settings.get("techniques.tip.allow_live_auto", False)))
-                    # UNATTENDED practice (user 2026-09-04: "I won't be monitoring —
-                    # approvals aren't useful"): the analyst's verdict IS the
-                    # decision. Skips/watches are declined on the record instead of
-                    # waiting for a click that never comes; promoted implied takes
-                    # trade like any take. Live portfolios always keep the human.
-                    unattended = (bool(eng.settings.get("techniques.tip.unattended", True))
-                                  and pf.get("kind") != "live")
-                    if promoted and not unattended:
-                        log.info("auto mode: proposal %s was promoted from an implied tip — "
-                                 "a human approves", proposal["id"])
-                    elif verdict is None and appraise and analyst_available:
-                        # the analyst was supposed to gate this and DIDN'T deliver a
-                        # verdict (crashed / unparseable reply). Fail CLOSED: a missing
-                        # gatekeeper is not permission (TSLA 2026-08-31 — a failed
-                        # appraisal auto-bought 15 two-DTE puts). The morning triage
-                        # re-appraises it; a second failure expires on the TTL.
-                        log.warning("auto mode: analyst enabled but no verdict for %s "
-                                    "(run failed?) — leaving proposal %s pending",
-                                    row.id, proposal["id"])
-                        istep("note", f"{row.ticker}: analyst produced no verdict — auto-approve "
-                                      "FAILS CLOSED; the morning triage re-appraises it.")
-                    elif verdict not in (None, "take"):
-                        if unattended:
-                            why = (f"analyst said {verdict}: "
-                                   f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
-                            with contextlib.suppress(Exception):
-                                proposal = await eng.proposals.reject(proposal["id"], via="analyst",
-                                                                      reason=why)
-                            istep("note", f"{row.ticker}: analyst said {verdict} — declined on the "
-                                          "record (unattended practice; no card waits for you).")
-                        else:
-                            log.info("auto mode: analyst said %r — leaving proposal %s for the human",
-                                     verdict, proposal["id"])
-                    elif not live_ok:
-                        log.warning("auto mode: live portfolio without allow_live_auto — "
-                                    "leaving proposal %s pending", proposal["id"])
                     else:
-                        # earned auto (POST-SOAK Phase 2): the platform-default
-                        # `auto` graduates per source on its closed tip positions;
-                        # an EXPLICIT per-source `mode: auto` bypasses (human said so)
-                        gate = None
-                        explicit_auto = (((eng.settings.get("techniques.tip.sources") or {})
-                                          .get(row.source_name or "", {}) or {}).get("mode") == "auto")
-                        if not explicit_auto:
-                            trust = await self.source_trust(row.source_name or "unknown")
-                            need_n = int(eng.settings.get("techniques.tip.auto_min_graded", 5))
-                            need_hit = float(eng.settings.get("techniques.tip.auto_min_hit", 0.4))
-                            if trust["graded"] < need_n:
-                                gate = f"auto not yet earned: {trust['graded']}/{need_n} graded tips"
-                            elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
-                                gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
-                                        f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
-                        if not gate and (proposal.get("context") or {}).get("reviewRequired"):
-                            # GEOMETRY rev 2: a review-gated card never auto-approves
-                            gate = f"geometry review required: {(proposal.get('context') or {}).get('reviewRequired')}"
-                        if not gate:
-                            # KB-06 (2026-09-14): the entry pause — the clock gate (the
-                            # 2026-09-04 nine-strike clause, default), execution-integrity
-                            # incidents, or both (techniques.tip.entry_pause_mode); detection
-                            # runs first so a fresh defect pauses this very card
-                            with contextlib.suppress(Exception):
-                                from ..techniques.tip import integrity as _ig
-                                await _ig.detect_incidents(eng)
-                                ks = await _ig.gate_reason(eng, portfolio_id=proposal.get("portfolioId"),
-                                                           entry_path="proposal")
-                                if ks:
-                                    gate = ks
-                                    await eng.journal.append(
-                                        ev.TIP_AUTO_PAUSED, {"reason": ks,
-                                                             "proposalId": proposal["id"]},
-                                        aggregate_type="signal", aggregate_id=row.id)
-                        if gate:
-                            log.info("auto mode: %s (%s) — leaving proposal %s pending",
-                                     gate, row.source_name, proposal["id"])
-                            istep("note", f"{row.ticker}: {gate} — the proposal waits for you.")
-                            with contextlib.suppress(Exception):
-                                from ..models import Proposal as ProposalRow
-                                from ..approvals.proposals import proposal_dict as _pdict
-                                async with eng.sf() as session:
-                                    prow = await session.get(ProposalRow, proposal["id"])
-                                    if prow is not None:
-                                        prow.context = {**(prow.context or {}), "autoGate": gate}
-                                        await session.commit()
-                                        proposal = _pdict(prow)
-                        else:
-                            try:
-                                decided = await eng.proposals.approve(proposal["id"], via="auto")
-                                proposal = decided["proposal"]
-                            except Exception:
-                                log.exception("auto-approve failed for proposal %s", proposal["id"])
-            # KFIN-09 (2026-09-14): the entry-variant COHORT records EVERY eligible
-            # idea at its decision - proposals, blocked cards, declines, arms,
-            # skips, shadows, parks, replays, failures (inert unless enabled)
-            with contextlib.suppress(Exception):
-                from ..techniques.tip import cohort as _cohort
-                await _cohort.record_idea(eng, row=row, content=content, status=status,
-                                          proposal=proposal, armed=armed, experiment=experiment,
-                                          appraised=bool(appraise and analyst_available))
-            out.append({"signal": signal_dict(row), "proposal": proposal,
-                        "armed": armed, "shadowOrder": shadow_order})
-        return out
+                        try:
+                            decided = await eng.proposals.approve(proposal["id"], via="auto")
+                            proposal = decided["proposal"]
+                        except Exception:
+                            log.exception("auto-approve failed for proposal %s", proposal["id"])
+        # KFIN-09 (2026-09-14): the entry-variant COHORT records EVERY eligible
+        # idea at its decision - proposals, blocked cards, declines, arms,
+        # skips, shadows, parks, replays, failures (inert unless enabled)
+        with contextlib.suppress(Exception):
+            from ..techniques.tip import cohort as _cohort
+            await _cohort.record_idea(eng, row=row, content=content, status=status,
+                                      proposal=proposal, armed=armed, experiment=experiment,
+                                      appraised=bool(appraise and analyst_available))
+        return {"signal": signal_dict(row), "proposal": proposal,
+                "armed": armed, "shadowOrder": shadow_order}
 
     @staticmethod
     def _stated_age(stated_at: str | None,
@@ -3707,6 +3970,14 @@ class SignalService:
                     await _cohort.record_idea(eng, row=row, content=None, status=new_status,
                                               proposal=prop, kind="redecision")
 
+        # -- (c) W1.5: a deferred post-record stage orphaned by a restart --------
+        try:
+            rec = await self.recover_deferred_stages()
+            out["deferredResumed"] = rec["resumed"]
+            out["deferredAbandoned"] = rec["abandoned"]
+        except Exception:
+            log.exception("deferred-stage recovery failed")
+
         # -- (b) error content, one retry -------------------------------------
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
         async with eng.sf() as session:
@@ -4001,6 +4272,9 @@ async def attach_signal_layer(engine) -> None:
     try:
         from ..techniques.tip.intake_liveness import monitor_loop as _intake_monitor
         engine._tasks.append(asyncio.create_task(_intake_monitor(engine), name="tip-intake-liveness"))
+        # W3.4 (2026-10-02): an RTH gateway idle > N min PAGES (push + Telegram + desk alert), once per stall
+        from ..techniques.tip.intake_liveness import page_loop as _intake_pager
+        engine._tasks.append(asyncio.create_task(_intake_pager(engine), name="tip-intake-pager"))
         from ..techniques.tip.cohort import recovery_loop as _cohort_recovery
         engine._tasks.append(asyncio.create_task(_cohort_recovery(engine), name="tip-cohort-recovery"))
     except Exception:
