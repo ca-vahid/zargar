@@ -2776,3 +2776,18 @@ time a closing sell or bracket child fills at most the held lot (an excess is no
 cancelled), and a sell that takes the lot flat cancels the book's other resting sells of that symbol (the dangling
 bracket child that would otherwise short later). Opening option legs (a spread's `SELL_TO_OPEN`) and every non-shadow
 book are untouched. Tests: `tests/test_tips_w1_intake.py`. Existing books are quarantined by a human step.
+
+### Intake answers once recorded; host clock skew; desk escalation - 2026-10-02 (Tips desk, W1.5/W1.6/W3.4)
+
+- **`/api/ingest/manual` `asyncAppraisal`** (Tips only): the Discord gateway's per-channel order now covers extraction
+  + verification + the signal row; the analyst appraisal and every lane decision after it run as a tracked background
+  task with a durable `extraction.deferredStage` marker that the tips recovery sweep resumes or abandons. The gateway
+  ACK point is unchanged in meaning (the app answered 200 = the message is durably recorded) and the EM forward path
+  (`/api/technique/ingest/message`, per-destination `emDone`) is untouched. Gateway workers 2 -> 6 (`--workers`).
+- **`ClockSkew`** (platform, `zargar/clockskew.py`): engine startup + daily `ops.clock_skew_at`, NTP quorum first,
+  HTTP `Date` fallback, alert above `ops.clock_skew_alert_ms`; `/api/health` `local.clockSkewMs`. Measurement only -
+  the app never sets the clock and no freshness tolerance moved (rule 2 of the 2026-09-21 entry above stands).
+  `AppConfig.clock_skew_probe` (tests: False) keeps suites off the network.
+- **`zargar/desk_alert.escalate`** (platform): toast (`technique` topic `alert`) + web push + Telegram in one call; the
+  bus message carries `pushed: true` so `PushService` does not push it twice. Used by `ClockSkew` and the Tips intake
+  pager (`TipIntakePaged`, RTH idle > `techniques.tip.intake_page_idle_minutes`).

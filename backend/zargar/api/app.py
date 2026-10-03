@@ -173,6 +173,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
                 except Exception:
                     log.debug("health: technique status unavailable", exc_info=True)
             out["local"] = {"techniqueRunning": running, "armed": armed}
+            sk = getattr(eng, "clock_skew", None) or {}          # W1.6: last ClockSkew reading (None = not measured)
+            out["local"]["clockSkewMs"] = sk.get("skewMs")
+            out["local"]["clockSkew"] = {k: sk.get(k) for k in ("reference", "at", "thresholdMs", "alert", "ok")} if sk else None
             try:  # KFIN-03: a hung bar handler / shed subscriber is visible where the restart scripts look
                 from ..delivery_health import snapshot
                 snap = snapshot(eng)

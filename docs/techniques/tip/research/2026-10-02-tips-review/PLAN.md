@@ -28,18 +28,28 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
   thing through ONE pure function (stop finalisation + per-unit risk + qty). The analyst sees the exact qty the gate
   will allow. If the gate still refuses at submission (quote moved), it returns the fitting qty/stop for one automatic
   re-size instead of expiring the card.
-- [ ] **W1.3 Contract multiplier unknown (D8).** Default 100 for standard US equity options when the chain omits it;
+- [x] **W1.3 Contract multiplier unknown (D8).** (PR #313) Default 100 for standard US equity options when the chain omits it;
   refuse only on a known non-standard deliverable.
 - [ ] **W1.4 Sim option fill realism (D3).** A simulated option BUY never fills below the decision bid/ask band that the
   live NBBO would allow (fill at the ask-side quote seen after latency, never below the limit by more than the live
   spread allows). Re-mark the three affected fills in the review notes (not in the books - books are append-only).
-- [ ] **W1.5 Gateway head-of-line blocking (D4).** Per-channel lock held through extraction only; the appraisal runs
+- [x] **W1.5 Gateway head-of-line blocking (D4).** Per-channel lock held through extraction only; the appraisal runs
   async after the signal is recorded (ordering stays per channel at extraction). Workers 2 → 6.
-- [x] **W1.6 Clock (D5).** (PR claude/tips-w1-gateway) Startup + 08:00 ET skew check against an NTP/HTTP Date reference, journaled `ClockSkew`;
+  *Built 2026-10-02 (branch claude/tips-w1-gateway):* the gateway sends `asyncAppraisal` and runs `--workers 6`;
+  `/api/ingest/manual` answers once extraction + verification + the signal rows are recorded (content `extracted`
+  = the ACK point) and the post-record stage (shadow books, appraisal, lane, auto-approve, cohort, review/finish)
+  runs as one tracked task per message (`TipAppraisalDeferred` / `...Done`). Durable marker
+  `extraction.deferredStage`; the recovery sweep resumes an orphan (< 30 min, never a second card) or abandons it
+  (`TipDeferredStageRecovered`). A close/trim/update_stop recorded while the appraisal ran refuses the card
+  (`TipLaneDecided lane=refused`). Rollback: `techniques.tip.intake_async_appraisal=false` or `--sync-appraisal`.
+- [x] **W1.6 Clock (D5).** Startup + 08:00 ET skew check against an NTP/HTTP Date reference, journaled `ClockSkew`;
   desk alert above 2 s; runbook step to enable Windows time sync (user, one command).
+  *Built 2026-10-02:* `zargar/clockskew.py` (NTP quorum via `tools/clock_health`, HTTP `Date` HEAD fallback),
+  `ops.clock_skew_*` settings, `/api/health` `local.clockSkewMs`, escalation via `zargar/desk_alert.py`; runbook in
+  docs/OPERATIONS.md "Host clock" (the w32time step is still the user's).
 - [x] **W1.7 Earnings entry consistency (D7 / E0).** (tip-time, armed-fire and armed auto entries) No new tip entry when the exit policy would flatten it before the
   next session (`days_to_earnings <= flatten_before.days`); journaled `TipLaneDecided lane=refused reason=earnings_window`.
-- [ ] **W1.8 Shadow book quarantine (D9).** Quarantine "Shadow: tt" and "Shadow: ab (armed)"; fix the cause (sells
+- [x] **W1.8 Shadow book quarantine (D9).** (cause fixed in PR #313; quarantine at deploy) Quarantine "Shadow: tt" and "Shadow: ab (armed)"; fix the cause (sells
   without a matching lot) so FIFO never goes short in a shadow book.
 - [x] **W1.9 Recovery-sweep gates (D10).** The recovery sweep and the main intake share one `_decide_auto` helper (trust,
   geometry, integrity). Integrity incidents scoped to the order's own book.
@@ -79,8 +89,11 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
   expire on the source's own trim/close (exists). Practice unattended keeps auto-deciding.
 - [x] **W3.3 Pre-market level maps.** (posts with >= 3 branch signals decline on the record without a card per branch) A multi-branch map post becomes ONE watch-map record (no per-branch proposal rows);
   its levels arm after 09:30 through W2.3 when the analyst names them.
-- [ ] **W3.4 Intake liveness paging.** Gateway idle > 3 min in RTH → push + Telegram + desk alert (escalation, not just
+- [x] **W3.4 Intake liveness paging.** Gateway idle > 3 min in RTH → push + Telegram + desk alert (escalation, not just
   a journal line).
+  *Built 2026-10-02:* `intake_liveness.page_loop` (30 s; `StallPager` = one page per stall + a recovery message),
+  `techniques.tip.intake_page_idle_minutes` (3), journaled `TipIntakePaged`. (The old monitor's `eng.alert` call
+  never existed on the engine - that is why 59 `TipIntakeStalled` rows reached nobody.)
 - [x] **W3.5 Fast lane (observe).** Deterministic pre-check for clean priced BTOs from earned-auto sources, booked as a
   shadow decision beside the analyst's; promotion criteria preregistered (fill-vs-quote gain net of extra takes).
 

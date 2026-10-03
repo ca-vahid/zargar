@@ -44,6 +44,9 @@ class AppConfig(BaseSettings):
     # 2026-10-02: IBKR is an EXECUTOR only by default - the app's market-data feed (Alpaca/Yahoo) serves every desk.
     # True = IBKR market data replaces the feed (delayed without an IBKR data subscription).
     ibkr_quotes: bool = False
+    # W1.6 (2026-10-02): the host-clock skew probe makes one outbound HTTPS HEAD (startup + 08:00 ET);
+    # tests turn it off so a suite never reaches the network (the thresholds are settings, ops.clock_skew_*)
+    clock_skew_probe: bool = True
 
     # --- sim engine ------------------------------------------------------
     sim_tick_interval: float = 0.35  # seconds between simulated ticks per symbol batch

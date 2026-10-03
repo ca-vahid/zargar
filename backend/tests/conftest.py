@@ -32,6 +32,7 @@ def make_test_config(**overrides) -> AppConfig:
         persist_sim_bars=True,     # tests bank the sim feed's bars; the runtime refuses them (F75)
         alpaca_key_id="",          # never let a test reach OPRA/SIP with the real .env keys
         alpaca_secret="",
+        clock_skew_probe=False,    # W1.6: no outbound HEAD from a suite (the probe is tested with a stub)
     )
     defaults.update(overrides)
     return AppConfig(**defaults)

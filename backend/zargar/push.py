@@ -152,7 +152,8 @@ class PushService:
                 msg: dict[str, Any] = await q.get()
                 try:
                     kind = msg.get("kind")
-                    if kind == "alert" and self._enabled("alert"):
+                    # a desk escalation (desk_alert.escalate) already sent its own push
+                    if kind == "alert" and self._enabled("alert") and not msg.get("pushed"):
                         await self.send("⚠ Zargar alert", str(msg.get("text") or ""),
                                         url=f"/armed/{msg.get('runId')}" if msg.get("runId") else "/armed",
                                         tag=f"alert-{msg.get('runId')}", level=str(msg.get("level") or "critical"))

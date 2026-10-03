@@ -300,6 +300,11 @@ class Engine:
                                     self.position_manager.reconcile)
         except Exception:
             log.exception("position manager restore failed")
+        try:  # W1.6 (2026-10-02): host clock vs an HTTP Date reference - startup + 08:00 ET, journaled ClockSkew
+            from .clockskew import register as _register_clock_skew
+            _register_clock_skew(self)
+        except Exception:
+            log.exception("clock skew check not registered")
         self.scheduler.start()
         log.info("engine started (feed=%s)", type(self.feed).__name__)
 
