@@ -58,6 +58,11 @@ The reference is the 1-minute bar at the post minute: its open, or the previous 
 * The worst cases are fast movers in the first minutes: VSH at 09:33 (+2.2%, 0.14R), VKTX (+1.5%, 0.34R, the only case above 0.25R), ENOV (+0.83%, 0.13R) and JELD (+0.79%).
 * Option premium drift is roughly 10 to 30 times the underlying drift (delta leverage on cheap contracts). In 11 of 23 option fills we paid more than 1% above the source's price. Most of that gap was already there when the message was posted (the source's print vs the contract's print at post time). Some source prices are averages ("NEW AVG .56", "AVG 2.41"), so those comparisons are not latency.
 * Data-quality flag: three sim option fills landed far below the limit and the decision ask. MRNA 165C filled at 0.75 against an ask of 2.01; AAOI at 2.90 against a 3.30 limit; DAL at 1.56 against a 1.76 limit. MRNA's +$115 "win" rests on that fill.
+  * Re-mark (W1.4, 2026-10-03; books not rewritten): all three were priced on an OPRA band that a stale chart print
+    had recentred while it kept `source="opra"`, which E17-01 (v0.8.11, 2026-09-17) fixed. Re-marked on the live
+    NBBO: MRNA would have rested unfilled (limit 1.95 under a 1.90 / 2.00 band), so drop it from the results. DAL
+    fills at about 1.76 instead of 1.56 (-$80 on 4 contracts). AAOI fills at the limit, 3.30 at most, instead of 2.90
+    (up to -$80 on 2 contracts). Record and residual fix: PLATFORM-RULES 2026-10-03.
 
 ## 3. Time of day
 
