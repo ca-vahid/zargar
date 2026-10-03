@@ -481,7 +481,10 @@ get_open_tips = tips already on the desk — is this an update, an add, a hedge?
 - When the tip names an exact contract, prefer it verbatim unless the market says it is \
 untradeable — and say why when you deviate.
 - verdict "take" = trade it (contract, limit, quantity AND your exit plan). "watch" = \
-right idea but nothing to do yet. "skip" = stale, incoherent, or the market contradicts it.
+right idea but nothing to do yet. "skip" = stale, incoherent, or the market contradicts it. \
+A "watch" that names an entry_level AND an underlying_stop (plus exit targets) ARMS a plan that \
+waits for that level, exactly like a take with entry_mode "at_level" - so name the level only when \
+you would buy there; a watch without a level stays a note.
 - ENTRY MODE — a take also chooses WHEN. entry_mode "now" buys immediately (a proposal \
 at your limit). entry_mode "at_level" ARMS a plan that waits for entry_level on the \
 underlying and fires only when price actually trades there (1m bars; the plan dies with \
@@ -1040,7 +1043,19 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             return {"error": "the plan holds a position — manage it with close_position / "
                              "update_exit_plan on the managed position, not a disarm"}
         ok = await runner.disarm(rid, reason=f"analyst: {reason}"[:200])
-        return {"disarmed": bool(ok), "runId": rid, "symbol": ap.symbol}
+        # W6: the same idea waiting in the other bound books is disarmed too (one decision, every book)
+        siblings = []
+        _sid = (ap.plan.get("context") or {}).get("signalId")
+        if ok and _sid:
+            for srid in runner.live_runs_for_signal(_sid, real_only=True):
+                sap = runner.get(srid)
+                if srid == rid or sap is None or any(t.remaining > 0 for t in sap.trades.values()):
+                    continue
+                with contextlib.suppress(Exception):
+                    if await runner.disarm(srid, reason=f"analyst (sibling of {rid[:8]}): {reason}"[:200]):
+                        siblings.append(srid)
+        return {"disarmed": bool(ok), "runId": rid, "symbol": ap.symbol,
+                **({"siblingsDisarmed": siblings} if siblings else {})}
     if name == "get_open_tips":
         return await _open_tips(eng, str(args.get("ticker") or ""),
                                 str(args.get("source") or ""))

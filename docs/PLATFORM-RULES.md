@@ -2744,3 +2744,23 @@ regular session). Now `parse_rfc3339_ms` caches the whole-second epoch per (seco
 Bit-identical results (`tests/test_alpaca_fastpath.py`: 20k random stamps, both DST switches); 15.9 -> 6.1 us per trade
 message. It does not fix host memory pressure - that is still the first cause.
 
+
+### Practice and live books at once; the mode switch is a view; per-book risk keys - 2026-10-03 (Tips desk, 0.8.59)
+
+- **`techniques.tip.books`** binds the Tips method to several books (design: `docs/techniques/tip/research/2026-10-02-tips-review/E-architecture.md`).
+  The analyst appraises once; each bound book gets its own proposal / armed plan, sized and gated by that book's own knobs
+  (`techniques/tip/books.py`; a `contextvars` binding lets deep helpers - the geometry risk budget - read per-book values).
+  Empty list = the old single book. Journal `TipBookFanOut` records what every book got and why.
+- **The top-bar Practice/LIVE switch is a VIEW** (per browser, `localStorage`). Real-order routing is still `trading.mode`
+  on the server, now shown as its own "Real orders on/off" switch beside HALT. With routing on, sim/shadow books keep
+  filling exactly as before. Other desks that read `trading.mode` (Options Cartel's arming gate) see the same value as
+  before - their code is untouched; the only change is that the UI no longer flips it when someone changes the view.
+- **RiskGate keys per book:** `risk.max_orders_per_minute` counts orders per BOOK, and the technique / tag day-notional
+  caps are keyed `tech:<id>@<pid>` / `tag:<t>@<pid>`. One technique running Practice + live must not let Practice (or a
+  burst of shadow-book orders) consume the live book's budget. Each book keeps its own runaway brake.
+- **Multi-leg routing gate**: a pair of reduce-only legs (closing a held spread) is exempt from the mode gate, as single
+  reduce-only orders already were.
+- **Earnings exit by report time** (`execution/policies.py::earnings_exit_at/earnings_exit_due`, opt-in per position via
+  `flatten_before.timing = "session"`; only Tips sets `flatten_before`): BMO / unknown -> flat at 15:45 ET of the session
+  before the report, AMC -> 15:45 of the report day (early closes pull it inside the close). The whole-day rule it
+  replaces held a Friday long through a Monday-BMO report and sold AMC names a session early.

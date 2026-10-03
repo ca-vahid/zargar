@@ -2176,7 +2176,12 @@ class SignalService:
                 continue
             pf = eng.positions.portfolio(p.get("portfolioId")) or {}
             from ..approvals.proposals import policy_kind as _policy_kind
-            if _policy_kind(eng.settings, pf) in ("live", "paper"):
+            from ..techniques.tip import books as _books
+            _bb = _books.binding_for(eng.settings, eng.positions.portfolio, p.get("portfolioId"))
+            if _bb is not None and _bb.mirror is not None:
+                if not _bb.mirror:
+                    continue                     # W6: this bound book opted out of mirroring the source's exits
+            elif _policy_kind(eng.settings, pf) in ("live", "paper"):
                 continue                         # a live/paper book only with techniques.tip.live_parity (IBKR)
             if match_on:
                 # Q2 (2026-09-27 review): only the leg our position came from is mirrored deterministically; an exit on
@@ -2735,6 +2740,11 @@ class SignalService:
             analyst_available = (bool(eng.settings.get("techniques.tip.analyst_enabled", True))
                                  and (self._analyst_client is not None
                                       or bool(getattr(eng.config, "anthropic_api_key", ""))))
+            if status == "verified" and experiment is None:
+                # W3.5 observe lane: what a deterministic fast lane would do BEFORE the appraisal (journal only)
+                with contextlib.suppress(Exception):
+                    from ..techniques.tip.observe_lanes import record_fast_lane
+                    asyncio.create_task(record_fast_lane(eng, row, sig, verification), name=f"tip-fastlane-{row.id[:8]}")
             if appraise:
                 # the tips analyst appraises the tip with market tools —
                 # strictly advisory, fail-open (POC 2026-08-28)
@@ -2809,6 +2819,9 @@ class SignalService:
                                                      "contractLabel", "limit_price",
                                                      "quantity", "rationale")},
                         aggregate_type="signal", aggregate_id=row.id)
+                    if experiment is None:
+                        from ..techniques.tip.observe_lanes import record_second_opinion_candidate
+                        await record_second_opinion_candidate(eng, row, opinion, verification)
                     eng.bus.publish(topics.SIGNALS, signal_dict(row))
             # cold-park fast path (2026-09-19): a tip parked ONLY because its ticker had no quote yet used to wait for
             # the 15-minute recovery sweep (SBLK 5 min, RKT 13 min after a TAKE). Now that the appraisal is on the
@@ -2819,7 +2832,19 @@ class SignalService:
             # plan waiting for the analyst's price instead of proposing at market
             armed = None
             op = (row.extraction or {}).get("analyst") or {}
-            wants_arm = (op.get("verdict") == "take" and op.get("entry_mode") == "at_level"
+            # W2.3 (2026-10-03): a WATCH that names a level and a stop is a conditional entry, not a dead end
+            # (23 watches, 0 arms over the review window) - it arms at that level like an at-level take
+            watch_arm = (op.get("verdict") == "watch" and op.get("entry_level") and op.get("underlying_stop")
+                         and bool(eng.settings.get("techniques.tip.watch_arms", True)))
+            if watch_arm:
+                op = {**op, "entry_mode": "at_level", "watchArmed": True}
+                async with eng.sf() as session:
+                    db_row = await session.get(Signal, row.id)
+                    db_row.extraction = {**(db_row.extraction or {}), "analyst": op}
+                    await session.commit()
+                    row = db_row
+            wants_arm = (op.get("verdict") in ("take", "watch") and op.get("entry_mode") == "at_level"
+                         and (op.get("verdict") == "take" or op.get("watchArmed"))
                          and status in ("verified", "parked")
                          and getattr(eng, "tip_runner", None) is not None)
             if wants_arm:
@@ -2876,127 +2901,55 @@ class SignalService:
                               "called implied — promoted to a proposal that waits for you.")
             if status == "verified" and armed is None:
                 # proposals need an explicit call (status "shadow" never proposes
-                # on its own — see the promotion above)
+                # on its own — see the promotion above). W6: one proposal per bound book.
+                made: list[dict] = []
                 if (eng.proposals is not None and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
-                    proposal = await eng.proposals.create_from_signal(row, sig, verification)
-                    if proposal is not None and promoted:
+                    _v = ((row.extraction or {}).get("analyst") or {}).get("verdict")
+                    _decl = None
+                    if (policy.mode == "auto" and not promoted and _v in ("skip", "watch") and row.raw_content_id
+                            and int(eng.settings.get("techniques.tip.decline_without_card_siblings", 3) or 0) > 0):
+                        # W3.3: a multi-branch post (a pre-market level map fans into 10-12 siblings) declines on the
+                        # record without minting one card per branch; a single tip keeps its declined card (history)
+                        with contextlib.suppress(Exception):
+                            async with eng.sf() as session:
+                                _n = len((await session.execute(select(Signal.id).where(
+                                    Signal.raw_content_id == row.raw_content_id))).all())
+                            if _n >= int(eng.settings.get("techniques.tip.decline_without_card_siblings", 3)):
+                                _decl = _v
+                    made = await eng.proposals.create_for_books(row, sig, verification, declined_verdict=_decl)
+                    if made and promoted:
                         with contextlib.suppress(Exception):
                             from ..models import Proposal as ProposalRow
                             from ..approvals.proposals import proposal_dict as _pdict
                             async with eng.sf() as session:
-                                prow = await session.get(ProposalRow, proposal["id"])
-                                if prow is not None:
-                                    prow.context = {**(prow.context or {}),
-                                                    "promoted": "analyst take on an implied tip",
-                                                    "autoGate": "promoted from shadow — a human approves"}
-                                    await session.commit()
-                                    proposal = _pdict(prow)
-                    if proposal is not None and op:
+                                for k, p in enumerate(made):
+                                    prow = await session.get(ProposalRow, p["id"])
+                                    if prow is not None:
+                                        prow.context = {**(prow.context or {}),
+                                                        "promoted": "analyst take on an implied tip",
+                                                        "autoGate": "promoted from shadow — a human approves"}
+                                        made[k] = _pdict(prow)
+                                await session.commit()
+                    if made and op:
                         await eng.journal.append(
                             ev.TIP_LANE_DECIDED,
                             {"signalId": row.id, "lane": "proposal",
                              "entryMode": op.get("entry_mode") or "now",
+                             "books": [p.get("portfolioId") for p in made],
                              **({"promoted": True} if promoted else {})},
                             aggregate_type="signal", aggregate_id=row.id)
-                # full auto: a "take" from the analyst self-approves the proposal —
-                # same path a human click takes (RiskGate inside OrderManager.place).
-                # A live portfolio additionally needs techniques.tip.allow_live_auto.
-                if proposal is not None and policy.mode == "auto":
-                    verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
-                    pf = eng.positions.portfolio(proposal["portfolioId"]) or {}
-                    live_ok = (pf.get("kind") != "live"
-                               or bool(eng.settings.get("techniques.tip.allow_live_auto", False)))
-                    # UNATTENDED practice (user 2026-09-04: "I won't be monitoring —
-                    # approvals aren't useful"): the analyst's verdict IS the
-                    # decision. Skips/watches are declined on the record instead of
-                    # waiting for a click that never comes; promoted implied takes
-                    # trade like any take. Live portfolios always keep the human.
-                    unattended = (bool(eng.settings.get("techniques.tip.unattended", True))
-                                  and pf.get("kind") != "live")
-                    if promoted and not unattended:
-                        log.info("auto mode: proposal %s was promoted from an implied tip — "
-                                 "a human approves", proposal["id"])
-                    elif verdict is None and appraise and analyst_available:
-                        # the analyst was supposed to gate this and DIDN'T deliver a
-                        # verdict (crashed / unparseable reply). Fail CLOSED: a missing
-                        # gatekeeper is not permission (TSLA 2026-08-31 — a failed
-                        # appraisal auto-bought 15 two-DTE puts). The morning triage
-                        # re-appraises it; a second failure expires on the TTL.
-                        log.warning("auto mode: analyst enabled but no verdict for %s "
-                                    "(run failed?) — leaving proposal %s pending",
-                                    row.id, proposal["id"])
-                        istep("note", f"{row.ticker}: analyst produced no verdict — auto-approve "
-                                      "FAILS CLOSED; the morning triage re-appraises it.")
-                    elif verdict not in (None, "take"):
-                        if unattended:
-                            why = (f"analyst said {verdict}: "
-                                   f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
-                            with contextlib.suppress(Exception):
-                                proposal = await eng.proposals.reject(proposal["id"], via="analyst",
-                                                                      reason=why)
-                            istep("note", f"{row.ticker}: analyst said {verdict} — declined on the "
-                                          "record (unattended practice; no card waits for you).")
-                        else:
-                            log.info("auto mode: analyst said %r — leaving proposal %s for the human",
-                                     verdict, proposal["id"])
-                    elif not live_ok:
-                        log.warning("auto mode: live portfolio without allow_live_auto — "
-                                    "leaving proposal %s pending", proposal["id"])
-                    else:
-                        # earned auto (POST-SOAK Phase 2): the platform-default
-                        # `auto` graduates per source on its closed tip positions;
-                        # an EXPLICIT per-source `mode: auto` bypasses (human said so)
-                        gate = None
-                        explicit_auto = (((eng.settings.get("techniques.tip.sources") or {})
-                                          .get(row.source_name or "", {}) or {}).get("mode") == "auto")
-                        if not explicit_auto:
-                            trust = await self.source_trust(row.source_name or "unknown")
-                            need_n = int(eng.settings.get("techniques.tip.auto_min_graded", 5))
-                            need_hit = float(eng.settings.get("techniques.tip.auto_min_hit", 0.4))
-                            if trust["graded"] < need_n:
-                                gate = f"auto not yet earned: {trust['graded']}/{need_n} graded tips"
-                            elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
-                                gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
-                                        f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
-                        if not gate and (proposal.get("context") or {}).get("reviewRequired"):
-                            # GEOMETRY rev 2: a review-gated card never auto-approves
-                            gate = f"geometry review required: {(proposal.get('context') or {}).get('reviewRequired')}"
-                        if not gate:
-                            # KB-06 (2026-09-14): the entry pause — the clock gate (the
-                            # 2026-09-04 nine-strike clause, default), execution-integrity
-                            # incidents, or both (techniques.tip.entry_pause_mode); detection
-                            # runs first so a fresh defect pauses this very card
-                            with contextlib.suppress(Exception):
-                                from ..techniques.tip import integrity as _ig
-                                await _ig.detect_incidents(eng)
-                                ks = await _ig.gate_reason(eng, portfolio_id=proposal.get("portfolioId"),
-                                                           entry_path="proposal")
-                                if ks:
-                                    gate = ks
-                                    await eng.journal.append(
-                                        ev.TIP_AUTO_PAUSED, {"reason": ks,
-                                                             "proposalId": proposal["id"]},
-                                        aggregate_type="signal", aggregate_id=row.id)
-                        if gate:
-                            log.info("auto mode: %s (%s) — leaving proposal %s pending",
-                                     gate, row.source_name, proposal["id"])
-                            istep("note", f"{row.ticker}: {gate} — the proposal waits for you.")
-                            with contextlib.suppress(Exception):
-                                from ..models import Proposal as ProposalRow
-                                from ..approvals.proposals import proposal_dict as _pdict
-                                async with eng.sf() as session:
-                                    prow = await session.get(ProposalRow, proposal["id"])
-                                    if prow is not None:
-                                        prow.context = {**(prow.context or {}), "autoGate": gate}
-                                        await session.commit()
-                                        proposal = _pdict(prow)
-                        else:
-                            try:
-                                decided = await eng.proposals.approve(proposal["id"], via="auto")
-                                proposal = decided["proposal"]
-                            except Exception:
-                                log.exception("auto-approve failed for proposal %s", proposal["id"])
+                # full auto: a "take" from the analyst self-approves each book's proposal through that book's own
+                # gates — same path a human click takes (RiskGate inside OrderManager.place)
+                decided: list[dict] = []
+                for p in made:
+                    if policy.mode == "auto":
+                        p = await self._decide_auto(row, p, policy=policy, promoted=promoted,
+                                                    verdict_expected=bool(appraise and analyst_available),
+                                                    istep=istep)
+                    decided.append(p)
+                proposal = next((p for p in decided if ((p.get("context") or {}).get("book") or {}).get("primary")),
+                                decided[0] if decided else None)
             # KFIN-09 (2026-09-14): the entry-variant COHORT records EVERY eligible
             # idea at its decision - proposals, blocked cards, declines, arms,
             # skips, shadows, parks, replays, failures (inert unless enabled)
@@ -3404,8 +3357,7 @@ class SignalService:
             n += 1
             if runner is not None:
                 with contextlib.suppress(Exception):
-                    rid = runner.live_run_for_signal(sid)
-                    if rid:
+                    for rid in runner.live_runs_for_signal(sid):
                         await runner.disarm(rid, reason="tip deleted by the user")
             if eng.proposals is not None:
                 with contextlib.suppress(Exception):
@@ -3680,26 +3632,18 @@ class SignalService:
                         and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
                     with contextlib.suppress(Exception):
-                        prop = await eng.proposals.create_from_signal(row, sig, verification)
+                        made = await eng.proposals.create_for_books(row, sig, verification)
                         # UNATTENDED practice decides promoted cards too (user
-                        # 2026-09-08, FRVO: an analyst TAKE promoted off a
-                        # prevClose-artifact park sat waiting for a click that
-                        # never comes). skip/watch self-DECLINES (RDDT 09-04),
-                        # a take self-APPROVES on a practice book; NO VERDICT
-                        # stays pending (fail-closed, the TSLA lesson) and live
-                        # books always keep the human.
-                        if prop is not None and policy.mode == "auto":
-                            verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
-                            pf = eng.positions.portfolio(prop["portfolioId"]) or {}
-                            unattended = (bool(eng.settings.get("techniques.tip.unattended", True))
-                                          and pf.get("kind") != "live")
-                            if unattended and verdict not in (None, "take"):
-                                why = (f"analyst said {verdict}: "
-                                       f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
-                                await eng.proposals.reject(prop["id"], via="analyst",
-                                                           reason=why)
-                            elif unattended and verdict == "take":
-                                await eng.proposals.approve(prop["id"], via="auto")
+                        # 2026-09-08, FRVO). skip/watch self-DECLINES (RDDT 09-04),
+                        # a take self-APPROVES on a practice book through the SAME gates as the
+                        # intake (earned trust, geometry, integrity - W1.9, 2026-10-03); NO VERDICT
+                        # stays pending (fail-closed, the TSLA lesson) and a live book keeps the human.
+                        for k, p in enumerate(made):
+                            if policy.mode == "auto":
+                                made[k] = await self._decide_auto(row, p, policy=policy, promoted=False,
+                                                                  verdict_expected=True, sweep=True)
+                        prop = next((p for p in made if ((p.get("context") or {}).get("book") or {}).get("primary")),
+                                    made[0] if made else None)
                 # KFIN-09: a park re-decided by the sweep is a REDECISION row in
                 # the entry cohort (the intake row stays as the first decision)
                 with contextlib.suppress(Exception):
@@ -3737,6 +3681,111 @@ class SignalService:
             log.info("recovery sweep: %s", out)
         return out
 
+    async def _decide_auto(self, row, proposal: dict, *, policy, promoted: bool, verdict_expected: bool,
+                           istep=None, sweep: bool = False) -> dict:
+        """ONE auto-approve decision for one book's proposal (W6 + W1.9, 2026-10-03). The intake and the recovery
+        sweep both call it, so earned trust, the geometry review and the integrity pause gate every automated
+        approval. Per book: a `mode: proposal` binding never self-approves; a live-role binding self-approves only
+        with its own `allowLiveAuto` (and a kind=live account also needs the master `techniques.tip.allow_live_auto`);
+        unattended Practice declines skip/watch on the record. Returns the (possibly updated) proposal."""
+        eng = self.engine
+        from ..techniques.tip import books as _books
+
+        def note(text: str) -> None:
+            if istep is not None:
+                with contextlib.suppress(Exception):
+                    istep("note", text)
+
+        verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
+        pid = proposal.get("portfolioId")
+        pf = eng.positions.portfolio(pid) or {}
+        kind = pf.get("kind")
+        b = _books.binding_for(eng.settings, eng.positions.portfolio, pid)
+        master = bool(eng.settings.get("techniques.tip.allow_live_auto", False))
+        if kind in ("live", "paper") and b is not None and not b.legacy:
+            live_ok = bool(b.allowLiveAuto) and (kind != "live" or master)
+        else:
+            live_ok = kind != "live" or master
+        unattended = bool(eng.settings.get("techniques.tip.unattended", True)) and kind != "live"
+        tag = f"{pf.get('name', pid)}"
+        if b is not None and b.mode == "proposal":
+            log.info("book %s is proposal-mode — proposal %s waits for a person", pid, proposal["id"])
+            note(f"{row.ticker}: {tag} is a proposal-mode book — the card waits for you.")
+            return proposal
+        if sweep and not unattended:
+            return proposal                              # the sweep never self-decides a book that keeps the human
+        if promoted and not unattended:
+            log.info("auto mode: proposal %s was promoted from an implied tip — a human approves", proposal["id"])
+            return proposal
+        if verdict is None and verdict_expected:
+            # the analyst was supposed to gate this and DIDN'T deliver a verdict: fail CLOSED (TSLA 2026-08-31)
+            log.warning("auto mode: analyst enabled but no verdict for %s — leaving proposal %s pending",
+                        row.id, proposal["id"])
+            note(f"{row.ticker}: analyst produced no verdict — auto-approve FAILS CLOSED; the morning triage "
+                 "re-appraises it.")
+            return proposal
+        if verdict not in (None, "take"):
+            if unattended:
+                why = (f"analyst said {verdict}: "
+                       f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
+                with contextlib.suppress(Exception):
+                    proposal = await eng.proposals.reject(proposal["id"], via="analyst", reason=why)
+                note(f"{row.ticker}: analyst said {verdict} — declined on the record in {tag} (unattended).")
+            else:
+                log.info("auto mode: analyst said %r — leaving proposal %s for the human", verdict, proposal["id"])
+            return proposal
+        if not live_ok:
+            log.warning("auto mode: %s is a live/paper book without its auto acknowledgement — proposal %s waits",
+                        tag, proposal["id"])
+            note(f"{row.ticker}: {tag} has no live-auto acknowledgement — the card waits for you.")
+            return await self._stamp_gate(proposal, f"live book without allowLiveAuto ({tag})")
+        gate = None
+        explicit_auto = (((eng.settings.get("techniques.tip.sources") or {})
+                          .get(row.source_name or "", {}) or {}).get("mode") == "auto")
+        if not explicit_auto:
+            trust = await self.source_trust(row.source_name or "unknown")
+            need_n = int(eng.settings.get("techniques.tip.auto_min_graded", 5))
+            need_hit = float(eng.settings.get("techniques.tip.auto_min_hit", 0.4))
+            if trust["graded"] < need_n:
+                gate = f"auto not yet earned: {trust['graded']}/{need_n} graded tips"
+            elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
+                gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
+                        f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
+        if not gate and (proposal.get("context") or {}).get("reviewRequired"):
+            gate = f"geometry review required: {(proposal.get('context') or {}).get('reviewRequired')}"
+        if not gate:
+            # KB-06: the entry pause (incidents scoped to THIS book); detection runs first
+            with contextlib.suppress(Exception):
+                from ..techniques.tip import integrity as _ig
+                await _ig.detect_incidents(eng)
+                ks = await _ig.gate_reason(eng, portfolio_id=pid, entry_path="proposal")
+                if ks:
+                    gate = ks
+                    await eng.journal.append(ev.TIP_AUTO_PAUSED, {"reason": ks, "proposalId": proposal["id"]},
+                                             aggregate_type="signal", aggregate_id=row.id)
+        if gate:
+            log.info("auto mode: %s (%s) — leaving proposal %s pending", gate, row.source_name, proposal["id"])
+            note(f"{row.ticker}: {gate} — the proposal in {tag} waits for you.")
+            return await self._stamp_gate(proposal, gate)
+        try:
+            decided = await eng.proposals.approve(proposal["id"], via="auto")
+            return decided["proposal"]
+        except Exception:
+            log.exception("auto-approve failed for proposal %s", proposal["id"])
+            return proposal
+
+    async def _stamp_gate(self, proposal: dict, gate: str) -> dict:
+        with contextlib.suppress(Exception):
+            from ..models import Proposal as ProposalRow
+            from ..approvals.proposals import proposal_dict as _pdict
+            async with self.engine.sf() as session:
+                prow = await session.get(ProposalRow, proposal["id"])
+                if prow is not None:
+                    prow.context = {**(prow.context or {}), "autoGate": gate}
+                    await session.commit()
+                    return _pdict(prow)
+        return proposal
+
     async def source_trust(self, source: str) -> dict:
         """Graduation stats for the earned-auto gate (POST-SOAK Phase 2, widened
         2026-09-04 by user decision): a source earns auto on BOTH lanes —
@@ -3750,6 +3799,11 @@ class SignalService:
 
         from ..models import ManagedPositionRow, Order
         eng = self.engine
+        from ..techniques.tip import books as _books
+        _bs = _books.resolve_books(eng.settings, eng.positions.portfolio)
+        # W6: with several bound books one idea closes in each - only the PRIMARY book grades (once per idea);
+        # the other bound books are skipped, every other non-shadow book counts as before
+        _skip = {b.portfolioId for b in _bs if not b.primary} if not (len(_bs) == 1 and _bs[0].legacy) else set()
         async with eng.sf() as session:
             rows = (await session.execute(select(ManagedPositionRow).where(
                 ManagedPositionRow.technique == "tip",
@@ -3757,6 +3811,8 @@ class SignalService:
         graded = hits = 0
         for r in rows:
             if f"source:{source}" not in (r.tags or []):
+                continue
+            if r.portfolio_id in _skip:
                 continue
             # cohort filter (Codex finding 10, confirmed): shadow research
             # books and archived books are NOT the real record — a GME shadow

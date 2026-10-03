@@ -1271,3 +1271,36 @@ class CartelPreparationLease(Base):
     workspace: Mapped[str] = mapped_column(String(16), primary_key=True)
     owner: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[int] = mapped_column(BigInteger)
+
+
+class MarketEventRow(Base):
+    """W4.1 (2026-10-03): one immutable revision of a scheduled market event (macro release or a company's earnings).
+    Append-only: a change is a new row with the same `key` and a later `valid_from`; a removal is a `deleted` row."""
+    __tablename__ = "market_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(160), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    tier: Mapped[int] = mapped_column(Integer, default=3)
+    name: Mapped[str] = mapped_column(String(160))
+    date: Mapped[str] = mapped_column(String(10), index=True)          # ET calendar date YYYY-MM-DD
+    time: Mapped[str | None] = mapped_column(String(5), nullable=True)  # HH:MM ET (None = unknown)
+    scope: Mapped[str] = mapped_column(String(8), default="macro")     # macro | symbol
+    symbol: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(32), index=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra: Mapped[dict] = mapped_column(JSONB, default=dict)
+    valid_from: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class MarketEventCoverage(Base):
+    """W4.1: the date window a source covered on one fetch (append-only). Outside every window = unknown."""
+    __tablename__ = "market_event_coverage"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(32), index=True)
+    coverage_from: Mapped[str] = mapped_column(String(10))
+    coverage_through: Mapped[str] = mapped_column(String(10))
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

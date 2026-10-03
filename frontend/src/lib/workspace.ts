@@ -5,8 +5,9 @@
 //            accounts (IBKR paper trades on IBKR's systems with their numbers,
 //            so it lives here, clearly badged — greyed until IBKR activates).
 //
-// The workspace IS trading.mode: switching it both changes what you see and
-// flips the order-routing gate (practice mode rejects orders to real accounts).
+// W6.5 (2026-10-03): the workspace is a VIEW - it only changes what you see (kept per browser). Real-order
+// routing is a separate server switch, `trading.mode` (useLiveRouting): with it on, Practice and the live books
+// both keep trading in the background whichever workspace is on screen.
 import { useMemo } from "react";
 import { useStore } from "../store";
 import type { Portfolio } from "../types";
@@ -29,7 +30,13 @@ export function workspaceOf(kind: string | undefined | null): Workspace {
 }
 
 export function useWorkspace(): Workspace {
-  return useStore((s) => ((s.settings["trading.mode"] ?? "practice") === "live" ? "live" : "practice"));
+  return useStore((s) => s.viewWorkspace
+    ?? ((s.settings["trading.mode"] ?? "practice") === "live" ? "live" : "practice"));
+}
+
+/** Real orders route to live/paper accounts (server `trading.mode` = live). Independent of the view. */
+export function useLiveRouting(): boolean {
+  return useStore((s) => (s.settings["trading.mode"] ?? "practice") === "live");
 }
 
 /** Portfolios visible in the active workspace. */

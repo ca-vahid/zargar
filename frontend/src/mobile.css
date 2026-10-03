@@ -595,6 +595,8 @@ button.bl-card:active { background: var(--surface-2); }
   .topbar--phone { gap: 4px; padding: 0 8px; }
   .topbar-phone-ws { padding: 0 8px; font-size: 11px; }
   .topbar .halt-btn { padding: 0 10px; }
+  .topbar .routing-chip { padding: 0 8px; min-height: 40px; font-size: 0; gap: 0; }
+  .topbar .routing-chip .mode-dot { width: 10px; height: 10px; }
 }
 /* 320px-class phones: HALT + the workspace pill own the row; the version chip
    drops out here (More → Version still opens the changelog) */

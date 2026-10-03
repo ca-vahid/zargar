@@ -142,6 +142,9 @@ def event_context(*, now: dt.datetime, verified: dict | None, shared: list[dict]
 
 def header_line(ctx: dict) -> str:
     """One line for the analyst header / desk report."""
+    nxt = ctx.get("upcoming") or []
+    ahead = ("; next tier-1: " + ", ".join(f"{u['name']} {u['date']} {u.get('time') or ''} ET".strip()
+                                           for u in nxt[:4])) if nxt else ""
     if ctx.get("status") == "event-day":
         parts = []
         for v in ctx.get("events") or []:
@@ -150,9 +153,10 @@ def header_line(ctx: dict) -> str:
         vat = next((v.get("verifiedAt") for v in ctx.get("events") or [] if v.get("verifiedAt")), None)
         return (f"EVENT CONTEXT ({ctx['session']}): " + "; ".join(parts)
                 + (f" - official calendar {src}" if src else "") + (f", verified {vat}" if vat else "")
-                + ". Awareness only: keep exact quote/decision times; no automatic no-trade rule.")
+                + ahead + ". Awareness only: keep exact quote/decision times; no automatic no-trade rule.")
     if ctx.get("status") == "no-scheduled-event":
-        return f"EVENT CONTEXT ({ctx['session']}): no scheduled macro event on the verified calendar (checked through {ctx.get('coverageThrough')})."
+        return (f"EVENT CONTEXT ({ctx['session']}): no scheduled macro event today on the verified calendar "
+                f"(checked through {ctx.get('coverageThrough')}){ahead}.")
     return f"EVENT CONTEXT ({ctx['session']}): macro calendar coverage UNKNOWN for this date - treat as unverified, not as 'no event'."
 
 
@@ -174,9 +178,37 @@ def load_shared(settings) -> list[dict]:
     return [r for r in rows if isinstance(r, dict)]
 
 
+def merged_verified(eng) -> dict:
+    """W4 (2026-10-03): the shared market-event store (official sources, tiers, coverage) when it has coverage, with
+    the desk's manual verified list layered on as annotations (never replacing the store's coverage)."""
+    manual = load_verified(eng.settings)
+    store = getattr(eng, "market_events", None)
+    sv = store.as_verified() if store is not None else None
+    if not sv:
+        return manual
+    seen = {(e.get("date"), e.get("time"), e.get("kind")) for e in sv["events"]}
+    extra = [e for e in (manual.get("events") or []) if (e.get("date"), e.get("time"), e.get("kind")) not in seen]
+    return {**sv, "events": sv["events"] + extra}
+
+
+def upcoming(verified: dict, *, now: dt.datetime, days: int = 7, max_tier: int = 1) -> list[dict]:
+    """Tier-1 events in the next `days` calendar days after today (horizon awareness, not only 'today')."""
+    today = now.astimezone(ET).date()
+    end = (today + dt.timedelta(days=days)).isoformat()
+    out = []
+    for e in verified.get("events") or []:
+        d = str(e.get("date") or "")
+        if today.isoformat() < d <= end and int(e.get("tier") or 1) <= max_tier:
+            out.append({"date": d, "time": e.get("time"), "name": e.get("name"), "kind": e.get("kind")})
+    return sorted(out, key=lambda e: (e["date"], e.get("time") or ""))
+
+
 def context_for(eng, *, now: dt.datetime | None = None, as_of: dt.datetime | None = None,
                 session: str | None = None) -> dict:
-    """Engine convenience: the label from the live settings."""
+    """Engine convenience: the label from the store (+ the manual list)."""
     now = now or dt.datetime.now(dt.timezone.utc)
-    return event_context(now=now, verified=load_verified(eng.settings), shared=load_shared(eng.settings),
-                         as_of=as_of, session=session)
+    ver = merged_verified(eng)
+    ctx = event_context(now=now, verified=ver, shared=load_shared(eng.settings), as_of=as_of, session=session)
+    ctx["upcoming"] = upcoming(ver, now=now)
+    ctx["store"] = ver.get("store") or "manual"
+    return ctx

@@ -180,12 +180,15 @@ class RiskGate:
                 break
 
     def _exposure_keys(self, intent) -> list[str]:
+        # keyed per BOOK (2026-10-03, W6): one technique running a Practice and a live book at once must not let
+        # Practice spend the live book's day notional (PLATFORM-RULES)
         keys = []
+        pid = getattr(intent, "portfolio_id", None) or "?"
         tid = getattr(intent, "technique_id", None)
         if tid:
-            keys.append(f"tech:{tid}")
+            keys.append(f"tech:{tid}@{pid}")
         for t in getattr(intent, "tags", None) or []:
-            keys.append(f"tag:{t}")
+            keys.append(f"tag:{t}@{pid}")
         return keys
 
     def _exposure_roll(self) -> None:
@@ -466,10 +469,13 @@ class RiskGate:
         # 8. order rate --------------------------------------------------------
         now = time.time()
         per_min = int(s.get("risk.max_orders_per_minute", 10))
-        recent = sum(1 for ts, _ in self._recent if now - ts <= 60)
+        # per BOOK (2026-10-03, W6): research shadow books and a Practice book firing in the same burst never
+        # starve a live book's entry; each book still has its own runaway brake
+        _pfx = f"{intent.portfolio_id}|"
+        recent = sum(1 for ts, k in self._recent if now - ts <= 60 and str(k).startswith(_pfx))
         checks.append(RiskCheck(
             "order_rate", recent < per_min,
-            f"{recent} orders in the last 60s (max {per_min})" if recent >= per_min else ""))
+            f"{recent} orders in this book in the last 60s (max {per_min})" if recent >= per_min else ""))
 
         # 9. duplicate ------------------------------------------------------------
         # keyed per PORTFOLIO (2026-08-29): a shadow book expressing the same

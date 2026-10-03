@@ -440,7 +440,9 @@ class OrderManager:
         mode = str(self._settings.get("trading.mode", "practice"))
         allowed = {"practice": {"sim", "shadow"},
                    "live": {"sim", "shadow", "paper", "live"}}.get(mode, set())
-        if portfolio["kind"] not in allowed:
+        # reduce-only pairs (closing a held spread) are exempt, as on the single-order path (W6.5, 2026-10-03)
+        _closing = bool(long_intent.reduce_only and short_intent.reduce_only)
+        if portfolio["kind"] not in allowed and not _closing:
             reason = f"trading.mode={mode} blocks orders on a '{portfolio['kind']}' portfolio"
             out = [await self._transition(o.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
                                           reject_reason=reason) for o in rows]

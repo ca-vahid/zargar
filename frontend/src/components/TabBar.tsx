@@ -7,6 +7,7 @@ import { useStore, type Page } from "../store";
 import { useTechniques } from "../lib/techniques";
 import { Sheet } from "./Sheet";
 import { ConfirmDialog } from "./Modal";
+import { useLiveRouting, useWorkspace } from "../lib/workspace";
 import {
   IconArmed, IconDashboard, IconJournal, IconLedger, IconOptions, IconPortfolios,
   IconSettings, IconSignals, IconTechnique, IconTrade, IconWatchlist,
@@ -80,7 +81,9 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   const connected = useStore((s) => s.connected);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();                       // the VIEW (W6.5)
+  const routing = useLiveRouting();
+  const setView = useStore((s) => s.setViewWorkspace);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const toast = useStore((s) => s.toast);
   const chgDollar = useStore((s) => s.chgDollar);
@@ -89,9 +92,11 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
   const [confirmLive, setConfirmLive] = useState(false);
   const [changelog, setChangelog] = useState(false);
   const go = (p: Page) => { setPage(p); onClose(); };
-  const setMode = async (value: string) => {
-    try { await api.patchSettings({ "trading.mode": value }); toast("info", `Workspace: ${value}`); }
-    catch (e: any) { toast("error", e.message); }
+  const setRouting = async (value: string) => {
+    try {
+      await api.patchSettings({ "trading.mode": value });
+      toast("info", value === "live" ? "Real-order routing ON" : "Real-order routing OFF");
+    } catch (e: any) { toast("error", e.message); }
   };
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -122,9 +127,16 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
         <div className="more-row">
           <span>Workspace</span>
           <div className="seg" role="group" aria-label="Workspace">
-            <button type="button" className={mode !== "live" ? "on" : ""} onClick={() => void setMode("practice")}>Practice</button>
-            <button type="button" className={mode === "live" ? "on live" : ""}
-              onClick={() => { if (mode !== "live") setConfirmLive(true); }}>LIVE</button>
+            <button type="button" className={mode !== "live" ? "on" : ""} onClick={() => setView("practice")}>Practice</button>
+            <button type="button" className={mode === "live" ? "on live" : ""} onClick={() => setView("live")}>LIVE</button>
+          </div>
+        </div>
+        <div className="more-row">
+          <span>Real orders</span>
+          <div className="seg" role="group" aria-label="Real-order routing">
+            <button type="button" className={!routing ? "on" : ""} onClick={() => { if (routing) void setRouting("practice"); }}>Off</button>
+            <button type="button" className={routing ? "on live" : ""}
+              onClick={() => { if (!routing) setConfirmLive(true); }}>On</button>
           </div>
         </div>
         <div className="more-row">
@@ -161,11 +173,11 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
       {changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
       {confirmLive && (
         <ConfirmDialog
-          title="Switch to LIVE?"
+          title="Turn on real-order routing?"
           danger
-          confirmLabel="Go live"
-          body={<p style={{ margin: 0 }}>Real orders will route to your brokerage accounts. Every order still passes the risk gate and asks for confirmation.</p>}
-          onConfirm={() => { setConfirmLive(false); void setMode("live"); }}
+          confirmLabel="Route real orders"
+          body={<p style={{ margin: 0 }}>Orders for live and paper accounts will route to the broker. Every order still passes the risk gate. The view does not change.</p>}
+          onConfirm={() => { setConfirmLive(false); void setRouting("live"); }}
           onCancel={() => setConfirmLive(false)}
         />
       )}

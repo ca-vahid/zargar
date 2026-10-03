@@ -256,6 +256,26 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.live_parity": False,            # IBKR live/paper books run the Practice policy (shares-first, substitution, geometry gate, mirror)
     "techniques.tip.live_shares_only": True,        # live/paper books trade SHARES only (no IBKR option / multi-leg path)
     "techniques.tip.live_capital_cap": 0.0,         # $ cap on the cost basis of open tip positions in a live/paper book (0 = off)
+    # W6 (2026-10-03): the Tips method bound to several books at once - [] = the single legacy book
+    # (techniques.tip.default_portfolio). Each entry: {portfolioId, role practice|live, enabled, primary, mode auto|proposal,
+    # allowLiveAuto, armAtLevel, mirror, sharesOnly, budgetPerTip, maxOpenPositions, capitalCap, reserveSlots, minBudget,
+    # riskPct, riskBudgetPerTip, maxPremiumPerTip}. Design: docs/techniques/tip/research/2026-10-02-tips-review/E-architecture.md
+    "techniques.tip.books": [],
+    "research.market_events_boot_refresh": True,
+    "ops.host_memory_alert_gb": 1.5,               # W7.2: page below this much free host memory (0 = off)
+    "ops.host_memory_alert_every_min": 30,    # W4.2: an empty event store fetches the official calendars at boot
+    # W4.4 / W1.7 (2026-10-03): earnings by report time. session = BMO/unknown flat at the cutoff of the session before
+    # the report, AMC at the cutoff of the report day; days = the old whole-day rule. A new entry whose earnings exit
+    # is ALREADY due is refused (it would be bought and force-sold minutes later - ORCL 09-09/09-10).
+    "techniques.tip.earnings_exit_timing": "session",
+    "techniques.tip.earnings_flatten_at": "15:45",
+    "techniques.tip.earnings_entry_block": True,
+    "techniques.tip.watch_arms": True,
+    "techniques.tip.observe_fast_lane": True,       # W3.5: journal TipFastLaneShadow at signal time (no orders)
+    "techniques.tip.decline_without_card_siblings": 3,  # W3.3: a post with >= N branch signals records a skip/watch per branch instead of minting a card to decline (0 = off)              # W2.3: a watch with entry_level + underlying_stop arms at that level
+    "techniques.tip.entry_band_option": 1.10,       # W3.1: option BUY limit <= this x the source's stated premium (0 = off)
+    "techniques.tip.card_ttl_short_minutes": 15,    # W3.2: life of a card on a contract expiring within card_ttl_short_dte
+    "techniques.tip.card_ttl_short_dte": 7,
     "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)
@@ -786,6 +806,10 @@ class SettingsService:
         if key not in DEFAULTS and not key.startswith("system.") \
                 and _technique_override_canonical(key) is None:
             raise KeyError(f"unknown setting: {key}")
+        if key == "techniques.tip.books" and getattr(self, "books_validator", None) is not None:
+            errs = self.books_validator(value)
+            if errs:
+                raise KeyError("techniques.tip.books: " + "; ".join(errs))
         if key == "trading.mode":
             value = MODE_ALIASES.get(value, value)
             if value not in ("practice", "live"):

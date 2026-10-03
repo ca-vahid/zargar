@@ -1406,10 +1406,18 @@ class PositionManager:
 
     async def _decide(self, p: Managed, bar: Bar, bars: list[Bar]) -> None:
         days_to_event = None
+        event_due = None
         fb = p.policy.get("flatten_before") or {}
         if fb and getattr(self.engine, "calendar", None) is not None:
             with contextlib.suppress(Exception):
-                if fb.get("event") == "earnings":
+                if fb.get("event") == "earnings" and fb.get("timing") == "session":
+                    from .policies import earnings_exit_due
+                    nxt = await self.engine.calendar.next_earnings(p.symbol)
+                    if nxt:
+                        event_due = earnings_exit_due(
+                            dt.datetime.fromtimestamp(self.now_ms() / 1000, ET), nxt[0], nxt[1],
+                            at=str(fb.get("at") or "15:45"))
+                elif fb.get("event") == "earnings":
                     days_to_event = await self.engine.calendar.days_to_earnings(p.symbol)
                 elif fb.get("event") == "ex_dividend":
                     days_to_event = await self.engine.calendar.days_to_ex_dividend(p.symbol)
@@ -1417,7 +1425,7 @@ class PositionManager:
             direction=p.direction, entry=p.entry, risk=p.risk, bar=bar, bars=bars,
             net_mark=self._fresh_net_mark(p), entry_mark=p.entry_mark,
             dte_min=p.dte_min(dt.datetime.fromtimestamp(self.now_ms() / 1000, ET).date()),
-            sessions_held=p.sessions_held(), days_to_event=days_to_event,
+            sessions_held=p.sessions_held(), days_to_event=days_to_event, event_due=event_due,
             min_dte_floor=self.min_dte_floor(),
         )
         decisions, moves = evaluate(p.policy, p.state, view)

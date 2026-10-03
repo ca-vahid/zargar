@@ -106,8 +106,10 @@ class TipRunner(PlanRunner):
         if sid:
             async with self.engine.sf() as session:
                 sig = await session.get(Signal, sid)
-            verdict = ((sig.extraction or {}).get("analyst") or {}).get("verdict") \
-                if sig is not None else None
+            _an = ((sig.extraction or {}).get("analyst") or {}) if sig is not None else {}
+            verdict = _an.get("verdict")
+            if verdict == "watch" and _an.get("watchArmed"):
+                verdict = "take"                         # W2.3: an armed watch IS the analyst's level entry
             if verdict in ("skip", "watch"):
                 asyncio.create_task(
                     self.disarm(ap.run_id,
@@ -321,7 +323,8 @@ class TipRunner(PlanRunner):
             replace = False
         # one live plan per tip (ARM-GAPS D5): a second arm REPLACES the first
         # (explicitly) or is refused — never a silent double-exposure
-        existing = self.live_run_for_signal(signal_id)
+        existing = self.live_run_for_signal(
+            signal_id, portfolio_id=(config.get("portfolioId") if isinstance(config, dict) else None) or None)
         if existing is not None:
             if not replace:
                 raise ValueError(f"this tip already has a live armed plan "
@@ -436,15 +439,43 @@ class TipRunner(PlanRunner):
         riding on the run. Preflight warns (journaled) when the tip budget
         exceeds the platform risk caps instead of failing silently at fill."""
         eng = self.engine
-        # the tips lane trades its OWN Practice book (2026-09-08: one book per technique - the
-        # shared book went to -$5k cash on 09-04); the app-wide default is the fallback
-        pid = str(eng.settings.get("techniques.tip.default_portfolio", "") or eng.settings.get("trading.default_portfolio", ""))
-        if not pid or eng.positions.portfolio(pid) is None:
-            sims = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
-            if not sims:
-                raise RuntimeError("no portfolio available for an analyst arm")
-            pid = sims[0]["id"]
+        # W6 (2026-10-03): every bound book with armAtLevel gets its own waiting plan (keyed (signal, book)); the
+        # primary book's result is returned (the others are journaled on TipBookFanOut). Legacy = the tips lane's
+        # own Practice book (2026-09-08), the app-wide default as fallback.
+        from . import books as _books
+        sims = [p for p in eng.positions.portfolios() if p["kind"] == "sim" and not p.get("book")]
+        bindings = [b for b in _books.resolve_books(eng.settings, eng.positions.portfolio,
+                                                     fallback_pid=(sims[0]["id"] if sims else None))
+                    if b.enabled and b.armAtLevel]
+        if not bindings:
+            raise RuntimeError("no bound book arms at-level plans (techniques.tip.books armAtLevel)")
+        results, fan, first_err = [], [], None
+        for b in bindings:
+            rec = {"portfolioId": b.portfolioId, "role": b.role, "primary": b.primary}
+            try:
+                with _books.use(b):
+                    r = await self._arm_from_analyst_book(sig, opinion, policy, b)
+                results.append((b, r))
+                fan.append({**rec, "outcome": "armed", "runId": (r or {}).get("runId")})
+            except Exception as exc:                     # noqa: BLE001 - one book never blocks another
+                first_err = first_err or exc
+                fan.append({**rec, "outcome": "refused", "reason": f"{exc}"[:300]})
+        if not (len(bindings) == 1 and bindings[0].legacy):
+            with contextlib.suppress(Exception):
+                await eng.journal.append("TipBookFanOut", {"signalId": sig.id, "lane": "arm", "books": fan},
+                                         aggregate_type="signal", aggregate_id=sig.id)
+        if not results:
+            raise first_err or RuntimeError("no book armed")
+        return next((r for b, r in results if b.primary), results[0][1])
+
+    async def _arm_from_analyst_book(self, sig, opinion: dict, policy, binding) -> dict:
+        eng = self.engine
+        pid = binding.portfolioId
         mode = policy.mode if policy.mode in ("alert", "proposal", "auto") else "alert"
+        if binding.mode == "proposal" and mode == "auto":
+            mode = "proposal"                            # a proposal-mode book never self-fires
+        pf = eng.positions.portfolio(pid) or {}
+        live_ack = pf.get("kind") in ("live", "paper") and bool(binding.allowLiveAuto)
         from ...signals.sources import resolve_policy  # noqa: F401  (docs anchor)
         from .lifecycle import build_exit_plan
         exit_plan = build_exit_plan(sig, sig, opinion, policy)
@@ -463,8 +494,40 @@ class TipRunner(PlanRunner):
                   **({"analystContract": opinion.get("contract")}
                      if opinion.get("contract")
                      and str(opinion.get("instrument") or "option") == "option" else {}),
-                  "allowAnyEntry": True, "replace": True}
+                  "allowAnyEntry": True, "replace": True,
+                  **({"allowLive": True} if live_ack else {})}
         return await self.arm_signal(sig.id, config)
+
+    async def entry_gate(self, ap, trade, stage: str) -> str | None:
+        """W1.7 (2026-10-03): an armed level that touches inside the earnings window does not buy - the earnings
+        exit would sell it minutes later (ORCL armed book, 09-09 and 09-10). Exits never pass through here."""
+        if stage != "pre_order":
+            return None
+        svc = getattr(self.engine, "proposals", None)
+        if svc is None:
+            return None
+        _ctx, why = await svc._earnings_context(ap.symbol)
+        return why
+
+    def validate_config(self, cfg, *, explicit_portfolio: bool = True) -> dict:
+        """W6: every arm path (arm, set_mode, preflight) is judged with the plan's own bound book in context."""
+        from . import books as _books
+        b = _books.current() or _books.binding_for(self.engine.settings, self.engine.positions.portfolio,
+                                                   getattr(cfg, "portfolio_id", None))
+        with _books.use(b):
+            return super().validate_config(cfg, explicit_portfolio=explicit_portfolio)
+
+    def rt(self, key: str, default=None):
+        """W6: a bound PAPER book's own allowLiveAuto acknowledgement satisfies the live-auto arm gate for that book
+        (a paper account moves no money); a kind=live account still needs the master techniques.tip.allow_live_auto."""
+        if key == "allow_live_auto":
+            from . import books as _books
+            b = _books.current()
+            if b is not None and b.allowLiveAuto and b.role == "live":
+                pf = self.engine.positions.portfolio(b.portfolioId) or {}
+                if pf.get("kind") == "paper":
+                    return True
+        return super().rt(key, default)
 
     async def runs_for_signal(self, signal_id: str) -> list[dict]:
         async with self.engine.sf() as session:
@@ -485,7 +548,10 @@ class TipRunner(PlanRunner):
             sig = await session.get(Signal, signal_id)
         if sig is None:
             raise ValueError("unknown signal")
-        verdict = ((sig.extraction or {}).get("analyst") or {}).get("verdict")
+        _an = (sig.extraction or {}).get("analyst") or {}
+        verdict = _an.get("verdict")
+        if verdict == "watch" and _an.get("watchArmed"):
+            verdict = "take"                             # W2.3: the armed book measures armed watches too
         if verdict in ("skip", "watch"):
             # codified 2026-09-08: a skipped tip never sits armed — the armed
             # book measures takes and unappraised tips, not declined ideas
@@ -535,7 +601,12 @@ class TipRunner(PlanRunner):
                 await self._expire_signal(sig, expiry)
                 expired += 1
                 continue
-            if await self._signal_played(sig.id) or self._armed_today(sig.id):
+            try:
+                _sh = await eng.signals_service.shadow_portfolio(sig.source_name or "unknown", "armed")
+                _has = bool(self.live_runs_for_signal(sig.id, portfolio_id=_sh["id"]))
+            except Exception:                       # noqa: BLE001
+                _has = self._armed_today(sig.id)
+            if await self._signal_played(sig.id) or _has:
                 skipped += 1
                 continue
             try:
@@ -586,14 +657,41 @@ class TipRunner(PlanRunner):
                                                   "closedOn": today.isoformat()})
         return closed
 
-    def live_run_for_signal(self, signal_id: str) -> str | None:
-        """The signal's live armed plan, if any (ARM-GAPS D2's index — the
-        source of truth is the runner's own map, restart-safe via restore)."""
+    def live_runs_for_signal(self, signal_id: str, *, portfolio_id: str | None = None,
+                             real_only: bool = False) -> list[str]:
+        """Every live armed plan of the signal (W6: one per book; the source of truth is the runner's own map,
+        restart-safe via restore). `real_only` leaves out the research shadow books."""
+        out = []
         for ap in self._armed.values():
-            if (ap.plan.get("context") or {}).get("signalId") == signal_id \
-                    and ap.status in ("armed", "paused"):
-                return ap.run_id
-        return None
+            if (ap.plan.get("context") or {}).get("signalId") != signal_id or ap.status not in ("armed", "paused"):
+                continue
+            pid = getattr(ap.config, "portfolio_id", None)
+            if portfolio_id and pid != portfolio_id:
+                continue
+            if real_only:
+                pf = self.engine.positions.portfolio(pid) or {}
+                if pf.get("kind") == "shadow" or pf.get("book"):
+                    continue
+            out.append(ap.run_id)
+        return out
+
+    def live_run_for_signal(self, signal_id: str, portfolio_id: str | None = None) -> str | None:
+        """The signal's live armed plan (ARM-GAPS D2's index). W6: plans are keyed (signal, book) - with a book,
+        that book's plan; without, a REAL book's plan first (primary book first), else a research book's."""
+        if portfolio_id:
+            rs = self.live_runs_for_signal(signal_id, portfolio_id=portfolio_id)
+            return rs[0] if rs else None
+        real = self.live_runs_for_signal(signal_id, real_only=True)
+        if real:
+            from .books import primary
+            b = primary(self.engine.settings, self.engine.positions.portfolio)
+            for rid in real:
+                ap = self._armed.get(rid)
+                if b is not None and ap is not None and getattr(ap.config, "portfolio_id", None) == b.portfolioId:
+                    return rid
+            return real[0]
+        rs = self.live_runs_for_signal(signal_id)
+        return rs[0] if rs else None
 
     async def note_seen_again(self, signal_id: str, count: int) -> str | None:
         """The source repeated an open tip (ARM-GAPS D6): annotate the waiting

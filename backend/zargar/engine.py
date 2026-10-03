@@ -40,11 +40,14 @@ class Engine:
         self.bars = BarAggregator(self.bus)
         self.halt = HaltState()
         self.positions = PositionKeeper(self.sf, self.bus, self.journal, self.quotes)
+        from .techniques.tip import books as _tip_books   # W6: techniques.tip.books is validated against real books
+        self.settings.books_validator = lambda v: _tip_books.validate(v, self.positions.portfolio)
         self.risk = RiskGate(self.settings, self.quotes, self.positions, self.halt)
         from .scheduler import Scheduler
         self.scheduler = Scheduler(self)   # engine-level daily jobs (techniques register scans here)
         from .calendar_service import EventCalendar
         self.calendar = EventCalendar()    # earnings / ex-dividend dates (policies + scans read this)
+        self.market_events = None          # W4: the shared append-only event store (research/market_events.py)
         from .research.macro_calendar import MacroCalendar
         self.macro = MacroCalendar(self.settings)   # FOMC/CPI/... days (manual list for now; placeholder source)
         from .execution.positions import PositionManager
@@ -242,6 +245,7 @@ class Engine:
             asyncio.create_task(self._equity_snapshotter(), name="equity-snapshots"),
             asyncio.create_task(self._daily_loss_monitor(), name="daily-loss-monitor"),
             asyncio.create_task(self._event_loop_monitor(), name="event-loop-monitor"),
+            asyncio.create_task(self._host_memory_monitor(), name="host-memory-monitor"),
         ]
         # 2026-09-17 (PFU-01): the engine stamps its own pid so the watchdog binds liveness to THIS process
         try:
@@ -275,6 +279,19 @@ class Engine:
             register_jobs(self)
         except Exception:
             log.exception("registering research jobs failed")
+        try:
+            from .research.market_events import MarketEventStore
+            self.market_events = MarketEventStore(self)
+            await self.market_events.load()
+            self.scheduler.register("market_events_morning", "08:00", self.refresh_market_events)
+            self.scheduler.register("market_events_evening", "18:30", self.refresh_market_events, weekdays_only=False)
+            import os as _os
+            if (bool(self.settings.get("research.market_events_boot_refresh", True))
+                    and "PYTEST_CURRENT_TEST" not in _os.environ
+                    and self.market_events.macro_coverage_through() is None):
+                asyncio.get_running_loop().create_task(self.refresh_market_events(), name="market-events-boot")
+        except Exception:
+            log.exception("market event store failed to start")
         try:
             n = await self.position_manager.restore()
             if n:
@@ -500,6 +517,8 @@ class Engine:
             spend = min(spend, float(st["settledCash"]))
         st = {**st, "spendable": spend}
         await self.positions.sync_portfolio_state(pid, cash=spend, positions=st["positions"], source="ibkr")
+        # W7.1: sale proceeds booked AFTER this instant are unsettled until the next sync reads IBKR's settled cash
+        self.ibkr_synced_at = dt.datetime.now(dt.timezone.utc)
         key = (round(spend, 2), tuple(sorted((p["symbol"], p["qty"]) for p in st["positions"])))
         if key != getattr(self, "_ibkr_last_sync", None):
             self._ibkr_last_sync = key
@@ -510,6 +529,28 @@ class Engine:
                 "positions": [{"symbol": p["symbol"], "qty": p["qty"]} for p in st["positions"]]},
                 portfolio_id=pid)
         return st
+
+    async def refresh_market_events(self) -> dict:
+        """W4.2: refresh the macro calendars + the earnings dates of every symbol the Tips desk holds, waits on or
+        is about to trade (journaled MarketEventsFetched)."""
+        if self.market_events is None:
+            return {"skipped": "no store"}
+        syms: set[str] = set()
+        with contextlib.suppress(Exception):
+            from sqlalchemy import select as _sel
+
+            from .models import ManagedPositionRow, Proposal, Signal
+            async with self.sf() as session:
+                syms |= {r for r in (await session.execute(_sel(ManagedPositionRow.symbol).where(
+                    ManagedPositionRow.status.in_(("open", "attention", "opening"))))).scalars().all() if r}
+                syms |= {r for r in (await session.execute(_sel(Signal.ticker).where(
+                    Signal.status.in_(("verified", "parked", "proposed"))))).scalars().all() if r}
+                for c in (await session.execute(_sel(Proposal.context).where(Proposal.status == "pending"))).scalars().all():
+                    u = ((c or {}).get("vehicle") or {}).get("underlying")
+                    if u:
+                        syms.add(u)
+        syms = {s.upper() for s in syms if s and len(s) <= 6 and "." not in s}
+        return await self.market_events.refresh(symbols=sorted(syms)[:200])
 
     async def _ibkr_sync_loop(self) -> None:
         while True:
@@ -615,6 +656,40 @@ class Engine:
         return (f"book paused ({p.get('label') or 'no label'}): {p.get('reason') or 'paused'}") if p else None
 
     # ------------------------------------------------------------- tasks
+    async def _host_memory_monitor(self) -> None:
+        """W7.2 (2026-10-03): page when free host memory drops under `ops.host_memory_alert_gb` (the app froze twice
+        below ~1 GB). Journaled `HostMemoryLow`; one page per `ops.host_memory_alert_every_min` while it lasts."""
+        from .hostmem import available_bytes
+        last_alert = 0.0
+        while True:
+            await asyncio.sleep(60)
+            try:
+                b = available_bytes()
+                self.host_free_gb = round(b / 2**30, 2) if b is not None else None
+                lim = float(self.settings.get("ops.host_memory_alert_gb", 1.5) or 0)
+                if self.host_free_gb is None or lim <= 0 or self.host_free_gb >= lim:
+                    continue
+                import time as _t
+                every = 60 * float(self.settings.get("ops.host_memory_alert_every_min", 30) or 30)
+                if _t.time() - last_alert < every:
+                    continue
+                last_alert = _t.time()
+                text = (f"Host memory low: {self.host_free_gb:.2f} GB free (alert below {lim:g} GB) - close other "
+                        "programs; the app stalls under ~1 GB")
+                await self.journal.append("HostMemoryLow", {"freeGb": self.host_free_gb, "thresholdGb": lim})
+                push = getattr(self, "push", None)
+                if push is not None:
+                    with contextlib.suppress(Exception):
+                        await push.send("Zargar: memory low", text, url="/", tag="host-memory")
+                tg = getattr(self, "telegram", None)
+                if tg is not None:
+                    with contextlib.suppress(Exception):
+                        await tg.send("⚠ " + text)
+            except asyncio.CancelledError:
+                raise
+            except Exception:                                  # noqa: BLE001
+                log.debug("host memory monitor failed", exc_info=True)
+
     async def _event_loop_monitor(self) -> None:
         loop = asyncio.get_running_loop()
         while True:

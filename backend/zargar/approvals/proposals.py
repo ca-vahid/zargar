@@ -207,6 +207,8 @@ class ProposalService:
         self._task: asyncio.Task | None = None
         self._adopt_tasks: dict[str, asyncio.Task] = {}   # proposalId -> adopt-on-fill waiter
         self._entry_studies: set[asyncio.Task] = set()    # journal-only NBBO samplers (P3)
+        self._last_refusal: dict[str, str] = {}           # pid -> the last refusal reason (W6 fan-out record)
+        self._alerted_signals: set[str] = set()           # W6: one card alert per idea, not per book
 
     def _cap_contracts(self, qty: int) -> int:
         """Safety net on option quantity: budget sizing on lotto premium is
@@ -251,7 +253,8 @@ class ProposalService:
                     f"equity (max {name_pct:g}%)")
         return None
 
-    async def _tip_budget(self, policy, pid: str, underlying: str | None = None) -> tuple[float, str | None, str | None]:
+    async def _tip_budget(self, policy, pid: str, underlying: str | None = None,
+                          binding=None) -> tuple[float, str | None, str | None]:
         """Reserve-aware per-tip budget (user decision 2026-09-07: ambitious
         early, never lose a late tip to a full book). budget =
         min(policy.budget_per_tip, free_cash / reserve_slots) — the desk always
@@ -264,20 +267,30 @@ class ProposalService:
         allowance (cost basis of its open managed positions).
         Returns (budget, sizedNote, refuseReason) — budget 0 means no proposal."""
         eng = self.engine
+        from ..techniques.tip import books as _books
+        if binding is None:
+            binding = _books.current()
         base = float(policy.budget_per_tip)
         pf = eng.positions.portfolio(pid) or {}
         if pf.get("kind") == "shadow":
             return base, None, None                    # research books: never gated
         note = None
+        # W6: a bound book's own per-tip budget caps the source's (Practice $1,000 / live $500 ...)
+        if binding is not None and binding.overrides.get("budgetPerTip") is not None:
+            _bb = float(binding.overrides["budgetPerTip"])
+            if 0 < _bb < base:
+                base = _bb
+                note = f"Book budget ${_bb:,.0f} per tip ({binding.role})."
         budget = base
-        slots = int(eng.settings.get("techniques.tip.reserve_slots", 3) or 0)
+        slots = int(_books.knob(binding, "reserveSlots", eng.settings, 3) or 0)
+        _unsettled = await self._unsettled_since_sync(pid, pf)
         if slots > 0:
-            cash = max(0.0, float(pf.get("cash") or 0.0))
+            cash = max(0.0, float(pf.get("cash") or 0.0) - _unsettled)
             if cash < 50.0:
                 return 0.0, None, f"book full: ${cash:,.0f} free cash in {pf.get('name', pid)}"
             glide = cash / slots
             if glide < budget:
-                floor = float(eng.settings.get("techniques.tip.min_budget", 500.0))
+                floor = float(_books.knob(binding, "minBudget", eng.settings, 500.0))
                 budget = max(glide, min(floor, cash))
                 note = (f"Sized for the reserve: ${cash:,.0f} free cash across "
                         f"{slots} slots → ${budget:,.0f} budget (full is ${base:,.0f}).")
@@ -294,18 +307,20 @@ class ProposalService:
                     return 0.0, None, _why
         # live go-live (2026-10-02): a hard dollar cap on what the live/paper book may have open (cost basis of its
         # open tip positions) - the user's "$3k is the limit"
-        if pf.get("kind") in ("live", "paper"):
-            _room = live_capital_room(float(eng.settings.get("techniques.tip.live_capital_cap", 0) or 0),
-                                      await self._book_open_cost(pid))
+        _has_cap = binding is not None and binding.overrides.get("capitalCap") is not None
+        if pf.get("kind") in ("live", "paper") or _has_cap:
+            _capv = float(_books.knob(binding, "capitalCap", eng.settings, 0) or 0)
+            _room = live_capital_room(_capv, await self._book_open_cost(pid))
             if _room is not None:
                 if _room < 50.0:
-                    return 0.0, None, (f"live capital cap reached: ${float(eng.settings.get('techniques.tip.live_capital_cap')):,.0f} "
-                                       f"is already committed in {pf.get('name', pid)} (techniques.tip.live_capital_cap)")
+                    return 0.0, None, (f"capital cap reached: ${_capv:,.0f} "
+                                       f"is already committed in {pf.get('name', pid)} (book capitalCap / "
+                                       "techniques.tip.live_capital_cap)")
                 if _room < budget:
                     budget = _room
-                    note = ((note + " ") if note else "") + f"Capped to the live book's remaining ${_room:,.0f}."
+                    note = ((note + " ") if note else "") + f"Capped to the book's remaining ${_room:,.0f}."
         # Q1 (2026-09-27 review): a book-wide cap on open tip positions (0 = off)
-        _cap = int(eng.settings.get("techniques.tip.max_open_positions", 0) or 0)
+        _cap = int(_books.knob(binding, "maxOpenPositions", eng.settings, 0) or 0)
         if _cap > 0:
             _n_book = await self._book_open_count(pid)
             if _n_book >= _cap:
@@ -327,6 +342,29 @@ class ProposalService:
                 note = ((note + " ") if note else "") + \
                     f"Capped to {policy.name}'s remaining open budget ${room:,.0f}."
         return budget, note, None
+
+    async def _unsettled_since_sync(self, pid: str, pf: dict) -> float:
+        """W7.1 (2026-10-03): on the IBKR CASH account a buy may only use SETTLED cash (re-using unsettled sale
+        proceeds is a good-faith violation). The broker sync sets the book's cash to IBKR's settled cash; proceeds of
+        sales filled since that sync are unsettled and are taken out of what a new tip may spend."""
+        eng = self.engine
+        if pf.get("kind") not in ("live", "paper") or pf.get("venue") == "snaptrade":
+            return 0.0
+        if str(eng.settings.get("ibkr.portfolio_id", "") or "") != pid:
+            return 0.0
+        since = getattr(eng, "ibkr_synced_at", None)
+        from ..models import Execution
+        q = select(Execution).where(Execution.portfolio_id == pid, Execution.side == "SELL")
+        if since is not None:
+            q = q.where(Execution.ts > since)
+        else:
+            q = q.where(Execution.ts > dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2))
+        try:
+            async with eng.sf() as session:
+                rows = (await session.execute(q)).scalars().all()
+        except Exception:                                # noqa: BLE001
+            return 0.0
+        return sum(abs(float(r.qty or 0) * float(r.price or 0)) - float(r.commission or 0) for r in rows)
 
     async def _book_open_cost(self, pid: str) -> float:
         """Cost basis $ of every OPEN managed tip position in this book (all sources)."""
@@ -369,33 +407,48 @@ class ProposalService:
         return n, cost
 
     async def _refuse(self, *, signal_id: str | None, reason: str,
-                      run_id: str | None = None) -> None:
+                      run_id: str | None = None, portfolio_id: str | None = None) -> None:
         """A tip that minted no proposal because the book/source is full — on
         the record, never silent (the analyst's trail must show WHY)."""
         log.warning("no proposal: %s", reason)
+        from ..techniques.tip import books as _books
+        _b = _books.current()
+        pid = portfolio_id or (_b.portfolioId if _b is not None else None)
+        self._last_refusal[pid or ""] = reason
         with contextlib.suppress(Exception):
             await self.engine.journal.append(
                 ev.TIP_LANE_DECIDED,
                 {"signalId": signal_id, "lane": "refused", "reason": reason,
-                 **({"runId": run_id} if run_id else {})},
-                aggregate_type="signal", aggregate_id=signal_id or run_id or "tip")
+                 **({"runId": run_id} if run_id else {}),
+                 **({"portfolioId": pid, "bookRole": _b.role} if (pid and _b is not None) else {})},
+                aggregate_type="signal", aggregate_id=signal_id or run_id or "tip",
+                **({"portfolio_id": pid} if pid else {}))
 
     def _cap_premium(self, qty: int, limit: float) -> int:
         """Per-tip premium concentration cap (BBAI 2026-09-04: 25 x $0.51 =
         $1,275 on one tip made a single loser the whole day). Caps the option
         premium a tip may spend — including analyst/tip stated counts — but a
         single contract always fits (the minimum expression of a take)."""
-        cap = float(self.engine.settings.get("techniques.tip.max_premium_per_tip", 750.0) or 0)
+        from ..techniques.tip import books as _books
+        cap = float(_books.knob(_books.current(), "maxPremiumPerTip", self.engine.settings, 750.0) or 0)
         if cap > 0 and limit > 0:
             return min(qty, max(1, int(cap // (limit * 100))))
         return qty
 
     # ------------------------------------------------------------- create
-    async def create_from_armed_fire(self, signal_row: Signal, *, run_id: str, trigger_id: str,
-                                     portfolio_id: str, direction: str, entry: float, stop: float,
-                                     targets: list[float], contract: dict | None,
-                                     contracts: int | None, exit_plan: dict | None,
-                                     analyst_run_id: str | None) -> dict | None:
+    async def create_from_armed_fire(self, signal_row: Signal, **kw) -> dict | None:
+        """W6: the armed plan carries its own book; its binding's knobs apply while the card is built."""
+        from ..techniques.tip import books as _books
+        eng = self.engine
+        b = _books.binding_for(eng.settings, eng.positions.portfolio, kw.get("portfolio_id"))
+        with _books.use(b):
+            return await self._create_from_armed_fire(signal_row, **kw)
+
+    async def _create_from_armed_fire(self, signal_row: Signal, *, run_id: str, trigger_id: str,
+                                      portfolio_id: str, direction: str, entry: float, stop: float,
+                                      targets: list[float], contract: dict | None,
+                                      contracts: int | None, exit_plan: dict | None,
+                                      analyst_run_id: str | None) -> dict | None:
         """A proposal minted by an ARMED plan's fire (ARM-GAPS A5): the level the
         plan waited for finally touched, in proposal mode — the card asks the
         human to take the trade NOW, with the vehicle the fire actually picked.
@@ -407,6 +460,10 @@ class ProposalService:
         budget, glide_note, refuse = await self._tip_budget(policy, portfolio_id, underlying=signal_row.ticker)
         if refuse:
             await self._refuse(signal_id=signal_row.id, reason=refuse, run_id=run_id)
+            return None
+        _ec, _er = await self._earnings_context(signal_row.ticker)
+        if _er:
+            await self._refuse(signal_id=signal_row.id, reason=_er, run_id=run_id, portfolio_id=portfolio_id)
             return None
         pf = eng.positions.portfolio(portfolio_id) or {}
         analyst = (signal_row.extraction or {}).get("analyst") or {}
@@ -505,6 +562,73 @@ class ProposalService:
 
     async def create_from_signal(self, signal_row: Signal, sig: TradeSignal,
                                  verification: dict) -> dict | None:
+        """Compatibility: the PRIMARY book's proposal of the fan-out (or the first one minted)."""
+        out = await self.create_for_books(signal_row, sig, verification)
+        prim = next((p for p in out if ((p.get("context") or {}).get("book") or {}).get("primary")), None)
+        return prim or (out[0] if out else None)
+
+    async def create_for_books(self, signal_row: Signal, sig: TradeSignal, verification: dict, *,
+                               declined_verdict: str | None = None) -> list[dict]:
+        """W6 (2026-10-03): one verified, appraised tip -> one proposal PER BOUND BOOK (`techniques.tip.books`),
+        each sized and gated by that book's own budget, caps, vehicle policy and geometry. The analyst ran once; its
+        quantity is rescaled to each non-primary book. One book's refusal or error never blocks another. The record
+        (`TipBookFanOut`) says what every book got and why. An empty books list = the single legacy book."""
+        from ..techniques.tip import books as _books
+        eng = self.engine
+        sims = [p for p in eng.positions.portfolios() if p.get("kind") == "sim" and not p.get("book")
+                and not p.get("archived")]
+        bindings = _books.resolve_books(eng.settings, eng.positions.portfolio,
+                                        fallback_pid=(sims[0]["id"] if sims else None))
+        if not bindings:
+            log.warning("no portfolio available for proposal")
+            return []
+        out: list[dict] = []
+        fan: list[dict] = []
+        primary_budget = None
+        for b in bindings:
+            rec = {"portfolioId": b.portfolioId, "role": b.role, "primary": b.primary}
+            if not b.enabled:
+                fan.append({**rec, "outcome": "skipped", "reason": "book disabled"})
+                continue
+            # W3.3 (2026-10-03): an analyst skip/watch on an UNATTENDED book would only mint a card to decline it
+            # (pre-market level maps: 72 such rows, 0 fills) - the decline is recorded, no row is minted. A book that
+            # keeps the human (a kind=live account, a proposal-mode binding) still gets its card.
+            _pfk = (eng.positions.portfolio(b.portfolioId) or {}).get("kind")
+            if declined_verdict and _pfk != "live" and b.mode != "proposal" \
+                    and bool(eng.settings.get("techniques.tip.unattended", True)):
+                fan.append({**rec, "outcome": "declined", "reason": f"analyst said {declined_verdict}"})
+                with contextlib.suppress(Exception):
+                    await eng.journal.append(ev.TIP_LANE_DECIDED, {
+                        "signalId": signal_row.id, "lane": "declined", "verdict": declined_verdict,
+                        "portfolioId": b.portfolioId, "reason": "unattended book: the analyst's verdict is the decision"},
+                        aggregate_type="signal", aggregate_id=signal_row.id, portfolio_id=b.portfolioId)
+                continue
+            self._last_refusal.pop(b.portfolioId, None)
+            try:
+                with _books.use(b):
+                    p = await self._create_for_book(signal_row, sig, verification, pid=b.portfolioId, binding=b,
+                                                    primary_budget=primary_budget)
+            except Exception as exc:                      # noqa: BLE001 - one book never blocks another
+                log.exception("proposal for book %s failed", b.portfolioId)
+                fan.append({**rec, "outcome": "error", "reason": f"{type(exc).__name__}: {exc}"[:300]})
+                continue
+            if b.primary:
+                primary_budget = float((((p or {}).get("context") or {}).get("sizing") or {}).get("budget") or 0) or None
+            if p is None:
+                fan.append({**rec, "outcome": "refused",
+                            "reason": self._last_refusal.get(b.portfolioId) or "no proposal (see the intake trace)"})
+                continue
+            fan.append({**rec, "outcome": "proposed", "proposalId": p["id"], "symbol": p.get("symbol"),
+                        "qty": p.get("qty")})
+            out.append(p)
+        if not (len(bindings) == 1 and bindings[0].legacy):
+            with contextlib.suppress(Exception):
+                await eng.journal.append("TipBookFanOut", {"signalId": signal_row.id, "books": fan},
+                                         aggregate_type="signal", aggregate_id=signal_row.id)
+        return out
+
+    async def _create_for_book(self, signal_row: Signal, sig: TradeSignal, verification: dict, *,
+                               pid: str, binding=None, primary_budget: float | None = None) -> dict | None:
         """Verified tip → the order the human is asked to approve. The proposal
         trades the SAME vehicle the shadow books do: a tip that names an option
         proposes that contract (BUY to open — a bearish tip buys the put, share
@@ -514,19 +638,19 @@ class ProposalService:
         from ..signals.sources import resolve_policy
 
         eng = self.engine
-        # tip proposals fill in the tips lane's own Practice book (2026-09-08), app default as fallback
-        pid = str(eng.settings.get("techniques.tip.default_portfolio", "") or eng.settings.get("trading.default_portfolio", ""))
-        if not pid or eng.positions.portfolio(pid) is None:
-            portfolios = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
-            if not portfolios:
-                log.warning("no portfolio available for proposal")
-                return None
-            pid = portfolios[0]["id"]
+        # the book comes from the W6 fan-out (techniques.tip.books; legacy = techniques.tip.default_portfolio)
+        book_ctx = ({"portfolioId": pid, "role": binding.role, "primary": bool(binding.primary),
+                     "fanOutGroup": signal_row.id} if binding is not None else None)
         pf = eng.positions.portfolio(pid) or {}
         policy = resolve_policy(eng.settings, signal_row.source_name)
-        budget, glide_note, refuse = await self._tip_budget(policy, pid, underlying=signal_row.ticker)
+        budget, glide_note, refuse = await self._tip_budget(policy, pid, underlying=signal_row.ticker,
+                                                            binding=binding)
         if refuse:
-            await self._refuse(signal_id=signal_row.id, reason=refuse)
+            await self._refuse(signal_id=signal_row.id, reason=refuse, portfolio_id=pid)
+            return None
+        earn_ctx, earn_refuse = await self._earnings_context(signal_row.ticker)
+        if earn_refuse:
+            await self._refuse(signal_id=signal_row.id, reason=earn_refuse, portfolio_id=pid)
             return None
         # the lotto lane (0-3 DTE, user 2026-09-01): its own budget, tip-time
         # only, and no 0-DTE entries once the expiry-day flatten time has passed
@@ -572,9 +696,10 @@ class ProposalService:
                            f"“{pf.get('name', pid)}” ({pf.get('kind', '?')}). The long leg fills "
                            f"FIRST, then the short leg — risk is defined at every instant.")
                 ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
-                _why_live = live_vehicle_refusal(eng.settings, pf, "SPREAD")
+                _why_live = (None if (binding is not None and binding.sharesOnly is False)
+                             else live_vehicle_refusal(eng.settings, pf, "SPREAD"))
                 if _why_live:
-                    await self._refuse(signal_id=signal_row.id, reason=_why_live)
+                    await self._refuse(signal_id=signal_row.id, reason=_why_live, portfolio_id=pid)
                     return None
                 row = Proposal(
                     id=new_id(), signal_id=signal_row.id, portfolio_id=pid,
@@ -599,7 +724,8 @@ class ProposalService:
                              "analystRunId": analyst.get("runId"),
                              "analyst": ({k: analyst.get(k) for k in
                                           ("verdict", "rationale", "invalidation",
-                                           "confidence")} if analyst else None)},
+                                           "confidence")} if analyst else None),
+                             **({"book": book_ctx} if book_ctx else {})},
                     expires_at=_ttl_expiry(ttl_min))
                 async with eng.sf() as session:
                     session.add(row)
@@ -678,7 +804,18 @@ class ProposalService:
             if not ref_price or ref_price <= 0:
                 log.warning("no premium reference for %s — no proposal", occ)
                 return None
+            band_note = ""
+            # W3.1 (2026-10-03): never pay more than the band over the SOURCE's own premium (3 of 22 option fills paid
+            # > 5% over it); the limit stays marketable when the market is inside the band
+            _band = float(eng.settings.get("techniques.tip.entry_band_option", 1.10) or 0)
+            if _band > 1 and sig.premium and float(sig.premium) > 0 and float(ref_price) > float(sig.premium) * _band:
+                band_note = (f" Limit held at {_band:g}x the source's {float(sig.premium):.2f} "
+                             f"(the analyst/market price {float(ref_price):.2f} is above the band).")
+                ref_price = round(float(sig.premium) * _band, 2)
             limit = round(float(ref_price), 2)
+            if binding is not None and not binding.primary and qty_hint:
+                from ..techniques.tip import books as _books
+                qty_hint = _books.rescale_qty(qty_hint, primary_budget=primary_budget, book_budget=budget) or None
             qty = self._cap_premium(
                 self._cap_contracts(int(qty_hint or 0) or max(1, math.floor(budget / (limit * 100)))),
                 limit)
@@ -696,7 +833,7 @@ class ProposalService:
                        f"at a ${limit:.2f} limit ≈ ${cost:,.0f} in “{pf.get('name', pid)}” "
                        f"({pf.get('kind', '?')}). The order still passes the risk gate; "
                        f"on the fill the position is handed to the durable manager under "
-                       f"the analyst's exit plan.")
+                       f"the analyst's exit plan." + band_note)
         else:
             if sig.direction == "short":
                 # bearish with no usable put: share shorting is never proposed
@@ -796,6 +933,10 @@ class ProposalService:
             signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
         if gnote:
             explain += " " + gnote
+        if binding is None or binding.primary:            # W2.6 observe lane (once per idea)
+            from ..techniques.tip.observe_lanes import record_starter
+            await record_starter(eng, signal_id=signal_row.id, symbol=symbol, sec_type=sec_type, limit=limit,
+                                 risk_plan=risk_plan, pid=pid)
         # ---- P-E (2026-09-23, user decision): on a PRACTICE book an analyst TAKE whose option cannot be sized
         # within the risk budget becomes the equal-risk SHARE proposal at the same stop, instead of a card that
         # expires waiting for a human (HOOD, GOOGL). Long ideas only; never a lotto; never a live book.
@@ -858,11 +999,24 @@ class ProposalService:
         except Exception:                                # advisory only
             log.debug("proposal preflight cap check failed", exc_info=True)
 
-        _why_live = live_vehicle_refusal(eng.settings, pf, sec_type)
+        _why_live = (None if (binding is not None and binding.sharesOnly is False)
+                     else live_vehicle_refusal(eng.settings, pf, sec_type))
         if _why_live:
-            await self._refuse(signal_id=signal_row.id, reason=_why_live)
+            await self._refuse(signal_id=signal_row.id, reason=_why_live, portfolio_id=pid)
             return None
+        event_obs = await self._event_exposure(signal_row, sec_type=sec_type, symbol=symbol, exit_plan=exit_plan)
         ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
+        # W3.2 (2026-10-03): a 0DTE/weekly card lives minutes, not hours (12 of 24 expired cards outlived the source's
+        # own trim/close; median ~22 min)
+        if sec_type == "OPT":
+            with contextlib.suppress(Exception):
+                from ..options import occ as _occ_t
+                _o = _occ_t.parse(symbol)
+                _short = int(eng.settings.get("techniques.tip.card_ttl_short_minutes", 15) or 0)
+                _dte_max = int(eng.settings.get("techniques.tip.card_ttl_short_dte", 7) or 0)
+                if _o is not None and _short > 0 and \
+                        (_o.expiry - dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))).date()).days <= _dte_max:
+                    ttl_min = min(ttl_min, _short)
         # a newer tip for the SAME contract replaces the one still waiting —
         # the re-arm rule, applied to proposals (2026-09-03: muggzone re-posted
         # his MU 995C re-entry and TWO cards sat pending; approving both would
@@ -919,6 +1073,9 @@ class ProposalService:
                             if analyst else None),
                 **({"riskWarning": "; ".join(warns)} if warns else {}),
                 "eventContext": _event_context(eng),
+                **({"book": book_ctx} if book_ctx else {}),
+                **({"earnings": earn_ctx} if earn_ctx else {}),
+                **(event_obs or {}),
             },
             expires_at=_ttl_expiry(ttl_min),
         )
@@ -933,9 +1090,79 @@ class ProposalService:
                                  aggregate_type="proposal", aggregate_id=row.id,
                                  portfolio_id=pid)
         eng.bus.publish(topics.PROPOSALS, pdict)
-        self._start_entry_study(pdict)
+        if binding is None or binding.primary:
+            self._start_entry_study(pdict)               # one study per idea (W6)
         self._start_card_alert(pdict)
         return pdict
+
+    async def _earnings_context(self, underlying: str | None) -> tuple[dict | None, str | None]:
+        """W1.7 (2026-10-03): (card context, refusal). The card says when an earnings report will flatten the position;
+        an entry whose earnings exit is ALREADY due is refused on the record - the exit rule decided it."""
+        eng = self.engine
+        cal = getattr(eng, "calendar", None)
+        if cal is None or not underlying:
+            return None, None
+        _store = getattr(eng, "market_events", None)
+        _rec = None
+        with contextlib.suppress(Exception):
+            _rec = _store.earnings_for(str(underlying).upper()) if _store is not None else None
+        try:
+            nxt = (_rec["date"], _rec["timing"]) if _rec else await cal.next_earnings(str(underlying).upper())
+        except Exception:                                # noqa: BLE001 - unknown is not a block
+            return None, None
+        if not nxt:
+            return None, None
+        from zoneinfo import ZoneInfo
+
+        from ..execution.policies import earnings_exit_at, earnings_exit_due
+        at = str(eng.settings.get("techniques.tip.earnings_flatten_at", "15:45"))
+        flat_at = earnings_exit_at(nxt[0], nxt[1], at=at)
+        ctx = {"date": nxt[0], "timing": nxt[1], "flattenAt": flat_at.isoformat(),
+               "source": ",".join(_rec["sources"]) if _rec else "yahoo",
+               "confirmed": bool(_rec and _rec.get("confirmed"))}
+        now = dt.datetime.now(ZoneInfo("America/New_York"))
+        due = earnings_exit_due(now, nxt[0], nxt[1], at=at)
+        if due and bool(eng.settings.get("techniques.tip.earnings_entry_block", True)) \
+                and str(eng.settings.get("techniques.tip.earnings_exit_timing", "session")) == "session":
+            return ctx, f"earnings window: {due} - a new entry would be force-sold by the earnings exit"
+        return ctx, None
+
+    async def _event_exposure(self, signal_row, *, sec_type: str, symbol: str, exit_plan: dict | None) -> dict | None:
+        """W4.3 + W4.5 (2026-10-03): the events inside this position's planned life (hold cap or contract expiry),
+        and what the observe-only event rules E1-E3 would do - journaled TipEventPolicyShadow; the card is unchanged."""
+        eng = self.engine
+        store = getattr(eng, "market_events", None)
+        if store is None or not getattr(store, "loaded", False):
+            return None
+        try:
+            from zoneinfo import ZoneInfo
+
+            from ..marketstructure import market_calendar as mc
+            from ..research import market_events as me
+            now = dt.datetime.now(ZoneInfo("America/New_York"))
+            day = now.date()
+            n = int((exit_plan or {}).get("maxHoldSessions") or 5)
+            end = day
+            for _ in range(max(1, n)):
+                end = mc.next_trading_day(end)
+            dte = None
+            if sec_type == "OPT":
+                from ..options import occ as _occ
+                o = _occ.parse(symbol)
+                if o is not None:
+                    dte = (o.expiry - day).days
+                    end = min(end, o.expiry)
+            expo = me.exposure(store, now=now, hold_until=end, symbol=signal_row.ticker)
+            would = me.policy_shadow(expo, now=now, sec_type=sec_type, dte=dte)
+            if would:
+                with contextlib.suppress(Exception):
+                    await eng.journal.append("TipEventPolicyShadow", {
+                        "signalId": signal_row.id, "symbol": symbol, "secType": sec_type, "would": would,
+                        "exposure": expo}, aggregate_type="signal", aggregate_id=signal_row.id)
+            return {"eventExposure": expo, **({"eventPolicyShadow": would} if would else {})}
+        except Exception:                                # noqa: BLE001 - labels never block a card
+            log.debug("event exposure failed", exc_info=True)
+            return None
 
     async def _lotto_cap_reached(self, source: str | None, pid: str) -> bool:
         """P6 (2026-09-24 review): at most `techniques.tip.lotto_max_per_source_day` lotto cards per source per ET
@@ -976,6 +1203,10 @@ class ProposalService:
                 pf = eng.positions.portfolio(row.portfolio_id) or {}
                 if pf.get("kind") == "shadow" or pf.get("book"):
                     return                                     # research books never page a human
+                if row.signal_id:
+                    if row.signal_id in self._alerted_signals:
+                        return                                 # W6: one page per idea, whichever book waits
+                    self._alerted_signals.add(row.signal_id)
                 text, url = card_alert_text(proposal_dict(row), public_url=None)
                 sent = {"push": False, "telegram": False}
                 push = getattr(eng, "push", None)
@@ -1282,7 +1513,8 @@ class ProposalService:
         equity = None
         with contextlib.suppress(Exception):
             equity = float(await eng.positions.equity(pid) or 0) or None
-        budget, budget_source = _geo.risk_budget(s, equity)
+        from ..techniques.tip import books as _books
+        budget, budget_source = _geo.risk_budget(_books.BookSettings(s), equity)   # W6: per-book riskPct
         delta = None
         greeks_meta: dict = {}
         multiplier = 1.0
