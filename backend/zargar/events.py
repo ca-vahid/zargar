@@ -29,6 +29,7 @@ ORDER_BRACKET_SKIPPED = "OrderBracketSkipped"   # a managed position owns the en
 ORDER_REJECTED = "OrderRejected"
 ORDER_EXPIRED = "OrderExpired"
 ORDER_DRY_RUN = "OrderDryRun"
+SHADOW_SELL_REFUSED = "ShadowSellRefused"       # W1.8 2026-10-02: a shadow book's sell with no held lot (never a phantom short)
 POSITION_UPDATED = "PositionUpdated"
 KILL_SWITCH_ENGAGED = "KillSwitchEngaged"
 KILL_SWITCH_RELEASED = "KillSwitchReleased"

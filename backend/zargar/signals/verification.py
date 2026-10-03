@@ -108,12 +108,19 @@ async def verify_signal(
     # underlying prices in ANY check (not_past_target AND price_ordering), warm
     # or cold. Undeclared units resolve only on exclusive consistency (see
     # underlying_price_checks_ok); ambiguity skips the checks on the record.
-    from .schemas import underlying_price_checks_ok
-    units_ok, units_why = underlying_price_checks_ok(
-        signal, float(quote.last) if warm else None)
+    from .schemas import entry_price_is_underlying, underlying_price_checks_ok
+    live = float(quote.last) if warm else None
+    units_ok, units_why = underlying_price_checks_ok(signal, live)
+    # W1.1: the stated ENTRY may be the contract's price too ("MSFT 505 0dte
+    # 1.00") — a premium-scale entry never meets the stock price either
+    entry_ok = entry_price_is_underlying(signal, live)
     if not units_ok:
         add("price_units", True,              # informational, never fatal
             f"{units_why} — underlying target checks skipped")
+    if not entry_ok:
+        add("entry_units", True,              # informational, never fatal
+            f"stated entry {signal.entry_price:g} is premium-scale vs the underlying "
+            "— treated as the contract's price; entry deviation/ordering checks skipped")
     add("ticker_resolves", warm,
         f"no market data for {symbol} yet — parked until the feed warms"
         if not warm else "")
@@ -141,7 +148,7 @@ async def verify_signal(
         # 6. price deviation vs claimed entry — PARKING, not fatal: the tip
         # technique waits for the level instead of chasing or dying.
         # entry_price is underlying by schema contract (premium has its own field)
-        if signal.entry_price:
+        if signal.entry_price and entry_ok:
             max_dev = float(settings.get("verification.max_price_deviation_pct", 3.0))
             dev = abs(quote.last - signal.entry_price) / signal.entry_price * 100
             add("price_deviation", dev <= max_dev,
@@ -164,7 +171,7 @@ async def verify_signal(
     # units are underlying too (Codex follow-up R1: premium 1.75/0.90 vs an
     # underlying 98.87 entry failed FATALLY here after the target check was
     # correctly skipped — both calls and puts).
-    if signal.entry_price and units_ok:
+    if signal.entry_price and units_ok and entry_ok:
         ok = True
         detail = ""
         if signal.direction == "long":

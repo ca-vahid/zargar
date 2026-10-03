@@ -2764,3 +2764,15 @@ message. It does not fix host memory pressure - that is still the first cause.
   `flatten_before.timing = "session"`; only Tips sets `flatten_before`): BMO / unknown -> flat at 15:45 ET of the session
   before the report, AMC -> 15:45 of the report day (early closes pull it inside the close). The whole-day rule it
   replaces held a Friday long through a Monday-BMO report and sold AMC names a session early.
+
+### A shadow book never sells a lot it does not hold - 2026-10-02 (Tips desk, platform; W1.8)
+
+The 2026-10-02 review found two live shadow books ("Shadow: tt", "Shadow: ab (armed)") with SELL executions and no
+matching lot. `OrderManager` now guards every SHADOW portfolio: a closing sell (shares - shadow books never short
+shares -, a reduce-only exit, or an option `*_TO_CLOSE`) is capped at place time to the held quantity (tagged
+`shadow:close`; resting sells are not subtracted so an exit stop is never refused because a target limit rests); zero
+held = `REJECTED_RISK` with `ShadowSellRefused` journaled. At fill
+time a closing sell or bracket child fills at most the held lot (an excess is not booked, journaled, the order
+cancelled), and a sell that takes the lot flat cancels the book's other resting sells of that symbol (the dangling
+bracket child that would otherwise short later). Opening option legs (a spread's `SELL_TO_OPEN`) and every non-shadow
+book are untouched. Tests: `tests/test_tips_w1_intake.py`. Existing books are quarantined by a human step.
