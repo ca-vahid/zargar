@@ -18,6 +18,7 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {version:"0.8.59",date:"2026-10-03",title:"Tips: Practice and live together, and the fixes from the month review",items:[
+    {tag:"improved",text:"More decisions without you: a live book that has its own auto approval decides its cards the way Practice does, and a defined-risk spread is sized by the risk budget so it can approve itself instead of waiting."},
     {tag:"major",text:"Tips can trade several books at once: the analyst judges each tip once, and the Practice book and a linked IBKR account each get their own card, sized by that book's own budget and caps (Settings > Tips technique > Books)."},
     {tag:"improved",text:"The Practice/LIVE switch now only changes what you see. Sending real orders is its own switch next to HALT, so Practice keeps running while live trades."},
     {tag:"new",text:"When the first option is too expensive for the risk budget, the analyst is shown cheaper strikes, a later expiry, a debit spread and shares that do fit, and must weigh them before skipping. Its size check and the app's now use the same arithmetic."},
