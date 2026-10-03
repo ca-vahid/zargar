@@ -24,7 +24,7 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
 - [ ] **W1.1 Units check (D1).** `not_past_target` / price-position checks compare a premium target with the stock price
   when `instrument=unspecified`. Rule: if the tip carries a strike or contract and the stated prices are premium-scale
   (below a fraction of the underlying), treat them as premium. Test with the MSFT 505 0DTE message (09-28).
-- [ ] **W1.2 One feasibility authority (D2).** `check_feasibility` (analyst tool) and the geometry gate compute the same
+- [x] **W1.2 One feasibility authority (D2).** `check_feasibility` (analyst tool) and the geometry gate compute the same
   thing through ONE pure function (stop finalisation + per-unit risk + qty). The analyst sees the exact qty the gate
   will allow. If the gate still refuses at submission (quote moved), it returns the fitting qty/stop for one automatic
   re-size instead of expiring the card.
@@ -47,7 +47,7 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
 
 ## W2 - Analyst: find another way to take the trade
 
-- [ ] **W2.1 Fit-or-reshape before a budget skip.** When the stated contract does not fit the risk budget, the
+- [x] **W2.1 Fit-or-reshape before a budget skip.** When the stated contract does not fit the risk budget, the
   application (deterministically, no extra model turns) builds the alternatives and hands them to the analyst in one
   tool result `find_alternatives`:
   1. same expiry, cheaper strikes (one-two strikes further OTM, liquid, spread within the fill band);
@@ -57,11 +57,11 @@ Status legend: `[ ]` open, `[x]` built + tested, `(observe)` ships journaling on
   Each with qty that fits, max loss, break-even, spread %, and `preview_payoff` numbers. The analyst picks one or skips
   with a concrete reason against each. Live books receive the shares alternative (shares-only policy). Journaled
   `TipAlternativesOffered` / chosen alternative on the opinion (`opinion.reshapedFrom`).
-- [ ] **W2.2 Prompt contract.** A verified, priced BTO may be skipped for budget only after `find_alternatives`; the
+- [x] **W2.2 Prompt contract.** A verified, priced BTO may be skipped for budget only after `find_alternatives`; the
   verdict JSON carries `alternativesConsidered`. Missing → one automatic re-ask (no human).
 - [ ] **W2.3 Watch becomes an armed level.** A `watch` with a named level + stop is armed at-level (ARM-PLAN `at_level`)
   until the tip horizon; a watch without a level stays a note. Re-appraisal on touch is the normal fire path.
-- [ ] **W2.4 Prefetch + seeded context.** Quote, chain slice, bars summary, positions and earnings for the extracted
+- [x] **W2.4 Prefetch + seeded context.** Quote, chain slice, bars summary, positions and earnings for the extracted
   ticker are fetched in parallel with extraction and seeded into the prompt (saves 1-2 turns, ~8-15 s; earnings checked
   on 100% of appraisals instead of 5%).
 - [ ] **W2.5 Second opinion on judgement skips (observe).** For a verified BTO skipped on geometry/reach/chase/identity

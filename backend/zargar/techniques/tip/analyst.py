@@ -279,6 +279,15 @@ class AnalystOpinion(BaseModel):
     expression_note: Optional[str] = Field(
         default=None, description="One sentence: how the expression fits the approved risk budget "
                                   "(check_feasibility result) and, for 1-2 units, the coherent exit")
+    alternativesConsidered: list[dict] = Field(
+        default_factory=list,
+        description='W2.2: every alternative find_alternatives offered, by id, with your decision and a '
+                    'CONCRETE reason: [{"id": "alt1", "decision": "chosen"|"rejected", "reason": "..."}]. '
+                    'Required before a budget/size skip of a verified priced buy-to-open; empty otherwise.')
+    alternativeChosen: Optional[str] = Field(
+        default=None, description="The id of the find_alternatives alternative this take trades (its vehicle "
+                                  "fields copied into contract/limit_price/quantity, or legs/legs_expiry, or "
+                                  "instrument shares); null when the take is the stated contract")
 
 
 TOOLS = [
@@ -309,17 +318,35 @@ TOOLS = [
          "strike": {"type": "number"}, "contract": {"type": "string"}},
          "required": ["symbol", "expiry"]}},
     {"name": "check_feasibility",
-     "description": "PROF-01: how many units of an expression fit the approved planned-risk "
-                    "budget at the stop you declare, from the same estimator the risk gate "
-                    "uses. Args: contract (OCC symbol, or 'shares'), limit (premium or share "
-                    "price), underlying_stop, premium_stop_pct (optional). Returns unit risk, "
-                    "feasible quantity (0 = an honest no-trade for that expression) and LABELLED "
-                    "research alternatives at equal risk (shares; same-expiry strikes from a "
-                    "chain you already fetched). Alternatives are comparisons, never substitutions.",
+     "description": "How many units of an expression fit the approved planned-risk budget - computed by "
+                    "the SAME function and the same evidence the risk gate applies (W1.2): your declared "
+                    "stop is first finalized by the geometry rules (a stop inside the width floor or inside "
+                    "recent structure is re-placed; the result shows declaredStop vs finalStop), then the unit "
+                    "risk and floor(budget / unit) at the FINAL stop, then the purchase/premium/contract caps. "
+                    "Args: contract (OCC symbol, or 'shares'), limit (premium or share price), underlying_stop, "
+                    "premium_stop_pct (optional), exit_targets (optional). qty 0 = this expression does not fit: "
+                    "the result points at find_alternatives and, when it can, attaches them already.",
      "input_schema": {"type": "object", "properties": {
          "contract": {"type": "string"}, "limit": {"type": "number"},
-         "underlying_stop": {"type": "number"}, "premium_stop_pct": {"type": "number"}},
+         "underlying_stop": {"type": "number"}, "premium_stop_pct": {"type": "number"},
+         "exit_targets": {"type": "array", "items": {"type": "number"}}},
          "required": ["contract", "limit"]}},
+    {"name": "find_alternatives",
+     "description": "W2.1: when the stated contract does not fit the risk budget, the application builds the "
+                    "other ways to take the SAME idea that DO fit (deterministic, no model): (1) the same expiry "
+                    "one-two strikes further OTM (liquid, inside the fill band), (2) the same strike at a later "
+                    "expiry, (3) a debit vertical of the stated contract (venue-dependent), (4) shares sized to "
+                    "the budget at the structure stop (long ideas). Each with qty, planned risk, max loss, "
+                    "break-even, spread %, fill band and payoff scenarios, plus the exact `vehicle` fields to "
+                    "copy into a take. A live shares-only book gets the shares alternative only. Args: contract "
+                    "(the stated OCC), underlying_stop, premium_stop_pct, exit_targets, exit_fractions, "
+                    "hold_sessions, limit (optional; the stated premium).",
+     "input_schema": {"type": "object", "properties": {
+         "contract": {"type": "string"}, "underlying_stop": {"type": "number"},
+         "premium_stop_pct": {"type": "number"}, "exit_targets": {"type": "array", "items": {"type": "number"}},
+         "exit_fractions": {"type": "array", "items": {"type": "number"}}, "hold_sessions": {"type": "integer"},
+         "limit": {"type": "number"}},
+         "required": ["underlying_stop"]}},
     {"name": "preview_payoff",
      "description": "PROF-02: the whole exit path in INTEGER units for a quantity: units sold "
                     "at each rung, whether the ladder is executable at that size, the net "
@@ -447,10 +474,21 @@ and the tape, not on "it's short-dated" — that is the lane's nature, not a fla
 budget B. A "take" must fit at least ONE unit of the expression you name inside B at the \
 stop you declare (one contract's loss at your underlying stop, delta-linear, or the premium \
 stop when there is no underlying stop; one share's loss = entry - stop). Call \
-check_feasibility BEFORE answering "take": if the named contract cannot fit one unit, say so \
-- answer "watch" with the thesis, or name an expression that fits (the tool lists labelled \
-alternatives at equal risk: shares, or another strike of the same expiry). Never raise \
-the budget, never pretend a fraction of a contract exists.
+check_feasibility BEFORE answering "take" - it is the risk gate's own arithmetic: it may \
+re-place a stop that sits inside the width floor or recent structure and sizes at that FINAL \
+stop, so its quantity is the quantity the gate will allow. Never raise the budget, never \
+pretend a fraction of a contract exists.
+- FIT OR RESHAPE BEFORE A BUDGET SKIP (2026-10-02): when the stated contract does not fit, look \
+for ANOTHER WAY TO TAKE THE SAME IDEA before giving up - call find_alternatives (check_feasibility \
+attaches its result when it can): a cheaper strike of the same expiry, the same strike at a later \
+expiry, a debit vertical of the stated contract, or shares at the structure stop, each already \
+sized to the budget by the same arithmetic. To take one, answer "take" with alternativeChosen = its \
+id and copy its vehicle fields (instrument, contract or legs + legs_expiry, limit_price, quantity) \
+with an exit plan at its finalStop. A verified, priced buy-to-open may be skipped (or watched) for \
+budget or size ONLY after find_alternatives, and alternativesConsidered must list EVERY offered id \
+with a concrete reason against it (e.g. "alt2 vertical caps the move at 105 below the 110 target"). \
+Judge the alternatives on the thesis - a spread caps the runner, shares need the stop to hold, a \
+far strike needs a bigger move - never reject one just because it differs from the tip.
 - ONE-LOT EXITS (2026-09-15): fractional exit_fractions cannot sell fractions of a contract. \
 With 1-2 contracts declare a coherent plan a single lot can execute (one target, or a \
 premium-based exit) - call preview_payoff to see what your ladder actually does in integer \
@@ -765,7 +803,8 @@ async def _expression_context(eng, ctx: dict) -> dict:
     the tip being appraised (the same policy the geometry gate sizes with)."""
     from . import geometry as _geo
     s = eng.settings
-    pid = str(s.get("techniques.tip.default_portfolio", "") or s.get("trading.default_portfolio", "") or "")
+    from .risk_evidence import tip_book_id
+    pid = tip_book_id(eng) or ""          # W1.2: the book the proposal will be minted in (same resolution)
     equity = None
     if pid:
         with contextlib.suppress(Exception):
@@ -776,7 +815,7 @@ async def _expression_context(eng, ctx: dict) -> dict:
     # understated the modelled round trip by the regulatory $0.05 per contract per side)
     from .execcost import fees_from_settings as _fees
     _f = _fees(s)
-    return {"riskBudget": budget, "riskBudgetSource": source, "allocationLimit": allocation,
+    return {"riskBudget": budget, "riskBudgetSource": source, "allocationLimit": allocation, "portfolioId": pid or None,
             "feePerContract": float(_f["feePerContract"]) + float(_f["regPerContract"]),
             "feeBasis": "options.fee_per_contract + sim.reg_fee_per_contract per contract per side (execcost basis)"}
 
@@ -810,68 +849,125 @@ async def _contract_evidence(eng, contract: str) -> dict:
     return out
 
 
-async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
+async def _expression_tool(eng, name: str, args: dict, ctx: dict, *, attach_alternatives: bool = True) -> dict:
+    """check_feasibility / preview_payoff. W1.2 (2026-10-02): both read ONE feasibility authority - the evidence
+    the pre-entry gate gathers (`risk_evidence.gather`: the reference price, 15m bars, the book's risk budget, the
+    contract metadata, a delta of known age) and the gate's own pure arithmetic (`geometry.fit_expression`: the
+    FINAL stop after the geometry rules, the unit loss, floor(B / unit)). The analyst therefore sees the stop and the
+    quantity the gate will apply - not a number computed at the stop it declared."""
+    from . import alternatives as _alt
     from . import feasibility as _fz
+    from . import geometry as _geo
     from . import payoff as _po
+    from . import risk_evidence as _rev
+    from ...options import occ as _occ
     book = await _expression_context(eng, ctx)
     contract = str(args.get("contract") or "").strip()
     is_shares = contract.lower() in ("shares", "stock", "")
     limit = float(args.get("limit") or 0)
     stop = args.get("underlying_stop")
     psp = args.get("premium_stop_pct")
+    targets = [float(t) for t in (args.get("exit_targets") or [])]
+    fractions = [float(x) for x in (args.get("exit_fractions") or [])] or ([1.0] if targets else [])
+    plan = {"targets": targets, "fractions": fractions,
+            **({"underlyingStop": float(stop)} if stop is not None else {}),
+            **({"premiumStopPct": float(psp)} if psp is not None else {})}
+    pid = book.get("portfolioId")
     direction = "long"
     ev: dict = {}
     if is_shares:
         under = str(ctx.get("ticker") or "").upper()
-        entry_ref = limit
-        ul, basis, meta = _fz.unit_risk(vehicle="shares", entry_ref=entry_ref, stop=stop, direction="long")
-        mult = 1.0
-        unit_cost = limit
+        sym, sec_type, vehicle = under, "STK", {}
     else:
         ev = await _contract_evidence(eng, contract)
+        parsed = _occ.parse(contract)
+        if parsed is not None:
+            contract = parsed.symbol
         under = str(ev.get("underlying") or ctx.get("ticker") or "").upper()
         direction = "short" if ev.get("optionType") == "put" else "long"
-        entry_ref = ev.get("spot")
-        ul, basis, meta = _fz.unit_risk(vehicle="option", entry_ref=entry_ref, stop=stop, direction=direction,
-                                        premium=limit, delta=ev.get("delta"), option_type=ev.get("optionType") or "call",
-                                        multiplier=100.0, premium_stop_pct=psp)
-        mult = 100.0
-        unit_cost = limit * 100.0
+        sym, sec_type = contract, "OPT"
+        if parsed is not None and not ctx.get("experiment"):
+            # no chain row seen for this contract yet (no delta, no estimate): read its expiry once - the same
+            # snapshot the gate will size from at proposal time
+            snap = None
+            with contextlib.suppress(Exception):
+                snap = eng.options.snapshot_cached(contract)
+            if not ((snap or {}).get("greeks") or {}).get("delta"):
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(eng.options.chain(parsed.underlying, parsed.expiry.isoformat()), 8.0)
+        vehicle = {"multiplier": _occ.contract_multiplier(contract), "optionType": ev.get("optionType") or "call",
+                   "currency": "USD"}
+    gate = await _rev.gather(eng, underlying=under, sec_type=sec_type, symbol=sym, vehicle=vehicle, limit=limit,
+                             entry_hint=(ctx.get("tip") or {}).get("entryPrice"), pid=pid)
+    final, fit = _geo.fit_expression(direction=direction, vehicle=("shares" if is_shares else "option"),
+                                     entry_ref=gate["entryRef"], exit_plan=plan, bars=gate["bars"],
+                                     settings=eng.settings, premium=limit, multiplier=gate["multiplier"],
+                                     option_type=(None if is_shares else vehicle.get("optionType")),
+                                     delta=gate["delta"], budget=gate["budget"])
+    ul, basis = fit["unitLoss"], fit["unitLossBasis"]
+    mult = 1.0 if is_shares else (float(gate["multiplier"] or 0) or 100.0)
+    unit_cost = limit * mult
+    entry_ref = gate["entryRef"]
+    gate_evidence = [d for _c, d in gate["problems"]] + ([gate["greeksMeta"]["reason"]]
+                                                         if gate["greeksMeta"].get("reason") else [])
+    stop_note = None
+    if fit["repairs"]:
+        stop_note = ("the risk gate finalizes your plan before sizing: " + "; ".join(fit["repairs"])
+                     + " - the quantity below is at the FINAL stop")
     if name == "check_feasibility":
-        f = _fz.feasibility(budget=float(book["riskBudget"] or 0), unit_loss=ul, unit_cost=unit_cost,
+        f = _fz.feasibility(budget=float(gate["budget"] or 0), unit_loss=ul, unit_cost=unit_cost,
                             allocation_limit=book.get("allocationLimit"))
-        alts: list = []
-        if not is_shares:
-            sa = _fz.share_alternative(entry=entry_ref, stop=stop, direction=direction, budget=float(book["riskBudget"] or 0),
-                                       allocation_limit=book.get("allocationLimit"))
-            if sa:
-                alts.append(sa)
-            rows = []
-            for t in (ctx.get("toolsUsed") or []):
-                if t.get("name") == "get_chain" and isinstance(t.get("result"), dict) and t["result"].get("expiry") == ev.get("expiry"):
-                    rows = t["result"].get("strikes") or []
-            if rows:
-                alts += _fz.chain_alternatives(rows, direction=direction, entry_ref=entry_ref, stop=stop,
-                                              budget=float(book["riskBudget"] or 0), allocation_limit=book.get("allocationLimit"),
-                                              premium_stop_pct=psp, exclude_symbol=contract)
-        return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
-                "unitRisk": ul, "unitRiskBasis": basis, "evidence": {**meta, **{k: ev.get(k) for k in ("delta", "ask", "spot", "quoteSource")}},
-                "riskBudget": book["riskBudget"], "riskBudgetSource": book["riskBudgetSource"],
-                "allocationLimit": book.get("allocationLimit"), **{k: f.get(k) for k in ("feasible", "qty", "qtyByRisk", "qtyByAllocation", "reason")},
-                "execCost": _exec_cost(eng, is_shares=is_shares, symbol=(under if is_shares else contract), qty=int(f.get("qty") or 1)),
-                "alternatives": alts,
-                "note": "alternatives are labelled research comparisons at equal dollar risk - the original expression stays the card"}
+        qty_cap, binds = _alt.cap_qty(f.get("qtyByRisk") if f.get("qtyByRisk") is not None else None,
+                                      unit_cost=unit_cost, allocation=book.get("allocationLimit"),
+                                      settings=eng.settings, is_option=not is_shares)
+        if f.get("qty") is not None and f.get("qtyByRisk") is not None:
+            f["qty"] = min(int(f["qty"]), int(qty_cap))
+            f["feasible"] = bool(f["qty"] >= 1)
+        out = {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
+               "authority": fit["version"], "unitRisk": ul, "unitRiskBasis": basis,
+               "declaredStop": fit["originalStop"], "finalStop": fit["finalStop"], "stopRepairs": fit["repairs"],
+               **({"stopNote": stop_note} if stop_note else {}),
+               "evidence": {**fit["meta"], "delta": gate["delta"], "spot": entry_ref, "multiplier": gate["multiplier"],
+                            **{k: ev.get(k) for k in ("ask", "quoteSource")}},
+               "riskBudget": gate["budget"], "riskBudgetSource": gate["budgetSource"],
+               "allocationLimit": book.get("allocationLimit"),
+               **{k: f.get(k) for k in ("feasible", "qty", "qtyByRisk", "qtyByAllocation", "reason")},
+               **({"binding": binds} if binds else {}),
+               **({"gateEvidence": gate_evidence,
+                   "gateNote": "the risk gate review-gates a card while these evidence problems stand"}
+                  if gate_evidence else {}),
+               "execCost": _exec_cost(eng, is_shares=is_shares, symbol=(under if is_shares else contract),
+                                      qty=int(f.get("qty") or 1))}
+        if not f.get("feasible"):
+            # W2.2: an unfittable expression points at find_alternatives - and, when it is cheap (an option, the
+            # tool enabled, no historical mode), the alternatives ride along so it costs no extra turn
+            out["next"] = ("this expression does not fit: call find_alternatives (cheaper strike, later expiry, debit "
+                           "vertical, shares at the stop) before any budget/size skip")
+            if attach_alternatives and not is_shares and not ctx.get("experiment") \
+                    and bool(eng.settings.get("techniques.tip.find_alternatives_enabled", True)):
+                try:
+                    alts = await asyncio.wait_for(_alt.find_alternatives(
+                        eng, {"contract": contract, "underlying_stop": stop, "premium_stop_pct": psp,
+                              "exit_targets": targets, "exit_fractions": fractions, "limit": limit or None},
+                        ctx), timeout=12.0)
+                    if not alts.get("error"):
+                        ctx["alternativesOffered"] = alts
+                        out["alternatives"] = _alt.for_model(alts)
+                        out["next"] = ("this expression does not fit - the alternatives that DO fit are attached "
+                                       "(same as find_alternatives): take one by id, or skip with a reason per id")
+                except Exception as exc:                  # noqa: BLE001 - the pointer stays; the tool is still callable
+                    log.debug("pre-attached alternatives failed: %s", exc)
+        return out
     qty = int(args.get("quantity") or 0)
-    targets = [float(t) for t in (args.get("exit_targets") or [])]
-    fractions = [float(x) for x in (args.get("exit_fractions") or [])] or ([1.0] if targets else [])
-    gains = _po.unit_gains(vehicle=("shares" if is_shares else "option"), entry_ref=float(entry_ref or 0), targets=targets,
-                           direction=direction, delta=ev.get("delta"), multiplier=mult)
+    gains = _po.unit_gains(vehicle=("shares" if is_shares else "option"), entry_ref=float(entry_ref or 0),
+                           targets=list(final.get("targets") or []), direction=direction, delta=gate["delta"],
+                           multiplier=mult)
     dte_days = None
     if not is_shares and ev.get("expiry"):
         with contextlib.suppress(Exception):
             dte_days = (dt.date.fromisoformat(str(ev["expiry"])) - dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))).date()).days
     hold = args.get("hold_sessions")
-    pv = _po.payoff_preview(qty=qty, fractions=fractions, gains=gains, unit_loss=ul,
+    pv = _po.payoff_preview(qty=qty, fractions=list(final.get("fractions") or fractions), gains=gains, unit_loss=ul,
                             fee_per_unit=(0.0 if is_shares else float(book.get("feePerContract") or 0.0)),
                             vehicle=("shares" if is_shares else "option"),
                             strike=(None if is_shares else ev.get("strike")), premium=(None if is_shares else limit),
@@ -880,7 +976,11 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict) -> dict:
                             expiry_date=(None if is_shares else ev.get("expiry")),
                             exit_at_expiry=bool(args.get("exit_at_expiry") or False))
     return {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
-            "unitRisk": ul, "unitRiskBasis": basis, **pv,
+            "unitRisk": ul, "unitRiskBasis": basis, "finalStop": fit["finalStop"],
+            **({"stopNote": stop_note} if stop_note else {}),
+            **({"droppedTargets": [r for r in fit["repairs"] if "target" in r]}
+               if any("target" in r for r in fit["repairs"]) else {}),
+            **pv,
             "execCost": _exec_cost(eng, is_shares=is_shares, symbol=(under if is_shares else contract), qty=qty)}
 
 
@@ -1242,7 +1342,18 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         return _compact_chain(chain, want=want)
     if name in ("check_feasibility", "preview_payoff"):
         try:
-            return await _expression_tool(eng, name, args, ctx or {})
+            return await _expression_tool(eng, name, args, ctx if ctx is not None else {})
+        except Exception as exc:                          # noqa: BLE001 - a tool error is an answer
+            return {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+    if name == "find_alternatives":
+        try:
+            from . import alternatives as _alt
+            _ctx = ctx if ctx is not None else {}
+            out = await _alt.find_alternatives(eng, args, _ctx)
+            if not out.get("error"):
+                _ctx["alternativesOffered"] = out          # the run's record: matched against the verdict
+                return _alt.for_model(out)
+            return out
         except Exception as exc:                          # noqa: BLE001 - a tool error is an answer
             return {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
     if name == "get_flow":
@@ -2023,8 +2134,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                                                  "data": out["_image_b64"]}},
                     {"type": "text", "text": out.get("note") or "the image"}]})
             else:
+                # W2.1: the alternatives list (numbers per alternative) gets more room than a plain tool result
+                _cap = 12000 if c.name in ("find_alternatives", "check_feasibility") else 6000
                 results.append({"type": "tool_result", "tool_use_id": c.id,
-                                "content": json.dumps(out, default=str)[:6000]})
+                                "content": json.dumps(out, default=str)[:_cap]})
         messages.append({"role": "user", "content": results})
         if len(tools_used) >= max_tools:
             messages.append({"role": "user", "content":
@@ -2095,6 +2208,14 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         await session.commit()
 
     rec = _Recorder(eng, run_id)
+
+    # W2.4 (2026-10-02): the market context the first 3-4 tool turns used to fetch is fetched NOW, concurrently
+    # with the knowledge / history lookups below, and seeded into the header (never in historical mode - the live
+    # market did not exist at the tip's time)
+    prefetch_task = None
+    if not experiment and bool(s.get("techniques.tip.analyst_prefetch", True)):
+        from . import prefetch as _pf
+        prefetch_task = asyncio.ensure_future(_pf.prefetch(eng, signal_row))
 
     as_of_ms = None
     as_of_dt = None
@@ -2173,7 +2294,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     try:
         _bk = await _expression_context(eng, {"budgetPerTip": float(policy.budget_per_tip)})
         risk_line = (f"Approved planned-risk budget: ${float(_bk['riskBudget'] or 0):,.2f} ({_bk['riskBudgetSource']}) - "
-                     f"a take must fit >= 1 unit at your declared stop (check_feasibility); the per-tip budget "
+                     f"a take must fit >= 1 unit at the FINAL stop the risk gate applies (check_feasibility; "
+                     f"find_alternatives when it does not); the per-tip budget "
                      f"below is the PURCHASE allocation limit, not the risk budget.\n")
     except Exception:                                   # noqa: BLE001 - the header never fails on this
         risk_line = ""
@@ -2183,6 +2305,19 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         event_line = _evc.header_line(_evc.context_for(eng)) + "\n"
     except Exception:                                   # noqa: BLE001 - the header never fails on this
         event_line = ""
+    seed_txt = ""
+    prefetched = None
+    if prefetch_task is not None:
+        try:
+            from . import prefetch as _pf
+            prefetched = await prefetch_task
+            seed_txt = _pf.seed_block(prefetched, fetched_at=_et_label(dt.datetime.now(dt.timezone.utc)) or "now")
+            rec.step("prefetch", f"Prefetched {', '.join(_pf.record(prefetched)['fetched']) or 'nothing'} in "
+                                 f"{prefetched.get('ms')} ms (earnings: {_pf.record(prefetched)['earnings'].get('status')}).",
+                     prefetch=_pf.record(prefetched), items=prefetched.get("items"))
+        except Exception as exc:                        # noqa: BLE001 - the header never fails on this
+            log.debug("analyst prefetch failed for %s: %s", signal_row.id, exc)
+            seed_txt = ""
     header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
               + event_line + risk_line +
               f"Per-tip budget: ${policy.budget_per_tip:,.0f} · option DTE window "
@@ -2191,6 +2326,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"TIP: {json.dumps(tip)}\n"
               f"VERIFICATION: {json.dumps({k: verification.get(k) for k in ('passed', 'park', 'shadow_only')})} "
               f"failed checks: {[c['name'] for c in verification.get('checks', []) if not c['passed']]}\n"
+              + seed_txt +
               f"YOUR TRADING RULES (self-maintained — follow them):\n{rules_txt}\n"
               f"SHARED NOTES (desk knowledge from earlier runs):\n{notes_txt}\n"
               f"THIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "
@@ -2217,7 +2353,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                  contextManifest=manifest_from_components(
                      header=header, system=system, today_line=header.split("\n", 1)[0],
                      rules_text=rules_txt, notes_text=notes_txt,
-                     history_text=history_txt, lotto_line=lotto_line,
+                     history_text=history_txt, lotto_line=lotto_line, seeded_text=seed_txt,
                      verification=verification, tip=tip, policy=policy,
                      siblings=siblings, historical_note=historical_note,
                      header_mode=("compact" if compact else "full"), recap_read=recap_read, max_tools=max_tools,
@@ -2229,11 +2365,78 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
                 "experiment": experiment, "asOfMs": as_of_ms,
                 "stage": "appraise", "budgetPerTip": float(policy.budget_per_tip),
-                "toolsUsed": tools_used}
+                "toolsUsed": tools_used, "tip": tip, "lotto": bool(lotto_line),
+                "dteMin": getattr(policy, "dte_min", None), "dteMax": getattr(policy, "dte_max", None)}
 
     loop_state: dict = _arm_deadline({}, eng)
 
     async def loop() -> AnalystOpinion | None:
+        op = await first_pass()
+        if op is None or experiment:
+            return op
+        return await _budget_reask(op)
+
+    async def _budget_reask(op: AnalystOpinion) -> AnalystOpinion:
+        """W2.2 (2026-10-02): a budget/size skip of a verified, priced buy-to-open that did not weigh the
+        alternatives is re-asked ONCE, inside this run, with the alternatives already built by the application
+        (find_alternatives, deterministic - no extra model call to fetch them). No human in the loop."""
+        from . import alternatives as _alt
+        if not bool(s.get("techniques.tip.budget_skip_reask", True)):
+            return op
+        why = _alt.reask_reason(op.model_dump(), tip=tip, verification=verification,
+                                offered=tool_ctx.get("alternativesOffered"))
+        if not why:
+            return op
+        _rem = _remaining_s(loop_state)
+        if _rem is not None and _rem < 15.0:
+            rec.step("note", f"Budget skip re-ask skipped ({why}): only {round(_rem, 1)} s left in the run.")
+            loop_state["budgetReask"] = {"reason": why, "skipped": "no time"}
+            return op
+        offered = tool_ctx.get("alternativesOffered")
+        if offered is None and bool(s.get("techniques.tip.find_alternatives_enabled", True)):
+            try:
+                offered = await asyncio.wait_for(_alt.find_alternatives(
+                    eng, _alt.reask_args(op.model_dump(), tip, signal_row.ticker), tool_ctx), timeout=15.0)
+                if offered.get("error"):
+                    offered = None
+                else:
+                    tool_ctx["alternativesOffered"] = offered
+                    rec.step("alternatives", f"find_alternatives run by the desk for the re-ask: "
+                                             f"{len(offered.get('alternatives') or [])} fit, "
+                                             f"{len(offered.get('notFitting') or [])} do not.",
+                             alternatives=_alt.compact(offered))
+            except Exception as exc:                    # noqa: BLE001 - the original verdict stands
+                log.debug("re-ask alternatives failed: %s", exc)
+                offered = None
+        if offered is not None and not (offered.get("alternatives") or []):
+            loop_state["budgetReask"] = {"reason": why, "skipped": "no alternative fits"}
+            return op                                   # nothing fits: the skip stands on the offered numbers
+        loop_state["budgetReask"] = {"reason": why, "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+        rec.step("note", f"Budget/size skip of a verified priced buy-to-open without weighed alternatives ({why}) - "
+                         "re-asking once with the alternatives attached (W2.2).")
+        loop_state["messages"].append({"role": "assistant", "content": loop_state.pop("lastAssistantContent", None)
+                                       or (op.model_dump_json())})
+        body = (json.dumps(_alt.for_model(offered), default=str)[:12000] if offered is not None
+                else "(find_alternatives unavailable)")
+        loop_state["messages"].append({"role": "user", "content":
+            "You skipped/watched a verified, priced buy-to-open for budget or size without weighing the other ways "
+            "to take the same idea. These alternatives were built by the desk with the risk gate's own arithmetic "
+            "(find_alternatives):\n" + body + "\nEither TAKE one (alternativeChosen = its id, copy its vehicle "
+            "fields, exit plan at its finalStop) or keep your verdict with alternativesConsidered listing EVERY "
+            "fitting id with a concrete reason against it. Reply with ONLY the JSON opinion object."})
+        loop_state.pop("finalDemanded", None)
+        text = await run_agent_loop(eng, client, model=model, system=system, header=header, rec=rec,
+                                    run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
+                                    tools_used=tools_used, state=loop_state)
+        try:
+            op2 = _parse_opinion(text) if text is not None else None
+        except ValueError as exc:
+            rec.step("note", f"Re-ask reply had no parseable opinion ({exc}) - the first verdict stands.")
+            op2 = None
+        loop_state["budgetReask"]["outcome"] = (op2.verdict if op2 is not None else "kept")
+        return op2 or op
+
+    async def first_pass() -> AnalystOpinion | None:
         text = await run_agent_loop(
             eng, client, model=model, system=system, header=header, rec=rec,
             run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
@@ -2321,24 +2524,60 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             _asof = dt.datetime.fromtimestamp(int(tool_ctx["asOfMs"]) / 1000, tz=dt.timezone.utc)
         _ec_ctx = _evc.context_for(eng, now=_asof, as_of=_asof)
         result["eventContext"] = {k: _ec_ctx.get(k) for k in ("version", "session", "status", "coverage", "label", "events", "nextEvent", "knowledgeCut")}
+    if prefetched is not None:
+        from . import prefetch as _pf
+        result["prefetch"] = _pf.record(prefetched)          # W2.4: earnings on 100% of appraisals, measurable
+    if loop_state.get("budgetReask"):
+        result["budgetReask"] = loop_state["budgetReask"]
+    # W2.1 (2026-10-02): an alternative the analyst chose becomes the take's vehicle exactly as a normal take
+    # carries it (the proposal path trades it), with `reshapedFrom`; the offer and the choice are journaled
+    offered = tool_ctx.get("alternativesOffered")
+    if offered is not None and not experiment:
+        from . import alternatives as _alt
+        choice = _alt.match_choice(offered, result) if opinion.verdict == "take" else None
+        stated = (offered.get("original") or {}).get("contract")
+        if choice is not None and not (choice.get("kind") == "stated" or (choice.get("contract") and choice.get("contract") == stated)):
+            result = _alt.apply_choice(result, choice, offered)
+            with contextlib.suppress(Exception):
+                opinion = AnalystOpinion(**{k: result.get(k) for k in AnalystOpinion.model_fields if k in result})
+            rec.step("note", f"Reshaped: {choice.get('label')} ({choice.get('id')}) instead of "
+                             f"{result.get('reshapedFrom')} - qty {choice.get('qty')}, planned risk "
+                             f"{choice.get('plannedRisk')}.", reshape=result.get("reshape"))
+        else:
+            choice = None
+        result["alternativesOffered"] = {"version": offered.get("version"), "count": len(offered.get("alternatives") or []),
+                                         "ids": [a.get("id") for a in offered.get("alternatives") or []]}
+        with contextlib.suppress(Exception):
+            await eng.journal.append("TipAlternativesOffered", {
+                "signalId": getattr(signal_row, "id", None), "runId": run_id, "ticker": signal_row.ticker,
+                "source": signal_row.source_name, "version": offered.get("version"), "book": offered.get("book"),
+                "original": {k: (offered.get("original") or {}).get(k) for k in
+                             ("contract", "qty", "fits", "unitRisk", "finalStop", "reason")},
+                "alternatives": _alt.compact(offered), "unavailable": offered.get("unavailable"),
+                "considered": list(result.get("alternativesConsidered") or []),
+                "chosen": (choice or {}).get("id"), "chosenKind": (choice or {}).get("kind"),
+                "reshapedFrom": result.get("reshapedFrom"), "verdict": result.get("verdict"),
+                "budgetReask": loop_state.get("budgetReask")},
+                aggregate_type="signal", aggregate_id=getattr(signal_row, "id", None) or run_id)
     # PROF-01/02 (2026-09-15): the expression's feasibility and the plan's
     # payoff are assessed server-side on every TAKE - the same numbers the
     # tools offered - and recorded beside the opinion; `analyst_feasibility_gate`
     # = annotate (default) keeps the verdict, downgrade turns an unfittable
     # take into watch with the thesis verdict kept apart. Never in historical mode.
-    if opinion.verdict == "take" and not experiment:
+    if opinion.verdict == "take" and not experiment and len(opinion.legs or []) != 2:
         try:
             from . import feasibility as _fz
             expr_args = {"contract": (opinion.contract if opinion.instrument == "option" and opinion.contract else "shares"),
                          "limit": float(opinion.limit_price or 0), "underlying_stop": opinion.underlying_stop,
-                         "premium_stop_pct": opinion.premium_stop_pct}
-            expression = await _expression_tool(eng, "check_feasibility", expr_args, tool_ctx)
+                         "premium_stop_pct": opinion.premium_stop_pct,
+                         "exit_targets": list(opinion.exit_targets or [])}
+            expression = await _expression_tool(eng, "check_feasibility", expr_args, tool_ctx, attach_alternatives=False)
             payoff = None
             if opinion.exit_targets:
                 payoff = await _expression_tool(eng, "preview_payoff", {
                     **expr_args, "quantity": int(opinion.quantity or expression.get("qty") or 1),
                     "exit_targets": list(opinion.exit_targets), "exit_fractions": list(opinion.exit_fractions or []),
-                    "hold_sessions": opinion.max_hold_sessions}, tool_ctx)
+                    "hold_sessions": opinion.max_hold_sessions}, tool_ctx, attach_alternatives=False)
             mode = str(s.get("techniques.tip.analyst_feasibility_gate", "annotate") or "annotate")
             result = _fz.apply_gate(result, {k: v for k, v in expression.items() if k != "alternatives"}
                                     | {"alternatives": expression.get("alternatives")}, mode)

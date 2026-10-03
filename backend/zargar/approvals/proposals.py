@@ -61,6 +61,14 @@ def shares_first_applies(expression: str, *, direction: str, lotto: bool, portfo
             and portfolio_kind not in ("live", "paper"))
 
 
+def analyst_takes_shares(analyst: dict | None, direction: str) -> bool:
+    """Pure (W2.1, 2026-10-02): the analyst's TAKE names SHARES (e.g. the find_alternatives shares alternative of an
+    option tip). The analyst's pick beats the book's expression, so the tip's own option is not proposed instead.
+    Long ideas only - a bearish idea is never expressed by shorting shares (the put stays the vehicle)."""
+    a = analyst or {}
+    return bool(a.get("verdict") == "take" and str(a.get("instrument") or "") == "shares" and str(direction) != "short")
+
+
 def share_substitution_ok(*, sec_type, risk_plan, settings, portfolio_kind, verdict, direction, lotto, alt) -> bool:
     """Pure (P-E): may an unfittable option TAKE become its equal-risk share alternative? Practice only (never a live
     book), analyst take, long, not a lotto, the option refused ONLY for size, an available alternative, knob on."""
@@ -634,7 +642,8 @@ class ProposalService:
             limit_hint = analyst.get("limit_price")
             qty_hint = analyst.get("quantity")
             picked_by = "analyst"
-        elif not shares_first and expr.get("vehicle") == "option" and expr.get("contract"):
+        elif not shares_first and expr.get("vehicle") == "option" and expr.get("contract") \
+                and not analyst_takes_shares(analyst, sig.direction):
             occ = str(expr["contract"]).upper()
             label = expr.get("display") or occ
             limit_hint = expr.get("ask")
@@ -1165,6 +1174,12 @@ class ProposalService:
                     await self._note_pre_entry_failure(pid, entry_path, out[2].reviewRequired, signal_id,
                                                        review_class="evidence")
             return out
+        if enforce and rp.reviewRequired and rp.reviewClass == "budget":
+            final_plan, rp = await self._refit_once(
+                first=(final_plan, rp), mode=mode, underlying=underlying, direction=direction, pid=pid,
+                exit_plan=exit_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol, limit=limit, qty=qty,
+                entry_hint=entry_hint, phase=phase, proposal_id=proposal_id, signal_id=signal_id,
+                analyst_run_id=analyst_run_id, source=source)
         with contextlib.suppress(Exception):
             await eng.journal.append(
                 ev.TIP_GEOMETRY_REPAIRED,
@@ -1200,6 +1215,63 @@ class ProposalService:
                     (f"; review: {rp.reviewRequired}" if rp.reviewRequired else "") + ".")
         return exit_plan, qty, rp, note
 
+    async def _refit_once(self, *, first: tuple, mode: str, underlying: str, direction: str, pid: str,
+                          exit_plan: dict, vehicle: dict, sec_type: str, symbol: str, limit: float, qty: int,
+                          entry_hint: float | None, phase: str, proposal_id: str | None, signal_id: str | None,
+                          analyst_run_id: str | None, source: str | None) -> tuple:
+        """W1.2 (2026-10-02): a plan refused ONLY for size ("no quantity satisfies the risk budget") gets ONE
+        automatic re-fit on refreshed evidence (the contract's quote observed again, the underlying reference re-read)
+        at the SAME limit - never a higher one. When a quantity now fits, the plan proceeds resized; when none does,
+        the refusal stands exactly as before and the record carries the diagnostic stop at which one unit WOULD fit
+        (never applied: tightening the analyst's invalidation is a different trade - W2.6 observes it).
+        Journaled `TipGeometryRefit` either way. Knob: `techniques.tip.geometry_refit_once` (default on)."""
+        from ..techniques.tip import geometry as _geo
+        eng = self.engine
+        final0, rp0 = first
+        if not bool(eng.settings.get("techniques.tip.geometry_refit_once", True)):
+            return first
+        refreshed = None
+        with contextlib.suppress(Exception):
+            if sec_type == "OPT":
+                q = await eng.options.refresh_now(symbol)
+            else:
+                await eng.ensure_symbol(underlying)
+                q = eng.quotes.get(underlying)
+            if q is not None:
+                refreshed = {"bid": getattr(q, "bid", None), "ask": getattr(q, "ask", None),
+                             "sourceTs": getattr(q, "source_ts", None) or getattr(q, "ts", None)}
+        try:
+            final1, rp1 = await self._compute_risk_plan(
+                mode=mode, underlying=underlying, direction=direction, pid=pid, exit_plan=exit_plan,
+                vehicle=vehicle, sec_type=sec_type, symbol=symbol, limit=limit, qty=qty, entry_hint=entry_hint)
+        except Exception as exc:                          # the first (refused) plan stands
+            log.info("geometry refit failed for %s: %s", underlying, exc)
+            final1, rp1 = first
+        fitted = bool(rp1.qty and rp1.qty >= 1 and not rp1.reviewRequired)
+        diag = {}
+        if not fitted:
+            with contextlib.suppress(Exception):
+                diag = _geo.fitting_stop(direction=direction, vehicle=rp1.vehicle, entry_ref=float(rp1.entryRef or 0),
+                                         exit_plan=exit_plan, bars=[], settings=eng.settings, premium=float(limit),
+                                         multiplier=float(rp1.multiplier or 0), budget=float(rp1.budget or 0),
+                                         delta=(abs(float(rp1.greeks["delta"])) if rp1.greeks.get("delta") is not None else None))
+                diag["structureChecked"] = False          # width floor only: the bars are not re-fetched for a diagnostic
+        rec = {"attempt": 1, "phase": phase, "outcome": "resized" if fitted else "no_fit",
+               "limit": float(limit), "refreshedQuote": refreshed,
+               "before": {"qty": rp0.qty, "unitLoss": rp0.unitLoss, "finalStop": rp0.finalStop, "entryRef": rp0.entryRef},
+               "after": {"qty": rp1.qty, "unitLoss": rp1.unitLoss, "finalStop": rp1.finalStop, "entryRef": rp1.entryRef,
+                         "reviewRequired": rp1.reviewRequired},
+               **({"fittingStop": diag} if diag else {})}
+        rp1.decisions.append(("re-fit once on refreshed evidence: " +
+                              (f"{rp1.qty} unit(s) now fit the ${float(rp1.budget or 0):,.0f} budget" if fitted
+                               else "still no quantity fits - refused on the record")))
+        with contextlib.suppress(Exception):
+            await eng.journal.append("TipGeometryRefit", {
+                "proposalId": proposal_id, "signalId": signal_id, "underlying": underlying, "symbol": symbol,
+                "analystRunId": analyst_run_id, "source": source, **rec},
+                aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
+        return final1, rp1
+
     async def _note_pre_entry_failure(self, pid: str, entry_path: str, reason: str, ref: str | None,
                                       review_class: str | None = None) -> None:
         """KB-06 wiring: a review-gated pre-entry result is refused on its own;
@@ -1217,114 +1289,17 @@ class ProposalService:
                                  limit: float, qty: int, entry_hint: float | None):
         """The evidence-gathering half of the gate (raises on unexpected
         failure; evidence problems come back as a review-gated plan)."""
-        from ..clock import now_ms as _now_ms
         from ..techniques.tip import geometry as _geo
+        from ..techniques.tip import risk_evidence as _re
         eng = self.engine
         s = eng.settings
-        now = int(_now_ms())
-        quote_meta: dict = {"limit": float(limit)}
-        problems: list[tuple[str, str]] = []      # (readiness code, detail)
-        q_max_age = float(s.get("techniques.tip.geometry_quote_max_age_seconds", 300.0) or 300.0)
-
-        def _age_s(q) -> float | None:
-            ts = getattr(q, "source_ts", None) or getattr(q, "ts", None)
-            try:
-                return max(0.0, (now - int(ts)) / 1000.0) if ts else None
-            except (TypeError, ValueError):
-                return None
-
-        if sec_type == "STK":
-            # G91-02: the maximum admissible entry is the BUY limit — size there
-            if not limit or float(limit) <= 0:
-                raise ValueError("no executable limit for a share entry")
-            entry_ref = float(limit)
-            quote_meta["entryRefBasis"] = "limit"
-            # EOD-06: the share plan carries the SAME quote-freshness evidence the
-            # incident classifier requires (source, age, delayed) — a valid fresh
-            # share entry used to read as "missing evidence" after a fast loss
-            sq = None
-            with contextlib.suppress(Exception):
-                sq = eng.quotes.get(underlying)
-            if sq is not None:
-                age = _age_s(sq)
-                quote_meta.update({"source": getattr(sq, "source", None), "ageS": age,
-                                   "delayed": bool(getattr(sq, "delayed", False)),
-                                   "underlyingDelayed": bool(getattr(sq, "delayed", False))})
-                if bool(getattr(sq, "delayed", False)):
-                    problems.append(("quote_delayed", "share reference quote is delayed"))
-                elif age is not None and age > q_max_age:
-                    problems.append(("quote_stale", f"share reference quote is {age:.0f}s old (max {q_max_age:.0f}s)"))
-        else:
-            await eng.ensure_symbol(underlying)
-            uq = eng.quotes.get(underlying)
-            entry_ref = float(uq.last) if uq is not None and getattr(uq, "last", 0) and uq.last > 0 else None
-            quote_meta["entryRefBasis"] = "underlying-last"
-            if entry_ref is None:
-                problems.append(("quote_missing", "no live underlying reference quote"))
-                entry_ref = float(entry_hint) if entry_hint else 0.0
-            else:
-                age = _age_s(uq)
-                quote_meta.update({"underlyingSource": getattr(uq, "source", None),
-                                   "underlyingAgeS": age, "underlyingDelayed": bool(getattr(uq, "delayed", False))})
-                if bool(getattr(uq, "delayed", False)):
-                    problems.append(("quote_delayed", "underlying reference quote is delayed"))
-                elif age is None:
-                    problems.append(("quote_stale", "underlying reference quote age unknown"))
-                elif age > q_max_age:
-                    problems.append(("quote_stale", f"underlying reference quote is {age:.0f}s old (max {q_max_age:.0f}s)"))
-        bars: list = []
-        if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
-            try:
-                from ..marketstructure.history import fetch_window
-                bars = await fetch_window(underlying, "15m", now - 7 * 86_400_000, now)
-            except Exception:
-                log.debug("pre-entry geometry: no bars for %s", underlying)
-        equity = None
-        with contextlib.suppress(Exception):
-            equity = float(await eng.positions.equity(pid) or 0) or None
-        budget, budget_source = _geo.risk_budget(s, equity)
-        delta = None
-        greeks_meta: dict = {}
-        multiplier = 1.0
-        option_type = None
-        currency = str((vehicle or {}).get("currency") or "USD")
-        if sec_type == "OPT":
-            raw_mult = (vehicle or {}).get("multiplier")
-            if raw_mult is None:
-                problems.append(("contract_metadata", "contract multiplier unknown (no contract metadata on the vehicle)"))
-                multiplier = 0.0
-            else:
-                multiplier = float(raw_mult)
-            option_type = (vehicle or {}).get("optionType")
-            if option_type not in ("call", "put"):
-                problems.append(("contract_metadata", "option type unknown"))
-            snap = None
-            with contextlib.suppress(Exception):
-                snap = eng.options.snapshot_cached(symbol)
-            g = (snap or {}).get("greeks") or {}
-            g_max_age = float(s.get("techniques.tip.geometry_greeks_max_age_seconds", 900.0) or 900.0)
-            if g.get("delta") is None:
-                greeks_meta = {"reason": "missing delta — no estimate invented"}
-            else:
-                field_ts = ((snap or {}).get("greeksFieldAsOf") or {}).get("delta") or (snap or {}).get("asOf")
-                try:
-                    g_age = max(0.0, (now - int(field_ts)) / 1000.0) if field_ts else None
-                except (TypeError, ValueError):
-                    g_age = None
-                greeks_meta = {"source": "live" if (snap or {}).get("greeksLive") else "chain",
-                               "asOf": field_ts, "ageS": g_age}
-                if g_age is None:
-                    greeks_meta["reason"] = "delta age unknown — no estimate invented"
-                elif g_age > g_max_age:
-                    greeks_meta["reason"] = f"delta is {g_age:.0f}s old (max {g_max_age:.0f}s) — no estimate invented"
-                else:
-                    delta = float(g["delta"])
-            oq = eng.quotes.get(symbol)
-            if oq is not None:
-                quote_meta.update({"source": getattr(oq, "source", None), "ageS": _age_s(oq),
-                                   "delayed": bool(getattr(oq, "delayed", False))})
-                if bool(getattr(oq, "delayed", False)):
-                    problems.append(("quote_delayed", "contract quote is delayed"))
+        # W1.2 (2026-10-02): the evidence is gathered by the SAME function the analyst's feasibility tools call
+        _ev = await _re.gather(eng, underlying=underlying, sec_type=sec_type, symbol=symbol, vehicle=vehicle,
+                               limit=limit, entry_hint=entry_hint, pid=pid)
+        entry_ref, quote_meta, problems, bars = _ev["entryRef"], _ev["quoteMeta"], _ev["problems"], _ev["bars"]
+        budget, budget_source = _ev["budget"], _ev["budgetSource"]
+        delta, greeks_meta, multiplier = _ev["delta"], _ev["greeksMeta"], _ev["multiplier"]
+        option_type, currency = _ev["optionType"], _ev["currency"]
         final_plan, rp = _geo.plan_risk(
             mode=mode, direction=direction, vehicle=("option" if sec_type == "OPT" else "shares"),
             entry_ref=entry_ref, exit_plan=exit_plan, bars=bars, settings=s,

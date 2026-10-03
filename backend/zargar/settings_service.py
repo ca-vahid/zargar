@@ -299,6 +299,13 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.hold_next_open_window_minutes": 15,  # HOLD142-01: first qualified quote inside 09:30 + N min of the EXPECTED next session
     "techniques.tip.hold_next_open_attempts": 40,        # in-window retries (20 s apart, from 09:30) for that first qualified quote
     "techniques.tip.analyst_feasibility_gate": "annotate",  # PROF-01: annotate (record the expression check beside the verdict) | downgrade (an unfittable TAKE becomes WATCH; thesis verdict kept) - a reviewed method decision flips it
+    "techniques.tip.geometry_refit_once": True,          # W1.2 2026-10-02: a pre-entry plan refused ONLY for size gets one automatic re-fit on refreshed evidence (same limit; journaled TipGeometryRefit)
+    "techniques.tip.find_alternatives_enabled": True,    # W2.1 2026-10-02: the analyst's find_alternatives tool (cheaper strike / later expiry / debit vertical / shares that FIT the risk budget; deterministic, no model calls)
+    "techniques.tip.alternatives_strikes_otm": 2,        # W2.1: how many further-OTM strikes of the stated expiry are tried
+    "techniques.tip.alternatives_later_expiries": 2,     # W2.1: how many later expiries (same strike) are tried
+    "techniques.tip.budget_skip_reask": True,            # W2.2: a budget/size skip of a verified priced BTO without find_alternatives (or without a reason per alternative) is re-asked ONCE in the same run
+    "techniques.tip.analyst_prefetch": True,             # W2.4: quote / chain slice / bars summary / positions / earnings fetched in parallel and seeded into the appraisal header
+    "techniques.tip.analyst_prefetch_timeout_s": 6.0,    # W2.4: per-fetch bound (all fetches run concurrently); a timed-out item is labelled, never invented
     "techniques.tip.entry_cohort_delay_tolerance_seconds": 60.0,  # KF83-03: a delayed sample observed later than due + tolerance is LATE (diagnostic, never the delay variant's evidence)
     "techniques.tip.entry_cohort_quote_max_age_seconds": 300.0,  # a decision-time quote older than this is 'stale' (still recorded, never upgraded)
     "techniques.tip.analyst_max_pending_rules": 6,      # D4 (2026-09-19): pending/disputed rule PROPOSALS shown per run in a separate NON-operative channel (newest first; 0 = none). They never consume the operative budget below
