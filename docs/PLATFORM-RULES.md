@@ -2791,3 +2791,27 @@ book are untouched. Tests: `tests/test_tips_w1_intake.py`. Existing books are qu
 - **`zargar/desk_alert.escalate`** (platform): toast (`technique` topic `alert`) + web push + Telegram in one call; the
   bus message carries `pushed: true` so `PushService` does not push it twice. Used by `ClockSkew` and the Tips intake
   pager (`TipIntakePaged`, RTH idle > `techniques.tip.intake_page_idle_minutes`).
+
+### Simulated option fills: the root cause of the three "below the limit" Tips fills, plus a latency hole - 2026-10-03 (Tips desk, W1.4; shared `brokers/sim.py`)
+
+The 2026-10-02 Tips review flagged three Practice option BUYs filled far under their limit and the decision ask (MRNA
+165C 0.75 vs ask 2.01 on 09-17; AAOI 09-11 120C 2.90 vs limit 3.30 on 09-08; DAL 11-20 90C 1.56 vs limit 1.76 on
+09-10). Read-only check of the runtime rows: MRNA's fill receipt shows `opra` 0.65 / 0.75 seconds after a 1.90 / 2.00
+OPRA band (the E17-01 audit, `docs/techniques/tip/reviews/2026-09-17-mrna-quote-audit.md`); AAOI and DAL predate the
+fill-receipt table (no evidence row), but DAL's own minute bars traded 1.72-1.83 then, another book's market buy one
+minute earlier paid 1.7604 (= ask 1.76 + 2 bps), and the following sampled bars carry a 1.55 print that never traded
+on the exchange bars; AAOI's 10:52 ET minute opened 3.35 and closed 3.50 (closes 3.00-3.50 for the next eight minutes) with an
+earlier 2.89 print at 10:26 - a reconstruction for AAOI/DAL, not a receipt. Same mechanism in all
+three: `QuoteCache._apply_overlay` recentred the real-time OPRA band on a stale chart-feed `last` and kept
+`source="opra"`; the simulator then filled the marketable-looking limit at the bent ask. **Fixed 2026-09-17 by E17-01
+(v0.8.11)**: venue bands are never recentred and a recentred chain estimate is `derived:` and refused. Every Practice
+option limit filled > 5% better than its limit since then was checked: each was priced on a raw OPRA band (a gap at
+the open, or a wide one-lot book - the latter is the separate `sim_max_option_spread_pct` knob, still off).
+The ledger is NOT rewritten (append-only); the three results are re-marked in the review notes.
+
+Residual hole closed here (options only; shares unchanged): the sim fill lane is a queue, so a quote RECEIVED before
+the order's latency window ended (the decision quote itself) still priced the fill whenever it was dequeued after
+`eligible_at`. Now an option order is priced only by a quote with `ts >= eligible_at` - the NBBO observed after
+latency; a BUY limit fills at that ask capped at the limit, a SELL at that bid floored at the limit, and every
+identity / freshness check of `quote_rejection` still applies. Tests: `tests/test_w14_sim_option_fill_realism.py`
+(the three cases replayed through QuoteCache -> SimExecutor, the SELL mirror, the latency rule).
