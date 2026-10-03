@@ -209,3 +209,16 @@ class BookSettings:
 
     def __getattr__(self, name):
         return getattr(self._s, name)
+
+
+def live_unattended(settings, binding: Binding | None) -> bool:
+    """User decision 2026-10-03 ("more autonomous than manual - I often can't answer for hours"): a LIVE book whose
+    binding carries its own allowLiveAuto acknowledgement decides its cards like unattended Practice - the analyst's
+    take approves, skip/watch declines on the record - instead of leaving them for a person.
+    `techniques.tip.live_unattended` False restores 'live keeps the human'."""
+    if binding is None or binding.legacy or binding.role != "live" or not binding.allowLiveAuto:
+        return False
+    try:
+        return bool(settings.get("techniques.tip.live_unattended", True))
+    except Exception:                                      # noqa: BLE001
+        return False

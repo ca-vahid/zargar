@@ -226,6 +226,10 @@ class AnalystOpinion(BaseModel):
     entry_level: Optional[float] = Field(
         default=None, description="UNDERLYING price to wait for when entry_mode is "
                                   "at_level (defaults to the tip's own entry)")
+    event_ack: Optional[str] = Field(
+        default=None, description='W4.3: how this trade treats the scheduled events inside its planned life (header '
+                                  '"EVENT CONTEXT" + earnings): "none_in_window", "acknowledged: <events> - <one-line '
+                                  'plan>" or "event_play: <why>"')
     entry_note: Optional[str] = Field(
         default=None, description="One sentence: why now / why wait")
     entry_levels: list[float] = Field(
@@ -523,6 +527,9 @@ right idea but nothing to do yet. "skip" = stale, incoherent, or the market cont
 A "watch" that names an entry_level AND an underlying_stop (plus exit targets) ARMS a plan that \
 waits for that level, exactly like a take with entry_mode "at_level" - so name the level only when \
 you would buy there; a watch without a level stays a note.
+- EVENTS — on a take, fill event_ack: name any tier-1 release (FOMC, CPI, jobs, GDP/PCE) or the ticker's \
+earnings that falls inside the trade's planned life and say how the plan handles it (size, exit before, or an \
+intentional event play); "none_in_window" when the header shows none.
 - ENTRY MODE — a take also chooses WHEN. entry_mode "now" buys immediately (a proposal \
 at your limit). entry_mode "at_level" ARMS a plan that waits for entry_level on the \
 underlying and fires only when price actually trades there (1m bars; the plan dies with \

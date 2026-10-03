@@ -280,6 +280,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.earnings_flatten_at": "15:45",
     "techniques.tip.earnings_entry_block": True,
     "techniques.tip.watch_arms": True,
+    "techniques.tip.live_unattended": True,         # user 2026-10-03: a live book with its own allowLiveAuto decides its cards
     "techniques.tip.observe_fast_lane": True,       # W3.5: journal TipFastLaneShadow at signal time (no orders)
     "techniques.tip.decline_without_card_siblings": 3,  # W3.3: a post with >= N branch signals records a skip/watch per branch instead of minting a card to decline (0 = off)              # W2.3: a watch with entry_level + underlying_stop arms at that level
     "techniques.tip.entry_band_option": 1.10,       # W3.1: option BUY limit <= this x the source's stated premium (0 = off)

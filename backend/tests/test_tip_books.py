@@ -198,3 +198,29 @@ async def test_risk_order_rate_and_day_notional_are_per_book(rig):
     keys = eng.risk._exposure_keys(OrderIntent(portfolio_id="p1", symbol="X", side="BUY", qty=1,
                                                technique_id="tip", tags=["source:a"]))
     assert keys == ["tech:tip@p1", "tag:source:a@p1"]
+
+
+def test_live_book_with_its_own_ack_decides_its_cards():
+    live = B._parse_one({"portfolioId": "pp", "role": "live", "allowLiveAuto": True})
+    assert B.live_unattended(S({}), live) is True
+    assert B.live_unattended(S({"techniques.tip.live_unattended": False}), live) is False
+    assert B.live_unattended(S({}), B._parse_one({"portfolioId": "pp", "role": "live"})) is False
+    assert B.live_unattended(S({}), B._parse_one({"portfolioId": "pa", "role": "practice", "allowLiveAuto": True})) is False
+    assert B.live_unattended(S({}), None) is False
+
+
+async def test_a_defined_risk_spread_is_sized_by_the_risk_budget(rig):
+    eng = rig
+    pa = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")["id"]
+    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
+    await eng.settings.set("techniques.tip.risk_budget_per_tip", 100.0, journal=False)
+    g = await eng.proposals._spread_risk_plan(pa, qty=5, max_loss=0.40)          # $40 per spread
+    assert g["riskPlan"]["qty"] == 2 and g["riskPlan"]["plannedRisk"] == 80.0 and "reviewRequired" not in g
+    big = await eng.proposals._spread_risk_plan(pa, qty=5, max_loss=1.50)        # $150 > $100
+    assert "reviewRequired" in big and "riskPlan" not in big
+    pdict = {"id": "x", "portfolioId": pa, "secType": "SPREAD", "limitPrice": 0.40, "context": {
+        "techniqueId": "tip", "riskPlan": g["riskPlan"], "vehicle": {"width": 5.0, "credit": False}}}
+    q, _, refusal = await eng.proposals._admit_geometry(pdict, limit=0.45, qty=2, via="auto")
+    assert refusal is None and q == 2
+    q2, _, refusal2 = await eng.proposals._admit_geometry(pdict, limit=1.20, qty=2, via="auto")
+    assert refusal2 and "over the" in refusal2

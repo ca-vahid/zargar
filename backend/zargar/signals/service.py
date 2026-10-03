@@ -3978,7 +3978,8 @@ class SignalService:
             live_ok = bool(b.allowLiveAuto) and (kind != "live" or master)
         else:
             live_ok = kind != "live" or master
-        unattended = bool(eng.settings.get("techniques.tip.unattended", True)) and kind != "live"
+        unattended = bool(eng.settings.get("techniques.tip.unattended", True)) and (
+            kind != "live" or _books.live_unattended(eng.settings, b))
         tag = f"{pf.get('name', pid)}"
         if b is not None and b.mode == "proposal":
             log.info("book %s is proposal-mode — proposal %s waits for a person", pid, proposal["id"])

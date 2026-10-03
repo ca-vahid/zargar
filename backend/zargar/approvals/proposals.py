@@ -602,7 +602,8 @@ class ProposalService:
             # (pre-market level maps: 72 such rows, 0 fills) - the decline is recorded, no row is minted. A book that
             # keeps the human (a kind=live account, a proposal-mode binding) still gets its card.
             _pfk = (eng.positions.portfolio(b.portfolioId) or {}).get("kind")
-            if declined_verdict and _pfk != "live" and b.mode != "proposal" \
+            if declined_verdict and (_pfk != "live" or _books.live_unattended(eng.settings, b)) \
+                    and b.mode != "proposal" \
                     and bool(eng.settings.get("techniques.tip.unattended", True)):
                 fan.append({**rec, "outcome": "declined", "reason": f"analyst said {declined_verdict}"})
                 with contextlib.suppress(Exception):
@@ -695,6 +696,9 @@ class ProposalService:
                 net, width = float(pick["net"]), float(pick["width"])
                 max_loss = net if net > 0 else max(width - abs(net), 0.01)
                 qty = self._cap_contracts(max(1, math.floor(budget / (max_loss * 100))))
+                spread_gate = await self._spread_risk_plan(pid, qty=qty, max_loss=max_loss)
+                if spread_gate.get("riskPlan"):
+                    qty = int(spread_gate["riskPlan"]["qty"]) or qty
                 disp = (f"{sig.ticker.upper()} "
                         f"{pick['legs'][0]['strike']:g}/{pick['legs'][1]['strike']:g} "
                         f"{pick['legs'][0]['optionType']} spread {pick['expiry']}")
@@ -727,7 +731,7 @@ class ProposalService:
                                          "width": width, "credit": bool(net < 0),
                                          "expiry": pick["expiry"]},
                              "explain": explain,
-                             **self._spread_gate_context(pid),
+                             **spread_gate,
                              "exitPlan": build_exit_plan_spread(signal_row, sig, analyst, policy),
                              "analystRunId": analyst.get("runId"),
                              "analyst": ({k: analyst.get(k) for k in
@@ -1335,6 +1339,29 @@ class ProposalService:
             return None
         return mode
 
+    async def _spread_risk_plan(self, pid: str, *, qty: int, max_loss: float) -> dict:
+        """User decision 2026-10-03 ("more autonomous than manual"): a DEFINED-risk 2-leg spread is sized by the
+        same per-book risk budget as any tip - its max loss per spread is known, no stop estimate is needed - so it
+        can self-approve like a single leg. Nothing fits -> review-gated as before."""
+        if self._geometry_scope(pid) != "enforce":
+            return {}
+        from ..techniques.tip import books as _books
+        from ..techniques.tip import geometry as _geo
+        eng = self.engine
+        equity = None
+        with contextlib.suppress(Exception):
+            equity = float(await eng.positions.equity(pid) or 0) or None
+        B, src = _geo.risk_budget(_books.BookSettings(eng.settings), equity)
+        unit = float(max_loss) * 100.0
+        if B <= 0 or unit <= 0:
+            return {"reviewRequired": "spread: no risk budget to size against - human decision only"}
+        fit = min(int(qty), int(B // unit))
+        if fit < 1:
+            return {"reviewRequired": f"spread: one spread risks ${unit:,.0f}, over the ${B:,.0f} risk budget ({src})"}
+        return {"riskPlan": {"enforced": True, "kind": "defined-risk", "phase": "pre-entry", "qty": fit,
+                             "unitLoss": round(unit, 2), "budget": round(B, 2), "budgetSource": src,
+                             "plannedRisk": round(fit * unit, 2), "invariantOk": True}}
+
     def _spread_gate_context(self, pid: str) -> dict:
         """A 2-leg spread is not covered by the geometry estimator: under
         enforce on a Practice book the card is review-gated (a person decides),
@@ -1627,6 +1654,19 @@ class ProposalService:
         # did not anticipate
         if via == "auto" and ctx.get("reviewRequired"):
             return qty, pdict, f"geometry review required: {ctx.get('reviewRequired')}"
+        if pdict.get("secType") == "SPREAD" and (ctx.get("riskPlan") or {}).get("kind") == "defined-risk":
+            rp = ctx["riskPlan"]
+            veh = ctx.get("vehicle") or {}
+            net = abs(float(limit if limit else pdict.get("limitPrice") or 0))
+            width = float(veh.get("width") or 0)
+            ml = net if not veh.get("credit") else max(width - net, 0.01)
+            unit = ml * 100.0
+            B = float(rp.get("budget") or 0)
+            fit = int(B // unit) if unit > 0 else 0
+            if fit < 1:
+                return qty, pdict, (f"spread: one spread now risks ${unit:,.0f} over the ${B:,.0f} budget"
+                                    if via == "auto" else None)
+            return float(min(int(qty), fit)), pdict, None
         if pdict.get("secType") not in ("OPT", "STK"):
             return (qty, pdict, ("geometry: vehicle not covered by the gate — automated entry refused"
                                  if via == "auto" else None))

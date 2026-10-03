@@ -496,7 +496,33 @@ class TipRunner(PlanRunner):
                      and str(opinion.get("instrument") or "option") == "option" else {}),
                   "allowAnyEntry": True, "replace": True,
                   **({"allowLive": True} if live_ack else {})}
-        return await self.arm_signal(sig.id, config)
+        res = await self.arm_signal(sig.id, config)
+        await self._journal_arm_event_exposure(sig, res, exit_plan)
+        return res
+
+    async def _journal_arm_event_exposure(self, sig, armed: dict, exit_plan: dict | None) -> None:
+        """W4.5 / E5 (observe): an at-level plan created while a tier-1 event or the ticker's earnings sits inside
+        its life is journaled (TipEventPolicyShadow rule E5 'would re-appraise before the event') - the 09-14 GOOGL
+        plan carried its FOMC caveat nowhere and fired 77 minutes after the statement."""
+        store = getattr(self.engine, "market_events", None)
+        if store is None or not getattr(store, "loaded", False):
+            return
+        with contextlib.suppress(Exception):
+            from zoneinfo import ZoneInfo
+
+            from ...marketstructure import market_calendar as mc
+            from ...research import market_events as me
+            now = dt.datetime.now(ZoneInfo("America/New_York"))
+            end = now.date()
+            for _ in range(max(1, int((exit_plan or {}).get("maxHoldSessions") or 5))):
+                end = mc.next_trading_day(end)
+            expo = me.exposure(store, now=now, hold_until=end, symbol=sig.ticker)
+            if expo.get("tier1") or expo.get("earnings"):
+                await self.engine.journal.append("TipEventPolicyShadow", {
+                    "signalId": sig.id, "runId": (armed or {}).get("runId"), "symbol": sig.ticker,
+                    "would": [{"rule": "E5", "would": "re-appraise the waiting plan before the event",
+                               "events": [e["name"] for e in expo.get("events") or []][:4]}],
+                    "exposure": expo}, aggregate_type="signal", aggregate_id=sig.id)
 
     async def entry_gate(self, ap, trade, stage: str) -> str | None:
         """W1.7 (2026-10-03): an armed level that touches inside the earnings window does not buy - the earnings
