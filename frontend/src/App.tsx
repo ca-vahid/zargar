@@ -1,3 +1,4 @@
+import { useWorkspace } from "./lib/workspace";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Splash } from "./components/Splash";
 import { TopBar } from "./components/TopBar";
@@ -94,7 +95,7 @@ export default function App() {
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const accent = useStore((s) => s.settings["ui.accent"] ?? "#5b8cff");
   const density = useStore((s) => s.settings["ui.density"] ?? "comfortable");
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

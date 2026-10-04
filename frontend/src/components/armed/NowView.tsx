@@ -1,3 +1,4 @@
+import { useWorkspace } from "../../lib/workspace";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { useStore } from "../../store";
@@ -59,6 +60,7 @@ export function NowView() {
   const [showAllStopped, setShowAllStopped] = useState(false);
   const [showAllTl, setShowAllTl] = useState(false);
   const toast = useStore((s) => s.toast);
+  const viewWs = useWorkspace();
   const armedRef = useStore((s) => s.techniqueArmed);
   const halt = useStore((s) => s.halt);
   const focusId = useStore((s) => s.armedFocusRunId);
@@ -97,7 +99,7 @@ export function NowView() {
     return <div className="now-empty">{err ? `couldn't load: ${err}` : "loading…"}</div>;
   }
   const c = sum.counts;
-  const live = sum.workspace === "live";
+  const live = viewWs === "live";   // W6.5: the viewed workspace, not the routing mode
   const nothing = !sum.attention.length && !sum.inTrade.length && !sum.watching.length
     && !sum.timeline.length && !sum.stoppedToday.length;
 

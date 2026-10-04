@@ -142,7 +142,7 @@ function ProviderCard({ provider }: { provider: BrokerageProvider }) {
 function PracticeCard() {
   const portfolios = useStore((s) => s.portfolios);
   const setPage = useStore((s) => s.setPage);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
   const sims = useMemo(
     () => portfolios.filter((p) => p.kind === "sim"),
     [portfolios]);
@@ -409,7 +409,7 @@ function EquityCurvePanel() {
   const portfolios = useStore((s) => s.portfolios);
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
   const [range, setRange] = useState<string>(() => lsGet("zargar_dash_curve", "1d"));
   const spec = CURVE_RANGES.find((r) => r.key === range) ?? CURVE_RANGES[0];
   // live mode charts your biggest real account; practice charts the sandbox
@@ -754,7 +754,7 @@ function EquityHero() {
   const toast = useStore((s) => s.toast);
   const setPage = useStore((s) => s.setPage);
   const [refreshing, setRefreshing] = useState(false);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
   const live = mode === "live";
   const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
   const rate = useMemo(() => makeRate(usdCad), [usdCad]);
