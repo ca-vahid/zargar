@@ -47,7 +47,7 @@ async def test_cad_cash_is_converted_into_the_usd_book(eng, monkeypatch):
     pid = await _paper(eng)
     eng.ibkr = FakeIbkr({"account": "DU1", "cash": 10000.0, "settledCash": None,
                          "cashByCurrency": {"CAD": 10000.0, "USD": -2.0}, "positions": []})
-    monkeypatch.setattr(eng.positions.fx, "rate", lambda a, b: 0.72 if (a, b) == ("CAD", "USD") else None)
+    monkeypatch.setattr(eng.positions.fx, "rate", lambda a, b, **k: 0.72 if (a, b) == ("CAD", "USD") else None)
     st = await eng.sync_ibkr_account()
     assert st is not None and abs(st["spendable"] - (7200.0 - 2.0)) < 0.01
     assert abs(eng.positions.portfolio(pid)["cash"] - 7198.0) < 0.01
@@ -57,6 +57,6 @@ async def test_no_rate_means_no_level_set(eng, monkeypatch):
     pid = await _paper(eng)
     eng.ibkr = FakeIbkr({"account": "DU1", "cash": 10000.0, "settledCash": None,
                          "cashByCurrency": {"CAD": 10000.0}, "positions": []})
-    monkeypatch.setattr(eng.positions.fx, "rate", lambda a, b: None)
+    monkeypatch.setattr(eng.positions.fx, "rate", lambda a, b, **k: None)
     assert await eng.sync_ibkr_account() is None
     assert eng.positions.portfolio(pid)["cash"] == 0.0, "never a 1:1 conversion"

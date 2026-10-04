@@ -531,7 +531,9 @@ class Engine:
                 a = min(a, float(st["settledCash"]))
             if abs(a) < 0.005:
                 continue
-            r = 1.0 if ccy == book_ccy else self.positions.fx.rate(ccy, book_ccy)
+            # FX markets close for the weekend: the last rate (up to 4 days old) is a far better level-set than none
+            r = 1.0 if ccy == book_ccy else (self.positions.fx.rate(ccy, book_ccy)
+                                             or self.positions.fx.rate(ccy, book_ccy, max_age_ms=4 * 86_400_000))
             if r is None:
                 missing.append(f"{ccy}->{book_ccy}")
                 continue
