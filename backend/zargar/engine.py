@@ -516,11 +516,35 @@ class Engine:
         if st is None:
             return None
         # a CASH account may only spend settled cash (re-using unsettled sale proceeds is a good-faith violation):
-        # the book's spendable cash is the lower of the currency balance and the settled cash IBKR reports for it
-        spend = float(st["cash"])
-        if st.get("settledCash") is not None:
-            spend = min(spend, float(st["settledCash"]))
-        st = {**st, "spendable": spend}
+        # per currency, the lower of the balance and the settled cash IBKR reports for it. 2026-10-04 (user: a C$10,000
+        # paper account read as US$10,000): EVERY currency the account holds is converted to the BOOK's currency at the
+        # live FX rate - never 1:1. No rate = no level-set this pass (journaled), the previous sync stands.
+        book_ccy = str(pf.get("baseCurrency") or "USD").upper()
+        by_cur = dict(st.get("cashByCurrency") or {}) or {cur: float(st["cash"])}
+        spend, parts, missing = 0.0, {}, []
+        for ccy, amt in by_cur.items():
+            ccy = str(ccy).upper()
+            if ccy == "BASE":
+                continue
+            a = float(amt or 0)
+            if ccy == cur.upper() and st.get("settledCash") is not None:
+                a = min(a, float(st["settledCash"]))
+            if abs(a) < 0.005:
+                continue
+            r = 1.0 if ccy == book_ccy else self.positions.fx.rate(ccy, book_ccy)
+            if r is None:
+                missing.append(f"{ccy}->{book_ccy}")
+                continue
+            parts[ccy] = {"amount": round(a, 2), "rate": round(r, 6), "inBook": round(a * r, 2)}
+            spend += a * r
+        if missing:
+            with contextlib.suppress(Exception):
+                await self.journal.append("IbkrSyncSkipped", {"portfolioId": pid, "reason": "no live FX rate",
+                                                              "pairs": missing, "cashByCurrency": by_cur},
+                                          portfolio_id=pid)
+            log.warning("IBKR sync skipped: no live FX rate for %s", missing)
+            return None
+        st = {**st, "spendable": spend, "bookCurrency": book_ccy, "converted": parts}
         await self.positions.sync_portfolio_state(pid, cash=spend, positions=st["positions"], source="ibkr")
         # W7.1: sale proceeds booked AFTER this instant are unsettled until the next sync reads IBKR's settled cash
         self.ibkr_synced_at = dt.datetime.now(dt.timezone.utc)
@@ -530,7 +554,7 @@ class Engine:
             await self.journal.append("IbkrAccountSynced", {
                 "portfolioId": pid, "account": st.get("account"), "cash": round(float(st["cash"]), 2),
                 "cashCurrency": cur, "settledCash": st.get("settledCash"), "spendable": round(spend, 2),
-                "cashByCurrency": st.get("cashByCurrency"),
+                "cashByCurrency": st.get("cashByCurrency"), "bookCurrency": book_ccy, "converted": parts,
                 "positions": [{"symbol": p["symbol"], "qty": p["qty"]} for p in st["positions"]]},
                 portfolio_id=pid)
         return st
