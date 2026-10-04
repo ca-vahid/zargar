@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.60";
+export const APP_VERSION = "0.8.61";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.61",date:"2026-10-04",title:"IBKR cash in the right currency",items:[
+    {tag:"fixed",text:"An IBKR account holding Canadian dollars now shows in its US-dollar book at the live exchange rate (C$10,000 is about US$7,200), not one-for-one. Without a live rate the app keeps the last good balance instead of guessing."},
+  ]},
   {version:"0.8.60",date:"2026-10-04",title:"The Practice/LIVE switch changes the whole screen",items:[
     {tag:"fixed",text:"Switching between Practice and LIVE now changes every view at once: the Dashboard headline and accounts, Portfolios, the Ledger, Settings accounts, the phone Now screen and the order tickets. Before, some of them kept showing the other side until real-order routing changed."},
   ]},
