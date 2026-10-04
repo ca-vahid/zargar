@@ -1,3 +1,4 @@
+import { useWorkspace } from "../lib/workspace";
 import { useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, fmtSigned, fmtTime } from "../lib/format";
@@ -689,8 +690,8 @@ export function LedgerPage() {
     } catch { return "timeline"; }
   });
   // the ledger follows the workspace: switching Practice/LIVE re-fetches
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
-  const state = useAsync(() => api.deskLedger(days), [days, mode]);
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
+  const state = useAsync(() => api.deskLedger(days, mode), [days, mode]);
   const led: Ledger | undefined = state.data;
   const model = useModel(led);
   const live = led?.workspace === "live";

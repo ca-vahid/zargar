@@ -1,3 +1,4 @@
+import { useWorkspace } from "../lib/workspace";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { cashText } from "../lib/brokerage";
@@ -28,7 +29,7 @@ export function OptionTicket({ contract }: { contract: string | null }) {
   const portfolios = useMemo(
     () => allPortfolios.filter((p) => p.kind !== "shadow"), [allPortfolios]);
   const positionsMap = useStore((s) => s.positions);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
   const settings = useStore((s) => s.settings);
   const brokerages = useStore((s) => s.brokerages);
   const toast = useStore((s) => s.toast);

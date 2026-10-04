@@ -1,3 +1,4 @@
+import { useWorkspace } from "../lib/workspace";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Highcharts from "highcharts/esm/highstock.js";
 import { memo } from "react";
@@ -639,7 +640,7 @@ export function PortfoliosPage() {
   const snaptradePids = useMemo(() => new Set(
     (brokerages?.providers ?? []).flatMap((pr) => pr.accounts.map((a) => a.portfolioId))),
     [brokerages]);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
   // Only the books this chart can actually draw. The series list filters to the
   // active workspace, so fetching the other 25 (mostly shadow research books)
   // bought nothing and cost the page ~25 s before the chart appeared.

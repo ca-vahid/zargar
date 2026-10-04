@@ -99,7 +99,7 @@ export function ArmedPage() {
   }, [setArmed, isPhone, sub]);
   useEffect(() => { refresh(); const id = setInterval(refresh, 30_000); return () => clearInterval(id); }, [refresh]);
 
-  const tradingMode = String(settings["trading.mode"] ?? "practice");
+  const tradingMode = useWorkspace();   // the VIEW (W6.5)
   const openCount = useMemo(() => armed.reduce((n, a) => n + a.openPositions, 0), [armed]);
   const pnl = useMemo(() => armed.reduce((n, a) => n + (a.realizedPnl ?? 0), 0), [armed]);
   const stopAll = async (flatten: boolean) => {

@@ -1,3 +1,4 @@
+import { useWorkspace } from "../lib/workspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { cashText } from "../lib/brokerage";
@@ -36,7 +37,7 @@ export function OrderTicket({
     () => allPortfolios.filter((p) => p.kind !== "shadow"), [allPortfolios]);
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
   const defaultQty = useStore((s) => Number(s.settings["trading.default_qty"] ?? 10));
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
   const brokerages = useStore((s) => s.brokerages);
   const toast = useStore((s) => s.toast);
 
