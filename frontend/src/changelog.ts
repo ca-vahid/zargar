@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.59";
+export const APP_VERSION = "0.8.60";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.60",date:"2026-10-04",title:"The Practice/LIVE switch changes the whole screen",items:[
+    {tag:"fixed",text:"Switching between Practice and LIVE now changes every view at once: the Dashboard headline and accounts, Portfolios, the Ledger, Settings accounts, the phone Now screen and the order tickets. Before, some of them kept showing the other side until real-order routing changed."},
+  ]},
   {version:"0.8.59",date:"2026-10-03",title:"Tips: Practice and live together, and the fixes from the month review",items:[
     {tag:"improved",text:"More decisions without you: a live book that has its own auto approval decides its cards the way Practice does, and a defined-risk spread is sized by the risk budget so it can approve itself instead of waiting."},
     {tag:"major",text:"Tips can trade several books at once: the analyst judges each tip once, and the Practice book and a linked IBKR account each get their own card, sized by that book's own budget and caps (Settings > Tips technique > Books)."},

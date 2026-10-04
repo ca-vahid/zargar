@@ -205,7 +205,7 @@ class DeskService:
         return report
 
     # ------------------------------------------------------------- ledger
-    async def ledger(self, days: int = 30) -> dict:
+    async def ledger(self, days: int = 30, workspace: str | None = None) -> dict:
         """The plain-language money view (user 2026-09-01: 'what was bought,
         what was sold, how much gain each time'). REAL books only (sim/live/
         paper) — research books never. Round trips are FIFO-paired per
@@ -218,7 +218,8 @@ class DeskService:
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
         # follow the workspace, like the Dashboard headline: practice = sim
         # books; live = the real accounts (research/shadow books never)
-        live_ws = str(eng.settings.get("trading.mode", "practice")) == "live"
+        # W6.5: the caller's VIEW when given (the UI switch is per browser); else the routing mode as before
+        live_ws = (workspace == "live") if workspace else str(eng.settings.get("trading.mode", "practice")) == "live"
         kinds = ("live", "paper") if live_ws else ("sim",)
         real = {p["id"]: p for p in eng.positions.portfolios()
                 if p["kind"] in kinds}

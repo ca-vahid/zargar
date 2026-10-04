@@ -1,3 +1,4 @@
+import { useWorkspace } from "../lib/workspace";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, getAuthToken, setAuthToken } from "../lib/api";
 import { useStore } from "../store";
@@ -300,7 +301,7 @@ function AccountPanel() {
 export function SettingsPage() {
   const broker = useStore((s) => s.broker);
   const allPortfolios = useStore((s) => s.portfolios);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
   // the account list follows the trading mode (set in the top banner):
   // practice -> simulator accounts, LIVE -> real/paper accounts
   const portfolios = useMemo(
