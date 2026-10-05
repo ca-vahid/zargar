@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.03";
+export const APP_VERSION = "0.9.04";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.04",date:"2026-10-05",title:"A missing broker stop puts itself back",items:[
+    {tag:"fixed",text:"If a share position should have a resting stop at the broker but does not (the first paper CYRX fill: the entry order's own stop and target were still being cancelled), the position watcher re-places it within a minute."},
+  ]},
   {version:"0.9.03",date:"2026-10-05",title:"IBKR prices on the tick",items:[
     {tag:"fixed",text:"Order prices sent to IBKR are rounded to the minimum price step (limits in our favour, stops toward the market). Two bracket orders with prices like 320.435 were rejected by IBKR on the first paper fill."},
   ]},
