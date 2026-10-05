@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.04";
+export const APP_VERSION = "0.9.05";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.05",date:"2026-10-05",title:"Cartel: held positions keep their daily exit rules after a data-provider difference",items:[
+    {tag:"fixed",text:"An Options Cartel position held overnight now keeps its daily moving-average and volatility exits: when the data provider's candle for an old day differs from the one the position was planned on, the position keeps its own record and still adds the newer days. Before, one such difference blocked the nightly history update and left those exits unable to run (stops and targets were unaffected)."},
+  ]},
   {version:"0.9.04",date:"2026-10-05",title:"A missing broker stop puts itself back",items:[
     {tag:"fixed",text:"If a share position should have a resting stop at the broker but does not (the first paper CYRX fill: the entry order's own stop and target were still being cancelled), the position watcher re-places it within a minute."},
   ]},
