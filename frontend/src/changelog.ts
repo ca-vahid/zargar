@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.62";
+export const APP_VERSION = "0.9.01";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.01",date:"2026-10-05",title:"v0.9: every trade gets a horizon, wider stops sized right, smarter profit taking",items:[
+    {tag:"major",text:"Each tip is planned as short (up to 3 days), swing (about 10 days) or extended (20+ days while the trend holds), and its exits follow the plan. A swing that is up 2R by day 5 and above its 20-day average is promoted to extended."},
+    {tag:"major",text:"Stops sit at 2-3x the stock's normal daily range and the position is sized from the stop, so each trade risks the same dollars with fewer shares, and stops are judged on the bar close instead of every tick. Our own record showed tight stops getting shaken out."},
+    {tag:"new",text:"Profit taking: sell a part at +1R (and move the stop to breakeven only together with that sale), then trail the rest at 3x the daily range, always keeping a runner. Short tips are watch-only and shares are never planned as same-day trades."},
+    {tag:"new",text:"Sizing starts from risk and uses the whole account: a cap on total open risk, at most 2 positions per sector, and a per-source size from its own graded record (recorded first, enforced later)."},
+    {tag:"new",text:"Every card shows the facts at decision time: daily range %, unusual volume, distance to the 20/50-day averages, gap, strength vs SPY, market regime, VIX and the source's graded record. Chase and regime filters record what they would do."},
+    {tag:"security",text:"Live book safety: at-level plans use the book's own budget and cap, a partly filled entry gets its stop at once, a failed hand-off is marked failed, replacement sells wait for the old cancel, and in a cash account a trim never sells shares bought with unsettled money before it settles."},
+    {tag:"improved",text:"An IBKR execution-cost report and new desk-report lines: open risk, horizon mix, share of each move kept, and stop-outs that later recovered."},
+  ]},
   {version:"0.8.62",date:"2026-10-04",title:"Tips: safety fixes before real money",items:[
     {tag:"security",text:"A paper book can only trade a paper IBKR account and a live book only a live one; the gateway port alone no longer decides whose money trades."},
     {tag:"fixed",text:"Buy orders still waiting to fill count against the book cap and free cash, sale proceeds from today never fund a new buy before they settle, and a live book spends only its US dollars."},
