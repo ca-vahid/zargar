@@ -2828,3 +2828,45 @@ identity / freshness check of `quote_rejection` still applies. Tests: `tests/tes
   A partial close also lifts the resting venue stop (re-placed for the remaining quantity).
 - **Earnings:** one resolver (`research.market_events.next_earnings`, store then Yahoo) for entry and exit; a moved
   date tombstones the stale one; a before-the-open report ends at 09:30 on the report day.
+
+### Tips v0.9 V1 live safety - 2026-10-05 (Tips desk; plan docs/techniques/tip/research/2026-10-04-v09/PLAN.md §V1)
+
+- **New PlanRunner hook `size_entry_shares(ap, trade, qty, limit) -> (qty, reason)`** (shares branch of the fired
+  entry, after the runner's own sizing, before the position cap). Base = unchanged quantity, so EM / Team2 / Cartel
+  keep their sizing. A non-empty reason with qty < 1 refuses the entry on the record (`TechniquePlanTriggerSkipped`
+  event `book_sizing`); a hook exception refuses (fail closed). The Tip runner sizes a fire on a BOUND book (non-legacy
+  binding, or any live/paper book) through `ProposalService._tip_budget` (binding budgetPerTip, capitalCap incl.
+  pending entry cost, reserveSlots glide, maxOpenPositions, source caps) and the per-book risk budget (binding
+  riskPct / riskBudgetPerTip against the widest of the trigger stop and the exit plan's stop; live/paper books always,
+  Practice only under the enforced geometry gate), journaled `TipArmedFireSized`. Live/paper at-level arms are
+  shares-only and their plan loss limit is the book's budgetPerTip.
+- **IBKR reconnect order:** the adapter runs the execution catch-up, then notifies `ready`; only `ready` triggers the
+  account sync, and the periodic sync skips while `IBKRBroker.caught_up` is False (a fill made during an outage is
+  applied once - never on top of a level-set that already contains it).
+- **IBKR cash lag:** `sync_ibkr_account` subtracts today's BUY fills of the IBKR book made after the account summary's
+  cash rows last CHANGED (`unreflectedBuys` on `IbkrAccountSynced`). Assumption: a summary change reflects every fill
+  before it; a fill landing between IBKR's update and our read is overstated for at most one summary cycle. A
+  catch-up-replayed fill carries the replay time, so it can be subtracted once more than needed (conservative).
+- **Partial entries (Tips):** `adopt_when_filled` adopts a partially filled entry at once (stop + venue stop for the
+  filled quantity; `techniques.tip.adopt_partial_fills`, default on); later fills grow the same leg in place
+  (`PositionManager.grow_entry_leg`), the remainder is cancelled when the position stops being open or the wait times
+  out, and a fill after the position closed becomes its own managed position. The venue stop now covers every open
+  long share leg of the symbol (previously the first leg only).
+- **Hand-off failure:** `ProposalService.approve` catches a raising venue hand-off: the card is FAILED
+  (`ProposalHandoffFailed`), never left approved; a `SubmitUncertain` keeps its order id and, for a tip, the fill
+  watcher (a fill the venue did take is still adopted and protected).
+- **Real-book cancel/replace (live/paper only; sim unchanged):** a replacement venue stop waits (bounded,
+  `execution.cancel_confirm_seconds`, max 5 s) for the old stop's cancel confirmation; an unconfirmed cancel leaves the
+  old stop in force and the terminal report places the replacement; a stop that FILLED during the replace is booked to
+  the position (retired-stop ids stay indexed) and nothing new rests. `close()` waits the same way, and `_close_leg`
+  on a real book sends at most held minus the venue's working sells (DB view) - never two resting sells beyond the
+  held quantity. The venue stop on a real book is sized to held minus other working sells.
+- **Good-faith guard (cash IBKR books, `execution.good_faith_guard` + `ibkr.cash_account`, both default on):** a
+  non-protective sell (trim/target, time stop, mirror, geometry trim) of a position bought TODAY with unsettled
+  same-day sale proceeds is deferred to the next trading day (`TipGoodFaithDeferred`, once per position/kind/day);
+  protective sells (stop, premium stop, venue stop, event/expiry flatten, rollback, a person's manual close) always go
+  (`TipGoodFaithStopSent` + alert). Assumptions (`execution/goodfaith.py`): T+1; only today's sales are unsettled;
+  the day's settled cash = cash now + today's buys - today's sells; buys spend settled cash first. A deferred ladder
+  rung is consumed (the policy advanced it at the decision) - the rest of the position keeps its stop and later
+  targets.
+

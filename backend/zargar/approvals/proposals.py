@@ -2390,8 +2390,11 @@ class ProposalService:
             paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal")
             if paused:
                 return await self._refuse_automated(proposal_id, reason=paused, revert=True)
-        order = await eng.orders.place(intent)
-        order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
+        try:
+            order = await eng.orders.place(intent)
+            order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
+        except Exception as exc:                          # noqa: BLE001 - V1.5: never left approved without an order
+            return await self._handoff_failed(proposal_id, pdict, exc, via=via)
 
         status = "executed" if order.get("status") not in ("REJECTED_RISK", "REJECTED") else "failed"
         async with eng.sf() as session:
@@ -2418,6 +2421,42 @@ class ProposalService:
             from ..techniques.tip.lifecycle import adopt_when_filled
             task = asyncio.create_task(adopt_when_filled(eng, pdict, order),
                                        name=f"tip-adopt-{proposal_id[:8]}")
+            self._adopt_tasks[proposal_id] = task
+            task.add_done_callback(lambda _t, k=proposal_id: self._adopt_tasks.pop(k, None))
+        return {"proposal": pdict, "order": order}
+
+    async def _handoff_failed(self, proposal_id: str, pdict: dict, exc: BaseException, *, via: str) -> dict:
+        """V1.5 (Tips v0.9, review R1 M7): the venue hand-off raised after the card was claimed. The proposal is
+        marked FAILED on the record (`ProposalHandoffFailed`) - never left approved/pending, so no later path can
+        submit the same idea a second time. A `SubmitUncertain` order (written ahead, handed to the venue, answer
+        lost) keeps its order id on the card and, for a tip, the fill watcher: if the venue did take and fill it,
+        the position is still adopted and protected."""
+        from ..orders import SubmitUncertain
+        eng = self.engine
+        uncertain = isinstance(exc, SubmitUncertain)
+        order_id = getattr(exc, "order_id", None) if uncertain else None
+        reason = f"{type(exc).__name__}: {exc}"[:400]
+        log.warning("proposal %s: venue hand-off failed (%s)", proposal_id, reason)
+        async with eng.sf() as session:
+            row = await session.get(Proposal, proposal_id)
+            if row is not None:
+                row.status = "failed"
+                row.order_id = order_id or row.order_id
+                row.context = {**(row.context or {}),
+                               "handoff": {"failed": True, "uncertain": uncertain, "reason": reason,
+                                           **({"orderId": order_id} if order_id else {})}}
+                await session.commit()
+                pdict = proposal_dict(row)
+        with contextlib.suppress(Exception):
+            await eng.journal.append("ProposalHandoffFailed", {
+                "via": via, "reason": reason, "uncertain": uncertain, "orderId": order_id,
+                "symbol": pdict.get("symbol"), "qty": pdict.get("qty")},
+                aggregate_type="proposal", aggregate_id=proposal_id, portfolio_id=pdict.get("portfolioId"))
+        eng.bus.publish(topics.PROPOSALS, pdict)
+        order = {"id": order_id, "status": "UNKNOWN" if uncertain else "ERROR", "rejectReason": reason}
+        if uncertain and order_id and (pdict.get("context") or {}).get("techniqueId") == "tip":
+            from ..techniques.tip.lifecycle import adopt_when_filled
+            task = asyncio.create_task(adopt_when_filled(eng, pdict, order), name=f"tip-adopt-{proposal_id[:8]}")
             self._adopt_tasks[proposal_id] = task
             task.add_done_callback(lambda _t, k=proposal_id: self._adopt_tasks.pop(k, None))
         return {"proposal": pdict, "order": order}

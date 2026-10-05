@@ -290,6 +290,10 @@ DEFAULTS: dict[str, Any] = {
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)
     "ibkr.convert_currencies": False,
+    "ibkr.cash_account": True,                      # V1.7 (2026-10-05): the IBKR account is a CASH account - the good-faith guard applies
+    "execution.cancel_confirm_seconds": 5.0,        # V1.6: real books wait (<= 5 s) for a cancel confirmation before a replacement sell rests
+    "execution.good_faith_guard": True,             # V1.7: cash live/paper IBKR books defer non-protective sells of unsettled-funded shares (T+1)
+    "techniques.tip.adopt_partial_fills": True,     # V1.4: a partially filled entry is adopted (stop + venue stop) at once; later fills grow it
     "risk.book_overrides": {},                      # {portfolioId: {"risk.<key>": value}} - per-book risk limits (live cash account)    # count non-book currencies at the FX rate (paper with CAD only; a live cash account converts in IBKR)
     # --- sharp-pencil review #3 (2026-09-27, docs/techniques/tip/research/2026-09-27-sharp-pencil-review-3.md)
     "techniques.tip.stale_after_sessions": 0,       # Q1: share positions below stale_min_r after N sessions exit on a closed bar (0 = off)

@@ -33,18 +33,22 @@ overrides, spread sizing by debit, band only on the stated contract, sibling lev
 
 ## V1 - Live safety leftovers (must land before real money)
 
-- [ ] **V1.1 At-level arms use the book's sizing** (R1 B1): armed fires on a bound book size through `_tip_budget`
+- [x] **V1.1 At-level arms use the book's sizing** (R1 B1): armed fires on a bound book size through `_tip_budget`
   (cap, glide, slot cap, risk %), not the source's budget; then re-enable `armAtLevel` on the IBKR book.
-- [ ] **V1.2 Reconnect order**: run execution catch-up BEFORE the account sync after a reconnect (R1 M: double-count).
-- [ ] **V1.3 Cash lag after a buy**: subtract today's buys not yet reflected in the IBKR cash summary (R1 M).
-- [ ] **V1.4 Partially filled entry gets its stop immediately** for the filled quantity (R1 M).
-- [ ] **V1.5 Hand-off failure**: an approve whose venue hand-off failed is marked failed, never left pending (R1 M).
-- [ ] **V1.6 Cancel/replace race**: wait for the cancel confirmation (bounded) before a replacement sell rests (R1 M).
-- [ ] **V1.7 Good-faith guard on SELLS**: a position bought with unsettled proceeds is not sold before settlement unless
+- [x] **V1.2 Reconnect order**: run execution catch-up BEFORE the account sync after a reconnect (R1 M: double-count).
+- [x] **V1.3 Cash lag after a buy**: subtract today's buys not yet reflected in the IBKR cash summary (R1 M).
+- [x] **V1.4 Partially filled entry gets its stop immediately** for the filled quantity (R1 M).
+- [x] **V1.5 Hand-off failure**: an approve whose venue hand-off failed is marked failed, never left pending (R1 M).
+- [x] **V1.6 Cancel/replace race**: wait for the cancel confirmation (bounded) before a replacement sell rests (R1 M).
+- [x] **V1.7 Good-faith guard on SELLS**: a position bought with unsettled proceeds is not sold before settlement unless
   it is a protective stop (journaled, alerted) (R4 #7).
 - [ ] **V1.8 Live config**: live book (kind live), USD cash, `risk.book_overrides` for it (max position $3,500, daily
   halt 4%, max position 35%), `risk.require_market_hours` on, `maxOpenPositions` 3-4, `budgetPerTip` ~$900-1,000,
-  `riskPct` 0.75-1%, `allow_live_auto` on the user's go.
+  `riskPct` 0.75-1%, `allow_live_auto` on the user's go. (Steps written in `LIVE-IBKR-RUNBOOK.md` "Live config";
+  applying them is the operational step.)
+
+V1.1-V1.7 built 2026-10-05 on branch `claude/v09-live-safety` (tests `backend/tests/test_v09_live_safety.py`; engine
+changes logged in PLATFORM-RULES 2026-10-05); not deployed until merged and restarted.
 
 ## V2 - Horizon at entry (days / week / multi-week)
 

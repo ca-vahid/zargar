@@ -237,6 +237,12 @@ class PositionManager:
         self._mark_obs_ts: dict[str, int | None] = {}   # position id -> mark observation identity
         self._premium_confirm: dict[str, dict] = {}     # position id -> pending stop confirmation
         self._entry_halted: set[str] = set()           # symbols where reconciliation found drift
+        # V1.6 (2026-10-05): venue stops we asked to cancel (order id -> position id) - their fill still belongs to
+        # the position (a stop that triggered while the cancel was in flight), and positions whose replacement stop
+        # waits for such a cancel to be confirmed
+        self._retired_stops: dict[str, str] = {}
+        self._stop_replace_pending: set[str] = set()
+        self._gf_noted: set[tuple] = set()             # V1.7 good-faith deferrals already journaled (pos, kind, day)
         self._now = time.time                          # injectable clock (chaos tests)
         self._policy_adapters: dict[str, object] = {}
 
@@ -257,6 +263,128 @@ class PositionManager:
 
     def _setting(self, key: str, default):
         return self.engine.settings.get(key, default)
+
+    # ---------------------------------------------------------------- real-book sell safety (V1.6, 2026-10-05)
+    def _real_book(self, p: Managed) -> bool:
+        """A live/paper book: its cancels are asynchronous at the venue (IBKR confirms them later)."""
+        pf = self.engine.positions.portfolio(p.portfolio_id) or {}
+        return pf.get("kind") in ("live", "paper")
+
+    async def _await_cancels(self, order_ids: list[str], *, wait: bool = True) -> dict[str, str]:
+        """Poll each order to a terminal state, bounded by `execution.cancel_confirm_seconds` (default 5 s) in total
+        (`wait=False`: one read). Returns {orderId: final status | "PENDING"} - PENDING = not confirmed yet."""
+        ids = [i for i in order_ids if i]
+        out: dict[str, str] = {}
+        if not ids:
+            return out
+        wait_s = max(0.0, min(5.0, float(self._setting("execution.cancel_confirm_seconds", 5.0) or 5.0))) if wait else 0.0
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                async with self.engine.sf() as session:
+                    rows = (await session.execute(select(Order.id, Order.status).where(Order.id.in_(ids)))).all()
+                st = {r[0]: r[1] for r in rows}
+            except Exception:                              # noqa: BLE001 - unknown is not confirmed
+                st = {}
+            out = {i: (st.get(i) if st.get(i) and st.get(i) not in _WORKING_ORDER else "PENDING") for i in ids}
+            if all(v != "PENDING" for v in out.values()) or time.monotonic() >= deadline:
+                return out
+            await asyncio.sleep(0.1)
+
+    async def _working_sells(self, p: Managed, symbol: str, *, exclude: tuple = ()) -> float:
+        """Unfilled quantity of every working SELL on `symbol` in the position's book (the venue's view: exit
+        records, the venue stop, a stop whose cancel is still in flight, bracket children)."""
+        try:
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(Order).where(
+                    Order.portfolio_id == p.portfolio_id, Order.symbol == symbol, Order.side == "SELL",
+                    Order.status.in_(_WORKING_ORDER)))).scalars().all()
+        except Exception:                                  # noqa: BLE001
+            return 0.0
+        return sum(max(0.0, float(o.qty or 0) - float(o.filled_qty or 0)) for o in rows if o.id not in exclude)
+
+    async def _cancel_stop_confirmed(self, p: Managed, order_id: str) -> str:
+        """Cancel our own venue stop. On a real book wait (bounded) for the venue's confirmation and remember the id:
+        a fill that lands while the cancel is in flight still reduces this position. Returns the final status
+        (CANCELLED / FILLED / ... / PENDING); a sim book returns "SENT" without waiting (the sim confirms in-band)."""
+        self._retired_stops[order_id] = p.id
+        self._register_exit_order(p, order_id)
+        with contextlib.suppress(Exception):
+            await self.engine.orders.cancel(order_id)
+        if not self._real_book(p):
+            return "SENT"
+        return (await self._await_cancels([order_id])).get(order_id, "PENDING")
+
+    # ---------------------------------------------------------------- good-faith guard (V1.7, 2026-10-05)
+    def _gf_applies(self, p: Managed) -> bool:
+        pf = self.engine.positions.portfolio(p.portfolio_id) or {}
+        if pf.get("kind") not in ("live", "paper") or pf.get("venue") == "snaptrade":
+            return False
+        try:
+            if not bool(self._setting("execution.good_faith_guard", True)):
+                return False
+            if not bool(self._setting("ibkr.cash_account", True)):
+                return False
+        except Exception:                                  # noqa: BLE001
+            return False
+        return any(l.sec_type == "STK" and l.qty > 0 for l in p.open_legs)
+
+    async def _gf_unsettled_funded(self, p: Managed) -> float:
+        """$ of this position's entry cost paid TODAY from unsettled same-day sale proceeds (0 = free to sell)."""
+        from ..models import Execution
+        from .goodfaith import unsettled_funded
+        entry_ids = {l.entry_order_id for l in p.legs if l.entry_order_id}
+        if not entry_ids:
+            return 0.0
+        sod = dt.datetime.now(ET).replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(Execution).where(
+                    Execution.portfolio_id == p.portfolio_id, Execution.ts >= sod))).scalars().all()
+        except Exception:                                  # noqa: BLE001 - unknown is not a deferral
+            return 0.0
+        if not any(r.order_id in entry_ids for r in rows):
+            return 0.0                                     # bought on an earlier day: settled by now (T+1)
+        cash = float((self.engine.positions.portfolio(p.portfolio_id) or {}).get("cash") or 0.0)
+        funded = unsettled_funded([{"orderId": r.order_id, "side": r.side, "qty": r.qty, "price": r.price,
+                                    "commission": r.commission, "ts": r.ts.timestamp() if r.ts else 0}
+                                   for r in rows], cash_now=cash)
+        return sum(v for k, v in funded.items() if k in entry_ids)
+
+    async def _good_faith_defers(self, p: Managed, *, kind: str, reason: str) -> bool:
+        """True = this sale is deferred to the next trading day (journaled `TipGoodFaithDeferred`, once per position,
+        kind and day). A protective sale is never deferred; on a position at risk it is journaled
+        (`TipGoodFaithStopSent`) and alerted."""
+        if not self._gf_applies(p):
+            return False
+        funded = await self._gf_unsettled_funded(p)
+        if funded <= 0.01:
+            return False
+        from .goodfaith import is_protective
+        day = session_date(self.now_ms())
+        nxt = None
+        with contextlib.suppress(Exception):
+            from ..marketstructure import market_calendar as _mc
+            nxt = _mc.next_trading_day(dt.date.fromisoformat(day)).isoformat()
+        payload = {"positionId": p.id, "symbol": p.symbol, "kind": kind, "reason": str(reason)[:200],
+                   "unsettledFunded": round(funded, 2), "session": day, "settlesOn": nxt}
+        if is_protective(kind, reason):
+            key = (p.id, "protective", day)
+            if key not in self._gf_noted:
+                self._gf_noted.add(key)
+                await self._journal("TipGoodFaithStopSent", p, payload)
+                await self._alert(p, f"{kind} exit sent on shares bought with unsettled proceeds (${funded:,.0f}) - "
+                                     "a possible good-faith violation on the cash account; protection comes first",
+                                  level="warning", stage="good_faith")
+            return False
+        key = (p.id, str(kind), day)
+        if key not in self._gf_noted:
+            self._gf_noted.add(key)
+            await self._journal("TipGoodFaithDeferred", p, payload)
+            self._log(p, "good_faith_deferred",
+                      f"{kind} deferred to {nxt or 'the next session'}: ${funded:,.0f} of the entry was paid with "
+                      "unsettled sale proceeds (cash account, T+1) - the stop stays in force")
+        return True
 
     def _fresh_net_mark(self, p: Managed) -> float | None:
         """net_mark judged only on FRESH, non-delayed option quotes (Codex
@@ -764,6 +892,30 @@ class PositionManager:
         await self._ensure_venue_stop(p)
         return p.to_dict()
 
+    async def grow_entry_leg(self, pid: str, *, entry_order_id: str, add_qty: float,
+                             price: float | None) -> dict | None:
+        """V1.4 (2026-10-05): a partially filled entry was adopted at once; a later fill of the SAME order grows that
+        leg in place (average re-weighted) and the venue stop follows the held quantity. None = the position is not
+        open (the caller adopts the late fill separately) or holds no leg of that order."""
+        p = self._pos.get(pid)
+        if p is None or p.status not in ("open", "attention") or add_qty <= 0 or p.policy.get("adapter"):
+            return None
+        leg = next((l for l in p.legs if l.entry_order_id == entry_order_id and abs(l.qty) > 1e-9), None)
+        if leg is None:
+            return None
+        old = abs(leg.qty)
+        new = old + float(add_qty)
+        if leg.avg_fill is not None and price:
+            leg.avg_fill = (float(leg.avg_fill) * old + float(price) * float(add_qty)) / new
+        leg.qty = new if leg.qty > 0 else -new
+        p.entry_mark = self._entry_mark(p)
+        await self._persist(p)
+        await self._journal(POSITION_SCALED, p, {"leg": leg.to_dict(), "added": float(add_qty),
+                                                 "partialFill": True, "entryOrderId": entry_order_id})
+        self._log(p, "partial_fill", f"+{float(add_qty):g} {leg.symbol} from the same entry order — leg now {new:g}")
+        await self._ensure_venue_stop(p)
+        return p.to_dict()
+
     def _entry_mark(self, p: Managed) -> float | None:
         opt = [l for l in p.legs if l.sec_type == "OPT"]
         if not opt or any(l.avg_fill is None for l in opt):
@@ -790,7 +942,26 @@ class PositionManager:
         if stop is None:
             return
         leg = stk[0]
-        want_qty = float(abs(leg.qty))
+        # every open long share leg of the symbol (a partial entry grown in place / scale-in legs) is covered
+        want_qty = float(sum(abs(l.qty) for l in stk if l.symbol.upper() == leg.symbol.upper()))
+        real = self._real_book(p)
+        if real:
+            if p.id in self._stop_replace_pending:
+                # V1.6: the previous stop's cancel is not confirmed yet - its terminal report re-runs this. A lost
+                # report must not leave the position unprotected forever: the venue's current view decides
+                mine = [oid for oid, owner in self._retired_stops.items() if owner == p.id]
+                st = await self._await_cancels(mine, wait=False) if mine else {}
+                if any(v == "PENDING" for v in st.values()):
+                    return
+                self._stop_replace_pending.discard(p.id)
+                if any(v in ("FILLED", "PARTIALLY_FILLED") for v in st.values()):
+                    return                                  # its fill report reduces the position first
+            # V1.6 (2026-10-05): never two resting sells beyond the held quantity on a real book - a resting exit
+            # (a trim LMT, a bracket child) leaves the stop only what it does not already cover
+            other = await self._working_sells(p, leg.symbol, exclude=((p.venue_stop_order_id,) if p.venue_stop_order_id else ()))
+            want_qty = float(int(max(0.0, want_qty - other)))
+            if want_qty < 1:
+                return
         # unchanged price AND quantity: the resting stop is right. A trim that
         # reduced the leg must resize it - the old stop kept the ORIGINAL size and
         # sold 148 RKT against 89 held (2026-09-15, a 59-share unintended short)
@@ -800,10 +971,27 @@ class PositionManager:
         from ..orders import OrderIntent
         if p.venue_stop_order_id:
             _old_stop, p.venue_stop_order_id = p.venue_stop_order_id, None   # our own cancel: clear the id FIRST
-            with contextlib.suppress(Exception):
-                await self.engine.orders.cancel(_old_stop)
+            st = await self._cancel_stop_confirmed(p, _old_stop)
+            if real and st in ("FILLED", "PARTIALLY_FILLED"):
+                # the old stop executed while we were replacing it: its fill report reduces the position - nothing
+                # new rests on top of it (the next pass re-sizes for whatever is still held)
+                self._log(p, "venue_stop", f"old stop {_old_stop[:8]} {st.lower()} during the replace - not re-placed")
+                await self._persist(p)
+                return
+            if real and st == "PENDING":
+                # cancel/replace race (review R1 M3): the old sell may still rest at the venue - a replacement now
+                # could sell twice the held quantity. The old stop keeps protecting; its CANCELLED report places
+                # the replacement (on_order_update)
+                self._stop_replace_pending.add(p.id)
+                p.venue_stop_at = None
+                await self._alert(p, f"venue stop {_old_stop[:8]}: cancel not confirmed within "
+                                     f"{float(self._setting('execution.cancel_confirm_seconds', 5.0) or 5.0):g}s - the "
+                                     "replacement waits for the venue's confirmation", level="warning",
+                                  stage="venue_stop")
+                await self._persist(p)
+                return
         intent = OrderIntent(portfolio_id=p.portfolio_id, symbol=leg.symbol, sec_type="STK", side="SELL",
-                             qty=abs(leg.qty), order_type="STP", stop_price=round(float(stop), 2), tif="GTC",
+                             qty=want_qty, order_type="STP", stop_price=round(float(stop), 2), tif="GTC",
                              source="technique", technique_id=p.technique, tags=list(p.tags), reduce_only=True)
         try:
             res = await self.engine.orders.place(intent)
@@ -878,6 +1066,22 @@ class PositionManager:
             self._log(p, "exit_skip",
                       f"{kind} {leg.symbol}: exits already in flight cover this qty")
             return None
+        if leg.qty > 0 and self._real_book(p):
+            # V1.6 (2026-10-05): on a real book the venue's own working sells bound the new one - a stop whose
+            # cancel is still in flight, a bracket child, an exit the records already marked dead. Never two resting
+            # sells beyond the held quantity (a cash account would reject the short; a margin one would open it)
+            working = await self._working_sells(p, leg.symbol)
+            room = abs(leg.qty) - working
+            if leg.sec_type == "STK":
+                room = float(int(max(0.0, room) + 1e-9))
+            else:
+                room = float(int(max(0.0, room)))
+            if room < qty:
+                self._log(p, "exit_clamp", f"{kind} {leg.symbol}: {working:g} already working at the venue - "
+                                           f"sending {room:g} of {qty:g}")
+                qty = room
+            if qty <= 0:
+                return None
         # HARD invariant: a reduce-only exit never takes the venue book through
         # zero. When the venue already shows this symbol flat or on the other
         # side, the leg is stale bookkeeping — mark it flat instead of selling
@@ -991,16 +1195,25 @@ class PositionManager:
             if await adapter.before_close(self, p, fraction=fraction, reason=reason, kind=kind, force_market=force_market):
                 return p.to_dict()
         fraction = min(1.0, max(0.0, fraction))
+        # V1.7 (2026-10-05): a cash IBKR book never sells shares bought with unsettled proceeds before they settle
+        # unless the sale is protective (stops always go - journaled + alerted)
+        if await self._good_faith_defers(p, kind=kind, reason=reason):
+            return p.to_dict()
         if fraction >= 1.0 - 1e-9:
             p.status = "closing"
+        real = self._real_book(p)
         # cancel a resting venue stop first so it can't double-fill with the close. 2026-10-04 (review H5): a PARTIAL
         # sell too - a resting full-size stop plus a trim sells more than is held, which a cash account rejects; the
         # stop is re-placed for the remaining quantity once the trim settles (_ensure_venue_stop follows held qty)
+        cancelling: list[str] = []
         if p.venue_stop_order_id:
             _old_stop, p.venue_stop_order_id = p.venue_stop_order_id, None
+            self._retired_stops[_old_stop] = p.id
+            self._register_exit_order(p, _old_stop)
             with contextlib.suppress(Exception):
                 await self.engine.orders.cancel(_old_stop)
             p.venue_stop_at = None
+            cancelling.append(_old_stop)
         # a forced (stop) close supersedes any resting limit exit: cancel it so
         # the in-flight guard doesn't suppress the stop, and mark it dead
         # optimistically — a zombie order must never block getting flat
@@ -1010,6 +1223,18 @@ class PositionManager:
                     with contextlib.suppress(Exception):
                         await self.engine.orders.cancel(rec["orderId"])
                     rec["status"] = "CANCELLED"
+                    cancelling.append(rec["orderId"])
+        if real and cancelling:
+            # V1.6 (2026-10-05, review R1 M3): IBKR cancels are asynchronous - the replacement sell waits (bounded)
+            # for the venue's confirmation. A sell still working after the wait is counted against the held quantity
+            # in _close_leg (the venue view), so the close never sells twice what is held; whatever it could not
+            # send now is decided again on the next bar / watch pass.
+            st = await self._await_cancels(cancelling)
+            pending = [i for i, v in st.items() if v == "PENDING"]
+            if pending:
+                await self._alert(p, f"{len(pending)} cancel(s) not confirmed by the venue within the wait - the "
+                                     "close sends only what no resting sell already covers", level="warning",
+                                  stage="cancel_replace")
         self._log(p, "close", f"closing {fraction:.0%} — {reason}")
         for leg in list(p.open_legs):
             want = abs(leg.qty) * fraction
@@ -1211,6 +1436,27 @@ class PositionManager:
             return
         status = o.get("status")
         rec = next((x for x in p.exits if x.get("orderId") == o["id"]), None)
+        was_retired = o["id"] in self._retired_stops and o["id"] != p.venue_stop_order_id
+        if was_retired:
+            # V1.6 (2026-10-05): a venue stop we asked to cancel. A FILL still belongs to this position (it triggered
+            # while the cancel was in flight - before this, that fill was dropped and the record kept the shares);
+            # once it is terminal, a replacement that waited for the confirmation is placed now.
+            if status in ("FILLED", "PARTIALLY_FILLED"):
+                rec = rec or {"kind": "venue_stop", "leg": o.get("symbol"), "qty": float(o.get("filledQty") or 0),
+                              "orderId": o["id"], "status": status, "filledQty": 0.0, "price": None,
+                              "ts": self.now_ms(), "reason": "venue-side GTC stop (filled while being replaced)"}
+                if rec not in p.exits:
+                    p.exits.append(rec)
+            if status in ("FILLED", "REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
+                self._retired_stops.pop(o["id"], None)
+                if p.id in self._stop_replace_pending and not any(
+                        v == p.id for v in self._retired_stops.values()):
+                    self._stop_replace_pending.discard(p.id)
+                    if status != "FILLED" and rec is None:
+                        await self._ensure_venue_stop(p)
+                        await self._persist(p)
+            if rec is None:
+                return
         if o["id"] == p.venue_stop_order_id and status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
             # review (2026-10-04): the resting venue stop died without us cancelling it (our own cancels clear the
             # id first) - the position would sit unprotected overnight. Alert, then re-place it (at most once a
@@ -1290,7 +1536,7 @@ class PositionManager:
                             await self._alert(p, message, stage="policy_adapter")
                 if not p.open_legs and p.status != "closed":
                     await self._mark_closed(p, reason=rec.get("reason") or rec["kind"])
-                elif rec.get("kind") != "venue_stop" and o["id"] != p.venue_stop_order_id:
+                elif was_retired or (rec.get("kind") != "venue_stop" and o["id"] != p.venue_stop_order_id):
                     # a partial exit (trim) changed the held quantity: the resting venue
                     # stop must cover exactly what remains, never the pre-trim size
                     await self._ensure_venue_stop(p)
