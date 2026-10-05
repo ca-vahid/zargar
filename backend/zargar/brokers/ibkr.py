@@ -54,6 +54,16 @@ def error_from_log(trade) -> str | None:
     return None
 
 
+
+def to_tick(price: float, direction: str) -> float:
+    """US stock minimum tick: $0.01 at/above $1, $0.0001 below. Rounded `up` or `down` to the tick."""
+    import decimal
+    p = decimal.Decimal(str(price))
+    tick = decimal.Decimal("0.01") if p >= 1 else decimal.Decimal("0.0001")
+    q = (p / tick).to_integral_value(rounding=decimal.ROUND_CEILING if direction == "up" else decimal.ROUND_FLOOR)
+    return float(q * tick)
+
+
 class IBKRBroker(QuoteFeed, Executor):
     """Executor (and optional feed) for IBKR live/paper portfolios."""
 
@@ -254,6 +264,12 @@ class IBKRBroker(QuoteFeed, Executor):
             return
         contract = qualified[0]
         action = "BUY" if order.side == OrderSide.BUY else "SELL"
+        # 2026-10-05: IBKR rejects prices off the minimum tick (error 110 on a 320.435 bracket stop). Limits round in
+        # our favour (buy down, sell up); stops round toward the market (sell stop up, buy stop down) - never looser.
+        if order.limit_price is not None:
+            order.limit_price = to_tick(order.limit_price, "down" if action == "BUY" else "up")
+        if order.stop_price is not None:
+            order.stop_price = to_tick(order.stop_price, "up" if action == "SELL" else "down")
         if order.order_type == OrderType.MKT:
             ib_order = MarketOrder(action, order.qty)
         elif order.order_type == OrderType.LMT:

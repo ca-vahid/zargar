@@ -279,3 +279,11 @@ async def test_a_lost_server_link_refuses_orders_until_restored():
     await asyncio.sleep(0.01)
     assert b.connected and "link_restored" in states
     await b.stop()
+
+
+def test_prices_are_rounded_to_the_tick_in_the_safe_direction():
+    assert ib_mod.to_tick(320.435, "up") == 320.44          # a sell stop: toward the market
+    assert ib_mod.to_tick(346.445, "up") == 346.45          # a sell limit: our favour
+    assert ib_mod.to_tick(333.449, "down") == 333.44        # a buy limit: never pay more
+    assert ib_mod.to_tick(0.12345, "down") == 0.1234
+    assert ib_mod.to_tick(25.0, "up") == 25.0

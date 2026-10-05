@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.02";
+export const APP_VERSION = "0.9.03";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.03",date:"2026-10-05",title:"IBKR prices on the tick",items:[
+    {tag:"fixed",text:"Order prices sent to IBKR are rounded to the minimum price step (limits in our favour, stops toward the market). Two bracket orders with prices like 320.435 were rejected by IBKR on the first paper fill."},
+  ]},
   {version:"0.9.02",date:"2026-10-05",title:"IBKR: a lost server link is noticed",items:[
     {tag:"fixed",text:"When IB Gateway loses its connection to IBKR (while still talking to the app), the app now treats IBKR as offline: new orders are refused visibly instead of sitting as submitted, you get an alert, and when the link comes back the app replays what happened and re-syncs the account."},
   ]},
