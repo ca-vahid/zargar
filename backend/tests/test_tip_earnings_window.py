@@ -24,7 +24,9 @@ def test_bmo_flattens_the_session_before_and_amc_the_report_day():
 def test_due_window():
     assert earnings_exit_due(t(2026, 10, 2, 15, 44), "2026-10-05", "BMO") is None
     assert "flat by 10-02 15:45" in earnings_exit_due(t(2026, 10, 2, 15, 45), "2026-10-05", "BMO")
-    assert earnings_exit_due(t(2026, 10, 5, 9, 31), "2026-10-05", "BMO"), "still holding on report morning: flatten now"
+    assert earnings_exit_due(t(2026, 10, 5, 9, 29), "2026-10-05", "BMO"), "still holding before the open: flatten"
+    assert earnings_exit_due(t(2026, 10, 5, 9, 31), "2026-10-05", "BMO") is None, "the report is out: trade freely"
+    assert earnings_exit_due(t(2026, 10, 5, 15, 0), "2026-10-05", "unknown") is None
     assert earnings_exit_due(t(2026, 10, 8, 10, 0), "2026-10-08", "AMC") is None, "an AMC name trades the report day"
     assert earnings_exit_due(t(2026, 10, 8, 15, 50), "2026-10-08", "AMC")
     assert earnings_exit_due(t(2026, 10, 9, 10, 0), "2026-10-08", "AMC") is None, "after the report: nothing"

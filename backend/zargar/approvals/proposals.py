@@ -292,8 +292,10 @@ class ProposalService:
         budget = base
         slots = int(_books.knob(binding, "reserveSlots", eng.settings, 3) or 0)
         _unsettled = await self._unsettled_since_sync(pid, pf)
+        # review (2026-10-04): money already promised to resting entry orders / approved cards is not free cash
+        _pending = await self._pending_entry_cost(pid)
         if slots > 0:
-            cash = max(0.0, float(pf.get("cash") or 0.0) - _unsettled)
+            cash = max(0.0, float(pf.get("cash") or 0.0) - _unsettled - _pending)
             if cash < 50.0:
                 return 0.0, None, f"book full: ${cash:,.0f} free cash in {pf.get('name', pid)}"
             glide = cash / slots
@@ -318,7 +320,7 @@ class ProposalService:
         _has_cap = binding is not None and binding.overrides.get("capitalCap") is not None
         if pf.get("kind") in ("live", "paper") or _has_cap:
             _capv = float(_books.knob(binding, "capitalCap", eng.settings, 0) or 0)
-            _room = live_capital_room(_capv, await self._book_open_cost(pid))
+            _room = live_capital_room(_capv, await self._book_open_cost(pid) + _pending)
             if _room is not None:
                 if _room < 50.0:
                     return 0.0, None, (f"capital cap reached: ${_capv:,.0f} "
@@ -361,18 +363,49 @@ class ProposalService:
         if str(eng.settings.get("ibkr.portfolio_id", "") or "") != pid:
             return 0.0
         since = getattr(eng, "ibkr_synced_at", None)
+        from zoneinfo import ZoneInfo
+
         from ..models import Execution
         q = select(Execution).where(Execution.portfolio_id == pid, Execution.side == "SELL")
-        if since is not None:
+        if since is not None and getattr(eng, "ibkr_settled_known", False):
             q = q.where(Execution.ts > since)
         else:
-            q = q.where(Execution.ts > dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2))
+            # review (2026-10-04): IBKR reported no SettledCash for this account - the sync's cash includes today's
+            # sale proceeds. Under T+1 a sale settles the next business day, so every sell filled TODAY (ET) is
+            # unsettled and never funds a new buy
+            et = ZoneInfo("America/New_York")
+            sod = dt.datetime.now(et).replace(hour=0, minute=0, second=0, microsecond=0)
+            q = q.where(Execution.ts >= sod)
         try:
             async with eng.sf() as session:
                 rows = (await session.execute(q)).scalars().all()
         except Exception:                                # noqa: BLE001
             return 0.0
         return sum(abs(float(r.qty or 0) * float(r.price or 0)) - float(r.commission or 0) for r in rows)
+
+    async def _pending_entry_cost(self, pid: str) -> float:
+        """$ committed but not yet held in this book: the unfilled part of working BUY orders and approved cards that
+        have no order yet (review 2026-10-04: two tips appraised at once each saw the whole capital cap)."""
+        eng = self.engine
+        total = 0.0
+        try:
+            async with eng.sf() as session:
+                rows = (await session.execute(select(Order).where(
+                    Order.portfolio_id == pid, Order.side == "BUY",
+                    Order.status.in_(("NEW", "SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"))))).scalars().all()
+                for o in rows:
+                    left = max(0.0, float(o.qty or 0) - float(o.filled_qty or 0))
+                    mult = 100.0 if o.sec_type in ("OPT", "SPREAD") else 1.0
+                    total += left * float(o.limit_price or 0) * mult
+                props = (await session.execute(select(Proposal).where(
+                    Proposal.portfolio_id == pid, Proposal.status == "approved",
+                    Proposal.order_id.is_(None)))).scalars().all()
+                for p in props:
+                    mult = 100.0 if p.sec_type in ("OPT", "SPREAD") else 1.0
+                    total += abs(float(p.qty or 0) * float(p.limit_price or 0) * mult)
+        except Exception:                                # noqa: BLE001
+            log.debug("pending entry cost failed", exc_info=True)
+        return total
 
     async def _book_open_cost(self, pid: str) -> float:
         """Cost basis $ of every OPEN managed tip position in this book (all sources)."""
@@ -512,6 +545,10 @@ class ProposalService:
             if not ref or ref <= 0:
                 return None
             limit = round(ref, 2)
+            if limit > budget * 1.05:
+                await self._refuse(signal_id=signal_row.id, run_id=run_id, portfolio_id=portfolio_id,
+                                   reason=f"one share ({limit:,.2f}) costs more than this book's ${budget:,.0f} budget")
+                return None
             qty = max(1, math.floor(budget / limit))
             symbol, sec_type = signal_row.ticker, "STK"
             vehicle = {"kind": "shares"}
@@ -811,7 +848,9 @@ class ProposalService:
             # the analyst's/tip's stated limit is the trader's price — never chase
             # above it; a live ask may only IMPROVE the limit (found 2026-08-28:
             # a bad option quote priced 2 contracts at $16k against a $4.60 tip)
-            ref_price = limit_hint or sig.premium or live_ask
+            # review H3: the tip's stated premium prices only the tip's own contract
+            _same_contract = picked_by == "tip" or str(expr.get("contract") or "").upper() == str(occ).upper()
+            ref_price = limit_hint or (sig.premium if _same_contract else None) or live_ask
             if live_ask and ref_price and live_ask < float(ref_price):
                 ref_price = live_ask
             if not ref_price or ref_price <= 0:
@@ -821,7 +860,11 @@ class ProposalService:
             # W3.1 (2026-10-03): never pay more than the band over the SOURCE's own premium (3 of 22 option fills paid
             # > 5% over it); the limit stays marketable when the market is inside the band
             _band = float(eng.settings.get("techniques.tip.entry_band_option", 1.10) or 0)
-            if _band > 1 and sig.premium and float(sig.premium) > 0 and float(ref_price) > float(sig.premium) * _band:
+            # review H3 (2026-10-04): the band protects the TIP's own contract only - a different strike/expiry the
+            # analyst chose has its own price and is never pinned to the original premium
+            _stated = str(expr.get("contract") or "").upper()
+            _is_stated = picked_by == "tip" or (bool(_stated) and _stated == str(occ).upper())
+            if _is_stated and _band > 1 and sig.premium and float(sig.premium) > 0                     and float(ref_price) > float(sig.premium) * _band:
                 band_note = (f" Limit held at {_band:g}x the source's {float(sig.premium):.2f} "
                              f"(the analyst/market price {float(ref_price):.2f} is above the band).")
                 ref_price = round(float(sig.premium) * _band, 2)
@@ -860,6 +903,11 @@ class ProposalService:
             if not ref_price or ref_price <= 0:
                 return None
             limit = round(float(ref_price), 2)
+            if limit > budget * 1.05:
+                # review (2026-10-04): the one-share minimum used to buy a $1,400 share against $200 of room
+                await self._refuse(signal_id=signal_row.id, portfolio_id=pid,
+                                   reason=f"one share ({limit:,.2f}) costs more than this book's ${budget:,.0f} budget")
+                return None
             qty = max(1, math.floor(budget / limit))
             # a proposal must FIT the caps it will be judged by (2026-09-03: the
             # $5,000/tip budget sized FSLR to 54.7% of a $9.1k practice book, the
@@ -2091,6 +2139,12 @@ class ProposalService:
                 paused = await _ig.admission(eng, portfolio_id=pre_pid, entry_path="proposal")
                 if paused:
                     return await self._refuse_automated(proposal_id, reason=paused)
+                # review M6 (2026-10-04): a card minted before the earnings cutoff and approved after it
+                if pre is not None and pre.side == "BUY":
+                    _und = ((pre.context or {}).get("vehicle") or {}).get("underlying") or pre.symbol
+                    _ec, _er = await self._earnings_context(_und)
+                    if _er:
+                        return await self._refuse_automated(proposal_id, reason=_er)
         async with eng.sf() as session:
             row = await session.get(Proposal, proposal_id)
             if row is None:
