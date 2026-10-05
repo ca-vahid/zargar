@@ -462,6 +462,7 @@ class PlanRunner(SessionListener):
         # order has settled, so the fill still reaches its Trade record and the persisted row
         # (QQQ 14:17: FILLED 18 @ 0.5599 in the book, "open, remaining 18" in the plan forever)
         self._closing: dict[str, ArmedPlan] = {}
+        self._persist_seen: dict[str, tuple[str, float]] = {}   # run_id -> (fingerprint, monotonic) of the last write
         # R3 (audit 2026-09-04): the per-technique day-loss halt summed only ARMED plans — a plan that
         # disarmed on its own loss halt stopped counting. Retired plans park their net P&L here per
         # (ET day, portfolio); a technique may seed it from persisted rows at boot.
@@ -2180,32 +2181,48 @@ class PlanRunner(SessionListener):
         return True
 
     # ---------------------------------------------------------------- persistence / audit
-    async def _persist(self, ap: ArmedPlan) -> None:
+    async def _persist(self, ap: ArmedPlan, *, bar_tick: bool = False) -> None:
+        """Write the plan's durable state. `bar_tick` (only the ordinary end-of-bar call) may SKIP the write when
+        nothing but the bar counters changed since the last write and the last write is younger than
+        `persist_floor_seconds` (2026-10-05: one full JSON write per armed plan per minute was ~9% of a saturated event
+        loop - 12-48 s freezes). Every other caller - fire, adopt, fills, disarm/close/roll, closing_settled - always
+        writes, and a bar that changes anything else (trackers, trades and their marks, events, P&L, refire, stop
+        reason, scorecard, status, config) writes on that bar, as before."""
         if ap.run_id in self._closing and not any(t.pending_exit_qty > 1e-9 for t in ap.trades.values()):
             self._closing.pop(ap.run_id, None)             # F40: the flatten settled — this is the final record
             self._log(ap, "closing_settled", "every exit of the disarmed plan has settled; record final")
         try:
+            state = {"trackers": {tid: {"status": tr.status, "firedTs": tr.fired_ts, "firedWindow": tr.fired_window,
+                                        "skipped": tr.skipped[-5:], "observedMidday": len(tr.observed_midday),
+                                        "gapUnchecked": tr.gap_unchecked, "failedBreaks": tr.failed_breaks}
+                                  for tid, tr in ap.trackers.items()},
+                     "trades": [t.to_dict() for t in ap.trades.values()],
+                     "events": ap.events[-200:], "barsSeen": ap.bar_index, "lastBarTs": ap.last_bar_ts,
+                     "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
+                     "criticKills": ap.critic_kills, "refireAt": ap.refire_at,
+                     "criticFailures": ap.critic_failures, "gapSeed": ap.gap_seed,
+                     "stopReason": ap.stop_reason, "scorecard": ap.scorecard,
+                     # multi-day roll bookkeeping (ARM-GAPS A): the CURRENT
+                     # session and horizon survive a restart via the state
+                     "planFor": ap.plan_for, "horizonSessions": ap.horizon_sessions,
+                     "sessionsUsed": ap.sessions_used, "expiresSession": ap.expires_session,
+                     "riskWarning": ap.risk_warning}
+            with contextlib.suppress(Exception):
+                # hook (2026-09-14): a technique's own durable state rides the ORDINARY persist — Team2's
+                # execution overlay (refused fires) and decision watermark; an occasional plan stamp is not a write path
+                state.update(dict(self.state_extras(ap) or {}))
+            fingerprint = self._persist_fingerprint(ap, state)
+            if bar_tick:
+                seen = self._persist_seen.get(ap.run_id)
+                try:
+                    floor = float(self.rt("persist_floor_seconds", 300) or 0)
+                except (TypeError, ValueError):
+                    floor = 300.0
+                if (floor > 0 and seen is not None and seen[0] == fingerprint
+                        and time.monotonic() - seen[1] < floor):
+                    return
             async with self.engine.sf() as session:
                 row = await session.get(TechniqueArmed, ap.run_id)
-                state = {"trackers": {tid: {"status": tr.status, "firedTs": tr.fired_ts, "firedWindow": tr.fired_window,
-                                            "skipped": tr.skipped[-5:], "observedMidday": len(tr.observed_midday),
-                                            "gapUnchecked": tr.gap_unchecked, "failedBreaks": tr.failed_breaks}
-                                      for tid, tr in ap.trackers.items()},
-                         "trades": [t.to_dict() for t in ap.trades.values()],
-                         "events": ap.events[-200:], "barsSeen": ap.bar_index, "lastBarTs": ap.last_bar_ts,
-                         "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
-                         "criticKills": ap.critic_kills, "refireAt": ap.refire_at,
-                         "criticFailures": ap.critic_failures, "gapSeed": ap.gap_seed,
-                         "stopReason": ap.stop_reason, "scorecard": ap.scorecard,
-                         # multi-day roll bookkeeping (ARM-GAPS A): the CURRENT
-                         # session and horizon survive a restart via the state
-                         "planFor": ap.plan_for, "horizonSessions": ap.horizon_sessions,
-                         "sessionsUsed": ap.sessions_used, "expiresSession": ap.expires_session,
-                         "riskWarning": ap.risk_warning}
-                with contextlib.suppress(Exception):
-                    # hook (2026-09-14): a technique's own durable state rides the ORDINARY persist — Team2's
-                    # execution overlay (refused fires) and decision watermark; an occasional plan stamp is not a write path
-                    state.update(dict(self.state_extras(ap) or {}))
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
                                          portfolio_id=ap.config.portfolio_id, mode=ap.config.mode,
@@ -2221,8 +2238,21 @@ class PlanRunner(SessionListener):
                     row.state = state
                     row.updated_at = dt.datetime.now(dt.timezone.utc)
                 await session.commit()
+                self._persist_seen[ap.run_id] = (fingerprint, time.monotonic())
         except Exception:
             log.exception("persisting armed plan failed")
+
+    _PERSIST_VOLATILE = ("barsSeen", "lastBarTs")
+
+    def _persist_fingerprint(self, ap: ArmedPlan, state: dict) -> str:
+        """Everything the write would carry EXCEPT the per-bar counters (EM review 2026-10-05: compare all of it,
+        not a hand-picked list)."""
+        body = {k: v for k, v in state.items() if k not in self._PERSIST_VOLATILE}
+        try:
+            cfg = ap.config.to_dict()
+        except Exception:  # noqa: BLE001 - an unserializable config just never matches
+            cfg = id(ap)
+        return json.dumps([body, ap.status, cfg, ap.plan_for], sort_keys=True, default=str)
 
     def _log(self, ap: ArmedPlan, what: str, text: str, **detail) -> dict:
         rec = {"ts": ap.replay_ts or int(time.time() * 1000), "event": what, "text": text, **detail}
@@ -2515,7 +2545,7 @@ class PlanRunner(SessionListener):
         if bar.ts >= close_ms - 60_000:
             await self._end_session(ap, journal=journal, reason="session closed")
         elif journal:
-            await self._persist(ap)
+            await self._persist(ap, bar_tick=True)
 
 
     async def _end_session(self, ap: ArmedPlan, *, journal: bool, reason: str = "session closed") -> None:
