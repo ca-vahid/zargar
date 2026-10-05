@@ -476,6 +476,51 @@ class ProposalService:
             return min(qty, max(1, int(cap // (limit * 100))))
         return qty
 
+    # ------------------------------------------------------------- v0.9 sizing + decision-time information
+    async def _v09_idea_inputs(self, signal_row: Signal, sig: TradeSignal) -> dict:
+        """V5.2/V6 (2026-10-05): the per-idea decision inputs - entry context, source grade, regime + chase guards -
+        computed ONCE before the fan-out (techniques/tip/decision.py). Never raises."""
+        try:
+            from ..techniques.tip import decision as _dec
+            return await _dec.idea_inputs(self.engine, signal_row, sig)
+        except Exception:                                # noqa: BLE001 - information never blocks a card
+            log.debug("v0.9 idea inputs failed for %s", getattr(signal_row, "id", None), exc_info=True)
+            return {}
+
+    async def _v09_book_gate(self, signal_row: Signal, *, pid: str, budget: float) -> tuple[float, str | None]:
+        """V5.3 sector cap + the enforce-mode size scale on the notional budget. (budget, refusal)."""
+        from ..techniques.tip import books as _books
+        from ..techniques.tip import decision as _dec
+        why = None
+        with contextlib.suppress(Exception):
+            why = await _dec.sector_refusal(self.engine, pid, signal_row.ticker)
+        if why:
+            return budget, why
+        sc = _books.risk_scale()
+        return (budget * sc if sc < 1.0 else budget), None
+
+    async def _v09_size(self, *, pid: str, binding, sec_type: str, symbol: str, underlying: str, direction: str,
+                        limit: float, qty: int, budget: float, exit_plan: dict, risk_plan) -> dict:
+        """V5.1 risk-first share sizing + the open-risk cap on the final vehicle (techniques/tip/decision.py)."""
+        from ..techniques.tip import decision as _dec
+        from ..techniques.tip import sizing as _sz
+        try:
+            return await _dec.size_and_gate(self.engine, pid=pid, binding=binding, sec_type=sec_type, symbol=symbol,
+                                            underlying=underlying, direction=direction, limit=limit, qty=qty,
+                                            budget=budget, exit_plan=exit_plan, risk_plan=risk_plan,
+                                            decision=_sz.current_decision())
+        except Exception:                                # noqa: BLE001 - sizing extras never fail a card
+            log.warning("v0.9 sizing failed for %s", symbol, exc_info=True)
+            return {"qty": int(qty), "sizing": {}, "refusal": None, "exitPlan": exit_plan, "note": ""}
+
+    def _v09_card(self, binding) -> dict:
+        from ..techniques.tip import decision as _dec
+        from ..techniques.tip import sizing as _sz
+        d = _sz.current_decision()
+        with contextlib.suppress(Exception):
+            return _dec.card_fields(d, _dec.book_scale(self.engine, d, binding))
+        return {}
+
     # ------------------------------------------------------------- create
     async def create_from_armed_fire(self, signal_row: Signal, **kw) -> dict | None:
         """W6: the armed plan carries its own book; its binding's knobs apply while the card is built."""
@@ -630,6 +675,16 @@ class ProposalService:
         out: list[dict] = []
         fan: list[dict] = []
         primary_budget = None
+        decision = await self._v09_idea_inputs(signal_row, sig)
+        if decision.get("watchOnly") and decision.get("kellyMode") == "enforce":
+            # V5.2 (enforce): a source with a negative shrunk edge is watch-only - no book gets a card
+            _why = (f"source watch-only: {signal_row.source_name} has a negative shrunk edge "
+                    f"({(decision.get('sourceGrade') or {}).get('shrunkEdge')}R over "
+                    f"{(decision.get('sourceGrade') or {}).get('n')} graded trades; techniques.tip.source_kelly_mode)")
+            for b in bindings:
+                if b.enabled:
+                    await self._refuse(signal_id=signal_row.id, reason=_why, portfolio_id=b.portfolioId)
+            return []
         for b in bindings:
             rec = {"portfolioId": b.portfolioId, "role": b.role, "primary": b.primary}
             if not b.enabled:
@@ -651,7 +706,10 @@ class ProposalService:
                 continue
             self._last_refusal.pop(b.portfolioId, None)
             try:
-                with _books.use(b):
+                from ..techniques.tip import decision as _dec
+                from ..techniques.tip import sizing as _sz
+                with _books.use(b), _sz.use_decision(decision), \
+                        _books.scale_risk(_dec.book_scale(eng, decision, b)["scale"]):
                     p = await self._create_for_book(signal_row, sig, verification, pid=b.portfolioId, binding=b,
                                                     primary_budget=primary_budget)
             except Exception as exc:                      # noqa: BLE001 - one book never blocks another
@@ -697,6 +755,10 @@ class ProposalService:
         earn_ctx, earn_refuse = await self._earnings_context(signal_row.ticker)
         if earn_refuse:
             await self._refuse(signal_id=signal_row.id, reason=earn_refuse, portfolio_id=pid)
+            return None
+        budget, _v9_refuse = await self._v09_book_gate(signal_row, pid=pid, budget=budget)
+        if _v9_refuse:
+            await self._refuse(signal_id=signal_row.id, reason=_v9_refuse, portfolio_id=pid)
             return None
         # the lotto lane (0-3 DTE, user 2026-09-01): its own budget, tip-time
         # only, and no 0-DTE entries once the expiry-day flatten time has passed
@@ -1029,6 +1091,16 @@ class ProposalService:
                         "signalId": signal_row.id, "option": orig, "symbol": symbol, "qty": qty, "limit": limit,
                         "stop": exit_plan.get("underlyingStop"), "portfolioId": pid},
                         aggregate_type="signal", aggregate_id=signal_row.id, portfolio_id=pid)
+        # ---- v0.9 V5.1 (2026-10-05): risk-first share size + the book's open-risk cap on the FINAL vehicle
+        _v9 = await self._v09_size(pid=pid, binding=binding, sec_type=sec_type, symbol=symbol,
+                                   underlying=sig.ticker.upper(), direction=sig.direction, limit=limit, qty=qty,
+                                   budget=budget, exit_plan=exit_plan, risk_plan=risk_plan)
+        if _v9.get("refusal"):
+            await self._refuse(signal_id=signal_row.id, reason=_v9["refusal"], portfolio_id=pid)
+            return None
+        qty, exit_plan = int(_v9["qty"]), _v9["exitPlan"]
+        if _v9.get("note"):
+            explain += " " + _v9["note"]
         if risk_plan is not None and risk_plan.enforced and sec_type == "STK":
             # G91-02: every protection is built from the SAME final plan — the
             # bracket carries the finalized stop, never the signal's original
@@ -1119,7 +1191,8 @@ class ProposalService:
                 "confidence": sig.confidence,
                 "verification": verification,
                 "sizing": {"budget": round(budget, 2), "refPrice": limit, "qty": qty,
-                           **({"glide": glide_note} if glide_note else {})},
+                           **({"glide": glide_note} if glide_note else {}), **(_v9.get("sizing") or {})},
+                **self._v09_card(binding),
                 "signalPrices": {"entry": sig.entry_price, "target": sig.target_price,
                                  "stop": sig.stop_price},
                 "vehicle": vehicle,

@@ -88,31 +88,31 @@ changes logged in PLATFORM-RULES 2026-10-05); not deployed until merged and rest
 
 ## V5 - Sizing that uses the whole account without over-concentration
 
-- [ ] **V5.1 Risk-first sizing**: qty = risk budget / stop distance, then capped by cash and per-name exposure (not by a
+- [x] **V5.1 Risk-first sizing** (built 2026-10-05: `techniques/tip/sizing.py` + `decision.py`; `risk_first_sizing`, `max_open_risk_pct` 5 / per-book `maxOpenRiskPct`): qty = risk budget / stop distance, then capped by cash and per-name exposure (not by a
   fixed $ per tip). Risk budget = 0.75-1% equity; total open risk cap 4-5% equity; max 3-4 positions on $7k, 7 on
   Practice.
-- [ ] **V5.2 Per-source Kelly once graded**: after >= 20 graded trades, risk = min(1%, 1/4 Kelly of the shrunk edge);
+- [x] **V5.2 Per-source Kelly once graded** (built 2026-10-05, `source_kelly_mode` = observe by default): after >= 20 graded trades, risk = min(1%, 1/4 Kelly of the shrunk edge);
   negative edge -> watch-only (R4 #4, #5).
-- [ ] **V5.3 Sector / correlation cap**: max 2 positions per sector, per-name cap 40% of equity.
+- [x] **V5.3 Sector / correlation cap** (built 2026-10-05: sector part, `max_per_sector` 2; per-name cap stays `max_name_exposure_pct`): max 2 positions per sector, per-name cap 40% of equity.
 - [ ] **V5.4 Fractional shares (IBKR supports US fractional via API for eligible stocks)** - investigate; until then
   refuse a name whose one share exceeds the per-trade cap (shipped).
 
 ## V6 - Best information at decision time (in the analyst header + card)
 
-- [ ] **V6.1 Context block**: ATR %, relative volume (today vs 20-day), distance to 20/50-day MA, gap % vs prior close,
+- [x] **V6.1 Context block** (built 2026-10-05: `techniques/tip/entry_context.py`, header via prefetch + card `entryContext`): ATR %, relative volume (today vs 20-day), distance to 20/50-day MA, gap % vs prior close,
   relative strength vs SPY (5/20-day), days-to-cover/short interest (when available), market regime (SPY vs 200-day,
   2-year return, VIX level), earnings date + timing, tier-1 events in the horizon (have).
-- [ ] **V6.2 Regime guard (observe -> enforce)**: hostile regime (SPY 2-yr return < 0 and high vol) halves momentum
+- [x] **V6.2 Regime guard (observe -> enforce)** (built 2026-10-05, `regime_guard` = observe, `TipRegimeShadow`): hostile regime (SPY 2-yr return < 0 and high vol) halves momentum
   entries (R4 #8).
-- [ ] **V6.3 Chase filter**: entry >= 2% above prior close -> short horizon + half size (R3), observe first.
-- [ ] **V6.4 Source grade on every card**: graded after-cost record, hit rate, mean R, Kelly fraction (V5.2).
+- [x] **V6.3 Chase filter** (built 2026-10-05, `chase_filter` = observe, `TipChaseShadow`): entry >= 2% above prior close -> short horizon + half size (R3), observe first.
+- [x] **V6.4 Source grade on every card** (built 2026-10-05: `context.sourceGrade`, one line on the card): graded after-cost record, hit rate, mean R, Kelly fraction (V5.2).
 
 ## V7 - Measurement
 
 - [ ] **V7.1 Horizon/exit study re-run** after 20 sessions (R3 script in this folder) and the preregistered promotion
   criteria per rule (EXPERIMENT-REGISTER).
-- [ ] **V7.2 Execution-cost ledger** for the IBKR book: commission, spread paid, slippage vs decision quote, FX.
-- [ ] **V7.3 Daily desk report** shows horizon mix, % of MFE kept, noise stop-outs, capital utilisation.
+- [x] **V7.2 Execution-cost ledger** (built 2026-10-05: `python -m zargar.tools.tip_exec_costs`) for the IBKR book: commission, spread paid, slippage vs decision quote, FX.
+- [x] **V7.3 Daily desk report** (built 2026-10-05: morning report `tips` block, `techniques/tip/desk_metrics.py`) shows horizon mix, % of MFE kept, noise stop-outs, capital utilisation.
 
 ## Order
 

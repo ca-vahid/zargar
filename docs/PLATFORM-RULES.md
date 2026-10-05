@@ -2870,3 +2870,33 @@ identity / freshness check of `quote_rejection` still applies. Tests: `tests/tes
   rung is consumed (the policy advanced it at the decision) - the rest of the position keeps its stop and later
   targets.
 
+
+### Tips v0.9 sizing + decision-time information - 2026-10-05 (Tips desk; V5/V6/V7 of docs/techniques/tip/research/2026-10-04-v09/PLAN.md)
+
+Tips-only behaviour; the shared surfaces touched are small and listed here.
+
+- **`zargar/desk.py`:** `morning_report` gains a `tips` block (`techniques/tip/desk_metrics.py`: per bound Tips book
+  capital utilisation, open risk to the stops vs the cap, horizon mix read defensively, % of MFE kept, noise stop-outs)
+  and the morning push one `Tips:` line. Bounded (20 s); a failure leaves the block out - no other desk's data changes.
+- **`techniques/tip/books.py` (Tips-owned, read by the geometry gate):** a per-idea risk multiplier
+  (`books.scale_risk`, contextvar, clamped 0..1) applied by `BookSettings` to `techniques.tip.risk_pct` /
+  `risk_budget_per_tip` only. Default 1.0 - nothing changes unless an `enforce` guard (source Kelly, regime, chase) is on.
+  New binding knob `maxOpenRiskPct`.
+- **Proposal path (`approvals/proposals.py`, Tips cards only):** new helpers `_v09_*` + four call sites. Share qty is
+  RISK-FIRST (`techniques.tip.risk_first_sizing`, default on): min(risk budget / stop distance, notional budget incl.
+  budgetPerTip/glide/capital cap/source room, position-% cap, name cap); the card records every candidate and the
+  binding cap (`sizing.riskFirst`). Scope: a Practice book with the geometry gate in enforce keeps the gate's qty (same
+  arithmetic, plus the name cap); in SHADOW the gate's contract holds (sizes untouched, the caps are only recorded); a
+  review-gated geometry plan is left alone. Live/paper books - outside the geometry gate's scope - and books with the
+  gate off are now sized from the stop for the first time. Total open risk cap `techniques.tip.max_open_risk_pct`
+  (default 5% of equity; per-book `maxOpenRiskPct`): a card that would push the book's remaining risk-to-stop over it
+  is refused on the record (`TipLaneDecided lane=refused`). Sector cap `techniques.tip.max_per_sector` (default 2;
+  Yahoo assetProfile through the shared `EventCalendar.quote_summary` transport, cached 24 h, unknown never blocks).
+- **Observe-first guards (journal only by default):** `TipSourceWatchOnly` (`source_kelly_mode` observe|enforce|off,
+  default observe), `TipRegimeShadow` (`regime_guard`), `TipChaseShadow` (`chase_filter`). Every card carries
+  `sourceGrade`, `entryContext`, `guards`, `riskScale` (when an enforce part applied).
+- **Network:** `techniques/tip/entry_context.py` reads daily bars through the shared `history.fetch_window` (SPY 780
+  calendar days once per session, the symbol 110 days, `^VIX` 10 days) with bounded timeouts; the synthetic sim feed
+  makes no calls (tests inject `entry_context.OVERRIDE`).
+- **Read-only tool:** `zargar.tools.tip_exec_costs` (per-fill commission, spread paid and slippage vs the recorded
+  decision quote, vs limit, FX flag; default book `ibkr.portfolio_id`).

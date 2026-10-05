@@ -24,6 +24,7 @@ KNOBS = {
     "riskPct": "techniques.tip.risk_pct",
     "riskBudgetPerTip": "techniques.tip.risk_budget_per_tip",
     "maxPremiumPerTip": "techniques.tip.max_premium_per_tip",
+    "maxOpenRiskPct": "techniques.tip.max_open_risk_pct",     # v0.9 V5.1 (2026-10-05)
 }
 
 
@@ -192,14 +193,55 @@ class use:
         return False
 
 
+# V5.2 / V6.2 / V6.3 (2026-10-05): a per-idea multiplier (<= 1) on the RISK budget while a card is built - the
+# source's fractional Kelly, the regime guard and the chase filter in enforce mode. Read only by BookSettings for the
+# two risk-budget keys, so the geometry gate and the risk-first sizer size against the same scaled budget.
+_RISK_SCALE: contextvars.ContextVar[float] = contextvars.ContextVar("tip_risk_scale", default=1.0)
+RISK_KEYS = ("techniques.tip.risk_pct", "techniques.tip.risk_budget_per_tip")
+
+
+def risk_scale() -> float:
+    return _RISK_SCALE.get()
+
+
+class scale_risk:
+    """with books.scale_risk(0.5): ... - the risk budget the deep helpers see is multiplied (clamped to 0..1)."""
+
+    def __init__(self, scale: float | None):
+        try:
+            v = float(1.0 if scale is None else scale)
+        except (TypeError, ValueError):
+            v = 1.0
+        self.scale, self._tok = max(0.0, min(1.0, v)), None
+
+    def __enter__(self):
+        self._tok = _RISK_SCALE.set(self.scale)
+        return self.scale
+
+    def __exit__(self, *exc):
+        _RISK_SCALE.reset(self._tok)
+        return False
+
+
 class BookSettings:
-    """A read-only settings view that answers the overridden KNOBS keys from the current binding."""
+    """A read-only settings view that answers the overridden KNOBS keys from the current binding (and applies the
+    current per-idea risk scale to the risk-budget keys)."""
 
     def __init__(self, settings, binding: Binding | None = None):
         self._s, self._b = settings, binding if binding is not None else current()
         self._rev = {v: k for k, v in KNOBS.items()}
 
     def get(self, key, default=None):
+        v = self._get(key, default)
+        sc = _RISK_SCALE.get()
+        if key in RISK_KEYS and sc < 1.0 and v is not None:
+            try:
+                return float(v) * sc
+            except (TypeError, ValueError):
+                return v
+        return v
+
+    def _get(self, key, default=None):
         b = self._b
         if b is not None:
             f = self._rev.get(key)
