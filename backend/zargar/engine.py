@@ -498,11 +498,14 @@ class Engine:
             return (await session.get(Execution, exec_id)) is not None
 
     async def _ibkr_state(self, kind: str, data: dict) -> None:
-        etype = {"connected": ev.BROKER_CONNECTED, "disconnected": ev.BROKER_DISCONNECTED}.get(kind, "IbkrCaughtUp")
-        await self.journal.append(etype, {"broker": "ibkr", **data})
-        if kind == "connected":
+        if kind == "ready":
+            # V1.2 (2026-10-05): the adapter's execution catch-up has run - only NOW does the account level-set (a
+            # sync before the replay double-counted every fill made while the gateway was away)
             with contextlib.suppress(Exception):
                 await self.sync_ibkr_account()
+            return
+        etype = {"connected": ev.BROKER_CONNECTED, "disconnected": ev.BROKER_DISCONNECTED}.get(kind, "IbkrCaughtUp")
+        await self.journal.append(etype, {"broker": "ibkr", **data})
 
     async def sync_ibkr_account(self) -> dict | None:
         """Level-set the linked app book (`ibkr.portfolio_id`) to the IBKR account: the cash balance in
@@ -510,6 +513,9 @@ class Engine:
         pid = str(self.settings.get("ibkr.portfolio_id", "") or "")
         pf = self.positions.portfolio(pid) if pid else None
         if self.ibkr is None or not self.ibkr.connected or pf is None or pf.get("kind") not in ("live", "paper"):
+            return None
+        if not getattr(self.ibkr, "caught_up", True):
+            # V1.2: a (re)connect's execution catch-up has not finished - the periodic sync waits for it
             return None
         cur = str(self.settings.get("ibkr.cash_currency", "USD") or "USD")
         st = await self.ibkr.account_state(cash_currency=cur)
@@ -550,7 +556,14 @@ class Engine:
                                           portfolio_id=pid)
             log.warning("IBKR sync skipped: no live FX rate for %s", missing)
             return None
-        st = {**st, "spendable": spend, "bookCurrency": book_ccy, "converted": parts}
+        # V1.3 (2026-10-05, review R1 M2): the account-summary cash is a cached subscription (IBKR: ~3 min) while
+        # positions are real time - right after a BUY the summary still shows the pre-buy cash. Buys of this book
+        # filled AFTER the summary's cash last changed are taken out of what is spendable until it moves.
+        lag = await self._ibkr_unreflected_buys(pid, st.get("cashByCurrency") or {})
+        if lag > 0:
+            spend = max(0.0, spend - lag)
+        st = {**st, "spendable": spend, "bookCurrency": book_ccy, "converted": parts,
+              **({"unreflectedBuys": round(lag, 2)} if lag > 0 else {})}
         await self.positions.sync_portfolio_state(pid, cash=spend, positions=st["positions"], source="ibkr")
         # W7.1: sale proceeds booked AFTER this instant are unsettled until the next sync reads IBKR's settled cash
         self.ibkr_synced_at = dt.datetime.now(dt.timezone.utc)
@@ -562,9 +575,38 @@ class Engine:
                 "portfolioId": pid, "account": st.get("account"), "cash": round(float(st["cash"]), 2),
                 "cashCurrency": cur, "settledCash": st.get("settledCash"), "spendable": round(spend, 2),
                 "cashByCurrency": st.get("cashByCurrency"), "bookCurrency": book_ccy, "converted": parts,
+                **({"unreflectedBuys": st["unreflectedBuys"]} if st.get("unreflectedBuys") else {}),
                 "positions": [{"symbol": p["symbol"], "qty": p["qty"]} for p in st["positions"]]},
                 portfolio_id=pid)
         return st
+
+    async def _ibkr_unreflected_buys(self, pid: str, cash_by_currency: dict) -> float:
+        """V1.3: $ of today's (ET) BUY fills on the IBKR book that the account summary's cash cannot contain yet -
+        those filled after the summary's cash rows last CHANGED (first observation = now). Assumption (documented in
+        PLATFORM-RULES 2026-10-05): a summary update that changes the cash reflects every fill before it; a buy that
+        lands between IBKR's update and our next read is overstated for at most one summary cycle."""
+        from zoneinfo import ZoneInfo
+
+        from sqlalchemy import select as _sel
+
+        from .models import Execution
+        now = dt.datetime.now(dt.timezone.utc)
+        fp = tuple(sorted((str(k).upper(), round(float(v or 0), 2)) for k, v in (cash_by_currency or {}).items()))
+        if fp != getattr(self, "_ibkr_cash_fp", None) or getattr(self, "_ibkr_cash_changed_at", None) is None:
+            self._ibkr_cash_fp = fp
+            self._ibkr_cash_changed_at = now
+            return 0.0
+        since = self._ibkr_cash_changed_at
+        sod = dt.datetime.now(ZoneInfo("America/New_York")).replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            async with self.sf() as session:
+                rows = (await session.execute(_sel(Execution).where(
+                    Execution.portfolio_id == pid, Execution.side == "BUY",
+                    Execution.ts > since, Execution.ts >= sod))).scalars().all()
+        except Exception:                                    # noqa: BLE001 - no read, no adjustment (logged)
+            log.debug("unreflected-buys read failed", exc_info=True)
+            return 0.0
+        return sum(abs(float(r.qty or 0) * float(r.price or 0)) + float(r.commission or 0) for r in rows)
 
     async def refresh_market_events(self) -> dict:
         """W4.2: refresh the macro calendars + the earnings dates of every symbol the Tips desk holds, waits on or

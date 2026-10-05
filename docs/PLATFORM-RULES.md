@@ -2828,3 +2828,105 @@ identity / freshness check of `quote_rejection` still applies. Tests: `tests/tes
   A partial close also lifts the resting venue stop (re-placed for the remaining quantity).
 - **Earnings:** one resolver (`research.market_events.next_earnings`, store then Yahoo) for entry and exit; a moved
   date tombstones the stale one; a before-the-open report ends at 09:30 on the report day.
+
+### Tips v0.9 V1 live safety - 2026-10-05 (Tips desk; plan docs/techniques/tip/research/2026-10-04-v09/PLAN.md §V1)
+
+- **New PlanRunner hook `size_entry_shares(ap, trade, qty, limit) -> (qty, reason)`** (shares branch of the fired
+  entry, after the runner's own sizing, before the position cap). Base = unchanged quantity, so EM / Team2 / Cartel
+  keep their sizing. A non-empty reason with qty < 1 refuses the entry on the record (`TechniquePlanTriggerSkipped`
+  event `book_sizing`); a hook exception refuses (fail closed). The Tip runner sizes a fire on a BOUND book (non-legacy
+  binding, or any live/paper book) through `ProposalService._tip_budget` (binding budgetPerTip, capitalCap incl.
+  pending entry cost, reserveSlots glide, maxOpenPositions, source caps) and the per-book risk budget (binding
+  riskPct / riskBudgetPerTip against the widest of the trigger stop and the exit plan's stop; live/paper books always,
+  Practice only under the enforced geometry gate), journaled `TipArmedFireSized`. Live/paper at-level arms are
+  shares-only and their plan loss limit is the book's budgetPerTip.
+- **IBKR reconnect order:** the adapter runs the execution catch-up, then notifies `ready`; only `ready` triggers the
+  account sync, and the periodic sync skips while `IBKRBroker.caught_up` is False (a fill made during an outage is
+  applied once - never on top of a level-set that already contains it).
+- **IBKR cash lag:** `sync_ibkr_account` subtracts today's BUY fills of the IBKR book made after the account summary's
+  cash rows last CHANGED (`unreflectedBuys` on `IbkrAccountSynced`). Assumption: a summary change reflects every fill
+  before it; a fill landing between IBKR's update and our read is overstated for at most one summary cycle. A
+  catch-up-replayed fill carries the replay time, so it can be subtracted once more than needed (conservative).
+- **Partial entries (Tips):** `adopt_when_filled` adopts a partially filled entry at once (stop + venue stop for the
+  filled quantity; `techniques.tip.adopt_partial_fills`, default on); later fills grow the same leg in place
+  (`PositionManager.grow_entry_leg`), the remainder is cancelled when the position stops being open or the wait times
+  out, and a fill after the position closed becomes its own managed position. The venue stop now covers every open
+  long share leg of the symbol (previously the first leg only).
+- **Hand-off failure:** `ProposalService.approve` catches a raising venue hand-off: the card is FAILED
+  (`ProposalHandoffFailed`), never left approved; a `SubmitUncertain` keeps its order id and, for a tip, the fill
+  watcher (a fill the venue did take is still adopted and protected).
+- **Real-book cancel/replace (live/paper only; sim unchanged):** a replacement venue stop waits (bounded,
+  `execution.cancel_confirm_seconds`, max 5 s) for the old stop's cancel confirmation; an unconfirmed cancel leaves the
+  old stop in force and the terminal report places the replacement; a stop that FILLED during the replace is booked to
+  the position (retired-stop ids stay indexed) and nothing new rests. `close()` waits the same way, and `_close_leg`
+  on a real book sends at most held minus the venue's working sells (DB view) - never two resting sells beyond the
+  held quantity. The venue stop on a real book is sized to held minus other working sells.
+- **Good-faith guard (cash IBKR books, `execution.good_faith_guard` + `ibkr.cash_account`, both default on):** a
+  non-protective sell (trim/target, time stop, mirror, geometry trim) of a position bought TODAY with unsettled
+  same-day sale proceeds is deferred to the next trading day (`TipGoodFaithDeferred`, once per position/kind/day);
+  protective sells (stop, premium stop, venue stop, event/expiry flatten, rollback, a person's manual close) always go
+  (`TipGoodFaithStopSent` + alert). Assumptions (`execution/goodfaith.py`): T+1; only today's sales are unsettled;
+  the day's settled cash = cash now + today's buys - today's sells; buys spend settled cash first. A deferred ladder
+  rung is consumed (the policy advanced it at the decision) - the rest of the position keeps its stop and later
+  targets.
+
+
+### Tips v0.9 sizing + decision-time information - 2026-10-05 (Tips desk; V5/V6/V7 of docs/techniques/tip/research/2026-10-04-v09/PLAN.md)
+
+Tips-only behaviour; the shared surfaces touched are small and listed here.
+
+- **`zargar/desk.py`:** `morning_report` gains a `tips` block (`techniques/tip/desk_metrics.py`: per bound Tips book
+  capital utilisation, open risk to the stops vs the cap, horizon mix read defensively, % of MFE kept, noise stop-outs)
+  and the morning push one `Tips:` line. Bounded (20 s); a failure leaves the block out - no other desk's data changes.
+- **`techniques/tip/books.py` (Tips-owned, read by the geometry gate):** a per-idea risk multiplier
+  (`books.scale_risk`, contextvar, clamped 0..1) applied by `BookSettings` to `techniques.tip.risk_pct` /
+  `risk_budget_per_tip` only. Default 1.0 - nothing changes unless an `enforce` guard (source Kelly, regime, chase) is on.
+  New binding knob `maxOpenRiskPct`.
+- **Proposal path (`approvals/proposals.py`, Tips cards only):** new helpers `_v09_*` + four call sites. Share qty is
+  RISK-FIRST (`techniques.tip.risk_first_sizing`, default on): min(risk budget / stop distance, notional budget incl.
+  budgetPerTip/glide/capital cap/source room, position-% cap, name cap); the card records every candidate and the
+  binding cap (`sizing.riskFirst`). Scope: a Practice book with the geometry gate in enforce keeps the gate's qty (same
+  arithmetic, plus the name cap); in SHADOW the gate's contract holds (sizes untouched, the caps are only recorded); a
+  review-gated geometry plan is left alone. Live/paper books - outside the geometry gate's scope - and books with the
+  gate off are now sized from the stop for the first time. Total open risk cap `techniques.tip.max_open_risk_pct`
+  (default 5% of equity; per-book `maxOpenRiskPct`): a card that would push the book's remaining risk-to-stop over it
+  is refused on the record (`TipLaneDecided lane=refused`). Sector cap `techniques.tip.max_per_sector` (default 2;
+  Yahoo assetProfile through the shared `EventCalendar.quote_summary` transport, cached 24 h, unknown never blocks).
+- **Observe-first guards (journal only by default):** `TipSourceWatchOnly` (`source_kelly_mode` observe|enforce|off,
+  default observe), `TipRegimeShadow` (`regime_guard`), `TipChaseShadow` (`chase_filter`). Every card carries
+  `sourceGrade`, `entryContext`, `guards`, `riskScale` (when an enforce part applied).
+- **Network:** `techniques/tip/entry_context.py` reads daily bars through the shared `history.fetch_window` (SPY 780
+  calendar days once per session, the symbol 110 days, `^VIX` 10 days) with bounded timeouts; the synthetic sim feed
+  makes no calls (tests inject `entry_context.OVERRIDE`).
+- **Read-only tool:** `zargar.tools.tip_exec_costs` (per-fill commission, spread paid and slippage vs the recorded
+  decision quote, vs limit, FX flag; default book `ibkr.portfolio_id`).
+
+### Policy vocabulary for horizon exits - 2026-10-05 (Tips desk, Tips v0.9 V2/V3/V4; shared `execution/policies.py` + `positions.py`)
+
+Additive, backward compatible: a policy that does not use these keys evaluates exactly as before (chaos suite green).
+
+- **`breakeven_on_trim: true`** - the stop moves to entry together with the FIRST ladder trim (the same bar, or the next
+  bar after a quote-watch trim). Independent of `breakeven_after_r`, which is unchanged.
+- **`trailing.atr_abs`** - an `atr` trail may carry a FIXED ATR unit (e.g. the daily ATR at entry) instead of the ATR
+  of the policy-timeframe bars. Activation (`after_r`) and ratchet-only are unchanged.
+- **`time_stop_unless_above_ma: N`** - the `time_stop_sessions` stop is waived while the close is on the favorable side
+  of the N-day SMA. Needs `PositionView.daily_bars` (new, default []); an unknown MA never waives it.
+- **`promote`** = {by_session, min_r, above_ma, label, overlay} - a ONE-WAY promotion: up >= min_r R on the close no
+  later than session `by_session` and above the MA -> `PolicyState.promoted` (new, persisted as `promoted`) and the
+  `overlay` is merged over the policy by `effective_policy()` (None deletes a key). An overlay may never carry a stop
+  (`validate_policy` refuses it); the stop only ratchets in the state. The manager journals the transition as
+  `ManagedPositionPolicyChanged` {promotion, label, overlay}. `simulate_position` evaluates the same functions but keeps
+  the base timeframe after a promotion (a timeframe overlay is honoured live only).
+- **Manager keys:** `quote_brake_r` (the intra-bar crash brake's distance beyond the stop for THIS policy; default
+  `execution.quote_exit_excess_r`), `venue_stop_beyond_r` (the resting venue GTC stop sits N R beyond the decision stop,
+  long shares only; default 0 = at the stop) and `gap_exit` (a position held into a session whose first 09:30 minute
+  OPENS through the stop exits at once, reduce-only, once per session). Together they make a close-judged stop with an
+  intra-bar brake: the close decides an ordinary stop-out; a gap or a move beyond the brake exits immediately.
+- **`timeframe: "1d"` (non-adapter positions):** the daily decision now judges the SESSION's own bar (first 5m open,
+  the session high/low incl. the closing minute, the closing minute's close) with completed daily bars before it,
+  instead of the last 5m bar alone. Only adapter policies (Options Cartel) used 1d before, and the adapter path is
+  untouched.
+- `PositionManager._daily_bars(symbol, day)` fetches 60 days of 1d history once per (symbol, ET day); the synthetic sim
+  feed never fetches.
+
+Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test_position_chaos.py` unchanged and green.

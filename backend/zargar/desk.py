@@ -194,6 +194,7 @@ class DeskService:
                 "rollWatchdog": await self._latest_job_result("roll_watchdog"),
             },
             "soak": await self._latest_job_result("soak_nightly"),
+            "tips": await self._tips_metrics(),
             "intake": {
                 "errorContent": err_content,
                 # since-boot resilience tally (POST-SOAK 4.4)
@@ -203,6 +204,17 @@ class DeskService:
         }
         self.last_report = report
         return report
+
+    async def _tips_metrics(self) -> dict | None:
+        """Tips v0.9 V7.3 (2026-10-05): utilisation, open risk vs cap, horizon mix, MFE kept, noise stop-outs per
+        bound Tips book (techniques/tip/desk_metrics.py). Bounded; a failure leaves the block out."""
+        try:
+            from .techniques.tip.desk_metrics import tips_daily
+            import asyncio as _asyncio
+            return await _asyncio.wait_for(tips_daily(self.engine), 20.0)
+        except Exception:                          # noqa: BLE001 - the morning report never fails on this
+            log.debug("morning: tips metrics unavailable", exc_info=True)
+            return None
 
     # ------------------------------------------------------------- ledger
     async def ledger(self, days: int = 30, workspace: str | None = None) -> dict:
@@ -495,6 +507,11 @@ class DeskService:
                 + f"\nOvernight: {tips_n} tip(s). Today: {armed} plan(s) armed"
                 + (f", {len(r['today']['rolled'])} rolled" if r["today"]["rolled"] else "")
                 + ".")
+        with contextlib.suppress(Exception):
+            from .techniques.tip.desk_metrics import summary_line
+            _tl = summary_line(r.get("tips"))
+            if _tl:
+                body += "\n" + _tl
         title = f"Zargar morning — {r['date']}"
         sent = {"push": False, "telegram": False}
         push = getattr(self.engine, "push", None)

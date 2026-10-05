@@ -28,6 +28,31 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 | `HISTORY.md` | superseded state-of-play and "what changed" text from older refreshes | archive |
 | `reviews/` | external review rounds, responses, deploy and incident records | dated records; `2026-09-14-kfin-response.md` (0.7.83–0.7.87, HOLD142, R147, the 2026-09-15 incidents) and `2026-09-16-tmr-plan-record.md` (TMR, INTRA, I175, the 2026-09-16 incident) are the current ledgers |
 
+## Horizons, ATR stops and exits by horizon (Tips v0.9 V2/V3/V4, 2026-10-05)
+
+Plan `research/2026-10-04-v09/PLAN.md`; evidence R3 (our record) + R4 (external); register `horizon-exits-v1`.
+- **Horizon at entry** (`techniques/tip/horizon_class.py`, pure): `short` (<= 3 sessions: chased >= +2% over the prior
+  close, gap >= +2%, catalyst/news tip, daily ATR < 2.5% of price), `extended` (20+: down-day entry <= -2%, or a source in
+  `horizon_extended_sources`), else `swing` (10). A short flag beats an extended one. The analyst's `horizon` /
+  `horizon_reason` win when not longer than the facts allow. Carried on the card (`context.horizon*`), the exit plan,
+  the position's extras and policy; journaled `TipHorizonDecided`. `horizon_mode` = enforce | observe.
+- **Exits by horizon** (`horizon_policy.py`, on Practice-policy books): short = 2x-ATR stop, 1/2 at +1R, 2x-ATR trail,
+  out at session 3; swing = 3x-ATR stop, 1/3 at +1R with breakeven, 3x-ATR trail after +1R, time stop at 10 only below
+  +0.5R, promoted to extended at +2R by session 5 above the 20-day MA; extended = 3x-ATR stop, 1/3 at +1.5R, 3x trail on
+  the DAILY close, no time stop while above the 20-day MA. A 1/3 runner always trails; the analyst's farther targets are
+  extra trims. Options keep premium stop / monetize / dte_close and the contract's hold cap.
+- **Stops (V3)**: the stop is >= 2x daily ATR (re-placed at the horizon default) and the size comes from it at the same
+  dollar risk - ONE function (`lifecycle.check_exit_geometry`) for the pre-entry gate, `fit_expression` and the
+  analyst's `check_feasibility`; applied only where the gate sizes (enforce, Practice policy), never post-fill without a
+  resize (armed fills keep their arm-time stop; see Known gaps). Swing/extended stops are judged on the CLOSE (15m /
+  daily); intra-bar only the crash brake 0.5R beyond (quote brake + the resting venue stop) or a gap through the stop.
+- **No same-day share plans** (min time stop 2 sessions) and **short tips are watch-only** (`TipShortWatchOnly`;
+  shadow books still measure them).
+- Knobs: `techniques.tip.horizon_*`, `stop_atr_*`, `min_share_hold_sessions`, `shorts_watch_only` (Settings). Re-graded
+  at V7.1 after 20 sessions. Known gaps: an armed fill's stop is not ATR-widened (V1.1 sizing first); a promoted
+  position's 1d overlay is honoured live, `simulate_position` keeps the base timeframe; MA/daily rules fetch daily
+  history and treat a failed fetch as "unknown" (time stop runs, no promotion).
+
 ## State of play (2026-10-03, 0.8.59 - the pre-live build)
 
 Review: `research/2026-10-02-tips-review/FINDINGS.md` (+ appendices A-F); plan with checkboxes: `PLAN.md` there.

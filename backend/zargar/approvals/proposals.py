@@ -447,6 +447,30 @@ class ProposalService:
                             * float(leg.get("multiplier") or 1.0))
         return n, cost
 
+    async def _short_watch_only(self, signal_row, *, lane: str, run_id: str | None = None) -> None:
+        """V2.4: a short tip on a Tips book is recorded as watch-only (journaled `TipShortWatchOnly`), never traded."""
+        reason = ("short tips are watch-only (techniques.tip.shorts_watch_only): every exit policy lost on the "
+                  "short cohort (R3, n=67)")
+        self._last_refusal[""] = reason
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(
+                "TipShortWatchOnly",
+                {"signalId": getattr(signal_row, "id", None), "ticker": getattr(signal_row, "ticker", None),
+                 "source": getattr(signal_row, "source_name", None), "lane": lane, "reason": reason,
+                 **({"runId": run_id} if run_id else {})},
+                aggregate_type="signal", aggregate_id=getattr(signal_row, "id", None) or "tip")
+
+    async def _decide_horizon(self, signal_row, *, exit_plan: dict, analyst: dict | None, direction: str,
+                              entry_ref: float | None, pid: str, where: str, journal: bool = True) -> dict:
+        """V2.1: classify the tip's horizon at entry and carry it on the exit plan (journaled `TipHorizonDecided`)."""
+        from ..techniques.tip import horizon_class as _hc
+        extraction = getattr(signal_row, "extraction", None) or {}
+        catalyst = getattr(signal_row, "catalyst", None) or ((extraction.get("signal") or {}).get("catalyst"))
+        return await _hc.decide(self.engine, plan=exit_plan, symbol=str(signal_row.ticker or "").upper(),
+                                direction=direction, entry_ref=entry_ref, catalyst=catalyst,
+                                source=signal_row.source_name, analyst=analyst, pid=pid, where=where,
+                                signal_id=signal_row.id, journal=journal)
+
     async def _refuse(self, *, signal_id: str | None, reason: str,
                       run_id: str | None = None, portfolio_id: str | None = None) -> None:
         """A tip that minted no proposal because the book/source is full — on
@@ -476,6 +500,51 @@ class ProposalService:
             return min(qty, max(1, int(cap // (limit * 100))))
         return qty
 
+    # ------------------------------------------------------------- v0.9 sizing + decision-time information
+    async def _v09_idea_inputs(self, signal_row: Signal, sig: TradeSignal) -> dict:
+        """V5.2/V6 (2026-10-05): the per-idea decision inputs - entry context, source grade, regime + chase guards -
+        computed ONCE before the fan-out (techniques/tip/decision.py). Never raises."""
+        try:
+            from ..techniques.tip import decision as _dec
+            return await _dec.idea_inputs(self.engine, signal_row, sig)
+        except Exception:                                # noqa: BLE001 - information never blocks a card
+            log.debug("v0.9 idea inputs failed for %s", getattr(signal_row, "id", None), exc_info=True)
+            return {}
+
+    async def _v09_book_gate(self, signal_row: Signal, *, pid: str, budget: float) -> tuple[float, str | None]:
+        """V5.3 sector cap + the enforce-mode size scale on the notional budget. (budget, refusal)."""
+        from ..techniques.tip import books as _books
+        from ..techniques.tip import decision as _dec
+        why = None
+        with contextlib.suppress(Exception):
+            why = await _dec.sector_refusal(self.engine, pid, signal_row.ticker)
+        if why:
+            return budget, why
+        sc = _books.risk_scale()
+        return (budget * sc if sc < 1.0 else budget), None
+
+    async def _v09_size(self, *, pid: str, binding, sec_type: str, symbol: str, underlying: str, direction: str,
+                        limit: float, qty: int, budget: float, exit_plan: dict, risk_plan) -> dict:
+        """V5.1 risk-first share sizing + the open-risk cap on the final vehicle (techniques/tip/decision.py)."""
+        from ..techniques.tip import decision as _dec
+        from ..techniques.tip import sizing as _sz
+        try:
+            return await _dec.size_and_gate(self.engine, pid=pid, binding=binding, sec_type=sec_type, symbol=symbol,
+                                            underlying=underlying, direction=direction, limit=limit, qty=qty,
+                                            budget=budget, exit_plan=exit_plan, risk_plan=risk_plan,
+                                            decision=_sz.current_decision())
+        except Exception:                                # noqa: BLE001 - sizing extras never fail a card
+            log.warning("v0.9 sizing failed for %s", symbol, exc_info=True)
+            return {"qty": int(qty), "sizing": {}, "refusal": None, "exitPlan": exit_plan, "note": ""}
+
+    def _v09_card(self, binding) -> dict:
+        from ..techniques.tip import decision as _dec
+        from ..techniques.tip import sizing as _sz
+        d = _sz.current_decision()
+        with contextlib.suppress(Exception):
+            return _dec.card_fields(d, _dec.book_scale(self.engine, d, binding))
+        return {}
+
     # ------------------------------------------------------------- create
     async def create_from_armed_fire(self, signal_row: Signal, **kw) -> dict | None:
         """W6: the armed plan carries its own book; its binding's knobs apply while the card is built."""
@@ -496,6 +565,9 @@ class ProposalService:
         Same shape and notification path as `create_from_signal` (Telegram + push
         ride topics.PROPOSALS)."""
         eng = self.engine
+        if str(direction) == "short" and bool(eng.settings.get("techniques.tip.shorts_watch_only", True)):
+            await self._short_watch_only(signal_row, lane="armed_fire", run_id=run_id)
+            return None
         from ..signals.sources import resolve_policy
         policy = resolve_policy(eng.settings, signal_row.source_name)
         budget, glide_note, refuse = await self._tip_budget(policy, portfolio_id, underlying=signal_row.ticker)
@@ -561,6 +633,11 @@ class ProposalService:
                        f"({pf.get('kind', '?')}). RiskGate still checks the order on approval.")
         # GEOMETRY rev 2: the armed-fire producer runs the same gate as the tip-time card
         arm_plan = exit_plan or {"targets": list(targets or []), "underlyingStop": stop}
+        _an = ((signal_row.extraction or {}).get("analyst") or {}) if getattr(signal_row, "extraction", None) else {}
+        arm_plan = await self._decide_horizon(signal_row, exit_plan=arm_plan, analyst=_an, direction=direction,
+                                              entry_ref=(float(entry) if entry else None), pid=portfolio_id,
+                                              where="armed_fire")
+        exit_plan = arm_plan
         arm_plan, qty, arm_risk, gnote = await self._pre_entry_geometry(
             underlying=signal_row.ticker, direction=direction, pid=portfolio_id,
             exit_plan=arm_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol,
@@ -620,6 +697,11 @@ class ProposalService:
         (`TipBookFanOut`) says what every book got and why. An empty books list = the single legacy book."""
         from ..techniques.tip import books as _books
         eng = self.engine
+        if str(sig.direction) == "short" and bool(eng.settings.get("techniques.tip.shorts_watch_only", True)):
+            # Tips v0.9 V2.4 (2026-10-05): short tips lost under every exit policy (R3: -0.22..-0.85R, n=67) - they
+            # are watch-only: no proposal on any book (the research shadow books still measure them)
+            await self._short_watch_only(signal_row, lane="proposal")
+            return []
         sims = [p for p in eng.positions.portfolios() if p.get("kind") == "sim" and not p.get("book")
                 and not p.get("archived")]
         bindings = _books.resolve_books(eng.settings, eng.positions.portfolio,
@@ -630,6 +712,16 @@ class ProposalService:
         out: list[dict] = []
         fan: list[dict] = []
         primary_budget = None
+        decision = await self._v09_idea_inputs(signal_row, sig)
+        if decision.get("watchOnly") and decision.get("kellyMode") == "enforce":
+            # V5.2 (enforce): a source with a negative shrunk edge is watch-only - no book gets a card
+            _why = (f"source watch-only: {signal_row.source_name} has a negative shrunk edge "
+                    f"({(decision.get('sourceGrade') or {}).get('shrunkEdge')}R over "
+                    f"{(decision.get('sourceGrade') or {}).get('n')} graded trades; techniques.tip.source_kelly_mode)")
+            for b in bindings:
+                if b.enabled:
+                    await self._refuse(signal_id=signal_row.id, reason=_why, portfolio_id=b.portfolioId)
+            return []
         for b in bindings:
             rec = {"portfolioId": b.portfolioId, "role": b.role, "primary": b.primary}
             if not b.enabled:
@@ -651,7 +743,10 @@ class ProposalService:
                 continue
             self._last_refusal.pop(b.portfolioId, None)
             try:
-                with _books.use(b):
+                from ..techniques.tip import decision as _dec
+                from ..techniques.tip import sizing as _sz
+                with _books.use(b), _sz.use_decision(decision), \
+                        _books.scale_risk(_dec.book_scale(eng, decision, b)["scale"]):
                     p = await self._create_for_book(signal_row, sig, verification, pid=b.portfolioId, binding=b,
                                                     primary_budget=primary_budget)
             except Exception as exc:                      # noqa: BLE001 - one book never blocks another
@@ -697,6 +792,10 @@ class ProposalService:
         earn_ctx, earn_refuse = await self._earnings_context(signal_row.ticker)
         if earn_refuse:
             await self._refuse(signal_id=signal_row.id, reason=earn_refuse, portfolio_id=pid)
+            return None
+        budget, _v9_refuse = await self._v09_book_gate(signal_row, pid=pid, budget=budget)
+        if _v9_refuse:
+            await self._refuse(signal_id=signal_row.id, reason=_v9_refuse, portfolio_id=pid)
             return None
         # the lotto lane (0-3 DTE, user 2026-09-01): its own budget, tip-time
         # only, and no 0-DTE entries once the expiry-day flatten time has passed
@@ -968,6 +1067,15 @@ class ProposalService:
                 exit_plan = {**exit_plan, "lotto": True,
                              "maxHoldSessions": min(int(exit_plan.get("maxHoldSessions") or (_dte + 1)), _dte + 1)}
                 vehicle = {**vehicle, "lotto": True}
+        # ---- Tips v0.9 V2.1 (2026-10-05): the horizon at entry, carried on the plan, the card and the position
+        _uref = float(limit) if sec_type == "STK" else None
+        if _uref is None:
+            with contextlib.suppress(Exception):
+                _uq = eng.quotes.get(sig.ticker.upper())
+                _uref = float(_uq.last) if _uq is not None and _uq.last and _uq.last > 0 else None
+        exit_plan = await self._decide_horizon(signal_row, exit_plan=exit_plan, analyst=analyst,
+                                               direction=sig.direction, entry_ref=_uref or sig.entry_price, pid=pid,
+                                               where="proposal", journal=(binding is None or binding.primary))
         bits = []
         if exit_plan.get("targets"):
             fr = exit_plan.get("fractions") or []
@@ -994,6 +1102,9 @@ class ProposalService:
             signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
         if gnote:
             explain += " " + gnote
+        if exit_plan.get("horizon"):
+            explain += (f" Horizon: {exit_plan['horizon']} ({exit_plan.get('horizonReason') or 'default'})"
+                        + ("" if exit_plan.get("horizonApplied") else " - label only, legacy exits") + ".")
         if binding is None or binding.primary:            # W2.6 observe lane (once per idea)
             from ..techniques.tip.observe_lanes import record_starter
             await record_starter(eng, signal_id=signal_row.id, symbol=symbol, sec_type=sec_type, limit=limit,
@@ -1029,6 +1140,16 @@ class ProposalService:
                         "signalId": signal_row.id, "option": orig, "symbol": symbol, "qty": qty, "limit": limit,
                         "stop": exit_plan.get("underlyingStop"), "portfolioId": pid},
                         aggregate_type="signal", aggregate_id=signal_row.id, portfolio_id=pid)
+        # ---- v0.9 V5.1 (2026-10-05): risk-first share size + the book's open-risk cap on the FINAL vehicle
+        _v9 = await self._v09_size(pid=pid, binding=binding, sec_type=sec_type, symbol=symbol,
+                                   underlying=sig.ticker.upper(), direction=sig.direction, limit=limit, qty=qty,
+                                   budget=budget, exit_plan=exit_plan, risk_plan=risk_plan)
+        if _v9.get("refusal"):
+            await self._refuse(signal_id=signal_row.id, reason=_v9["refusal"], portfolio_id=pid)
+            return None
+        qty, exit_plan = int(_v9["qty"]), _v9["exitPlan"]
+        if _v9.get("note"):
+            explain += " " + _v9["note"]
         if risk_plan is not None and risk_plan.enforced and sec_type == "STK":
             # G91-02: every protection is built from the SAME final plan — the
             # bracket carries the finalized stop, never the signal's original
@@ -1119,12 +1240,16 @@ class ProposalService:
                 "confidence": sig.confidence,
                 "verification": verification,
                 "sizing": {"budget": round(budget, 2), "refPrice": limit, "qty": qty,
-                           **({"glide": glide_note} if glide_note else {})},
+                           **({"glide": glide_note} if glide_note else {}), **(_v9.get("sizing") or {})},
+                **self._v09_card(binding),
                 "signalPrices": {"entry": sig.entry_price, "target": sig.target_price,
                                  "stop": sig.stop_price},
                 "vehicle": vehicle,
                 "explain": explain + ((" " + glide_note) if glide_note else ""),
                 "exitPlan": exit_plan,
+                **({"horizon": exit_plan.get("horizon"), "horizonReason": exit_plan.get("horizonReason"),
+                    "horizonSource": exit_plan.get("horizonSource"),
+                    "horizonApplied": bool(exit_plan.get("horizonApplied"))} if exit_plan.get("horizon") else {}),
                 **({"riskPlan": risk_plan.to_dict()} if risk_plan else {}),
                 **({"reviewRequired": risk_plan.reviewRequired}
                    if (risk_plan and risk_plan.enforced and risk_plan.reviewRequired) else {}),
@@ -2390,8 +2515,11 @@ class ProposalService:
             paused = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="proposal")
             if paused:
                 return await self._refuse_automated(proposal_id, reason=paused, revert=True)
-        order = await eng.orders.place(intent)
-        order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
+        try:
+            order = await eng.orders.place(intent)
+            order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
+        except Exception as exc:                          # noqa: BLE001 - V1.5: never left approved without an order
+            return await self._handoff_failed(proposal_id, pdict, exc, via=via)
 
         status = "executed" if order.get("status") not in ("REJECTED_RISK", "REJECTED") else "failed"
         async with eng.sf() as session:
@@ -2418,6 +2546,42 @@ class ProposalService:
             from ..techniques.tip.lifecycle import adopt_when_filled
             task = asyncio.create_task(adopt_when_filled(eng, pdict, order),
                                        name=f"tip-adopt-{proposal_id[:8]}")
+            self._adopt_tasks[proposal_id] = task
+            task.add_done_callback(lambda _t, k=proposal_id: self._adopt_tasks.pop(k, None))
+        return {"proposal": pdict, "order": order}
+
+    async def _handoff_failed(self, proposal_id: str, pdict: dict, exc: BaseException, *, via: str) -> dict:
+        """V1.5 (Tips v0.9, review R1 M7): the venue hand-off raised after the card was claimed. The proposal is
+        marked FAILED on the record (`ProposalHandoffFailed`) - never left approved/pending, so no later path can
+        submit the same idea a second time. A `SubmitUncertain` order (written ahead, handed to the venue, answer
+        lost) keeps its order id on the card and, for a tip, the fill watcher: if the venue did take and fill it,
+        the position is still adopted and protected."""
+        from ..orders import SubmitUncertain
+        eng = self.engine
+        uncertain = isinstance(exc, SubmitUncertain)
+        order_id = getattr(exc, "order_id", None) if uncertain else None
+        reason = f"{type(exc).__name__}: {exc}"[:400]
+        log.warning("proposal %s: venue hand-off failed (%s)", proposal_id, reason)
+        async with eng.sf() as session:
+            row = await session.get(Proposal, proposal_id)
+            if row is not None:
+                row.status = "failed"
+                row.order_id = order_id or row.order_id
+                row.context = {**(row.context or {}),
+                               "handoff": {"failed": True, "uncertain": uncertain, "reason": reason,
+                                           **({"orderId": order_id} if order_id else {})}}
+                await session.commit()
+                pdict = proposal_dict(row)
+        with contextlib.suppress(Exception):
+            await eng.journal.append("ProposalHandoffFailed", {
+                "via": via, "reason": reason, "uncertain": uncertain, "orderId": order_id,
+                "symbol": pdict.get("symbol"), "qty": pdict.get("qty")},
+                aggregate_type="proposal", aggregate_id=proposal_id, portfolio_id=pdict.get("portfolioId"))
+        eng.bus.publish(topics.PROPOSALS, pdict)
+        order = {"id": order_id, "status": "UNKNOWN" if uncertain else "ERROR", "rejectReason": reason}
+        if uncertain and order_id and (pdict.get("context") or {}).get("techniqueId") == "tip":
+            from ..techniques.tip.lifecycle import adopt_when_filled
+            task = asyncio.create_task(adopt_when_filled(eng, pdict, order), name=f"tip-adopt-{proposal_id[:8]}")
             self._adopt_tasks[proposal_id] = task
             task.add_done_callback(lambda _t, k=proposal_id: self._adopt_tasks.pop(k, None))
         return {"proposal": pdict, "order": order}

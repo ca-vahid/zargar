@@ -3385,6 +3385,26 @@ class PlanRunner(SessionListener):
                               f"${cfg.premium_budget:,.0f} plan budget", trigger=trade.trigger_id)
                     qty = float(afford)
             limit = round(trade.entry * (1 + cfg.slippage_pct / 100), 2)
+            # 2026-10-05 (Tips v0.9 V1.1): the technique may size the share entry through its BOOK's own sizing (the
+            # Tips bound-book budget / capital cap / slots / risk %). Base hook = unchanged qty (EM/Team2 untouched).
+            try:
+                sized_qty, size_why = await self._hook("size_entry_shares",
+                                                       self.size_entry_shares(ap, trade, float(qty), float(limit)))
+            except Exception as exc:  # noqa: BLE001 - a broken sizer refuses (fail closed on a money path)
+                log.exception("size_entry_shares hook failed")
+                sized_qty, size_why = 0.0, f"book sizing failed: {type(exc).__name__}: {exc}"
+            if size_why and (sized_qty is None or float(sized_qty) < 1):
+                trade.status = "skipped"
+                trade.reason = size_why
+                self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "book_sizing",
+                    "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                return
+            if sized_qty is not None and float(sized_qty) < qty:
+                self._log(ap, "sized", f"{trade.trigger_id}: shares {qty:g} -> {float(sized_qty):g} by the book's "
+                          f"sizing{(' (' + size_why + ')') if size_why else ''}", trigger=trade.trigger_id)
+                qty = float(sized_qty)
             # 2026-09-24 (HOOD 09:31): the RiskGate values a new position at the quote MID, the sizer at the limit - after a
             # fast bar the mid was above the limit and 40 shares came out at 50.2% of equity against the 50% cap. Size
             # against the higher of the two so the gate's own arithmetic admits what is sent.
@@ -4324,6 +4344,13 @@ class PlanRunner(SessionListener):
     def runner_protection_policy(self, ap: "ArmedPlan") -> str:
         """Hook: `execute` makes the frozen P-06 runner protection a real reduce-only exit for THIS plan. Base: `off`."""
         return "off"
+
+    async def size_entry_shares(self, ap: "ArmedPlan", trade: "Trade", qty: float,
+                                limit: float) -> tuple[float, str | None]:
+        """Hook (2026-10-05): the share quantity a FIRED entry may send, given the runner's own sizing (`qty`) and the
+        BUY limit. Return (qty, None) to keep it, (smaller, note) to shrink it, or (0, reason) to refuse the entry on
+        the record. Default: unchanged (EM / Team2 / Cartel keep their sizing)."""
+        return qty, None
 
     async def entry_limit_cap(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> float | None:
         """The most an auto entry may pay for the contract (ARM-GAPS C1) —
