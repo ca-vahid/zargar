@@ -2930,3 +2930,16 @@ Additive, backward compatible: a policy that does not use these keys evaluates e
   feed never fetches.
 
 Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test_position_chaos.py` unchanged and green.
+
+### Armed-plan persistence throttle - 2026-10-05 (Tips desk, 0.9.06; shared `execution/planrunner.py`; EM-reviewed)
+- **Finding:** on 2026-10-05 the event loop's main thread was ~74% busy in normal running (py-spy, 60 s @ 50 Hz,
+  14:38 ET) and bursts became 12-48 s freezes. `PlanRunner.on_minute_bar` was 15% of samples; `_persist` alone 8.8% -
+  a full state JSON + DB write per armed plan per bar (126 plans).
+- **Rule:** `_persist(ap, bar_tick=True)` (ONLY the ordinary end-of-bar call in `PlanRunner._on_bar`) skips the write
+  when the state minus `barsSeen`/`lastBarTs` (plus status/config/plan_for) is identical to the last write and that
+  write is younger than `execution.persist_floor_seconds` (300; 0 = write every bar). Every other caller (fire, adopt,
+  fills, disarm/close/roll, closing_settled) always writes; any other change writes on its bar. Team2's own `_on_bar`
+  calls `_persist(ap)` and is unaffected. EM confirmed nothing reads `barsSeen`/`lastBarTs` back on restore.
+- Test: `tests/test_planrunner_persist_throttle.py` (the stored row equals memory minus the counters).
+- Diagnostics lesson: never `py-spy record` the live app without `--nonblocking` on Windows - it suspends the process
+  per sample (a 181 s freeze on 2026-10-05).
