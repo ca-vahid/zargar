@@ -504,6 +504,22 @@ class Engine:
             with contextlib.suppress(Exception):
                 await self.sync_ibkr_account()
             return
+        if kind in ("link_lost", "link_restored"):
+            await self.journal.append("IbkrLinkLost" if kind == "link_lost" else "IbkrLinkRestored",
+                                      {"broker": "ibkr", **data})
+            with contextlib.suppress(Exception):
+                from .desk_alert import escalate
+                await escalate(self, "IBKR link " + ("LOST" if kind == "link_lost" else "restored"),
+                               ("IB Gateway lost its connection to IBKR - new IBKR orders are refused; check/re-login "
+                                "the gateway" if kind == "link_lost" else "IB Gateway is talking to IBKR again"),
+                               tag="ibkr-link", level=("critical" if kind == "link_lost" else "info"))
+            if kind == "link_restored" and self.ibkr is not None:
+                # whatever happened while the link was down (fills, cancels) is replayed before the next level-set
+                with contextlib.suppress(Exception):
+                    await self.ibkr.catch_up()
+                with contextlib.suppress(Exception):
+                    await self.sync_ibkr_account()
+            return
         etype = {"connected": ev.BROKER_CONNECTED, "disconnected": ev.BROKER_DISCONNECTED}.get(kind, "IbkrCaughtUp")
         await self.journal.append(etype, {"broker": "ibkr", **data})
 

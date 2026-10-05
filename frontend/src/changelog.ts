@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.01";
+export const APP_VERSION = "0.9.02";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.02",date:"2026-10-05",title:"IBKR: a lost server link is noticed",items:[
+    {tag:"fixed",text:"When IB Gateway loses its connection to IBKR (while still talking to the app), the app now treats IBKR as offline: new orders are refused visibly instead of sitting as submitted, you get an alert, and when the link comes back the app replays what happened and re-syncs the account."},
+  ]},
   {version:"0.9.01",date:"2026-10-05",title:"v0.9: every trade gets a horizon, wider stops sized right, smarter profit taking",items:[
     {tag:"major",text:"Each tip is planned as short (up to 3 days), swing (about 10 days) or extended (20+ days while the trend holds), and its exits follow the plan. A swing that is up 2R by day 5 and above its 20-day average is promoted to extended."},
     {tag:"major",text:"Stops sit at 2-3x the stock's normal daily range and the position is sized from the stop, so each trade risks the same dollars with fewer shares, and stops are judged on the bar close instead of every tick. Our own record showed tight stops getting shaken out."},
