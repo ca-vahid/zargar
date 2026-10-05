@@ -74,6 +74,44 @@ order; the kill switch, pressed once, blocks a new entry.
    top of its binding). **The Practice book keeps receiving every Tips idea** - same method, both books.
 4. First day: watch every fill; any `needsAttention`, an unexplained fill or a stuck order -> kill switch, then explain.
 
+## Live config (V1.8, Tips v0.9 - 2026-10-05)
+
+Applied by this desk through the journaled `PATCH /api/settings` once the user says "go" (the market closed). The
+numbers below are the v0.9 plan's; the user may pick inside the ranges.
+
+1. **The live book:** create `Tips IBKR Live` with **kind `live`** (never `paper` - a paper-kind book skips the master
+   live-auto switch and the real-money confirm dialog), base currency USD. Archive `Tips IBKR Paper` and `Live (IBKR)`
+   (2d173f44) so no order can route to the real account from them.
+2. **Sync + cash:** `ibkr.portfolio_id` = the live book; `ibkr.cash_currency` = `USD`; `ibkr.convert_currencies` =
+   `false` (only USD is spendable - convert CAD to USD inside IBKR before the open); `ibkr.cash_account` = `true`
+   (the good-faith guard applies; default).
+3. **Per-book risk limits** (`risk.book_overrides`, keyed by the live book's id - Practice and the other desks keep the
+   global numbers):
+   ```json
+   "risk.book_overrides": {"<Tips IBKR Live id>": {
+     "risk.max_position_notional": 3500, "risk.daily_loss_halt_pct": 4, "risk.max_position_pct": 35}}
+   ```
+4. **`risk.require_market_hours` = `true`** (applies to live/paper books only; exits are exempt) - no pre-market DAY
+   limits queued into the open.
+5. **The binding** (`techniques.tip.books`): Practice stays primary; REMOVE the paper binding (two bindings on one
+   gateway = double orders) and add the live one:
+   ```json
+   {"portfolioId": "<Tips IBKR Live id>", "role": "live", "enabled": true, "allowLiveAuto": true,
+    "capitalCap": 3000, "maxOpenPositions": 3, "budgetPerTip": 900, "riskPct": 0.75, "armAtLevel": false}
+   ```
+   Ranges: `maxOpenPositions` 3-4, `budgetPerTip` 900-1000, `riskPct` 0.75-1. **`armAtLevel` may be turned on** once
+   v0.9 V1.1 is deployed: an at-level fire on this book is then sized by the book's own budget / cap (incl. resting
+   entries) / slots / risk % and trades shares only (journaled `TipArmedFireSized`); before V1.1 keep it `false`.
+6. **Last:** `techniques.tip.allow_live_auto` = `true` - only on the user's explicit go, after steps 1-5 read back
+   correctly from `GET /api/settings`.
+
+What V1 changes underneath (for the first-day watch): a partially filled entry gets its stop at once
+(`TipPartialFillAdopted`); a failed hand-off marks the card failed (`ProposalHandoffFailed`); a replacement stop waits
+up to 5 s for IBKR's cancel confirmation (alert "cancel not confirmed" if it does not come); a reconnect replays fills
+before the account sync; the cash right after a buy excludes the buy until IBKR's summary shows it
+(`unreflectedBuys`); a trim/target/time exit of shares bought today with unsettled sale proceeds waits for the next
+session (`TipGoodFaithDeferred`) - stops always go (`TipGoodFaithStopSent`).
+
 ## Rollback (any time)
 
 - Stop new live entries now: the kill switch (HALT) or `techniques.tip.allow_live_auto` = false. Exits keep running

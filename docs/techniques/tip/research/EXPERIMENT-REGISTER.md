@@ -223,3 +223,34 @@ judged on real fills (never the shadow buy-and-hold proxy) with date-clustered 9
 - **Enforced now (fixes, not experiments):** earnings exit by report time + no entry inside the due window (W4.4/W1.7),
   watch-with-a-level arms (W2.3), option entry band 1.10x the source premium (W3.1), 15-minute cards for <= 7 DTE (W3.2),
   multi-branch posts decline without minting cards (W3.3), per-book risk keys (W6.6).
+
+## `horizon-exits-v1` (opened 2026-10-05, Tips v0.9 V2/V3/V4 - ENFORCED on Practice-policy books; re-graded at V7.1)
+
+Plan: `2026-10-04-v09/PLAN.md` (V2, V3, V4). Evidence: `2026-10-04-v09/R3-horizon-exits.md` (our record, bars to
+2026-10-02) and `R4-external-evidence.md`. User decision 2026-10-04: build it and run it (not observe-only).
+
+- **What runs.** Every tip proposal (tip-time card and armed-fire card) and every armed fill on a real book is classified
+  `short` / `swing` / `extended` at entry (`techniques/tip/horizon_class.py`, journaled `TipHorizonDecided` with its facts,
+  flags, the analyst's choice and whether they agreed). On books where the Practice policy runs (`policy_kind == sim`)
+  the exit policy follows the horizon (`horizon_policy.py`): 2x/3x daily-ATR stops sized at the same dollar risk (only
+  where the pre-entry gate sizes from the stop), the R ladder with a 1/3 runner, breakeven only with the first partial,
+  a 2x/3x-ATR trail after +1R, close-judged swing/extended stops with a 0.5R crash brake, the swing -> extended
+  promotion and the time rules. Short tips are watch-only (`TipShortWatchOnly`). Positions opened before 2026-10-05 keep
+  their stored policy.
+- **Confidence going in.** Wide stops at equal risk: MEDIUM (the only result that kept its sign in most splits; ticker-
+  clustered gain small, -0.18 -> +0.01R). Horizon labels: LOW (n 31-101 per trigger, CIs include 0). Ladder/runner:
+  LOW-MEDIUM (equal mean, higher hit rate). Short tips negative under every exit: MEDIUM (n=67, one up-tape window).
+- **V7.1 re-run (preregistered).** After 20 sessions from 2026-10-05, re-run `2026-10-04-v09/r3.py` on the new record
+  (target >= 30 Practice share closes under `horizon-exits-v1` and >= 150 tip entries with 20 sessions of path) and
+  report, per horizon class, mean / median R, worst decile, hit rate, % of MFE kept and noise stop-outs (stopped, then
+  +1R within 10 sessions), with date- AND ticker-clustered 90% intervals, against the R3 baseline numbers.
+- **Keep / revert criteria (per rule, decided at V7.1, never mid-sample):**
+  - ATR stop (V3.1): keep if the worst decile is no worse than R3's original-stop -1.47R AND the mean R is not lower than
+    the original-stop replay on the same entries by more than 0.05R; else revert `stop_atr_mode=off`.
+  - Horizon labels (V2.1): keep a trigger only if its class beats the swing default on the same entries in the replay
+    (mean R, ticker-clustered); a trigger with n < 25 stays as is and is re-read at the next window.
+  - Ladder / runner / breakeven (V4): keep if the % of MFE kept on +2R runs is >= 45% and the hit rate >= 50% (R3's scale-out replay: 57%).
+  - Short watch-only (V2.4): re-enable only when the shadow books' short cohort shows positive mean R with n >= 30.
+- **Rollback.** `PATCH /api/settings` `techniques.tip.horizon_mode=observe` (labels only, legacy exits for new
+  positions), `techniques.tip.stop_atr_mode=off` (the 0.75% floor), `techniques.tip.shorts_watch_only=false`. Each is
+  journaled; open positions keep the policy they were adopted with.

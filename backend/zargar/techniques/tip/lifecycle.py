@@ -70,7 +70,7 @@ def build_exit_plan(signal_row, sig, analyst: dict, policy) -> dict:
 
 
 def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
-                        bars: list, settings) -> tuple[dict, list[str]]:
+                        bars: list, settings, vehicle: str | None = None) -> tuple[dict, list[str]]:
     """The adoption-geometry gate (2026-09-04): the analyst's nine-strike rule
     made deterministic. Eight adoptions in three days (HOOD 9/02, MU 9/03-04 x4,
     MRVL 9/03 x2, RKLB 9/04) died in seconds because a handed plan had a target
@@ -83,7 +83,13 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
     so the gate REPAIRS: wrong-side / penny targets are dropped, and an invalid
     stop is re-placed at the structural level the rule demands — below the
     recent low minus an ATR buffer for a long, and at least the width floor
-    (0.75% of entry, 1.0% on a 3%+ daily-range name; >= ~1x timeframe ATR)."""
+    (0.75% of entry, 1.0% on a 3%+ daily-range name; >= ~1x timeframe ATR).
+
+    Tips v0.9 V3.1 (2026-10-05): a plan stamped `atrStop` (horizon_class.decide, only where the pre-entry gate SIZES
+    from the stop) replaces that % floor with DAILY-ATR multiples - minimum `stop_atr_min` (2x), re-placed at the
+    horizon's default (`horizon_<h>_stop_atr`: 3x swing/extended, 2x short); a share plan with no stop gets the
+    default. Sizing from the final stop keeps the dollar risk (geometry gate, fit_expression and check_feasibility
+    all call THIS function). A horizon-applied plan's ladder is rebuilt on the final stop (V4.1)."""
     from ...marketstructure.levels import atr as _atr
 
     plan = dict(plan or {})
@@ -100,6 +106,18 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
         if entry > 0 and rng / entry >= 0.03:
             floor_pct = 1.0
     width_floor = max(a, entry * floor_pct / 100.0)
+    default_dist = width_floor
+    atr_d = float(plan.get("atrDaily") or 0.0) if plan.get("atrStop") else 0.0
+    floor_label = "floor"
+    if atr_d > 0:
+        from .horizon_policy import stop_atr_multiples
+        min_m, def_m = stop_atr_multiples(plan.get("horizon"), settings)
+        width_floor, default_dist = min_m * atr_d, def_m * atr_d
+        floor_label = f"{min_m:g}x daily ATR {atr_d:.4g}; re-placed at {def_m:g}x"
+        if plan.get("underlyingStop") is None and vehicle == "shares" and entry > 0:
+            plan["underlyingStop"] = round(entry - sgn * default_dist, 4)
+            repairs.append(f"set stop {plan['underlyingStop']:g}: no stop declared - {def_m:g}x daily ATR "
+                           f"({plan.get('horizon') or 'swing'} default)")
     tp_floor = max(0.5 * a, entry * 0.002)
 
     # ---- targets: sign, then minimum width (drop, never invent)
@@ -135,15 +153,18 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
         inside_structure = (struct_edge is not None
                             and sgn * (struct_edge - stop) < 0)  # stop above the low (long)
         if bad_sign or too_tight or inside_structure:
-            candidates = [entry - sgn * width_floor]
+            candidates = [entry - sgn * default_dist]
             if struct_edge is not None:
                 candidates.append(struct_edge)
             new_stop = min(candidates) if sgn > 0 else max(candidates)
             why = ("wrong side of entry" if bad_sign
-                   else f"only {abs(entry - stop):.4g} wide (floor {width_floor:.4g})"
+                   else f"only {abs(entry - stop):.4g} wide ({floor_label} {width_floor:.4g})"
                    if too_tight else "inside recent structure")
             repairs.append(f"re-placed stop {stop:g} -> {new_stop:.4g}: {why}")
             plan["underlyingStop"] = round(new_stop, 4)
+    if plan.get("horizonApplied") and entry > 0:
+        from .horizon_policy import with_horizon_ladder
+        plan = with_horizon_ladder(plan, entry_ref=entry, direction=direction, settings=settings)
     return plan, repairs
 
 
@@ -202,10 +223,27 @@ def _csv_floats(raw) -> list[float]:
     return out
 
 
-def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
+def policy_from_exit_plan(plan: dict, *, is_option: bool, settings, entry_ref: float | None = None,
+                          direction: str = "long") -> dict:
     """Exit plan → the shared policy document. Ladder fractions normalise to
     <= 1.0 (a remainder rides the structure trail); a stop-less plan becomes an
-    explicit no-stop policy with the premium-stop guard declared."""
+    explicit no-stop policy with the premium-stop guard declared.
+
+    Tips v0.9 (2026-10-05): a share policy never time-stops inside `min_share_hold_sessions` (V2.4, 2: day-1 exits
+    earn ~0R); a plan whose horizon is APPLIED is reshaped by `horizon_policy.apply` (V2.2 / V3.2 / V4) - with
+    `entry_ref` the ladder is rebuilt on the final stop. A legacy plan (no horizon) keeps the old shape."""
+    pol = _policy_from_exit_plan(plan, is_option=is_option, settings=settings)
+    if not is_option and pol.get("time_stop_sessions"):
+        pol["time_stop_sessions"] = max(int(settings.get("techniques.tip.min_share_hold_sessions", 2) or 1),
+                                        int(pol["time_stop_sessions"]))
+    if (plan or {}).get("horizon"):
+        from .horizon_policy import apply as _apply_horizon
+        pol = _apply_horizon(pol, plan, is_option=is_option, settings=settings, entry_ref=entry_ref,
+                             direction=direction)
+    return pol
+
+
+def _policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
     plan = plan or {}
     policy: dict = {"timeframe": "15m"}
     stop = plan.get("underlyingStop")
@@ -750,233 +788,300 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         except Exception:
             log.exception("journal failed for proposal %s", pid)
 
+    async def _adopt(row: dict, partial: bool) -> dict | None:
+        """Hand `row`'s FILLED quantity to the durable manager (geometry gate, policy, venue stop)."""
+        mgr = getattr(eng, "position_manager", None)
+        if mgr is None:
+            await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": "position manager not attached"})
+            return None
+
+        is_opt = (proposal.get("secType") or row.get("secType")) == "OPT"
+        vehicle = ctx.get("vehicle") or {}
+        underlying = str(vehicle.get("underlying") or proposal.get("symbol") or "").upper()
+        # direction = the UNDERLYING idea's side: a long put profits on the way down
+        direction = "short" if (is_opt and vehicle.get("optionType") == "put") else "long"
+        fill = float(row.get("avgFillPrice") or proposal.get("limitPrice") or 0)
+        qty = float(row.get("filledQty") or proposal.get("qty") or 0)
+        if qty <= 0 or fill <= 0:
+            await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": f"bad fill qty={qty} px={fill}"})
+            return None
+
+        # TMR-02: the realised fill against the quote the decision saw (the risk plan's
+        # execCost record) - the desk's own slippage evidence, journaled per fill
+        fvq = None
+        with contextlib.suppress(Exception):
+            from . import execcost as _ec
+            _rp = (ctx.get("riskPlan") or {})
+            _dq = (_rp.get("execCost") or {})
+            fvq = _ec.fill_vs_quote(fill_price=fill, fill_qty=qty, limit=proposal.get("limitPrice"),
+                                    decision_quote={"bid": _dq.get("bid"), "ask": _dq.get("ask"), "sourceTs": _dq.get("sourceTs"),
+                                                    "sampledAt": _dq.get("sampledAt"), "quoteStatus": _dq.get("quoteStatus"),
+                                                    "sourceTimeBasis": _dq.get("sourceTimeBasis"), "quoteRole": "decision"},
+                                    sec_type=("OPT" if is_opt else "STK"), multiplier=(100.0 if is_opt else 1.0), side="BUY")
+            # S21-04 (2026-09-21 review; ACHR rested 58 minutes): the decision-time comparison is NOT fill-time market quality.
+            # A second, independently labelled sample is taken from the quote store AT the fill, with its own clock basis;
+            # the two never blend. A missing fill-time quote stays missing.
+            _ft = None
+            with contextlib.suppress(Exception):
+                from . import cohort as _co
+                _sym = str(proposal.get("symbol") or "")
+                _frec, _fst = _co._snap_quote(eng, _sym, max_age_s=float(eng.settings.get("execution.premium_mark_max_age_seconds", 10) or 10),
+                                              kind="fill", is_option=is_opt)
+                if _frec:
+                    _ft = {"quoteRole": "fill", "bid": _frec.get("bid"), "ask": _frec.get("ask"), "sourceTs": _frec.get("sourceTs"),
+                           "receivedTs": _frec.get("receivedTs"), "sampledAt": _frec.get("sampledAt"), "quoteStatus": _fst,
+                           "sourceTimeBasis": _frec.get("sourceTimeBasis"), "ageSeconds": _frec.get("ageSeconds")}
+            _ord_at = row.get("createdAt") or row.get("submittedAt")
+            await note(ev.TIP_FILL_VS_QUOTE, {"symbol": proposal.get("symbol"), **fvq,
+                                              "decisionSampledAt": _dq.get("sampledAt"), "submittedAt": _ord_at,
+                                              "fillTimeQuote": _ft or {"quoteRole": "fill", "unknown": ["no quote in the store at the fill"]},
+                                              "labels": "decision / submission / fill are separate samples; none is a claim about the others"})
+
+        plan = ctx.get("exitPlan") or {}
+        await eng.ensure_symbol(underlying)
+        q = eng.quotes.get(underlying)
+        entry_ref = (float(q.last) if q and q.last > 0 else None) \
+            or float((ctx.get("signalPrices") or {}).get("entry") or 0) \
+            or (float(plan.get("underlyingStop") or 0) or None)
+        if not entry_ref:
+            await note(ev.TIP_POSITION_NOT_ADOPTED,
+                       {"reason": f"no underlying reference price for {underlying}"})
+            return None
+        # ---- adoption-geometry gate (2026-09-04): sanitise the handed plan against
+        # the ACTUAL entry and recent structure BEFORE any venue GTC exists. Repairs
+        # are journaled and appended to the analyst run that wrote the plan.
+        gate_bars: list = []
+        if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
+            # a simulated feed (tests) must stay offline and tick-deterministic —
+            # the gate then checks sign + % width only (no ATR/structure), which is
+            # exactly what the pure tests pin; every real feed gets full structure
+            try:
+                from ...clock import now_ms as _now_ms
+                from ...marketstructure.history import fetch_window
+                nms = _now_ms()
+                gate_bars = await fetch_window(underlying, "15m", nms - 7 * 86_400_000, nms)
+            except Exception:
+                log.debug("geometry gate: no bars for %s (checking without structure)", underlying)
+        fresh, repairs = check_exit_geometry(plan, direction=direction,
+                                             entry_ref=entry_ref, bars=gate_bars,
+                                             settings=eng.settings)
+        pre = ctx.get("riskPlan") if isinstance(ctx.get("riskPlan"), dict) else {}
+        exception: dict | None = None
+        if pre.get("enforced") and pre.get("finalStop") is not None:
+            # GEOMETRY rev 2 (design §5): the pre-entry FINAL stop is the trade the
+            # analyst evaluated. A fill-time re-check may only TIGHTEN immediately;
+            # a WIDEN is a bounded exception — trim FIRST, the tight stop stays armed
+            # until the trim is confirmed (run_geometry_exception, below)
+            from . import geometry as _geo
+            tight = float(pre["finalStop"])
+            proposed = fresh.get("underlyingStop")
+            unit_wide = None
+            if proposed is not None and pre.get("unitLoss") is not None and pre.get("stopDistance"):
+                d_new = _geo.stop_distance(direction, entry_ref, float(proposed))
+                if d_new and d_new > 0:
+                    # both estimators are linear in the stop distance; the floor is re-applied below
+                    unit_wide = float(pre["unitLoss"]) * d_new / float(pre["stopDistance"])
+                    if pre.get("vehicle") == "option":
+                        unit_wide = min(unit_wide, float(pre.get("stressUnitLoss") or unit_wide))
+            decision = _geo.post_fill_decision(
+                direction=direction, entry_ref=entry_ref, current_stop=tight,
+                proposed_stop=(float(proposed) if proposed is not None else None),
+                qty=int(qty), unit_loss_at_proposed=unit_wide, budget=float(pre.get("budget") or 0))
+            plan = dict(fresh)
+            if decision["action"] == "tighten":
+                plan["underlyingStop"] = float(decision["stop"])
+            else:
+                plan["underlyingStop"] = tight                      # the tight stop arms first, always
+                if decision["action"] in ("widen", "trim_first", "reconcile"):
+                    exception = {"phase": {"widen": "widen_ready", "trim_first": "trim_pending",
+                                           "reconcile": "reconcile"}[decision["action"]],
+                                 "tightStop": tight, "wideStop": float(decision["stop"]),
+                                 "trimQty": int(decision.get("trimQty") or 0),
+                                 "keepQty": int(decision.get("keepQty") or qty), "qty": int(qty),
+                                 "unitLossAtWide": unit_wide, "budget": float(pre.get("budget") or 0),
+                                 "why": decision["why"], "history": [], "stopInForce": tight}
+            if repairs or decision["action"] != "keep":
+                await note(ev.TIP_GEOMETRY_REPAIRED,
+                           {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs,
+                            "phase": "post-fill", "decision": decision,
+                            "plannedRiskBefore": pre.get("plannedRisk"), "tightStop": tight})
+                await _note_on_run(eng, ctx.get("analystRunId"),
+                                   f"Post-fill geometry check: {decision['action']} — {decision['why']}")
+        else:
+            plan = fresh
+            if repairs:
+                await note(ev.TIP_GEOMETRY_REPAIRED,
+                           {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs,
+                            "phase": "post-fill-legacy"})
+                await _note_on_run(eng, ctx.get("analystRunId"),
+                                   "Adoption-geometry gate repaired the exit plan before any venue "
+                                   "order was placed: " + "; ".join(repairs))
+
+        stop = plan.get("underlyingStop")
+        risk = abs(entry_ref - float(stop)) if stop else entry_ref * 0.05
+
+        policy = policy_from_exit_plan(plan, is_option=is_opt, settings=eng.settings,
+                                       entry_ref=entry_ref, direction=direction)
+        leg = ({"symbol": proposal.get("symbol"), "secType": "OPT", "qty": qty,
+                "avgFill": fill, "multiplier": 100.0, "entryOrderId": oid,
+                "origin": "adoption"}
+               if is_opt else
+               {"symbol": underlying, "secType": "STK", "qty": qty, "avgFill": fill,
+                "entryOrderId": oid, "origin": "adoption"})
+        spec = {
+            "portfolioId": proposal.get("portfolioId"), "symbol": underlying,
+            "direction": direction, "techniqueId": "tip",
+            "tags": [f"source:{ctx.get('sourceName') or 'unknown'}", "proposal"],
+            "runId": ctx.get("analystRunId") or pid,     # the reasoning that opened it
+            "entry": entry_ref, "risk": risk, "legs": [leg],
+            "overnight": "app_managed" if is_opt else "venue_stop",
+            "overnightAck": True if is_opt else False,
+            "policy": policy,
+            "guardAccepted": (policy.get("stop") or {}).get("kind") == "none",
+            "extras": {**({"riskPlan": pre} if pre else {}),
+                       **({"geometryException": exception} if exception else {}),
+                       **({"fillVsQuote": fvq} if fvq else {}),
+                       **({"horizon": plan.get("horizon"), "horizonReason": plan.get("horizonReason"),
+                           "horizonSource": plan.get("horizonSource"), "horizonApplied": bool(plan.get("horizonApplied"))}
+                          if plan.get("horizon") else {}),
+                       **({"eventContext": ctx.get("eventContext")} if ctx.get("eventContext") else {})},
+        }
+        try:
+            pos = await mgr.adopt(spec)
+        except ValueError as exc:
+            # the analyst's plan didn't validate — fall back to the technique default
+            log.warning("analyst exit plan invalid for proposal %s (%s) — default policy", pid, exc)
+            spec["policy"] = default_policy(stop=stop, targets=plan.get("targets") or [],
+                                            hold=int(plan.get("maxHoldSessions") or 10),
+                                            is_option=is_opt, settings=eng.settings)
+            spec["guardAccepted"] = (spec["policy"].get("stop") or {}).get("kind") == "none"
+            try:
+                pos = await mgr.adopt(spec)
+            except ValueError as exc2:
+                await note(ev.TIP_POSITION_NOT_ADOPTED,
+                           {"reason": f"policy invalid twice: {exc2}"})
+                return None
+            await note(ev.TIP_POSITION_ADOPTED,
+                       {"positionId": pos["id"], "policy": spec["policy"],
+                        "fallback": f"analyst plan invalid: {exc}"})
+            await _note_on_run(eng, ctx.get("analystRunId"),
+                               f"Exit plan REJECTED by the position manager ({exc}) — the "
+                               f"position ({pos['id'][:8]}) runs the default 50/50 ladder instead.")
+            return pos
+        await note(ev.TIP_POSITION_ADOPTED,
+                   {"positionId": pos["id"], "policy": policy,
+                    "exitPlan": plan, "runId": spec["runId"],
+                    **({"partial": True, "filled": qty,
+                        "ordered": float(proposal.get("qty") or 0)} if partial else {})})
+        log.info("proposal %s adopted as managed position %s (%s, %s)%s",
+                 pid, pos["id"], underlying, "OPT" if is_opt else "STK",
+                 " [partial]" if partial else "")
+        if exception:
+            asyncio.create_task(run_geometry_exception(eng, pos["id"], exception),
+                                name=f"tip-geometry-exception-{pos['id'][:8]}")
+        return pos
+
     # ---- wait for the fill (sim fills in ms; a live LMT may rest a while).
-    # A PARTIAL fill is real money (ARM-GAPS B1): when the order goes terminal —
-    # or the wait times out — with filled_qty > 0, the filled contracts are
-    # adopted and the resting remainder is CANCELLED, never abandoned unmanaged.
+    # A PARTIAL fill is real money (ARM-GAPS B1). V1.4 (Tips v0.9, 2026-10-05, review R1 M6): it is adopted AT ONCE -
+    # the filled quantity gets the manager's stop and the venue GTC stop immediately, never only when the order
+    # completes. Later fills of the same order GROW that position (the venue stop follows the held quantity); the
+    # resting remainder is cancelled when the wait times out or the position stops being open (stopped out), and a
+    # fill that still lands after that is adopted as its own position - never left unmanaged.
+    early = bool(eng.settings.get("techniques.tip.adopt_partial_fills", True))
+    mgr0 = getattr(eng, "position_manager", None)
     deadline = asyncio.get_event_loop().time() + FILL_WAIT_S
     row = None
-    partial = False
+    pos = None
+    adopted = 0.0           # filled quantity already handed to the manager
+    adopted_cost = 0.0      # its cost at the order's average fill
+    remainder_cancelled = False
+
+    async def _grow(row: dict, filled: float) -> None:
+        nonlocal pos, adopted, adopted_cost
+        delta = filled - adopted
+        avg = float(row.get("avgFillPrice") or 0) or float(proposal.get("limitPrice") or 0)
+        total = filled * avg
+        marginal = (total - adopted_cost) / delta if delta > 0 and total > adopted_cost else avg
+        grown = None
+        if mgr0 is not None and hasattr(mgr0, "grow_entry_leg"):
+            grown = await mgr0.grow_entry_leg(pos["id"], entry_order_id=oid, add_qty=delta, price=marginal)
+        if grown is not None:
+            pos = grown
+            await note("TipPartialFillGrown", {"positionId": pos["id"], "added": delta, "filled": filled,
+                                               "price": round(marginal, 4)})
+        else:
+            # the first position is no longer open (it was stopped out while the remainder rested): the late fill is
+            # still real exposure - it becomes its own managed position under the same plan
+            extra = await _adopt({**row, "filledQty": delta, "avgFillPrice": marginal}, partial=True)
+            await note("TipPartialFillGrown", {"positionId": (extra or {}).get("id"), "added": delta,
+                                               "filled": filled, "price": round(marginal, 4),
+                                               "separatePosition": True, "firstPositionId": pos["id"]})
+        adopted, adopted_cost = filled, total
+
     while True:
         row = await _order_row(eng, oid)
         st = (row or {}).get("status") or ""
         filled = float((row or {}).get("filledQty") or 0)
-        if st == "FILLED":
-            break
-        if st in ("CANCELLED", "REJECTED", "REJECTED_RISK", "EXPIRED", "ERROR"):
-            if filled > 0:
-                partial = True
-                log.warning("proposal %s order %s ended %s with %g filled — adopting the partial",
-                            pid, oid, st, filled)
-                break
-            log.info("proposal %s order %s ended %s — nothing to manage", pid, oid, st)
-            await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": f"order {st}"})
-            return None
+        terminal = st in ("CANCELLED", "REJECTED", "REJECTED_RISK", "EXPIRED", "ERROR")
+        if pos is None:
+            if st == "FILLED":
+                return await _adopt(row, partial=False)
+            if terminal:
+                if filled > 0:
+                    log.warning("proposal %s order %s ended %s with %g filled — adopting the partial",
+                                pid, oid, st, filled)
+                    return await _adopt(row, partial=True)
+                log.info("proposal %s order %s ended %s — nothing to manage", pid, oid, st)
+                await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": f"order {st}"})
+                return None
+            if early and filled > 0:
+                pos = await _adopt(row, partial=True)
+                if pos is None:
+                    early = False                       # adoption refused (journaled): fall back to waiting
+                else:
+                    adopted = filled
+                    adopted_cost = filled * (float(row.get("avgFillPrice") or 0)
+                                             or float(proposal.get("limitPrice") or 0))
+                    log.warning("proposal %s order %s partially filled (%g of %g) — adopted now, the stop rests",
+                                pid, oid, filled, float(row.get("qty") or 0))
+                    await note("TipPartialFillAdopted", {"positionId": pos["id"], "filled": filled,
+                                                         "ordered": float(row.get("qty") or 0)})
+                    if st == "FILLED" or terminal:
+                        return pos
+        else:
+            if filled > adopted + 1e-9:
+                await _grow(row, filled)
+            if st == "FILLED" or terminal:
+                return pos
+            p_live = mgr0.get(pos["id"]) if mgr0 is not None and hasattr(mgr0, "get") else None
+            if not remainder_cancelled and (p_live is None or getattr(p_live, "status", "") not in ("open", "attention")):
+                # the adopted part is gone (stopped out / closed): the resting remainder must not buy back in
+                with contextlib.suppress(Exception):
+                    await eng.orders.cancel(oid)
+                remainder_cancelled = True
+                await note("TipPartialRemainderCancelled", {"positionId": pos["id"],
+                                                            "reason": "the adopted position is no longer open"})
         if asyncio.get_event_loop().time() > deadline:
-            import contextlib as _ctx
-            with _ctx.suppress(Exception):
+            with contextlib.suppress(Exception):
                 await eng.orders.cancel(oid)
             await asyncio.sleep(POLL_S)                 # let the cancel settle
             row = await _order_row(eng, oid) or row
             filled = float((row or {}).get("filledQty") or 0)
+            if pos is not None:
+                if filled > adopted + 1e-9:
+                    await _grow(row, filled)
+                log.warning("proposal %s order %s timed out — remainder cancelled, %g adopted", pid, oid, filled)
+                return pos
             if filled > 0:
-                partial = True
                 log.warning("proposal %s order %s timed out with %g filled — remainder "
                             "cancelled, adopting the partial", pid, oid, filled)
-                break
+                return await _adopt(row, partial=True)
             log.warning("proposal %s order %s unfilled after %.0fh — cancelled, not adopted",
                         pid, oid, FILL_WAIT_S / 3600)
             await note(ev.TIP_POSITION_NOT_ADOPTED,
                        {"reason": "fill wait timed out", "cancelledResting": True})
             return None
         await asyncio.sleep(POLL_S)
-
-    mgr = getattr(eng, "position_manager", None)
-    if mgr is None:
-        await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": "position manager not attached"})
-        return None
-
-    is_opt = (proposal.get("secType") or row.get("secType")) == "OPT"
-    vehicle = ctx.get("vehicle") or {}
-    underlying = str(vehicle.get("underlying") or proposal.get("symbol") or "").upper()
-    # direction = the UNDERLYING idea's side: a long put profits on the way down
-    direction = "short" if (is_opt and vehicle.get("optionType") == "put") else "long"
-    fill = float(row.get("avgFillPrice") or proposal.get("limitPrice") or 0)
-    qty = float(row.get("filledQty") or proposal.get("qty") or 0)
-    if qty <= 0 or fill <= 0:
-        await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": f"bad fill qty={qty} px={fill}"})
-        return None
-
-    # TMR-02: the realised fill against the quote the decision saw (the risk plan's
-    # execCost record) - the desk's own slippage evidence, journaled per fill
-    fvq = None
-    with contextlib.suppress(Exception):
-        from . import execcost as _ec
-        _rp = (ctx.get("riskPlan") or {})
-        _dq = (_rp.get("execCost") or {})
-        fvq = _ec.fill_vs_quote(fill_price=fill, fill_qty=qty, limit=proposal.get("limitPrice"),
-                                decision_quote={"bid": _dq.get("bid"), "ask": _dq.get("ask"), "sourceTs": _dq.get("sourceTs"),
-                                                "sampledAt": _dq.get("sampledAt"), "quoteStatus": _dq.get("quoteStatus"),
-                                                "sourceTimeBasis": _dq.get("sourceTimeBasis"), "quoteRole": "decision"},
-                                sec_type=("OPT" if is_opt else "STK"), multiplier=(100.0 if is_opt else 1.0), side="BUY")
-        # S21-04 (2026-09-21 review; ACHR rested 58 minutes): the decision-time comparison is NOT fill-time market quality.
-        # A second, independently labelled sample is taken from the quote store AT the fill, with its own clock basis;
-        # the two never blend. A missing fill-time quote stays missing.
-        _ft = None
-        with contextlib.suppress(Exception):
-            from . import cohort as _co
-            _sym = str(proposal.get("symbol") or "")
-            _frec, _fst = _co._snap_quote(eng, _sym, max_age_s=float(eng.settings.get("execution.premium_mark_max_age_seconds", 10) or 10),
-                                          kind="fill", is_option=is_opt)
-            if _frec:
-                _ft = {"quoteRole": "fill", "bid": _frec.get("bid"), "ask": _frec.get("ask"), "sourceTs": _frec.get("sourceTs"),
-                       "receivedTs": _frec.get("receivedTs"), "sampledAt": _frec.get("sampledAt"), "quoteStatus": _fst,
-                       "sourceTimeBasis": _frec.get("sourceTimeBasis"), "ageSeconds": _frec.get("ageSeconds")}
-        _ord_at = row.get("createdAt") or row.get("submittedAt")
-        await note(ev.TIP_FILL_VS_QUOTE, {"symbol": proposal.get("symbol"), **fvq,
-                                          "decisionSampledAt": _dq.get("sampledAt"), "submittedAt": _ord_at,
-                                          "fillTimeQuote": _ft or {"quoteRole": "fill", "unknown": ["no quote in the store at the fill"]},
-                                          "labels": "decision / submission / fill are separate samples; none is a claim about the others"})
-
-    plan = ctx.get("exitPlan") or {}
-    await eng.ensure_symbol(underlying)
-    q = eng.quotes.get(underlying)
-    entry_ref = (float(q.last) if q and q.last > 0 else None) \
-        or float((ctx.get("signalPrices") or {}).get("entry") or 0) \
-        or (float(plan.get("underlyingStop") or 0) or None)
-    if not entry_ref:
-        await note(ev.TIP_POSITION_NOT_ADOPTED,
-                   {"reason": f"no underlying reference price for {underlying}"})
-        return None
-    # ---- adoption-geometry gate (2026-09-04): sanitise the handed plan against
-    # the ACTUAL entry and recent structure BEFORE any venue GTC exists. Repairs
-    # are journaled and appended to the analyst run that wrote the plan.
-    gate_bars: list = []
-    if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
-        # a simulated feed (tests) must stay offline and tick-deterministic —
-        # the gate then checks sign + % width only (no ATR/structure), which is
-        # exactly what the pure tests pin; every real feed gets full structure
-        try:
-            from ...clock import now_ms as _now_ms
-            from ...marketstructure.history import fetch_window
-            nms = _now_ms()
-            gate_bars = await fetch_window(underlying, "15m", nms - 7 * 86_400_000, nms)
-        except Exception:
-            log.debug("geometry gate: no bars for %s (checking without structure)", underlying)
-    fresh, repairs = check_exit_geometry(plan, direction=direction,
-                                         entry_ref=entry_ref, bars=gate_bars,
-                                         settings=eng.settings)
-    pre = ctx.get("riskPlan") if isinstance(ctx.get("riskPlan"), dict) else {}
-    exception: dict | None = None
-    if pre.get("enforced") and pre.get("finalStop") is not None:
-        # GEOMETRY rev 2 (design §5): the pre-entry FINAL stop is the trade the
-        # analyst evaluated. A fill-time re-check may only TIGHTEN immediately;
-        # a WIDEN is a bounded exception — trim FIRST, the tight stop stays armed
-        # until the trim is confirmed (run_geometry_exception, below)
-        from . import geometry as _geo
-        tight = float(pre["finalStop"])
-        proposed = fresh.get("underlyingStop")
-        unit_wide = None
-        if proposed is not None and pre.get("unitLoss") is not None and pre.get("stopDistance"):
-            d_new = _geo.stop_distance(direction, entry_ref, float(proposed))
-            if d_new and d_new > 0:
-                # both estimators are linear in the stop distance; the floor is re-applied below
-                unit_wide = float(pre["unitLoss"]) * d_new / float(pre["stopDistance"])
-                if pre.get("vehicle") == "option":
-                    unit_wide = min(unit_wide, float(pre.get("stressUnitLoss") or unit_wide))
-        decision = _geo.post_fill_decision(
-            direction=direction, entry_ref=entry_ref, current_stop=tight,
-            proposed_stop=(float(proposed) if proposed is not None else None),
-            qty=int(qty), unit_loss_at_proposed=unit_wide, budget=float(pre.get("budget") or 0))
-        plan = dict(fresh)
-        if decision["action"] == "tighten":
-            plan["underlyingStop"] = float(decision["stop"])
-        else:
-            plan["underlyingStop"] = tight                      # the tight stop arms first, always
-            if decision["action"] in ("widen", "trim_first", "reconcile"):
-                exception = {"phase": {"widen": "widen_ready", "trim_first": "trim_pending",
-                                       "reconcile": "reconcile"}[decision["action"]],
-                             "tightStop": tight, "wideStop": float(decision["stop"]),
-                             "trimQty": int(decision.get("trimQty") or 0),
-                             "keepQty": int(decision.get("keepQty") or qty), "qty": int(qty),
-                             "unitLossAtWide": unit_wide, "budget": float(pre.get("budget") or 0),
-                             "why": decision["why"], "history": [], "stopInForce": tight}
-        if repairs or decision["action"] != "keep":
-            await note(ev.TIP_GEOMETRY_REPAIRED,
-                       {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs,
-                        "phase": "post-fill", "decision": decision,
-                        "plannedRiskBefore": pre.get("plannedRisk"), "tightStop": tight})
-            await _note_on_run(eng, ctx.get("analystRunId"),
-                               f"Post-fill geometry check: {decision['action']} — {decision['why']}")
-    else:
-        plan = fresh
-        if repairs:
-            await note(ev.TIP_GEOMETRY_REPAIRED,
-                       {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs,
-                        "phase": "post-fill-legacy"})
-            await _note_on_run(eng, ctx.get("analystRunId"),
-                               "Adoption-geometry gate repaired the exit plan before any venue "
-                               "order was placed: " + "; ".join(repairs))
-
-    stop = plan.get("underlyingStop")
-    risk = abs(entry_ref - float(stop)) if stop else entry_ref * 0.05
-
-    policy = policy_from_exit_plan(plan, is_option=is_opt, settings=eng.settings)
-    leg = ({"symbol": proposal.get("symbol"), "secType": "OPT", "qty": qty,
-            "avgFill": fill, "multiplier": 100.0, "entryOrderId": oid,
-            "origin": "adoption"}
-           if is_opt else
-           {"symbol": underlying, "secType": "STK", "qty": qty, "avgFill": fill,
-            "entryOrderId": oid, "origin": "adoption"})
-    spec = {
-        "portfolioId": proposal.get("portfolioId"), "symbol": underlying,
-        "direction": direction, "techniqueId": "tip",
-        "tags": [f"source:{ctx.get('sourceName') or 'unknown'}", "proposal"],
-        "runId": ctx.get("analystRunId") or pid,     # the reasoning that opened it
-        "entry": entry_ref, "risk": risk, "legs": [leg],
-        "overnight": "app_managed" if is_opt else "venue_stop",
-        "overnightAck": True if is_opt else False,
-        "policy": policy,
-        "guardAccepted": (policy.get("stop") or {}).get("kind") == "none",
-        "extras": {**({"riskPlan": pre} if pre else {}),
-                   **({"geometryException": exception} if exception else {}),
-                   **({"fillVsQuote": fvq} if fvq else {}),
-                   **({"eventContext": ctx.get("eventContext")} if ctx.get("eventContext") else {})},
-    }
-    try:
-        pos = await mgr.adopt(spec)
-    except ValueError as exc:
-        # the analyst's plan didn't validate — fall back to the technique default
-        log.warning("analyst exit plan invalid for proposal %s (%s) — default policy", pid, exc)
-        spec["policy"] = default_policy(stop=stop, targets=plan.get("targets") or [],
-                                        hold=int(plan.get("maxHoldSessions") or 10),
-                                        is_option=is_opt, settings=eng.settings)
-        spec["guardAccepted"] = (spec["policy"].get("stop") or {}).get("kind") == "none"
-        try:
-            pos = await mgr.adopt(spec)
-        except ValueError as exc2:
-            await note(ev.TIP_POSITION_NOT_ADOPTED,
-                       {"reason": f"policy invalid twice: {exc2}"})
-            return None
-        await note(ev.TIP_POSITION_ADOPTED,
-                   {"positionId": pos["id"], "policy": spec["policy"],
-                    "fallback": f"analyst plan invalid: {exc}"})
-        await _note_on_run(eng, ctx.get("analystRunId"),
-                           f"Exit plan REJECTED by the position manager ({exc}) — the "
-                           f"position ({pos['id'][:8]}) runs the default 50/50 ladder instead.")
-        return pos
-    await note(ev.TIP_POSITION_ADOPTED,
-               {"positionId": pos["id"], "policy": policy,
-                "exitPlan": plan, "runId": spec["runId"],
-                **({"partial": True, "filled": qty,
-                    "ordered": float(proposal.get("qty") or 0)} if partial else {})})
-    log.info("proposal %s adopted as managed position %s (%s, %s)%s",
-             pid, pos["id"], underlying, "OPT" if is_opt else "STK",
-             " [partial]" if partial else "")
-    if exception:
-        asyncio.create_task(run_geometry_exception(eng, pos["id"], exception),
-                            name=f"tip-geometry-exception-{pos['id'][:8]}")
-    return pos
 
 
 TRIM_WAIT_S = 120.0     # a trim is a reduce-only LMT at the bid; sim fills in ms, live may rest a bit

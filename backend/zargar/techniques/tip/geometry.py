@@ -191,8 +191,13 @@ def fit_expression(*, direction: str, vehicle: str, entry_ref: float, exit_plan:
                  "meta": {}}
     fit["originalStop"] = float(plan["underlyingStop"]) if plan.get("underlyingStop") else None
     final, repairs = check_exit_geometry(plan, direction=direction, entry_ref=float(entry_ref or 0.0),
-                                         bars=bars or [], settings=settings)
+                                         bars=bars or [], settings=settings, vehicle=vehicle)
     fit["repairs"] = list(repairs)
+    if final.get("horizon"):
+        # V2/V3 (2026-10-05): the horizon the stop multiple and the ladder came from
+        fit["horizon"] = final.get("horizon")
+        fit["atrDaily"] = final.get("atrDaily")
+        fit["atrStop"] = bool(final.get("atrStop"))
     fit["finalStop"] = float(final["underlyingStop"]) if final.get("underlyingStop") else None
     dist = stop_distance(direction, entry_ref, fit["finalStop"])
     fit["stopDistance"] = dist
@@ -258,7 +263,8 @@ def fitting_stop(*, direction: str, vehicle: str, entry_ref: float, exit_plan: d
     stop = round(float(entry_ref) - sgn * max_dist, 4)
     from .lifecycle import check_exit_geometry
     _final, repairs = check_exit_geometry({**dict(exit_plan or {}), "underlyingStop": stop}, direction=direction,
-                                          entry_ref=float(entry_ref), bars=bars or [], settings=settings)
+                                          entry_ref=float(entry_ref), bars=bars or [], settings=settings,
+                                          vehicle=vehicle)
     stop_repairs = [r for r in repairs if "stop" in r]
     return {"available": True, "stop": stop, "stopDistance": round(max_dist, 4), "admissible": not stop_repairs,
             "why": (stop_repairs[0] if stop_repairs else "inside the geometry rules"),

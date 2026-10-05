@@ -123,8 +123,14 @@ async def prefetch(eng, signal_row, *, timeout_s: float | None = None) -> dict:
         return {"daysToEarnings": days, "status": ("none known" if days is None else "known"),
                 "note": "dates are advisory, not confirmed"}
 
-    names = ("quote", "chain", "bars", "positions", "earnings")
-    got = await asyncio.gather(*(_bounded(f(), t) for f in (quote, chain, bars, positions, earnings)))
+    async def context():
+        # v0.9 V6.1 (2026-10-05): the deterministic decision-time read (cached per symbol per session; the proposal
+        # path reuses it). Its own fetches are bounded; offline feeds return status "offline"
+        from . import entry_context as _ec
+        return await _ec.get(eng, sym)
+
+    names = ("quote", "chain", "bars", "positions", "earnings", "context")
+    got = await asyncio.gather(*(_bounded(f(), t) for f in (quote, chain, bars, positions, earnings, context)))
     items = dict(zip(names, got))
     if not items["earnings"]["ok"]:
         items["earnings"] = {"ok": True, "value": {"daysToEarnings": None, "status": "unknown",
@@ -151,9 +157,15 @@ def seed_block(pre: dict, *, fetched_at: str) -> str:
         earn = "no upcoming date known (advisory)"
     else:
         earn = f"unknown - {e.get('why') or e.get('unavailable') or 'not fetched'}"
+    ctx_line = ""
+    with contextlib.suppress(Exception):
+        from . import entry_context as _ec
+        _cv = val("context")
+        ctx_line = _ec.header_line(_cv) if (isinstance(_cv, dict) and _cv.get("version")) else ""
     return (f"{SEED_MARK} for {pre.get('ticker')} (prefetched {fetched_at}, concurrently, before this appraisal; "
             "the tools stay available - re-fetch before pricing if minutes have passed):\n"
             f"- earnings: {earn}\n"
+            + ctx_line +
             f"- quote: {_line(val('quote'))}\n"
             f"- chain slice (stated expiry/strike): {_line(val('chain'))}\n"
             f"- bars summary: {_line(val('bars'))}\n"

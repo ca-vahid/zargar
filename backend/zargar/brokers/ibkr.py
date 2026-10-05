@@ -78,6 +78,9 @@ class IBKRBroker(QuoteFeed, Executor):
         self._stopping = False
         self._reconnect_task: asyncio.Task | None = None
         self._cancel_requested: set[str] = set()   # our order ids we asked IBKR to cancel
+        # V1.2 (2026-10-05): False from a (re)connect until the execution catch-up has run - an account sync before
+        # it would level-set to IBKR's numbers and the replayed fills would then count a second time
+        self.caught_up = False
 
     # ------------------------------------------------------------- connection
     def account_kind(self) -> str | None:
@@ -116,6 +119,7 @@ class IBKRBroker(QuoteFeed, Executor):
             self._schedule_reconnect()
 
     async def _connect(self) -> None:
+        self.caught_up = False
         ib = self._new_ib()
         await ib.connectAsync(self._host, self._port, clientId=self._client_id, timeout=10)
         self._ib = ib
@@ -131,9 +135,14 @@ class IBKRBroker(QuoteFeed, Executor):
                  "on" if self._quotes else "off")
         await self._notify("connected", {"host": self._host, "port": self._port,
                                          "accounts": list(getattr(ib, "managedAccounts", lambda: [])() or [])})
-        await self.catch_up()
+        # V1.2 (2026-10-05, review R1 M1): replay the executions FIRST, then let the account sync level-set - a fill
+        # made during the outage is applied once (catch-up), never on top of a sync that already contains it
+        out = await self.catch_up()
+        self.caught_up = True
+        await self._notify("ready", {"replayed": int((out or {}).get("replayed") or 0)})
 
     def _on_disconnected(self) -> None:
+        self.caught_up = False
         if self._stopping:
             return
         log.warning("IBKR gateway disconnected - reconnecting")

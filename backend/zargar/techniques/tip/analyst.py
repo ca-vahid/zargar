@@ -27,7 +27,7 @@ import json
 import logging
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 log = logging.getLogger(__name__)
 
@@ -263,6 +263,18 @@ class AnalystOpinion(BaseModel):
         default=None, description="Time box in TRADING sessions; re-evaluate dies with it")
     exit_rationale: Optional[str] = Field(
         default=None, description="One sentence: the exit campaign in words")
+    # --- V2.5 (2026-10-05): the trade's horizon class (the app validates it against its entry-facts classifier)
+    horizon: Optional[str] = Field(
+        default=None, description='"short" (<= 3 sessions), "swing" (default, ~10 sessions) or "extended" '
+                                  '(20+ sessions, trend); null = let the app classify')
+    horizon_reason: Optional[str] = Field(
+        default=None, description="One sentence: which entry facts make it that horizon")
+
+    @field_validator("horizon", mode="before")
+    @classmethod
+    def _horizon_vocab(cls, v):
+        h = str(v or "").strip().lower()
+        return h if h in ("short", "swing", "extended") else None
     used_notes: list[str] = Field(
         default_factory=list,
         description='Labels of the SHARED NOTES you actually relied on for this '
@@ -328,12 +340,14 @@ TOOLS = [
                     "recent structure is re-placed; the result shows declaredStop vs finalStop), then the unit "
                     "risk and floor(budget / unit) at the FINAL stop, then the purchase/premium/contract caps. "
                     "Args: contract (OCC symbol, or 'shares'), limit (premium or share price), underlying_stop, "
-                    "premium_stop_pct (optional), exit_targets (optional). qty 0 = this expression does not fit: "
+                    "premium_stop_pct (optional), exit_targets (optional), horizon (optional: short | swing | "
+                    "extended - the stop multiple and ladder follow it). qty 0 = this expression does not fit: "
                     "the result points at find_alternatives and, when it can, attaches them already.",
      "input_schema": {"type": "object", "properties": {
          "contract": {"type": "string"}, "limit": {"type": "number"},
          "underlying_stop": {"type": "number"}, "premium_stop_pct": {"type": "number"},
-         "exit_targets": {"type": "array", "items": {"type": "number"}}},
+         "exit_targets": {"type": "array", "items": {"type": "number"}},
+         "horizon": {"type": "string"}},
          "required": ["contract", "limit"]}},
     {"name": "find_alternatives",
      "description": "W2.1: when the stated contract does not fit the risk budget, the application builds the "
@@ -549,6 +563,17 @@ underlying_stop = where the idea is simply wrong (null only when premium_stop_pc
 your declared guard), premium_stop_pct = max premium bleed you will sit through, \
 max_hold_sessions = the time box. The platform executes this plan mechanically on \
 closed bars — write the plan you would actually trade.
+- HORIZON (2026-10-05) — on a take set horizon + horizon_reason. "short" (<= 3 sessions: a chased entry >= 2% \
+over the prior close, a gap >= 2%, a catalyst/news tip, a low-ATR name): stop 2x daily ATR, half off at +1R, the \
+rest trails 2x ATR, out by the 3rd session. "swing" (the default, ~10 sessions): stop 3x daily ATR, a third off at \
++1R with the stop to breakeven, the rest trails 3x ATR after +1R, out at session 10 only if still below +0.5R; at \
++2R by session 5 above the 20-day MA it is promoted to extended. "extended" (20+ sessions: a down-day entry, a \
+source with a multi-week record): stop 3x ATR, a third off at +1.5R, trail 3x ATR on the DAILY close, no time stop \
+while above the 20-day MA. Swing/extended stops are judged on the bar close (a crash brake fires 0.5R beyond). \
+The stop sits at least 2x daily ATR from entry and the SIZE comes from it (same dollar risk, fewer shares) - \
+check_feasibility shows the final stop. Your exit_targets beyond the horizon's first target stay as extra trims; a \
+third always rides the trail. The app classifies from the entry facts and keeps your horizon only when the facts \
+allow it (never longer than a short flag permits).
 - THE SOURCE'S HISTORY: their messages are linked stories — a morning "bought NVDA" and \
 an afternoon "sold 40%" belong together. Recent messages from this source are handed to \
 you; search_messages digs deeper (older, other tickers, the original OPEN behind an \
@@ -909,6 +934,14 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict, *, attach_alte
                    "currency": "USD"}
     gate = await _rev.gather(eng, underlying=under, sec_type=sec_type, symbol=sym, vehicle=vehicle, limit=limit,
                              entry_hint=(ctx.get("tip") or {}).get("entryPrice"), pid=pid)
+    if not ctx.get("experiment"):
+        # V2/V3 (2026-10-05): the horizon (the analyst's, validated, else the classifier's) and the daily ATR the gate
+        # will size the stop from - the same stamping the proposal path applies, so the quantity shown is the gate's
+        from . import horizon_class as _hc
+        plan = await _hc.decide(eng, plan=({**plan, "lotto": True} if ctx.get("lotto") else plan), symbol=under, direction=direction, entry_ref=gate["entryRef"],
+                                catalyst=ctx.get("catalyst"), source=ctx.get("source"),
+                                analyst={"horizon": args.get("horizon")}, pid=pid, where="feasibility",
+                                journal=False)
     final, fit = _geo.fit_expression(direction=direction, vehicle=("shares" if is_shares else "option"),
                                      entry_ref=gate["entryRef"], exit_plan=plan, bars=gate["bars"],
                                      settings=eng.settings, premium=limit, multiplier=gate["multiplier"],
@@ -936,6 +969,10 @@ async def _expression_tool(eng, name: str, args: dict, ctx: dict, *, attach_alte
         out = {"expression": ("shares" if is_shares else contract), "underlying": under, "direction": direction,
                "authority": fit["version"], "unitRisk": ul, "unitRiskBasis": basis,
                "declaredStop": fit["originalStop"], "finalStop": fit["finalStop"], "stopRepairs": fit["repairs"],
+               **({"horizon": plan.get("horizon"), "horizonReason": plan.get("horizonReason"),
+                   "horizonDecidedBy": plan.get("horizonSource"), "atrDaily": plan.get("atrDaily"),
+                   "finalTargets": final.get("targets"), "finalFractions": final.get("fractions")}
+                  if plan.get("horizon") else {}),
                **({"stopNote": stop_note} if stop_note else {}),
                "evidence": {**fit["meta"], "delta": gate["delta"], "spot": entry_ref, "multiplier": gate["multiplier"],
                             **{k: ev.get(k) for k in ("ask", "quoteSource")}},
@@ -1092,6 +1129,12 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                 # 2026-09-02 dropped the expiry-day flatten and the premium
                 # ladder, leaving dte_close=1 to dump a 0DTE on the next bar
                 "lotto": bool(p.policy.get("expiry_day_flatten_et") or p.policy.get("premium_watch"))}
+        if p.policy.get("horizon") and not plan["lotto"]:
+            # V2 (2026-10-05): a horizon position keeps its horizon exits (trail, time rules, brake); the analyst's
+            # rewritten ladder is taken as written (ladderFixed) - an exit-only edit never re-derives the ladder
+            plan.update({"horizon": p.policy["horizon"], "horizonReason": p.policy.get("horizonReason"),
+                         "horizonApplied": True, "ladderFixed": True,
+                         "atrDaily": p.policy.get("atrDaily") or (p.policy.get("trailing") or {}).get("atr_abs")})
         policy = policy_from_exit_plan(plan, is_option=p.has_options, settings=eng.settings)
         # keep trims already done — the evaluator's state carries them; only the doc changes
         try:
@@ -2388,6 +2431,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 "experiment": experiment, "asOfMs": as_of_ms,
                 "stage": "appraise", "budgetPerTip": float(policy.budget_per_tip),
                 "toolsUsed": tools_used, "tip": tip, "lotto": bool(lotto_line),
+                "catalyst": getattr(signal_row, "catalyst", None),
                 "dteMin": getattr(policy, "dte_min", None), "dteMax": getattr(policy, "dte_max", None)}
 
     loop_state: dict = _arm_deadline({}, eng)
@@ -2597,7 +2641,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             expr_args = {"contract": (opinion.contract if opinion.instrument == "option" and opinion.contract else "shares"),
                          "limit": float(opinion.limit_price or 0), "underlying_stop": opinion.underlying_stop,
                          "premium_stop_pct": opinion.premium_stop_pct,
-                         "exit_targets": list(opinion.exit_targets or [])}
+                         "exit_targets": list(opinion.exit_targets or []),
+                         "horizon": opinion.horizon}
             expression = await _expression_tool(eng, "check_feasibility", expr_args, tool_ctx, attach_alternatives=False)
             payoff = None
             if opinion.exit_targets:
