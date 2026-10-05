@@ -243,6 +243,7 @@ class PositionManager:
         # waits for such a cancel to be confirmed
         self._retired_stops: dict[str, str] = {}
         self._stop_replace_pending: set[str] = set()
+        self._venue_heal_at: dict[str, float] = {}       # 2026-10-05: last missing-venue-stop heal per position
         self._gf_noted: set[tuple] = set()             # V1.7 good-faith deferrals already journaled (pos, kind, day)
         self._now = time.time                          # injectable clock (chaos tests)
         self._policy_adapters: dict[str, object] = {}
@@ -2110,6 +2111,20 @@ class PositionManager:
                 return
             if p.status == "closed" or not p.open_legs:
                 return
+        # missing venue stop heal (2026-10-05, CYRX paper): a share position that should rest a GTC stop at the venue but
+        # has none (e.g. the entry's bracket children were still cancelling when the stop was first sized) gets one -
+        # at most once a minute per position; _ensure_venue_stop itself decides price, quantity and the oversell guard
+        if (p.overnight == "venue_stop" and p.status == "open" and not p.venue_stop_order_id
+                and p.id not in self._stop_replace_pending
+                and any(l.sec_type == "STK" and l.qty > 0 for l in p.open_legs)):
+            _last = self._venue_heal_at.get(p.id, 0.0)
+            if self._now() - _last >= 60.0:
+                self._venue_heal_at[p.id] = self._now()
+                with contextlib.suppress(Exception):
+                    await self._ensure_venue_stop(p)
+                    if p.venue_stop_order_id:
+                        self._log(p, "venue_stop", "missing venue stop re-placed by the watch loop")
+                        await self._persist(p)
         # failed-exit watchdog
         last = p.exits[-1] if p.exits else None
         if last and last.get("status") in ("ERROR", "REJECTED", "REJECTED_RISK") \
