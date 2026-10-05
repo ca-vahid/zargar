@@ -40,13 +40,37 @@ async def test_missed_close_is_persisted_for_review_not_booked_as_a_fill(engine)
     assert again["addedSessions"] == [] and again["missedCloses"] == [rig.closes]
 
 
-async def test_conflicting_or_future_recovery_is_rejected_without_partial_mutation(engine):
+async def test_conflict_on_a_known_session_is_recorded_not_merged_and_never_blocks_newer_sessions(engine):
+    """2026-10-05 (DHT): a provider candle that disagrees with a session the position already holds is
+    evidence, not a reason to leave every newer session (and the daily EMA/ATR exits) unrecovered."""
+    rig = await prepared(engine)
+    await minute(rig, 0, 110)
+    adapter = rig.pm._policy_adapter(rig.p)
+    context = rig.p.policy["cartel"]
+    missing = context["daily"].pop()
+    known = deepcopy(context["daily"][-5])
+    conflict = {**known, "volume": known["volume"]+999}
+    count = len(engine.orders.placed)
+    result = await adapter.recover_daily(rig.pm, rig.p, [conflict, missing], source="provider with a revised old bar",
+                                         as_of_ms=rig.pm.now_ms())
+    assert result["addedSessions"] == [missing["session"]]
+    daily = rig.p.policy["cartel"]["daily"]
+    assert next(b for b in daily if b["session"] == known["session"]) == known      # the position's record is kept
+    assert rig.p.policy["cartel"]["recovery"]["conflictingKnownSessions"] == [known["session"]]
+    assert len(engine.orders.placed) == count                                       # recovery itself places nothing
+
+
+async def test_conflicting_new_data_or_future_recovery_is_rejected_without_partial_mutation(engine):
     rig = await prepared(engine)
     adapter = rig.pm._policy_adapter(rig.p)
     before = deepcopy(rig.p.policy)
-    conflict = {**before["cartel"]["daily"][-1], "volume": 999}
-    with pytest.raises(ValueError, match="conflicting"):
-        await adapter.recover_daily(rig.pm, rig.p, [conflict], source="conflict", as_of_ms=rig.pm.now_ms())
+    new = before["cartel"]["daily"][-1]
+    rig.p.policy["cartel"]["daily"] = before["cartel"]["daily"][:-1]
+    shadow = deepcopy(rig.p.policy)
+    with pytest.raises(ValueError, match="conflicting"):   # two different provider bars for the same NEW session
+        await adapter.recover_daily(rig.pm, rig.p, [new, {**new, "volume": 999}], source="conflict", as_of_ms=rig.pm.now_ms())
+    assert rig.p.policy == shadow
+    rig.p.policy = before
     with pytest.raises(ValueError, match="non-future"):
         await adapter.recover_daily(rig.pm, rig.p, [], source="future", as_of_ms=rig.pm.now_ms()+1)
     rewind = DailyBar.model_validate(before["cartel"]["daily"][-2]).closes_at

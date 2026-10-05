@@ -204,8 +204,15 @@ class CartelPositionAdapter:
             existing = [DailyBar.model_validate(b) for b in context["daily"]]
             if any(b.closes_at > as_of_ms for b in existing):
                 raise ValueError("recovery cannot rewind the position's already-observed history")
-            # completed_daily rejects conflicting duplicates, including conflicts
-            # against the original plan/observed record; never silently revise it.
+            # The position's own record is authoritative and is never revised. A provider candle that
+            # disagrees with an ALREADY-KNOWN session is recorded as evidence, not merged and not allowed
+            # to block the newer sessions (2026-10-05: one 09-15 provider difference blocked DHT's
+            # recovery for a week, leaving its daily EMA/ATR exits blind).
+            known_bars = {b.session: b for b in existing}
+            conflicts = sorted({b.session.isoformat() for b in incoming
+                                if b.session in known_bars and known_bars[b.session] != b})
+            incoming = [b for b in incoming if b.session not in known_bars]
+            # completed_daily still rejects conflicting duplicates WITHIN the new provider data.
             merged = completed_daily(existing + incoming, as_of_ms)
             require_contiguous(merged)
             today = dt.datetime.fromtimestamp(as_of_ms/1000, ET).date()
@@ -224,7 +231,8 @@ class CartelPositionAdapter:
             context.update(daily=[b.model_dump(mode="json") for b in merged[-600:]],
                            missedCloses=pending,
                            recovery={"source": source, "asOfMs": as_of_ms,
-                                     "addedSessions": [b.session.isoformat() for b in added]})
+                                     "addedSessions": [b.session.isoformat() for b in added],
+                                     "conflictingKnownSessions": conflicts})
             p.policy = {**p.policy, "cartel": context}
             # Clear only this adapter's data-gap notices, preserving all others.
             p.attention = [s for s in p.attention if not s.startswith(("Incomplete session tape;",
@@ -237,7 +245,7 @@ class CartelPositionAdapter:
             await manager._journal(MANAGED_POSITION_HISTORY_RECOVERED, p,
                                    {"source": source, "asOfMs": as_of_ms,
                                     "addedSessions": [b.session.isoformat() for b in added],
-                                    "missedCloses": pending})
+                                    "conflictingKnownSessions": conflicts, "missedCloses": pending})
             catchup = None
             if pending:
                 try:
