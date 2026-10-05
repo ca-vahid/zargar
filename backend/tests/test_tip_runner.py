@@ -457,6 +457,12 @@ async def test_short_tip_puts_end_to_end(tip_rig):
     assert out[0]["shadowOrder"]["secType"] == "OPT"
     assert out[0]["shadowOrder"]["side"] == "BUY"
 
+    # Tips v0.9 V2.4 (2026-10-05): short tips are watch-only on Tips books by default - no arm
+    with pytest.raises(ValueError, match="watch-only"):
+        await eng.tip_runner.arm_signal(sig["id"], {
+            "portfolioId": sim["id"], "mode": "auto", "dailyLossLimit": 200.0})
+    # the put mechanics stay intact behind the switch (shadow books and a future re-enable use them)
+    await eng.settings.set("techniques.tip.shorts_watch_only", False, journal=False)
     snap = await eng.tip_runner.arm_signal(sig["id"], {
         "portfolioId": sim["id"], "mode": "auto", "dailyLossLimit": 200.0})
     assert snap["config"]["instrument"] == "options"
@@ -656,10 +662,13 @@ async def test_unverified_signal_cannot_arm(tip_rig):
     with pytest.raises(ValueError, match="verified"):
         await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
 
-async def test_handoff_runs_the_analyst_exit_plan(tip_rig):
+@pytest.mark.parametrize("horizon_mode", ["observe", "enforce"])
+async def test_handoff_runs_the_analyst_exit_plan(tip_rig, horizon_mode):
     # ARM-PLAN P2 (one exit authority): a REAL-portfolio armed fill runs the
-    # ANALYST'S exit campaign; the default 50/50 ladder is only the fallback
+    # ANALYST'S exit campaign; the default 50/50 ladder is only the fallback.
+    # Tips v0.9 (2026-10-05): under horizon_mode=enforce the campaign is reshaped by the horizon
     eng, sim = tip_rig
+    await eng.settings.set("techniques.tip.horizon_mode", horizon_mode, journal=False)
     sid = await _ingest_tip(eng)
     from zargar.models import Signal
     async with eng.sf() as session:
@@ -697,11 +706,20 @@ async def test_handoff_runs_the_analyst_exit_plan(tip_rig):
                if p.get("technique") == "tip" and p.get("runId") == run_id]
         return pos[0] if pos else None
     pos = await wait_for(handed_off, timeout=15)
-    assert pos["policy"]["ladder"] == {"targets": [101.0, 104.0, 107.0],
-                                       "fractions": [0.4, 0.4, 0.2]}
     assert pos["policy"]["stop"] == {"kind": "fixed", "price": 98.5}
-    assert pos["policy"]["time_stop_sessions"] == 6
     assert "exit:analyst:an-run-1" in pos["tags"]
+    if horizon_mode == "observe":
+        assert pos["policy"]["ladder"] == {"targets": [101.0, 104.0, 107.0],
+                                           "fractions": [0.4, 0.4, 0.2]}
+        assert pos["policy"]["time_stop_sessions"] == 6
+        return
+    pol = pos["policy"]
+    assert pol["horizon"] == "swing"                       # sim feed: no daily facts -> the default class
+    tg, fr = pol["ladder"]["targets"], pol["ladder"]["fractions"]
+    assert abs(fr[0] - 1 / 3) < 1e-3 and sum(fr) <= 2 / 3 + 1e-3   # a third rides the trail
+    assert 104.0 in tg and 107.0 in tg                     # the analyst's farther targets stay as extra trims
+    assert pol["breakeven_on_trim"] is True and pol["stale"]["sessions"] == 10
+    assert "time_stop_sessions" not in pol and pol["promote"]["label"] == "extended"
 
 
 async def test_shadow_handoff_keeps_standard_ladder(tip_rig):

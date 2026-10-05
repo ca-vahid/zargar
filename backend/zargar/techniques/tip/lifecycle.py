@@ -70,7 +70,7 @@ def build_exit_plan(signal_row, sig, analyst: dict, policy) -> dict:
 
 
 def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
-                        bars: list, settings) -> tuple[dict, list[str]]:
+                        bars: list, settings, vehicle: str | None = None) -> tuple[dict, list[str]]:
     """The adoption-geometry gate (2026-09-04): the analyst's nine-strike rule
     made deterministic. Eight adoptions in three days (HOOD 9/02, MU 9/03-04 x4,
     MRVL 9/03 x2, RKLB 9/04) died in seconds because a handed plan had a target
@@ -83,7 +83,13 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
     so the gate REPAIRS: wrong-side / penny targets are dropped, and an invalid
     stop is re-placed at the structural level the rule demands — below the
     recent low minus an ATR buffer for a long, and at least the width floor
-    (0.75% of entry, 1.0% on a 3%+ daily-range name; >= ~1x timeframe ATR)."""
+    (0.75% of entry, 1.0% on a 3%+ daily-range name; >= ~1x timeframe ATR).
+
+    Tips v0.9 V3.1 (2026-10-05): a plan stamped `atrStop` (horizon_class.decide, only where the pre-entry gate SIZES
+    from the stop) replaces that % floor with DAILY-ATR multiples - minimum `stop_atr_min` (2x), re-placed at the
+    horizon's default (`horizon_<h>_stop_atr`: 3x swing/extended, 2x short); a share plan with no stop gets the
+    default. Sizing from the final stop keeps the dollar risk (geometry gate, fit_expression and check_feasibility
+    all call THIS function). A horizon-applied plan's ladder is rebuilt on the final stop (V4.1)."""
     from ...marketstructure.levels import atr as _atr
 
     plan = dict(plan or {})
@@ -100,6 +106,18 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
         if entry > 0 and rng / entry >= 0.03:
             floor_pct = 1.0
     width_floor = max(a, entry * floor_pct / 100.0)
+    default_dist = width_floor
+    atr_d = float(plan.get("atrDaily") or 0.0) if plan.get("atrStop") else 0.0
+    floor_label = "floor"
+    if atr_d > 0:
+        from .horizon_policy import stop_atr_multiples
+        min_m, def_m = stop_atr_multiples(plan.get("horizon"), settings)
+        width_floor, default_dist = min_m * atr_d, def_m * atr_d
+        floor_label = f"{min_m:g}x daily ATR {atr_d:.4g}; re-placed at {def_m:g}x"
+        if plan.get("underlyingStop") is None and vehicle == "shares" and entry > 0:
+            plan["underlyingStop"] = round(entry - sgn * default_dist, 4)
+            repairs.append(f"set stop {plan['underlyingStop']:g}: no stop declared - {def_m:g}x daily ATR "
+                           f"({plan.get('horizon') or 'swing'} default)")
     tp_floor = max(0.5 * a, entry * 0.002)
 
     # ---- targets: sign, then minimum width (drop, never invent)
@@ -135,15 +153,18 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
         inside_structure = (struct_edge is not None
                             and sgn * (struct_edge - stop) < 0)  # stop above the low (long)
         if bad_sign or too_tight or inside_structure:
-            candidates = [entry - sgn * width_floor]
+            candidates = [entry - sgn * default_dist]
             if struct_edge is not None:
                 candidates.append(struct_edge)
             new_stop = min(candidates) if sgn > 0 else max(candidates)
             why = ("wrong side of entry" if bad_sign
-                   else f"only {abs(entry - stop):.4g} wide (floor {width_floor:.4g})"
+                   else f"only {abs(entry - stop):.4g} wide ({floor_label} {width_floor:.4g})"
                    if too_tight else "inside recent structure")
             repairs.append(f"re-placed stop {stop:g} -> {new_stop:.4g}: {why}")
             plan["underlyingStop"] = round(new_stop, 4)
+    if plan.get("horizonApplied") and entry > 0:
+        from .horizon_policy import with_horizon_ladder
+        plan = with_horizon_ladder(plan, entry_ref=entry, direction=direction, settings=settings)
     return plan, repairs
 
 
@@ -202,10 +223,27 @@ def _csv_floats(raw) -> list[float]:
     return out
 
 
-def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
+def policy_from_exit_plan(plan: dict, *, is_option: bool, settings, entry_ref: float | None = None,
+                          direction: str = "long") -> dict:
     """Exit plan → the shared policy document. Ladder fractions normalise to
     <= 1.0 (a remainder rides the structure trail); a stop-less plan becomes an
-    explicit no-stop policy with the premium-stop guard declared."""
+    explicit no-stop policy with the premium-stop guard declared.
+
+    Tips v0.9 (2026-10-05): a share policy never time-stops inside `min_share_hold_sessions` (V2.4, 2: day-1 exits
+    earn ~0R); a plan whose horizon is APPLIED is reshaped by `horizon_policy.apply` (V2.2 / V3.2 / V4) - with
+    `entry_ref` the ladder is rebuilt on the final stop. A legacy plan (no horizon) keeps the old shape."""
+    pol = _policy_from_exit_plan(plan, is_option=is_option, settings=settings)
+    if not is_option and pol.get("time_stop_sessions"):
+        pol["time_stop_sessions"] = max(int(settings.get("techniques.tip.min_share_hold_sessions", 2) or 1),
+                                        int(pol["time_stop_sessions"]))
+    if (plan or {}).get("horizon"):
+        from .horizon_policy import apply as _apply_horizon
+        pol = _apply_horizon(pol, plan, is_option=is_option, settings=settings, entry_ref=entry_ref,
+                             direction=direction)
+    return pol
+
+
+def _policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
     plan = plan or {}
     policy: dict = {"timeframe": "15m"}
     stop = plan.get("underlyingStop")
@@ -882,7 +920,8 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         stop = plan.get("underlyingStop")
         risk = abs(entry_ref - float(stop)) if stop else entry_ref * 0.05
 
-        policy = policy_from_exit_plan(plan, is_option=is_opt, settings=eng.settings)
+        policy = policy_from_exit_plan(plan, is_option=is_opt, settings=eng.settings,
+                                       entry_ref=entry_ref, direction=direction)
         leg = ({"symbol": proposal.get("symbol"), "secType": "OPT", "qty": qty,
                 "avgFill": fill, "multiplier": 100.0, "entryOrderId": oid,
                 "origin": "adoption"}
@@ -902,6 +941,9 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
             "extras": {**({"riskPlan": pre} if pre else {}),
                        **({"geometryException": exception} if exception else {}),
                        **({"fillVsQuote": fvq} if fvq else {}),
+                       **({"horizon": plan.get("horizon"), "horizonReason": plan.get("horizonReason"),
+                           "horizonSource": plan.get("horizonSource"), "horizonApplied": bool(plan.get("horizonApplied"))}
+                          if plan.get("horizon") else {}),
                        **({"eventContext": ctx.get("eventContext")} if ctx.get("eventContext") else {})},
         }
         try:

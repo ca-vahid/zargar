@@ -2900,3 +2900,33 @@ Tips-only behaviour; the shared surfaces touched are small and listed here.
   makes no calls (tests inject `entry_context.OVERRIDE`).
 - **Read-only tool:** `zargar.tools.tip_exec_costs` (per-fill commission, spread paid and slippage vs the recorded
   decision quote, vs limit, FX flag; default book `ibkr.portfolio_id`).
+
+### Policy vocabulary for horizon exits - 2026-10-05 (Tips desk, Tips v0.9 V2/V3/V4; shared `execution/policies.py` + `positions.py`)
+
+Additive, backward compatible: a policy that does not use these keys evaluates exactly as before (chaos suite green).
+
+- **`breakeven_on_trim: true`** - the stop moves to entry together with the FIRST ladder trim (the same bar, or the next
+  bar after a quote-watch trim). Independent of `breakeven_after_r`, which is unchanged.
+- **`trailing.atr_abs`** - an `atr` trail may carry a FIXED ATR unit (e.g. the daily ATR at entry) instead of the ATR
+  of the policy-timeframe bars. Activation (`after_r`) and ratchet-only are unchanged.
+- **`time_stop_unless_above_ma: N`** - the `time_stop_sessions` stop is waived while the close is on the favorable side
+  of the N-day SMA. Needs `PositionView.daily_bars` (new, default []); an unknown MA never waives it.
+- **`promote`** = {by_session, min_r, above_ma, label, overlay} - a ONE-WAY promotion: up >= min_r R on the close no
+  later than session `by_session` and above the MA -> `PolicyState.promoted` (new, persisted as `promoted`) and the
+  `overlay` is merged over the policy by `effective_policy()` (None deletes a key). An overlay may never carry a stop
+  (`validate_policy` refuses it); the stop only ratchets in the state. The manager journals the transition as
+  `ManagedPositionPolicyChanged` {promotion, label, overlay}. `simulate_position` evaluates the same functions but keeps
+  the base timeframe after a promotion (a timeframe overlay is honoured live only).
+- **Manager keys:** `quote_brake_r` (the intra-bar crash brake's distance beyond the stop for THIS policy; default
+  `execution.quote_exit_excess_r`), `venue_stop_beyond_r` (the resting venue GTC stop sits N R beyond the decision stop,
+  long shares only; default 0 = at the stop) and `gap_exit` (a position held into a session whose first 09:30 minute
+  OPENS through the stop exits at once, reduce-only, once per session). Together they make a close-judged stop with an
+  intra-bar brake: the close decides an ordinary stop-out; a gap or a move beyond the brake exits immediately.
+- **`timeframe: "1d"` (non-adapter positions):** the daily decision now judges the SESSION's own bar (first 5m open,
+  the session high/low incl. the closing minute, the closing minute's close) with completed daily bars before it,
+  instead of the last 5m bar alone. Only adapter policies (Options Cartel) used 1d before, and the adapter path is
+  untouched.
+- `PositionManager._daily_bars(symbol, day)` fetches 60 days of 1d history once per (symbol, ET day); the synthetic sim
+  feed never fetches.
+
+Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test_position_chaos.py` unchanged and green.

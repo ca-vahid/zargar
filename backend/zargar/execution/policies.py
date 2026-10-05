@@ -27,10 +27,24 @@ Policy document (all keys optional unless noted):
                    "floors": [[50,15],[100,50],[200,120]]},    # ratchet floors under the rest (see
                                                                # MONETIZE_DEFAULTS for tightening knobs)
       "breakeven_after_r": 1.0,                          # favorable excursion >= N R -> stop to entry
+      "breakeven_on_trim": true,                         # stop to entry together with the FIRST ladder trim
+                                                         #   (2026-10-05: breakeven only with a partial)
       "trailing": {"mode": "pct" | "atr" | "structure",  # trailing stop on the underlying
                    "value": 2.0,                         # pct: %, atr: multiple; structure ignores it
-                   "after_r": 1.0},                      # activates only once up N R (trail_after)
+                   "after_r": 1.0,                       # activates only once up N R (trail_after)
+                   "atr_abs": 2.15},                     # atr mode: a FIXED ATR unit (e.g. daily ATR at entry)
+                                                         #   instead of the ATR of the policy-timeframe bars
       "time_stop_sessions": 10,                          # TRADING sessions held (weekends don't count)
+      "time_stop_unless_above_ma": 20,                   # the time stop is waived while the close is above the
+                                                         #   N-day simple MA (needs PositionView.daily_bars)
+      "promote": {"by_session": 5, "min_r": 2.0,         # one-way promotion: up >= min_r by session N AND above
+                  "above_ma": 20, "label": "extended",   #   the N-day MA -> `overlay` is merged over the policy
+                  "overlay": {...}},                     #   (None deletes a key; never the stop - it only ratchets)
+      "quote_brake_r": 0.5,                              # manager: the intra-bar crash brake fires this many R
+                                                         #   beyond the stop (default execution.quote_exit_excess_r)
+      "venue_stop_beyond_r": 0.5,                        # manager: the resting venue GTC stop sits this many R
+                                                         #   beyond the decision stop (default 0 = at it)
+      "gap_exit": true,                                  # manager: a session that OPENS beyond the stop exits
       "dte_close": 7,                                    # close when min leg DTE <= N (clamped >= execution.min_dte)
       "flatten_before": {"event": "earnings", "days": 1} # close N days before the event
     }
@@ -84,6 +98,7 @@ class PolicyState:
     premium_floor_gain: float | None = None  # ratchet floor as % gain over entry (monetize policy)
     premium_stall_marks: int = 0             # sessions without a new premium peak (stall exit near expiry)
     rolls_done: int = 0                      # roll-ups executed on this position
+    promoted: bool = False                   # `promote` fired: its overlay is in force (one-way)
 
     def to_dict(self) -> dict:
         return {"trimsDone": self.trims_done, "stop": self.stop, "trailingActive": self.trailing_active,
@@ -91,7 +106,7 @@ class PolicyState:
                 "premiumTrimsDone": self.premium_trims_done, "premiumFloor": self.premium_floor,
                 "premiumPeak": self.premium_peak, "premiumTakeDone": self.premium_take_done,
                 "premiumFloorGain": self.premium_floor_gain, "premiumStallMarks": self.premium_stall_marks,
-                "rollsDone": self.rolls_done}
+                "rollsDone": self.rolls_done, "promoted": self.promoted}
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "PolicyState":
@@ -105,7 +120,8 @@ class PolicyState:
                    premium_take_done=bool(d.get("premiumTakeDone")),
                    premium_floor_gain=d.get("premiumFloorGain"),
                    premium_stall_marks=int(d.get("premiumStallMarks") or 0),
-                   rolls_done=int(d.get("rollsDone") or 0))
+                   rolls_done=int(d.get("rollsDone") or 0),
+                   promoted=bool(d.get("promoted")))
 
 
 @dataclass
@@ -125,9 +141,68 @@ class PositionView:
     event_due: str | None = None         # W4.4: the timing-aware event exit is due (the reason), None = not due/unknown
     min_dte_floor: int = 1               # execution.min_dte — the platform floor
     iv_ratio: float | None = None        # options: contract IV now / IV at entry (vega-driven gain marker)
+    daily_bars: list[Bar] = field(default_factory=list)   # completed DAILY bars (MA rules); [] = unknown
 
     def favorable(self, price: float) -> float:
         return (price - self.entry) if self.direction == "long" else (self.entry - price)
+
+
+def effective_policy(policy: dict, state: PolicyState) -> dict:
+    """The policy in force: the base document, with `promote.overlay` merged over it once the position was promoted
+    (a None value deletes a key). An overlay never carries the stop - a stop only ratchets in the state."""
+    pr = policy.get("promote") or {}
+    if not state.promoted or not pr.get("overlay"):
+        return policy
+    out = dict(policy)
+    for k, v in dict(pr["overlay"]).items():
+        if k in ("stop", "promote"):
+            continue
+        if v is None:
+            out.pop(k, None)
+        else:
+            out[k] = v
+    return out
+
+
+def _sma(closes: list[float], n: int) -> float | None:
+    if n <= 0 or len(closes) < n:
+        return None
+    return sum(closes[-n:]) / n
+
+
+def _daily_closes(policy: dict, view: "PositionView") -> list[float]:
+    if view.daily_bars:
+        return [float(b.close) for b in view.daily_bars]
+    if str(policy.get("timeframe")) == "1d":
+        return [float(b.close) for b in view.bars]
+    return []
+
+
+def above_ma(policy: dict, view: "PositionView", n: int) -> bool | None:
+    """Is the bar's close on the favorable side of the N-day simple MA? None = not enough daily history."""
+    ma = _sma(_daily_closes(policy, view), int(n))
+    if ma is None:
+        return None
+    return view.bar.close > ma if view.direction != "short" else view.bar.close < ma
+
+
+def promotion_due(policy: dict, state: PolicyState, view: "PositionView") -> str | None:
+    """Pure: the reason the one-way `promote` fires on this bar, or None. Up >= min_r R on the close no later than
+    session `by_session`, and on the favorable side of the `above_ma`-day MA (an unknown MA never promotes)."""
+    pr = policy.get("promote") or {}
+    if not pr or state.promoted:
+        return None
+    if view.sessions_held > int(pr.get("by_session") or 0):
+        return None
+    risk = max(view.risk, 1e-9)
+    fav_r = view.favorable(view.bar.close) / risk
+    if fav_r < float(pr.get("min_r") or 0):
+        return None
+    n = int(pr.get("above_ma") or 0)
+    if n > 0 and not above_ma(policy, view, n):
+        return None
+    return (f"promoted to {pr.get('label') or 'the overlay'}: {fav_r:+.2f}R by session {view.sessions_held}"
+            + (f", above the {n}-day MA" if n > 0 else ""))
 
 
 def _ladder(policy: dict) -> tuple[list[float], list[float]]:
@@ -334,6 +409,15 @@ def validate_policy(policy: dict) -> list[str]:
     tr = policy.get("trailing") or {}
     if tr and tr.get("mode") not in ("pct", "atr", "structure"):
         out.append(f"unknown trailing mode {tr.get('mode')!r}")
+    if tr and tr.get("atr_abs") is not None and float(tr.get("atr_abs") or 0) < 0:
+        out.append("trailing.atr_abs must be >= 0")
+    pr = policy.get("promote")
+    if pr:
+        ov = pr.get("overlay") or {}
+        if "stop" in ov:
+            out.append("promote.overlay may not carry a stop (a stop only ratchets in the state)")
+        if ov.get("timeframe") is not None and ov["timeframe"] not in ("1m", "5m", "15m", "1h", "1d"):
+            out.append(f"unsupported promote.overlay timeframe {ov['timeframe']!r}")
     tf = policy.get("timeframe", DEFAULT_TIMEFRAME)
     if tf not in ("1m", "5m", "15m", "1h", "1d"):
         out.append(f"unsupported timeframe {tf!r}")
@@ -356,6 +440,7 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
     and executes Decisions reduce-only."""
     decisions: list[Decision] = []
     moves: list[StopMove] = []
+    policy = effective_policy(policy, state)
     bar = view.bar
     short = view.direction == "short"
     risk = max(view.risk, 1e-9)
@@ -399,7 +484,10 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
                                              "never hold to expiry")], moves
     ts = policy.get("time_stop_sessions")
     if ts and view.sessions_held >= int(ts):
-        return [Decision("time", 1.0, f"held {view.sessions_held} trading sessions (time stop {ts})")], moves
+        ma_n = int(policy.get("time_stop_unless_above_ma") or 0)
+        if not (ma_n > 0 and above_ma(policy, view, ma_n)):
+            return [Decision("time", 1.0, f"held {view.sessions_held} trading sessions (time stop {ts})"
+                             + (f"; not above the {ma_n}-day MA" if ma_n > 0 else ""))], moves
     # Q1 (2026-09-27 review): a position that has not earned min_r after N sessions frees its slot - capital is the
     # binding constraint once positions are shares. Judged on a CLOSED bar of the policy timeframe, never a quote.
     stale = policy.get("stale") or {}
@@ -448,6 +536,13 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
         new_stop = view.entry
         if stop is None or (new_stop > stop if not short else new_stop < stop):
             moves.append(StopMove(new_stop, f"breakeven: up {fav / risk:.2f}R (>= {be}R)"))
+    if policy.get("breakeven_on_trim") and not state.breakeven_done \
+            and (state.trims_done >= 1 or any(d.kind == "trim" for d in decisions)):
+        # 2026-10-05 (Tips v0.9 V4.3): breakeven only together with a partial - a bare breakeven at +1R kept 35% of
+        # the big runs; with a 1/3 partial the hit rate rose 44% -> 57% at about the same mean (R3)
+        new_stop = view.entry
+        if stop is None or (new_stop > stop if not short else new_stop < stop):
+            moves.append(StopMove(new_stop, "breakeven: with the first partial"))
     tr = policy.get("trailing") or {}
     if tr:
         after_r = float(tr.get("after_r") or 0)
@@ -460,7 +555,7 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
                 ref = (view.entry + peak) if not short else (view.entry - peak)
                 new_stop = ref * (1 - pct) if not short else ref * (1 + pct)
             elif mode == "atr":
-                a = _atr(view.bars[-15:]) if view.bars else 0.0
+                a = float(tr.get("atr_abs") or 0.0) or (_atr(view.bars[-15:]) if view.bars else 0.0)
                 if a > 0:
                     ref = (view.entry + peak) if not short else (view.entry - peak)
                     new_stop = ref - float(tr.get("value") or 1.0) * a if not short \
@@ -522,6 +617,9 @@ def apply_moves(state: PolicyState, view: PositionView, decisions: list[Decision
             new_stop = cand
     out = replace(state, trims_done=trims, stop=new_stop, trailing_active=trailing,
                   peak_favorable=peak, breakeven_done=be_done)
+    if policy and not any(d.kind in ("stop", "time", "dte", "event", "premium_stop") for d in decisions) \
+            and promotion_due(policy, state, view):
+        out = replace(out, promoted=True)          # one-way; the caller journals the transition
     for d in decisions:
         if d.kind in ("premium_trim", "premium_take"):
             out = apply_premium_decision(policy or {}, out, d, view.entry_mark)

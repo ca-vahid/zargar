@@ -447,6 +447,30 @@ class ProposalService:
                             * float(leg.get("multiplier") or 1.0))
         return n, cost
 
+    async def _short_watch_only(self, signal_row, *, lane: str, run_id: str | None = None) -> None:
+        """V2.4: a short tip on a Tips book is recorded as watch-only (journaled `TipShortWatchOnly`), never traded."""
+        reason = ("short tips are watch-only (techniques.tip.shorts_watch_only): every exit policy lost on the "
+                  "short cohort (R3, n=67)")
+        self._last_refusal[""] = reason
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(
+                "TipShortWatchOnly",
+                {"signalId": getattr(signal_row, "id", None), "ticker": getattr(signal_row, "ticker", None),
+                 "source": getattr(signal_row, "source_name", None), "lane": lane, "reason": reason,
+                 **({"runId": run_id} if run_id else {})},
+                aggregate_type="signal", aggregate_id=getattr(signal_row, "id", None) or "tip")
+
+    async def _decide_horizon(self, signal_row, *, exit_plan: dict, analyst: dict | None, direction: str,
+                              entry_ref: float | None, pid: str, where: str, journal: bool = True) -> dict:
+        """V2.1: classify the tip's horizon at entry and carry it on the exit plan (journaled `TipHorizonDecided`)."""
+        from ..techniques.tip import horizon_class as _hc
+        extraction = getattr(signal_row, "extraction", None) or {}
+        catalyst = getattr(signal_row, "catalyst", None) or ((extraction.get("signal") or {}).get("catalyst"))
+        return await _hc.decide(self.engine, plan=exit_plan, symbol=str(signal_row.ticker or "").upper(),
+                                direction=direction, entry_ref=entry_ref, catalyst=catalyst,
+                                source=signal_row.source_name, analyst=analyst, pid=pid, where=where,
+                                signal_id=signal_row.id, journal=journal)
+
     async def _refuse(self, *, signal_id: str | None, reason: str,
                       run_id: str | None = None, portfolio_id: str | None = None) -> None:
         """A tip that minted no proposal because the book/source is full — on
@@ -541,6 +565,9 @@ class ProposalService:
         Same shape and notification path as `create_from_signal` (Telegram + push
         ride topics.PROPOSALS)."""
         eng = self.engine
+        if str(direction) == "short" and bool(eng.settings.get("techniques.tip.shorts_watch_only", True)):
+            await self._short_watch_only(signal_row, lane="armed_fire", run_id=run_id)
+            return None
         from ..signals.sources import resolve_policy
         policy = resolve_policy(eng.settings, signal_row.source_name)
         budget, glide_note, refuse = await self._tip_budget(policy, portfolio_id, underlying=signal_row.ticker)
@@ -606,6 +633,11 @@ class ProposalService:
                        f"({pf.get('kind', '?')}). RiskGate still checks the order on approval.")
         # GEOMETRY rev 2: the armed-fire producer runs the same gate as the tip-time card
         arm_plan = exit_plan or {"targets": list(targets or []), "underlyingStop": stop}
+        _an = ((signal_row.extraction or {}).get("analyst") or {}) if getattr(signal_row, "extraction", None) else {}
+        arm_plan = await self._decide_horizon(signal_row, exit_plan=arm_plan, analyst=_an, direction=direction,
+                                              entry_ref=(float(entry) if entry else None), pid=portfolio_id,
+                                              where="armed_fire")
+        exit_plan = arm_plan
         arm_plan, qty, arm_risk, gnote = await self._pre_entry_geometry(
             underlying=signal_row.ticker, direction=direction, pid=portfolio_id,
             exit_plan=arm_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol,
@@ -665,6 +697,11 @@ class ProposalService:
         (`TipBookFanOut`) says what every book got and why. An empty books list = the single legacy book."""
         from ..techniques.tip import books as _books
         eng = self.engine
+        if str(sig.direction) == "short" and bool(eng.settings.get("techniques.tip.shorts_watch_only", True)):
+            # Tips v0.9 V2.4 (2026-10-05): short tips lost under every exit policy (R3: -0.22..-0.85R, n=67) - they
+            # are watch-only: no proposal on any book (the research shadow books still measure them)
+            await self._short_watch_only(signal_row, lane="proposal")
+            return []
         sims = [p for p in eng.positions.portfolios() if p.get("kind") == "sim" and not p.get("book")
                 and not p.get("archived")]
         bindings = _books.resolve_books(eng.settings, eng.positions.portfolio,
@@ -1030,6 +1067,15 @@ class ProposalService:
                 exit_plan = {**exit_plan, "lotto": True,
                              "maxHoldSessions": min(int(exit_plan.get("maxHoldSessions") or (_dte + 1)), _dte + 1)}
                 vehicle = {**vehicle, "lotto": True}
+        # ---- Tips v0.9 V2.1 (2026-10-05): the horizon at entry, carried on the plan, the card and the position
+        _uref = float(limit) if sec_type == "STK" else None
+        if _uref is None:
+            with contextlib.suppress(Exception):
+                _uq = eng.quotes.get(sig.ticker.upper())
+                _uref = float(_uq.last) if _uq is not None and _uq.last and _uq.last > 0 else None
+        exit_plan = await self._decide_horizon(signal_row, exit_plan=exit_plan, analyst=analyst,
+                                               direction=sig.direction, entry_ref=_uref or sig.entry_price, pid=pid,
+                                               where="proposal", journal=(binding is None or binding.primary))
         bits = []
         if exit_plan.get("targets"):
             fr = exit_plan.get("fractions") or []
@@ -1056,6 +1102,9 @@ class ProposalService:
             signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
         if gnote:
             explain += " " + gnote
+        if exit_plan.get("horizon"):
+            explain += (f" Horizon: {exit_plan['horizon']} ({exit_plan.get('horizonReason') or 'default'})"
+                        + ("" if exit_plan.get("horizonApplied") else " - label only, legacy exits") + ".")
         if binding is None or binding.primary:            # W2.6 observe lane (once per idea)
             from ..techniques.tip.observe_lanes import record_starter
             await record_starter(eng, signal_id=signal_row.id, symbol=symbol, sec_type=sec_type, limit=limit,
@@ -1198,6 +1247,9 @@ class ProposalService:
                 "vehicle": vehicle,
                 "explain": explain + ((" " + glide_note) if glide_note else ""),
                 "exitPlan": exit_plan,
+                **({"horizon": exit_plan.get("horizon"), "horizonReason": exit_plan.get("horizonReason"),
+                    "horizonSource": exit_plan.get("horizonSource"),
+                    "horizonApplied": bool(exit_plan.get("horizonApplied"))} if exit_plan.get("horizon") else {}),
                 **({"riskPlan": risk_plan.to_dict()} if risk_plan else {}),
                 **({"reviewRequired": risk_plan.reviewRequired}
                    if (risk_plan and risk_plan.enforced and risk_plan.reviewRequired) else {}),
