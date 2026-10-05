@@ -299,6 +299,18 @@ class TipRunner(PlanRunner):
             raise ValueError("unknown signal")
         if sig.status not in ARMABLE_STATUSES:
             raise ValueError(f"signal is {sig.status} — only verified/parked tips arm")
+        _target_pid = config.get("portfolioId") if isinstance(config, dict) else None
+        _target_pf = (self.engine.positions.portfolio(_target_pid) or {}) if _target_pid else {}
+        if str(sig.direction) == "short" and not _target_pf.get("book") \
+                and bool(self.engine.settings.get("techniques.tip.shorts_watch_only", True)):
+            # Tips v0.9 V2.4 (2026-10-05): short tips are watch-only on Tips books - no arm (the research shadow
+            # books, `Portfolio.book`, still measure them so the short cohort can earn its way back)
+            with contextlib.suppress(Exception):
+                await self.engine.journal.append(
+                    "TipShortWatchOnly", {"signalId": sig.id, "ticker": sig.ticker, "source": sig.source_name,
+                                          "lane": "arm", "reason": "techniques.tip.shorts_watch_only"},
+                    aggregate_type="signal", aggregate_id=sig.id)
+            raise ValueError("short tips are watch-only (techniques.tip.shorts_watch_only) - not armed")
         from ...signals.sources import resolve_policy
         policy = resolve_policy(self.engine.settings, sig.source_name)
         # a config-less arm (raw API) gets the same vehicle defaults the UI
@@ -1013,7 +1025,8 @@ class TipRunner(PlanRunner):
                                                    nms - 7 * 86_400_000, nms)
             plan2, repairs = check_exit_geometry(
                 plan_dict, direction=trade.direction, entry_ref=entry_ref,
-                bars=gate_bars, settings=self.engine.settings)
+                bars=gate_bars, settings=self.engine.settings,
+                vehicle=("option" if is_opt else "shares"))
             if repairs:
                 from ... import events as ev
                 with contextlib.suppress(Exception):
@@ -1030,13 +1043,26 @@ class TipRunner(PlanRunner):
             return plan2
 
         exit_author = "default"
+
+        async def _horizon(plan_dict: dict) -> dict:
+            # Tips v0.9 V2.1 (2026-10-05): the armed lane carries the horizon too. The ATR STOP (V3.1) is NOT applied
+            # here: an armed fill was sized at arm time against its own stop, and a post-fill widen without a
+            # resize would multiply the dollar risk (open: V1.1 sizes at-level arms through the book's gate)
+            from . import horizon_class as _hc
+            return await _hc.decide(self.engine, plan=plan_dict, symbol=ap.symbol, direction=trade.direction,
+                                    entry_ref=entry_ref, catalyst=(sig.catalyst if sig is not None else None),
+                                    source=ctx.get("source"), analyst=analyst, pid=ap.config.portfolio_id,
+                                    where="armed_fill", signal_id=signal_id, atr_stop=False)
+
         if analyst.get("exit_targets") and not pf.get("book") and sig is not None:
             src_policy = resolve_policy(self.engine.settings, ctx.get("source"))
             plan = build_exit_plan(sig, sig, analyst, src_policy)
             plan["maxHoldSessions"] = min(int(plan.get("maxHoldSessions") or hold_cap), hold_cap)
+            plan = await _horizon(plan)
             plan = await _gate(plan)
             policy = policy_from_exit_plan(plan, is_option=is_opt,
-                                           settings=self.engine.settings)
+                                           settings=self.engine.settings,
+                                           entry_ref=entry_ref, direction=trade.direction)
             exit_author = f"analyst:{str(analyst.get('runId') or '')[:8]}"
         else:
             gated = await _gate({"targets": [float(t) for t in trade.targets],

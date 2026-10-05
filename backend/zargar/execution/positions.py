@@ -67,6 +67,7 @@ from .policies import (
     advance_premium_state,
     apply_moves,
     apply_premium_decision,
+    effective_policy,
     evaluate,
     evaluate_premium,
     quote_target_decision,
@@ -789,6 +790,11 @@ class PositionManager:
         stop = stop_price(p.policy, p.state)
         if stop is None:
             return
+        # generic (2026-10-05): a close-judged policy rests its venue stop `venue_stop_beyond_r` R beyond the decision
+        # stop - the resting order is the crash brake (and the gap net), the close decides the ordinary stop-out
+        _beyond = float(effective_policy(p.policy, p.state).get("venue_stop_beyond_r") or 0.0)
+        if _beyond > 0 and p.risk > 0:
+            stop = max(0.01, stop - _beyond * p.risk)          # long shares only (stk legs with qty > 0)
         leg = stk[0]
         want_qty = float(abs(leg.qty))
         # unchanged price AND quantity: the resting stop is right. A trim that
@@ -1399,7 +1405,10 @@ class PositionManager:
         day = session_date(bar.ts)
         if day not in p.sessions_seen:
             p.sessions_seen.append(day)
-        tf = str(p.policy.get("timeframe", DEFAULT_TIMEFRAME))
+        pol = effective_policy(p.policy, p.state)
+        if pol.get("gap_exit") and await self._gap_exit(p, bar, day, pol):
+            return
+        tf = str(pol.get("timeframe", DEFAULT_TIMEFRAME))
         step = TF_MINUTES.get(tf, 5)
         if tf == "1d":
             # the daily decision runs on the last RTH bar of the session
@@ -1408,9 +1417,23 @@ class PositionManager:
             closes_tf = ((bar.ts // 60_000) + 1) % step == 0
         if not closes_tf:
             return
-        tf_bars = self.engine.bars.bars(p.symbol, tf="5m" if tf == "1d" else tf, limit=40, include_forming=False) \
+        tf_bars = self.engine.bars.bars(p.symbol, tf="5m" if tf == "1d" else tf, limit=(80 if tf == "1d" else 40),
+                                        include_forming=False) \
             if hasattr(self.engine, "bars") else []
-        tfbar = tf_bars[-1] if tf_bars else bar
+        if tf == "1d":
+            # 2026-10-05 (generic): the DAILY decision is judged on the session's own bar - open of its first 5m bar,
+            # the session's high/low, the closing minute's close - not on the last 5m bar alone (a daily ladder rung
+            # touched at 11:00 was invisible to a 15:55 5m bar)
+            today = [b for b in tf_bars if session_date(b.ts) == day]
+            if today:
+                tfbar = Bar(symbol=p.symbol, tf="1d", ts=today[0].ts, open=today[0].open,
+                            high=max([b.high for b in today] + [bar.high]), low=min([b.low for b in today] + [bar.low]),
+                            close=bar.close, volume=sum(int(b.volume or 0) for b in today))
+                tf_bars = [*(await self._daily_bars(p.symbol, day)), tfbar]
+            else:
+                tfbar = tf_bars[-1] if tf_bars else bar
+        else:
+            tfbar = tf_bars[-1] if tf_bars else bar
         if p.last_tf_bar_ts is not None and tfbar.ts <= p.last_tf_bar_ts:
             tfbar = bar                                  # fall back to the raw bar (tests feed those directly)
         p.last_tf_bar_ts = max(p.last_tf_bar_ts or 0, tfbar.ts)
@@ -1422,6 +1445,51 @@ class PositionManager:
             return
         self._last_decide[p.id] = bar.ts
         await self._decide(p, tfbar, tf_bars or [bar])
+
+    async def _daily_bars(self, symbol: str, day: str | None = None) -> list[Bar]:
+        """Completed DAILY bars before `day` (ET session date; default today) for the MA / daily-timeframe rules,
+        cached per (symbol, day). [] when unknown - the synthetic sim feed never fetches history. Generic
+        (2026-10-05): a rule that needs daily history and gets [] treats it as unknown, never as a pass."""
+        day = day or session_date(self.now_ms())
+        cache: dict = self.__dict__.setdefault("_daily_cache", {})
+        key = (symbol, day)
+        hit = cache.get(key)
+        if hit is not None and (hit[1] or self._now() - hit[0] < 600):
+            return hit[1]                                 # an EMPTY answer is retried after 10 minutes
+        out: list[Bar] = []
+        if type(getattr(self.engine, "feed", None)).__name__ != "SimQuoteFeed":
+            with contextlib.suppress(Exception):
+                from ..marketstructure.history import fetch_window
+                now = self.now_ms()
+                got = await fetch_window(symbol, "1d", now - 60 * 86_400_000, now)
+                out = [b for b in (got or []) if session_date(b.ts) < day]
+        if len(cache) > 500:
+            cache.clear()
+        cache[key] = (self._now(), out)
+        return out
+
+    async def _gap_exit(self, p: Managed, bar: Bar, day: str, pol: dict) -> bool:
+        """`gap_exit` (generic, 2026-10-05): a position held into a session whose FIRST regular-session minute opens
+        beyond the stop exits at once - the crash brake for a close-judged stop whose resting venue stop sits beyond
+        it (`venue_stop_beyond_r`). Exit-only, reduce-only, once per position and session."""
+        t = dt.datetime.fromtimestamp(bar.ts / 1000, ET)
+        if (t.hour, t.minute) != (9, 30) or len(p.sessions_seen) < 2 or bar.ts < p.opened_ms:
+            return False
+        seen: set = self.__dict__.setdefault("_gap_checked", set())
+        if (p.id, day) in seen:
+            return False
+        seen.add((p.id, day))
+        stop = stop_price(pol, p.state)
+        if stop is None:
+            return False
+        short = p.direction == "short"
+        through = (bar.open >= stop) if short else (bar.open <= stop)
+        if not through or any(x.get("status") not in self._EXIT_DEAD + ("FILLED",) for x in p.exits if x.get("orderId")):
+            return False
+        self._log(p, "gap_stop", f"session opened at {bar.open:g} through the stop {stop:.4f}")
+        await self.close(p.id, fraction=1.0, kind="stop", force_market=True,
+                         reason=f"gap: the session opened at {bar.open:g}, through the stop {stop:.4f}")
+        return True
 
     async def _decide(self, p: Managed, bar: Bar, bars: list[Bar]) -> None:
         days_to_event = None
@@ -1448,6 +1516,10 @@ class PositionManager:
             sessions_held=p.sessions_held(), days_to_event=days_to_event, event_due=event_due,
             min_dte_floor=self.min_dte_floor(),
         )
+        pol = effective_policy(p.policy, p.state)
+        if p.policy.get("promote") or pol.get("time_stop_unless_above_ma"):
+            with contextlib.suppress(Exception):
+                view.daily_bars = await self._daily_bars(p.symbol)
         decisions, moves = evaluate(p.policy, p.state, view)
         # ONE confirmation state across bar and tick paths (Codex 2026-09-13
         # P1: an underlying candle close is not a second OPTION observation —
@@ -1473,7 +1545,15 @@ class PositionManager:
             # contract's premium, unchanged by our size.
             self._premium_confirm.pop(p.id, None)
         old_stop = p.state.stop
+        was_promoted = p.state.promoted
         p.state = apply_moves(p.state, view, decisions, moves, p.policy)
+        if p.state.promoted and not was_promoted:
+            from .policies import promotion_due as _pdue
+            why = _pdue(p.policy, replace(p.state, promoted=False), view) or "promoted"
+            self._log(p, "promoted", why)
+            await self._journal(POSITION_POLICY, p, {"promotion": why,
+                                                     "label": (p.policy.get("promote") or {}).get("label"),
+                                                     "overlay": (p.policy.get("promote") or {}).get("overlay")})
         if p.state.stop != old_stop and p.state.stop is not None:
             self._log(p, "stop_moved", f"stop -> {p.state.stop:.4f}")
             await self._ensure_venue_stop(p)
@@ -1924,7 +2004,10 @@ class PositionManager:
         if stop is not None and fresh and q.last and q.last > 0:
             short = p.direction == "short"
             beyond = (float(q.last) - stop) if short else (stop - float(q.last))
-            if beyond >= excess * p.risk:
+            # generic (2026-10-05): a close-judged policy declares its own crash-brake distance (`quote_brake_r`)
+            _brake = effective_policy(p.policy, p.state).get("quote_brake_r")
+            _excess = float(_brake) if _brake is not None and float(_brake) > 0 else excess
+            if beyond >= _excess * p.risk:
                 k = (p.id, "quote")
                 n = self._breaches.get(k, 0) + 1
                 self._breaches[k] = n

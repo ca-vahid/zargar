@@ -298,6 +298,42 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.mirror_match_instrument": True, # Q2: the author's exit is mirrored only on the leg our position came from
     "techniques.tip.followup_close_disarms": False,  # Q3: the author's own grounded close disarms that source's waiting plan on the ticker
     "techniques.tip.share_target_watch": False,     # Q5: share ladder rungs judged on the live bid (exit-only quote watch)
+    # --- Tips v0.9 V2/V3/V4 (2026-10-05, docs/techniques/tip/research/2026-10-04-v09/PLAN.md): horizon at entry,
+    #     ATR stops sized at equal risk, exits by horizon. Positions opened before keep their stored policy.
+    "techniques.tip.horizon_mode": "enforce",       # observe (label + journal TipHorizonDecided only) | enforce (exit policy by horizon on Practice-policy books)
+    "techniques.tip.horizon_chase_pct": 2.0,        # short: entry >= +N% over the prior close (chased)
+    "techniques.tip.horizon_gap_pct": 2.0,          # short: the session gapped >= +N% at the open
+    "techniques.tip.horizon_low_atr_pct": 2.5,      # short: daily ATR14 < N% of price (low-ATR name)
+    "techniques.tip.horizon_dip_pct": 2.0,          # extended: entry <= -N% under the prior close (down-day entry)
+    "techniques.tip.horizon_extended_sources": "neal",  # extended: sources with a graded multi-week record (comma list)
+    "techniques.tip.stop_atr_mode": "enforce",      # V3.1: enforce (daily-ATR stop floor where the gate sizes from the stop) | off (the legacy % floor)
+    "techniques.tip.stop_atr_min": 2.0,             # V3.1: a declared stop narrower than N x daily ATR is re-placed at the horizon default
+    "techniques.tip.horizon_short_stop_atr": 2.0,   # stop distance (x daily ATR) by horizon
+    "techniques.tip.horizon_swing_stop_atr": 3.0,
+    "techniques.tip.horizon_extended_stop_atr": 3.0,
+    "techniques.tip.horizon_short_tp_r": 1.0,       # first ladder target (R) and the fraction sold there, by horizon
+    "techniques.tip.horizon_short_tp_fraction": 0.5,
+    "techniques.tip.horizon_swing_tp_r": 1.0,
+    "techniques.tip.horizon_swing_tp_fraction": 0.3333,
+    "techniques.tip.horizon_extended_tp_r": 1.5,
+    "techniques.tip.horizon_extended_tp_fraction": 0.3333,
+    "techniques.tip.horizon_runner_fraction": 0.3333,   # V4.4: at least this share rides the trail past the last target
+    "techniques.tip.horizon_trail_after_r": 1.0,    # V4.2: the trail activates only after +N R (and only ratchets)
+    "techniques.tip.horizon_short_trail_atr": 2.0,  # trail distance (x daily ATR at entry) by horizon
+    "techniques.tip.horizon_swing_trail_atr": 3.0,
+    "techniques.tip.horizon_extended_trail_atr": 3.0,
+    "techniques.tip.horizon_short_sessions": 3,     # short: time stop (sessions)
+    "techniques.tip.horizon_short_breakeven": False,  # short: also move the stop to entry with the 1/2 partial
+    "techniques.tip.horizon_swing_sessions": 10,    # swing: time stop after N sessions ONLY while below swing_stale_min_r
+    "techniques.tip.horizon_swing_stale_min_r": 0.5,
+    "techniques.tip.horizon_extended_sessions": 20, # extended: time stop, waived while above the extended_ma-day MA
+    "techniques.tip.horizon_extended_ma": 20,
+    "techniques.tip.horizon_promote_by_session": 5, # V2.3: swing -> extended when >= promote_min_r by session N ...
+    "techniques.tip.horizon_promote_min_r": 2.0,
+    "techniques.tip.horizon_promote_ma": 20,        # ... and above the N-day MA (journaled ManagedPositionPolicyChanged)
+    "techniques.tip.horizon_brake_r": 0.5,          # V3.2: swing/extended judge stops on the CLOSE; intrabar only N R beyond (quote brake + resting venue stop) or a gap through
+    "techniques.tip.min_share_hold_sessions": 2,    # V2.4: no same-day share plans (a share time stop is never < N sessions)
+    "techniques.tip.shorts_watch_only": True,       # V2.4: short tips propose/arm nothing on Tips books (journaled TipShortWatchOnly; shadow books still measure)
     "techniques.tip.rule_proposal_queue_max": 0,    # Q7: refuse new model rule proposals while N wait for review (0 = off)
     "techniques.tip.prompt_cache_rulebook_ttl": "5m",  # Q9: 5m | 1h cache TTL for the rulebook block (1h writes bill 2x input)
     "techniques.tip.gate_audit_rate": 0.0,          # Q12: share of ENFORCED gate skips reviewed DRY; a miss flips the gate to observe
