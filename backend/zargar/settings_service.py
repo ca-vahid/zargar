@@ -286,6 +286,22 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry_band_option": 1.10,       # W3.1: option BUY limit <= this x the source's stated premium (0 = off)
     "techniques.tip.card_ttl_short_minutes": 15,    # W3.2: life of a card on a contract expiring within card_ttl_short_dte
     "techniques.tip.card_ttl_short_dte": 7,
+    # --- Tips v0.9 sizing + decision-time information (2026-10-05, docs/techniques/tip/research/2026-10-04-v09/PLAN.md V5/V6)
+    "techniques.tip.risk_first_sizing": True,       # V5.1: share qty = risk budget / stop distance, then the notional/cash/position/name caps (the card names the binding cap)
+    "techniques.tip.max_open_risk_pct": 5.0,        # V5.1: open tip positions' remaining risk to their stops + this trade <= this % of equity, else refused (0 = off; per-book maxOpenRiskPct)
+    "techniques.tip.source_kelly_mode": "observe",  # V5.2: off | observe (grade + journal what it would do) | enforce (risk = min(risk_pct, fraction x Kelly); negative shrunk edge -> watch-only)
+    "techniques.tip.source_kelly_min_trades": 20,   # V5.2: graded closed trades (primary book, after costs) before a source is graded
+    "techniques.tip.source_kelly_shrink_k": 20.0,   # V5.2: edge shrunk toward 0 by n / (n + k)
+    "techniques.tip.source_kelly_fraction": 0.25,   # V5.2: fractional Kelly (R4: <= 1/4)
+    "techniques.tip.max_per_sector": 2,             # V5.3: open tip positions per sector per book (unknown sector never blocks; 0 = off)
+    "techniques.tip.entry_context": True,           # V6.1: deterministic decision-time context (ATR %, RVOL, MAs, gap, RS vs SPY, regime, short ratio) in the header + card
+    "techniques.tip.entry_context_timeout_s": 4.0,  # V6.1: per-fetch bound (fetches run concurrently)
+    "techniques.tip.entry_context_ttl_s": 600,      # V6.1: per-symbol cache within a session
+    "techniques.tip.regime_guard": "observe",       # V6.2: off | observe (journal TipRegimeShadow) | enforce (halve momentum entries in a hostile regime)
+    "techniques.tip.regime_vix_max": 25.0,          # V6.2: VIX above this = high volatility
+    "techniques.tip.regime_vol_max": 25.0,          # V6.2: else SPY 126-session realised vol (% annualised) above this
+    "techniques.tip.chase_filter": "observe",       # V6.3: off | observe (journal TipChaseShadow) | enforce (half size + time box 3 sessions)
+    "techniques.tip.chase_threshold_pct": 2.0,      # V6.3: entry this % above the prior close = chased
     "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)

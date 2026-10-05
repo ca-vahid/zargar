@@ -578,6 +578,49 @@ function DecidedRow({ p }: { p: any }) {
   );
 }
 
+// v0.9 V6.4 (2026-10-05): the source's graded after-cost record, one compact line
+function sourceGradeText(g: any): { text: string; title: string } | null {
+  if (!g || g.n == null) return null;
+  const k = g.kelly;
+  const mode = k?.mode ?? "observe";
+  const title = `Graded closed tip positions in the primary book, after commissions, in R (${g.basis ?? ""}). `
+    + `Edge = mean R shrunk toward 0 by n/(n+${g.shrinkK ?? 20}); risk = min(book risk %, ${g.kellyFraction ?? 0.25} Kelly). `
+    + `Mode ${mode}${k?.why ? ` - ${k.why}` : ""}.`;
+  if (g.status === "ungraded") {
+    return { text: `ungraded (${g.n}/${g.minTrades ?? 20} trades${g.meanR != null ? `, mean ${g.meanR > 0 ? "+" : ""}${g.meanR}R` : ""})`, title };
+  }
+  const sign = (x: number) => `${x > 0 ? "+" : ""}${x}`;
+  const tail = g.status === "negative"
+    ? (mode === "enforce" ? " · watch-only" : " · would be watch-only")
+    : (g.fractionalKellyPct != null ? ` · ¼ Kelly ${Number(g.fractionalKellyPct).toFixed(2)}%${mode === "enforce" ? "" : " (observe)"}` : "");
+  return {
+    text: `${g.n} graded · hit ${Math.round((g.hitRate ?? 0) * 100)}% · mean ${sign(g.meanR)}R · edge ${sign(g.shrunkEdge)}R${tail}`,
+    title,
+  };
+}
+
+// v0.9 V6.1-V6.3 (2026-10-05): the deterministic decision-time read + what the guards would do
+function entryContextText(ec: any, guards: any): string | null {
+  if (!ec) return null;
+  const pct = (x: any, sign = true) => (x == null ? null : `${sign && x > 0 ? "+" : ""}${x}%`);
+  const rg = ec.regime ?? {};
+  const bits = [
+    ec.atrPct != null ? `ATR ${ec.atrPct}%` : null,
+    ec.rvolAdj != null ? `RVOL ${ec.rvolAdj}x` : null,
+    ec.distMa20Pct != null ? `MA20 ${pct(ec.distMa20Pct)}` : null,
+    ec.changePct != null ? `vs close ${pct(ec.changePct)}` : null,
+    ec.rs20 != null ? `RS20 ${ec.rs20 > 0 ? "+" : ""}${ec.rs20}` : null,
+    ec.shortRatio != null ? `DTC ${ec.shortRatio}` : null,
+    rg.spyAbove200 != null ? `SPY ${rg.spyAbove200 ? "above" : "below"} 200d` : null,
+    rg.vix != null ? `VIX ${rg.vix}` : null,
+  ].filter(Boolean);
+  const g: string[] = [];
+  if (guards?.regime?.would) g.push(`hostile regime: ${guards.regime.applied ? "halved" : "would halve"}`);
+  if (guards?.chase?.would) g.push(`chased ${guards.chase.entryVsPrevClosePct}%: ${guards.chase.applied ? "half size, 3-session box" : "would halve + 3-session box"}`);
+  if (!bits.length && !g.length) return ec.status === "offline" ? "context unavailable (offline feed)" : null;
+  return bits.join(" · ") + (g.length ? ` · ${g.join(" · ")}` : "");
+}
+
 function ProposalCard({ p }: { p: Proposal }) {
   const toast = useStore((s) => s.toast);
   const [busy, setBusy] = useState(false);
@@ -819,12 +862,33 @@ function ProposalCard({ p }: { p: Proposal }) {
 
       <div className="prop-facts">
         <span className="prop-fact"><b>{p.context?.sourceName ?? "unknown source"}</b> · {p.context?.confidence ?? "?"}</span>
+        {(() => {
+          const sg = sourceGradeText(p.context?.sourceGrade);
+          return sg ? <span className="prop-fact" title={sg.title}>record <b>{sg.text}</b></span> : null;
+        })()}
+        {(() => {
+          const rf = p.context?.sizing?.riskFirst;
+          return rf?.binding ? (
+            <span className="prop-fact" title={`Risk-first sizing (${rf.sizedBy ?? ""}): candidates ${JSON.stringify(rf.caps)}; risk budget ${rf.riskBudget ?? "?"} (${rf.riskBudgetSource ?? ""}).`}>
+              sized by <b>{rf.binding === "risk" ? "risk" : rf.binding === "notional" ? "budget" : rf.binding === "positionPct" ? "position cap" : rf.binding === "guard" ? "guard (reduced)" : "name cap"}</b>{rf.applied === false ? " (recorded only)" : ""}
+            </span>
+          ) : null;
+        })()}
         {trims && <span className="prop-fact">trims <b>{trims}</b></span>}
         {exitPlan?.premiumStopPct != null && <span className="prop-fact">premium stop <b>{exitPlan.premiumStopPct}%</b></span>}
         {exitPlan?.maxHoldSessions != null && <span className="prop-fact">time box <b>{exitPlan.maxHoldSessions} sessions</b></span>}
         {!exitPlan && p.bracket?.take_profit && <span className="prop-fact">target <b>{fmtMoney(p.bracket.take_profit)}</b></span>}
         {!exitPlan && p.bracket?.stop_loss && <span className="prop-fact">stop <b>{fmtMoney(p.bracket.stop_loss)}</b></span>}
       </div>
+      {(() => {
+        const t = entryContextText(p.context?.entryContext, p.context?.guards);
+        return t ? (
+          <div className="muted" style={{ fontSize: 12, margin: "2px 0" }}
+            title="Decision-time context computed deterministically from daily bars and quotes (ATR, relative volume time-adjusted, distance to the 20-day MA, move vs the prior close, 20-day relative strength vs SPY, days to cover, market regime). Guards in observe mode only record what they would do.">
+            {t}
+          </div>
+        ) : null;
+      })()}
       {analyst?.rationale && (
         <div className="muted" style={{ fontSize: 12, margin: "4px 0" }}
           title="The analyst's own reasoning and sizing narrative - an opinion, kept apart from the final approved plan above">
