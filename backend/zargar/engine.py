@@ -521,6 +521,10 @@ class Engine:
         # live FX rate - never 1:1. No rate = no level-set this pass (journaled), the previous sync stands.
         book_ccy = str(pf.get("baseCurrency") or "USD").upper()
         by_cur = dict(st.get("cashByCurrency") or {}) or {cur: float(st["cash"])}
+        # review (2026-10-04): a CASH account may not convert on its own - by default only the book's own currency is
+        # spendable; `ibkr.convert_currencies` (paper testing with a CAD account) counts every currency at the FX rate
+        if not bool(self.settings.get("ibkr.convert_currencies", False)):
+            by_cur = {k: v for k, v in by_cur.items() if str(k).upper() == book_ccy}
         spend, parts, missing = 0.0, {}, []
         for ccy, amt in by_cur.items():
             ccy = str(ccy).upper()
@@ -550,6 +554,7 @@ class Engine:
         await self.positions.sync_portfolio_state(pid, cash=spend, positions=st["positions"], source="ibkr")
         # W7.1: sale proceeds booked AFTER this instant are unsettled until the next sync reads IBKR's settled cash
         self.ibkr_synced_at = dt.datetime.now(dt.timezone.utc)
+        self.ibkr_settled_known = st.get("settledCash") is not None
         key = (round(spend, 2), tuple(sorted((p["symbol"], p["qty"]) for p in st["positions"])))
         if key != getattr(self, "_ibkr_last_sync", None):
             self._ibkr_last_sync = key
@@ -889,7 +894,7 @@ class Engine:
         portfolios with orders placed today can auto-halt. Passive market
         drift on real accounts raises a once-a-day warning instead.
         """
-        halt_pct = float(self.settings.get("risk.daily_loss_halt_pct", 3.0))
+        base_halt = halt_pct = float(self.settings.get("risk.daily_loss_halt_pct", 3.0))
         scope = str(self.settings.get("risk.daily_loss_halt_scope", "portfolio") or "portfolio")
         traded = await self._traded_today()
         today = dt.datetime.now(tz=ET).date().isoformat()
@@ -900,6 +905,8 @@ class Engine:
         for p in self.positions.portfolios():
             if p["kind"] == "shadow":
                 continue
+            from .risk import BookRiskSettings
+            halt_pct = float(BookRiskSettings(self.settings, p["id"]).get("risk.daily_loss_halt_pct", base_halt))
             loss = await self.positions.daily_loss_pct(p["id"])
             if loss is None or loss > -abs(halt_pct):
                 continue

@@ -238,13 +238,18 @@ async def test_find_alternatives_offers_fitting_reshapes_and_the_proposal_trades
     full = ctx["alternativesOffered"]
     assert full["original"]["contract"] == stated and full["original"]["fits"] is False
     kinds = {a["kind"] for a in full["alternatives"]}
-    assert {"strike", "vertical", "shares"} <= kinds, (kinds, full["notFitting"], full["unavailable"])
+    assert {"strike", "shares"} <= kinds, (kinds, full["notFitting"], full["unavailable"])
+    # review H4 (2026-10-04): a vertical is sized by its whole net debit (defined risk), the same arithmetic as the
+    # proposal gate - here one spread costs more than the risk budget, so it is offered as NOT fitting
+    vall = [a for a in full["alternatives"] + full["notFitting"] if a["kind"] == "vertical"]
+    assert vall and all(a["kind"] != "vertical" or a["qty"] * a["netDebit"] * 100 <= B + 1e-6
+                        for a in full["alternatives"])
     assert any(a["kind"] == "expiry" for a in full["notFitting"]), "the later expiry costs more risk: offered, not fitting"
     for a in full["alternatives"]:
         assert a["qty"] >= 1 and a["plannedRisk"] <= B + 1e-6 and a["vehicle"]["quantity"] == a["qty"]
         assert a["payoff"] and a["fillBand"] and a.get("breakEven") is not None
-    v = next(a for a in full["alternatives"] if a["kind"] == "vertical")
-    assert v["venueDependent"] and v["maxLoss"] == round(v["qty"] * v["netDebit"] * 100, 2) and v["maxGain"] > 0
+    v = vall[0]
+    assert v["venueDependent"] and v["maxLoss"] == round(max(v["qty"], 1) * v["netDebit"] * 100, 2) and v["maxGain"] > 0
     # the model-facing rendition keeps every deciding number and stays inside the tool-result budget
     assert len(json.dumps(res, default=str)) < 12000 and res["alternatives"][0]["id"] == "alt1"
     # the proposal path trades a chosen cheaper strike EXACTLY at the size the alternative showed

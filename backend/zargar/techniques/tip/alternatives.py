@@ -253,7 +253,11 @@ class _Builder:
                                          multiplier=evl["multiplier"], option_type=side, delta=net_delta,
                                          budget=evl["budget"])
         mult = float(evl["multiplier"] or 0) or 100.0
-        qty, binds = cap_qty(fit["qtyByRisk"], unit_cost=net * mult, allocation=self.alloc, settings=self.s,
+        # review H4 (2026-10-04): a debit vertical is DEFINED risk - sized by its max loss (the net debit) against the
+        # risk budget, exactly as the proposal gate (_spread_risk_plan) sizes it, so "fits" here means it will trade
+        _b = float(evl["budget"] or 0)
+        q_def = int(_b // (net * mult)) if (_b > 0 and net > 0) else 0
+        qty, binds = cap_qty(q_def, unit_cost=net * mult, allocation=self.alloc, settings=self.s,
                              is_option=True)
         pay = _payoff(vehicle="option", qty=max(qty, 1), plan=final, entry_ref=evl["entryRef"], direction=direction,
                       delta=net_delta, multiplier=mult, unit_loss=fit["unitLoss"], fee=2 * self.fee,
@@ -261,7 +265,7 @@ class _Builder:
         out.update({
             "available": True, "fits": qty >= 1, "qty": qty, "netDebit": net, "width": width,
             "unitRisk": fit["unitLoss"], "unitRiskBasis": fit["unitLossBasis"] + " (net delta of the two legs)",
-            "plannedRisk": round(qty * fit["unitLoss"], 2) if fit["unitLoss"] is not None and qty else None,
+            "plannedRisk": round(qty * net * mult, 2) if qty else None,
             "maxLoss": round(max(qty, 1) * net * mult, 2), "maxLossBasis": "the net debit (defined risk)",
             "maxGain": round(max(qty, 1) * (width - net) * mult, 2), "riskBudget": evl["budget"],
             "finalStop": fit["finalStop"], "stopRepairs": fit["repairs"],
@@ -409,13 +413,10 @@ async def find_alternatives(eng, args: dict, ctx: dict) -> dict:
                     shorts.append(k)
             if not shorts and further:
                 shorts.append(further[0])
-            venue = ({"venue": "native multi-leg (one combined order)", "autoEligible": False}
+            # 2026-10-03 user decision: a defined-risk spread is sized by the risk budget and may self-approve
+            venue = ({"venue": "native multi-leg (one combined order)", "autoEligible": True}
                      if pid and _mleg_supported(eng, pid) else
-                     {"venue": "leg-sequenced (long leg fills first, then the short)", "autoEligible": False})
-            from . import geometry as _g
-            if pid and _g.gate_mode(s) == "enforce" and policy_kind(s, pf) == "sim":
-                venue["executionNote"] = ("the Practice geometry gate does not size spread vehicles: a spread card waits "
-                                          "for a person (never auto-approved)")
+                     {"venue": "leg-sequenced (long leg fills first, then the short)", "autoEligible": True})
             for k in shorts:
                 cands.append(await b.vertical(underlying=underlying, long_sym=parsed.symbol, long_cell=stated_cell,
                                               short_cell=b.cell(chain, k, side), short_strike=k, direction=direction,

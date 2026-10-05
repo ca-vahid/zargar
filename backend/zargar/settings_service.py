@@ -289,6 +289,8 @@ DEFAULTS: dict[str, Any] = {
     "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)
+    "ibkr.convert_currencies": False,
+    "risk.book_overrides": {},                      # {portfolioId: {"risk.<key>": value}} - per-book risk limits (live cash account)    # count non-book currencies at the FX rate (paper with CAD only; a live cash account converts in IBKR)
     # --- sharp-pencil review #3 (2026-09-27, docs/techniques/tip/research/2026-09-27-sharp-pencil-review-3.md)
     "techniques.tip.stale_after_sessions": 0,       # Q1: share positions below stale_min_r after N sessions exit on a closed bar (0 = off)
     "techniques.tip.stale_min_r": 0.5,              # Q1: the R a position must have earned by then

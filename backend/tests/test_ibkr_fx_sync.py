@@ -40,6 +40,7 @@ async def _paper(e):
     e.positions.register_portfolio(p)
     await e.settings.set("ibkr.portfolio_id", p.id, journal=False)
     await e.settings.set("ibkr.cash_currency", "CAD", journal=False)
+    await e.settings.set("ibkr.convert_currencies", True, journal=False)
     return p.id
 
 

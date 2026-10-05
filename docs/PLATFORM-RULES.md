@@ -2815,3 +2815,16 @@ the order's latency window ended (the decision quote itself) still priced the fi
 latency; a BUY limit fills at that ask capped at the limit, a SELL at that bid floored at the limit, and every
 identity / freshness check of `quote_rejection` still applies. Tests: `tests/test_w14_sim_option_fill_realism.py`
 (the three cases replayed through QuoteCache -> SimExecutor, the SELL mirror, the latency rule).
+
+### Pre-live money-path fixes - 2026-10-04 (Tips desk, 0.8.62; reviews in docs/techniques/tip/research/2026-10-04-v09/)
+
+- **Account-type guard (OrderManager.place):** a `paper` book routes only to an IBKR paper account (DU...) and a `live`
+  book only to a live one (`IBKRBroker.account_kind()`); unknown refuses new entries, exits still pass.
+- **`risk.book_overrides`** = {portfolioId: {"risk.<key>": value}}: RiskGate.evaluate and the daily-loss monitor read a
+  book's own risk numbers (a small live account) without changing any other desk's book.
+- **Venue stop death:** a resting GTC stop the broker rejects/cancels/expires without our request is alerted and
+  re-placed (at most once a minute); every own cancel clears the stop id first so its report is never mistaken.
+- **Failed-exit watchdog:** retries the failed exit as what it was (a trim stays a trim); protective exits stay full.
+  A partial close also lifts the resting venue stop (re-placed for the remaining quantity).
+- **Earnings:** one resolver (`research.market_events.next_earnings`, store then Yahoo) for entry and exit; a moved
+  date tombstones the stale one; a before-the-open report ends at 09:30 on the report day.

@@ -2447,9 +2447,14 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             "fields, exit plan at its finalStop) or keep your verdict with alternativesConsidered listing EVERY "
             "fitting id with a concrete reason against it. Reply with ONLY the JSON opinion object."})
         loop_state.pop("finalDemanded", None)
-        text = await run_agent_loop(eng, client, model=model, system=system, header=header, rec=rec,
-                                    run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
-                                    tools_used=tools_used, state=loop_state)
+        try:
+            text = await run_agent_loop(eng, client, model=model, system=system, header=header, rec=rec,
+                                        run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
+                                        tools_used=tools_used, state=loop_state)
+        except Exception as exc:                        # noqa: BLE001 - review M3: the first verdict stands
+            rec.step("note", f"Budget re-ask failed ({type(exc).__name__}) - the first verdict stands.")
+            loop_state["budgetReask"] = {**loop_state.get("budgetReask", {}), "failed": f"{type(exc).__name__}"}
+            return op
         try:
             op2 = _parse_opinion(text) if text is not None else None
         except ValueError as exc:

@@ -2414,7 +2414,23 @@ class SignalService:
                             aggregate_type="position", aggregate_id=p["id"], portfolio_id=p.get("portfolioId"))
                     continue
             reason = f"source {sig.action}: mirrored ({source}, signal {row.id})"
-            await mgr.close(p["id"], fraction=min(1.0, max(0.05, frac)), reason=reason[:200])
+            f_eff = min(1.0, max(0.05, frac))
+            # review (2026-10-04): a trim smaller than one share is skipped (the runner is kept), and one book's
+            # failure never stops the mirror on the other books' positions
+            held_sh = sum(abs(float(lg.get("qty") or 0)) for lg in (p.get("legs") or [])
+                          if str(lg.get("secType") or "STK") == "STK")
+            if f_eff < 1.0 and held_sh and held_sh * f_eff < 1.0:
+                with contextlib.suppress(Exception):
+                    await eng.journal.append("TipSourceExitNotMirrored", {
+                        "positionId": p["id"], "symbol": p.get("symbol"), "source": source, "action": sig.action,
+                        "signalId": row.id, "reason": f"a {f_eff:.0%} trim of {held_sh:g} share(s) is under one share"},
+                        aggregate_type="position", aggregate_id=p["id"], portfolio_id=p.get("portfolioId"))
+                continue
+            try:
+                await mgr.close(p["id"], fraction=f_eff, reason=reason[:200])
+            except Exception:                            # noqa: BLE001
+                log.exception("mirror close failed for position %s", p.get("id"))
+                continue
             from ..techniques.tip.analyst import note_source_mirror
             note_source_mirror(eng, p["id"], sig.action, row.id)
             await eng.journal.append("TipSourceExitMirrored", {
@@ -3020,9 +3036,11 @@ class SignalService:
                 opinion = dict(shared_opinion)
                 if opinion.get("verdict") == "take":
                     opinion["verdict"] = "watch"
-                    for k in ("contract", "contract_label", "limit_price", "quantity",
-                              "entry_mode", "entry_level", "exit_targets", "exit_fractions"):
-                        opinion.pop(k, None)
+                # review M1 (2026-10-04): a sibling never inherits another branch's prices - a watch with the first
+                # ticker's level + stop would otherwise arm (W2.3) a different ticker at that price
+                for k in ("contract", "contract_label", "limit_price", "quantity", "entry_mode", "entry_level",
+                          "entry_levels", "exit_targets", "exit_fractions", "underlying_stop", "premium_stop_pct"):
+                    opinion.pop(k, None)
                 opinion["rationale"] = ("[sibling branch — this message was appraised once; "
                                         "verdict inherited] " + str(opinion.get("rationale") or ""))
                 opinion["fanIn"] = True

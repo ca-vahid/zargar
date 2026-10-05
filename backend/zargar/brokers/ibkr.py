@@ -80,6 +80,21 @@ class IBKRBroker(QuoteFeed, Executor):
         self._cancel_requested: set[str] = set()   # our order ids we asked IBKR to cancel
 
     # ------------------------------------------------------------- connection
+    def account_kind(self) -> str | None:
+        """'paper' when every managed account is an IBKR paper account (DU...), 'live' when none is, None unknown
+        (review B2, 2026-10-04: which money trades must never depend on the gateway port alone)."""
+        try:
+            accts = [str(a) for a in (self._ib.managedAccounts() or [])] if self._ib is not None else []
+        except Exception:                                  # noqa: BLE001
+            return None
+        if not accts:
+            return None
+        if all(a.upper().startswith("DU") for a in accts):
+            return "paper"
+        if not any(a.upper().startswith("DU") for a in accts):
+            return "live"
+        return None
+
     @property
     def connected(self) -> bool:
         return bool(self._ib and self._ib.isConnected())

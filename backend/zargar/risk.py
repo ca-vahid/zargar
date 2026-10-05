@@ -143,6 +143,29 @@ def _pf(portfolio, key):
         return portfolio.get(key)
     return getattr(portfolio, key, None)
 
+
+class BookRiskSettings:
+    """Review 2026-10-04: one small live cash account must not share Practice's risk numbers. `risk.book_overrides`
+    = {portfolioId: {"risk.max_position_notional": 3500, "risk.daily_loss_halt_pct": 4, ...}} answers any risk.* key
+    for that book; everything else reads the global settings."""
+
+    def __init__(self, settings, pid: str | None):
+        self._s = settings
+        ov = {}
+        try:
+            ov = (settings.get("risk.book_overrides", {}) or {}).get(str(pid or ""), {}) or {}
+        except Exception:                                  # noqa: BLE001
+            ov = {}
+        self._ov = ov if isinstance(ov, dict) else {}
+
+    def get(self, key, default=None):
+        if key in self._ov and self._ov[key] is not None:
+            return self._ov[key]
+        return self._s.get(key, default)
+
+    def __getattr__(self, name):
+        return getattr(self._s, name)
+
 class RiskGate:
     def __init__(self, settings, quote_cache, position_keeper, halt: HaltState) -> None:
         self._settings = settings
@@ -242,7 +265,7 @@ class RiskGate:
 
     async def evaluate(self, intent, portfolio) -> RiskVerdict:
         """intent: OrderManager's OrderIntent; portfolio: Portfolio row."""
-        s = self._settings
+        s = BookRiskSettings(self._settings, getattr(intent, "portfolio_id", None))
         symbol = intent.symbol
         side = OrderSide(intent.side)
         qty = float(intent.qty)
