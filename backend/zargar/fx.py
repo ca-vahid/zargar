@@ -36,15 +36,15 @@ class FxService:
         self._quotes = quotes
         self._warned: set[tuple[str, str]] = set()
 
-    def rate(self, frm: str, to: str) -> float | None:
+    def rate(self, frm: str, to: str, *, max_age_ms: int = MAX_RATE_AGE_MS) -> float | None:
         frm, to = frm.upper(), to.upper()
         if frm == to:
             return 1.0
         q = self._quotes.get(fx_pair_symbol(frm, to))
-        if q is not None and q.last > 0 and now_ms() - q.ts < MAX_RATE_AGE_MS:
+        if q is not None and q.last > 0 and now_ms() - q.ts < max_age_ms:
             return q.last
         q = self._quotes.get(fx_pair_symbol(to, frm))  # inverse pair
-        if q is not None and q.last > 0 and now_ms() - q.ts < MAX_RATE_AGE_MS:
+        if q is not None and q.last > 0 and now_ms() - q.ts < max_age_ms:
             return 1.0 / q.last
         return None
 

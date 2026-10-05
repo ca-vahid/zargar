@@ -561,7 +561,12 @@ def earnings_exit_due(now_et, date_iso: str | None, timing: str | None, *, at: s
     except Exception:                                  # noqa: BLE001 - a bad date is unknown, never a crash
         return None
     d = _dt.date.fromisoformat(str(date_iso))
-    end = _dt.datetime.combine(d + _dt.timedelta(days=1), _dt.time(0, 0), tzinfo=cut.tzinfo)
+    # review H1 (2026-10-04): a before-the-open (or unknown-timing) report is DONE at that day's 09:30 open - the
+    # report day itself trades freely (post-earnings setups); an after-the-close report ends at midnight
+    if str(timing or "").upper() == "AMC":
+        end = _dt.datetime.combine(d + _dt.timedelta(days=1), _dt.time(0, 0), tzinfo=cut.tzinfo)
+    else:
+        end = _dt.datetime.combine(d, _dt.time(9, 30), tzinfo=cut.tzinfo)
     if cut <= now_et < end:
         tm = str(timing or "unknown").upper()
         return (f"earnings {date_iso} ({tm}{', timing unknown - treated as before the open' if tm not in ('AMC', 'BMO') else ''})"

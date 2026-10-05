@@ -192,7 +192,8 @@ class MarketEventStore:
         self.loaded = True
 
     async def write(self, events: list[dict], *, source: str, coverage: tuple[str, str] | None,
-                    now: dt.datetime | None = None, tombstone_missing: bool = True) -> dict:
+                    now: dt.datetime | None = None, tombstone_missing: bool = True,
+                    tombstone_symbols: set[str] | None = None) -> dict:
         """Append a revision for every new/changed event of `source`; with a coverage window, an event of that source
         inside the window that is no longer reported gets a tombstone row."""
         from ..models import MarketEventCoverage, MarketEventRow
@@ -222,6 +223,19 @@ class MarketEventStore:
             if tombstone_missing and coverage:
                 for k, r in latest.items():
                     if k in seen or r.deleted or not (coverage[0] <= r.date <= coverage[1]):
+                        continue
+                    session.add(MarketEventRow(key=k, kind=r.kind, tier=r.tier, name=r.name, date=r.date,
+                                               time=r.time, scope=r.scope, symbol=r.symbol, source=source, url=r.url,
+                                               extra=r.extra or {}, valid_from=now, revision=r.revision + 1,
+                                               deleted=True))
+                    removed += 1
+            if tombstone_symbols:
+                # review H2 (2026-10-04): a symbol this source was asked about and no longer reports on a future date
+                # (the date MOVED) gets a tombstone, so the stale date never outlives the new one
+                today = dt.datetime.now(ET).date().isoformat()
+                for k, r in latest.items():
+                    if (k in seen or r.deleted or r.scope != "symbol" or r.symbol not in tombstone_symbols
+                            or r.date < today):
                         continue
                     session.add(MarketEventRow(key=k, kind=r.kind, tier=r.tier, name=r.name, date=r.date,
                                                time=r.time, scope=r.scope, symbol=r.symbol, source=source, url=r.url,
@@ -336,7 +350,8 @@ class MarketEventStore:
                     nas += parse_nasdaq_earnings(r.json(), d.isoformat(), syms)
             except Exception:                                # noqa: BLE001
                 continue
-        res = await self.write(nas, source="nasdaq", coverage=None, tombstone_missing=False)
+        res = await self.write(nas, source="nasdaq", coverage=None, tombstone_missing=False,
+                               tombstone_symbols=syms)
         yev = []
         cal = getattr(self.engine, "calendar", None)
         if cal is not None:
@@ -348,7 +363,8 @@ class MarketEventStore:
                 if nxt:
                     yev.append(ev("earnings", 1, f"{s} earnings", nxt[0], None, "yahoo",
                                   "https://finance.yahoo.com/quote/" + s, symbol=s, extra={"timing": nxt[1]}))
-        res2 = await self.write(yev, source="yahoo", coverage=None, tombstone_missing=False)
+        res2 = await self.write(yev, source="yahoo", coverage=None, tombstone_missing=False,
+                                tombstone_symbols={e["symbol"] for e in yev} | (syms if cal is not None else set()))
         return {"nasdaq": res, "yahoo": res2}
 
     def earnings_for(self, symbol: str) -> dict | None:
@@ -418,3 +434,22 @@ def policy_shadow(expo: dict, *, now: dt.datetime, sec_type: str, dte: int | Non
         out.append({"rule": "E3", "would": "flatten the short-dated option before the event",
                     "dte": dte, "events": ([e["name"] for e in t1] + (["earnings"] if expo.get("earnings") else []))[:3]})
     return out
+
+
+async def next_earnings(eng, symbol: str) -> tuple[str, str] | None:
+    """THE earnings resolver (review H2, 2026-10-04): entry refusal, card labels and the earnings exit all read this -
+    the two-source store first, then the Yahoo calendar. (date ISO, BMO|AMC|unknown) or None."""
+    store = getattr(eng, "market_events", None)
+    try:
+        rec = store.earnings_for(str(symbol).upper()) if store is not None and store.loaded else None
+    except Exception:                                      # noqa: BLE001
+        rec = None
+    if rec:
+        return rec["date"], rec.get("timing") or "unknown"
+    cal = getattr(eng, "calendar", None)
+    if cal is None:
+        return None
+    try:
+        return await cal.next_earnings(str(symbol).upper())
+    except Exception:                                      # noqa: BLE001
+        return None

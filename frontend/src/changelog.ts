@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.8.61";
+export const APP_VERSION = "0.8.62";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,13 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.8.62",date:"2026-10-04",title:"Tips: safety fixes before real money",items:[
+    {tag:"security",text:"A paper book can only trade a paper IBKR account and a live book only a live one; the gateway port alone no longer decides whose money trades."},
+    {tag:"fixed",text:"Buy orders still waiting to fill count against the book cap and free cash, sale proceeds from today never fund a new buy before they settle, and a live book spends only its US dollars."},
+    {tag:"fixed",text:"If IBKR rejects or cancels the overnight stop the app alerts and puts it back; a rejected partial sell is retried as that partial sell instead of a full market close."},
+    {tag:"fixed",text:"Before-the-open earnings days trade normally after 09:30, entry and exit use the same earnings date, and an automatic approval re-checks it."},
+    {tag:"improved",text:"Each book can carry its own risk limits (position size, daily loss halt), so the small live account can be tighter than Practice."},
+  ]},
   {version:"0.8.61",date:"2026-10-04",title:"IBKR cash in the right currency",items:[
     {tag:"fixed",text:"An IBKR account holding Canadian dollars now shows in its US-dollar book at the live exchange rate (C$10,000 is about US$7,200), not one-for-one. Without a live rate the app keeps the last good balance instead of guessing."},
   ]},

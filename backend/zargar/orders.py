@@ -396,6 +396,17 @@ class OrderManager:
             return await self._transition(
                 order.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
                 reject_reason=f"no connected execution venue for '{kind}' portfolio")
+        # review B2 (2026-10-04): a PAPER book only routes to a paper account and a LIVE book only to a live one -
+        # the gateway port alone must never decide whose money trades. Unknown account type refuses new entries
+        # (exits are allowed so a held position can always be closed).
+        _ak = getattr(executor, "account_kind", None)
+        if callable(_ak) and kind in ("paper", "live"):
+            ak = _ak()
+            if ak != kind and not (ak is None and intent.reduce_only):
+                return await self._transition(
+                    order.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
+                    reject_reason=(f"account type mismatch: a '{kind}' book cannot route to an IBKR "
+                                   f"{ak or 'unknown'} account (check the gateway login / port)"))
 
         result = await self._transition(order.id, OrderStatus.SUBMITTED, ev.ORDER_SUBMITTED,
                                         extra=extra_out or None)

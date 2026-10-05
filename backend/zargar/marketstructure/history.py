@@ -47,13 +47,22 @@ _CACHE_MAX = 240            # a 250-symbol sweep must not pin every bar list in 
 _LIVE_TTL = 20.0
 _HIST_TTL = 3600.0
 _shared_client: httpx.AsyncClient | None = None
+_shared_loop = None
 
 
 def _client_shared() -> httpx.AsyncClient:
     """One keep-alive client for all Yahoo history traffic — a 250-symbol sweep
     was opening (and TLS-handshaking) ~750 throwaway clients."""
-    global _shared_client
-    if _shared_client is None or _shared_client.is_closed:
+    global _shared_client, _shared_loop
+    import asyncio as _aio
+    try:
+        loop = _aio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    # 2026-10-04: a client is bound to the event loop it first ran on; a new loop (each test, or an engine
+    # restarted in-process) gets a fresh client instead of "Event loop is closed" on the old connections
+    if _shared_client is None or _shared_client.is_closed or (loop is not None and loop is not _shared_loop):
+        _shared_loop = loop
         _shared_client = httpx.AsyncClient(
             timeout=20, headers={"User-Agent": UA}, follow_redirects=True,
             limits=httpx.Limits(max_connections=16, max_keepalive_connections=8))

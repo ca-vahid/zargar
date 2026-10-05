@@ -799,8 +799,9 @@ class PositionManager:
             return
         from ..orders import OrderIntent
         if p.venue_stop_order_id:
+            _old_stop, p.venue_stop_order_id = p.venue_stop_order_id, None   # our own cancel: clear the id FIRST
             with contextlib.suppress(Exception):
-                await self.engine.orders.cancel(p.venue_stop_order_id)
+                await self.engine.orders.cancel(_old_stop)
         intent = OrderIntent(portfolio_id=p.portfolio_id, symbol=leg.symbol, sec_type="STK", side="SELL",
                              qty=abs(leg.qty), order_type="STP", stop_price=round(float(stop), 2), tif="GTC",
                              source="technique", technique_id=p.technique, tags=list(p.tags), reduce_only=True)
@@ -992,11 +993,13 @@ class PositionManager:
         fraction = min(1.0, max(0.0, fraction))
         if fraction >= 1.0 - 1e-9:
             p.status = "closing"
-        # cancel a resting venue stop first so it can't double-fill with the close
-        if p.venue_stop_order_id and fraction >= 1.0 - 1e-9:
+        # cancel a resting venue stop first so it can't double-fill with the close. 2026-10-04 (review H5): a PARTIAL
+        # sell too - a resting full-size stop plus a trim sells more than is held, which a cash account rejects; the
+        # stop is re-placed for the remaining quantity once the trim settles (_ensure_venue_stop follows held qty)
+        if p.venue_stop_order_id:
+            _old_stop, p.venue_stop_order_id = p.venue_stop_order_id, None
             with contextlib.suppress(Exception):
-                await self.engine.orders.cancel(p.venue_stop_order_id)
-            p.venue_stop_order_id = None
+                await self.engine.orders.cancel(_old_stop)
             p.venue_stop_at = None
         # a forced (stop) close supersedes any resting limit exit: cancel it so
         # the in-flight guard doesn't suppress the stop, and mark it dead
@@ -1208,6 +1211,22 @@ class PositionManager:
             return
         status = o.get("status")
         rec = next((x for x in p.exits if x.get("orderId") == o["id"]), None)
+        if o["id"] == p.venue_stop_order_id and status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
+            # review (2026-10-04): the resting venue stop died without us cancelling it (our own cancels clear the
+            # id first) - the position would sit unprotected overnight. Alert, then re-place it (at most once a
+            # minute so a venue that keeps refusing cannot loop).
+            p.venue_stop_order_id = None
+            p.venue_stop_at = None
+            p.venue_stop_qty = None
+            why = o.get("rejectReason") or status
+            await self._alert(p, f"venue stop {status.lower()} at the broker ({why}) - re-placing it",
+                              level="warning", stage="venue_stop")
+            last = getattr(self, "_venue_stop_replaced", {}).get(p.id, 0.0)
+            if self._now() - last >= 60.0:
+                self._venue_stop_replaced = {**getattr(self, "_venue_stop_replaced", {}), p.id: self._now()}
+                await self._ensure_venue_stop(p)
+            await self._persist(p)
+            return
         if o["id"] == p.venue_stop_order_id and status in ("FILLED", "PARTIALLY_FILLED"):
             rec = rec or {"kind": "venue_stop", "leg": o.get("symbol"), "qty": float(o.get("filledQty") or 0),
                           "orderId": o["id"], "status": status, "filledQty": 0.0, "price": None,
@@ -1293,9 +1312,9 @@ class PositionManager:
         p.closed_ms = self.now_ms()
         p.close_reason = reason        # persisted: the session brake reads it
         if p.venue_stop_order_id:
+            _old_stop, p.venue_stop_order_id = p.venue_stop_order_id, None
             with contextlib.suppress(Exception):
-                await self.engine.orders.cancel(p.venue_stop_order_id)
-            p.venue_stop_order_id = None
+                await self.engine.orders.cancel(_old_stop)
         await self._journal(POSITION_CLOSED, p, {"realizedPnl": round(p.realized_pnl, 2), "reason": reason,
                                                  "sessionsHeld": p.sessions_held()})
         self._log(p, "closed", f"{reason} — realized {p.realized_pnl:+.2f}")
@@ -1412,7 +1431,8 @@ class PositionManager:
             with contextlib.suppress(Exception):
                 if fb.get("event") == "earnings" and fb.get("timing") == "session":
                     from .policies import earnings_exit_due
-                    nxt = await self.engine.calendar.next_earnings(p.symbol)
+                    from ..research.market_events import next_earnings as _next_earn
+                    nxt = await _next_earn(self.engine, p.symbol)
                     if nxt:
                         event_due = earnings_exit_due(
                             dt.datetime.fromtimestamp(self.now_ms() / 1000, ET), nxt[0], nxt[1],
@@ -1772,9 +1792,18 @@ class PositionManager:
             ts0, attempts = self._exit_retries.get(key, (0.0, 0))
             if attempts < 5 and self._now() - ts0 >= 30.0:
                 self._exit_retries[key] = (self._now(), attempts + 1)
-                self._log(p, "exit_retry", f"watchdog retry {attempts + 1}/5 for {last.get('kind')}")
-                await self.close(p.id, fraction=1.0, reason=f"watchdog retry {attempts + 1}",
-                                 kind="stop", force_market=True)
+                # 2026-10-04 (review H5): retry the FAILED exit as what it was - a rejected trim is retried as that
+                # trim (by its quantity), never escalated into a full market flatten; protective exits stay full
+                lk = str(last.get("kind") or "stop")
+                held = sum(abs(float(lg.qty)) for lg in p.open_legs) or 0.0
+                full_kinds = ("stop", "event", "time", "dte", "premium_stop", "flatten", "expiry", "manual")
+                if lk in full_kinds or held <= 0:
+                    frac, rkind = 1.0, ("stop" if lk not in full_kinds else lk)
+                else:
+                    frac, rkind = min(1.0, float(last.get("qty") or held) / held), lk
+                self._log(p, "exit_retry", f"watchdog retry {attempts + 1}/5 for {lk} ({frac:.0%})")
+                await self.close(p.id, fraction=frac, reason=f"watchdog retry {attempts + 1} ({lk})",
+                                 kind=rkind, force_market=True)
                 return
             if attempts >= 5 and ts0 < 1e12:      # not yet alerted (the sentinel below)
                 await self._alert(p, "exit still failing after 5 retries — needs a person "
