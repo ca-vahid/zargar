@@ -252,3 +252,30 @@ async def test_account_state_reads_the_ledger_prefixed_cash_rows():
     assert (await b.account_state(cash_currency="USD"))["cash"] == -2.0269
     await b.stop()
 
+
+
+async def test_a_lost_server_link_refuses_orders_until_restored():
+    """2026-10-05: the gateway lost IBKR's servers (1100) while the API socket stayed up; orders sat 'submitted'."""
+    fake = FakeIB()
+    states = []
+
+    async def on_state(kind, data):
+        states.append(kind)
+    b = ib_mod.IBKRBroker("127.0.0.1", 4002, 17, on_quote=lambda q: None, ib_factory=lambda: fake,
+                          exec_seen=(lambda x: _false()), on_state=on_state)
+    rep = []
+
+    async def on_report(r):
+        rep.append(r)
+    b.on_report = on_report
+    await b.start()
+    assert b.connected
+    fake.errorEvent.emit(-1, 1100, "Connectivity between IBKR and Trader Workstation has been lost.", None)
+    await asyncio.sleep(0.01)
+    assert not b.connected and "link_lost" in states
+    await b.submit(_order("L1"))
+    assert rep[-1].kind == "rejected" and "not connected" in rep[-1].reason
+    fake.errorEvent.emit(-1, 1102, "Connectivity between IBKR and TWS has been restored - data maintained.", None)
+    await asyncio.sleep(0.01)
+    assert b.connected and "link_restored" in states
+    await b.stop()

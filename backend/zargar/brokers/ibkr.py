@@ -100,7 +100,10 @@ class IBKRBroker(QuoteFeed, Executor):
 
     @property
     def connected(self) -> bool:
-        return bool(self._ib and self._ib.isConnected())
+        # 2026-10-05: the API socket to the gateway can stay up while the GATEWAY has lost IBKR's servers (notice 1100,
+        # 00:17 ET to 10:18 ET+ that morning): orders sat "submitted" and the account sync re-read cached numbers.
+        # A lost server link is NOT connected - new orders are refused visibly until IBKR restores it (1101/1102).
+        return bool(self._ib and self._ib.isConnected()) and not getattr(self, "_link_down", False)
 
     def _new_ib(self):
         if self._ib_factory is not None:
@@ -296,7 +299,20 @@ class IBKRBroker(QuoteFeed, Executor):
     def _on_error(self, req_id, error_code, error_string, contract=None) -> None:
         oid = self._oid_for_req(req_id) if req_id is not None and int(req_id) > 0 else None
         if oid is None:
-            if int(error_code) < 2100 or int(error_code) > 2199:      # 21xx are connectivity/info notices
+            code = int(error_code)
+            if code in (1100, 2110):                 # the gateway lost IBKR's servers (2110: TWS <-> server broken)
+                if not getattr(self, "_link_down", False):
+                    self._link_down = True
+                    log.warning("IBKR server link LOST (%s): %s - new orders refused until restored", code, error_string)
+                    asyncio.ensure_future(self._notify("link_lost", {"code": code, "message": str(error_string)[:200]}))
+                return
+            if code in (1101, 1102):                 # restored (1101: data lost - resubscribe; 1102: data kept)
+                if getattr(self, "_link_down", False):
+                    self._link_down = False
+                    log.warning("IBKR server link RESTORED (%s): %s", code, error_string)
+                    asyncio.ensure_future(self._notify("link_restored", {"code": code, "message": str(error_string)[:200]}))
+                return
+            if code < 2100 or code > 2199:      # 21xx are connectivity/info notices
                 log.info("IBKR notice %s: %s", error_code, error_string)
             return
         self._last_error[oid] = f"IBKR {error_code}: {error_string}"[:300]
