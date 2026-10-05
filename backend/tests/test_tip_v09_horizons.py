@@ -153,6 +153,12 @@ def test_geometry_rebuilds_the_ladder_on_the_final_stop_idempotently():
     assert p1["targets"] == [109.0, 130.0] and p1["analystTargets"] == [130.0]
     p2, _ = check_exit_geometry(p1, direction="long", entry_ref=100.0, bars=[], settings=S, vehicle="shares")
     assert p2["targets"] == p1["targets"] and p2["fractions"] == p1["fractions"]
+    # a re-check off a MOVED quote (an option's underlying reference) keeps the card's ladder while the stop holds,
+    # so the displayed plan's fingerprint does not churn; a changed stop rebuilds it
+    p3, _ = check_exit_geometry(p1, direction="long", entry_ref=101.5, bars=[], settings=S, vehicle="shares")
+    assert p3["targets"] == p1["targets"]
+    p4 = policy_from_exit_plan({**p1, "underlyingStop": 95.0}, is_option=False, settings=S, entry_ref=100.0)
+    assert p4["ladder"]["targets"][0] == 105.0
     obs, _ = check_exit_geometry(_plan(93.0, applied=False, targets=[130.0]), direction="long", entry_ref=100.0,
                                  bars=[], settings=S, vehicle="shares")
     assert obs["targets"] == [130.0]                                                  # observe: plan untouched

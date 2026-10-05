@@ -80,6 +80,9 @@ def with_horizon_ladder(plan: dict, *, entry_ref: float, direction: str, setting
     kept once under `analystTargets`). Unchanged when the horizon is not applied or the ladder is fixed."""
     if not plan.get("horizonApplied") or plan.get("ladderFixed") or plan.get("lotto"):
         return plan
+    if plan.get("horizonLadderStop") is not None and plan.get("underlyingStop") is not None \
+            and abs(float(plan["horizonLadderStop"]) - float(plan["underlyingStop"])) < 1e-9:
+        return plan          # already built on THIS stop: a re-check never re-prices the ladder off a moving quote
     lad = horizon_ladder(plan, entry_ref=entry_ref, direction=direction, settings=settings)
     if lad is None:
         return plan
@@ -87,6 +90,7 @@ def with_horizon_ladder(plan: dict, *, entry_ref: float, direction: str, setting
     if "analystTargets" not in out:
         out["analystTargets"] = list(plan.get("targets") or [])
     out["targets"], out["fractions"] = lad
+    out["horizonLadderStop"] = float(plan["underlyingStop"])
     return out
 
 
@@ -116,9 +120,10 @@ def apply(policy: dict, plan: dict, *, is_option: bool, settings, entry_ref: flo
     min_hold = int(_g(settings, "min_share_hold_sessions", 2))
     cap = out.get("time_stop_sessions")                 # options: the contract's hold cap (never outlive it)
     if entry_ref and not plan.get("ladderFixed"):
-        lad = horizon_ladder(plan, entry_ref=float(entry_ref), direction=direction, settings=settings)
-        if lad is not None:
-            out["ladder"] = {"targets": lad[0], "fractions": lad[1]}
+        # the card's ladder stands while its stop does (the approved plan); a changed stop rebuilds it on the fill
+        laddered = with_horizon_ladder(plan, entry_ref=float(entry_ref), direction=direction, settings=settings)
+        if laddered is not plan and laddered.get("targets"):
+            out["ladder"] = {"targets": list(laddered["targets"]), "fractions": list(laddered["fractions"])}
     for k in ("stale", "breakeven_after_r", "promote", "time_stop_unless_above_ma"):
         out.pop(k, None)
     if h == "short":
