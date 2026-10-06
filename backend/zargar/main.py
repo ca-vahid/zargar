@@ -41,6 +41,30 @@ def configure_logging(log_path: "pathlib.Path", *, stream=None) -> "logging.hand
     return listener
 
 
+_PRIORITY_CLASSES = {"normal": 0x0020, "above_normal": 0x8000, "high": 0x0080}
+
+
+def raise_process_priority(level: str | None = None) -> str:
+    """Windows: run the engine above other desktop apps (2026-10-05: Discord/Teams/sign-in bursts and a build froze the
+    event loop 12-53 s while the engine itself was idle). `ZARGAR_PROCESS_PRIORITY` = normal | above_normal (default) |
+    high. A no-op elsewhere; never fatal. Returns what was applied."""
+    level = (level or os.environ.get("ZARGAR_PROCESS_PRIORITY") or "above_normal").strip().lower()
+    if sys.platform != "win32" or level not in _PRIORITY_CLASSES:
+        return "unchanged"
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetCurrentProcess.restype = wintypes.HANDLE          # a 64-bit pseudo-handle: the c_int default truncates it
+        k32.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        k32.SetPriorityClass.restype = wintypes.BOOL
+        if k32.SetPriorityClass(k32.GetCurrentProcess(), _PRIORITY_CLASSES[level]):
+            return level
+    except Exception:  # noqa: BLE001 - a priority is an optimisation, never a startup failure
+        pass
+    return "unchanged"
+
+
 def main() -> None:
     config = get_config()
     # Always keep a rotating file log next to the package: the app usually runs
@@ -50,7 +74,8 @@ def main() -> None:
     listener = configure_logging(log_path)
     atexit.register(listener.stop)
     boot = logging.getLogger("zargar.process")
-    boot.warning("process starting pid=%s parent=%s argv=%s", os.getpid(), os.getppid(), sys.argv)
+    boot.warning("process starting pid=%s parent=%s argv=%s priority=%s", os.getpid(), os.getppid(), sys.argv,
+                 raise_process_priority())
     # the 2026-09-08 stop left no shutdown line at all: say goodbye on every path we can see
     atexit.register(lambda: boot.warning("process exiting (atexit) pid=%s", os.getpid()))
 
