@@ -90,7 +90,7 @@ def parse(symbol: str | None) -> Occ | None:
 _LOOSE_RE = re.compile(r"^(?P<root>[A-Z]{1,6})(?P<date>\d{6})(?P<cp>[CP])(?P<strike>\d+(?:\.\d+)?)$")
 
 
-def parse_loose(symbol: str | None) -> Occ | None:
+def parse_loose(symbol: str | None, ref_price: float | None = None) -> Occ | None:
     """Strict OCC first; else the common SHORT spelling `ROOT YYMMDD C|P STRIKE` with the strike in dollars
     ("INTC260925C130", "SPY260925P742.5") - how a model writes a contract when it drops the 8-digit strike field
     (2026-09-24, Opus 5.5). None when neither parses: the caller must never trade a string it cannot read."""
@@ -111,6 +111,16 @@ def parse_loose(symbol: str | None) -> Occ | None:
         return None
     if strike <= 0:
         return None
+    # 2026-10-06 ("NKE261023C37000" = the $37 call with a truncated OCC strike field, read as a $37,000 strike): an
+    # all-digit strike is ambiguous - dollars ("C130") or OCC thousandths ("C37000"). With the underlying's price, the
+    # reading that sits near it wins; without one, dollars (the old reading).
+    raw = m.group("strike")
+    if ref_price and ref_price > 0 and "." not in raw and len(raw) >= 4:
+        def _fit(k: float) -> float:
+            return abs(k / ref_price - 1.0)
+        thousandths = strike / 1000.0
+        if thousandths > 0 and _fit(thousandths) < _fit(strike) and 0.2 <= thousandths / ref_price <= 5.0:
+            strike = thousandths
     return Occ(m.group("root"), expiry, m.group("cp"), strike)
 
 
