@@ -210,7 +210,10 @@ class Engine:
         if self.ibkr is not None:
             self.ibkr.on_report = self.orders.on_report
             if not bool(getattr(self.config, "ibkr_quotes", False)):
-                await self.ibkr.start()          # retries in the background when no gateway is logged in yet
+                # 2026-10-05 21:36 PT (00:36 ET, IBKR's nightly maintenance): a gateway request that never answered held
+                # the WHOLE boot - the API never came up. The IBKR connect + catch-up + sync now run in the background;
+                # until it is caught up an IBKR order is refused visibly (not connected), never queued blind.
+                self._ibkr_start_task = asyncio.create_task(self.ibkr.start(), name="ibkr-start")
             else:
                 await self.ibkr.catch_up()       # the early connect could not deliver its catch-up
         if self.snaptrade is not None:
@@ -341,6 +344,11 @@ class Engine:
         if self.feed:
             await self.feed.stop()
         if self.ibkr:
+            t = getattr(self, "_ibkr_start_task", None)
+            if t is not None and not t.done():
+                t.cancel()
+                with contextlib.suppress(BaseException):
+                    await t
             await self.ibkr.stop()
         if self.snaptrade is not None:
             await self.snaptrade.stop()
