@@ -64,6 +64,25 @@ executions after every (re)connect. Tests: `tests/test_ibkr_adapter.py`.
 venue stop rested at IBKR for the held quantity; the book's cash/positions equal the gateway's; no stuck "accepted"
 order; the kill switch, pressed once, blocks a new entry.
 
+## Paper week 2026-10-05..09 (user decision 10-05: paper all week, real money from the week of 10-12)
+
+**10-05 result: PASSED** every criterion above - 5 IBKR fills (AAPL 5, CYRX 40, TSLA 1, MGM 8 bought; TSLA sold
+381.39 on the analyst's mirror of the source's trim), venue GTC stops resting for every held quantity, the account sync
+matching the gateway, no stuck order. Bugs it found, all fixed and deployed the same day:
+- 0.9.02: the gateway lost IBKR's servers (notice 1100) and orders sat "submitted" - a lost server link is now
+  "not connected" (orders refused visibly, `IbkrLinkLost` alert) until 1101/1102.
+- 0.9.03: IBKR rejected bracket children priced off the tick (error 110) - prices round to the tick in the safe direction.
+- 0.9.04: two positions (CYRX, MGM) adopted while their bracket children were still cancelling got NO venue stop - the
+  watch loop now re-places a missing venue stop (re-placed by hand on 10-05 before the fix shipped).
+- 0.9.06/0.9.07/0.9.08: 12-181 s event-loop freezes - armed-plan persist throttle, a real DB connection pool (no TLS
+  to the local DB), stale exits cancelled before replacement, above-normal process priority.
+- 0.9.09: Portfolios/Ledger in one display currency; IBKR shown like the other brokers; paper never added to real money.
+
+**Before the live switch (the user):** the paper account bought US stocks with a CAD balance and IBKR simply went
+NEGATIVE US$2,619.87 against the C$10,000 (a paper account allows it; `ibkr.convert_currencies=true` let the book see
+the CAD). A real CASH account will not: **convert CAD to USD inside IBKR (or deposit USD)** before the first live
+session - the live config below turns `convert_currencies` off, so only USD is spendable.
+
 ## Go-live (after a passing paper session; the user says "go")
 
 1. The user logs IB Gateway into the **live** account (port **4001**); this desk sets `ZARGAR_IBKR_PORT=4001` in

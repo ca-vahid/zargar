@@ -7,7 +7,7 @@ import pytest
 from zargar.api.app import create_app
 from zargar.engine import Engine
 from zargar.models import RawContent
-from zargar.domain import new_id
+from zargar.domain import new_id, now_ms
 from zargar.signals.schemas import ExtractionResult, TradeSignal
 from zargar.signals.service import attach_signal_layer
 
@@ -158,7 +158,8 @@ async def test_full_signal_to_proposal_to_execution(app_client):
     pending = (await client.get("/api/proposals")).json()
     assert len(pending) == 1
 
-    r = await client.post(f"/api/proposals/{proposal['id']}/approve", json={"half": False})
+    fp = (await client.post(f"/api/proposals/{proposal['id']}/revalidate")).json()["readiness"]["fingerprint"]
+    r = await client.post(f"/api/proposals/{proposal['id']}/approve", json={"half": False, "expected": fp})
     assert r.status_code == 200
     result = r.json()
     assert result["proposal"]["status"] == "executed"
@@ -416,9 +417,10 @@ async def test_share_proposal_is_sized_to_fit_the_position_cap(app_client):
     assert notional <= equity * 0.50 + 1e-6, (notional, equity)
     assert "Sized down" in (p["context"].get("explain") or ""), p["context"].get("explain")
     # and the approval actually goes through the gate it was sized for
-    r = await client.post(f"/api/proposals/{p['id']}/approve")
+    fp = (await client.post(f"/api/proposals/{p['id']}/revalidate")).json()["readiness"]["fingerprint"]
+    r = await client.post(f"/api/proposals/{p['id']}/approve", json={"expected": fp})
     assert r.status_code == 200, r.text
-    assert r.json()["proposal"]["status"] == "executed"
+    assert r.json()["proposal"]["status"] == "executed", r.json().get("refused")
 
 
 async def test_immediate_book_sized_by_budget(app_client):
@@ -853,7 +855,7 @@ async def test_take_fill_adopts_position_under_analyst_exits(app_client):
         transport=_hx.MockTransport(lambda _req: _hx.Response(404, json={})))))
     # the risk gate and the sim executor both need a live option quote
     for _ in range(2):
-        eng.quotes.on_quote(Quote(symbol=occ, bid=4.4, ask=4.6, last=4.5,
+        eng.quotes.on_quote(Quote(symbol=occ, source="opra", source_ts=now_ms(), bid=4.4, ask=4.6, last=4.5,
                                   bid_size=500, ask_size=500, volume=100))
     out = await run_pipeline(eng, canned_extraction())
     p = out[0]["proposal"]
@@ -872,7 +874,7 @@ async def test_take_fill_adopts_position_under_analyst_exits(app_client):
     async def adopted():
         # the sim executor fills only once it has a fresh option quote (post-latency)
         for _ in range(2):
-            eng.quotes.on_quote(Quote(symbol=occ, bid=4.4, ask=4.6, last=4.5,
+            eng.quotes.on_quote(Quote(symbol=occ, source="opra", source_ts=now_ms(), bid=4.4, ask=4.6, last=4.5,
                                       bid_size=500, ask_size=500, volume=100))
         await _aio.sleep(0.15)
         return any(x["technique"] == "tip" and x["status"] == "open"
@@ -882,7 +884,11 @@ async def test_take_fill_adopts_position_under_analyst_exits(app_client):
     pos = next(x for x in eng.position_manager.positions()
                if x["technique"] == "tip" and x["status"] == "open")
     pol = pos["policy"]
-    assert pol["ladder"] == {"targets": [245.0, 252.0], "fractions": [0.5, 0.3]}
+    # Tips v0.9 horizon exits (2026-10-05): 1/3 at +1R first, the analyst's targets become extra trims of the
+    # middle third, and a 1/3 runner always trails - the analyst's own targets are kept, in order
+    lad = pol["ladder"]
+    assert lad["targets"][1:] == [245.0, 252.0] and lad["targets"][0] < 245.0, lad
+    assert abs(sum(lad["fractions"]) - 2 / 3) < 0.01 and abs(lad["fractions"][0] - 1 / 3) < 0.01, lad
     assert pol["stop"] == {"kind": "fixed", "price": 224.0}
     assert pol["premium_stop_pct"] == 45.0 and pol["time_stop_sessions"] == 8
     assert pos["direction"] == "long" and pos["symbol"] == "AAPL"
@@ -1687,6 +1693,10 @@ async def test_spread_tip_proposes_and_opens_defined_risk(app_client):
     exp = (dt.date.today() + dt.timedelta(days=17)).isoformat()
     fake, occ240, occ250 = _spread_cboe(exp)
     eng.options.use_client(fake)
+    # the chain mock only supplies the strikes; the pump below IS the live OPRA feed. Without this the options
+    # service overlays the chain's (delayed, source "chain"/"provider") prices onto the pumped quotes and the
+    # simulator - which prices option fills only from OPRA/IBKR quotes (sim_fill_v1) - never fills the long leg
+    eng.quotes.set_overlay = lambda *a, **k: None
 
     tip = canned_extraction()
     tip.signals[0].legs = [{"action": "buy", "type": "call", "strike": 240.0},
@@ -1698,9 +1708,9 @@ async def test_spread_tip_proposes_and_opens_defined_risk(app_client):
 
     async def pump():
         while not stop:
-            eng.quotes.on_quote(Quote(symbol=occ240, bid=4.4, ask=4.6, last=4.5,
+            eng.quotes.on_quote(Quote(symbol=occ240, source="opra", source_ts=now_ms(), bid=4.4, ask=4.6, last=4.5,
                                       bid_size=500, ask_size=500, volume=100))
-            eng.quotes.on_quote(Quote(symbol=occ250, bid=1.4, ask=1.6, last=1.5,
+            eng.quotes.on_quote(Quote(symbol=occ250, source="opra", source_ts=now_ms(), bid=1.4, ask=1.6, last=1.5,
                                       bid_size=500, ask_size=500, volume=100))
             await _aio.sleep(0.1)
     pump_task = _aio.create_task(pump())
@@ -1716,7 +1726,8 @@ async def test_spread_tip_proposes_and_opens_defined_risk(app_client):
         expr = out[0]["signal"]["extraction"]["shadowExpression"]
         assert expr["vehicle"] == "spread", expr.get("fallback")
 
-        r = await client.post(f"/api/proposals/{p['id']}/approve", json={})
+        fp = (await client.post(f"/api/proposals/{p['id']}/revalidate")).json()["readiness"]["fingerprint"]
+        r = await client.post(f"/api/proposals/{p['id']}/approve", json={"expected": fp})
         assert r.status_code == 200
         res = r.json()
         assert res["proposal"]["status"] == "executed", res["proposal"]
