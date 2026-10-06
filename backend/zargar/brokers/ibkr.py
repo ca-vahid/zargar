@@ -153,8 +153,30 @@ class IBKRBroker(QuoteFeed, Executor):
         # V1.2 (2026-10-05, review R1 M1): replay the executions FIRST, then let the account sync level-set - a fill
         # made during the outage is applied once (catch-up), never on top of a sync that already contains it
         out = await self.catch_up()
+        if (out or {}).get("ok") is False:
+            # 2026-10-05: a catch-up the gateway did not answer (nightly maintenance) is NOT done - the account sync keeps
+            # waiting (no level-set before the replay) and the replay is retried until it succeeds
+            self._schedule_catch_up_retry()
+            return
         self.caught_up = True
         await self._notify("ready", {"replayed": int((out or {}).get("replayed") or 0)})
+
+    def _schedule_catch_up_retry(self, every_s: float = 60.0) -> None:
+        if getattr(self, "_catch_up_task", None) is not None and not self._catch_up_task.done():
+            return
+
+        async def _retry() -> None:
+            while not self._stopping and self.connected and not self.caught_up:
+                await asyncio.sleep(every_s)
+                if self._stopping or not self.connected:
+                    return
+                out = await self.catch_up()
+                if (out or {}).get("ok") is not False:
+                    self.caught_up = True
+                    log.warning("IBKR catch-up completed on retry (%s replayed)", (out or {}).get("replayed"))
+                    await self._notify("ready", {"replayed": int((out or {}).get("replayed") or 0)})
+                    return
+        self._catch_up_task = asyncio.ensure_future(_retry())
 
     def _on_disconnected(self) -> None:
         self.caught_up = False
@@ -216,6 +238,7 @@ class IBKRBroker(QuoteFeed, Executor):
                     out["replayed"] += 1
         except Exception:  # noqa: BLE001
             log.exception("IBKR catch-up failed")
+            out["ok"] = False
         if out["replayed"]:
             await self._notify("caught_up", out)
         return out
