@@ -813,6 +813,7 @@ export interface TechniqueSetup {
 /** GET /api/techniques — the technique registry (platform plan phase 0). */
 export interface TechniqueInfo {
   id: string; label: string; version: string; page: string; settingsPrefix?: string; tabs: string[]; description?: string;
+  retired?: boolean;   // its `techniques.<id>.enabled` setting is off: listed last, marked, still reachable
 }
 
 export interface TechniqueStatus {

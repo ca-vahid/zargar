@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { useStore, type Page } from "../store";
 import type React from "react";
-import { useTechniques } from "../lib/techniques";
+import { retiredLast, useTechniques } from "../lib/techniques";
 import {
   IconArmed,
   IconChevron,
@@ -53,7 +53,7 @@ function ripple(e: React.MouseEvent<HTMLButtonElement>) {
 
 export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: { collapsed?: boolean; onToggleCollapse?: () => void } = {}) {
   const registry = useTechniques();
-  const techniques = [...registry].sort((a, b) => (TECHNIQUE_ORDER[a.page] ?? 99) - (TECHNIQUE_ORDER[b.page] ?? 99));
+  const techniques = retiredLast([...registry].sort((a, b) => (TECHNIQUE_ORDER[a.page] ?? 99) - (TECHNIQUE_ORDER[b.page] ?? 99)));
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   const pending = useStore((s) => s.proposals.length);
@@ -85,9 +85,11 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
           </button>
         )).flatMap((btn, i) => PAGES[i].key === "technique" ? [btn, ...techniques.map((t) => (
           // techniques are a family: each registered one is a sub-item under "Techniques"
-          <button key={`technique-${t.id}`} className={`nav-sub ${page === t.page ? "active" : ""}`}
-            title={navCollapsed ? t.label : undefined} onClick={(e) => { ripple(e); setPage(t.page as Page); }}>
+          <button key={`technique-${t.id}`} className={`nav-sub ${page === t.page ? "active" : ""} ${t.retired ? "retired" : ""}`}
+            title={navCollapsed ? (t.retired ? `${t.label} (retired)` : t.label) : (t.retired ? "Retired: switched off, records kept" : undefined)}
+            onClick={(e) => { ripple(e); setPage(t.page as Page); }}>
             <span className="nav-sub-dot" aria-hidden="true" /> <span className="nav-label">{TECHNIQUE_SHORT[t.id] ?? t.label}</span>
+            {t.retired && <span className="nav-retired">retired</span>}
             {t.page === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
           </button>
         ))] : [btn])}

@@ -9,6 +9,11 @@ export const EM_TECHNIQUE: TechniqueInfo = {
   tabs: ["validation", "analyse", "chat", "history", "backtest"],
 };
 
+/** Retired techniques (switched off) sort after every active one; order is otherwise the caller's. */
+export function retiredLast<T extends { retired?: boolean }>(list: T[]): T[] {
+  return [...list.filter((t) => !t.retired), ...list.filter((t) => t.retired)];
+}
+
 let cache: TechniqueInfo[] | null = null;
 let inflight: Promise<TechniqueInfo[]> | null = null;
 
