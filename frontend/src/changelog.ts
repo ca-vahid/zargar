@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.08";
+export const APP_VERSION = "0.9.09";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.09",date:"2026-10-05",title:"One currency, real money apart from paper",items:[
+    {tag:"new",text:"Portfolios and Ledger have one CAD | USD switch: every money total on the page is shown in that currency (share prices stay in the stock's own); the top-bar Real money chip is one number in it too."},
+    {tag:"improved",text:"Interactive Brokers gets the same view as Webull and Wealthsimple: account number, last sync, real-money vs paper label, spendable cash beside the cash the account actually holds per currency, and a full holdings table with P&L and value."},
+    {tag:"fixed",text:"The Ledger no longer adds the IBKR paper book to your real money: a Real money | IBKR paper switch keeps them apart, and a CAD account and a USD book are no longer summed as one number. A funded IBKR live book now counts in the top-bar Real money total."},
+  ]},
   {version:"0.9.08",date:"2026-10-05",title:"Steadier engine",items:[
     {tag:"improved",text:"The engine raises its own Windows priority to above-normal at startup, so bursts from other desktop apps (Discord, Teams, builds) no longer freeze it (ZARGAR_PROCESS_PRIORITY = normal to opt out)."},
   ]},

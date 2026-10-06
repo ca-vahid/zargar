@@ -217,7 +217,8 @@ class DeskService:
             return None
 
     # ------------------------------------------------------------- ledger
-    async def ledger(self, days: int = 30, workspace: str | None = None) -> dict:
+    async def ledger(self, days: int = 30, workspace: str | None = None, scope: str | None = None,
+                     currency: str | None = None) -> dict:
         """The plain-language money view (user 2026-09-01: 'what was bought,
         what was sold, how much gain each time'). REAL books only (sim/live/
         paper) — research books never. Round trips are FIFO-paired per
@@ -232,7 +233,10 @@ class DeskService:
         # books; live = the real accounts (research/shadow books never)
         # W6.5: the caller's VIEW when given (the UI switch is per browser); else the routing mode as before
         live_ws = (workspace == "live") if workspace else str(eng.settings.get("trading.mode", "practice")) == "live"
-        kinds = ("live", "paper") if live_ws else ("sim",)
+        # 2026-10-05 (user): paper money is never summed with real money - the live workspace shows REAL books
+        # (kind live) by default and the IBKR paper book only when asked (scope=paper)
+        scope = "paper" if (live_ws and scope == "paper") else ("real" if live_ws else "practice")
+        kinds = ("paper",) if scope == "paper" else (("live",) if live_ws else ("sim",))
         real = {p["id"]: p for p in eng.positions.portfolios()
                 if p["kind"] in kinds}
         async with eng.sf() as session:
@@ -377,6 +381,7 @@ class DeskService:
                     "inOrderId": lot["order_id"], "outOrderId": e.order_id,
                     "inReason": lot["reason"], "outReason": reason_of(e.order_id),
                     "day": e.ts.astimezone(ET).strftime("%Y-%m-%d"),
+                    "_pid": e.portfolio_id,
                 })
                 lot["qty"] -= take
                 qty -= take
@@ -408,13 +413,46 @@ class DeskService:
                     "unrealized": (round((mark - lot["px"]) * lot["qty"] * mult * lot["sgn"]
                                          - fee_in, 2) if mark else None),
                     "label": lot["label"],
+                    "_pid": pid,
                 })
 
         adjustments = [{
             "day": a.ts.astimezone(ET).strftime("%Y-%m-%d"), "at": a.ts.isoformat(),
             "amount": round(float((a.payload or {}).get("cashDelta") or 0), 2),
             "reason": str((a.payload or {}).get("reason") or "book correction")[:200],
+            "_pid": a.portfolio_id,
         } for a in adj_rows]
+
+        # ONE currency for every amount on the page (2026-10-05: a CAD account and a USD paper book were summed as one
+        # number). Money amounts convert at the live USD/CAD rate; per-share PRICES stay in the stock's own currency.
+        disp = str(currency or "").upper() or None
+        book_ccy = {pid: str(p.get("baseCurrency") or "USD").upper() for pid, p in real.items()}
+        if disp is None:
+            ccys = set(book_ccy.values())
+            disp = ccys.pop() if len(ccys) == 1 else "USD"
+        fx_missing: set[str] = set()
+
+        def rate(pid: str) -> float:
+            src = book_ccy.get(pid, "USD")
+            if src == disp:
+                return 1.0
+            fx = eng.positions.fx
+            r = fx.rate(src, disp) or fx.rate(src, disp, max_age_ms=4 * 86_400_000)
+            if r is None:
+                fx_missing.add(f"{src}->{disp}")
+                return 1.0
+            return float(r)
+
+        _MONEY = ("cost", "proceeds", "gross", "feeIn", "feeOut", "fees", "gain", "unrealized", "amount")
+        for row in [*trips, *open_positions, *adjustments]:
+            pid = row.pop("_pid", None)
+            r = rate(pid) if pid else 1.0
+            row["currency"] = disp
+            row["bookCurrency"] = book_ccy.get(pid, disp) if pid else disp
+            if r != 1.0:
+                for k in _MONEY:
+                    if row.get(k) is not None:
+                        row[k] = round(float(row[k]) * r, 2)
 
         window_trips = [t for t in trips
                         if dt.datetime.fromisoformat(t["outAt"]) >= cutoff]
@@ -434,7 +472,7 @@ class DeskService:
         equity = 0.0
         for pid in real:
             with contextlib.suppress(Exception):
-                equity += float(await eng.positions.equity(pid) or 0)
+                equity += float(await eng.positions.equity(pid) or 0) * rate(pid)
         # Today, the way the Dashboard says it: mark-to-market against the
         # previous session's close (invariant 21). The per-day rows below book
         # a trip's WHOLE gain on the day it closes, so a day's "realized" and
@@ -450,8 +488,8 @@ class DeskService:
             if start is None:
                 anchored = False
                 break
-            day_start += float(start)
-        starting = round(sum(float(p.get("startingCash") or 0) for p in real.values()), 2)
+            day_start += float(start) * rate(pid)
+        starting = round(sum(float(p.get("startingCash") or 0) * rate(pid) for pid, p in real.items()), 2)
         # since the baseline: EVERY trip + adjustment (the window only scopes the
         # day list) — so start + banked + riding == total, by construction
         banked_all = round(sum(t["gain"] for t in trips)
@@ -467,6 +505,11 @@ class DeskService:
             "asOf": dt.datetime.now(dt.timezone.utc).isoformat(),
             "windowDays": days,
             "workspace": "live" if live_ws else "practice",
+            "scope": scope,
+            "currency": disp,
+            "fxMissing": sorted(fx_missing),
+            "books": sorted(p["name"] for p in real.values()),
+            "hasPaper": any(p["kind"] == "paper" and not p.get("archived") for p in eng.positions.portfolios()),
             "total": round(equity, 2),
             "startingCash": starting if practice else None,
             "startedAt": (dt.datetime.fromtimestamp(baseline / 1000, dt.timezone.utc)

@@ -1,7 +1,8 @@
 import { useWorkspace } from "../lib/workspace";
 import { useMemo, useState } from "react";
 import { api } from "../lib/api";
-import { fmtDateTime, fmtMoney, fmtSigned, fmtTime } from "../lib/format";
+import { fmtCcy, fmtDateTime, fmtMoney, fmtSigned, fmtTime } from "../lib/format";
+import { useDisplayCurrency } from "../lib/displayCurrency";
 import { parseOcc } from "../lib/occ";
 import { useAsync } from "../lib/useAsync";
 import { SymIcon } from "../components/SymIcon";
@@ -133,16 +134,19 @@ function Headline({ led, model, days, setDays, view, setView }: {
   days: number; setDays: (d: number) => void; view: View; setView: (v: View) => void;
 }) {
   const live = led.workspace === "live";
+  const paper = led.scope === "paper";
   const todayRow = model.days.find((d) => d.isToday);
   const windowNet = led.days.reduce((s, d) => s + d.realized, 0);
   return (
     <div className="panel mb led-head2">
       <div className="led-balance">
-        <div className="led-bal-lbl">{live ? "Brokerage total" : "Balance now"}</div>
-        <div className="led-bal-num">{fmtMoney(led.total, 2)}</div>
+        <div className="led-bal-lbl">
+          {paper ? "IBKR paper — not real money" : live ? "Real accounts" : "Balance now"}
+        </div>
+        <div className="led-bal-num">{fmtCcy(led.total, led.currency ?? "USD")}</div>
         <div className="led-bal-sub">
           {live
-            ? <>all accounts · Zargar banked <span className={led.banked >= 0 ? "pos" : "neg"}>{fmtSigned(led.banked)}</span> and is riding <span className={led.riding >= 0 ? "pos" : "neg"}>{fmtSigned(led.riding)}</span></>
+            ? <>{paper ? "rehearsing the real IBKR path" : (led.books ?? []).join(", ") || "all accounts"} · Zargar banked <span className={led.banked >= 0 ? "pos" : "neg"}>{fmtSigned(led.banked)}</span> and is riding <span className={led.riding >= 0 ? "pos" : "neg"}>{fmtSigned(led.riding)}</span></>
             : <>from {fmtMoney(led.startingCash ?? 0, 0)}{led.startedAt ? ` on ${shortDate(led.startedAt)}` : ""}
               {" · "}<span className={(led.sinceStart ?? 0) >= 0 ? "pos" : "neg"}>{fmtSigned(led.sinceStart ?? 0)}</span> since you started</>}
         </div>
@@ -691,14 +695,37 @@ export function LedgerPage() {
   });
   // the ledger follows the workspace: switching Practice/LIVE re-fetches
   const mode = useWorkspace();   // the VIEW (W6.5) - not real-order routing
-  const state = useAsync(() => api.deskLedger(days, mode), [days, mode]);
+  // one currency for every amount (2026-10-05); real money and IBKR paper are never summed together
+  const [ccy, setCcy] = useDisplayCurrency();
+  const [scope, setScope] = useState<"real" | "paper">("real");
+  const state = useAsync(() => api.deskLedger(days, mode, mode === "live" ? scope : undefined, ccy),
+    [days, mode, scope, ccy]);
   const led: Ledger | undefined = state.data;
   const model = useModel(led);
   const live = led?.workspace === "live";
 
   return (
     <div className="ledger-page">
-      <h2 className="page-title">Ledger — your money, in plain terms</h2>
+      <div className="led-titlebar">
+        <h2 className="page-title">Ledger — your money, in plain terms</h2>
+        <div className="led-scope">
+          {mode === "live" && (led?.hasPaper || scope === "paper") && (
+            <div className="seg sm" role="group" aria-label="Which money">
+              <button className={scope === "real" ? "on" : ""} aria-pressed={scope === "real"}
+                title="Your real-money accounts" onClick={() => setScope("real")}>Real money</button>
+              <button className={scope === "paper" ? "on" : ""} aria-pressed={scope === "paper"}
+                title="The IBKR paper account - real routing, pretend money; never added to your real total"
+                onClick={() => setScope("paper")}>IBKR paper</button>
+            </div>
+          )}
+          <div className="seg sm" role="group" aria-label="Currency">
+            {(["CAD", "USD"] as const).map((c) => (
+              <button key={c} className={ccy === c ? "on" : ""} aria-pressed={ccy === c}
+                title={`Show every amount in ${c}`} onClick={() => setCcy(c)}>{c}</button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <AsyncSection state={state} isEmpty={() => !led}
         empty={<EmptyState title="No trades yet" />}>
@@ -717,7 +744,8 @@ export function LedgerPage() {
 
             <p className="muted led-foot">
               Real books only, after commissions (Webull Canada: $0 on stocks, $0.99 + reg. fees
-              per option contract). The research (shadow) books that grade each tip source are not
+              per option contract). Amounts are in {led.currency ?? "USD"} at today's USD/CAD rate; share prices stay
+              in the stock's own currency. The IBKR paper account is pretend money and is never added to the real total. The research (shadow) books that grade each tip source are not
               money and never appear here. The Journal keeps the full audit trail.
             </p>
           </>

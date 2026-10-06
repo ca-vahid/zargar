@@ -477,6 +477,7 @@ button.brand { background: none; border: 0; padding: 0 4px 0 0; min-height: 40px
   font-size: var(--fs-0); font-weight: 700; color: var(--text-3);
   border: 1px solid var(--border); border-radius: 4px; padding: 0 4px;
 }
+.ccy-tag { margin-left: 6px; font-size: var(--fs-0); font-weight: 600; color: var(--text-3); }
 .provider-card {
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease;
@@ -2468,6 +2469,10 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .led-stat2 .v { font-family: var(--mono); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .led-stat2 .s { font-size: var(--fs-0); color: var(--text-3); }
 .led-controls { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.led-titlebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.led-scope { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.pf-titlebar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pf-titlebar .seg { margin-left: auto; }
 .led-foot { font-size: 12px; max-width: 640px; }
 
 /* -- B. Timeline -- */
