@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.10";
+export const APP_VERSION = "0.9.11";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.11",date:"2026-10-06",title:"Armed entries get the ATR stop",items:[
+    {tag:"improved",text:"Tips entries that fill from an armed (wait-for-the-level) plan now get the same daily-ATR stop floor as direct entries, decided at the fire and sized from that stop at the same dollar risk - expect fewer shares with wider stops on armed fills."},
+  ]},
   {version:"0.9.10",date:"2026-10-05",title:"Retired techniques are marked and listed last",items:[
     {tag:"improved",text:"Team2 is marked retired in the Techniques list and sits at the bottom. Its page and records stay reachable. Any technique that is switched off is shown the same way."},
   ]},
