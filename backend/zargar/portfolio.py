@@ -594,11 +594,33 @@ class PositionKeeper:
         `points` caps how many come back — a month of 30-second samples is 86k
         rows, so the caller asks for a budget and gets one value per bucket
         (the LAST in each, so the final point is always the live one)."""
+        # 2026-10-06: the Portfolios chart asks for limit=200000 per book every 5 min; materializing that many ORM rows on
+        # the event loop froze the engine 2.5-4.5 s every few minutes. The min/max decimation now runs IN POSTGRES (the
+        # same rule as `_decimate`: count-based buckets, each bucket's low and high, both ends kept) and only the kept
+        # points cross to Python - as plain tuples, never ORM objects.
+        from sqlalchemy import text as _text
+        since_sql = "AND ts >= :since" if since is not None else ""
+        params = {"pid": pid, "limit": int(limit), **({"since": int(since)} if since is not None else {})}
         async with self._sf() as session:
-            q = select(EquityPoint).where(EquityPoint.portfolio_id == pid)
-            if since is not None:
-                q = q.where(EquityPoint.ts >= since)
-            rows = (await session.execute(
-                q.order_by(EquityPoint.ts.desc()).limit(limit))).scalars().all()
-        out = [[r.ts, round(r.equity, 2)] for r in reversed(rows)]
+            if points and points > 0:
+                n = (await session.execute(_text(
+                    "SELECT count(*) FROM (SELECT 1 FROM equity_points WHERE portfolio_id = :pid " + since_sql
+                    + " ORDER BY ts DESC LIMIT :limit) c"), params)).scalar() or 0
+                if n > points:
+                    rows = (await session.execute(_text(
+                        "WITH w AS (SELECT ts, equity FROM equity_points WHERE portfolio_id = :pid " + since_sql
+                        + " ORDER BY ts DESC LIMIT :limit),"
+                        " b AS (SELECT ts, equity, ntile(:buckets) OVER (ORDER BY ts) AS nb,"
+                        "       row_number() OVER (ORDER BY ts) AS rn, count(*) OVER () AS n FROM w),"
+                        " lo AS (SELECT DISTINCT ON (nb) ts, equity FROM b ORDER BY nb, equity ASC, ts),"
+                        " hi AS (SELECT DISTINCT ON (nb) ts, equity FROM b ORDER BY nb, equity DESC, ts),"
+                        " ends AS (SELECT ts, equity FROM b WHERE rn = 1 OR rn = n)"
+                        " SELECT DISTINCT ts, equity FROM (SELECT * FROM lo UNION ALL SELECT * FROM hi"
+                        "  UNION ALL SELECT * FROM ends) x ORDER BY ts"),
+                        {**params, "buckets": max(1, int(points) // 2)})).all()
+                    return [[int(r[0]), round(float(r[1]), 2)] for r in rows]
+            rows = (await session.execute(_text(
+                "SELECT ts, equity FROM equity_points WHERE portfolio_id = :pid " + since_sql
+                + " ORDER BY ts DESC LIMIT :limit"), params)).all()
+        out = [[int(r[0]), round(float(r[1]), 2)] for r in reversed(rows)]
         return _decimate(out, points)
