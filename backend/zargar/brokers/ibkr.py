@@ -138,6 +138,10 @@ class IBKRBroker(QuoteFeed, Executor):
         ib = self._new_ib()
         await ib.connectAsync(self._host, self._port, clientId=self._client_id, timeout=10)
         self._ib = ib
+        # 2026-10-06 05:15 PT: a NEW session starts linked - the 1100 "link lost" flag of the previous session was only
+        # ever cleared by 1101/1102, which a restarted gateway never sends, so the app kept refusing orders and kept
+        # reconnecting over a healthy connection. If the gateway is still cut off it says so again (1100).
+        self._link_down = False
         if self._quotes:
             ib.reqMarketDataType(3)   # delayed data fallback for unsubscribed instruments
             ib.pendingTickersEvent += self._on_pending_tickers
