@@ -72,3 +72,32 @@ async def test_a_failed_catch_up_is_retried_and_holds_the_sync(broker, monkeypat
     assert broker.caught_up is False
     await asyncio.wait_for(broker._catch_up_task, timeout=5)
     assert broker.caught_up is True and "ready" in seen and calls["n"] == 2   # failed once, retried once
+
+
+async def test_a_new_session_clears_a_stale_link_lost_flag(monkeypatch):
+    """A gateway restart never sends 1101/1102: the new connection must not inherit the old session's 1100 flag."""
+    class _Evt:
+        def __iadd__(self, _h):
+            return self
+
+    class _FreshIB(_HangingIB):
+        def __init__(self):
+            for n in ("orderStatusEvent", "execDetailsEvent", "commissionReportEvent", "errorEvent",
+                      "disconnectedEvent", "pendingTickersEvent"):
+                setattr(self, n, _Evt())
+
+        async def connectAsync(self, *a, **k):
+            return None
+
+        def managedAccounts(self):
+            return ["DU1"]
+
+        async def reqExecutionsAsync(self):
+            return []
+
+    monkeypatch.setattr(ib_mod, "REQUEST_TIMEOUT_S", 0.2)
+    b = ib_mod.IBKRBroker(host="127.0.0.1", port=1, client_id=99, on_quote=lambda q: None)
+    b._link_down = True                                # left over from the previous session's 1100
+    monkeypatch.setattr(b, "_new_ib", lambda: _FreshIB())
+    await b._connect()
+    assert b.connected is True and b.caught_up is True
