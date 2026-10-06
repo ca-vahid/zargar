@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.11";
+export const APP_VERSION = "0.9.12";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.12",date:"2026-10-06",title:"Boot never waits on IBKR",items:[
+    {tag:"fixed",text:"The app no longer hangs at startup when IB Gateway does not answer (IBKR nightly maintenance): the IBKR connection, catch-up and account sync run in the background, and every awaited gateway request is bounded to 30 s."},
+  ]},
   {version:"0.9.11",date:"2026-10-06",title:"Armed entries get the ATR stop",items:[
     {tag:"improved",text:"Tips entries that fill from an armed (wait-for-the-level) plan now get the same daily-ATR stop floor as direct entries, decided at the fire and sized from that stop at the same dollar risk - expect fewer shares with wider stops on armed fills."},
   ]},
