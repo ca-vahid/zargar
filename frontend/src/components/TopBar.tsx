@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDisplayCurrency, useToDisplay } from "../lib/displayCurrency";
 import { api } from "../lib/api";
 import { fmtCcy } from "../lib/format";
 import { netWorthByCurrency, useStore } from "../store";
@@ -55,6 +56,26 @@ export function TopBar() {
   const realTotals = useMemo(
     () => netWorthByCurrency(portfolios, brokerages).filter((t) => t.brokerage > 0),
     [portfolios, brokerages]);
+  // ONE number in the display currency (2026-10-05): the SnapTrade accounts plus every REAL (kind live) app book -
+  // a funded IBKR live book counts; IBKR paper never does
+  const [dispCcy] = useDisplayCurrency();
+  const toDisp = useToDisplay();
+  const realOne = useMemo(() => {
+    const parts: [number, string][] = [];
+    const brokeragePids = new Set((brokerages?.providers ?? []).flatMap((pr) => pr.accounts.map((a) => a.portfolioId)));
+    for (const pr of brokerages?.providers ?? []) for (const a of pr.accounts) parts.push([a.equity, a.currency]);
+    for (const p of portfolios) {
+      if (p.kind !== "live" || p.archived || brokeragePids.has(p.id)) continue;
+      parts.push([p.equity ?? p.cash, p.baseCurrency ?? "USD"]);
+    }
+    let sum = 0;
+    for (const [v, c] of parts) {
+      const d = toDisp(v, c);
+      if (d == null) return null;
+      sum += d;
+    }
+    return sum > 0 ? sum : null;
+  }, [portfolios, brokerages, toDisp]);
   const practice = useMemo(
     () => portfolios.filter((p) => p.kind === "sim" && !p.archived), [portfolios]);
   // marked to the live tape, not to the 30 s server push: the chip used to
@@ -280,12 +301,13 @@ export function TopBar() {
         inputRef={searchRef}
       />
       <div className="spacer" />
-      {mode === "live" && realTotals.length > 0 && (
+      {mode === "live" && (realTotals.length > 0 || realOne != null) && (
         <button className="equity-chip equity-chip--real" onClick={() => setPage("dashboard")}
-          title="Real brokerage net worth (per currency) — click for the Dashboard">
+          title="Real money across every real account, in your display currency (IBKR paper excluded) — click for the Dashboard">
           <span className="equity-chip-lbl">Real money</span>
           <span className="equity-chip-num">
-            {realTotals.map((t) => fmtCcy(t.brokerage, t.currency)).join("  ·  ")}
+            {realOne != null ? fmtCcy(realOne, dispCcy)
+              : realTotals.map((t) => fmtCcy(t.brokerage, t.currency)).join("  ·  ")}
           </span>
         </button>
       )}
