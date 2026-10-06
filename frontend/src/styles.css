@@ -248,6 +248,10 @@ button.brand { background: none; border: 0; padding: 0 4px 0 0; min-height: 40px
 .nav button.nav-sub .nav-sub-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.55; flex-shrink: 0; }
 .nav button.nav-sub.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .nav button.nav-sub.active .nav-sub-dot { opacity: 1; }
+/* a retired technique: listed last, dimmed, tagged - still a working link to its records */
+.nav button.nav-sub.retired .nav-label, .nav button.nav-sub.retired .nav-sub-dot, .more-item.retired > span:not(.nav-retired) { opacity: 0.5; }
+.nav-retired { margin-left: auto; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3, currentColor); opacity: 0.7; }
+.sidebar.collapsed .nav-retired { display: none; }
 .sidebar.collapsed .nav button.nav-sub { padding-left: 0; padding-right: 0; justify-content: center; }
 .nav button:hover { background: var(--surface-2); color: var(--text-1); }
 .nav button.active { background: var(--surface-2); color: var(--text-1); font-weight: 600; }

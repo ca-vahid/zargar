@@ -30,7 +30,10 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def techniques_list():
         """The technique registry — what the nav lists (platform plan phase 0)."""
         from ..techniques import all_techniques
-        return [t.to_dict() for t in all_techniques()]
+        # 2026-10-05: a technique whose persisted `techniques.<id>.enabled` is off is RETIRED - the nav lists it
+        # last with a marker instead of hiding it (its pages and records stay reachable). No key = not retired.
+        return [{**t.to_dict(), "retired": eng.settings.get(f"techniques.{t.id}.enabled", True) is False}
+                for t in all_techniques()]
 
     def _tech(tid: str):
         from ..techniques import get_technique

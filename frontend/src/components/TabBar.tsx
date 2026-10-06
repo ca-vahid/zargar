@@ -4,7 +4,7 @@ import { APP_VERSION } from "../changelog";
 import { ChangelogDialog } from "./ChangelogDialog";
 import { api } from "../lib/api";
 import { useStore, type Page } from "../store";
-import { useTechniques } from "../lib/techniques";
+import { retiredLast, useTechniques } from "../lib/techniques";
 import { Sheet } from "./Sheet";
 import { ConfirmDialog } from "./Modal";
 import { useLiveRouting, useWorkspace } from "../lib/workspace";
@@ -116,10 +116,11 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
       </div>
       <div className="more-group">
         <div className="more-group-title"><IconTechnique /> Techniques</div>
-        {techniques.map((t) => (
-          <button type="button" key={`technique-${t.id}`} className={`more-item more-item--sub ${page === t.page ? "active" : ""}`}
+        {retiredLast(techniques).map((t) => (
+          <button type="button" key={`technique-${t.id}`} className={`more-item more-item--sub ${page === t.page ? "active" : ""} ${t.retired ? "retired" : ""}`}
             onClick={() => go(t.page as Page)}>
             <span className="nav-sub-dot" aria-hidden="true" /><span>{t.label}</span>
+            {t.retired && <span className="nav-retired">retired</span>}
           </button>
         ))}
       </div>
