@@ -72,3 +72,25 @@ async def test_equity_series_returns_the_spike_at_any_budget(engine):
         out = await engine.positions.equity_series(pid, limit=200_000, points=budget)
         assert max(p[1] for p in out) == pytest.approx(11_335.02)
         assert min(p[1] for p in out) == pytest.approx(9_010.00)
+
+
+@pytest.mark.asyncio
+async def test_sql_decimation_matches_the_python_rule(engine):
+    """2026-10-06: the bucketing moved into Postgres; it must keep the range, both ends, time order and the budget."""
+    pid = "eqser02"
+    pts = _series(5000)
+    async with engine.sf() as session:
+        session.add(Portfolio(id=pid, name="Series2", kind="sim",
+                              cash=10_000.0, starting_cash=10_000.0, base_currency="USD"))
+        for ts, eq in pts:
+            session.add(EquityPoint(portfolio_id=pid, ts=ts, equity=eq, cash=eq))
+        await session.commit()
+    await engine.positions.load()
+    out = await engine.positions.equity_series(pid, limit=200_000, points=320)
+    assert len(out) <= 322
+    assert [p[0] for p in out] == sorted(p[0] for p in out)
+    assert out[0][0] == pts[0][0] and out[-1][0] == pts[-1][0]
+    assert max(p[1] for p in out) == pytest.approx(max(e for _, e in pts))
+    assert min(p[1] for p in out) == pytest.approx(min(e for _, e in pts))
+    small = await engine.positions.equity_series(pid, limit=50)
+    assert len(small) == 50 and small[-1][0] == pts[-1][0]
