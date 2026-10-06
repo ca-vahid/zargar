@@ -3913,3 +3913,12 @@ Tests: `tests/test_team2_p0_2026_09_27.py`.
 - P1.2 (`zargar.tools.team2_cost_lines`): Team2's closed trades since 2026-09-08 are **−$2,856 gross** (no
   commission), −$3,831 at IBKR ~$0.65 and −$4,416 at the sim's $1.04. Fees make it much worse, but the live price edge
   is negative on its own. A cheaper venue or dearer contracts can only narrow the loss.
+
+### F133 (2026-10-05) - Team2 retired
+
+User decision after six sessions on the fresh books: Control −$2,009, five days traded, none green. Across every
+book since 2026-09-08: 45 entries, **−$4,135 before fees, −$6,425 after**, one green book-day in 20. The method
+loses on price before any fee, fees add about half again, eleven single-factor changes failed on real prints, and
+the premium stop is ruled out twice (width H6, sampling P1.1). Switched off through journaled settings
+(`techniques.team2.enabled=false`, study and experiments off, plans disarmed, books archived); nothing deleted.
+Findings in order of confidence, what not to repeat, and the revival steps: `notes/research/2026-10-05-retirement.md`.

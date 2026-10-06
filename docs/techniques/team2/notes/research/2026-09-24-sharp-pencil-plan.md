@@ -180,3 +180,12 @@ $1,560–2,600 of costs. They cannot turn a gross loss into a profit. Building t
 reviewed experiment schema and the readiness receipt, and lifting C1's registered pause. That is worth doing only as
 a reviewed PR with the Codex reviewer, and only if you still want it after the 20-session review. Until then, the
 money-relevant question is **which setups have a gross edge at all**, and that is S1's job (5 of 60 sessions).
+
+---
+
+## Status 2026-10-05 — plan closed
+
+Team2 was retired on the user's decision before the 20-session review (planned for ~10-15). The fresh Control book
+lost −$2,009 in six sessions, and nothing in this plan could turn a before-fee loss into a profit. Open items P0.3,
+P1.3, P2.1 (H5-P), P3.1–P3.3 and P4 are **not done** and carry over only if Team2 is revisited. Closing record:
+`2026-10-05-retirement.md`.
