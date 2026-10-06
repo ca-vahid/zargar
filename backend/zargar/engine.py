@@ -584,6 +584,14 @@ class Engine:
         # W7.1: sale proceeds booked AFTER this instant are unsettled until the next sync reads IBKR's settled cash
         self.ibkr_synced_at = dt.datetime.now(dt.timezone.utc)
         self.ibkr_settled_known = st.get("settledCash") is not None
+        # what the Portfolios page shows for the IBKR book (2026-10-05): the account, when it was read, and the cash the
+        # account ACTUALLY holds per currency beside the book's converted spendable figure
+        self.ibkr_view = {"portfolioId": pid, "account": st.get("account"),
+                          "syncedAt": self.ibkr_synced_at.isoformat(), "bookCurrency": book_ccy,
+                          "cashByCurrency": {str(k).upper(): round(float(v or 0), 2)
+                                             for k, v in (st.get("cashByCurrency") or {}).items()
+                                             if str(k).upper() != "BASE"},
+                          "spendable": round(spend, 2)}
         key = (round(spend, 2), tuple(sorted((p["symbol"], p["qty"]) for p in st["positions"])))
         if key != getattr(self, "_ibkr_last_sync", None):
             self._ibkr_last_sync = key
@@ -1047,6 +1055,7 @@ class Engine:
             "feed": feed_name,
             "feedConnected": bool(self.feed and self.feed.connected),
             "ibkrConnected": bool(self.ibkr and self.ibkr.connected),
+            "ibkr": getattr(self, "ibkr_view", None),
             "snaptradeConnected": bool(self.snaptrade and self.snaptrade.connected),
             "quoteSource": quote_source,
             "alpacaConnected": alpaca_connected,

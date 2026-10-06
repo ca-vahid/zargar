@@ -90,6 +90,9 @@ export interface BrokerState {
   ibkrConnected?: boolean;
   snaptradeConnected?: boolean;
   quoteSource?: "yahoo" | "sim" | "ibkr" | string;
+  /** the last IBKR account read (2026-10-05): account id, when, and the cash the account holds per currency */
+  ibkr?: { portfolioId: string; account?: string | null; syncedAt: string; bookCurrency: string;
+    cashByCurrency: Record<string, number>; spendable: number } | null;
   mode: string;
 }
 
@@ -335,6 +338,10 @@ export interface LedgerTrip {
 }
 export interface Ledger {
   asOf: string; windowDays: number; workspace: "practice" | "live";
+  /** live workspace: "real" (kind live) or "paper" (IBKR paper) - never summed together (2026-10-05) */
+  scope?: "real" | "paper" | "practice";
+  /** every money amount on the page is in this currency; per-share prices stay in the stock's own */
+  currency?: string; fxMissing?: string[]; books?: string[]; hasPaper?: boolean;
   total: number; startingCash: number | null; startedAt: string | null;
   /** practice: startingCash + banked + riding == total (unexplained ≈ 0); live: null */
   sinceStart: number | null; banked: number; riding: number; unexplained: number | null;

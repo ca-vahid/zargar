@@ -541,6 +541,7 @@ DEFAULTS: dict[str, Any] = {
     "fees.default_fx_pct": 1.5,
     # --- UI ----------------------------------------------------------------
     "ui.theme": "light",                    # light | dark (explicit saves win)
+    "ui.display_currency": "CAD",           # CAD | USD - every money TOTAL on Portfolios + the top-bar real-money chip (2026-10-05)
     "ui.accent": "#5b8cff",
     "ui.density": "comfortable",            # comfortable | compact
     "ui.default_symbol": "AAPL",

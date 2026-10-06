@@ -498,13 +498,16 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         return await eng.desk.morning_report()
 
     @app.get("/api/desk/ledger", dependencies=[auth])
-    async def desk_ledger(days: int = 30, workspace: str = ""):
+    async def desk_ledger(days: int = 30, workspace: str = "", scope: str = "", currency: str = ""):
         """The plain-language money view: round trips, gains, corrections,
-        open positions — real books only."""
+        open positions — real books only (scope=paper: the IBKR paper book, never summed with real money);
+        every amount in `currency` (CAD | USD) when given."""
         if getattr(eng, "desk", None) is None:
             raise HTTPException(status_code=503, detail="desk not attached")
         return await eng.desk.ledger(days=max(1, min(days, 365)),
-                                     workspace=workspace if workspace in ("live", "practice") else None)
+                                     workspace=workspace if workspace in ("live", "practice") else None,
+                                     scope=scope if scope in ("real", "paper") else None,
+                                     currency=currency.upper() if currency.upper() in ("CAD", "USD") else None)
 
     @app.post("/api/desk/morning/send", dependencies=[auth])
     async def desk_morning_send():

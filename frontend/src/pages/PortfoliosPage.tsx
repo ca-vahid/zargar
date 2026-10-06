@@ -16,7 +16,8 @@ import type {
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { LivePrice, ValuePill } from "../components/quotekit";
-import { cashText, providerTotal } from "../lib/brokerage";
+import { cashText } from "../lib/brokerage";
+import { useDisplayCurrency, useFmtDisplay, useToDisplay } from "../lib/displayCurrency";
 import { AsyncSection, EmptyState } from "../components/ui";
 import { ResearchBadge } from "../components/ResearchBadge";
 
@@ -66,7 +67,7 @@ function PortfolioCard({
             </span>
           )}
         </div>
-        {p.kind !== "live" && (
+        {!REAL_KINDS.has(p.kind) && p.startingCash > 0 && (
           <div className={pnl >= 0 ? "pos" : "neg"} style={{ fontSize: "var(--fs-2)" }}>
             {fmtSigned(pnl)} since start
           </div>
@@ -490,20 +491,22 @@ const LiveBrokerageRow = memo(function LiveBrokerageRow({
 }) {
   const quote = useQuote(pos.symbol);
   const openTrade = useStore((s) => s.openTrade);
+  const fmtD = useFmtDisplay();
+  const [disp] = useDisplayCurrency();
   const live = quote?.last && quote.last > 0 ? quote.last : pos.price ?? 0;
   const ccy = pos.currency ?? accountCurrency;
   const pnlPct = pos.avgCost > 0 ? (live / pos.avgCost - 1) * 100 : null;
   return (
     <tr onClick={() => openTrade(pos.symbol)} style={{ cursor: "pointer" }}
-      title={`Open ${pos.symbol} in Trade`}>
-      <td className="sym-cell">{pos.symbol}</td>
+      title={`Open ${pos.symbol} in Trade - prices in ${ccy}`}>
+      <td className="sym-cell">{pos.symbol}{ccy !== disp && <span className="ccy-tag">{ccy}</span>}</td>
       <td className="num">{fmtQty(pos.qty)}</td>
       <td className="num">{fmtMoney(pos.avgCost)}</td>
       <td className="num"><LivePrice symbol={pos.symbol} fallback={live || undefined} /></td>
       <td className="num">
         {pnlPct !== null ? <ValuePill value={pnlPct} text={fmtPct(pnlPct)} /> : "—"}
       </td>
-      <td className="num">{live ? fmtCcy(pos.qty * live, ccy) : "—"}</td>
+      <td className="num">{live ? fmtD(pos.qty * live, ccy) : "—"}</td>
     </tr>
   );
 });
@@ -541,8 +544,13 @@ function BrokerageSection({
   lastSyncAt: string | null;
 }) {
   const { isPhone } = useViewport();
-  const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
-  const total = providerTotal(provider.accounts, usdCad);
+  const [disp] = useDisplayCurrency();
+  const toD = useToDisplay();
+  const fmtD = useFmtDisplay();
+  const conv = provider.accounts.map((a) => toD(a.equity, a.currency));
+  const total = conv.every((v) => v != null)
+    ? fmtCcy(conv.reduce((x, v) => x + (v as number), 0), disp)
+    : provider.accounts.map((a) => fmtCcy(a.equity, a.currency)).join(" · ");
   const warnPill = provider.disabled
     ? { cls: "bad", text: "disconnected" }
     : provider.type !== "trade" ? { cls: "dim", text: "read-only" } : null;
@@ -574,10 +582,11 @@ function BrokerageSection({
                 </span>
               )}
               <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", textAlign: "right" }}>
-                <b>{fmtCcy(a.equity, a.currency)}</b>
+                <b title={a.currency !== disp ? `${fmtCcy(a.equity, a.currency)} in the account's own currency` : undefined}>
+                  {fmtD(a.equity, a.currency)}</b>
                 {a.equity > 0.005 && (
                   <span className="metric-sub">
-                    {" "}· invested {fmtCcy(a.equity - a.cash, a.currency)} · cash {cashText(a)}
+                    {" "}· invested {fmtD(a.equity - a.cash, a.currency)} · cash held {cashText(a)}
                   </span>
                 )}
               </span>
@@ -614,6 +623,123 @@ function BrokerageSection({
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Interactive Brokers: the same shape as a SnapTrade provider (2026-10-05) ── */
+
+const IbkrPosRow = memo(function IbkrPosRow({ pos }: { pos: Position }) {
+  const quote = useQuote(pos.symbol);
+  const openTrade = useStore((s) => s.openTrade);
+  const fmtD = useFmtDisplay();
+  const [disp] = useDisplayCurrency();
+  const mult = pos.option?.multiplier ?? (pos.secType === "OPT" ? 100 : 1);
+  const ccy = (pos as any).currency ?? "USD";
+  const live = quote?.last && quote.last > 0 ? quote.last : pos.last ?? 0;
+  const pnl = live > 0 ? (live - pos.avgCost) * pos.qty * mult : null;
+  const pnlPct = live > 0 && pos.avgCost > 0 ? (live / pos.avgCost - 1) * 100 : null;
+  const underlying = pos.option?.underlying ?? pos.symbol;
+  return (
+    <tr onClick={() => openTrade(underlying)} style={{ cursor: "pointer" }}
+      title={`Open ${underlying} in Trade - prices in ${ccy}`}>
+      <td className="sym-cell"><SymIcon sym={underlying} size={18} />{pos.option?.display ?? symbolLabel(pos.symbol)}
+        {ccy !== disp && <span className="ccy-tag">{ccy}</span>}</td>
+      <td className="num">{fmtQty(pos.qty)}</td>
+      <td className="num">{fmtMoney(pos.avgCost)}</td>
+      <td className="num"><LivePrice symbol={pos.symbol} fallback={live || undefined} /></td>
+      <td className="num">
+        {pnlPct !== null && pnl !== null
+          ? <ValuePill value={pnlPct} text={`${fmtD(pnl, ccy)} (${fmtPct(pnlPct)})`} />
+          : "—"}
+      </td>
+      <td className="num">{live > 0 ? fmtD(pos.qty * live * mult, ccy) : "—"}</td>
+    </tr>
+  );
+});
+
+function IbkrSection({ books, byPortfolio, hidden, onToggle }: {
+  books: Portfolio[];
+  byPortfolio: Record<string, Position[]>;
+  hidden: Record<string, boolean>;
+  onToggle: (pid: string, v: boolean) => void;
+}) {
+  const broker = useStore((s) => s.broker);
+  const [disp] = useDisplayCurrency();
+  const toD = useToDisplay();
+  const fmtD = useFmtDisplay();
+  const view = broker?.ibkr ?? null;
+  const connected = !!broker?.ibkrConnected;
+  // real money and paper are never added together - the header totals the REAL books only
+  const real = books.filter((p) => p.kind === "live");
+  const realConv = real.map((p) => toD(p.equity ?? p.cash, p.baseCurrency));
+  const realTotal = realConv.every((v) => v != null) ? realConv.reduce((x, v) => x + (v as number), 0) : null;
+  return (
+    <div className="panel mb" id="provider-ibkr">
+      <div className="panel-head">
+        <BrokerIcon name="Interactive Brokers" />
+        Interactive Brokers
+        {!connected && <span className="status-pill bad">gateway offline</span>}
+        <span className="sub">synced {view?.syncedAt ? fmtDateTime(view.syncedAt) : "—"}</span>
+        <span className="prov-total" title="Real-money IBKR books only - paper is never added">
+          {realTotal != null ? fmtCcy(realTotal, disp) : "—"}
+        </span>
+      </div>
+      <div className="panel-body">
+        {books.map((p) => {
+          const pos = byPortfolio[p.id] ?? [];
+          const ccy = p.baseCurrency ?? "USD";
+          const equity = p.equity ?? p.cash;
+          const linked = view && view.portfolioId === p.id ? view : null;
+          const held = linked ? Object.entries(linked.cashByCurrency).filter(([, v]) => Math.abs(v) > 0.004) : [];
+          return (
+            <div key={p.id} className="mb">
+              <div className="acct-head" style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                <strong>{p.name}</strong>
+                {linked?.account && <span className="metric-sub">#{linked.account}</span>}
+                <span className={`status-pill ${p.kind === "live" ? "bad" : "ok"}`}>
+                  {p.kind === "live" ? "real money" : "paper - not real money"}</span>
+                <span className="ccy-chip" title="The currency this book keeps its numbers in">{ccy}</span>
+                {p.todayPct != null && (
+                  <ValuePill value={p.todayPct} text={`${p.todayPct >= 0 ? "+" : ""}${p.todayPct.toFixed(2)}% today`} />
+                )}
+                <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", textAlign: "right" }}>
+                  <b title={ccy !== disp ? `${fmtCcy(equity, ccy)} in the book's own currency` : undefined}>
+                    {fmtD(equity, ccy)}</b>
+                  {equity > 0.005 && (
+                    <span className="metric-sub">
+                      {" "}· invested {fmtD(Math.max(equity - p.cash, 0), ccy)} · spendable {fmtD(p.cash, ccy)}
+                      {held.length > 0 && <> · account holds {held.map(([c, v]) => fmtCcy(v, c)).join(" + ")}</>}
+                    </span>
+                  )}
+                </span>
+                <label className="switch" title="Show on equity chart">
+                  <input type="checkbox" checked={!hidden[p.id]} onChange={(e) => onToggle(p.id, e.target.checked)} />
+                  <span className="track" />
+                </label>
+              </div>
+              {pos.length === 0 ? (
+                <div className="metric-sub">no positions</div>
+              ) : (
+                <div className="scroll-x">
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>Symbol</th><th className="num">Qty</th>
+                        <th className="num">Avg cost</th><th className="num">Live</th>
+                        <th className="num">P&L</th><th className="num">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pos.map((x) => <IbkrPosRow key={`${x.symbol}:${x.secType}`} pos={x} />)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -660,6 +786,12 @@ export function PortfoliosPage() {
     () => portfolios.filter((p) => REAL_KINDS.has(p.kind) && !snaptradePids.has(p.id)
       && (ibkrConnected || (p.equity ?? p.cash) > 0.005)),
     [portfolios, snaptradePids, ibkrConnected]);
+  const ibkrBooks = useMemo(
+    () => realCards.filter((p) => p.venue === "ibkr")
+      .sort((a, b) => (a.kind === "live" ? 0 : 1) - (b.kind === "live" ? 0 : 1)),
+    [realCards]);
+  const otherRealCards = useMemo(() => realCards.filter((p) => p.venue !== "ibkr"), [realCards]);
+  const [disp, setDisp] = useDisplayCurrency();
   const practiceCards = useMemo(
     () => portfolios.filter((p) => !REAL_KINDS.has(p.kind)),
     [portfolios]);
@@ -778,7 +910,16 @@ export function PortfoliosPage() {
 
   return (
     <div>
-      <h2 className="page-title">Portfolios</h2>
+      <div className="pf-titlebar">
+        <h2 className="page-title">Portfolios</h2>
+        <div className="seg sm" role="group" aria-label="Currency"
+          title="Every money total on this page is shown in this currency; share prices stay in the stock's own currency">
+          {(["CAD", "USD"] as const).map((c) => (
+            <button key={c} className={disp === c ? "on" : ""} aria-pressed={disp === c}
+              onClick={() => setDisp(c)}>{c}</button>
+          ))}
+        </div>
+      </div>
 
       {mode === "live" && (
         <div className="section-head">
@@ -790,9 +931,12 @@ export function PortfoliosPage() {
           provider={provider} onRefresh={refresh} refreshing={refreshing}
           lastSyncAt={brokerages?.lastSyncAt ?? null} />
       ))}
-      {mode === "live" && realCards.length > 0 && (
+      {mode === "live" && ibkrBooks.length > 0 && (
+        <IbkrSection books={ibkrBooks} byPortfolio={byPortfolio} hidden={hidden} onToggle={toggleVisible} />
+      )}
+      {mode === "live" && otherRealCards.length > 0 && (
         <div className="settings-grid mb">
-          {realCards.map((p) => (
+          {otherRealCards.map((p) => (
             <PortfolioCard key={p.id} portfolio={p}
               positions={byPortfolio[p.id] ?? []}
               visible={!hidden[p.id]}
