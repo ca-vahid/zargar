@@ -23,6 +23,8 @@ from ..domain import OrderSide, OrderType, Quote, now_ms
 from .base import BrokerOrder, ExecReport, Executor, QuoteFeed
 
 log = logging.getLogger("zargar.ibkr")
+# every awaited gateway request is bounded: during IBKR's nightly maintenance a request can never answer (2026-10-05)
+REQUEST_TIMEOUT_S = 30.0
 
 # Order errors: ib_async already turns a non-warning order error into status Cancelled (and treats 105/110/321/399/...
 # as WARNINGS on a still-live order). So the error event is only RECORDED; the order's own status decides - Cancelled
@@ -204,7 +206,8 @@ class IBKRBroker(QuoteFeed, Executor):
                 if oid:
                     self._trades[oid] = t
                     out["openOrders"] += 1
-            fills = await self._ib.reqExecutionsAsync()
+            # bounded (2026-10-05): during IBKR's nightly maintenance a request can simply never answer
+            fills = await asyncio.wait_for(self._ib.reqExecutionsAsync(), timeout=REQUEST_TIMEOUT_S)
             for f in fills or []:
                 ref = getattr(getattr(f, "execution", None), "orderRef", None) or None
                 if not ref:
@@ -413,7 +416,11 @@ class IBKRBroker(QuoteFeed, Executor):
         """{cash, cashByCurrency, positions:[{symbol, secType, qty, avgCost, currency}], account} or None."""
         if not self.connected:
             return None
-        rows = await self._ib.accountSummaryAsync()
+        try:
+            rows = await asyncio.wait_for(self._ib.accountSummaryAsync(), timeout=REQUEST_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            log.warning("IBKR account summary did not answer within %ss - sync skipped this pass", REQUEST_TIMEOUT_S)
+            return None
         by_cur: dict[str, float] = {}
         settled = None
         account = None
