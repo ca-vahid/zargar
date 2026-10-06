@@ -11,8 +11,33 @@ from .models import Base
 log = logging.getLogger("zargar.db")
 
 
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+# 2026-10-05 (py-spy, market hours): ~25% of the event loop's main thread went to OPENING Postgres connections -
+# the default pool keeps 5 and closes every overflow connection on return, and each new asyncpg connection under the
+# default sslmode=prefer builds an SSLContext, resolves ~/.postgresql/* cert paths (Windows realpath) and tries TLS
+# before falling back on a server with ssl=off. A pool that covers the app's concurrency keeps connections reused.
+POOL_SIZE = 30            # minute-bar bursts (armed plans, positions, bar flush) stay on held connections
+MAX_OVERFLOW = 10         # <= 40 total of the server's 100 (tools + tests share it)
+
+
+def engine_kwargs(url: str) -> dict:
+    """create_async_engine kwargs: a pool sized for the engine's concurrency, and no TLS attempt to a LOOPBACK
+    database whose URL does not ask for it (an explicit ssl/sslmode in the URL always wins)."""
+    from sqlalchemy.engine import make_url
+    kw: dict = {"pool_pre_ping": True, "pool_size": POOL_SIZE, "max_overflow": MAX_OVERFLOW}
+    try:
+        u = make_url(url)
+    except Exception:  # noqa: BLE001 - let create_async_engine report a bad URL
+        return kw
+    query = {k.lower() for k in (u.query or {})}
+    if u.get_backend_name() == "postgresql" and (u.host or "") in _LOOPBACK and not ({"ssl", "sslmode"} & query):
+        kw["connect_args"] = {"ssl": False}
+    return kw
+
+
 def make_engine(url: str, echo: bool = False) -> AsyncEngine:
-    return create_async_engine(url, echo=echo, pool_pre_ping=True)
+    return create_async_engine(url, echo=echo, **engine_kwargs(url))
 
 
 def make_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
