@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.15";
+export const APP_VERSION = "0.9.16";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.16",date:"2026-10-06",title:"Short contract spellings read right",items:[
+    {tag:"fixed",text:"A contract written with a truncated strike field (e.g. NKE261023C37000 for the $37 call) is read at the strike near the stock price instead of as a $37,000 strike, so an analyst take in that spelling is no longer lost."},
+  ]},
   {version:"0.9.15",date:"2026-10-06",title:"Equity charts no longer stall the engine",items:[
     {tag:"fixed",text:"Equity-curve requests thin the history inside the database (same min/max rule) and return only the kept points - the Portfolios chart no longer loads 200,000 rows per book onto the engine every five minutes (the 2.5-4.5 s freezes)."},
   ]},

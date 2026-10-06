@@ -921,7 +921,11 @@ class ProposalService:
         # (or no option) instead of minting a card whose contract nobody can price
         if occ:
             from ..options import occ as _occmod
-            _canon = _occmod.parse_loose(occ)
+            _ref = None
+            with contextlib.suppress(Exception):
+                _uq = eng.quotes.get(sig.ticker)
+                _ref = float(_uq.last or _uq.ask or _uq.bid or 0) or None if _uq is not None else None
+            _canon = _occmod.parse_loose(occ, ref_price=_ref)
             if _canon is not None:
                 if label == occ:
                     label = _canon.display() if hasattr(_canon, "display") else _canon.symbol
