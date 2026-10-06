@@ -1,5 +1,9 @@
 # Team2 technique — research folder
 
+> **RETIRED 2026-10-05 (user decision: "retire for now, revisit later").** Team2 is switched off: no plans are
+> minted or armed, the experiments and the selection study are off, and its three Practice books are archived.
+> Final numbers, findings, and how to bring it back: [`notes/research/2026-10-05-retirement.md`](notes/research/2026-10-05-retirement.md). Everything below describes the desk as it ran.
+
 *Started 2026-09-03. Candidate technique #4 for the multi-technique platform
 (`docs/TECHNIQUE-PLATFORM-PLAN.md`; build guide `docs/BUILDING-A-TECHNIQUE.md`).
 Working id: `team2` (display "Team2"); rename before registering if the user prefers.*

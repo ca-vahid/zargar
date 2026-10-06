@@ -333,6 +333,9 @@ and are now part of the plan; each carries the phase it belongs to.
 
 ## 3e. State of play and the change pipeline (2026-09-16)
 
+> **2026-10-05: RETIRED.** `techniques.team2.enabled=false`; the 20-session review and the S1 study were stopped
+> early (S1 at 10 of 60 sessions, no result). Closing record: `notes/research/2026-10-05-retirement.md`.
+
 > 2026-09-19 (corrected pass): the profitability study (`notes/research/profitability-2026-09-19/00-decision-sheet.md`) found no ESTABLISHED after-cost edge
 > on simulated execution over real option prints, nine preregistered variants failed their criterion, and the sweep's premium formula
 > is unreliable in level and sign. No trading arm is proposed. On the table: the frozen order-free selection study (page 7 of the
