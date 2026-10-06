@@ -48,3 +48,27 @@ async def test_engine_boot_does_not_wait_for_the_gateway(monkeypatch):
     src = inspect.getsource(eng_mod.Engine.start)
     assert "create_task(self.ibkr.start()" in src
     assert "await self.ibkr.start()          # retries" not in src
+
+
+async def test_a_failed_catch_up_is_retried_and_holds_the_sync(broker, monkeypatch):
+    """A catch-up the gateway did not answer is not 'done': caught_up stays False (the account sync waits) and the
+    replay is retried until it succeeds; then the broker reports ready."""
+    calls = {"n": 0}
+
+    async def flaky():
+        calls["n"] += 1
+        return {"openOrders": 0, "replayed": 0, **({"ok": False} if calls["n"] == 1 else {})}
+
+    seen = []
+
+    async def notify(kind, data):
+        seen.append(kind)
+
+    monkeypatch.setattr(broker, "catch_up", flaky)
+    monkeypatch.setattr(broker, "_notify", notify)
+    broker._stopping = False
+    broker.caught_up = False
+    broker._schedule_catch_up_retry(every_s=0.01)
+    assert broker.caught_up is False
+    await asyncio.wait_for(broker._catch_up_task, timeout=5)
+    assert broker.caught_up is True and "ready" in seen and calls["n"] == 2   # failed once, retried once

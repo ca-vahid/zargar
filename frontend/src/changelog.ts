@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.12";
+export const APP_VERSION = "0.9.13";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.13",date:"2026-10-06",title:"IBKR catch-up retries",items:[
+    {tag:"fixed",text:"A fill catch-up the IB Gateway did not answer is retried every minute until it succeeds; the account sync waits for it, so the book is never level-set before missed fills are replayed."},
+  ]},
   {version:"0.9.12",date:"2026-10-06",title:"Boot never waits on IBKR",items:[
     {tag:"fixed",text:"The app no longer hangs at startup when IB Gateway does not answer (IBKR nightly maintenance): the IBKR connection, catch-up and account sync run in the background, and every awaited gateway request is bounded to 30 s."},
   ]},
