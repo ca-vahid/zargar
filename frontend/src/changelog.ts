@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.07";
+export const APP_VERSION = "0.9.08";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.08",date:"2026-10-05",title:"Steadier engine",items:[
+    {tag:"improved",text:"The engine raises its own Windows priority to above-normal at startup, so bursts from other desktop apps (Discord, Teams, builds) no longer freeze it (ZARGAR_PROCESS_PRIORITY = normal to opt out)."},
+  ]},
   {version:"0.9.07",date:"2026-10-05",title:"Engine responsiveness + exit safety",items:[
     {tag:"improved",text:"Database connections are kept open and reused (pool of 30, no TLS attempt to the local database): reconnecting was about a third of the engine main thread during market hours - the main cause of the jittery, freezing app."},
     {tag:"fixed",text:"An exit order left unfilled past the 15-minute in-flight window is now cancelled before its replacement goes out, instead of stacking (an expired MU spread had 20 buy-to-close orders for 3 contracts). On IBKR books the over-close guard now counts working buy-backs on short legs too."},
