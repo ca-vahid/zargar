@@ -2943,3 +2943,15 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
 - Test: `tests/test_planrunner_persist_throttle.py` (the stored row equals memory minus the counters).
 - Diagnostics lesson: never `py-spy record` the live app without `--nonblocking` on Windows - it suspends the process
   per sample (a 181 s freeze on 2026-10-05).
+
+### DB connection pool + stale-exit supersede - 2026-10-05 (Tips desk, 0.9.07; shared `db.py`, `execution/positions.py`)
+- **Finding (py-spy 14:38 ET):** ~1/3 of the main thread was asyncpg OPENING connections - the default pool kept 5 and
+  closed every overflow connection on return; each new connection under sslmode=prefer built an SSLContext, resolved
+  ~/.postgresql cert paths (Windows realpath, 10%) and tried TLS against a server with ssl=off.
+- **Rule:** `db.engine_kwargs` - pool 30 + overflow 10 (<= 40 of the server's 100); a LOOPBACK postgres URL without an
+  explicit ssl/sslmode gets `ssl=False`. A remote host or an explicit setting is left alone.
+- **Finding:** an unfilled exit past `execution.exit_inflight_ttl_seconds` stopped counting as in flight but was never
+  cancelled - a 0DTE short leg's DTE close re-issued every 15 min (20 working buy-to-close orders for 3 contracts in a
+  shadow book). **Rule:** `_close_leg` first cancels such stale exits (`exit_superseded`), and on real books the venue
+  bound counts working BUYs for a short leg (it counted only SELLs). Tests: `test_exit_supersede.py`,
+  `test_db_engine_kwargs.py`.

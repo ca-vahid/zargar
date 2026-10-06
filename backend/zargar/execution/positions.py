@@ -269,7 +269,10 @@ class PositionManager:
     # ---------------------------------------------------------------- real-book sell safety (V1.6, 2026-10-05)
     def _real_book(self, p: Managed) -> bool:
         """A live/paper book: its cancels are asynchronous at the venue (IBKR confirms them later)."""
-        pf = self.engine.positions.portfolio(p.portfolio_id) or {}
+        try:
+            pf = self.engine.positions.portfolio(p.portfolio_id) or {}
+        except Exception:                                  # noqa: BLE001 - a keeper without books (unit rigs)
+            return False
         return pf.get("kind") in ("live", "paper")
 
     async def _await_cancels(self, order_ids: list[str], *, wait: bool = True) -> dict[str, str]:
@@ -296,10 +299,14 @@ class PositionManager:
     async def _working_sells(self, p: Managed, symbol: str, *, exclude: tuple = ()) -> float:
         """Unfilled quantity of every working SELL on `symbol` in the position's book (the venue's view: exit
         records, the venue stop, a stop whose cancel is still in flight, bracket children)."""
+        return await self._working_qty(p, symbol, "SELL", exclude=exclude)
+
+    async def _working_qty(self, p: Managed, symbol: str, side: str, *, exclude: tuple = ()) -> float:
+        """Unfilled quantity of every working order on `symbol` and `side` in the position's book."""
         try:
             async with self.engine.sf() as session:
                 rows = (await session.execute(select(Order).where(
-                    Order.portfolio_id == p.portfolio_id, Order.symbol == symbol, Order.side == "SELL",
+                    Order.portfolio_id == p.portfolio_id, Order.symbol == symbol, Order.side == side,
                     Order.status.in_(_WORKING_ORDER)))).scalars().all()
         except Exception:                                  # noqa: BLE001
             return 0.0
@@ -319,7 +326,10 @@ class PositionManager:
 
     # ---------------------------------------------------------------- good-faith guard (V1.7, 2026-10-05)
     def _gf_applies(self, p: Managed) -> bool:
-        pf = self.engine.positions.portfolio(p.portfolio_id) or {}
+        try:
+            pf = self.engine.positions.portfolio(p.portfolio_id) or {}
+        except Exception:                                  # noqa: BLE001 - an unknown book is never deferred
+            return False
         if pf.get("kind") not in ("live", "paper") or pf.get("venue") == "snaptrade":
             return False
         try:
@@ -1045,6 +1055,26 @@ class PositionManager:
             out += max(0.0, float(rec.get("qty") or 0) - float(rec.get("filledQty") or 0))
         return out
 
+    async def _supersede_stale_exits(self, p: Managed, leg_symbol: str) -> None:
+        """An unfilled exit older than `execution.exit_inflight_ttl_seconds` stops blocking a new exit (a zombie must
+        never block getting flat) - and is CANCELLED first, so the new exit replaces it instead of stacking on it
+        (2026-10-05: a 0DTE short leg's buy-to-close re-issued every 15 min while every earlier one stayed working -
+        20 orders for 3 contracts)."""
+        ttl_ms = int(float(self._setting("execution.exit_inflight_ttl_seconds", 900) or 900) * 1000)
+        now = self.now_ms()
+        for rec in p.exits:
+            if (rec.get("leg") != leg_symbol or rec.get("status") in self._EXIT_DEAD + ("FILLED",)
+                    or float(rec.get("filledQty") or 0) > 0 or not rec.get("ts") or now - rec["ts"] <= ttl_ms):
+                continue
+            oid = rec.get("orderId")
+            if oid:
+                with contextlib.suppress(Exception):
+                    await self.engine.orders.cancel(oid)
+            rec["status"] = "CANCELLED"
+            rec["superseded"] = True
+            self._log(p, "exit_superseded", f"{leg_symbol}: unfilled exit {str(oid)[:8]} older than the in-flight "
+                                            f"TTL cancelled before a replacement")
+
     def _venue_qty(self, portfolio_id: str, symbol: str) -> float | None:
         """The venue/book quantity for a symbol, or None when the book has no
         line for it (unknown — never treated as flat)."""
@@ -1061,6 +1091,7 @@ class PositionManager:
     async def _close_leg(self, p: Managed, leg: Leg, qty: float, *, force_market: bool,
                          kind: str, reason: str, attempt_tag: str | None = None) -> dict | None:
         qty = float(int(min(qty, abs(leg.qty)))) if leg.sec_type == "OPT" else float(min(qty, abs(leg.qty)))
+        await self._supersede_stale_exits(p, leg.symbol)
         # total outstanding exits must never exceed the leg: a policy decision,
         # the quote watch and a manual close can race a slow fill, and the
         # overshoot flips the position past flat. A further ladder rung while an
@@ -1073,11 +1104,12 @@ class PositionManager:
             self._log(p, "exit_skip",
                       f"{kind} {leg.symbol}: exits already in flight cover this qty")
             return None
-        if leg.qty > 0 and self._real_book(p):
-            # V1.6 (2026-10-05): on a real book the venue's own working sells bound the new one - a stop whose
+        if leg.qty != 0 and self._real_book(p):
+            # V1.6 (2026-10-05): on a real book the venue's own working exits bound the new one - a stop whose
             # cancel is still in flight, a bracket child, an exit the records already marked dead. Never two resting
-            # sells beyond the held quantity (a cash account would reject the short; a margin one would open it)
-            working = await self._working_sells(p, leg.symbol)
+            # exits beyond the held quantity (a cash account would reject the short; a margin one would open it).
+            # 2026-10-05 (MU short-leg stack): a SHORT leg's exits are BUYs - counted the same way
+            working = await self._working_qty(p, leg.symbol, "SELL" if leg.qty > 0 else "BUY")
             room = abs(leg.qty) - working
             if leg.sec_type == "STK":
                 room = float(int(max(0.0, room) + 1e-9))
