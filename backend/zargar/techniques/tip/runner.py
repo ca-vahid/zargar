@@ -578,7 +578,14 @@ class TipRunner(PlanRunner):
         pid = ap.config.portfolio_id
         binding = self._sizing_binding(pid)
         svc = getattr(eng, "proposals", None)
-        if binding is None or svc is None:
+        # V3.1 on the armed lane (2026-10-05): the ATR stop floor is finalized HERE, at the fired entry's own limit,
+        # BEFORE the quantity is decided - so the size below comes from the final stop (never a post-fill widen)
+        atr = await self._armed_atr_stop(ap, trade, float(limit)) if limit > 0 else None
+        if binding is None:
+            if atr and atr.get("applied"):
+                return await self._legacy_atr_size(ap, trade, qty, limit, atr)
+            return qty, None
+        if svc is None:
             return qty, None
         if limit <= 0:
             return 0.0, "book sizing: no entry price"
@@ -625,8 +632,120 @@ class TipRunner(PlanRunner):
             await eng.journal.append("TipArmedFireSized", {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "portfolioId": pid,
                 "role": binding.role, "runnerQty": qty, "qty": out, "limit": limit, "budget": round(float(budget), 2),
-                "notes": notes}, aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=pid)
+                "notes": notes, **({"atrStop": atr} if atr else {})},
+                aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=pid)
         return float(out), ("; ".join(notes) or None)
+
+    async def _armed_atr_stop(self, ap, trade, limit: float) -> dict | None:
+        """Tips v0.9 V3.1 on the ARMED lane (2026-10-05; closes the README known gap "an armed fill's stop is not
+        ATR-widened"). The SAME rule as the direct path - `horizon_class.decide` stamps the horizon + daily ATR and
+        `lifecycle.check_exit_geometry` floors the stop at `stop_atr_min` x daily ATR (re-placed at the horizon
+        default: 3x swing/extended, 2x short) - judged at the fired entry's BUY limit, the price the quantity is
+        sized on. Scope = the direct path's (`horizon_class.atr_stop_scope`: `stop_atr_mode` + the geometry gate on
+        enforce, Practice-policy book); research/shadow books keep measuring the source as-is; the sizing hook only
+        runs for SHARE entries (options keep their premium stop; the lotto lane is excluded inside `decide`).
+        A wider final stop replaces `trade.stop` BEFORE the quantity is decided; the record rides on
+        `trade.timing["tipAtrStop"]` (persisted with the trade) so the hand-off manages the stop that was sized.
+        Journaled: `TipHorizonDecided` (where=armed_fire) and, for a re-placed stop, `TipGeometryRepaired`
+        (phase armed-fire). Returns None out of scope."""
+        from . import horizon_class as _hc
+        from .lifecycle import check_exit_geometry
+        eng = self.engine
+        pid = ap.config.portfolio_id
+        pf = eng.positions.portfolio(pid) or {}
+        if pf.get("kind") == "shadow" or pf.get("book") or not _hc.atr_stop_scope(eng, pid):
+            return None
+        timing = getattr(trade, "timing", None)
+        if timing is None:
+            timing = {}
+            with contextlib.suppress(Exception):
+                trade.timing = timing
+        prior = timing.get("tipAtrStop")
+        if prior and prior.get("entryRef") == float(limit):
+            return prior                                   # the same fire sized again: decided once
+        direction = str(getattr(trade, "direction", "long") or "long")
+        sgn = -1.0 if direction == "short" else 1.0
+        ctx = ap.plan.get("context") or {}
+        signal_id = ctx.get("signalId")
+        sig = None
+        if signal_id:
+            async with eng.sf() as session:
+                sig = await session.get(Signal, signal_id)
+        base: dict = {}
+        with contextlib.suppress(Exception):
+            base = dict(((await self.load_plan(ap.run_id) or {}).get("config") or {}).get("exitPlan") or {})
+        # the widest declared stop is the one the trade would be sized against (as the book sizing does)
+        declared = [float(x) for x in (getattr(trade, "stop", None), base.get("underlyingStop")) if x]
+        orig = (min(declared) if sgn > 0 else max(declared)) if declared else None
+        plan = {**base, "underlyingStop": orig,
+                "targets": list(base.get("targets") or [float(t) for t in (getattr(trade, "targets", None) or [])])}
+        analyst = ((sig.extraction or {}).get("analyst") or {}) if sig is not None else {}
+        plan = await _hc.decide(eng, plan=plan, symbol=ap.symbol, direction=direction, entry_ref=float(limit),
+                                catalyst=(sig.catalyst if sig is not None else None), source=ctx.get("source"),
+                                analyst=analyst, pid=pid, where="armed_fire", signal_id=signal_id)
+        stamp = {k: v for k, v in plan.items() if k.startswith("horizon") or k in ("atrDaily", "atrStop")}
+        rec: dict = {"applied": False, "entryRef": float(limit), "originalStop": orig, "finalStop": orig,
+                     "horizon": plan.get("horizon"), "atrDaily": plan.get("atrDaily"),
+                     "atrStop": bool(plan.get("atrStop")), "repairs": [], "horizonPlan": stamp}
+        if plan.get("atrStop"):
+            bars: list = []
+            if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
+                with contextlib.suppress(Exception):
+                    from ...clock import now_ms as _now_ms
+                    from ...marketstructure.history import fetch_window
+                    nms = _now_ms()
+                    bars = await fetch_window(ap.symbol, "15m", nms - 7 * 86_400_000, nms)
+            final, repairs = check_exit_geometry(plan, direction=direction, entry_ref=float(limit), bars=bars,
+                                                 settings=eng.settings, vehicle="shares")
+            new = final.get("underlyingStop")
+            stop_repairs = [r for r in repairs if "stop" in r]
+            rec["repairs"] = stop_repairs
+            if new is not None and (orig is None or sgn * (float(orig) - float(new)) > 1e-9):
+                rec.update(applied=True, finalStop=float(new))
+                trade.stop = float(new)
+                with contextlib.suppress(Exception):
+                    await eng.journal.append(
+                        ev.TIP_GEOMETRY_REPAIRED,
+                        {"proposalId": None, "runId": ap.run_id, "trigger": trade.trigger_id, "signalId": signal_id,
+                         "underlying": ap.symbol, "entryRef": float(limit), "repairs": stop_repairs,
+                         "phase": "armed-fire", "entryPath": "armed", "enforced": True, "mode": "enforce",
+                         "originalStop": orig, "finalStop": float(new), "horizon": plan.get("horizon"),
+                         "atrDaily": plan.get("atrDaily"), "source": ctx.get("source")},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=pid)
+                with contextlib.suppress(Exception):
+                    self._log(ap, "geometry_repaired",
+                              f"{trade.trigger_id}: stop finalized before the order at the {float(limit):g} limit - "
+                              + "; ".join(stop_repairs), trigger=trade.trigger_id)
+        timing["tipAtrStop"] = rec
+        return rec
+
+    async def _legacy_atr_size(self, ap, trade, qty: float, limit: float, atr: dict) -> tuple[float, str | None]:
+        """A Practice book with no explicit binding (empty `techniques.tip.books`) keeps the runner's sizing - until
+        the ATR floor widens its stop: then the size comes from the FINAL stop against the approved risk budget
+        (`risk_budget_per_tip` / `risk_pct` of equity), exactly as the direct path's pre-entry gate sizes, and never
+        above the runner's quantity. Journaled `TipArmedFireSized`."""
+        from . import books as _books
+        from . import geometry as _geo
+        eng = self.engine
+        pid = ap.config.portfolio_id
+        sgn = -1.0 if str(getattr(trade, "direction", "long")) == "short" else 1.0
+        unit = sgn * (float(limit) - float(trade.stop))
+        if unit <= 0:
+            return 0.0, "book sizing: the final stop is not on the loss side of the entry"
+        equity = None
+        with contextlib.suppress(Exception):
+            equity = float(await eng.positions.equity(pid) or 0) or None
+        B, src = _geo.risk_budget(_books.BookSettings(eng.settings, None), equity)
+        fit, why = _geo.size_to_budget(budget=B, unit_loss=unit, qty_requested=int(qty))
+        with contextlib.suppress(Exception):
+            await eng.journal.append("TipArmedFireSized", {
+                "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "portfolioId": pid,
+                "role": "legacy", "runnerQty": qty, "qty": fit, "limit": limit, "riskBudget": round(float(B), 2),
+                "riskBudgetSource": src, "notes": [why] if why else [], "atrStop": atr},
+                aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=pid)
+        if fit < 1:
+            return 0.0, f"book sizing: {why or 'no risk budget'} ({src})"
+        return float(fit), (f"ATR stop {float(trade.stop):g}: {why}" if why else None)
 
     async def entry_gate(self, ap, trade, stage: str) -> str | None:
         """W1.7 (2026-10-03): an armed level that touches inside the earnings window does not buy - the earnings
@@ -1137,9 +1256,20 @@ class TipRunner(PlanRunner):
         exit_author = "default"
 
         async def _horizon(plan_dict: dict) -> dict:
-            # Tips v0.9 V2.1 (2026-10-05): the armed lane carries the horizon too. The ATR STOP (V3.1) is NOT applied
-            # here: an armed fill was sized at arm time against its own stop, and a post-fill widen without a
-            # resize would multiply the dollar risk (open: V1.1 sizes at-level arms through the book's gate)
+            # Tips v0.9 V2.1 (2026-10-05): the armed lane carries the horizon too. The ATR STOP (V3.1) is decided at
+            # the FIRE (`_armed_atr_stop`, before the quantity is sized): when that record exists the fill reuses its
+            # horizon stamp and keeps the stop that was sized. Without it (out of scope) the stop is NOT ATR-floored
+            # here - a post-fill widen without a resize would multiply the dollar risk.
+            fire = (trade.timing or {}).get("tipAtrStop") or {}
+            if fire.get("horizonPlan"):
+                out = {**plan_dict, **fire["horizonPlan"]}
+                fs = fire.get("finalStop")
+                if fire.get("applied") and fs is not None:
+                    cur = out.get("underlyingStop")
+                    sg = -1.0 if trade.direction == "short" else 1.0
+                    out["underlyingStop"] = (float(fs) if cur is None or sg * (float(cur) - float(fs)) > 0
+                                             else float(cur))
+                return out
             from . import horizon_class as _hc
             return await _hc.decide(self.engine, plan=plan_dict, symbol=ap.symbol, direction=trade.direction,
                                     entry_ref=entry_ref, catalyst=(sig.catalyst if sig is not None else None),

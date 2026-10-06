@@ -59,7 +59,7 @@ async def test_transport_retry_rechecks_incident_before_second_order(monkeypatch
     async def admission(*_args, **_kwargs):
         return "new incident during retry" if paused else None
 
-    async def place(_intent):
+    async def place(_intent, **_kw):          # OrderManager.place(intent, before_submit=...) (FA-01)
         nonlocal paused
         orders.append(_intent)
         if len(orders) == 1:

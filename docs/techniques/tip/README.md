@@ -44,12 +44,17 @@ Plan `research/2026-10-04-v09/PLAN.md`; evidence R3 (our record) + R4 (external)
 - **Stops (V3)**: the stop is >= 2x daily ATR (re-placed at the horizon default) and the size comes from it at the same
   dollar risk - ONE function (`lifecycle.check_exit_geometry`) for the pre-entry gate, `fit_expression` and the
   analyst's `check_feasibility`; applied only where the gate sizes (enforce, Practice policy), never post-fill without a
-  resize (armed fills keep their arm-time stop; see Known gaps). Swing/extended stops are judged on the CLOSE (15m /
+  resize. **Armed fires too (2026-10-05):** an at-level SHARE fire finalizes the same ATR stop at its BUY limit in
+  `TipRunner.size_entry_shares` (`_armed_atr_stop`, before the quantity exists), sizes from it against the book's risk
+  budget (an unbound Practice book: `_legacy_atr_size`), journals `TipHorizonDecided` (where=armed_fire) +
+  `TipGeometryRepaired` (phase armed-fire), and the hand-off manages that stop (`trade.timing.tipAtrStop`); option
+  fires and research/shadow books are untouched. Swing/extended stops are judged on the CLOSE (15m /
   daily); intra-bar only the crash brake 0.5R beyond (quote brake + the resting venue stop) or a gap through the stop.
 - **No same-day share plans** (min time stop 2 sessions) and **short tips are watch-only** (`TipShortWatchOnly`;
   shadow books still measure them).
 - Knobs: `techniques.tip.horizon_*`, `stop_atr_*`, `min_share_hold_sessions`, `shorts_watch_only` (Settings). Re-graded
-  at V7.1 after 20 sessions. Known gaps: an armed fill's stop is not ATR-widened (V1.1 sizing first); a promoted
+  at V7.1 after 20 sessions. Known gaps: an armed fire's ATR stop is judged at the fire's BUY limit on the cached
+  (~10 min) daily facts, and the hand-off reuses that horizon (no fill-time re-classification); a promoted
   position's 1d overlay is honoured live, `simulate_position` keeps the base timeframe; MA/daily rules fetch daily
   history and treat a failed fetch as "unknown" (time stop runs, no promotion).
 
