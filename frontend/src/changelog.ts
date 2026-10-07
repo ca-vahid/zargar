@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.16";
+export const APP_VERSION = "0.9.17";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.17",date:"2026-10-06",title:"IBKR account summary: one request at a time",items:[
+    {tag:"fixed",text:"During an IB Gateway outage the account sync no longer piles up account-summary subscriptions until IBKR refuses them (notice 322): one request stays in flight and is reused until it answers."},
+  ]},
   {version:"0.9.16",date:"2026-10-06",title:"Short contract spellings read right",items:[
     {tag:"fixed",text:"A contract written with a truncated strike field (e.g. NKE261023C37000 for the $37 call) is read at the strike near the stock price instead of as a $37,000 strike, so an analyst take in that spelling is no longer lost."},
   ]},
