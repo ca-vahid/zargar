@@ -101,3 +101,27 @@ async def test_a_new_session_clears_a_stale_link_lost_flag(monkeypatch):
     monkeypatch.setattr(b, "_new_ib", lambda: _FreshIB())
     await b._connect()
     assert b.connected is True and b.caught_up is True
+
+
+
+async def test_a_pending_account_summary_is_reused_not_reissued(monkeypatch):
+    """Notice 322 (2026-10-06): repeated timed-out passes must not open a new IBKR subscription each time."""
+    calls = {"n": 0}
+    gate = asyncio.Event()
+
+    class _SlowIB(_HangingIB):
+        async def accountSummaryAsync(self):
+            calls["n"] += 1
+            await gate.wait()
+            return []
+
+    monkeypatch.setattr(ib_mod, "REQUEST_TIMEOUT_S", 0.05)
+    b = ib_mod.IBKRBroker(host="127.0.0.1", port=1, client_id=99, on_quote=lambda q: None)
+    b._ib = _SlowIB()
+    assert await b.account_state(cash_currency="USD") is None
+    assert await b.account_state(cash_currency="USD") is None
+    assert calls["n"] == 1, "the pending request is reused"
+    gate.set()
+    await asyncio.sleep(0)
+    out = await b.account_state(cash_currency="USD")
+    assert out is not None          # once answered, ib_async serves later calls from its cached summary

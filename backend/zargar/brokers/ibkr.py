@@ -443,8 +443,15 @@ class IBKRBroker(QuoteFeed, Executor):
         """{cash, cashByCurrency, positions:[{symbol, secType, qty, avgCost, currency}], account} or None."""
         if not self.connected:
             return None
+        # ONE summary request in flight per session (2026-10-06): until the first summary arrives ib_async opens a NEW
+        # subscription per call; timed-out passes during an outage piled them up past IBKR's limit (notice 322). The
+        # pending request is shielded from the timeout and reused by the next pass; a new session starts a new one.
+        task = getattr(self, "_acct_summary_task", None)
+        if task is None or task.done() or getattr(self, "_acct_summary_ib", None) is not self._ib:
+            task = asyncio.ensure_future(self._ib.accountSummaryAsync())
+            self._acct_summary_task, self._acct_summary_ib = task, self._ib
         try:
-            rows = await asyncio.wait_for(self._ib.accountSummaryAsync(), timeout=REQUEST_TIMEOUT_S)
+            rows = await asyncio.wait_for(asyncio.shield(task), timeout=REQUEST_TIMEOUT_S)
         except asyncio.TimeoutError:
             log.warning("IBKR account summary did not answer within %ss - sync skipped this pass", REQUEST_TIMEOUT_S)
             return None
