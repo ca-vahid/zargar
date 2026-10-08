@@ -1,0 +1,404 @@
+<SEC-DOCUMENT>0001213900-26-107316.txt : 20261006
+<SEC-HEADER>0001213900-26-107316.hdr.sgml : 20261006
+<ACCEPTANCE-DATETIME>20261006180746
+ACCESSION NUMBER:		0001213900-26-107316
+CONFORMED SUBMISSION TYPE:	4
+PUBLIC DOCUMENT COUNT:		1
+CONFORMED PERIOD OF REPORT:	20261002
+FILED AS OF DATE:		20261006
+DATE AS OF CHANGE:		20261006
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			Batista de Lima Filho Pedro
+		CENTRAL INDEX KEY:			0002121444
+		ORGANIZATION NAME:           	
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-34129
+		FILM NUMBER:		261445065
+
+	MAIL ADDRESS:	
+		ADDRESS IS A NON US LOCATION: 	YES
+		STREET 1:		AVENIDA GRACA ARANHA, NO. 26
+		STREET 2:		CENTRO
+		CITY:			RIO DE JANEIRO
+		NON US STATE TERRITORY:  	RIO DE JANEIRO
+		PROVINCE COUNTRY:   	D5
+		ZIP:			20030-000
+
+ISSUER:		
+
+	COMPANY DATA:	
+		COMPANY CONFORMED NAME:			AXIA Energia S.A.
+		CENTRAL INDEX KEY:			0001439124
+		STANDARD INDUSTRIAL CLASSIFICATION:	ELECTRIC SERVICES [4911]
+		ORGANIZATION NAME:           	01 Energy & Transportation
+		EIN:				000000000
+		STATE OF INCORPORATION:			D5
+		FISCAL YEAR END:			1231
+
+	BUSINESS ADDRESS:	
+		ADDRESS IS A NON US LOCATION: 	YES
+		STREET 1:		AVENIDA GRACA ARANHA, 26, 19TH FLOOR
+		STREET 2:		CENTRO
+		CITY:			RIO DE JANEIRO
+		NON US STATE TERRITORY:  	RIO DE JANEIRO
+		PROVINCE COUNTRY:   	D5
+		ZIP:			20030900
+		BUSINESS PHONE:		55 21 2514 6435
+
+	MAIL ADDRESS:	
+		ADDRESS IS A NON US LOCATION: 	YES
+		STREET 1:		AVENIDA GRACA ARANHA, 26, 19TH FLOOR
+		STREET 2:		CENTRO
+		CITY:			RIO DE JANEIRO
+		NON US STATE TERRITORY:  	RIO DE JANEIRO
+		PROVINCE COUNTRY:   	D5
+		ZIP:			20030900
+
+	FORMER COMPANY:	
+		FORMER CONFORMED NAME:	BRAZILIAN ELECTRIC POWER CO
+		DATE OF NAME CHANGE:	20080702
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>4
+<SEQUENCE>1
+<FILENAME>marketforms-74105.xml
+<DESCRIPTION>PRIMARY DOCUMENT
+<TEXT>
+<XML>
+<?xml version="1.0"?>
+<ownershipDocument>
+
+    <schemaVersion>X0609</schemaVersion>
+
+    <documentType>4</documentType>
+
+    <periodOfReport>2026-10-02</periodOfReport>
+
+    <issuer>
+        <issuerCik>0001439124</issuerCik>
+        <issuerName>AXIA Energia S.A.</issuerName>
+        <issuerTradingSymbol>AXIA3</issuerTradingSymbol>
+        <issuerForeignTradingSymbol></issuerForeignTradingSymbol>
+    </issuer>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0002121444</rptOwnerCik>
+            <rptOwnerName>Batista de Lima Filho Pedro</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerNonUSAddressFlag>true</rptOwnerNonUSAddressFlag>
+            <rptOwnerStreet1>AVENIDA GRACA ARANHA, NO. 26</rptOwnerStreet1>
+            <rptOwnerStreet2>CENTRO</rptOwnerStreet2>
+            <rptOwnerCity>RIO DE JANEIRO</rptOwnerCity>
+            <rptOwnerNonUSStateTerritory></rptOwnerNonUSStateTerritory>
+            <rptOwnerCountry>D5</rptOwnerCountry>
+            <rptOwnerZipCode>20030-000</rptOwnerZipCode>
+            <rptOwnerStateDescription>BRAZIL</rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>true</isDirector>
+            <isOfficer>false</isOfficer>
+            <isTenPercentOwner>false</isTenPercentOwner>
+            <isOther>false</isOther>
+            <officerTitle></officerTitle>
+            <otherText></otherText>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <aff10b5One>0</aff10b5One>
+
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-10-02</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>false</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness></transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>276300</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>10.81</value>
+                    <footnoteId id="F1"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>14827931</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By managed account</value>
+                    <footnoteId id="F2"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-10-02</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>false</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness></transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>62000</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>10.81</value>
+                    <footnoteId id="F1"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>7327525</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By managed account</value>
+                    <footnoteId id="F3"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-10-02</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>false</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness></transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>1800</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>10.81</value>
+                    <footnoteId id="F1"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>377356</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By managed account</value>
+                    <footnoteId id="F4"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-10-02</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>false</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness></transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>2400</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>10.81</value>
+                    <footnoteId id="F1"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>498939</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By managed account</value>
+                    <footnoteId id="F5"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-10-02</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>false</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness></transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>92200</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>10.81</value>
+                    <footnoteId id="F1"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>4946769</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By managed account</value>
+                    <footnoteId id="F6"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-10-02</value>
+            </transactionDate>
+            <deemedExecutionDate></deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>false</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness></transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>55200</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>10.81</value>
+                    <footnoteId id="F7"/>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>5204331</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By managed account</value>
+                    <footnoteId id="F8"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeHolding>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>51115</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>D</value>
+                </directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeHolding>
+    </nonDerivativeTable>
+
+    <derivativeTable></derivativeTable>
+
+    <footnotes>
+        <footnote id="F1">The price reported in column 4 is a weighted average price. The reporting person undertakes to provide to AXIA Energia S.A. (the &quot;Company&quot;), any security holder of the Company, or the staff of the Securities and Exchange Commission (the &quot;SEC&quot;), upon request, full information regarding the number of shares purchased at each separate price. The weighted average price, $56.27 Brazilian reals (&quot;BRL&quot;) per share, has been converted to U.S. dollars (&quot;USD&quot;) using the U.S. Department of the Treasury Bureau of the Fiscal Service Treasury Reporting Rates of Exchange as of September 30, 2026 (the most recently published quarterly rate at the time of filing), at a rate of 5.2050 BRL per USD (fiscaldata.treasury.gov). Brokerage commissions and other costs of execution, if any, are excluded from the reported price.</footnote>
+        <footnote id="F2">Pedro Batista de Lima Filho (&quot;Mr. Filho&quot;) is a partner at Radar Gestora de Recursos Ltda. (&quot;Radar Gestora&quot;), which is responsible for the portfolio management of MALIKO INVESTMENTS LLC - BANCO BTG PACTUAL S/A (&quot;Maliko&quot;) and receives a performance-based compensation in his capacity as a partner of Radar Gestora. Mr. Filho may be deemed to indirectly beneficially own these shares by virtue of its relationship with Maliko. For the purposes of this filing, each of Maliko and Mr. Filho disclaims beneficial ownership of the reported securities except to the extent of his or its pecuniary interest therein. This filing shall not be deemed an admission that Maliko or Mr. Filho is the beneficial owner of any of the reported securities for purposes of Section 16 of the Securities Exchange Act of 1934, as amended (the &quot;Exchange Act&quot;), or otherwise.</footnote>
+        <footnote id="F3">Mr. Filho is a partner at Radar Gestora, which is responsible for the portfolio management of MANUKA INVESTMENTS LLC - BANCO BTG PACTUAL S/A (&quot;Manuka&quot;) and receives a performance-based compensation in his capacity as a partner of Radar Gestora. Mr. Filho may be deemed to indirectly beneficially own these shares by virtue of its relationship with Manuka. For the purposes of this filing, each of Manuka and Mr. Filho disclaims beneficial ownership of the reported securities except to the extent of his or its pecuniary interest therein. This filing shall not be deemed an admission that Manuka or Mr. Filho is the beneficial owner of any of the reported securities for purposes of Section 16 of the Exchange Act, or otherwise.</footnote>
+        <footnote id="F4">Mr. Filho is a partner at Radar Gestora, which is responsible for the portfolio management of TUCURUI MASTER FUNDO DE INVESTIMENTO FINANCEIRO EM ACOES (&quot;Tucurui&quot;) and receives a performance-based compensation in his capacity as a partner of Radar Gestora. Mr. Filho may be deemed to indirectly beneficially own these shares by virtue of its relationship with Tucurui. For the purposes of this filing, each of Tucurui and Mr. Filho disclaims beneficial ownership of the reported securities except to the extent of his or its pecuniary interest therein. This filing shall not be deemed an admission that Tucurui or Mr. Filho is the beneficial owner of any of the reported securities for purposes of Section 16 of the Exchange Act, or otherwise.</footnote>
+        <footnote id="F5">Mr. Filho is a partner at Radar Gestora, which is responsible for the portfolio management of XINGO MASTER FUNDO DE INVESTIMENTO FINANCEIRO DE ACOES (&quot;Xingo&quot;) and receives a performance-based compensation in his capacity as a partner of Radar Gestora. Mr. Filho may be deemed to indirectly beneficially own these shares by virtue of its relationship with Xingo. For the purposes of this filing, each of Xingo and Mr. Filho disclaims beneficial ownership of the reported securities except to the extent of his or its pecuniary interest therein. This filing shall not be deemed an admission that Xingo or Mr. Filho is the beneficial owner of any of the reported securities for purposes of Section 16 of the Exchange Act, or otherwise.</footnote>
+        <footnote id="F6">Mr. Filho is a partner at Radar Gestora, which is responsible for the portfolio management of RADAR MASTER FUNDO DE INVESTIMENTO FINANCEIRO EM ACOES (&quot;Radar&quot;) and receives a performance-based compensation in his capacity as a partner of Radar Gestora. Mr. Filho may be deemed to indirectly beneficially own these shares by virtue of its relationship with Radar. For the purposes of this filing, each of Radar and Mr. Filho disclaims beneficial ownership of the reported securities except to the extent of his or its pecuniary interest therein. This filing shall not be deemed an admission that Radar or Mr. Filho is the beneficial owner of any of the reported securities for purposes of Section 16 of the Exchange Act, or otherwise.</footnote>
+        <footnote id="F7">The price reported in column 4 is a weighted average price. The reporting person undertakes to provide to the Company, any security holder of the Company, or the staff of the SEC, upon request, full information regarding the number of shares purchased at each separate price. The weighted average price, $56.26 BRL per share, has been converted to USD using the U.S. Department of the Treasury Bureau of the Fiscal Service Treasury Reporting Rates of Exchange as of September 30, 2026 (the most recently published quarterly rate at the time of filing), at a rate of 5.2050 BRL per USD (fiscaldata.treasury.gov). Brokerage commissions and other costs of execution, if any, are excluded from the reported price.</footnote>
+        <footnote id="F8">Mr. Filho is a partner at Radar Gestora, which is responsible for the portfolio management of INFRAD MASTER FUNDO DE INVESTIMENTO FINANCEIRO EM ACOES (&quot;Infrad&quot;) and receives a performance-based compensation in his capacity as a partner of Radar Gestora. Mr. Filho may be deemed to indirectly beneficially own these shares by virtue of its relationship with Infrad. For the purposes of this filing, each of Infrad and Mr. Filho disclaims beneficial ownership of the reported securities except to the extent of his or its pecuniary interest therein. This filing shall not be deemed an admission that Infrad or Mr. Filho is the beneficial owner of any of the reported securities for purposes of Section 16 of the Exchange Act, or otherwise.</footnote>
+    </footnotes>
+
+    <remarks></remarks>
+
+    <ownerSignature>
+        <signatureName>/s/ Pedro Batista de Lima Filho</signatureName>
+        <signatureDate>2026-10-06</signatureDate>
+    </ownerSignature>
+</ownershipDocument>
+</XML>
+</TEXT>
+</DOCUMENT>
+</SEC-DOCUMENT>

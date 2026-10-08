@@ -22,7 +22,7 @@ import type { Page } from "../store";
  */
 
 export const PAGES: Page[] = [
-  "dashboard", "trade", "options", "inbox", "technique", "flow", "team2", "options_cartel", "armed", "watchlists",
+  "dashboard", "trade", "options", "inbox", "technique", "flow", "team2", "options_cartel", "scout", "armed", "watchlists",
   "portfolios", "ledger", "journal", "settings",
 ];
 const OCC_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
@@ -37,6 +37,7 @@ export const PAGE_TABS: Partial<Record<Page, readonly string[]>> = {
   flow: ["reads", "brief"],
   team2: ["plans", "armed", "history", "validation"],
   options_cartel: ["plans", "armed", "history", "validation", "method", "settings", "desk"],
+  scout: ["candidates", "lanes", "status"],
 };
 
 export interface RouteState {
@@ -60,8 +61,8 @@ export interface RouteState {
 }
 
 /** URL slug <-> page for the technique family. */
-export const TECHNIQUE_SLUGS: Record<string, Page> = { em: "technique", tips: "inbox", team2: "team2", flow: "flow", "options-cartel": "options_cartel" };
-const PAGE_SLUGS: Partial<Record<Page, string>> = { technique: "em", inbox: "tips", team2: "team2", flow: "flow", options_cartel: "options-cartel" };
+export const TECHNIQUE_SLUGS: Record<string, Page> = { em: "technique", tips: "inbox", team2: "team2", flow: "flow", "options-cartel": "options_cartel", scout: "scout" };
+const PAGE_SLUGS: Partial<Record<Page, string>> = { technique: "em", inbox: "tips", team2: "team2", flow: "flow", options_cartel: "options-cartel", scout: "scout" };
 
 export function parseLocation(pathname = window.location.pathname): RouteState {
   const parts = pathname.split("/").filter(Boolean);

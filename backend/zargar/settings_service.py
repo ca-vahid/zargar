@@ -510,6 +510,67 @@ DEFAULTS: dict[str, Any] = {
     # FL4: OFF until the thresholds earn it — when True, a confirmed high-score
     # read sent to Tips carries explicit_call conviction instead of implied
     "techniques.flow.calibrated": False,
+    # --- Scout (docs/techniques/scout/PLAN.md; research only - places NO orders, routes to no broker) ---
+    # PREREGISTERED thresholds (PLAN 2.1/2.2): do not tune during the paper run; log variants instead.
+    "techniques.scout.daily_enabled": True,           # the 07:00 ET job: EDGAR catch-up + screens + gates
+    "techniques.scout.daily_at": "07:00",             # ET; EDGAR's daily index for D is published ~22:00 ET on D
+    "techniques.scout.catchup_days": 7,               # daily indexes the job may back-fill when it fell behind
+    "techniques.scout.edgar_user_agent": "Zargar research vhaeri@bgcengineering.ca",  # SEC fair access: name + contact
+    "techniques.scout.edgar_max_rps": 5.0,            # SEC limit is 10/s; we stay at half
+    "techniques.scout.s1_insider_enabled": True,      # S1 opportunistic insider cluster (OFF = screen fully skipped)
+    "techniques.scout.s2_earnings_enabled": True,     # S2 earnings reaction (OFF = no 8-K reads, no screen)
+    "techniques.scout.s1_window_days": 10,            # cluster span, calendar days of transaction dates
+    "techniques.scout.s1_min_insiders": 2,            # distinct opportunistic officers/directors
+    "techniques.scout.s1_min_value_usd": 100_000.0,   # cluster total purchase value
+    "techniques.scout.s1_hold_sessions": 20,          # time stop (also the earnings-in-hold window)
+    "techniques.scout.s1_track_unclassified": True,   # also record clusters that need UNCLASSIFIED insiders (own kind)
+    "techniques.scout.cmp_years": 3,                  # Cohen-Malloy-Pomorski look-back years
+    "techniques.scout.signal_lookback_days": 3,       # the daily job records hits whose signal time is this recent
+    "techniques.scout.s2_top_pct": 10.0,              # top % of the day's events by day 0..+1 abnormal return
+    "techniques.scout.s2_volume_mult": 2.0,           # day-0 volume vs its 20-day average
+    "techniques.scout.s2_volume_avg_days": 20,
+    "techniques.scout.s2_entry_offset_sessions": 2,   # entry on day +2
+    "techniques.scout.s2_hold_sessions": 10,
+    "techniques.scout.s2_benchmark": "SPY",
+    "techniques.scout.gate_min_price": 5.0,
+    "techniques.scout.gate_min_adv_usd": 5_000_000.0,
+    "techniques.scout.gate_adv_days": 20,
+    "techniques.scout.gate_max_spread_pct": 0.5,      # quoted spread at entry, % of mid (unknown until entry quotes exist)
+    "techniques.scout.gate_min_market_cap_usd": 300_000_000.0,  # SEC dei shares outstanding x close (unknown if no fact)
+    "techniques.scout.gate_no_earnings_in_hold": True,  # S1 only
+    "techniques.scout.gate_corp_action_days": 183,    # no reverse split / symbol change (Alpaca corporate actions)
+    "techniques.scout.gate_tips_mention_days": 5,     # not mentioned by a Tips source (signals table) in the prior N days
+    # --- Scout P3 (PLAN 2.2-2.4, preregistered 2026-10-07): analyst lanes, research books, entries ---
+    "techniques.scout.llm_budget_usd_day": 15.0,      # shared by BOTH analyst lanes; a lane stops calling once used
+    "techniques.scout.claude_enabled": True,          # lane (a): Anthropic Claude (the Tips analyst's model)
+    "techniques.scout.claude_model": "claude-opus-5-5",
+    "techniques.scout.claude_effort": "medium",       # output_config.effort (low|medium|high|xhigh|max)
+    "techniques.scout.openai_enabled": True,          # lane (b): OpenAI (needs OPENAI_API_KEY; absent = skipped per candidate)
+    "techniques.scout.openai_model": "gpt-6.1-sol",
+    "techniques.scout.openai_effort": "medium",       # reasoning.effort
+    # USD per million tokens, for the budget (estimates from the provider's usage numbers)
+    "techniques.scout.llm_rates": {
+        "claude-opus-5-5": {"in": 4.0, "out": 20.0, "cacheRead": 0.2, "cacheWrite": 5.0, "note": "Anthropic list price"},
+        "gpt-6.1-sol": {"in": 2.0, "out": 10.0, "note": "third-party pricing, verify"},
+    },
+    "techniques.scout.llm_max_tokens": 8000,          # per call (thinking included on Opus 5.5)
+    "techniques.scout.llm_timeout_s": 120.0,
+    "techniques.scout.prompt_cache": True,            # Claude: the stable system prompt carries cache_control
+    "techniques.scout.packet_max_chars": 12000,       # 8-K text excerpt cap in the masked fact packet
+    "techniques.scout.verdicts_at": "09:00",          # ET: analyst calls for today's entry candidates (before 10:00)
+    "techniques.scout.books_enabled": True,           # research books take entries (sim executor only, never a broker)
+    "techniques.scout.entry_start": "10:00",          # ET: first entry attempt; the spread gate is judged on the live quote
+    "techniques.scout.entry_end": "11:30",            # ET: last attempt; still wider -> skipped with reason `spread`
+    "techniques.scout.entry_retry_minutes": 15,
+    "techniques.scout.entry_fill_wait_s": 30.0,       # a marketable limit at the ask that has not filled by then is cancelled
+    "techniques.scout.position_usd": 600.0,           # per entry, every lane
+    "techniques.scout.stop_atr_mult": 2.0,            # stop = fill - N x daily ATR
+    "techniques.scout.atr_days": 14,
+    "techniques.scout.fee_per_order": 1.0,            # USD per filled order, charged in Scout's accounting
+    "techniques.scout.trade_unclassified": False,     # s1_unclassified candidates are tracked, never traded
+    "techniques.scout.random_lane_enabled": True,     # the random matched baseline book
+    "techniques.scout.random_max_offset_sessions": 4,  # random entry date = matched entry + U{0..N} sessions
+    "techniques.scout.report_at": "16:30",            # ET: end-of-day report
     "techniques.flow.otm_min_pct": 0.0,      # flagged footprint: 0–12% OTM
     "techniques.flow.otm_max_pct": 12.0,
     "techniques.flow.repeat_days": 3,        # same zone flagged N days in the window
