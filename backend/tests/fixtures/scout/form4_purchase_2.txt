@@ -1,0 +1,187 @@
+<SEC-DOCUMENT>0001628280-26-065174.txt : 20261006
+<SEC-HEADER>0001628280-26-065174.hdr.sgml : 20261006
+<ACCEPTANCE-DATETIME>20261006072954
+ACCESSION NUMBER:		0001628280-26-065174
+CONFORMED SUBMISSION TYPE:	4
+PUBLIC DOCUMENT COUNT:		1
+CONFORMED PERIOD OF REPORT:	20261005
+FILED AS OF DATE:		20261006
+DATE AS OF CHANGE:		20261006
+
+REPORTING-OWNER:	
+
+	OWNER DATA:	
+		COMPANY CONFORMED NAME:			Troim Tor Olav
+		CENTRAL INDEX KEY:			0001709630
+		ORGANIZATION NAME:           	
+
+	FILING VALUES:
+		FORM TYPE:		4
+		SEC ACT:		1934 Act
+		SEC FILE NUMBER:	001-39007
+		FILM NUMBER:		261442302
+
+	MAIL ADDRESS:	
+		STREET 1:		C/O MAGNI PARTNERS LIMITED
+		STREET 2:		40 BRUTON STREET
+		CITY:			LONDON
+		STATE:			X0
+		ZIP:			W1J 6QZ
+
+ISSUER:		
+
+	COMPANY DATA:	
+		COMPANY CONFORMED NAME:			Borr Drilling Ltd
+		CENTRAL INDEX KEY:			0001715497
+		STANDARD INDUSTRIAL CLASSIFICATION:	DRILLING OIL & GAS WELLS [1381]
+		ORGANIZATION NAME:           	01 Energy & Transportation
+		EIN:				000000000
+		STATE OF INCORPORATION:			D0
+		FISCAL YEAR END:			1231
+
+	BUSINESS ADDRESS:	
+		STREET 1:		S.E. PEARMAN BUILDING
+		STREET 2:		2ND FLOOR 9 PAR-LA-VILLE ROAD
+		CITY:			HAMILTON
+		STATE:			D0
+		ZIP:			HM11
+		BUSINESS PHONE:		4722483000
+
+	MAIL ADDRESS:	
+		STREET 1:		S.E. PEARMAN BUILDING
+		STREET 2:		2ND FLOOR 9 PAR-LA-VILLE ROAD
+		CITY:			HAMILTON
+		STATE:			D0
+		ZIP:			HM11
+</SEC-HEADER>
+<DOCUMENT>
+<TYPE>4
+<SEQUENCE>1
+<FILENAME>wk-form4_1791286191.xml
+<DESCRIPTION>FORM 4
+<TEXT>
+<XML>
+<?xml version="1.0"?>
+<ownershipDocument>
+
+    <schemaVersion>X0609</schemaVersion>
+
+    <documentType>4</documentType>
+
+    <periodOfReport>2026-10-05</periodOfReport>
+
+    <notSubjectToSection16>0</notSubjectToSection16>
+
+    <issuer>
+        <issuerCik>0001715497</issuerCik>
+        <issuerName>Borr Drilling Ltd</issuerName>
+        <issuerTradingSymbol>BORR</issuerTradingSymbol>
+        <issuerForeignTradingSymbol>BORR</issuerForeignTradingSymbol>
+    </issuer>
+
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001709630</rptOwnerCik>
+            <rptOwnerName>Troim Tor Olav</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerAddress>
+            <rptOwnerNonUSAddressFlag>true</rptOwnerNonUSAddressFlag>
+            <rptOwnerStreet1>C/O BORR DRILLING LIMITED</rptOwnerStreet1>
+            <rptOwnerStreet2>2ND FLOOR 9 PAR-LA-VILLE ROAD</rptOwnerStreet2>
+            <rptOwnerCity>HAMILTON</rptOwnerCity>
+            <rptOwnerNonUSStateTerritory></rptOwnerNonUSStateTerritory>
+            <rptOwnerCountry>D0</rptOwnerCountry>
+            <rptOwnerZipCode>D0 HM11</rptOwnerZipCode>
+            <rptOwnerStateDescription>BERMUDA</rptOwnerStateDescription>
+        </reportingOwnerAddress>
+        <reportingOwnerRelationship>
+            <isDirector>1</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>0</isTenPercentOwner>
+            <isOther>0</isOther>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+
+    <aff10b5One>0</aff10b5One>
+
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <transactionDate>
+                <value>2026-10-05</value>
+            </transactionDate>
+            <deemedExecutionDate>
+                <value>2026-10-06</value>
+            </deemedExecutionDate>
+            <transactionCoding>
+                <transactionFormType>5</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+            </transactionCoding>
+            <transactionTimeliness>
+                <value>E</value>
+            </transactionTimeliness>
+            <transactionAmounts>
+                <transactionShares>
+                    <value>1500000</value>
+                </transactionShares>
+                <transactionPricePerShare>
+                    <value>4.1314</value>
+                </transactionPricePerShare>
+                <transactionAcquiredDisposedCode>
+                    <value>A</value>
+                </transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>32035941</value>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>I</value>
+                </directOrIndirectOwnership>
+                <natureOfOwnership>
+                    <value>By Drew Holdings Ltd.</value>
+                    <footnoteId id="F1"/>
+                </natureOfOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+        <nonDerivativeHolding>
+            <securityTitle>
+                <value>Common Shares</value>
+            </securityTitle>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction>
+                    <value>81867</value>
+                    <footnoteId id="F2"/>
+                </sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership>
+                    <value>D</value>
+                </directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeHolding>
+    </nonDerivativeTable>
+
+    <derivativeTable></derivativeTable>
+
+    <footnotes>
+        <footnote id="F1">Drew Holdings Ltd. is wholly owned by Drew Trust, a non-discretionary trust in which the reporting person is the beneficiary.</footnote>
+        <footnote id="F2">Includes 54,545 restricted stock units (RSUs) that vest in full on September 30, 2026 conditional upon continuing to serve as a Director of the Issuer at the date of vesting. Each RSU represents a contingent right to receive one common share.</footnote>
+    </footnotes>
+
+    <remarks></remarks>
+
+    <ownerSignature>
+        <signatureName>/s/ Temi Bankole as attorney-in-fact</signatureName>
+        <signatureDate>2026-10-06</signatureDate>
+    </ownerSignature>
+</ownershipDocument>
+</XML>
+</TEXT>
+</DOCUMENT>
+</SEC-DOCUMENT>

@@ -1,6 +1,6 @@
 [project]
 name = "zargar"
-version = "0.9.17"
+version = "0.9.18"
 description = "Zargar - personal trading engine (IBKR + simulation + signal ingestion)"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib",
     "PyJWT[crypto]>=2.8",
     "anthropic>=0.40",
+    "openai>=1.0",            # Scout GPT analyst lane only (techniques/scout/analyst.py)
     "python-dateutil>=2.9",
     "tzdata; platform_system == 'Windows'",
 ]

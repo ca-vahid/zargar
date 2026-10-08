@@ -45,6 +45,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         await attach_technique_layer(eng)
         from ..techniques.flow.service import attach_flow_layer
         attach_flow_layer(eng)
+        from ..techniques.scout.service import attach_scout_layer
+        attach_scout_layer(eng)                 # research only: registers the daily job, places no orders
         from ..techniques.tip.runner import attach_tip_runner
         await attach_tip_runner(eng)
         from ..techniques.team2.runner import attach_team2_runner
@@ -62,6 +64,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
             await eng.tip_runner.stop()
         if getattr(eng, "flow_service", None) is not None:
             await eng.flow_service.stop()
+        if getattr(eng, "scout_service", None) is not None:
+            await eng.scout_service.stop()
         if eng.technique is not None:
             await eng.technique.stop()
         await eng.stop()
@@ -627,6 +631,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
     from .routes_flow import build_flow_routes
     build_flow_routes(app, eng, auth, config)
+
+    from .routes_scout import build_scout_routes
+    build_scout_routes(app, eng, auth, config)
 
     from .routes_team2 import build_team2_routes
     build_team2_routes(app, eng, auth, config)

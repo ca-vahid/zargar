@@ -150,6 +150,11 @@ export const api = {
       "POST", "/api/tip/digest", { channelId, date }),
   dismissSignals: (ids: string[]) =>
     request<{ dismissed: number }>("POST", "/api/signals/dismiss", { ids }),
+  // --- scout (research only) ---
+  scoutCandidates: (days = 14) =>
+    request<import("../types").ScoutCandidate[]>("GET", `/api/scout/candidates?days=${days}`),
+  scoutLanes: () => request<import("../types").ScoutLane[]>("GET", "/api/scout/lanes"),
+  scoutStatus: () => request<import("../types").ScoutStatus>("GET", "/api/scout/status"),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

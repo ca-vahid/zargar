@@ -2955,3 +2955,38 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   shadow book). **Rule:** `_close_leg` first cancels such stale exits (`exit_superseded`), and on real books the venue
   bound counts working BUYs for a short leg (it counted only SELLs). Tests: `test_exit_supersede.py`,
   `test_db_engine_kwargs.py`.
+
+### Scout P1: a research-only technique's shared surfaces - 2026-10-07 (Scout desk; plan docs/techniques/scout/PLAN.md)
+- **Shared edits (additive only):** four tables in `models.py` (`scout_filings`, `scout_insider_trades`,
+  `scout_candidates`, `scout_state`; `SCOUT_TABLES` lets the backfill tool create just these on the runtime DB),
+  `techniques.scout.*` keys in `settings_service.DEFAULTS`, three journal kinds in `events.py`
+  (`ScoutCandidateFound`, `ScoutGateResult`, `ScoutDailyRun` - not `Technique*`, so no events_contract entry), and
+  `api/app.py` attaches `attach_scout_layer` (registers ONE scheduler job, `scout_daily` 07:00 ET) + read-only routes
+  `GET /api/scout/candidates|status`.
+- **Invariant:** Scout places no orders - `zargar/techniques/scout/` imports nothing from the order path, portfolios or
+  RiskGate, and reads the Tips `signals` table read-only (the "no Tips mention in 5 days" gate). Not registered in the
+  technique registry yet (no page until P3; the nav renders the registry).
+- **Finding (EDGAR, verified first-hand):** the SGML header `<ACCEPTANCE-DATETIME>` is ET wall clock; the
+  data.sec.gov submissions JSON `acceptanceDateTime` claims `Z` but is the true UTC instant PLUS the ET offset again
+  (AAPL 16:30 ET 8-K -> `00:30Z` next day). Any desk reading that JSON must undo it
+  (`techniques/scout/form4.submissions_json_acceptance`) or prefer the header. Details: docs/techniques/scout/DATA-NOTES.md.
+
+### Scout P3: research books, two LLM lanes, the entry-spread rule - 2026-10-07 (Scout desk; branch claude/scout-p3)
+- **Shared edits (small, additive):** `config.py` gains `openai_api_key` (env `OPENAI_API_KEY` or
+  `ZARGAR_OPENAI_API_KEY`, `repr=False`, never logged; `tests/conftest.make_test_config` pins it to "" so a host key
+  never reaches a suite); `backend/pyproject.toml` adds `openai>=1.0` (used ONLY by `techniques/scout/analyst.py`);
+  three tables (`scout_verdicts`, `scout_entries`, `scout_reports`), five journal kinds (`ScoutVerdict`,
+  `ScoutBudgetStop`, `ScoutEntryAttempt`, `ScoutEntry`, `ScoutDailyReport`), more `techniques.scout.*` DEFAULTS, the
+  registry entry `scout` (page `scout`, tabs candidates/lanes/status; `test_platform_phase0` set updated) and routes
+  `GET /api/scout/lanes|reports`. Scheduler jobs: `scout_verdicts` 09:00, `scout_entry_1000..1130` (7), `scout_report`
+  16:30 ET.
+- **Invariant (research books):** Scout's only order path is `techniques/scout/desk.py`, through
+  `OrderManager.place()` (RiskGate), on books with `kind == "shadow"`, `book == "scout"`; the desk refuses any book
+  whose executor is not `engine.sim_executor`. The fills are adopted by the shared `PositionManager` (policy as data,
+  no adapter). Static guards: `tests/test_platform_separation.py::test_scout_*` (no broker adapter / other desk import,
+  OrderIntent only in desk.py, books only shadow). A Scout book never appears in money totals (store/Dashboard skip
+  `kind shadow`; the desk ledger reads sim/live/paper only; the daily-loss monitor skips shadow).
+- **Finding (position manager, 1d policies):** the FIRST daily decision on a position reads the engine's latest 5m bar
+  when the session's own 5m bars are absent (tests that feed raw 1m closing bars on future dates); raw bars decide
+  from the second decision on (`last_tf_bar_ts`). Harmless live (the session's bars exist); a test that expects a stop
+  on the first fed bar must feed one neutral bar first.

@@ -70,6 +70,14 @@ FLOW = register(TechniqueInfo(
                 "places no orders.",
 ))
 
+SCOUT = register(TechniqueInfo(
+    id="scout", label="Scout", version="0.3", page="scout", settings_prefix="techniques.scout.",
+    tabs=("candidates", "lanes", "status"),
+    description="Research-only idea finder: opportunistic insider clusters (S1) and earnings-reaction "
+                "drift (S2) from SEC filings, filtered by two LLM analyst lanes and traded only in "
+                "simulated research books. Places no broker orders.",
+))
+
 OPTIONS_CARTEL = register(TechniqueInfo(
     id="options_cartel", label="Options Cartel", version="0.1", page="options_cartel",
     settings_prefix="techniques.options_cartel.", tabs=("desk", "plans", "history", "method"),
