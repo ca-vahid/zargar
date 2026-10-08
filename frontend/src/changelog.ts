@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.18";
+export const APP_VERSION = "0.9.20";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.20",date:"2026-10-08",title:"Smoother engine: web-server logs written off the main loop",items:[
+    {tag:"fixed",text:"The web server's request log no longer writes on the engine's main loop. A slow console write froze the app for 3.7 s on 10-08."},
+  ]},
+  {version:"0.9.19",date:"2026-10-08",title:"Scout entry retry",items:[
+    {tag:"fixed",text:"Scout: an entry refused only because its quote was a few seconds stale is retried at the next 15-minute attempt instead of being dropped for the day (APOG on day 1)."},
+  ]},
   {version:"0.9.18",date:"2026-10-08",title:"Scout (research only)",items:[
     {tag:"new",text:"Scout: a research-only idea finder. Daily SEC Form 4 insider-cluster (opportunistic insiders only) and earnings-reaction screens with liquidity gates; Claude Opus 5.5 and GPT-6.1 Sol read each candidate masked and keep or drop it with cited reasons; every lane trades its own simulated research book (never a broker) against a screen-all and a random baseline. Scout page: Candidates, Lanes, Status."},
   ]},

@@ -538,8 +538,14 @@ class ScoutDesk:
         oid = res.get("id")
         await self._update_entry(eid, order_id=oid)
         if res.get("status") in ("REJECTED", "REJECTED_RISK", "ERROR"):
-            return await self._finish(eid, status="unfilled", reason=f"rejected: {res.get('rejectReason') or res.get('status')}",
-                                      code="rejected", spread=sp)
+            why = str(res.get("rejectReason") or res.get("status"))
+            # 2026-10-08 (APOG): a risk refusal for a STALE quote ("quote age 10.6s (max 10s)") is a timing miss, not a
+            # verdict on the trade - the entry goes back to pending and the next 15-min attempt retries it (the rule
+            # still ends the window at 11:30 ET). Every other refusal stays final.
+            if "quote age" in why.lower():
+                await self._update_entry(eid, status="pending", reason=f"retry: {why}")
+                return "retry"
+            return await self._finish(eid, status="unfilled", reason=f"rejected: {why}", code="rejected", spread=sp)
         order = await self._await_fill(oid, float(self.s("entry_fill_wait_s", 30.0)))
         if order is None or order.status != "FILLED":
             with contextlib.suppress(Exception):

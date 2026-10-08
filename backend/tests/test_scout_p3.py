@@ -492,3 +492,32 @@ async def test_attach_registers_the_p3_schedule(engine):
         "scout_entry_1115", "scout_entry_1130"]
     await engine.scout_service.stop()
     assert not [j for j in engine.scheduler.status() if j["name"].startswith("scout_")]
+
+
+async def test_stale_quote_refusal_retries_at_the_next_attempt(scout, engine, monkeypatch):
+    """2026-10-08 (APOG): a RiskGate refusal for a stale quote is a timing miss - the entry stays pending and the next
+    15-minute attempt retries it; any other refusal stays final."""
+    svc, today = scout
+    svc.desk.claude_client = FakeClaude(KEEP)
+    svc.desk.openai_client = FakeOpenAI(KEEP)
+    await engine.settings.set("techniques.scout.random_lane_enabled", False)
+    await add_candidate(engine, entry=today)
+    await svc.desk.prepare_day(at(today.isoformat(), "09:00"))
+    real_place = engine.orders.place
+    calls = {"n": 0}
+
+    async def flaky_place(intent, *a, **k):
+        calls["n"] += 1
+        if calls["n"] <= 3:                                     # the first attempt's three books
+            return {"id": f"x{calls['n']}", "status": "REJECTED_RISK", "rejectReason": "quote age 10.6s (max 10s)"}
+        return await real_place(intent, *a, **k)
+    monkeypatch.setattr(engine.orders, "place", flaky_place)
+    d = today.isoformat()
+    r1 = await svc.desk.attempt_entries(at(d, "10:00"))
+    async with engine.sf() as s:
+        es = (await s.execute(select(ScoutEntry))).scalars().all()
+    assert all(e.status == "pending" and (e.reason or "").startswith("retry:") for e in es), [(e.status, e.reason) for e in es]
+    r2 = await svc.desk.attempt_entries(at(d, "10:15"))
+    async with engine.sf() as s:
+        es = (await s.execute(select(ScoutEntry))).scalars().all()
+    assert all(e.status == "entered" for e in es), (r1, r2, [(e.status, e.reason) for e in es])
