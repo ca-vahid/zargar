@@ -94,7 +94,10 @@ def main() -> None:
             f"refusing to bind {config.host}:{config.port} without sign-in — set ZARGAR_GOOGLE_CLIENT_ID "
             "(+ ZARGAR_GOOGLE_ALLOWED_EMAILS) or ZARGAR_AUTH_TOKEN in backend/.env (docs/AUTH.md)")
     app = create_app(config)
-    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
+    # log_config=None (2026-10-08, a 3.7 s loop stall in StreamHandler.emit): uvicorn's default config gives its own
+    # loggers synchronous console handlers, so every access line was written ON the event loop. Without it they
+    # propagate to the root queue above and the listener thread writes them.
+    uvicorn.run(app, host=config.host, port=config.port, log_level="info", log_config=None)
 
 
 if __name__ == "__main__":
