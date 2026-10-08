@@ -5,8 +5,8 @@ Orchestration only: parsing (`form4`, `datasets`), classification (`classify`), 
 gathers facts and writes `scout_candidates`, journaling every decision
 (ScoutCandidateFound / ScoutGateResult / ScoutDailyRun).
 
-Scout places NO orders: there is no import of the order path, no portfolio, no RiskGate
-call. Fact providers (bars, spread, market cap, corporate actions, earnings dates, Tips
+This module places NO orders. The only order path in Scout is `desk.py` (P3): simulated research
+books (shadow kind, sim executor) through `OrderManager.place()` / RiskGate - never a broker. Fact providers (bars, spread, market cap, corporate actions, earnings dates, Tips
 mentions, CIK->ticker) are plain async attributes so tests replace them without network.
 """
 from __future__ import annotations
@@ -67,6 +67,9 @@ class ScoutService:
         self.earnings_dates = self._earnings_dates
         self.tips_mentions = self._tips_mentions
         self.ticker_for_cik = self._ticker_for_cik
+        # P3: analyst lanes, research books, entries, accounting, daily report
+        from .desk import ScoutDesk
+        self.desk = ScoutDesk(self)
 
     # ------------------------------------------------------------------ settings
     def s(self, key: str, default=None):
@@ -100,9 +103,11 @@ class ScoutService:
     def start(self) -> None:
         at = str(self.s("daily_at", "07:00"))
         self.engine.scheduler.register("scout_daily", at, self._scheduled)
+        self.desk.start()
 
     async def stop(self) -> None:
         self.engine.scheduler.unregister("scout_daily")
+        self.desk.stop()
 
     async def _scheduled(self):
         if not bool(self.s("daily_enabled", True)):
@@ -388,17 +393,19 @@ class ScoutService:
         return {"APCA-API-KEY-ID": cfg.alpaca_key_id, "APCA-API-SECRET-KEY": cfg.alpaca_secret}
 
     async def _entry_spread_pct(self, symbol: str, entry_date: str | None, now: dt.datetime) -> tuple[float | None, str]:
-        """Median quoted spread (% of mid) over 09:35-09:40 ET of the entry session (Alpaca SIP quotes)."""
+        """HISTORICAL re-check only (a candidate the live entry rule never judged): median quoted spread
+        (% of mid) over 10:00-10:01 ET of the entry session - the preregistered entry moment (PLAN 2.2,
+        2026-10-07; P1 used 09:35-09:40). The live rule (desk.attempt_entries) judges the live quote."""
         if not entry_date:
             return None, "no entry date"
-        start = dt.datetime.combine(dt.date.fromisoformat(entry_date), dt.time(9, 35), ET)
-        if now < start + dt.timedelta(minutes=5):
-            return None, f"pending: entry session {entry_date} 09:35-09:40 ET not reached"
+        start = dt.datetime.combine(dt.date.fromisoformat(entry_date), dt.time(10, 0), ET)
+        if now < start + dt.timedelta(minutes=1):
+            return None, f"pending: judged live at the {entry_date} 10:00 ET entry attempt"
         h = self._alpaca_headers()
         if h is None:
             return None, "no Alpaca data keys - spread unknown"
         params = {"start": start.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-                  "end": (start + dt.timedelta(minutes=5)).astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+                  "end": (start + dt.timedelta(minutes=1)).astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
                   "limit": 1000, "feed": "sip"}
         try:
             async with httpx.AsyncClient(timeout=20) as c:
@@ -411,7 +418,7 @@ class ScoutService:
         sp = [(q["ap"] - q["bp"]) / ((q["ap"] + q["bp"]) / 2) * 100 for q in qs
               if q.get("ap") and q.get("bp") and q["ap"] >= q["bp"] > 0]
         if not sp:
-            return None, "no two-sided quotes 09:35-09:40 ET"
+            return None, "no two-sided quotes 10:00-10:01 ET"
         return statistics.median(sp), f"median of {len(sp)} quotes"
 
     async def _market_cap(self, cik: str | None, close: float | None, as_of: str) -> tuple[float | None, str]:
@@ -522,7 +529,17 @@ class ScoutService:
             if kind:
                 q = q.where(ScoutCandidate.kind == kind)
             rows = (await s.execute(q.order_by(ScoutCandidate.signal_ts.desc()))).scalars().all()
-        return [candidate_dict(r) for r in rows]
+        out = [candidate_dict(r) for r in rows]
+        ids = [c["id"] for c in out]
+        verdicts = await self.desk.verdicts_for(ids)
+        entries = await self.desk.entries_for(ids)
+        from .desk import pre_entry_status
+        for c in out:
+            c["verdicts"] = verdicts.get(c["id"], [])
+            c["entries"] = entries.get(c["id"], [])
+            c["preEntry"] = pre_entry_status(c["gates"])
+            c["links"] = filing_links(c)
+        return out
 
     async def status(self) -> dict:
         sf = self.engine.sf
@@ -544,7 +561,50 @@ class ScoutService:
                        "backfill": backfill or None, **(await ing.counts(sf))},
             "candidates": [{"kind": k, "status": st, "n": n} for k, st, n in cand],
             "config": self.config_snapshot(),
+            "llm": {**(await self.desk.spent_today(dt.datetime.now(ET).date().isoformat())),
+                    "budgetUsd": float(self.s("llm_budget_usd_day", 15.0)),
+                    "lanes": {"claude": {"enabled": bool(self.s("claude_enabled", True)),
+                                         "model": self.s("claude_model", "claude-opus-5-5"),
+                                         "effort": self.s("claude_effort", "medium"),
+                                         "keyPresent": bool(getattr(self.engine.config, "anthropic_api_key", ""))},
+                              "gpt": {"enabled": bool(self.s("openai_enabled", True)),
+                                      "model": self.s("openai_model", "gpt-6.1-sol"),
+                                      "effort": self.s("openai_effort", "medium"),
+                                      "keyPresent": bool(getattr(self.engine.config, "openai_api_key", ""))}}},
+            "schedule": [j for j in self.engine.scheduler.status() if j["name"].startswith("scout_")],
+            "settings": {k[len(P):]: self.engine.settings.get(k) for k in sorted(_scout_keys())},
+            "reports": await self.desk.reports(limit=10),
         }
+
+
+def _scout_keys() -> list[str]:
+    from ...settings_service import DEFAULTS
+    return [k for k in DEFAULTS if k.startswith(P)]
+
+
+def filing_links(c: dict) -> list[dict]:
+    """SEC filing index links for the candidate's evidence (Form 4 rows / the 8-K)."""
+    def url(cik, acc):
+        if not cik or not acc:
+            return None
+        try:
+            return (f"https://www.sec.gov/Archives/edgar/data/{int(str(cik))}/{acc.replace('-', '')}/"
+                    f"{acc}-index.htm")
+        except ValueError:
+            return None
+    ev = c.get("evidence") or {}
+    out, seen = [], set()
+    for r in ev.get("rows") or []:
+        acc = r.get("accession")
+        u = url(c.get("issuerCik"), acc)
+        if u and acc not in seen:
+            seen.add(acc)
+            out.append({"label": f"Form 4 {acc}", "url": u})
+    if ev.get("accession"):
+        u = url(c.get("issuerCik"), ev["accession"])
+        if u:
+            out.append({"label": f"8-K {ev['accession']}", "url": u})
+    return out
 
 
 def shares_market_cap(data: dict, close: float, as_of: str) -> tuple[float | None, str]:

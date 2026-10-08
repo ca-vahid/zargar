@@ -1397,4 +1397,83 @@ class ScoutState(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-SCOUT_TABLES = ("scout_filings", "scout_insider_trades", "scout_candidates", "scout_state")
+class ScoutVerdict(Base):
+    """P3: one analyst lane's verdict on one candidate (filter + explainer only - the model never adds a
+    candidate). `claims` are the GROUNDED claims (quote found verbatim in the masked packet); the ones that
+    failed grounding stay on the record in `dropped_claims`. status: ok | skipped | error | budget."""
+    __tablename__ = "scout_verdicts"
+    __table_args__ = (UniqueConstraint("candidate_id", "lane", name="uq_scout_verdict_lane"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(String(64), index=True)
+    lane: Mapped[str] = mapped_column(String(16), index=True)                     # claude | gpt
+    model: Mapped[str | None] = mapped_column(String(64))
+    day: Mapped[str] = mapped_column(String(10), index=True)                      # ET date of the call
+    status: Mapped[str] = mapped_column(String(12), index=True)
+    verdict: Mapped[str | None] = mapped_column(String(8))                        # keep | drop
+    conviction: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(Text)                              # skipped/error/ungrounded why
+    reasons: Mapped[list] = mapped_column(JSONVariant, default=list)
+    claims: Mapped[list] = mapped_column(JSONVariant, default=list)
+    dropped_claims: Mapped[list] = mapped_column(JSONVariant, default=list)
+    packet_hash: Mapped[str | None] = mapped_column(String(64))
+    raw: Mapped[str | None] = mapped_column(Text)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScoutEntry(Base):
+    """P3: one candidate x one research book (lane). Lifecycle pending -> entered -> closed, or skipped /
+    unfilled with a reason. The position itself is a durable managed position on a SHADOW book (sim
+    executor only); this row is Scout's accounting view of it (after-cost P&L)."""
+    __tablename__ = "scout_entries"
+    __table_args__ = (UniqueConstraint("candidate_id", "book", name="uq_scout_entry_book"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(String(64), index=True)
+    book: Mapped[str] = mapped_column(String(32), index=True)                     # lane key, e.g. s1_claude_keep
+    portfolio_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    ticker: Mapped[str] = mapped_column(String(32))
+    entry_date: Mapped[str] = mapped_column(String(10), index=True)
+    hold_sessions: Mapped[int] = mapped_column(Integer, default=20)
+    status: Mapped[str] = mapped_column(String(12), index=True)                   # pending|entered|closed|skipped|unfilled
+    reason: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[list] = mapped_column(JSONVariant, default=list)
+    spread_pct: Mapped[float | None] = mapped_column(Float)
+    order_id: Mapped[str | None] = mapped_column(String(64))
+    position_id: Mapped[str | None] = mapped_column(String(64))
+    qty: Mapped[float | None] = mapped_column(Float)
+    entry_price: Mapped[float | None] = mapped_column(Float)
+    entry_ts: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    stop_price: Mapped[float | None] = mapped_column(Float)
+    atr: Mapped[float | None] = mapped_column(Float)
+    exit_price: Mapped[float | None] = mapped_column(Float)
+    exit_ts: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    exit_reason: Mapped[str | None] = mapped_column(Text)
+    gross_pnl: Mapped[float | None] = mapped_column(Float)
+    fees: Mapped[float] = mapped_column(Float, default=0.0)
+    half_spread_cost: Mapped[float] = mapped_column(Float, default=0.0)          # informational: embodied in the ask/bid fills
+    net_pnl: Mapped[float | None] = mapped_column(Float)
+    orders_filled: Mapped[int] = mapped_column(Integer, default=0)
+    config: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScoutReport(Base):
+    """P3: the end-of-day summary, one row per ET session date (a re-run replaces the projection; every
+    run is also journaled as ScoutDailyReport)."""
+    __tablename__ = "scout_reports"
+
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+SCOUT_TABLES = ("scout_filings", "scout_insider_trades", "scout_candidates", "scout_state",
+                "scout_verdicts", "scout_entries", "scout_reports")

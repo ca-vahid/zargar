@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -63,6 +64,10 @@ class AppConfig(BaseSettings):
     snaptrade_client_id: str = ""
     snaptrade_consumer_key: str = ""
     anthropic_api_key: str = ""
+    # Scout's GPT analyst lane (research only, 2026-10-07): read from OPENAI_API_KEY (or ZARGAR_OPENAI_API_KEY).
+    # Empty = the lane records "skipped: no OPENAI_API_KEY" per candidate. Never logged.
+    openai_api_key: str = Field(default="", validation_alias=AliasChoices(
+        "OPENAI_API_KEY", "ZARGAR_OPENAI_API_KEY", "openai_api_key"), repr=False)
     extraction_model: str = "claude-opus-5"
     # Alpaca market data (Algo Trader Plus = full-SIP websocket). With both keys
     # set, US-listed quotes/1m bars stream from Alpaca and Yahoo drops back to

@@ -51,6 +51,15 @@ earnings inside the hold (S1); no pending binary event flagged in filings (biote
 no reverse split or ticker change in 6 months; not mentioned by a Discord tip source in the prior 5 days (keeps
 Scout independent of Tips).
 
+**Entry-spread rule (preregistered, user-approved via the desk 2026-10-07; `techniques/scout/entry.py`).** A
+candidate's entry is attempted at **10:00 ET** on its entry session; the spread gate (<= 0.5% of mid) is judged on
+the **live quote at that moment**. Wider (or no usable two-sided quote): re-check **every 15 minutes until 11:30
+ET**; still wider at the 11:30 attempt -> **skipped, reason `spread`** (`no_quote` when no usable quote was ever
+seen). An attempt that only runs after 11:30 + one step (the app was down) is `window_missed` - never a late fill.
+The verdict calls run before 10:00 (09:00 ET), so "passed the gates" for the analyst lanes means every gate except
+the entry spread passed. (P1's 09:35-09:40 median is replaced by this rule; the historical re-check of an
+un-attempted candidate now measures 10:00-10:01 ET.)
+
 ### 2.3 The LLM analyst (filter + explainer)
 
 - Input: the facts for one candidate - the Form 4 rows or the earnings release text, recent price/volume numbers,
@@ -59,13 +68,45 @@ Scout independent of Tips).
   id for every factual claim**; a claim without a citation is discarded (grounding).
 - It may veto (drop), never add a candidate. Budget: <= 20 deep reads/night, capped by a setting (~US$5/day).
 - Its "drop" decisions are tracked as a counterfactual lane, so its value is measured, not assumed.
+- **As built (P3, 2026-10-07; `techniques/scout/analyst.py`, `desk.py`):** prompted JSON `{verdict keep|drop,
+  conviction 1-5, claims [{text, quote, source_id}], reasons [{text, claims [indexes]}]}`. A claim whose quote is not
+  found verbatim (whitespace-collapsed, case-insensitive) in the CITED packet source is discarded (kept on the record
+  as dropped); a reason survives only if it cites a surviving claim; no surviving reason -> `drop`, reason
+  `ungrounded`. Packet sources: `S1` cluster summary + `F4-n` purchase rows (insiders renamed Insider A, B, ...) or
+  `S2` reaction + `8K` (EX-99 release text, capped at `packet_max_chars`), `PX` daily price/volume numbers, `SEC`
+  sector (SIC), `EV` entry/exit/earnings calendar. Company names (submissions JSON incl. former names, 8-K header)
+  and the ticker are masked. The packet is stored per candidate (`scout_state` `packet:<id>`) and hashed on every
+  verdict. Two lanes on the SAME packet: Claude `claude-opus-5-5` effort `medium` (`output_config.effort`,
+  `cache_control` on the system prompt, no `thinking` parameter - Opus 5.5 thinks adaptively) and OpenAI
+  `gpt-6.1-sol` (Responses API, `reasoning.effort` medium; key from env `OPENAI_API_KEY`, absent = every candidate
+  records `skipped: no OPENAI_API_KEY`). **Budget** `llm_budget_usd_day` (US$15) is SHARED: before each call
+  `spent today + worst case (input ~chars/3.5 tokens + the full max_tokens output) > budget` stops that lane for the
+  day (`ScoutBudgetStop`, journaled once per lane per day); cost = usage x `llm_rates` (Opus 5.5 $4/$20 per M,
+  cache read $0.20 / write $5.00; GPT-6.1 Sol $2/$10 marked "third-party pricing, verify"). Every verdict (incl.
+  skipped / budget / error) is a `scout_verdicts` row + `ScoutVerdict` event (tokens, cost, latency, packet hash).
 
 ### 2.4 Trading rules (simulated, identical for every lane)
 
 Position US$600 (*judgement*, matches the live book's slot size); stop 2x daily ATR; exits: time stop 20 sessions
 (S1) / 10 sessions (S2), or the stop; no trims. Costs charged: $1 per order + half the quoted spread each side.
-Research books only (one per lane): `Scout S1 screen`, `Scout S1 +LLM keep`, `Scout S1 LLM drop`, same for S2,
-plus the random baseline.
+Research books only (one per lane): `Scout S1 screen`, `Scout S1 claude keep`, `Scout S1 claude drop`,
+`Scout S1 gpt keep`, `Scout S1 gpt drop`, the same five for S2, plus `Scout random` (11 books).
+
+**As built (P3, 2026-10-07; `books.py`, `desk.py`):** books are SHADOW portfolios (`kind shadow`, `book scout`,
+`source_name scout:<lane>`): the engine routes them to the sim executor only, money totals / ledger / daily-loss
+monitor skip them, Tips' scorecards never read them. Entry = BUY limit at the observed ask (+ at most the gate's
+half spread, so it is marketable) via `OrderManager.place()` (RiskGate), US$600 / ask shares, cancelled as `unfilled`
+if not filled within `entry_fill_wait_s`; the fill is adopted by the shared position manager with policy
+`{timeframe 1d, stop fixed at fill - 2 x 14-day daily ATR, time_stop_sessions hold-1, gap_exit}` (the stop is judged
+on the daily close, a resting GTC stop sits at the same price on the sim executor; the time stop exits at the close
+of the P1 `exitDate` session = 20 sessions incl. the entry day for S1, 10 for S2). Accounting: $1 per FILLED order
+(entry + each exit) is charged in Scout's ledger; the half spread is embodied in the ask/bid fills and reported apart
+(`half_spread_cost`), never charged twice. Kill switch / book halts are honoured (skip reason `halted`).
+s1_unclassified candidates are tracked, not traded (`trade_unclassified` off). **Random matched baseline:** for every
+gate-passing S1/S2 candidate one twin, seeded by the candidate key: a ticker drawn from Scout's own gate-passing
+tickers of the last 365 days (minus the last 30 days' names; topped up with a fixed liquid list below 20 names),
+entry = the matched entry + U{0..4} sessions, same hold/rules; it must pass price/ADV/corporate-action/Tips gates
+(market cap not required - no CIK), up to 5 redraws (`books.py` docstring).
 
 ### 2.5 Data (free first)
 
@@ -97,7 +138,7 @@ plus the random baseline.
 | P0 | day 1 | Verify data first-hand: EDGAR Form 4/8-K fields and acceptance times; Alpaca news fields and timestamps; an earnings calendar source | A short note with real samples |
 | P1 | days 1-3 | EDGAR ingester (daily index + 3-year Form 4 backfill), CMP classifier, gates, S1/S2 screens -> candidate table | Yesterday's candidates listed with their evidence |
 | P2 | days 3-4 | Historical replay of the screens (no LLM), after costs | Report per year + variants log |
-| P3 | days 4-5 | LLM analyst (masked inputs, cited verdicts, budget cap) + research books per lane + daily report | First daily report |
+| P3 | days 4-5 | LLM analyst (masked inputs, cited verdicts, budget cap) + research books per lane + daily report | First daily report - **BUILT 2026-10-07 (branch claude/scout-p3; not deployed)** |
 | P4 | days 5-10 | Prospective run, no tuning; Tips paper keeps running | 2-week checkpoint review |
 
 Constraints: Scout never routes to IBKR; it lives in `zargar/techniques/scout/` with its own settings
@@ -112,6 +153,9 @@ Constraints: Scout never routes to IBKR; it lives in `zargar/techniques/scout/` 
    the 6-10 week evidence, not now.
 
 ## 6. User decisions (2026-10-07)
+
+0. **Entry-spread rule** (desk, 2026-10-07): 10:00 ET live-quote judgement, re-check every 15 min to 11:30 ET,
+   then skip `spread` - recorded in 2.2.
 
 1. **Both screens**, each behind its own toggle so either can be switched off later without code:
    `techniques.scout.s1_insider_enabled`, `techniques.scout.s2_earnings_enabled` (both default on). **Full

@@ -165,3 +165,15 @@ Two passed every gate (GME $10.8M, XENE $1.7M, both unclassified). S2: 53 item-2
 rest wait for day +1), 3 top-decile-on-volume hits, all failing the liquidity/cap gates (MOJO, FEAM, INTT).
 **Observation for review (not a change - thresholds are preregistered):** the 09:35-09:40 ET entry spread is wide
 even for liquid names (FUL 1.67% with $47M ADV); the spread window choice decides how many candidates survive.
+
+## 7. P3 notes (2026-10-07)
+
+- **Entry spread** is now judged on the LIVE quote at 10:00 ET (retry every 15 min to 11:30, then skip `spread`;
+  PLAN 2.2). The 09:35-09:40 observation above (FUL 1.67% with $47M ADV) is why the moment moved later; the
+  historical re-check for a candidate the live rule never judged measures 10:00-10:01 ET.
+- **8-K text for S2 packets:** the full submission `.txt` (`edgar/data/<cik>/<accession>.txt`), first `EX-99*`
+  document (else the 8-K body), HTML stripped, company names from `COMPANY CONFORMED NAME` for masking
+  (`analyst.release_text`). Not yet verified on a broad sample of filers (some put the release only in a PDF exhibit -
+  the packet then carries the 8-K cover text only).
+- **OpenAI pricing** for `gpt-6.1-sol` ($2/$10 per M) is third-party - verify on the official page before relying on
+  the budget for that lane.

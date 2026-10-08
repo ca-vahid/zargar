@@ -864,3 +864,56 @@ export interface Counterfactual {
   };
   createdAt: string | null;
 }
+
+
+// --- Scout (research only, 2026-10-07) ---
+export interface ScoutGate { status: string; why: string; value?: unknown; threshold?: unknown }
+export interface ScoutClaim { text: string; quote: string; sourceId: string }
+export interface ScoutVerdict {
+  id: string; candidateId: string; lane: "claude" | "gpt"; model: string | null; day: string; status: string;
+  verdict: "keep" | "drop" | null; conviction: number | null; reason: string | null;
+  reasons: { text: string; claims: number[] }[]; claims: ScoutClaim[];
+  droppedClaims: (ScoutClaim & { why: string })[];
+  tokensIn: number; tokensOut: number; cacheRead: number; cacheWrite: number; costUsd: number; latencyMs: number;
+  createdAt: string | null;
+}
+export interface ScoutEntry {
+  id: string; candidateId: string; book: string; bookLabel: string; portfolioId: string | null; ticker: string;
+  entryDate: string; holdSessions: number; status: string; reason: string | null; attempts: Record<string, unknown>[];
+  spreadPct: number | null; orderId: string | null; positionId: string | null; qty: number | null;
+  entryPrice: number | null; entryTs: string | null; stopPrice: number | null; atr: number | null;
+  exitPrice: number | null; exitTs: string | null; exitReason: string | null; grossPnl: number | null; fees: number;
+  halfSpreadCost: number; netPnl: number | null; ordersFilled: number; mark?: number | null; openNetPnl?: number | null;
+}
+export interface ScoutCandidate {
+  id: string; key: string; kind: string; ticker: string; issuerCik: string | null; signalTs: string | null;
+  signalDate: string; entryDate: string | null; status: string; preEntry: string;
+  evidence: Record<string, any>; gates: Record<string, ScoutGate>; config: Record<string, unknown>;
+  verdicts: ScoutVerdict[]; entries: ScoutEntry[]; links: { label: string; url: string }[];
+}
+export interface ScoutLane {
+  lane: string; label: string; portfolioId: string | null; entries: number; open: number; closed: number;
+  skipped: number; pending: number; realizedNet: number; openNet: number; totalNet: number; hitRate: number | null;
+  openTrades: ScoutEntry[]; closedTrades: ScoutEntry[];
+}
+export interface ScoutReport {
+  day: string; at: string; candidates: { kind: string; status: string; n: number }[];
+  verdicts: { lane: string; status: string; verdict: string | null; n: number }[];
+  entries: { ticker: string; book: string; status: string; reason: string | null }[];
+  exits: { ticker: string; book: string; exitReason: string | null; netPnl: number | null }[];
+  lanes: { lane: string; label: string; entries: number; open: number; closed: number; realizedNet: number;
+    openNet: number; totalNet: number; hitRate: number | null }[];
+  llm: { total: number; budgetUsd: number; byLane: Record<string, { usd: number; calls: number }> };
+}
+export interface ScoutStatus {
+  technique: string; researchOnly: boolean; screenVersion: string;
+  enabled: { daily: boolean; s1: boolean; s2: boolean }; running: boolean; lastRun: Record<string, unknown> | null;
+  ingest: { datasetsDone: string[]; dailyDays: string[]; dailyDaysCount: number; coverageStart: string | null;
+    [k: string]: unknown };
+  candidates: { kind: string; status: string; n: number }[];
+  llm: { total: number; budgetUsd: number; byLane: Record<string, { usd: number; calls: number }>;
+    lanes: Record<"claude" | "gpt", { enabled: boolean; model: string; effort: string; keyPresent: boolean }> };
+  schedule: { name: string; at: string; lastDay: string }[];
+  settings: Record<string, unknown>;
+  reports: ScoutReport[];
+}
