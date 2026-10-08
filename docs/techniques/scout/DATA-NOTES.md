@@ -146,3 +146,22 @@ use it for timing until P3 checks it against the source page. The WebSocket stre
 | Data sets 2015q1-2026q3 | 47 ZIPs | ~1 min each to download + parse; 2015q1 alone = 65,957 Form 4/4-A filings, 39,562 P/S rows |
 | Daily indexes (current quarter) | 1 + ~400 Form 4 + ~250 8-K per day | ~2-3 min/day at 5 req/s |
 | Acceptance enrichment | 1 per officer/director purchase filing | the long tail; newest first, resumable |
+
+Actual run 2026-10-07 (runtime DB, `--since 2015-01-01`): 47 quarters in ~25 min (2.18M Form 4/4-A filings, 1.82M
+P/S rows: P 542,561, S 1,277,297; tables 786 MB + 460 MB), 4 daily indexes (2026-10-01..06, 3,874 Form 4, 885 8-K, 53
+item-2.02 releases) in ~10 min; then ~152k officer/director purchase filings queued for acceptance stamps (~9 h at
+5 req/s). `--since` went to 2015 rather than 2023-10 because CMP needs Jan 1 of Y-3: data from 2023-10-01 would leave
+every 2026 insider `unclassified`; 2015 lets P2 classify from 2018.
+
+**Data quality seen:** transaction-date typos in the data sets (`0015-11-11`, `2033-11-18`) - rows dated after their
+own filing or before 1990 are dropped by the screens and the classifier.
+
+## 6. First dry screen on real data (2026-10-07, look-back 7 days, nothing written)
+
+S1: 1,475 officer/director purchases in the window, 65 clusters point in time; 14 recent hits - **1** plain
+opportunistic (ADRX, 4 insiders, $43M on one date - looks like a placement, fails the spread gate) and 13 of the
+tracked `s1_unclassified` kind (insiders without a trade in each of the 3 prior years - CMP is selective by design).
+Two passed every gate (GME $10.8M, XENE $1.7M, both unclassified). S2: 53 item-2.02 releases, 28 measurable (the
+rest wait for day +1), 3 top-decile-on-volume hits, all failing the liquidity/cap gates (MOJO, FEAM, INTT).
+**Observation for review (not a change - thresholds are preregistered):** the 09:35-09:40 ET entry spread is wide
+even for liquid names (FUL 1.67% with $47M ADV); the spread window choice decides how many candidates survive.

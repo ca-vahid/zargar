@@ -238,6 +238,14 @@ def test_s1_unclassified_tracked_separately_and_one_hit_per_cluster():
     assert screen_s1(rows, lab, p, include_unclassified=True)[0].anchor_date == "2026-10-02"
 
 
+def test_s1_drops_typo_dates():
+    p = S1Params()
+    future = {**buy("1", "2033-11-18", 80_000), "filed_date": "2026-10-02",
+              "acceptance_ts": dt.datetime(2026, 10, 2, 17, 0, tzinfo=ET)}
+    ancient = {**buy("2", "0015-11-11", 80_000), "filed_date": "2026-10-02"}
+    assert s1_purchases([future, ancient], p) == []
+
+
 def test_s1_point_in_time_uses_dataset_filing_date_conservatively():
     p = S1Params()
     a = {**buy("1", "2026-10-01", 80_000), "acceptance_ts": None, "filed_date": "2026-10-02"}

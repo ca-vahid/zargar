@@ -50,6 +50,8 @@ def history_by_insider(trades: Iterable[Mapping], year: int, *, years: int = 3) 
         y, m = int(td[:4]), int(td[5:7])
         if not (lo <= y <= year - 1) or not _known_by(r, cutoff):
             continue
+        if r.get("filed_date") and td > str(r["filed_date"])[:10]:
+            continue                                   # dated after its own filing: a filer typo
         out[str(r["insider_cik"])][y].add(m)
     return out
 

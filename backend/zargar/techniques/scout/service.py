@@ -210,6 +210,8 @@ class ScoutService:
         if bool(self.s("s1_track_unclassified", True)):
             hits += screen_s1(purchases, classify, p, include_unclassified=True)
         recent = [h for h in hits if now - dt.timedelta(days=lookback) <= h.signal_ts <= now]
+        no_ticker = [h.key for h in recent if not h.ticker]       # untradeable as filed (no symbol): counted, not recorded
+        recent = [h for h in recent if h.ticker]
         written = 0
         hold = int(self.s("s1_hold_sessions", 20))
         for h in recent:
@@ -224,7 +226,7 @@ class ScoutService:
             if await self._record(h.kind, h.key, h.ticker, h.issuer_cik, h.signal_ts, h.entry_date, evidence, now):
                 written += 1
         return {"purchases": len(purchases), "clusters": len(hits), "recent": len(recent), "new": written,
-                "coverageStart": cov}
+                "noTicker": no_ticker, "coverageStart": cov}
 
     # ------------------------------------------------------------------ S2
     async def run_s2(self, now: dt.datetime) -> dict:

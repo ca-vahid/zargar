@@ -95,6 +95,18 @@ def _role_ok(r: Mapping, roles: Sequence[str]) -> bool:
     return ("officer" in roles and bool(r.get("is_officer"))) or ("director" in roles and bool(r.get("is_director")))
 
 
+def plausible_date(r: Mapping) -> bool:
+    """Filer typos exist in the data sets (trans dates like 0015-11-11 or 2033-11-18 seen
+    2026-10-07): a transaction dated AFTER its own filing, or before 1990, is dropped."""
+    td = str(r.get("trans_date") or "")[:10]
+    if len(td) != 10 or td < "1990-01-01":
+        return False
+    fd = r.get("filed_date")
+    ts = r.get("acceptance_ts")
+    known = ts.astimezone(ET).date().isoformat() if isinstance(ts, dt.datetime) else (str(fd)[:10] if fd else None)
+    return known is None or td <= known
+
+
 def s1_purchases(rows: Iterable[Mapping], p: S1Params) -> list[dict]:
     """Open-market purchases (code P, original Form 4 - amendments excluded so a 4/A never
     double counts) by an officer or director, with a positive value."""
@@ -105,6 +117,8 @@ def s1_purchases(rows: Iterable[Mapping], p: S1Params) -> list[dict]:
         if not _role_ok(r, p.roles) or not r.get("trans_date"):
             continue
         if (r.get("acq_disp") or "A") != "A":
+            continue
+        if not plausible_date(r):
             continue
         out.append(dict(r))
     return out
