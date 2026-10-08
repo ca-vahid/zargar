@@ -1,6 +1,6 @@
 # Scout - research-only idea finder (plan, 2026-10-07)
 
-**Status:** PLAN for the user's review. Nothing built yet. User decision 2026-10-07: the IBKR real-money go-live is
+**Status:** PLAN APPROVED 2026-10-07 (decisions in section 6). Build starting. User decision 2026-10-07: the IBKR real-money go-live is
 DELAYED; the IBKR Paper book keeps rehearsing the C$3k account while Scout is planned, built and judged on simulated
 money for ~2 weeks. Scout places **no orders** at IBKR - research books only (PLATFORM-RULES invariants 12-13 style).
 
@@ -110,3 +110,17 @@ Constraints: Scout never routes to IBKR; it lives in `zargar/techniques/scout/` 
 3. LLM budget cap (suggested US$5/day).
 4. Whether Scout may later share the IBKR account with Tips (a separate slot) once a lane passes - decided only after
    the 6-10 week evidence, not now.
+
+## 6. User decisions (2026-10-07)
+
+1. **Both screens**, each behind its own toggle so either can be switched off later without code:
+   `techniques.scout.s1_insider_enabled`, `techniques.scout.s2_earnings_enabled` (both default on). **Full
+   visibility:** a Scout page (candidates with their evidence, every LLM verdict with its citations, each lane's
+   book and P&L) plus the daily report.
+2. **Gates as recommended** (price >= $5, ADV >= $5M, spread <= 0.5%, cap >= $300M), each a `techniques.scout.*`
+   setting. Paper money first - "be aspirational".
+3. **LLM budget US$15/day** (`techniques.scout.llm_budget_usd_day`). **Two analyst lanes on the same candidates:**
+   Claude Opus 5.5 (the Tips analyst's model, effort medium) and OpenAI GPT-6.1 Sol (`gpt-6.1-sol`, ~$2/$10 per
+   million tokens per third-party pricing pages - verify on the official page before relying on it). Each has its
+   keep/drop lanes; the comparison is part of the experiment. The OpenAI client lives inside Scout only; the user
+   adds `OPENAI_API_KEY` to backend/.env (until then the GPT lane is skipped and says so).
