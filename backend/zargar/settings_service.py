@@ -510,6 +510,37 @@ DEFAULTS: dict[str, Any] = {
     # FL4: OFF until the thresholds earn it — when True, a confirmed high-score
     # read sent to Tips carries explicit_call conviction instead of implied
     "techniques.flow.calibrated": False,
+    # --- Scout (docs/techniques/scout/PLAN.md; research only - places NO orders, routes to no broker) ---
+    # PREREGISTERED thresholds (PLAN 2.1/2.2): do not tune during the paper run; log variants instead.
+    "techniques.scout.daily_enabled": True,           # the 07:00 ET job: EDGAR catch-up + screens + gates
+    "techniques.scout.daily_at": "07:00",             # ET; EDGAR's daily index for D is published ~22:00 ET on D
+    "techniques.scout.catchup_days": 7,               # daily indexes the job may back-fill when it fell behind
+    "techniques.scout.edgar_user_agent": "Zargar research vhaeri@bgcengineering.ca",  # SEC fair access: name + contact
+    "techniques.scout.edgar_max_rps": 5.0,            # SEC limit is 10/s; we stay at half
+    "techniques.scout.s1_insider_enabled": True,      # S1 opportunistic insider cluster (OFF = screen fully skipped)
+    "techniques.scout.s2_earnings_enabled": True,     # S2 earnings reaction (OFF = no 8-K reads, no screen)
+    "techniques.scout.s1_window_days": 10,            # cluster span, calendar days of transaction dates
+    "techniques.scout.s1_min_insiders": 2,            # distinct opportunistic officers/directors
+    "techniques.scout.s1_min_value_usd": 100_000.0,   # cluster total purchase value
+    "techniques.scout.s1_hold_sessions": 20,          # time stop (also the earnings-in-hold window)
+    "techniques.scout.s1_track_unclassified": True,   # also record clusters that need UNCLASSIFIED insiders (own kind)
+    "techniques.scout.cmp_years": 3,                  # Cohen-Malloy-Pomorski look-back years
+    "techniques.scout.signal_lookback_days": 3,       # the daily job records hits whose signal time is this recent
+    "techniques.scout.s2_top_pct": 10.0,              # top % of the day's events by day 0..+1 abnormal return
+    "techniques.scout.s2_volume_mult": 2.0,           # day-0 volume vs its 20-day average
+    "techniques.scout.s2_volume_avg_days": 20,
+    "techniques.scout.s2_entry_offset_sessions": 2,   # entry on day +2
+    "techniques.scout.s2_hold_sessions": 10,
+    "techniques.scout.s2_benchmark": "SPY",
+    "techniques.scout.gate_min_price": 5.0,
+    "techniques.scout.gate_min_adv_usd": 5_000_000.0,
+    "techniques.scout.gate_adv_days": 20,
+    "techniques.scout.gate_max_spread_pct": 0.5,      # quoted spread at entry, % of mid (unknown until entry quotes exist)
+    "techniques.scout.gate_min_market_cap_usd": 300_000_000.0,  # SEC dei shares outstanding x close (unknown if no fact)
+    "techniques.scout.gate_no_earnings_in_hold": True,  # S1 only
+    "techniques.scout.gate_corp_action_days": 183,    # no reverse split / symbol change (Alpaca corporate actions)
+    "techniques.scout.gate_tips_mention_days": 5,     # not mentioned by a Tips source (signals table) in the prior N days
+    "techniques.scout.llm_budget_usd_day": 15.0,      # P3 analyst lanes (unused in P1)
     "techniques.flow.otm_min_pct": 0.0,      # flagged footprint: 0–12% OTM
     "techniques.flow.otm_max_pct": 12.0,
     "techniques.flow.repeat_days": 3,        # same zone flagged N days in the window

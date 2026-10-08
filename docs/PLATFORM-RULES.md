@@ -2955,3 +2955,18 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   shadow book). **Rule:** `_close_leg` first cancels such stale exits (`exit_superseded`), and on real books the venue
   bound counts working BUYs for a short leg (it counted only SELLs). Tests: `test_exit_supersede.py`,
   `test_db_engine_kwargs.py`.
+
+### Scout P1: a research-only technique's shared surfaces - 2026-10-07 (Scout desk; plan docs/techniques/scout/PLAN.md)
+- **Shared edits (additive only):** four tables in `models.py` (`scout_filings`, `scout_insider_trades`,
+  `scout_candidates`, `scout_state`; `SCOUT_TABLES` lets the backfill tool create just these on the runtime DB),
+  `techniques.scout.*` keys in `settings_service.DEFAULTS`, three journal kinds in `events.py`
+  (`ScoutCandidateFound`, `ScoutGateResult`, `ScoutDailyRun` - not `Technique*`, so no events_contract entry), and
+  `api/app.py` attaches `attach_scout_layer` (registers ONE scheduler job, `scout_daily` 07:00 ET) + read-only routes
+  `GET /api/scout/candidates|status`.
+- **Invariant:** Scout places no orders - `zargar/techniques/scout/` imports nothing from the order path, portfolios or
+  RiskGate, and reads the Tips `signals` table read-only (the "no Tips mention in 5 days" gate). Not registered in the
+  technique registry yet (no page until P3; the nav renders the registry).
+- **Finding (EDGAR, verified first-hand):** the SGML header `<ACCEPTANCE-DATETIME>` is ET wall clock; the
+  data.sec.gov submissions JSON `acceptanceDateTime` claims `Z` but is the true UTC instant PLUS the ET offset again
+  (AAPL 16:30 ET 8-K -> `00:30Z` next day). Any desk reading that JSON must undo it
+  (`techniques/scout/form4.submissions_json_acceptance`) or prefer the header. Details: docs/techniques/scout/DATA-NOTES.md.

@@ -1304,3 +1304,97 @@ class MarketEventCoverage(Base):
     coverage_from: Mapped[str] = mapped_column(String(10))
     coverage_through: Mapped[str] = mapped_column(String(10))
     fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --- Scout (docs/techniques/scout/PLAN.md, 2026-10-07): research only, places no orders ---------------
+class ScoutFiling(Base):
+    """One EDGAR filing Scout has seen (Form 4 / 4/A from the daily index or a quarterly
+    insider data set; 8-K headers for S2). The ingest ledger: idempotency key = accession.
+    `acceptance_ts` is the EDGAR acceptance time (ET wall clock in the SGML header, stored
+    tz-aware) - NULL when only the quarterly data set (filing DATE only) has been seen;
+    `scout_backfill --enrich` fills it from the header."""
+    __tablename__ = "scout_filings"
+
+    accession: Mapped[str] = mapped_column(String(32), primary_key=True)
+    form_type: Mapped[str] = mapped_column(String(16), index=True)
+    issuer_cik: Mapped[str | None] = mapped_column(String(16), index=True)
+    ticker: Mapped[str | None] = mapped_column(String(32), index=True)
+    filed_date: Mapped[str | None] = mapped_column(String(10), index=True)        # YYYY-MM-DD
+    acceptance_ts: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    items: Mapped[str | None] = mapped_column(String(128))                        # 8-K items "2.02,9.01"
+    source: Mapped[str] = mapped_column(String(16), default="daily")             # daily | dataset | submissions
+    status: Mapped[str] = mapped_column(String(16), default="parsed", index=True)  # parsed | error | header
+    error: Mapped[str | None] = mapped_column(Text)
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScoutInsiderTrade(Base):
+    """One non-derivative Form 4 transaction row x one reporting owner. Joint filings
+    repeat the row per owner (`row_key` = accession:row); value totals dedupe on row_key.
+    Only open-market codes (P, S) are stored - the CMP classifier and S1 need nothing else."""
+    __tablename__ = "scout_insider_trades"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    accession: Mapped[str] = mapped_column(String(32), index=True)
+    row_key: Mapped[str] = mapped_column(String(48))
+    form_type: Mapped[str] = mapped_column(String(8), default="4")
+    issuer_cik: Mapped[str] = mapped_column(String(16), index=True)
+    ticker: Mapped[str | None] = mapped_column(String(32), index=True)
+    insider_cik: Mapped[str] = mapped_column(String(16))
+    insider_name: Mapped[str | None] = mapped_column(String(256))
+    is_director: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_ten_pct: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_other: Mapped[bool] = mapped_column(Boolean, default=False)
+    officer_title: Mapped[str | None] = mapped_column(String(256))
+    security_title: Mapped[str | None] = mapped_column(String(256))
+    trans_date: Mapped[str] = mapped_column(String(10), index=True)               # YYYY-MM-DD
+    trans_code: Mapped[str] = mapped_column(String(4))
+    acq_disp: Mapped[str | None] = mapped_column(String(2))
+    shares: Mapped[float | None] = mapped_column(Float)
+    price: Mapped[float | None] = mapped_column(Float)
+    value: Mapped[float | None] = mapped_column(Float)
+    direct_indirect: Mapped[str | None] = mapped_column(String(2))
+    filed_date: Mapped[str | None] = mapped_column(String(10))
+    acceptance_ts: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    source: Mapped[str] = mapped_column(String(16), default="daily")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+Index("uq_scout_trades_row_owner", ScoutInsiderTrade.row_key, ScoutInsiderTrade.insider_cik, unique=True)
+Index("ix_scout_trades_insider_date", ScoutInsiderTrade.insider_cik, ScoutInsiderTrade.trans_date)
+Index("ix_scout_trades_code_filed", ScoutInsiderTrade.trans_code, ScoutInsiderTrade.filed_date)
+
+
+class ScoutCandidate(Base):
+    """One screen hit (S1 insider cluster / S2 earnings reaction) with its evidence and
+    every gate's verdict (pass | fail | unknown). A projection of the journaled
+    ScoutCandidateFound / ScoutGateResult events; `key` makes the daily job idempotent."""
+    __tablename__ = "scout_candidates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key: Mapped[str] = mapped_column(String(160), unique=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)                     # s1_insider | s2_earnings
+    ticker: Mapped[str] = mapped_column(String(32), index=True)
+    issuer_cik: Mapped[str | None] = mapped_column(String(16))
+    signal_ts: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    signal_date: Mapped[str] = mapped_column(String(10), index=True)
+    entry_date: Mapped[str | None] = mapped_column(String(10), index=True)
+    status: Mapped[str] = mapped_column(String(12), index=True)                   # pass | fail | unknown
+    evidence: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    gates: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    config: Mapped[dict] = mapped_column(JSONVariant, default=dict)               # thresholds + screen version
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScoutState(Base):
+    """Small key -> JSON store for ingest progress (backfill cursor, last run)."""
+    __tablename__ = "scout_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+SCOUT_TABLES = ("scout_filings", "scout_insider_trades", "scout_candidates", "scout_state")

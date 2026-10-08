@@ -77,6 +77,9 @@ SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before th
 SIGNAL_DISMISSED = "SignalDismissed"                # user deleted the tip (soft: status=dismissed, plan disarmed, proposal expired)
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads
 FLOW_CONTEXT_SERVED = "FlowContextServed" # a flow read's context line was delivered to a consumer (tip/em)
+SCOUT_CANDIDATE_FOUND = "ScoutCandidateFound"  # Scout (research only): a screen hit with its evidence
+SCOUT_GATE_RESULT = "ScoutGateResult"          # Scout: every gate's pass/fail/unknown for one candidate (re-checks too)
+SCOUT_DAILY_RUN = "ScoutDailyRun"              # Scout: the daily job's summary (ingest + screens + counts)
 PROPOSAL_CREATED = "ProposalCreated"
 PROPOSAL_APPROVED = "ProposalApproved"
 PROPOSAL_REJECTED = "ProposalRejected"
