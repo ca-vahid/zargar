@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.17";
+export const APP_VERSION = "0.9.18";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.18",date:"2026-10-08",title:"Scout (research only)",items:[
+    {tag:"new",text:"Scout: a research-only idea finder. Daily SEC Form 4 insider-cluster (opportunistic insiders only) and earnings-reaction screens with liquidity gates; Claude Opus 5.5 and GPT-6.1 Sol read each candidate masked and keep or drop it with cited reasons; every lane trades its own simulated research book (never a broker) against a screen-all and a random baseline. Scout page: Candidates, Lanes, Status."},
+  ]},
   {version:"0.9.17",date:"2026-10-06",title:"IBKR account summary: one request at a time",items:[
     {tag:"fixed",text:"During an IB Gateway outage the account sync no longer piles up account-summary subscriptions until IBKR refuses them (notice 322): one request stays in flight and is reused until it answers."},
   ]},
