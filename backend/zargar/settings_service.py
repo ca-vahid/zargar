@@ -254,6 +254,10 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.friction_flag_pct": 0,            # ADV-08: flag a card whose round-trip fees+spread >= this % of the debit (annotation; 0 = off)
     "techniques.tip.max_book_exposure_pct": 0,        # ADV-06: refuse NEW tip entries once open tip cost basis >= this % of the book's equity (0 = off)
     "techniques.tip.max_name_exposure_pct": 0,        # ADV-06: same, per underlying (options count under their root) (0 = off)
+    # 2026-10-08 setup review (per-book via the binding fields onePerName / minTradeNotional / minExitNotional):
+    "techniques.tip.one_position_per_name": False,    # refuse a new tip entry on a stock the book already holds or is buying
+    "techniques.tip.min_trade_notional": 0,           # refuse an entry whose final size costs less than $N (0 = off)
+    "techniques.tip.min_exit_order_notional": 0,      # merge ladder trims so every sell order is >= $N; tiny positions exit in one order (0 = off)
     "techniques.tip.review_source_budgets": {},       # ADV-05: {source: daily USD, "*": default}; a source over budget skips ONLY reviews the relevance gate judged irrelevant (never a message about a held/armed/proposed item). {} = off
     "techniques.tip.review_context": "full",          # ADV-04: full | notes (2026-09-23: full rulebook, only notes scoped + trimmed) | compact (rule headlines too - measured UNSAFE) for INTAKE REVIEWS only; appraisals keep the full rulebook
     "techniques.tip.extraction_model": "",           # 2026-09-23: intake extraction + attachment transcription model ("" = engine extraction_model)

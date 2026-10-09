@@ -628,6 +628,10 @@ class TipRunner(PlanRunner):
                 if fit < out:
                     notes.append(why or f"risk {src}")
                 out = fit
+            from ...approvals.proposals import min_trade_refusal
+            _small = min_trade_refusal(binding, eng.settings, sec_type="STK", limit=limit, qty=out)
+            if _small:
+                return 0.0, f"book sizing: {_small}"
         with contextlib.suppress(Exception):
             await eng.journal.append("TipArmedFireSized", {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "portfolioId": pid,

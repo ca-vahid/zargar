@@ -243,6 +243,51 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings, entry_ref: f
     return pol
 
 
+def merge_small_trims(ladder: dict | None, *, qty: float, price: float,
+                      min_notional: float) -> tuple[dict | None, str | None]:
+    """Pure (2026-10-08 setup review): a share ladder rebuilt so every sell order is worth at least `min_notional`.
+    At $1 a side, UNM 4 shares sold in 2 orders and AAPL 5 in 2: the fees took most of the gain. Trims too small for
+    their own order merge FORWARD into the next one (sold at that later target); a runner too small for its own order
+    goes with the last trim; a position too small for any split sells in ONE order at the first target.
+    Returns (ladder, note) - the ladder unchanged and note None when nothing had to merge (or the knob is off)."""
+    if not ladder or not min_notional or min_notional <= 0 or not qty or qty <= 0 or not price or price <= 0:
+        return ladder, None
+    targets = [float(t) for t in (ladder.get("targets") or [])]
+    if not targets:
+        return ladder, None
+    fr = [max(0.0, float(f)) for f in (ladder.get("fractions") or [])][:len(targets)]
+    if not fr:
+        fr = [1.0 / len(targets)] * len(targets)
+    fr += [0.0] * (len(targets) - len(fr))
+    value = float(qty) * float(price)
+    runner = max(0.0, 1.0 - sum(fr))
+    out_t: list[float] = []
+    out_f: list[float] = []
+    acc = 0.0
+    for t, f in zip(targets, fr):
+        acc += f
+        if acc > 1e-9 and acc * value >= float(min_notional):
+            out_t.append(t)
+            out_f.append(acc)
+            acc = 0.0
+    leftover = acc + runner                               # what stays unsold after the kept trims
+    if not out_t:
+        new = {"targets": [targets[0]], "fractions": [1.0]}
+    else:
+        if leftover > 1e-9 and leftover * value < float(min_notional):
+            out_f[-1] = 1.0 - sum(out_f[:-1])               # too small to ride alone: it goes with the last trim
+        new = {"targets": out_t, "fractions": [round(f, 4) for f in out_f]}
+        if sum(new["fractions"]) > 1.0:
+            new["fractions"][-1] = round(1.0 - sum(new["fractions"][:-1]), 4)
+    if new["targets"] == targets and new["fractions"] == [round(f, 4) for f in fr]:
+        return ladder, None
+    n_before = len(targets) + (1 if runner > 1e-9 else 0)
+    n_after = len(new["targets"]) + (1 if 1.0 - sum(new["fractions"]) > 1e-4 else 0)
+    note = (f"small position (${value:,.0f}): exits merged so every sell is >= ${float(min_notional):,.0f} "
+            f"({n_before} sell orders -> {n_after})")
+    return {**ladder, **new}, note
+
+
 def _policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
     plan = plan or {}
     policy: dict = {"timeframe": "15m"}
@@ -920,8 +965,21 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         stop = plan.get("underlyingStop")
         risk = abs(entry_ref - float(stop)) if stop else entry_ref * 0.05
 
-        policy = policy_from_exit_plan(plan, is_option=is_opt, settings=eng.settings,
+        # 2026-10-08: the BOOK's own knobs (binding swingStaleSessions / minExitNotional) shape its exit policy
+        from . import books as _books
+        _bk = None
+        with contextlib.suppress(Exception):
+            _bk = _books.binding_for(eng.settings, eng.positions.portfolio, str(proposal.get("portfolioId") or ""))
+        book_settings = _books.BookSettings(eng.settings, _bk) if _bk is not None else eng.settings
+        policy = policy_from_exit_plan(plan, is_option=is_opt, settings=book_settings,
                                        entry_ref=entry_ref, direction=direction)
+        if not is_opt and policy.get("ladder"):
+            _min_exit = float(_books.knob(_bk, "minExitNotional", eng.settings, 0) or 0)
+            _merged, _mnote = merge_small_trims(policy["ladder"], qty=qty, price=fill, min_notional=_min_exit)
+            if _mnote:
+                policy["ladder"] = _merged
+                await note("TipExitsMerged", {"symbol": underlying, "qty": qty, "fill": fill,
+                                              "minExitNotional": _min_exit, "ladder": _merged, "note": _mnote})
         leg = ({"symbol": proposal.get("symbol"), "secType": "OPT", "qty": qty,
                 "avgFill": fill, "multiplier": 100.0, "entryOrderId": oid,
                 "origin": "adoption"}

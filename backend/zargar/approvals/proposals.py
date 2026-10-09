@@ -54,6 +54,25 @@ def live_capital_room(cap: float, open_cost: float) -> float | None:
     return max(0.0, float(cap) - float(open_cost))
 
 
+def min_trade_refusal(binding, settings, *, sec_type: str, limit, qty) -> str | None:
+    """Pure (2026-10-08 setup review): the book's minimum trade size. An entry whose FINAL size (after the risk
+    sizing) costs less than `minTradeNotional` is refused - at $1 a side, a $250 position pays ~0.8% in fees and still
+    takes a whole slot. 0 / unset = off."""
+    from ..techniques.tip import books as _books
+    try:
+        floor = float(_books.knob(binding, "minTradeNotional", settings, 0) or 0)
+        q, px = int(qty or 0), float(limit or 0)
+    except (TypeError, ValueError):
+        return None
+    if floor <= 0 or q <= 0 or px <= 0:
+        return None
+    notional = px * q * (100.0 if sec_type in ("OPT", "SPREAD") else 1.0)
+    if notional >= floor:
+        return None
+    return (f"below the book's minimum trade: {q} x ${px:,.2f} = ${notional:,.0f} < ${floor:,.0f} "
+            "(minTradeNotional) - fees would dominate a position this small")
+
+
 def shares_first_applies(expression: str, *, direction: str, lotto: bool, portfolio_kind) -> bool:
     """Pure (P1): express this idea in shares? Only for expression=shares, long ideas, not the lotto lane, and never
     on a live or paper book."""
@@ -329,6 +348,13 @@ class ProposalService:
                 if _room < budget:
                     budget = _room
                     note = ((note + " ") if note else "") + f"Capped to the book's remaining ${_room:,.0f}."
+        # 2026-10-08 setup review: one position per stock in this book - a second source's tip on a name the book
+        # already holds or is buying is refused (two of three slots in one name is concentration)
+        if underlying and bool(_books.knob(binding, "onePerName", eng.settings, False)):
+            _held = await self._name_held_or_buying(pid, underlying)
+            if _held:
+                return 0.0, None, (f"one position per stock: {pf.get('name', pid)} already {_held} "
+                                   f"{str(underlying).upper()} (onePerName)")
         # Q1 (2026-09-27 review): a book-wide cap on open tip positions (0 = off)
         _cap = int(_books.knob(binding, "maxOpenPositions", eng.settings, 0) or 0)
         if _cap > 0:
@@ -420,6 +446,36 @@ class ProposalService:
                 cost += abs(float(leg.get("avgFill") or 0) * float(leg.get("qty") or 0)
                             * float(leg.get("multiplier") or 1.0))
         return cost
+
+    async def _name_held_or_buying(self, pid: str, underlying: str) -> str | None:
+        """'holds' when an open managed tip position in this book is on `underlying` (an option leg counts under its
+        OCC root), 'is buying' when a working BUY order or an approved card without an order is; else None."""
+        from ..options import occ as _occ
+        u = str(underlying or "").upper()
+        if not u:
+            return None
+
+        def _root(sym: str | None) -> str:
+            s = str(sym or "").upper()
+            o = _occ.parse(s)
+            return o.underlying if o else s
+
+        _tot, name_cost = await self._book_exposure(pid, u)
+        if name_cost > 0:
+            return "holds"
+        try:
+            async with self.engine.sf() as session:
+                orders = (await session.execute(select(Order.symbol).where(
+                    Order.portfolio_id == pid, Order.side == "BUY",
+                    Order.status.in_(("NEW", "SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"))))).scalars().all()
+                props = (await session.execute(select(Proposal.symbol).where(
+                    Proposal.portfolio_id == pid, Proposal.status == "approved",
+                    Proposal.order_id.is_(None)))).scalars().all()
+        except Exception:                                # noqa: BLE001
+            return None
+        if any(_root(s) == u for s in list(orders) + list(props)):
+            return "is buying"
+        return None
 
     async def _book_open_count(self, pid: str) -> int:
         async with self.engine.sf() as session:
@@ -1154,6 +1210,10 @@ class ProposalService:
         qty, exit_plan = int(_v9["qty"]), _v9["exitPlan"]
         if _v9.get("note"):
             explain += " " + _v9["note"]
+        _small = min_trade_refusal(binding, eng.settings, sec_type=sec_type, limit=limit, qty=qty)
+        if _small:
+            await self._refuse(signal_id=signal_row.id, reason=_small, portfolio_id=pid)
+            return None
         if risk_plan is not None and risk_plan.enforced and sec_type == "STK":
             # G91-02: every protection is built from the SAME final plan — the
             # bracket carries the finalized stop, never the signal's original
@@ -2178,6 +2238,12 @@ class ProposalService:
             if row is not None and row.status == "pending":      # a claimed (approved) plan is never rewritten
                 c = {k: v for k, v in (row.context or {}).items() if k not in ("readiness", "autoGate")}
                 c["readiness"] = readiness
+                # 2026-10-08: the recently DISPLAYED plans by fingerprint - a click that confirmed one of them is
+                # judged again at ITS limit even when another refresh replaced the card in between
+                _seen = [s for s in (c.get("readinessSeen") or []) if s.get("fingerprint") != readiness.get("fingerprint")]
+                _seen.append({"fingerprint": readiness.get("fingerprint"), "limit": (readiness.get("plan") or {}).get("limit"),
+                              "at": now.isoformat()})
+                c["readinessSeen"] = _seen[-6:]
                 first = (readiness["blockers"] or readiness["info"] or [None])[0]
                 if first:
                     c["autoGate"] = f"{first['label']}: {first['detail']}" if first.get("detail") else first["label"]
@@ -2191,6 +2257,27 @@ class ProposalService:
                 await session.commit()
                 pdict = proposal_dict(row)
         return readiness, pdict, q_final, (min(limit_submit, limit) if limit_submit and limit else limit)
+
+    def _confirmed_limit(self, seen, expected: str | None, *, now: dt.datetime | None = None) -> float | None:
+        """2026-10-08 (IWM: a second refresh lowered the card's limit between the person's view and the click, and the
+        approval was refused as 'changed'): the limit of the recently displayed plan the click confirmed, found by its
+        fingerprint - None when it is unknown or older than the card's validity window. The plan is then re-judged at
+        that limit and must reproduce the SAME fingerprint, so the match stays exact."""
+        if not expected:
+            return None
+        now = now or dt.datetime.now(dt.timezone.utc)
+        valid = float(self.engine.settings.get("techniques.tip.geometry_quote_max_age_seconds", 300.0) or 300.0)
+        for s in reversed(list(seen or [])):
+            if not isinstance(s, dict) or s.get("fingerprint") != expected or not s.get("limit"):
+                continue
+            try:
+                at = dt.datetime.fromisoformat(str(s.get("at")))
+                if (now - at).total_seconds() > valid:
+                    return None
+                return float(s["limit"])
+            except (TypeError, ValueError):
+                return None
+        return None
 
     async def revalidate(self, proposal_id: str, *, via: str = "app") -> dict:
         """Refresh and revalidate a pending card: quotes, geometry, sizing,
@@ -2308,7 +2395,7 @@ class ProposalService:
                            "refresh the card and approve exactly what it shows")
             basis = float(((shown.get("plan") or {}).get("limit") or 0) or 0) or None
             if shown.get("fingerprint") != expected:
-                basis = None
+                basis = self._confirmed_limit((pre.get("context") or {}).get("readinessSeen"), expected)
             readiness, pre, q_final, limit_pre = await self.assess(pre, via=via, half=False, refresh=True,
                                                                    phase="submit", limit_basis=basis)
             if readiness["state"] == "expired":

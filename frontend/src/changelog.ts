@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.20";
+export const APP_VERSION = "0.9.21";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.21",date:"2026-10-08",title:"Small-account setup: fewer fees, one position per stock",items:[
+    {tag:"improved",text:"A small position now sells in fewer orders: trims too small for their own order merge, so every sell is at least the book's minimum (paper: $250)."},
+    {tag:"new",text:"Per-book rules: one position per stock, a minimum trade size (paper: $400) and the book's own 'stale after N sessions' limit (paper: 5)."},
+    {tag:"fixed",text:"Approving a card no longer fails when another refresh re-priced it a moment earlier: the plan you saw is checked again at its own limit."},
+  ]},
   {version:"0.9.20",date:"2026-10-08",title:"Smoother engine: web-server logs written off the main loop",items:[
     {tag:"fixed",text:"The web server's request log no longer writes on the engine's main loop. A slow console write froze the app for 3.7 s on 10-08."},
   ]},
