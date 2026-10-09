@@ -161,13 +161,26 @@ foreach ($d in "skills", "plans") {
 Step "C:\ProgramData\Zargar"
 $pd = Join-Path $Pkg "machine\ProgramData-Zargar"
 if (Test-Path $pd) { robocopy $pd "C:\ProgramData\Zargar" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null }
+# a different folder on this machine: the task helper scripts name the repo by its full path - point them at the new one
+function Repath([string]$text) {
+  $t = [regex]::Replace($text, [regex]::Escape($OldRoot), $RepoPath.Replace('$', '$$'), 'IgnoreCase')
+  return [regex]::Replace($t, [regex]::Escape($OldRoot.Replace('\', '/')), $RepoPath.Replace('\', '/').Replace('$', '$$'), 'IgnoreCase')
+}
+if ($RepoPath -ne $OldRoot -and (Test-Path "C:\ProgramData\Zargar")) {
+  Get-ChildItem "C:\ProgramData\Zargar" -Recurse -File -Include *.ps1, *.py, *.vbs, *.cmd, *.bat, *.json |
+    Where-Object { $_.FullName -notmatch '\\(logs|archive)\\' } | ForEach-Object {
+      $raw = Get-Content $_.FullName -Raw -Encoding utf8
+      $new = Repath $raw
+      if ($new -ne $raw) { Set-Content $_.FullName $new -Encoding utf8 -NoNewline; Step "  repointed $($_.Name) to $RepoPath" }
+    }
+}
 if (-not $SkipTasks) {
   Step "Scheduled tasks (registered DISABLED - RESTORE.md enables them after the checks)"
   $me = "$env:USERDOMAIN\$env:USERNAME"
   foreach ($x in Get-ChildItem (Join-Path $Pkg "machine\tasks") -Filter *.xml) {
     $xml = Get-Content $x.FullName -Raw
     $xml = $xml -replace '<UserId>[^<]*</UserId>', "<UserId>$me</UserId>"
-    if ($RepoPath -ne $OldRoot) { $xml = $xml.Replace($OldRoot, $RepoPath) }
+    if ($RepoPath -ne $OldRoot) { $xml = Repath $xml }
     $xml = $xml -replace '<Enabled>true</Enabled>(\s*<Hidden>|\s*</Settings>)', '<Enabled>false</Enabled>$1'
     try {
       Register-ScheduledTask -TaskName $x.BaseName -Xml $xml -Force | Out-Null
