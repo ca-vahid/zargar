@@ -42,10 +42,20 @@ if (-not (Test-Path (Join-Path $pkg "manifest.json"))) {
   & py -3.13 -m pip install --quiet --disable-pip-version-check cryptography
   if ($LASTEXITCODE -ne 0) { Fail "could not install 'cryptography' (is Python 3.13 installed? run prepare-new-machine.ps1)" }
 
+  # the password file sent from the old machine (ZARGAR-PACKAGE-PASSWORD.txt next to this script) is used first;
+  # otherwise the password is typed or PASTED (right-click / Ctrl+V pastes into the hidden prompt)
+  $given = Get-ChildItem $Here -Filter "ZARGAR-PACKAGE-PASSWORD*.txt" -ErrorAction SilentlyContinue | Select-Object -First 1
   $tries = 0
   while ($true) {
-    $sec = Read-Host "Package password" -AsSecureString
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+    if ($given -and $tries -eq 0) {
+      Write-Host "  using the password file $($given.Name)"
+      $plain = (Get-Content $given.FullName | Where-Object { $_.Trim() } | Select-Object -Last 1)
+    } else {
+      $sec = Read-Host "Package password (paste with right-click or Ctrl+V)" -AsSecureString
+      $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+    }
+    if (-not $plain -or -not $plain.Trim()) { Write-Host "  empty - try again" -ForegroundColor Yellow; $tries++; if ($tries -ge 4) { Fail "no password given" }; continue }
+    Write-Host ("  password has {0} characters (the right one has 32)" -f $plain.Trim().Length)
     $pwFile = Join-Path $env:TEMP ("zpw-" + [guid]::NewGuid().ToString("N") + ".txt")
     Set-Content -Path $pwFile -Value $plain.Trim() -Encoding utf8 -NoNewline
     $plain = $null
