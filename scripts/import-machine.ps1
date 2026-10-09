@@ -189,3 +189,5 @@ if (-not $SkipTasks) {
   }
 }
 Step "Done. Nothing is running yet. Continue with RESTORE.md step 5 (sign-ins, Tailscale, IB Gateway, first start)."
+
+exit 0   # robocopy's 'files copied' (1) must not read as a failure to the caller
