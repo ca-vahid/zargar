@@ -25,6 +25,11 @@ KNOBS = {
     "riskBudgetPerTip": "techniques.tip.risk_budget_per_tip",
     "maxPremiumPerTip": "techniques.tip.max_premium_per_tip",
     "maxOpenRiskPct": "techniques.tip.max_open_risk_pct",     # v0.9 V5.1 (2026-10-05)
+    # 2026-10-08 setup review (small-account costs and concentration)
+    "onePerName": "techniques.tip.one_position_per_name",
+    "minTradeNotional": "techniques.tip.min_trade_notional",
+    "minExitNotional": "techniques.tip.min_exit_order_notional",
+    "swingStaleSessions": "techniques.tip.horizon_swing_sessions",
 }
 
 

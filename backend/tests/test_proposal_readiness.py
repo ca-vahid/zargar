@@ -247,6 +247,27 @@ async def test_changed_plan_or_new_incident_between_refresh_and_submit_is_refuse
     assert not await _orders(eng)
 
 
+async def test_a_click_on_the_displayed_plan_survives_a_concurrent_refresh(rig):
+    """2026-10-08 (IWM): a second refresh lowered the limit between the view and the click; the click confirmed the
+    plan it SAW and is judged again at that plan's limit - the fingerprint still has to match exactly."""
+    eng = rig
+    pdict = await _share_tip(eng, "RDG")
+    shown = await eng.proposals.revalidate(pdict["id"])
+    fp = shown["readiness"]["fingerprint"]
+    # another refresh replaces the stored card with a different plan (a lower limit, as an improved ask would)
+    async with eng.sf() as session:
+        row = await session.get(Proposal, pdict["id"])
+        ctx = dict(row.context or {})
+        rd = dict(ctx["readiness"])
+        rd["fingerprint"] = "feedfacefeedface"
+        ctx["readiness"] = rd
+        row.context = ctx
+        await session.commit()
+    out = await eng.proposals.approve(pdict["id"], via="app", expected=fp)
+    assert not out.get("refused"), out.get("refused")
+    assert out["order"] is not None and (await _card(eng, pdict["id"]))["status"] != "pending"
+
+
 # ---------------------------------------------------------------- expiry, duplicate clicks, refresh = zero orders
 async def test_expired_cards_and_duplicate_clicks_cannot_create_orders(rig):
     eng = rig
