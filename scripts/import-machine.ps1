@@ -26,9 +26,14 @@ $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 function Enc($p) { ($p -replace '[^A-Za-z0-9-]', '-') }        # Claude Code's project-folder name for a path
 
 # ---- 0. prerequisites --------------------------------------------------------------------------------------------
-foreach ($c in "git", "python", "node", "npm", "docker") {
-  if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Fail "$c not found - install it first (RESTORE.md step 1)" }
+foreach ($c in "git", "node", "npm", "docker") {
+  if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Fail "$c not found - install it first (prepare-new-machine.ps1)" }
 }
+# the real Python 3.13 (the py launcher first: a fresh Windows 'python' can be the Microsoft Store stub)
+$Python = $null
+if (Get-Command py -ErrorAction SilentlyContinue) { $Python = (py -3.13 -c "import sys; print(sys.executable)" 2>$null) }
+if (-not $Python) { $Python = (python -c "import sys; print(sys.executable)" 2>$null) }
+if (-not $Python -or -not (Test-Path $Python)) { Fail "Python 3.13 not found - run prepare-new-machine.ps1" }
 docker info *> $null; if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop is not running" }
 if (Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyContinue) { Fail "something already listens on :8420" }
 
@@ -108,7 +113,7 @@ if (-not $SkipDb) {
 # ---- 5. Python + Node -------------------------------------------------------------------------------------------------
 Step "Backend virtualenv (the exact package versions of the old machine)"
 Push-Location (Join-Path $RepoPath "backend")
-if (-not (Test-Path ".venv")) { python -m venv .venv }
+if (-not (Test-Path ".venv")) { & $Python -m venv .venv }
 $freeze = Get-Content (Join-Path $Pkg "machine\pip-freeze-venv.txt") | Where-Object { $_ -and $_ -notmatch '^-e |zargar' }
 $freeze | Set-Content "$env:TEMP\zargar-req.txt" -Encoding utf8
 & .venv\Scripts\python.exe -m pip install --quiet --upgrade pip
@@ -117,7 +122,7 @@ $freeze | Set-Content "$env:TEMP\zargar-req.txt" -Encoding utf8
 if ($LASTEXITCODE -ne 0) { Fail "backend install failed" }
 $fi = Join-Path $Pkg "machine\pip-freeze-venv-ingest.txt"
 if (Test-Path $fi) {
-  if (-not (Test-Path ".venv-ingest")) { python -m venv .venv-ingest }
+  if (-not (Test-Path ".venv-ingest")) { & $Python -m venv .venv-ingest }
   Get-Content $fi | Where-Object { $_ -and $_ -notmatch '^-e |zargar' } | Set-Content "$env:TEMP\zargar-ingest-req.txt" -Encoding utf8
   & .venv-ingest\Scripts\python.exe -m pip install --quiet -r "$env:TEMP\zargar-ingest-req.txt"
   if ($LASTEXITCODE -ne 0) { Warn "the EM ingestion venv did not install cleanly (only the EM video worker needs it)" }
