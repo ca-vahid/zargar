@@ -133,30 +133,45 @@ class _DecReader:
     """File-like source for tarfile: verifies and decrypts chunk by chunk; refuses a truncated stream."""
 
     def __init__(self, src: _PartsReader, aes: AESGCM, base: bytes):
-        self.src, self.aes, self.base, self.buf, self.i, self.done = src, aes, base, b"", 0, False
+        self.src, self.aes, self.base, self.i, self.done = src, aes, base, 0, False
+        self.buf, self.pos = b"", 0                       # current plaintext chunk + read offset (no re-copying)
 
     def read(self, n: int = -1) -> bytes:
-        while not self.done and (n < 0 or len(self.buf) < n):
-            hdr = self.src.read(4)
-            if len(hdr) < 4:
-                raise SystemExit("package is truncated (a part is missing or incomplete)")
-            (ln,) = struct.unpack(">I", hdr)
-            ct = self.src.read(ln)
+        if n is None or n < 0:
+            out = [self.buf[self.pos:]]
+            self.buf, self.pos = b"", 0
+            while not self.done:
+                out.append(self._next())
+            return b"".join(out)
+        out = bytearray()
+        while len(out) < n:
+            if self.pos >= len(self.buf):
+                if self.done:
+                    break
+                self.buf, self.pos = self._next(), 0
+                continue
+            take = min(n - len(out), len(self.buf) - self.pos)
+            out += self.buf[self.pos:self.pos + take]
+            self.pos += take
+        return bytes(out)
+
+    def _next(self) -> bytes:
+        """The next authenticated plaintext chunk (sets `done` on the flagged final chunk)."""
+        hdr = self.src.read(4)
+        if len(hdr) < 4:
+            raise SystemExit("package is truncated (a part is missing or incomplete)")
+        (ln,) = struct.unpack(">I", hdr)
+        ct = self.src.read(ln)
+        try:
+            plain = self.aes.decrypt(_nonce(self.base, self.i, False), ct, MAGIC)
+        except Exception:                                  # noqa: BLE001 - maybe the final chunk
             try:
-                plain = self.aes.decrypt(_nonce(self.base, self.i, False), ct, MAGIC)
-            except Exception:                              # noqa: BLE001 - maybe the final chunk
-                try:
-                    plain = self.aes.decrypt(_nonce(self.base, self.i, True), ct, MAGIC)
-                    self.done = True
-                except Exception:                          # noqa: BLE001
-                    raise SystemExit(f"chunk {self.i} failed authentication: wrong password, or a changed part")
-            self.buf += plain
-            self.i += 1
-        if n < 0:
-            out, self.buf = self.buf, b""
-        else:
-            out, self.buf = self.buf[:n], self.buf[n:]
-        return out
+                plain = self.aes.decrypt(_nonce(self.base, self.i, True), ct, MAGIC)
+                self.done = True
+            except Exception:                              # noqa: BLE001
+                raise SystemExit(f"chunk {self.i} failed authentication: wrong password, or a changed part")
+        self.i += 1
+        return plain
 
 
 def decrypt(first: pathlib.Path, dest: pathlib.Path, password: str) -> None:
