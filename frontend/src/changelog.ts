@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.21";
+export const APP_VERSION = "0.9.22";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.22",date:"2026-10-09",title:"Live market data stream restored",items:[
+    {tag:"fixed",text:"The live Alpaca stream is subscribed again after a restart. Since 10-06 one symbol Alpaca cannot read (a futures name from a tip, a preferred share) made it refuse the whole symbol list, so every restart left all market data on the slower Yahoo poll and armed plans went idle for about two minutes each time Yahoo rate-limited (the 'stale bars' bursts)."},
+    {tag:"improved",text:"Symbols are sent to the stream in groups of 50, so one refused name can no longer silence the rest; a refused group is logged as an error."},
+  ]},
   {version:"0.9.21",date:"2026-10-08",title:"Small-account setup: fewer fees, one position per stock",items:[
     {tag:"improved",text:"A small position now sells in fewer orders: trims too small for their own order merge, so every sell is at least the book's minimum (paper: $250)."},
     {tag:"new",text:"Per-book rules: one position per stock, a minimum trade size (paper: $400) and the book's own 'stale after N sessions' limit (paper: 5)."},
