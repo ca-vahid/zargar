@@ -38,6 +38,22 @@ the database (VAPID push keys and the settings). Install 7-Zip on the old machin
   email or chat;
 - delete it from the drive and the new machine once the restore checks pass.
 
+### Moving it through a cloud drive (Google Drive)
+
+When the package travels through Google Drive it is encrypted first with `scripts\package_crypt.py` (AES-256-GCM, a
+key derived from a random password, 2 GB parts so each upload can be retried):
+
+    backend\.venv\Scripts\python.exe scripts\package_crypt.py encrypt <package-folder> <out-dir> --password-file <file>
+
+The password file is written OUTSIDE the package (keep the password in your password manager; never upload the
+file). Upload the `*.zenc.000`, `.001`, ... parts plus `package_crypt.py` itself. On the new machine, after installing
+Python and `pip install cryptography`:
+
+    python package_crypt.py decrypt <dir>\zargar-package-<stamp>.zenc.000 C:\ZargarMove --password-file <file>
+
+A wrong password, a changed part or a missing part is refused (every 4 MiB chunk is authenticated). Then continue at
+step 4 with the decrypted folder.
+
 ## Step 1 - prepare the new machine (any time before the move)
 
 Install, matching the old machine where it matters:
