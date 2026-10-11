@@ -155,6 +155,7 @@ export const api = {
     request<import("../types").ScoutCandidate[]>("GET", `/api/scout/candidates?days=${days}`),
   scoutLanes: () => request<import("../types").ScoutLane[]>("GET", "/api/scout/lanes"),
   scoutStatus: () => request<import("../types").ScoutStatus>("GET", "/api/scout/status"),
+  scoutReports: (limit = 30) => request<import("../types").ScoutReport[]>("GET", `/api/scout/reports?limit=${limit}`),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

@@ -886,3 +886,12 @@ button.bl-card:active { background: var(--surface-2); }
   .kb-bar .seg.sm { display: flex; flex-wrap: wrap; }
   .kb-search { flex-basis: 100%; max-width: none; }
 }
+
+/* Scout: the day timeline stacks on phones */
+@media (max-width: 639px) {
+  .scout-timeline { grid-template-columns: 1fr 1fr; row-gap: var(--sp-3); }
+  .scout-lane { min-height: 44px; }
+}
+@media (max-width: 639px) {
+  .scout-detail { grid-template-columns: 1fr; }
+}
