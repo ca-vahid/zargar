@@ -78,6 +78,8 @@ EMIT_MS = 250
 # 1-5 letter root, so .TO/.V/.CN/.NE and two-letter foreign suffixes (.L, .MI, .HK are single letters but not A/B/C)
 # stay on Yahoo.
 _US_SHARE_CLASS = re.compile(r"^[A-Z]{1,5}\.[ABC]$")
+_US_ROOT = re.compile(r"^[A-Z]{1,6}$")
+SUB_CHUNK = 50          # symbols per subscribe message: a rejected message loses its chunk, never the whole list
 
 
 def is_us_share_class(symbol: str) -> bool:
@@ -93,6 +95,12 @@ def is_us_equity(symbol: str) -> bool:
     if not s or "=" in s or "/" in s:
         return False
     if "." in s and not is_us_share_class(s):
+        return False
+    # 2026-10-09: anything else Alpaca cannot spell (a futures root from a tip "ES1!", a preferred "ATH-PA") stays on
+    # Yahoo. One such name in the connect-time subscribe made Alpaca answer "400 invalid syntax" and drop the WHOLE
+    # message: from 2026-10-06 every restart left the stream authenticated but subscribed to nothing, all data ran on
+    # the Yahoo poll, and each Yahoo 429 cooldown (90 s) idled every armed plan ("stale bars", 1,945 on 2026-10-09).
+    if "." not in s and not _US_ROOT.match(s):
         return False
     from ..options.occ import is_occ
     return not is_occ(s)
@@ -249,6 +257,12 @@ class AlpacaQuoteFeed(QuoteFeed):
     def _sub_msg(syms: list[str]) -> dict:
         return {"action": "subscribe", "trades": syms, "quotes": syms, "bars": syms}
 
+    def _connect_sub_msgs(self) -> list[dict]:
+        """The subscribe messages sent on every (re)connect: SPY first and alone (the liveness heartbeat must never
+        share a message with a name Alpaca might refuse), then the watched names in chunks."""
+        rest = sorted(s for s in self._symbols if s != "SPY" and is_us_equity(s))
+        return [self._sub_msg(["SPY"])] + [self._sub_msg(rest[i:i + SUB_CHUNK]) for i in range(0, len(rest), SUB_CHUNK)]
+
     async def _run(self) -> None:
         backoff = 1.0
         while True:
@@ -259,7 +273,8 @@ class AlpacaQuoteFeed(QuoteFeed):
                     # SPY is always on the wire as a liveness heartbeat: during
                     # market hours (incl. extended) it prints every second, so
                     # "no message in 60s" is a real outage, not a quiet book.
-                    await ws.send(json.dumps(self._sub_msg(sorted(self._symbols | {"SPY"}))))
+                    for msg in self._connect_sub_msgs():
+                        await ws.send(json.dumps(msg))
                     backoff = 1.0
                     async for raw in ws:
                         self._last_msg = now_ms()
@@ -395,6 +410,10 @@ class AlpacaQuoteFeed(QuoteFeed):
                 log.error("alpaca stream REFUSED (406 connection limited): another "
                           "process holds this account's single SIP stream — find and "
                           "stop the duplicate (second app instance / alpaca_check --ws)")
+            elif code in (400, "400"):
+                # a subscribe message was refused as a whole (a symbol Alpaca cannot spell): its chunk is NOT streaming
+                log.error("alpaca stream REFUSED a subscribe message (400 %s): the names in that message are not "
+                          "streaming and run on the Yahoo poll - find the symbol Alpaca cannot spell", m.get("msg"))
             else:
                 log.warning("alpaca stream error: %s %s", code, m.get("msg"))
         elif t == "success":

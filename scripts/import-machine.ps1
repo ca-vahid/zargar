@@ -26,9 +26,14 @@ $ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 function Enc($p) { ($p -replace '[^A-Za-z0-9-]', '-') }        # Claude Code's project-folder name for a path
 
 # ---- 0. prerequisites --------------------------------------------------------------------------------------------
-foreach ($c in "git", "python", "node", "npm", "docker") {
-  if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Fail "$c not found - install it first (RESTORE.md step 1)" }
+foreach ($c in "git", "node", "npm", "docker") {
+  if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Fail "$c not found - install it first (prepare-new-machine.ps1)" }
 }
+# the real Python 3.13 (the py launcher first: a fresh Windows 'python' can be the Microsoft Store stub)
+$Python = $null
+if (Get-Command py -ErrorAction SilentlyContinue) { $Python = (py -3.13 -c "import sys; print(sys.executable)" 2>$null) }
+if (-not $Python) { $Python = (python -c "import sys; print(sys.executable)" 2>$null) }
+if (-not $Python -or -not (Test-Path $Python)) { Fail "Python 3.13 not found - run prepare-new-machine.ps1" }
 docker info *> $null; if ($LASTEXITCODE -ne 0) { Fail "Docker Desktop is not running" }
 if (Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyContinue) { Fail "something already listens on :8420" }
 
@@ -108,7 +113,7 @@ if (-not $SkipDb) {
 # ---- 5. Python + Node -------------------------------------------------------------------------------------------------
 Step "Backend virtualenv (the exact package versions of the old machine)"
 Push-Location (Join-Path $RepoPath "backend")
-if (-not (Test-Path ".venv")) { python -m venv .venv }
+if (-not (Test-Path ".venv")) { & $Python -m venv .venv }
 $freeze = Get-Content (Join-Path $Pkg "machine\pip-freeze-venv.txt") | Where-Object { $_ -and $_ -notmatch '^-e |zargar' }
 $freeze | Set-Content "$env:TEMP\zargar-req.txt" -Encoding utf8
 & .venv\Scripts\python.exe -m pip install --quiet --upgrade pip
@@ -117,7 +122,7 @@ $freeze | Set-Content "$env:TEMP\zargar-req.txt" -Encoding utf8
 if ($LASTEXITCODE -ne 0) { Fail "backend install failed" }
 $fi = Join-Path $Pkg "machine\pip-freeze-venv-ingest.txt"
 if (Test-Path $fi) {
-  if (-not (Test-Path ".venv-ingest")) { python -m venv .venv-ingest }
+  if (-not (Test-Path ".venv-ingest")) { & $Python -m venv .venv-ingest }
   Get-Content $fi | Where-Object { $_ -and $_ -notmatch '^-e |zargar' } | Set-Content "$env:TEMP\zargar-ingest-req.txt" -Encoding utf8
   & .venv-ingest\Scripts\python.exe -m pip install --quiet -r "$env:TEMP\zargar-ingest-req.txt"
   if ($LASTEXITCODE -ne 0) { Warn "the EM ingestion venv did not install cleanly (only the EM video worker needs it)" }
@@ -156,13 +161,26 @@ foreach ($d in "skills", "plans") {
 Step "C:\ProgramData\Zargar"
 $pd = Join-Path $Pkg "machine\ProgramData-Zargar"
 if (Test-Path $pd) { robocopy $pd "C:\ProgramData\Zargar" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null }
+# a different folder on this machine: the task helper scripts name the repo by its full path - point them at the new one
+function Repath([string]$text) {
+  $t = [regex]::Replace($text, [regex]::Escape($OldRoot), $RepoPath.Replace('$', '$$'), 'IgnoreCase')
+  return [regex]::Replace($t, [regex]::Escape($OldRoot.Replace('\', '/')), $RepoPath.Replace('\', '/').Replace('$', '$$'), 'IgnoreCase')
+}
+if ($RepoPath -ne $OldRoot -and (Test-Path "C:\ProgramData\Zargar")) {
+  Get-ChildItem "C:\ProgramData\Zargar" -Recurse -File -Include *.ps1, *.py, *.vbs, *.cmd, *.bat, *.json |
+    Where-Object { $_.FullName -notmatch '\\(logs|archive)\\' } | ForEach-Object {
+      $raw = Get-Content $_.FullName -Raw -Encoding utf8
+      $new = Repath $raw
+      if ($new -ne $raw) { Set-Content $_.FullName $new -Encoding utf8 -NoNewline; Step "  repointed $($_.Name) to $RepoPath" }
+    }
+}
 if (-not $SkipTasks) {
   Step "Scheduled tasks (registered DISABLED - RESTORE.md enables them after the checks)"
   $me = "$env:USERDOMAIN\$env:USERNAME"
   foreach ($x in Get-ChildItem (Join-Path $Pkg "machine\tasks") -Filter *.xml) {
     $xml = Get-Content $x.FullName -Raw
     $xml = $xml -replace '<UserId>[^<]*</UserId>', "<UserId>$me</UserId>"
-    if ($RepoPath -ne $OldRoot) { $xml = $xml.Replace($OldRoot, $RepoPath) }
+    if ($RepoPath -ne $OldRoot) { $xml = Repath $xml }
     $xml = $xml -replace '<Enabled>true</Enabled>(\s*<Hidden>|\s*</Settings>)', '<Enabled>false</Enabled>$1'
     try {
       Register-ScheduledTask -TaskName $x.BaseName -Xml $xml -Force | Out-Null
@@ -171,3 +189,5 @@ if (-not $SkipTasks) {
   }
 }
 Step "Done. Nothing is running yet. Continue with RESTORE.md step 5 (sign-ins, Tailscale, IB Gateway, first start)."
+
+exit 0   # robocopy's 'files copied' (1) must not read as a failure to the caller
