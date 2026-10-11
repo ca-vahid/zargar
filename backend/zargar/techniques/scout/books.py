@@ -25,14 +25,26 @@ candidate's key (sha256 -> int), so the draw is reproducible and independent of 
     is shown but not required: the twin has no issuer CIK to read the SEC shares fact from);
     a failing draw is redrawn (next seed) up to 5 times, then the twin is recorded as `unmatched`;
   * the twin then follows the identical entry-spread rule, sizing, stop and time exit.
+
+2026-10-11 revision (RANDOM_METHOD): the first twins came from FALLBACK_POOL (COST, DE, PEP, T against small
+and mid-cap earnings movers) - not a matched bar. The pool is now the candidate's PEERS (service.peer_pool):
+for S2 the other companies that filed an 8-K item 2.02 within 3 days of the candidate's release, for S1 the
+other issuers with an officer/director open-market purchase filed in the prior 10 days. A peer has an issuer
+CIK, so the market-cap gate applies to it too; up to 10 redraws. Only when there are fewer than 5 peers does
+the old pool serve (recorded on the twin as `poolKind`).
 """
 from __future__ import annotations
 
 import hashlib
 import random as _random
 
-SIGNALS = ("s1", "s2")
-SIGNAL_OF_KIND = {"s1_insider": "s1", "s2_earnings": "s2"}
+SIGNALS = ("s1", "s1u", "s2")
+# s1u = the S1 cluster that needs UNCLASSIFIED insiders: its own preregistered variant with its own five books
+# since 2026-10-11 (never blended into S1; traded only while `techniques.scout.trade_unclassified` is on).
+SIGNAL_OF_KIND = {"s1_insider": "s1", "s1_unclassified": "s1u", "s2_earnings": "s2"}
+# The random baseline's method tag. A pending twin drawn under an OLDER method is skipped as superseded
+# (desk.attempt_entries) so the random book never mixes two baselines.
+RANDOM_METHOD = "peer-matched random baseline (2026-10-11)"
 RANDOM = "random"
 BOOK_TAG = "scout"
 LANE_SOURCE_PREFIX = "scout:"

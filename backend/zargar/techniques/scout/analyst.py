@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-PROMPT_VERSION = "scout-analyst-v1"
+PROMPT_VERSION = "scout-analyst-v2"      # v2 2026-10-11: same prompt; packet = results exhibit, stronger masking
 
 CLAUDE, GPT = "claude", "gpt"
 LANES = (CLAUDE, GPT)
@@ -86,15 +86,58 @@ def name_variants(names: list[str]) -> list[str]:
     return sorted((v for v in out if len(v) >= 3), key=len, reverse=True)
 
 
-def mask(text: str, *, names: list[str], ticker: str | None, insiders: dict[str, str] | None = None) -> str:
-    """Replace company names (case-insensitive), the ticker (whole word; case-sensitive for <= 2 letters)
-    and insider names with placeholders."""
+# words too common to mask on their own when they happen to open a company name ("First ...", "American ...")
+_GENERIC_FIRST = frozenset("""first american united general national international global pacific atlantic
+northern southern eastern western central standard advanced applied digital energy financial capital royal
+great new north south east west universal premier summit liberty patriot federal mutual public service
+services health healthcare medical technology technologies systems solutions resources industries partners
+bank banc trust home group holdings company""".split())
+_NOT_ALIAS = frozenset({"we", "us", "our", "ours", "company", "the company", "registrant", "the registrant"})
+_ALIAS_PAREN = re.compile(r"\(([^()]{0,240}[“\"']\s*(?:the\s+)?Company\s*[,.]?\s*[”\"'][^()]{0,60})\)", re.I)
+_QUOTED = re.compile(r"[“\"]\s*([^“”\"]{2,40}?)\s*[,.]?\s*[”\"]")
+_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+_URL = re.compile(r"(?:https?://|www\.)[^\s<>()\"']+", re.I)
+
+
+def short_aliases(names: list[str], text: str | None = None) -> list[str]:
+    """Extra spellings a release uses for the company (2026-10-11 - the first packets leaked "Penguin", defined
+    in the release as a short name, and `investors@lambweston.com`):
+      * the FIRST word of each registered name when it is a distinctive word (>= 5 letters, not a generic
+        opener like "First" / "American");
+      * the defined short names in the release's own opening parenthetical - (the "Company", "Acme" or "we");
+      * multi-word names with the spaces removed ("lambweston"), as they appear in domains and file names."""
+    out: set[str] = set()
+    for n in names:
+        words = re.findall(r"[A-Za-z][A-Za-z'&\-]*", str(n or ""))
+        if words and len(words[0]) >= 5 and words[0].lower() not in _GENERIC_FIRST:
+            out.add(words[0])
+    for m in _ALIAS_PAREN.finditer(str(text or "")[:6000]):
+        for q in _QUOTED.findall(m.group(1)):
+            q = q.strip(" ,.")
+            if len(q) >= 3 and q.lower() not in _NOT_ALIAS and not q.startswith("["):
+                out.add(q)
+    for v in name_variants(names):
+        squashed = re.sub(r"[^A-Za-z0-9]", "", v)
+        if " " in v and len(squashed) >= 8:
+            out.add(squashed)
+    return sorted(out, key=len, reverse=True)
+
+
+def mask(text: str, *, names: list[str], ticker: str | None, insiders: dict[str, str] | None = None,
+         aliases: list[str] | None = None) -> str:
+    """Replace company names (case-insensitive; any whitespace between the words, so a name broken across
+    lines is still caught), extra `aliases` (short names), e-mail addresses and URLs (their domain names the
+    company), the ticker (whole word; case-sensitive for <= 2 letters) and insider names with placeholders."""
     s = str(text or "")
+    s = _EMAIL.sub("[EMAIL]", s)
+    s = _URL.sub("[URL]", s)
     for real, alias in sorted((insiders or {}).items(), key=lambda kv: -len(kv[0])):
         if real and len(real) >= 3:
             s = re.sub(re.escape(real), alias, s, flags=re.I)
-    for v in name_variants(names):
-        s = re.sub(r"(?<![A-Za-z0-9])" + re.escape(v) + r"(?![A-Za-z0-9])", "[COMPANY]", s, flags=re.I)
+    variants = sorted({*name_variants(names), *(a for a in (aliases or []) if len(a) >= 3)}, key=len, reverse=True)
+    for v in variants:
+        pat = r"\s+".join(re.escape(w) for w in v.split())
+        s = re.sub(r"(?<![A-Za-z0-9])" + pat + r"(?![A-Za-z0-9])", "[COMPANY]", s, flags=re.I)
     t = (ticker or "").strip().upper()
     if t and t != "?":
         flags = 0 if len(t) <= 2 else re.I
@@ -209,8 +252,10 @@ def build_packet(candidate: dict, *, bars: list, sector: str | None, events: lis
                 names_by_cik[cik] = str(r["insider_name"])
     real_to_alias = {names_by_cik[c]: a for c, a in insiders.items() if c in names_by_cik}
 
+    aliases = short_aliases(company_names, filing_text)
+
     def m(t: str) -> str:
-        return mask(t, names=company_names, ticker=ticker, insiders=real_to_alias)
+        return mask(t, names=company_names, ticker=ticker, insiders=real_to_alias, aliases=aliases)
 
     sources: list[dict] = []
     if kind.startswith("s1"):
@@ -233,27 +278,41 @@ def build_packet(candidate: dict, *, bars: list, sector: str | None, events: lis
     for s in sources:
         s["text"] = m(s["text"])
     return Packet(sources=sources, meta={"kind": kind, "masked": {"ticker": bool(ticker), "names": len(company_names),
-                                                                    "insiders": len(insiders)},
+                                                                    "aliases": len(aliases), "insiders": len(insiders)},
                                          "promptVersion": PROMPT_VERSION})
+
+
+_RESULTS_WORDS = ("results", "quarter", "revenue", "net sales", "net income", "per share", "guidance", "outlook",
+                  "fiscal", "gross margin", "operating income", "ebitda")
+
+
+def _results_score(doc: str) -> int:
+    t = re.sub(r"<[^>]+>", " ", doc[:60000]).lower()
+    return sum(t.count(w) for w in _RESULTS_WORDS)
 
 
 def release_text(submission: str) -> tuple[str | None, list[str]]:
     """(plain text of the earnings release, company names from the header) from an 8-K full submission
-    `.txt`. The release is the first EX-99* document; without one, the 8-K body itself."""
+    `.txt`. The release is the EX-99* document that READS like results (2026-10-11: an 8-K can carry several
+    press releases - PENG's second filing put a CFO appointment first - so the exhibits are scored on
+    results vocabulary and the best one wins, the first on a tie); without an EX-99, the 8-K body itself.
+    The SGML document header (type, sequence, FILE NAME, description) is never part of the text - a file
+    name like `pengq4-26form8k.htm` names the company."""
     import html as _html
     raw = str(submission or "")
     names = re.findall(r"COMPANY CONFORMED NAME:\s*(.+)", raw)
     docs = re.findall(r"<DOCUMENT>(.*?)</DOCUMENT>", raw, flags=re.S)
-    pick = None
+    exhibits = []
     for d in docs:
         t = re.search(r"<TYPE>\s*([^\s<]+)", d)
         if t and t.group(1).upper().startswith("EX-99"):
-            pick = d
-            break
-    if pick is None and docs:
-        pick = docs[0]
+            exhibits.append(d)
+    pick = max(exhibits, key=_results_score) if exhibits else (docs[0] if docs else None)   # max keeps the first on ties
     if pick is None:
         return None, [n.strip() for n in names]
+    cut = re.search(r"<TEXT>", pick, flags=re.I)
+    if cut:
+        pick = pick[cut.end():]
     body = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", pick, flags=re.S | re.I)
     body = re.sub(r"<br\s*/?>|</p>|</div>|</tr>", "\n", body, flags=re.I)
     body = re.sub(r"<[^>]+>", " ", body)
