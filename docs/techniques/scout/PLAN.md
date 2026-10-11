@@ -152,6 +152,33 @@ Constraints: Scout never routes to IBKR; it lives in `zargar/techniques/scout/` 
 4. Whether Scout may later share the IBKR account with Tips (a separate slot) once a lane passes - decided only after
    the 6-10 week evidence, not now.
 
+## 7. First review and screen v2 (2026-10-11, user: "ship the fixes, start the replay, make the adjustments you feel necessary")
+
+Reviewed after two entry sessions (2026-10-08/09): 15 candidates, 8 verdicts (US$0.26 of LLM), 3 distinct trade
+ideas, no exits yet. Nothing here is evidence about edge. What the review found, and what changed (`SCREEN_VERSION
+scout-p1-v2`, analyst packet `scout-analyst-v2`; every change is plumbing or a NEW preregistered variant with its own
+book - no existing threshold was tuned):
+
+| # | Finding | Change |
+|---|---|---|
+| 1 | PENG filed two 8-Ks with item 2.02 for one release: two candidates, two verdict pairs, a double position in the screen book, two random twins, and two of the day's two top-decile ranks | **One S2 event per company and day 0** (`screens.dedupe_reactions`, earliest accepted filing; a company already recorded for that day 0 is never recorded again) |
+| 2 | The second PENG packet carried a CFO-appointment press release, not the results | `analyst.release_text` scores every EX-99 exhibit on results vocabulary and takes the best; the SGML document header (file name) is never in the text |
+| 3 | 3 of 4 packets named the company ("Penguin" as a defined short name, `pengq4-26...htm`, `investors@lambweston.com`) | Masking also covers the release's own defined short names, a distinctive first word, names broken across lines, squashed names, e-mail addresses and URLs |
+| 4 | APOG (both models: keep) was lost to a RiskGate stale-quote refusal | Already fixed in 0.9.19 (the entry returns to pending and retries at the next 15-minute step) |
+| 5 | The random twins were megacaps (COST, DE, PEP, T) against small/mid-cap earnings movers | **Peer-matched baseline** (`service.peer_pool`, `books.RANDOM_METHOD`): the twin is another company with the same kind of event in the same days, bound by the market-cap gate too. Pending twins of the old method are skipped as `superseded` |
+| 6 | S1 (the core signal) cannot be judged: ~6 opportunistic clusters a month in 2026 BEFORE gates, against ~80 that need unclassified insiders; all 5 clusters of the week were unclassified, tracked but not traded | **The unclassified variant trades in its own five books** (`s1u_*`, `trade_unclassified` on) - a separate preregistered lane, never blended into S1 |
+| 7 | TSM "cluster": ~30 executives each buying $2k-$11k on one day; purchase rows of $1bn+ (filer typos) exist | `s1_min_insider_value_usd` $10k (an insider counts only with at least that much bought in the window) and `s1_max_row_value_usd` $500M (a larger single row is dropped) |
+| 8 | The 16:30 report marked open positions at a thin after-hours bid (PENG 75.65 vs a 76.28 close) | Outside the regular session the mark is the regular-session price |
+| 9 | Validation step 1 (history, screens only) had been skipped | `tools/scout_replay.py` (P2): S1 2018-2026 and S2 2023-2026, after costs, by year, with SPY-relative and month-clustered statistics and a variants log (`replay/VARIANTS.jsonl`) |
+
+Consequences for the run: the two-week checkpoint clock restarts at 2026-10-12 for the lanes whose inputs changed
+(S2 packets, the random book, the new `s1u` books). The PENG duplicate (candidate `4d3feb38`, the 16:34 ET filing)
+stays on the record as entered; lane comparisons must count that event once.
+
+Still open: an earnings-in-hold source that is not a projection; S2's "top decile" is ranked inside ONE day's
+releases (1-2 names in a quiet week, dozens in peak season); costs at this size (US$1 per order on US$600 is 0.33%
+round trip before the spread).
+
 ## 6. User decisions (2026-10-07)
 
 0. **Entry-spread rule** (desk, 2026-10-07): 10:00 ET live-quote judgement, re-check every 15 min to 11:30 ET,

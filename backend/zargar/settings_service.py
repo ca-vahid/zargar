@@ -571,7 +571,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.scout.stop_atr_mult": 2.0,            # stop = fill - N x daily ATR
     "techniques.scout.atr_days": 14,
     "techniques.scout.fee_per_order": 1.0,            # USD per filled order, charged in Scout's accounting
-    "techniques.scout.trade_unclassified": False,     # s1_unclassified candidates are tracked, never traded
+    "techniques.scout.trade_unclassified": True,      # 2026-10-11: s1_unclassified clusters trade in their OWN s1u books (never blended into S1)
+    "techniques.scout.s1_min_insider_value_usd": 10_000.0,  # 2026-10-11: an insider counts toward a cluster only with >= this bought in the window (0 = off)
+    "techniques.scout.s1_max_row_value_usd": 500_000_000.0,  # 2026-10-11: a single purchase row above this is a filer typo and is dropped (0 = off)
     "techniques.scout.random_lane_enabled": True,     # the random matched baseline book
     "techniques.scout.random_max_offset_sessions": 4,  # random entry date = matched entry + U{0..N} sessions
     "techniques.scout.report_at": "16:30",            # ET: end-of-day report

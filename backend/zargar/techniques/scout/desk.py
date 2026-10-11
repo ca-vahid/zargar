@@ -127,7 +127,7 @@ class ScoutDesk:
         kinds = []
         if bool(self.s("s1_insider_enabled", True)):
             kinds.append(S1_KIND)
-            if bool(self.s("trade_unclassified", False)):
+            if bool(self.s("trade_unclassified", True)):
                 kinds.append(S1_UNCLASSIFIED_KIND)
         if bool(self.s("s2_earnings_enabled", True)):
             kinds.append(S2_KIND)
@@ -362,11 +362,19 @@ class ScoutDesk:
         ok = [t for t, g, _ in past if (g or {}).get("price", {}).get("status") == "pass"
               and (g or {}).get("adv", {}).get("status") == "pass"]
         recent = {t for t, _, d in past if d >= lo30}
-        pool = bk.build_pool(ok, recent)
+        # 2026-10-11: the twin comes from the candidate's PEERS (same kind of event, same days) - a matched bar;
+        # the old own-history / fixed-megacap pool serves only when there are fewer than 5 peers.
+        peers: dict[str, str] = {}
+        with contextlib.suppress(Exception):
+            peers = {t: c for t, c in await self.svc.peer_pool(cd, now) if t not in recent}
+        if len(peers) >= 5:
+            pool, pool_kind, tries = sorted(peers), "peers", 10
+        else:
+            pool, pool_kind, tries, peers = bk.build_pool(ok, recent), "fallback", 5, {}
         max_off = int(self.s("random_max_offset_sessions", 4))
         hold = self._hold(cd["kind"])
         tried = []
-        for attempt in range(5):
+        for attempt in range(tries):
             pick = bk.draw_random(cd["key"], pool, exclude={cd["ticker"], *tried}, max_offset=max_off, attempt=attempt)
             if pick is None:
                 break
@@ -374,18 +382,20 @@ class ScoutDesk:
             tried.append(ticker)
             entry = add_sessions(cd["entryDate"], off)
             exit_date = add_sessions(entry, hold - 1)
-            gates = await self.svc.evaluate_gates(RANDOM_KIND, ticker, None, now, entry, exit_date, now)
+            cik = peers.get(ticker)
+            gates = await self.svc.evaluate_gates(RANDOM_KIND, ticker, cik, now, entry, exit_date, now)
             gates.pop("spread", None)
             gates["spread"] = {"status": "unknown", "why": f"pending: judged live at the entry attempt ({entry})",
                                "value": None, "threshold": float(self.s("gate_max_spread_pct", 0.5))}
-            if pre_entry_status({k: v for k, v in gates.items() if k != "marketCap"}) != "pass":
+            # a peer has a CIK, so the market-cap gate binds it like the candidate; a fallback name has none
+            if pre_entry_status(gates if cik else {k: v for k, v in gates.items() if k != "marketCap"}) != "pass":
                 continue
             cid = new_id()
             evidence = {"matchedCandidateId": cd["id"], "matchedKey": cd["key"], "matchedTicker": cd["ticker"],
                         "matchedKind": cd["kind"], "seedAttempt": attempt, "offsetSessions": off,
-                        "poolSize": len(pool), "rejectedDraws": tried[:-1], "exitDate": exit_date,
-                        "method": "books.py random matched baseline (2026-10-07)"}
-            row = ScoutCandidate(id=cid, key=key, kind=RANDOM_KIND, ticker=ticker, issuer_cik=None, signal_ts=now,
+                        "poolSize": len(pool), "poolKind": pool_kind, "rejectedDraws": tried[:-1],
+                        "exitDate": exit_date, "method": bk.RANDOM_METHOD}
+            row = ScoutCandidate(id=cid, key=key, kind=RANDOM_KIND, ticker=ticker, issuer_cik=cik, signal_ts=now,
                                  signal_date=now.date().isoformat(), entry_date=entry, status=overall(gates),
                                  evidence=evidence, gates=gates, config=self.svc.config_snapshot(),
                                  created_at=utcnow(), updated_at=utcnow())
@@ -426,6 +436,18 @@ class ScoutDesk:
         out = {"at": now.isoformat(), "candidates": len(groups), "entered": 0, "skipped": 0, "retry": 0, "unfilled": 0}
         for cid, es in groups.items():
             ticker = es[0].ticker
+            if any(e.book == bk.RANDOM for e in es):
+                # a twin drawn under an older baseline method never enters (the random book holds ONE method)
+                async with self.engine.sf() as s:
+                    c = await s.get(ScoutCandidate, cid)
+                method = ((c.evidence or {}).get("method") if c is not None else None)
+                if method != bk.RANDOM_METHOD:
+                    for e in es:
+                        await self._finish(e.id, status="skipped", code="superseded",
+                                           reason=f"superseded: drawn under '{method}', the baseline is now "
+                                                  f"'{bk.RANDOM_METHOD}'")
+                    out["skipped"] += len(es)
+                    continue
             q = await self.quote_of(ticker) if es[0].entry_date == today else None
             sp = er.spread_pct((q or {}).get("bid"), (q or {}).get("ask"))
             seen = any(a.get("spreadPct") is not None for a in (es[0].attempts or []))
@@ -618,9 +640,15 @@ class ScoutDesk:
         return n
 
     def _mark(self, ticker: str) -> float | None:
+        """Open positions are marked at the bid while the regular session trades. Outside it (the 16:30 ET
+        report) the after-hours bid of a mid-cap is thin and low - 2026-10-09 it marked PENG at 75.65 against a
+        76.28 close - so the mark is the regular-session price then."""
         q = self.engine.quotes.get(ticker)
         if q is None:
             return None
+        reg = float(getattr(q, "reg_price", 0) or 0)
+        if reg > 0 and str(getattr(q, "session", "") or "") in ("post", "closed", "pre"):
+            return reg
         return float(q.bid) if q.bid and q.bid > 0 else (float(q.last) if q.last else None)
 
     async def lanes(self) -> list[dict]:

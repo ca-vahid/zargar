@@ -121,6 +121,41 @@ def test_release_text_picks_the_exhibit():
     assert names == ["ACME WIDGETS INC"]
 
 
+def test_release_text_prefers_the_results_exhibit_and_drops_the_file_name():
+    # PENG 2026-10-06: the second 8-K listed a CFO appointment release before anything about results
+    raw = ("<SEC-HEADER>COMPANY CONFORMED NAME:\t\t\tACME WIDGETS INC\n</SEC-HEADER>"
+           "<DOCUMENT><TYPE>8-K\n<TEXT>cover</TEXT></DOCUMENT>"
+           "<DOCUMENT><TYPE>EX-99.1\n<SEQUENCE>2\n<FILENAME>acmwcfo991.htm\n<DESCRIPTION>EX-99.1\n<TEXT>"
+           "<p>Acme appoints Jane Doe as Chief Financial Officer</p></TEXT></DOCUMENT>"
+           "<DOCUMENT><TYPE>EX-99.2\n<SEQUENCE>3\n<FILENAME>acmwq4form8kex992.htm\n<DESCRIPTION>EX-99.2\n<TEXT>"
+           "<p>Fourth quarter results: revenue rose 12%, net income per share $1.10; fiscal outlook raised</p>"
+           "</TEXT></DOCUMENT>")
+    text, _ = an.release_text(raw)
+    assert "revenue rose 12%" in text and "appoints" not in text
+    assert "acmw" not in text.lower() and "EX-99" not in text
+
+
+def test_masking_catches_short_names_domains_and_broken_lines():
+    release = ("Acme\nWidgets Reports Record Quarter\nBoise - Acme Widgets, Inc. (“Acme Widgets,” “Widgetco,” “we,” "
+               "“us,” or the “Company”) (Nasdaq: ACMW) today reported. Widgetco grew. Contact: ir@acmewidgets.com, "
+               "https://investors.acmewidgets.com/news")
+    names = ["ACME WIDGETS INC"]
+    aliases = an.short_aliases(names, release)
+    assert "Widgetco" in aliases and "acmewidgets" in [a.lower() for a in aliases]
+    assert not {"we", "us", "Company"} & set(aliases)
+    m = an.mask(release, names=names, ticker="ACMW", aliases=aliases)
+    assert "acme" not in m.lower() and "widgetco" not in m.lower() and "ACMW" not in m
+    assert "[EMAIL]" in m and "[URL]" in m and m.startswith("[COMPANY] Reports Record Quarter")
+    # a generic opening word is never masked on its own
+    assert "FIRST" not in an.short_aliases(["FIRST NATIONAL BANCORP"], None)
+    assert an.mask("the first quarter", names=["FIRST NATIONAL BANCORP"], ticker=None,
+                   aliases=an.short_aliases(["FIRST NATIONAL BANCORP"], None)) == "the first quarter"
+    cd = {"id": "c", "kind": "s2_earnings", "ticker": "ACMW", "entryDate": "2026-10-08", "config": {}, "evidence": {}}
+    p = an.build_packet(cd, bars=[], sector=None, events=[], filing_text=release, company_names=names)
+    assert "acme" not in p.render().lower() and "widgetco" not in p.render().lower()
+    assert p.meta["masked"]["aliases"] >= 2 and p.meta["promptVersion"] == "scout-analyst-v2"
+
+
 def test_cost_and_projection():
     rates = {"claude-opus-5-5": {"in": 4.0, "out": 20.0, "cacheRead": 0.2, "cacheWrite": 5.0},
              "gpt-6.1-sol": {"in": 2.0, "out": 10.0}}
@@ -135,8 +170,10 @@ def test_cost_and_projection():
 def test_books_lanes_and_random_draw():
     assert bk.lanes_for("s1_insider", {"claude": "keep", "gpt": None}) == ["s1_screen", "s1_claude_keep"]
     assert bk.lanes_for("s2_earnings", {"claude": "drop", "gpt": "keep"}) == ["s2_screen", "s2_claude_drop", "s2_gpt_keep"]
-    assert bk.lanes_for("s1_unclassified", {}) == [] and bk.lanes_for("random", {}) == []
-    assert len(bk.all_lanes()) == 11 and bk.lane_label("s1_claude_keep") == "Scout S1 claude keep"
+    # 2026-10-11: the unclassified variant has its OWN five books (never the S1 books)
+    assert bk.lanes_for("s1_unclassified", {"claude": "keep", "gpt": "drop"}) == ["s1u_screen", "s1u_claude_keep", "s1u_gpt_drop"]
+    assert bk.lanes_for("random", {}) == [] and bk.lane_label("s1u_screen") == "Scout S1U screen"
+    assert len(bk.all_lanes()) == 16 and bk.lane_label("s1_claude_keep") == "Scout S1 claude keep"
     assert bk.lane_label("s2_gpt_drop") == "Scout S2 gpt drop" and bk.lane_label("random") == "Scout random"
     pool = bk.build_pool(["AAA", "BBB"], set())
     assert len(pool) >= 20 and "AAA" in pool                     # thin pool topped up
@@ -521,3 +558,59 @@ async def test_stale_quote_refusal_retries_at_the_next_attempt(scout, engine, mo
     async with engine.sf() as s:
         es = (await s.execute(select(ScoutEntry))).scalars().all()
     assert all(e.status == "entered" for e in es), (r1, r2, [(e.status, e.reason) for e in es])
+
+
+async def test_random_twin_is_drawn_from_peers_and_old_method_twins_never_enter(scout, engine):
+    """2026-10-11: the baseline twin comes from the candidate's PEERS (with a CIK, so the market-cap gate binds);
+    a pending twin drawn under the older megacap-pool method is skipped as superseded."""
+    svc, today = scout
+    svc.desk.claude_client = FakeClaude(KEEP)
+    svc.desk.openai_client = FakeOpenAI(KEEP)
+    await engine.settings.set("techniques.scout.random_max_offset_sessions", 0)
+    peers = [("MSFT", "11"), ("NVDA", "12"), ("AMD", "13"), ("INTC", "14"), ("QCOM", "15"), ("TXN", "16")]
+
+    async def peer_pool(cd, now):
+        return peers
+    svc.peer_pool = peer_pool
+    cid = await add_candidate(engine, entry=today)
+    out = await svc.desk.prepare_day(at(today.isoformat(), "09:00"))
+    assert out["random"] == 1
+    async with engine.sf() as s:
+        twin = (await s.execute(select(ScoutCandidate).where(ScoutCandidate.kind == "random"))).scalar_one()
+    assert twin.evidence["poolKind"] == "peers" and twin.evidence["method"] == bk.RANDOM_METHOD
+    assert (twin.ticker, twin.issuer_cik) in peers and twin.gates["marketCap"]["status"] == "pass"
+    # an old-method twin still pending from before the change
+    old = new_id()
+    async with engine.sf() as s:
+        s.add(ScoutCandidate(id=old, key="random:old", kind="random", ticker="COST", issuer_cik=None,
+                             signal_ts=at(today.isoformat(), "09:00"), signal_date=today.isoformat(),
+                             entry_date=today.isoformat(), status="unknown", gates={}, config={},
+                             evidence={"method": "books.py random matched baseline (2026-10-07)", "matchedCandidateId": cid}))
+        s.add(ScoutEntry(id=new_id(), candidate_id=old, book="random", ticker="COST", entry_date=today.isoformat(),
+                         hold_sessions=10, status="pending", attempts=[], config={}))
+        await s.commit()
+    await wait_for(lambda: engine.quotes.get(twin.ticker) is not None and engine.quotes.get("AAPL") is not None)
+    await svc.desk.attempt_entries(at(today.isoformat(), "10:00"))
+    async with engine.sf() as s:
+        rnd = {e.ticker: e for e in (await s.execute(select(ScoutEntry).where(ScoutEntry.book == "random"))).scalars().all()}
+    assert rnd["COST"].status == "skipped" and rnd["COST"].reason.startswith("superseded:")
+    assert rnd[twin.ticker].status == "entered"
+
+
+async def test_unclassified_cluster_trades_in_its_own_books(scout, engine):
+    """2026-10-11: an s1_unclassified cluster enters the s1u books - never the S1 books - and only while
+    `trade_unclassified` is on."""
+    svc, today = scout
+    svc.desk.claude_client = FakeClaude(KEEP)
+    svc.desk.openai_client = FakeOpenAI(DROP)
+    await engine.settings.set("techniques.scout.random_lane_enabled", False)
+    await engine.settings.set("techniques.scout.trade_unclassified", False)
+    await add_candidate(engine, kind="s1_unclassified", entry=today)
+    assert (await svc.desk.prepare_day(at(today.isoformat(), "09:00")))["candidates"] == 0
+    await engine.settings.set("techniques.scout.trade_unclassified", True)
+    out = await svc.desk.prepare_day(at(today.isoformat(), "09:00"))
+    assert out["eligible"] == 1 and out["entriesPlanned"] == 3
+    async with engine.sf() as s:
+        books = sorted(e.book for e in (await s.execute(select(ScoutEntry))).scalars().all())
+    assert books == ["s1u_claude_keep", "s1u_gpt_drop", "s1u_screen"]
+    assert {l["lane"] for l in await svc.desk.lanes()} == set(bk.all_lanes())

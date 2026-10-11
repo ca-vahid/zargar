@@ -31,7 +31,7 @@ from .edgar import DEFAULT_UA, EdgarClient, EdgarError
 from .form4 import ET
 from .gates import (GateParams, gate_adv, gate_corporate_actions, gate_earnings_in_hold, gate_market_cap,
                     gate_price, gate_spread, gate_tips_mention, overall)
-from .screens import (S1_KIND, S1_UNCLASSIFIED_KIND, S2_KIND, S1Params, S2Params, add_sessions,
+from .screens import (S1_KIND, S1_UNCLASSIFIED_KIND, S2_KIND, S1Params, S2Params, add_sessions, dedupe_reactions,
                       measure_reaction, reaction_day0, s1_purchases, screen_s1, screen_s2)
 
 log = logging.getLogger("zargar.scout")
@@ -77,7 +77,9 @@ class ScoutService:
 
     def s1_params(self) -> S1Params:
         return S1Params(window_days=int(self.s("s1_window_days", 10)), min_insiders=int(self.s("s1_min_insiders", 2)),
-                        min_value_usd=float(self.s("s1_min_value_usd", 100_000.0)))
+                        min_value_usd=float(self.s("s1_min_value_usd", 100_000.0)),
+                        min_insider_value_usd=float(self.s("s1_min_insider_value_usd", 10_000.0) or 0),
+                        max_row_value_usd=float(self.s("s1_max_row_value_usd", 500_000_000.0) or 0))
 
     def s2_params(self) -> S2Params:
         return S2Params(top_pct=float(self.s("s2_top_pct", 10.0)), volume_mult=float(self.s("s2_volume_mult", 2.0)),
@@ -264,13 +266,27 @@ class ScoutService:
             bars = await self.daily_bars(ticker, start, end)
             reactions.append(measure_reaction({"ticker": ticker, "accession": e.accession,
                                                "acceptance_ts": e.acceptance_ts}, bars, bench_cache or [], p))
+        reactions, duplicates = dedupe_reactions(reactions)       # one event per company and day 0
         hits, verdicts = screen_s2(reactions, p)
+        verdicts = duplicates + verdicts
+        dup_of: dict[str, list[str]] = {}
+        for d in duplicates:
+            dup_of.setdefault(d["duplicateOf"], []).append(d["accession"])
         recent = [h for h in hits if now - dt.timedelta(days=lookback) <= h.signal_ts <= now]
+        # a company already recorded for this day 0 under ANOTHER accession (before the dedupe existed, or a
+        # late second 8-K) is the same event - never a second candidate
+        async with self.engine.sf() as s:
+            prior = (await s.execute(select(ScoutCandidate.ticker, ScoutCandidate.evidence, ScoutCandidate.key).where(
+                ScoutCandidate.kind == S2_KIND,
+                ScoutCandidate.signal_date >= (now.date() - dt.timedelta(days=lookback + 10)).isoformat()))).all()
+        seen_events = {(str(t).upper(), (e or {}).get("day0")): k for t, e, k in prior}
         hold = int(self.s("s2_hold_sessions", 10))
         written = 0
         for h in recent:
             r = h.reaction
-            evidence = {"accession": r.accession, "acceptanceTs": r.acceptance_ts.isoformat(), "day0": r.day0,
+            if seen_events.get((str(r.ticker).upper(), r.day0), h.key) != h.key:
+                continue
+            evidence = {"accession": r.accession, "otherAccessions": dup_of.get(r.accession, []), "acceptanceTs": r.acceptance_ts.isoformat(), "day0": r.day0,
                         "day1": r.day1, "abnormalReturn": r.abnormal_return, "stockReturn": r.stock_return,
                         "benchReturn": r.bench_return, "benchmark": bench_sym, "volumeRatio": r.volume_ratio,
                         "rank": h.rank, "of": h.of, "cutoffRank": h.cutoff_rank,
@@ -278,7 +294,8 @@ class ScoutService:
             cik = next((e.issuer_cik for e in events if e.accession == r.accession), None)
             if await self._record(S2_KIND, h.key, r.ticker, cik, h.signal_ts, h.entry_date, evidence, now):
                 written += 1
-        return {"events": len(events), "measured": sum(1 for r in reactions if r.abnormal_return is not None),
+        return {"events": len(events), "duplicates": len(duplicates),
+                "measured": sum(1 for r in reactions if r.abnormal_return is not None),
                 "skipped": skipped[:50], "hits": len(hits), "recent": len(recent), "new": written,
                 "verdicts": verdicts[:200]}
 
@@ -506,6 +523,39 @@ class ScoutService:
         except Exception:  # pragma: no cover
             return None
         return [{"signalId": i, "source": src, "at": at.isoformat()} for i, src, at in rows]
+
+    async def peer_pool(self, cd: dict, now: dt.datetime) -> list[tuple[str, str]]:
+        """(ticker, issuer CIK) PEERS of a candidate for the random matched baseline (books.py, 2026-10-11):
+        S2 -> the other companies with an 8-K item 2.02 accepted within 3 days of the candidate's release;
+        S1 -> the other issuers with an officer/director open-market purchase filed in the 10 days before the
+        signal. Never the candidate itself; only what was public at `now`."""
+        kind, me = str(cd.get("kind") or ""), str(cd.get("ticker") or "").upper()
+        out: dict[str, str] = {}
+        if kind == S2_KIND:
+            acc = (cd.get("evidence") or {}).get("acceptanceTs")
+            try:
+                at = dt.datetime.fromisoformat(acc) if acc else now
+            except ValueError:
+                at = now
+            async with self.engine.sf() as s:
+                rows = (await s.execute(select(ScoutFiling.ticker, ScoutFiling.issuer_cik).where(
+                    ScoutFiling.form_type == "8-K", ScoutFiling.items.like("%2.02%"),
+                    ScoutFiling.acceptance_ts >= at - dt.timedelta(days=3),
+                    ScoutFiling.acceptance_ts <= min(now, at + dt.timedelta(days=3))))).all()
+        else:
+            sig = dt.date.fromisoformat(str(cd.get("signalDate") or now.date().isoformat())[:10])
+            async with self.engine.sf() as s:
+                rows = (await s.execute(select(ScoutInsiderTrade.ticker, ScoutInsiderTrade.issuer_cik).where(
+                    ScoutInsiderTrade.trans_code == "P",
+                    ScoutInsiderTrade.filed_date >= (sig - dt.timedelta(days=10)).isoformat(),
+                    ScoutInsiderTrade.filed_date <= sig.isoformat(),
+                    or_(ScoutInsiderTrade.is_officer.is_(True), ScoutInsiderTrade.is_director.is_(True)))
+                    .distinct())).all()
+        for ticker, cik in rows:
+            t = (ticker or (await self.ticker_for_cik(cik or "")) or "").upper()
+            if t and t != me and t.isalpha() and cik and str(cik) != str(cd.get("issuerCik") or ""):
+                out.setdefault(t, str(cik))
+        return sorted(out.items())
 
     async def _ticker_for_cik(self, cik: str) -> str | None:
         if self._tickers is None:
