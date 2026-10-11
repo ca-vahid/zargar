@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.22";
+export const APP_VERSION = "0.9.23";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.23",date:"2026-10-11",title:"Scout: first-review fixes",items:[
+    {tag:"fixed",text:"Scout counts one earnings event per company and day. A company that files two 8-Ks for the same results (PENG on 10-06) no longer becomes two candidates, two positions and two of the day's top ranks."},
+    {tag:"fixed",text:"The Scout analysts read the results press release. When a filing carries several releases the one about results is chosen, where before the first exhibit was taken (once a CFO announcement)."},
+    {tag:"fixed",text:"Company names are hidden more thoroughly in what the Scout analysts read: short names the release defines, e-mail addresses, web links and file names no longer give the company away."},
+    {tag:"improved",text:"Scout's random comparison book now draws from companies with the same kind of event in the same days (and the same size gate), where before it drew from a fixed list of very large companies. Twins drawn the old way are skipped."},
+    {tag:"new",text:"Insider clusters that need insiders without three years of trading history now trade in their own five Scout books (S1U), kept apart from the strict insider screen, which fires only a few times a month."},
+    {tag:"improved",text:"An insider counts toward a Scout cluster only with at least $10,000 bought, and purchase rows above $500M (filing typos) are ignored."},
+    {tag:"improved",text:"Scout's end-of-day report values open positions at the regular-session price after the close; the after-hours bid it used before was too low for thinly traded names."},
+    {tag:"new",text:"Scout historical replay tool: both screens replayed on past data without the model, after costs, by year (reports under docs/techniques/scout/replay)."},
+  ]},
   {version:"0.9.22",date:"2026-10-09",title:"Live market data stream restored",items:[
     {tag:"fixed",text:"The live Alpaca stream is subscribed again after a restart. Since 10-06 one symbol Alpaca cannot read (a futures name from a tip, a preferred share) made it refuse the whole symbol list, so every restart left all market data on the slower Yahoo poll and armed plans went idle for about two minutes each time Yahoo rate-limited (the 'stale bars' bursts)."},
     {tag:"improved",text:"Symbols are sent to the stream in groups of 50, so one refused name can no longer silence the rest; a refused group is logged as an error."},

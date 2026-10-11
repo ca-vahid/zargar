@@ -10,4 +10,6 @@ P3 (`desk.py`, `analyst.py`, `books.py`, `entry.py`): masked fact packets judged
 (filter + explainer), research books on the SIM executor only (shadow kind), the preregistered
 10:00-11:30 ET entry-spread rule, managed stops/time exits, after-cost lane accounting and the daily report.
 """
-SCREEN_VERSION = "scout-p1-v1"
+# v2 (2026-10-11): one S2 event per company and day 0; S1 per-insider minimum + typo-row cap; the unclassified
+# S1 variant trades in its own books; peer-matched random baseline. PLAN.md section 7.
+SCREEN_VERSION = "scout-p1-v2"

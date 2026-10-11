@@ -69,6 +69,12 @@ class S1Params:
     min_insiders: int = 2
     min_value_usd: float = 100_000.0
     roles: tuple[str, ...] = ("officer", "director")
+    # 2026-10-11 (screen v2): an insider counts toward the cluster only with >= this much bought inside the
+    # window (the TSM "cluster" of 2026-10-08 was ~30 executives buying $2k-$11k each on one day - a plan,
+    # not conviction); a single row above `max_row_value_usd` is a filer typo (rows of $1bn+ exist) and is
+    # dropped. 0 = off (the v1 behaviour).
+    min_insider_value_usd: float = 0.0
+    max_row_value_usd: float = 0.0
 
 
 @dataclass
@@ -119,6 +125,8 @@ def s1_purchases(rows: Iterable[Mapping], p: S1Params) -> list[dict]:
         if (r.get("acq_disp") or "A") != "A":
             continue
         if not plausible_date(r):
+            continue
+        if p.max_row_value_usd > 0 and float(r.get("value") or 0.0) > p.max_row_value_usd:
             continue
         out.append(dict(r))
     return out
@@ -173,6 +181,17 @@ def screen_s1(purchases: Iterable[Mapping], classify, p: S1Params, *,
                         opp.add(cik)
                     elif c.label == UNCLASSIFIED:
                         unc.add(cik)
+                if p.min_insider_value_usd > 0:
+                    bought: dict[str, float] = defaultdict(float)
+                    counted: set = set()
+                    for r in members:
+                        rk = (r.get("row_key") or id(r), str(r["insider_cik"]))
+                        if rk not in counted:
+                            counted.add(rk)
+                            bought[str(r["insider_cik"])] += float(r.get("value") or 0.0)
+                    small = {c for c, v in bought.items() if v < p.min_insider_value_usd}
+                    opp -= small
+                    unc -= small
                 qualifying = opp | (unc if include_unclassified else set())
                 if len(qualifying) < p.min_insiders:
                     continue
@@ -291,6 +310,31 @@ class S2Hit:
     @property
     def key(self) -> str:
         return f"{S2_KIND}:{self.reaction.accession}"
+
+
+def dedupe_reactions(reactions: Iterable[S2Reaction]) -> tuple[list[S2Reaction], list[dict]]:
+    """One earnings event per company and day 0. A company can file SEVERAL 8-Ks carrying item 2.02 for one
+    release (PENG, 2026-10-06: the results 8-K at 16:27 ET and a second one at 16:34 that also announced a new
+    CFO) - counted apart they took two ranks of the day's top decile and two positions. The EARLIEST accepted
+    filing is the event; the others are returned for the record. -> (kept, dropped notes)."""
+    reactions = list(reactions)
+    best: dict[tuple[str, str], S2Reaction] = {}
+    for r in reactions:
+        k = (str(r.ticker).upper(), r.day0)
+        cur = best.get(k)
+        if cur is None or (r.acceptance_ts, r.accession) < (cur.acceptance_ts, cur.accession):
+            best[k] = r
+    kept_ids = {id(r) for r in best.values()}
+    kept, dropped = [], []
+    for r in reactions:
+        if id(r) in kept_ids:
+            kept.append(r)
+        else:
+            first = best[(str(r.ticker).upper(), r.day0)]
+            dropped.append({"accession": r.accession, "ticker": r.ticker, "day0": r.day0, "selected": False,
+                            "why": f"duplicate 8-K for the same release - the event is {first.accession}",
+                            "duplicateOf": first.accession})
+    return kept, dropped
 
 
 def screen_s2(reactions: Iterable[S2Reaction], p: S2Params) -> tuple[list[S2Hit], list[dict]]:

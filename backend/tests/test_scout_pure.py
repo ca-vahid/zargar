@@ -238,6 +238,24 @@ def test_s1_unclassified_tracked_separately_and_one_hit_per_cluster():
     assert screen_s1(rows, lab, p, include_unclassified=True)[0].anchor_date == "2026-10-02"
 
 
+def test_s1_per_insider_minimum_and_typo_row_cap():
+    # 2026-10-08 TSM: ~30 executives buying a few thousand dollars each on one day summed past $100k
+    plan = [buy(str(i), "2026-10-07", 4_000) for i in range(30)]
+    v1, v2 = S1Params(), S1Params(min_insider_value_usd=10_000, max_row_value_usd=500_000_000)
+    assert len(screen_s1(s1_purchases(plan, v1), labels(), v1)) == 1
+    assert screen_s1(s1_purchases(plan, v2), labels(), v2) == []
+    # small buyers are not counted, the real buyers still make the cluster with their own value
+    mixed = plan[:5] + [buy("90", "2026-10-07", 80_000), buy("91", "2026-10-07", 60_000)]
+    [h] = screen_s1(s1_purchases(mixed, v2), labels(), v2)
+    assert {i["insiderCik"] for i in h.insiders} == {"90", "91"} and h.total_value == 140_000
+    # an insider's several rows in the window add up toward the minimum
+    split = [buy("1", "2026-10-06", 6_000, acc="a"), buy("1", "2026-10-07", 6_000, acc="b"), buy("2", "2026-10-07", 95_000)]
+    assert len(screen_s1(s1_purchases(split, v2), labels(), v2)) == 1
+    # a $9bn purchase row is a filer typo: dropped before it can carry a cluster's value
+    typo = [buy("1", "2026-10-06", 9_000_000_000), buy("2", "2026-10-07", 20_000)]
+    assert len(s1_purchases(typo, v2)) == 1 and screen_s1(s1_purchases(typo, v2), labels(), v2) == []
+
+
 def test_s1_drops_typo_dates():
     p = S1Params()
     future = {**buy("1", "2033-11-18", 80_000), "filed_date": "2026-10-02",
@@ -293,6 +311,65 @@ def test_s2_measure_and_rank():
     assert [h.reaction.ticker for h in hits] == ["T0"]
     assert hits[0].entry_date == "2026-10-08" and hits[0].rank == 2 and hits[0].cutoff_rank == 2
     assert any(v["ticker"] == "T1" and "volume" in v["why"] for v in verdicts)
+
+
+def test_s2_one_event_per_company_and_day0():
+    # PENG 2026-10-06: two 8-Ks with item 2.02 for one release took ranks 1 AND 2 of the day's top two
+    from zargar.techniques.scout.screens import dedupe_reactions
+    p = S2Params()
+    start = "2026-09-04"
+    bench = daily("SPY", start, [400.0] * 23, [1] * 23)
+
+    def ev(tk, acc, hh, mm):
+        return {"ticker": tk, "accession": acc, "acceptance_ts": dt.datetime(2026, 10, 5, hh, mm, tzinfo=ET)}
+    reactions = [measure_reaction(ev("PENG", "second", 16, 34), daily("PENG", start, *_series(0.12, 9.0)), bench, p),
+                 measure_reaction(ev("PENG", "first", 16, 27), daily("PENG", start, *_series(0.12, 9.0)), bench, p)]
+    for i in range(15):
+        reactions.append(measure_reaction(ev(f"T{i}", f"a{i}", 16, 30),
+                                          daily(f"T{i}", start, *_series(0.10 - 0.005 * i, 3.0)), bench, p))
+    hits, _ = screen_s2(reactions, p)
+    assert [h.reaction.ticker for h in hits] == ["PENG", "PENG"]            # the bug: T0 crowded out
+    kept, dropped = dedupe_reactions(reactions)
+    assert len(kept) == 16 and [d["accession"] for d in dropped] == ["second"] and dropped[0]["duplicateOf"] == "first"
+    hits, _ = screen_s2(kept, p)
+    assert [(h.reaction.ticker, h.reaction.accession) for h in hits] == [("PENG", "first"), ("T0", "a0")]
+    # the same company on ANOTHER day 0 is a different event
+    other = measure_reaction({"ticker": "PENG", "accession": "later",
+                              "acceptance_ts": dt.datetime(2026, 10, 6, 16, 30, tzinfo=ET)}, [], [], p)
+    assert len(dedupe_reactions(reactions + [other])[0]) == 17
+
+
+def test_replay_trade_simulation_and_statistics():
+    import pytest
+    from zargar.tools.scout_replay import clustered, gate_facts, simulate_trade, stats, summarize
+    days = [b for b in daily("X", "2026-08-03", [100.0] * 40, [1_000_000] * 40)]
+    rows = [[dt.datetime.fromtimestamp(b.ts / 1000, ET).date().isoformat(), 100.0, 101.0, 99.0, 100.0, 1_000_000]
+            for b in days]                                              # ATR = 2 -> stop = entry - 4
+    entry = rows[20][0]
+    flat = simulate_trade(rows, entry, 10)
+    assert flat["reason"] == "time" and flat["exitDate"] == rows[29][0] and flat["gross"] == 0 and flat["stop"] == 96.0
+    touched = [list(r) for r in rows]
+    touched[23][3] = 95.0                                               # low through the stop on the 4th session
+    t = simulate_trade(touched, entry, 10)
+    assert t["reason"] == "stop" and t["exit"] == 96.0 and t["exitDate"] == rows[23][0]
+    gapped = [list(r) for r in rows]
+    gapped[22][1], gapped[22][3] = 90.0, 89.0                           # opens below the stop: out at the open
+    g = simulate_trade(gapped, entry, 10)
+    assert g["reason"] == "gap" and g["exit"] == 90.0
+    assert simulate_trade(rows, rows[5][0], 10) is None                 # not enough history for the ATR
+    assert simulate_trade(rows[:25], entry, 10)["reason"] == "data_end"  # delisted mid-hold: last close
+    assert simulate_trade(rows, "2027-01-04", 10) is None
+    assert gate_facts(rows, entry) == {"close": 100.0, "adv": 100_000_000.0}
+    assert gate_facts(rows, rows[5][0])["adv"] is None                  # fewer than 20 prior sessions
+    s = stats([0.02, -0.01, 0.03])
+    assert s["n"] == 3 and s["hit"] == pytest.approx(2 / 3) and s["t"] > 0
+    trades = [{"entryDate": "2026-01-05", "net": 0.02, "gross": 0.03, "bench": 0.01, "reason": "time"},
+              {"entryDate": "2026-01-20", "net": 0.04, "gross": 0.05, "bench": 0.01, "reason": "stop"},
+              {"entryDate": "2026-02-03", "net": -0.02, "gross": -0.01, "bench": 0.00, "reason": "time"}]
+    assert clustered(trades, "net")["months"] == 2 and clustered(trades, "net")["mean"] == pytest.approx(0.005)
+    sm = summarize(trades)
+    assert sm["all"]["net"]["n"] == 3 and sm["byYear"]["2026"]["exits"] == {"time": 2, "stop": 1, "gap": 0, "data_end": 0}
+    assert sm["all"]["abnormalNet"]["mean"] == pytest.approx((0.01 + 0.03 - 0.02) / 3)
 
 
 def test_s2_unmeasurable_event_is_recorded_not_ranked():
