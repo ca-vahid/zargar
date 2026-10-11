@@ -175,6 +175,13 @@ Consequences for the run: the two-week checkpoint clock restarts at 2026-10-12 f
 (S2 packets, the random book, the new `s1u` books). The PENG duplicate (candidate `4d3feb38`, the 16:34 ET filing)
 stays on the record as entered; lane comparisons must count that event once.
 
+**Replay result (2026-10-11, `replay/README.md`, 5 runs logged):** neither screen shows an after-cost edge on
+history. S1 strict: 268 trades 2018-2026, +0.79% net per trade, -0.45% against SPY (month-clustered t -0.39).
+S1U: 3,291 trades, -0.03% net, -1.04% against SPY. S2 selected: 1,898 trades 2023-2026, -0.50% net - no better
+than the 25,069 other gate-passing reporters of the same days (-0.40%), on a universe that excludes delisted
+companies. Removing the stop does not change the sign. The screens are a roughly zero-edge candidate source; what
+the prospective run can still answer is whether an analyst KEEP book beats its screen book and the random book.
+
 Still open: an earnings-in-hold source that is not a projection; S2's "top decile" is ranked inside ONE day's
 releases (1-2 names in a quiet week, dozens in peak season); costs at this size (US$1 per order on US$600 is 0.33%
 round trip before the spread).
