@@ -159,3 +159,27 @@ def test_a_us_share_class_is_streamed_and_foreign_suffixes_are_not():
     for s in ("SHOP.TO", "ABC.V", "XYZ.CN", "NVDI.L", "3NVD.MI", "700.HK", "BRK.BB", "TOOLONG.B", ".B", "USDCAD=X", "BRK/B"):
         assert not is_us_equity(s), s
     assert not _alpaca_symbol("SHOP.TO") and _alpaca_symbol("AAPL")
+
+
+def test_names_alpaca_cannot_spell_never_reach_the_subscribe_message():
+    """2026-10-09: "ES1!" (a futures root from a tip) and "ATH-PA" (a preferred) passed the routing predicate; one of
+    them in the connect-time subscribe made Alpaca refuse the WHOLE message (400 invalid syntax) - the stream stayed
+    authenticated and silent, and every armed plan ran on the Yahoo poll."""
+    for s in ("ES1!", "ATH-PA", "BRK-B", "SPX500", "AB CD", "ABCDEFG", "^VIX", "NQ1!"):
+        assert not is_us_equity(s), s
+    for s in ("AAPL", "F", "GOOGL", "BRK.B", "SPY"):
+        assert is_us_equity(s), s
+
+
+def test_connect_subscribe_is_chunked_with_spy_alone():
+    from zargar.brokers.alpaca import SUB_CHUNK
+    feed = make_feed([], [])
+    names = [f"A{chr(65 + i // 26)}{chr(65 + i % 26)}" for i in range(SUB_CHUNK * 2 + 7)]
+    feed._symbols.update(names)
+    feed._symbols.update({"SPY", "ES1!", "ATH-PA"})          # a bad name restored from an older watch list
+    msgs = feed._connect_sub_msgs()
+    assert msgs[0]["trades"] == ["SPY"] and msgs[0]["quotes"] == ["SPY"] and msgs[0]["bars"] == ["SPY"]
+    sent = [s for m in msgs[1:] for s in m["trades"]]
+    assert sorted(sent) == sorted(names) and len(msgs) == 1 + 3
+    assert all(len(m["trades"]) <= SUB_CHUNK for m in msgs)
+    assert "ES1!" not in sent and "ATH-PA" not in sent
