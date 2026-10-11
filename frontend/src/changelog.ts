@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.23";
+export const APP_VERSION = "0.9.24";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.24",date:"2026-10-11",title:"Scout page redesign",items:[
+    {tag:"improved",text:"Scout Candidates: a funnel across the top (found, passed the gates, kept by a model, entered), and each row now shows its evidence as a bar or insider dots, the seven gates as dots, each model's verdict with its conviction, and the position's move. Random twins sit behind their own filter."},
+    {tag:"improved",text:"Scout candidate detail: the two models' reads side by side, the gates with their reasons, and a price ladder for each fill (stop, entry, now) with the session of the hold."},
+    {tag:"new",text:"Scout Lanes: a scoreboard per signal with one bar per book, progress toward the 40 closed trades a lane needs, every open position on a price ladder, and a grid showing how often the two models agree."},
+    {tag:"improved",text:"Scout Status: the day's four steps as a timeline, the model budget as a meter with spend per day, and the SEC data on file as headline numbers. The settings list is folded away."},
+  ]},
   {version:"0.9.23",date:"2026-10-11",title:"Scout: first-review fixes",items:[
     {tag:"fixed",text:"Scout counts one earnings event per company and day. A company that files two 8-Ks for the same results (PENG on 10-06) no longer becomes two candidates, two positions and two of the day's top ranks."},
     {tag:"fixed",text:"The Scout analysts read the results press release. When a filing carries several releases the one about results is chosen, where before the first exhibit was taken (once a CFO announcement)."},

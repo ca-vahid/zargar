@@ -74,8 +74,8 @@ def simulate_trade(rows: list[list], entry_date: str, hold: int, *, atr_days: in
     trs = [max(c[2] - c[3], abs(c[2] - p[4]), abs(c[3] - p[4])) for p, c in zip(prior, prior[1:])]
     atr = sum(trs) / len(trs) if trs else 0.0
     entry = float(rows[idx][1])
-    stop = entry - stop_mult * atr
-    if entry <= 0 or atr <= 0 or stop <= 0:
+    stop = entry - stop_mult * atr if stop_mult > 0 else 0.0        # 0 = no stop (diagnostic variant)
+    if entry <= 0 or atr <= 0 or (stop_mult > 0 and stop <= 0):
         return None
     exit_px, exit_date, reason = None, None, None
     for k in range(hold):
@@ -356,7 +356,7 @@ async def replay_s1(args, data: Data, sf) -> dict:
                 if mcap < args.min_cap:
                     f["marketCap"] += 1
                     continue
-            tr = simulate_trade(b["adj"], h.entry_date, args.s1_hold)
+            tr = simulate_trade(b["adj"], h.entry_date, args.s1_hold, stop_mult=args.stop_mult)
             if tr is None:
                 f["unpriced"] += 1
                 continue
@@ -418,7 +418,7 @@ async def replay_s2(args, data: Data, sf) -> dict:
                     continue
                 entry = add_sessions(rx.day0, p.entry_offset_sessions)
                 events.append({"rx": rx, "cik": cik, "entry": entry, "gate": gate_facts(b["raw"], entry),
-                               "trade": simulate_trade(b["adj"], entry, args.s2_hold)})
+                               "trade": simulate_trade(b["adj"], entry, args.s2_hold, stop_mult=args.stop_mult)})
         done += 1
         if done % 500 == 0:
             print(f"S2: read {done}/{len(universe)} issuers, {len(events)} measured events", flush=True)
@@ -481,7 +481,8 @@ def render(res: dict, args) -> str:
          f"{args.half_spread_pct:g}% assumed half spread per side).", "",
          f"Parameters: `{json.dumps(res['params'])}`; gates: price >= ${args.min_price:g}, 20-day dollar volume >= "
          f"${args.min_adv / 1e6:g}M, market cap >= ${args.min_cap / 1e6:g}M. Hold: "
-         f"{args.s1_hold if res['signal'] == 's1' else args.s2_hold} sessions, stop 2 x ATR(14).", "",
+         f"{args.s1_hold if res['signal'] == 's1' else args.s2_hold} sessions, "
+         + (f"stop {args.stop_mult:g} x ATR(14)." if args.stop_mult > 0 else "NO stop (diagnostic variant)."), "",
          "**Not applied / known biases:** the live entry-spread gate, earnings-in-hold, corporate-action and Tips gates "
          "(no point-in-time source); entry is the session OPEN, the live rule buys at 10:00 ET; "
          + ("the universe is today's NYSE/Nasdaq listings, so delisted companies are missing (survivorship - results "
@@ -548,6 +549,7 @@ async def main_async(args) -> None:
                              "start": args.start, "end": args.end, "params": res["params"],
                              "gates": {"minPrice": args.min_price, "minAdv": args.min_adv, "minCap": args.min_cap},
                              "costs": {"fee": args.fee, "position": args.position, "halfSpreadPct": args.half_spread_pct},
+                             "stopMult": args.stop_mult, "hold": args.s1_hold if args.signal == "s1" else args.s2_hold,
                              "headline": head}) + "\n")
     print(json.dumps(head, indent=1))
     print(f"report: {out / (stem + '.md')}")
@@ -568,6 +570,7 @@ def main() -> None:
     ap.add_argument("--half-spread-pct", type=float, default=0.15)
     ap.add_argument("--s1-hold", type=int, default=20)
     ap.add_argument("--s2-hold", type=int, default=10)
+    ap.add_argument("--stop-mult", type=float, default=2.0, help="stop = entry - N x ATR(14); 0 = no stop")
     ap.add_argument("--limit", type=int, default=0, help="S2: only the first N issuers (smoke test)")
     ap.add_argument("--cache", default="")
     ap.add_argument("--out", default="docs/techniques/scout/replay")
