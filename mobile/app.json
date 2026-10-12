@@ -46,6 +46,14 @@
         "projectId": "e1315745-eae2-41fe-91ea-cef3e6140dc9"
       }
     },
-    "owner": "vahiids-team"
+    "owner": "vahiids-team",
+    "updates": {
+      "url": "https://u.expo.dev/e1315745-eae2-41fe-91ea-cef3e6140dc9",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

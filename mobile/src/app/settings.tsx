@@ -7,6 +7,7 @@ import { setLockEnabled, signOut } from '@/auth/session';
 import { Button, Card, Row, Screen, Section, Txt } from '@/components/ui';
 import { APP_VERSION } from '@/config';
 import { runAction } from '@/lib/actions';
+import { fetchUpdate, restartIntoUpdate, updateInfo } from '@/lib/updates';
 import { disablePush, enablePush, pushState, type PushState } from '@/notifications/push';
 import { useStore } from '@/store';
 import { useTheme } from '@/theme';
@@ -20,6 +21,8 @@ export default function SettingsScreen() {
   const [push, setPush] = useState<PushState | null>(null);
   const [lockable, setLockable] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const upd = updateInfo();
   const toast = useStore.getState().toast;
 
   useEffect(() => {
@@ -80,8 +83,14 @@ export default function SettingsScreen() {
         <Card>
           <Row left="Signed in as" right={<Txt dim>{user?.email || '—'}</Txt>} />
           <Row left="Server" right={<Txt dim style={{ maxWidth: 210 }} numberOfLines={1}>{apiUrl.replace(/^https?:\/\//, '')}</Txt>} />
-          <Row last left="App version" right={<Txt dim num>{APP_VERSION}</Txt>} />
+          <Row last left="App version"
+            sub={upd.enabled ? (upd.embedded ? 'Running the installed build' : `Running update ${(upd.id ?? '').slice(0, 8)}`) : 'Over-the-air updates are off in this build'}
+            right={<Txt dim num>{APP_VERSION}</Txt>} />
         </Card>
+        {upd.enabled && (
+          <Button small kind="plain" label="Check for an update" busy={checking}
+            onPress={() => { setChecking(true); void fetchUpdate().then((ready) => { setChecking(false); if (ready) void restartIntoUpdate(); else toast('info', 'You have the latest version'); }); }} />
+        )}
         <View>
           <Button kind="plain" label="Sign out"
             onPress={() => void runAction(

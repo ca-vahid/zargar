@@ -10,6 +10,7 @@ import { HeaderRight } from '@/components/Header';
 import { LockScreen } from '@/components/LockScreen';
 import { LoginScreen } from '@/components/LoginScreen';
 import { ConfirmHost, ToastHost } from '@/components/Overlays';
+import { fetchUpdate, restartIntoUpdate } from '@/lib/updates';
 import { bindNotifications, ensureChannels } from '@/notifications/push';
 import { useStore } from '@/store';
 import { useTheme } from '@/theme';
@@ -29,6 +30,9 @@ export default function RootLayout() {
   useEffect(() => {
     void boot().finally(() => { void SplashScreen.hideAsync().catch(() => {}); });
     void ensureChannels().catch(() => {});
+    // a newer bundle published since this one was installed: take it now, in the first
+    // seconds, rather than a launch later. After that restart nothing is waiting, so no loop.
+    void fetchUpdate().then((ready) => { if (ready) void restartIntoUpdate(); });
   }, []);
 
   useEffect(() => {

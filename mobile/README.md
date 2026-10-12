@@ -101,3 +101,18 @@ tests, expo-doctor, the Android JS bundle, and every screen in the browser previ
 against the live server. Untested until a device build: Google sign-in, secure
 storage, the fingerprint prompt, push, chart touch gestures on a touchscreen, and the
 bottom tab bar's spacing with Android's gesture bar.
+
+## Updating the installed app
+
+The app carries `expo-updates`. Screen and logic changes are published over the air:
+
+```powershell
+$env:EAS_NO_VCS = '1'
+npx eas-cli update --channel production --message "what changed"
+```
+
+The app fetches a waiting update when it starts and restarts into it (Settings shows
+which code is running and has a manual check). An update only reaches builds with the
+same `version` in `app.json`: when a native dependency or config plugin changes, bump
+the version and build a new APK (`npm run build:apk`) instead.
+
