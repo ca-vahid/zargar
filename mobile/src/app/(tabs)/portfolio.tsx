@@ -7,6 +7,7 @@ import type { ManagedPosition, Order, Portfolio, Position } from '@/api/types';
 import { RangeBar, SymbolBadge } from '@/components/graphics';
 import { LineChart } from '@/components/LineChart';
 import { Async, Button, Card, Chips, Delta, Empty, Pill, Row, Screen, Section, styles, Txt } from '@/components/ui';
+import { AccountPicker } from '@/components/AccountPicker';
 import { CurrencySwitch } from '@/components/Header';
 import { useConvert, useCurrency } from '@/hooks/useCurrency';
 import { rateFor } from '@/lib/fx';
@@ -106,8 +107,11 @@ export default function PortfolioScreen() {
 
   return (
     <Screen onRefresh={refreshAll} refreshing={equity.refreshing || managed.refreshing}>
-      <Chips value={book.id} onChange={(id) => useStore.getState().set({ selectedBook: id })}
-        options={books.map((b) => ({ key: b.id, label: b.name }))} />
+      <AccountPicker books={books} selected={book} onSelect={(id) => useStore.getState().set({ selectedBook: id })}
+        footer={ws === 'practice' ? (
+          <Button small kind="plain" label={showResearch ? 'Hide research books' : 'Show research books'}
+            onPress={() => setShowResearch((v) => !v)} style={{ marginTop: space.sm }} />
+        ) : undefined} />
 
       <View style={{ gap: 2 }}>
         <View style={styles.wrap}>
@@ -185,10 +189,6 @@ export default function PortfolioScreen() {
 
       <View style={{ gap: space.sm }}>
         <Button kind="plain" label={paused ? 'Resume entries on this book' : 'Pause entries on this book'} onPress={togglePause} />
-        <Txt v="small" color={t.accent} style={{ textAlign: 'center', paddingVertical: space.sm }}
-          onPress={() => setShowResearch((v) => !v)}>
-          {ws === 'practice' ? (showResearch ? 'Hide research books' : 'Show research books') : ''}
-        </Txt>
       </View>
     </Screen>
   );
