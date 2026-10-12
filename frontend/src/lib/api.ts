@@ -156,6 +156,10 @@ export const api = {
   scoutLanes: () => request<import("../types").ScoutLane[]>("GET", "/api/scout/lanes"),
   scoutStatus: () => request<import("../types").ScoutStatus>("GET", "/api/scout/status"),
   scoutReports: (limit = 30) => request<import("../types").ScoutReport[]>("GET", `/api/scout/reports?limit=${limit}`),
+  scoutDossiers: (limit = 30) => request<import("../types").ScoutDossier[]>("GET", `/api/scout/dossiers?limit=${limit}`),
+  scoutDossier: (id: string) => request<import("../types").ScoutDossier>("GET", `/api/scout/dossiers/${id}`),
+  scoutDossierRequest: (ticker: string, refresh = false) =>
+    request<import("../types").ScoutDossier>("POST", "/api/scout/dossiers", { ticker, refresh }),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

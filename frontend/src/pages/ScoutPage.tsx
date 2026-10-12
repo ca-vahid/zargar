@@ -8,11 +8,13 @@ import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
+import { DossierTab, queueDossier } from "./ScoutDossier";
 import type { ScoutCandidate, ScoutEntry, ScoutLane, ScoutReport, ScoutStatus, ScoutVerdict } from "../types";
 
 const TABS = [
   { key: "candidates", label: "Candidates" },
   { key: "lanes", label: "Lanes" },
+  { key: "dossier", label: "Research" },
   { key: "status", label: "Status" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
@@ -209,6 +211,7 @@ export function ScoutPage() {
       </div>
       {tab === "candidates" && <CandidatesTab />}
       {tab === "lanes" && <LanesTab />}
+      {tab === "dossier" && <DossierTab />}
       {tab === "status" && <StatusTab />}
     </div>
   );
@@ -332,6 +335,7 @@ function CandidatesTab() {
 
 function CandidateDetail({ c, marks }: { c: ScoutCandidate; marks: Map<string, ScoutEntry> }) {
   const ev = c.evidence ?? {};
+  const setPageTab = useStore((s) => s.setPageTab);
   const fills = useMemo(() => {
     const m = new Map<string, { e: ScoutEntry; books: string[] }>();
     for (const e of c.entries) {
@@ -394,6 +398,7 @@ function CandidateDetail({ c, marks }: { c: ScoutCandidate; marks: Map<string, S
               : e.reason ? <div className="muted">{e.reason}</div> : null}
           </div>
         ))}
+        <div><button className="link-btn" onClick={() => { queueDossier(c.ticker); setPageTab("dossier"); }}>Research note on {c.ticker} →</button></div>
         {c.links.length > 1 && <div className="muted">{c.links.map((l) => <a key={l.url} href={l.url} target="_blank" rel="noreferrer" style={{ marginRight: 10 }}>{l.label} ↗</a>)}</div>}
       </section>
     </div>

@@ -906,4 +906,10 @@ button.bl-card:active { background: var(--surface-2); }
 }
 @media (max-width: 639px) {
   .scout-detail { grid-template-columns: 1fr; }
+  .dossier-charts { grid-template-columns: 1fr; }
+  .dossier-bar form { flex: 1 1 100%; }
+  .dossier-bar input { flex: 1; width: auto; min-height: 44px; font-size: 16px; }
+  .dossier-pick { min-height: 36px; }
+  .dossier-facts { grid-template-columns: 1fr; }
+  .dossier-cites a { line-height: 22px; padding: 0 8px; }
 }
