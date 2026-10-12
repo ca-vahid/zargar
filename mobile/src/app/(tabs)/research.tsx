@@ -5,6 +5,7 @@ import { TextInput, View } from 'react-native';
 import { api } from '@/api/endpoints';
 import type { ScoutCandidate, ScoutDossier, ScoutLane } from '@/api/types';
 import { Async, Button, Card, Delta, Pill, type PillKind, Row, Screen, Section, styles, Tabs, Txt } from '@/components/ui';
+import { SymbolBadge } from '@/components/graphics';
 import { usePoll } from '@/hooks/usePoll';
 import { runAction } from '@/lib/actions';
 import { shortDate, signedMoney, titleCase } from '@/lib/format';
@@ -58,6 +59,7 @@ function Notes() {
             {(items) => items.map((d, i) => (
               <Row key={d.id} last={i === items.length - 1} onPress={() => router.navigate({ pathname: '/dossier/[id]', params: { id: d.id } })}
                 left={<View style={styles.wrap}>
+                  <SymbolBadge symbol={d.ticker} size={32} />
                   <Txt v="head">{d.ticker}</Txt>
                   {d.status === 'running' ? <Pill kind="accent" text="writing…" />
                     : d.status === 'error' ? <Pill kind="bad" text="failed" />
@@ -104,7 +106,7 @@ function Scout() {
               return (
                 <Row key={c.id} last={i === all.length - 1}
                   onPress={() => router.navigate({ pathname: '/chart/[symbol]', params: { symbol: c.ticker } })}
-                  left={<View style={styles.wrap}><Txt v="head">{c.ticker}</Txt><Pill kind={statusKind(c.status)} text={titleCase(c.status)} /></View>}
+                  left={<View style={styles.wrap}><SymbolBadge symbol={c.ticker} size={32} /><Txt v="head">{c.ticker}</Txt><Pill kind={statusKind(c.status)} text={titleCase(c.status)} /></View>}
                   sub={[KIND_LABEL[c.kind] ?? titleCase(c.kind),
                     keeps.length ? `keep: ${keeps.join(', ')}` : '', drops.length ? `drop: ${drops.join(', ')}` : '',
                     failed ? failed[1].why : ''].filter(Boolean).join(' · ')}

@@ -1,11 +1,14 @@
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { api } from '@/api/endpoints';
 import type { ArmedSummary } from '@/api/types';
 import { Async, Button, Card, Delta, Empty, Pill, Row, Screen, Section, styles, Tabs, Txt } from '@/components/ui';
 import { usePoll } from '@/hooks/usePoll';
+import { useWorkspace } from '@/hooks/useWorkspace';
+import { workspaceOf } from '@/lib/books';
+import { RangeBar, SymbolBadge } from '@/components/graphics';
 import { runAction, sellNow } from '@/lib/actions';
 import { dayTime, price, qty, signedMoney, titleCase } from '@/lib/format';
 import { useStore } from '@/store';
@@ -15,7 +18,15 @@ type Tab = 'trade' | 'watching' | 'stopped';
 
 export default function ArmedScreen() {
   const [tab, setTab] = useState<Tab>('trade');
-  const summary = usePoll(() => api.armedSummary(), 20000);
+  const ws = useWorkspace();
+  const raw = usePoll(() => api.armedSummary(), 20000);
+  // the server's summary spans every book: keep this workspace's plans (stopped plans carry no book, so all show)
+  const summary = useMemo(() => {
+    const d = raw.data;
+    if (!d) return raw;
+    const mine = <T extends { workspace?: string | null }>(list: T[]) => list.filter((x) => workspaceOf(x.workspace) === ws);
+    return { ...raw, data: { ...d, inTrade: mine(d.inTrade), watching: mine(d.watching), attention: mine(d.attention) } };
+  }, [raw, ws]);
   const armedBump = useStore((s) => s.armedBump);
   const refresh = summary.refresh;
   useEffect(() => {
@@ -41,14 +52,13 @@ export default function ArmedScreen() {
         {(s: ArmedSummary) => (
           <>
             <View style={styles.wrap}>
-              <Pill kind="accent" text={`${s.counts.armed} armed`} />
-              <Pill kind={s.counts.inTrade ? 'ok' : 'dim'} text={`${s.counts.inTrade} in a trade`} />
-              {s.counts.paused > 0 && <Pill kind="warn" text={`${s.counts.paused} paused`} />}
-              {s.counts.attention > 0 && <Pill kind="bad" text={`${s.counts.attention} need attention`} />}
+              <Pill kind="accent" text={`${ws === 'live' ? 'Live' : 'Practice'} · ${s.watching.length} watching`} />
+              <Pill kind={s.inTrade.length ? 'ok' : 'dim'} text={`${s.inTrade.length} in a trade`} />
+              {s.attention.length > 0 && <Pill kind="bad" text={`${s.attention.length} need attention`} />}
             </View>
             <Card>
               <View style={styles.rowBetween}>
-                <Txt dim>Today, armed plans</Txt>
+                <Txt dim>Today, armed plans (all books)</Txt>
                 <Delta value={s.pnl.realized + s.pnl.unrealized} text={signedMoney(s.pnl.realized + s.pnl.unrealized)} />
               </View>
               <Txt v="small" dim num>
@@ -69,6 +79,7 @@ export default function ArmedScreen() {
                 <Card key={`${x.runId}-${x.triggerId}`}>
                   <View style={styles.rowBetween}>
                     <View style={styles.wrap}>
+                      <SymbolBadge symbol={x.symbol} />
                       <Txt v="title">{x.symbol}</Txt>
                       <Pill kind={x.direction === 'short' ? 'bad' : 'ok'} text={x.direction} />
                     </View>
@@ -84,6 +95,7 @@ export default function ArmedScreen() {
                       : `In at ${price(x.entry)}`} · stop {price(x.stop)}{x.nextTarget != null ? ` · next target ${price(x.nextTarget)}` : ''}
                     {x.unrealizedR != null ? ` · ${x.unrealizedR >= 0 ? '+' : ''}${x.unrealizedR.toFixed(2)} R` : ''}
                   </Txt>
+                  <RangeBar stop={x.stop} entry={x.underlyingEntry ?? x.entry} now={x.lastPrice} target={x.nextTarget} />
                   <View style={{ flexDirection: 'row', gap: space.sm }}>
                     <Button small kind="plain" label="Chart" style={{ flex: 1 }}
                       onPress={() => router.navigate({ pathname: '/chart/[symbol]', params: { symbol: x.symbol, entry: String(x.underlyingEntry ?? x.entry), stop: String(x.stop), target: x.nextTarget != null ? String(x.nextTarget) : '' } })} />
@@ -101,8 +113,9 @@ export default function ArmedScreen() {
                   .map((w, i, all) => (
                     <Row key={w.runId} last={i === all.length - 1} onPress={() => void pause(w)}
                       left={<View style={styles.wrap}>
+                        <SymbolBadge symbol={w.symbol} size={32} />
                         <Txt v="head">{w.symbol}</Txt>
-                        {!!w.grade && <Pill text={w.grade} />}
+                        {!!w.grade && <Pill kind="accent" text={w.grade} />}
                         {w.status === 'paused' && <Pill kind="warn" text="paused" />}
                         {w.stale && <Pill kind="warn" text="stale price" />}
                       </View>}

@@ -1,4 +1,4 @@
-import { dayMove, dayMovePct, groupOf, visibleBooks } from '@/lib/books';
+import { dayMove, dayMovePct, groupOf, visibleBooks, workspaceOf } from '@/lib/books';
 import { areaPath, decimate, extent, indexAt, linePath, type Point, tickLabel, ticks, xAt, yAt } from '@/lib/chart';
 import { ago, money, pct, price, qty, signedMoney, sourceLabel, titleCase, tone, until } from '@/lib/format';
 import { routeForWebPath } from '@/lib/links';
@@ -125,8 +125,14 @@ describe('books', () => {
   it('hides archived, empty and research books, real money first', () => {
     const all = [mk('zsim', 'sim'), mk('old', 'sim', { archived: true }), mk('shadow', 'shadow'), mk('paper', 'paper'), mk('real', 'live'),
       mk('unfunded', 'live', { cash: 0, equity: 0 })];
-    expect(visibleBooks(all).map((b) => b.id)).toEqual(['real', 'paper', 'zsim']);
-    expect(visibleBooks(all, true).map((b) => b.id)).toEqual(['real', 'paper', 'zsim', 'shadow']);
+    // Live = real venues (real accounts + the broker's paper account); Practice = our simulator
+    expect(visibleBooks(all, 'live').map((b) => b.id)).toEqual(['real', 'paper']);
+    expect(visibleBooks(all, 'practice').map((b) => b.id)).toEqual(['zsim']);
+    expect(visibleBooks(all, 'practice', true).map((b) => b.id)).toEqual(['zsim', 'shadow']);
+    expect(visibleBooks(all, 'live', true).map((b) => b.id)).toEqual(['real', 'paper']);
+    expect(workspaceOf('paper')).toBe('live');
+    expect(workspaceOf('shadow')).toBe('practice');
+    expect(workspaceOf(undefined)).toBe('practice');
   });
   it("measures today from the server's day-start anchor only", () => {
     expect(dayMove({ equity: 6908.71, dayStart: 6923.16 })).toBeCloseTo(-14.45, 2);

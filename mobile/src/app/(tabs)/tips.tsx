@@ -4,9 +4,11 @@ import { View } from 'react-native';
 import { api } from '@/api/endpoints';
 import type { Portfolio, Proposal, Signal } from '@/api/types';
 import { Async, Button, Card, Empty, Pill, type PillKind, Row, Screen, styles, Tabs, Txt } from '@/components/ui';
+import { EmptyArt, Meter, SymbolBadge } from '@/components/graphics';
 import { usePoll } from '@/hooks/usePoll';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { runAction } from '@/lib/actions';
-import { GROUP_LABEL, groupOf } from '@/lib/books';
+import { GROUP_LABEL, groupOf, workspaceOf } from '@/lib/books';
 import { dayTime, money, price, qty, sourceLabel, titleCase, until } from '@/lib/format';
 import { confirmAction, useStore } from '@/store';
 import { space, useTheme } from '@/theme';
@@ -98,9 +100,10 @@ function CardView({ p, book }: { p: Proposal; book?: Portfolio }) {
   };
 
   return (
-    <Card>
+    <Card style={{ borderLeftWidth: 4, borderLeftColor: analyst?.verdict === 'take' ? t.up : analyst?.verdict === 'skip' ? t.down : analyst?.verdict === 'watch' ? t.warn : t.line }}>
       <View style={styles.rowBetween}>
         <View style={styles.wrap}>
+          <SymbolBadge symbol={vehicle?.underlying ?? p.symbol} />
           <Txt v="title">{vehicle?.underlying ?? p.symbol}</Txt>
           <Pill kind={real ? 'bad' : 'dim'} text={real ? 'REAL MONEY' : book ? GROUP_LABEL[groupOf(book)] : 'Book'} />
         </View>
@@ -114,6 +117,12 @@ function CardView({ p, book }: { p: Proposal; book?: Portfolio }) {
         {analyst?.verdict && <Pill kind={verdictKind(analyst.verdict)} text={`Analyst: ${analyst.verdict}${analyst.confidence != null ? ` ${(analyst.confidence * 100).toFixed(0)}%` : ''}`} />}
         <Pill kind={rd.kind} text={`Checks: ${rd.label}`} />
       </View>
+      {analyst?.confidence != null && (
+        <View style={{ gap: 4 }}>
+          <Txt v="small" dim>Analyst confidence</Txt>
+          <Meter value={analyst.confidence} color={analyst.verdict === 'take' ? t.up : analyst.verdict === 'skip' ? t.down : t.warn} />
+        </View>
+      )}
       {(stop != null || exit?.targets?.length) && (
         <Txt v="small" dim num>
           {stop != null ? `Stop ${price(stop)}` : 'No stop on the card'}
@@ -145,6 +154,7 @@ function SignalRow({ s, last }: { s: Signal; last: boolean }) {
   return (
     <Row last={last}
       left={<View style={styles.wrap}>
+        <SymbolBadge symbol={s.ticker} size={30} />
         <Txt v="head">{s.ticker}{contract}</Txt>
         <Pill kind={s.direction === 'short' ? 'bad' : 'ok'} text={s.action === 'open' ? s.direction : s.action} />
         {verdict && <Pill kind={verdictKind(verdict)} text={verdict} />}
@@ -159,8 +169,12 @@ function SignalRow({ s, last }: { s: Signal; last: boolean }) {
 
 export default function TipsScreen() {
   const [tab, setTab] = useState<Tab>('cards');
-  const proposals = useStore((s) => s.proposals);
+  const ws = useWorkspace();
+  const allProposals = useStore((s) => s.proposals);
   const portfolios = useStore((s) => s.portfolios);
+  // a card belongs to the workspace of the book it would trade in
+  const proposals = allProposals.filter((p) => workspaceOf(portfolios.find((b) => b.id === p.portfolioId)?.kind) === ws);
+  const elsewhere = allProposals.length - proposals.length;
   const signals = usePoll(() => (tab === 'tips' ? api.signals(40) : Promise.resolve(null)), tab === 'tips' ? 45000 : 0, [tab]);
   const history = usePoll(() => (tab === 'history' ? api.proposals(true, 40) : Promise.resolve(null)), tab === 'history' ? 60000 : 0, [tab]);
   const bookOf = (pid: string) => portfolios.find((b) => b.id === pid);
@@ -176,7 +190,9 @@ export default function TipsScreen() {
 
       {tab === 'cards' && (
         proposals.length === 0
-          ? <Empty text="No approval cards are waiting. A new one appears here the moment a tip needs your decision." />
+          ? <EmptyArt text={elsewhere > 0
+              ? `${elsewhere} card${elsewhere > 1 ? 's are' : ' is'} waiting in the ${ws === 'live' ? 'Practice' : 'Live'} workspace. Switch at the top to see ${elsewhere > 1 ? 'them' : 'it'}.`
+              : 'No approval cards are waiting. A new one appears here the moment a tip needs your decision.'} />
           : proposals.map((p) => <CardView key={p.id} p={p} book={bookOf(p.portfolioId)} />)
       )}
 
@@ -191,13 +207,13 @@ export default function TipsScreen() {
       {tab === 'history' && (
         <Card>
           <Async state={history as any} empty="No cards have been decided yet.">
-            {(list: Proposal[]) => list.filter((p) => p.status !== 'pending').map((p, i, all) => {
+            {(list: Proposal[]) => list.filter((p) => p.status !== 'pending' && workspaceOf(bookOf(p.portfolioId)?.kind) === ws).map((p, i, all) => {
               const book = bookOf(p.portfolioId);
               const filled = p.outcome?.filledQty ? ` · filled ${qty(p.outcome.filledQty)} at ${price(p.outcome.avgFillPrice)}` : '';
               const kind: PillKind = p.status === 'approved' || p.status === 'executed' ? 'ok' : p.status === 'rejected' ? 'bad' : 'dim';
               return (
                 <Row key={p.id} last={i === all.length - 1}
-                  left={<View style={styles.wrap}><Txt v="head">{p.symbol}</Txt><Pill kind={kind} text={titleCase(p.status)} /></View>}
+                  left={<View style={styles.wrap}><SymbolBadge symbol={p.symbol} size={30} /><Txt v="head">{p.symbol}</Txt><Pill kind={kind} text={titleCase(p.status)} /></View>}
                   sub={`${titleCase(p.side.toLowerCase())} ${qty(p.qty)} at ${price(p.limitPrice)} · ${book?.name ?? ''}${p.decidedVia ? ` · by ${p.decidedVia}` : ''}${filled}`}
                   right={<Txt v="small" dim num>{dayTime(p.createdAt)}</Txt>} />
               );

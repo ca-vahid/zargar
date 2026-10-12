@@ -1,6 +1,7 @@
 import { useColorScheme } from 'react-native';
 
-// The web app's tokens (frontend/src/styles.css), so the two read as one product.
+// The web app's surfaces and gain/loss inks (frontend/src/styles.css), with the brand's
+// gold as the accent: the mark, the hero card and every primary control share it.
 const dark = {
   bg: '#0d0d0d',
   surface: '#1a1a19',
@@ -10,8 +11,8 @@ const dark = {
   text: '#ffffff',
   text2: '#c3c2b7',
   text3: '#898781',
-  accent: '#5b8cff',
-  onAccent: '#ffffff',
+  accent: '#f2b83b',
+  onAccent: '#1c1400',
   up: '#2dbd2d',
   down: '#e8554f',
   warn: '#fab219',
@@ -31,7 +32,7 @@ const light: typeof dark = {
   text: '#171717',
   text2: '#4c4b47',
   text3: '#7d7b74',
-  accent: '#3d6fe0',
+  accent: '#946500',
   onAccent: '#ffffff',
   up: '#006300',
   down: '#c62f2f',

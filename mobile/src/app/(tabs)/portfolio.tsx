@@ -4,9 +4,11 @@ import { View } from 'react-native';
 
 import { api } from '@/api/endpoints';
 import type { ManagedPosition, Order, Portfolio, Position } from '@/api/types';
+import { RangeBar, SymbolBadge } from '@/components/graphics';
 import { LineChart } from '@/components/LineChart';
 import { Async, Button, Card, Chips, Delta, Empty, Pill, Row, Screen, Section, styles, Txt } from '@/components/ui';
 import { usePoll } from '@/hooks/usePoll';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { runAction } from '@/lib/actions';
 import { dayMove, dayMovePct, GROUP_LABEL, groupOf, visibleBooks } from '@/lib/books';
 import type { Point } from '@/lib/chart';
@@ -31,6 +33,8 @@ function planFor(managed: ManagedPosition[] | null, pos: Position) {
 
 export default function PortfolioScreen() {
   const t = useTheme();
+  const ws = useWorkspace();
+  const quotes = useStore((s) => s.quotes);
   const portfolios = useStore((s) => s.portfolios);
   const positionsMap = useStore((s) => s.positions);
   const ordersMap = useStore((s) => s.openOrders);
@@ -40,7 +44,7 @@ export default function PortfolioScreen() {
   const [range, setRange] = useState<Range>('1D');
   const [showResearch, setShowResearch] = useState(false);
 
-  const books = useMemo(() => visibleBooks(portfolios, showResearch), [portfolios, showResearch]);
+  const books = useMemo(() => visibleBooks(portfolios, ws, showResearch), [portfolios, ws, showResearch]);
   const book: Portfolio | undefined = books.find((b) => b.id === selected) ?? books[0];
   const bookId = book?.id ?? '';
   const cur = book?.baseCurrency ?? 'USD';
@@ -59,7 +63,7 @@ export default function PortfolioScreen() {
     () => Object.values(ordersMap).filter((o) => o.portfolioId === bookId).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     [ordersMap, bookId]);
 
-  if (!book) return <Screen><Empty text="No books yet — waiting for the server." /></Screen>;
+  if (!book) return <Screen><Empty text={ws === 'live' ? 'No funded live or paper account yet.' : 'No practice books yet — waiting for the server.'} /></Screen>;
 
   // the live point is appended so the curve's right edge is the number in the headline
   const series: Point[] = equity.data && book.equity != null ? [...equity.data, [Date.now(), book.equity]] : equity.data ?? [];
@@ -118,16 +122,21 @@ export default function PortfolioScreen() {
           {positions.map((p, i) => {
             const plan = planFor(managed.data, p);
             const label = p.option?.short ?? p.symbol;
+            const mark = quotes[p.symbol]?.last || p.last || null;
             return (
-              <Row key={p.symbol} last={i === positions.length - 1}
+              <View key={p.symbol} style={{ gap: 4, paddingBottom: i === positions.length - 1 ? 0 : space.sm }}>
+              <Row last
                 onPress={() => router.navigate({ pathname: '/chart/[symbol]', params: {
                   symbol: p.option?.underlying ?? p.symbol, entry: plan ? String(plan.entry) : String(p.avgCost),
                   stop: plan?.stop != null ? String(plan.stop) : '', target: plan?.target != null ? String(plan.target) : '',
                   positionId: plan?.id ?? '', name: label } })}
-                left={<View style={styles.wrap}><Txt v="head">{label}</Txt>{plan?.status === 'closing' && <Pill kind="warn" text="closing" />}{plan?.status === 'attention' && <Pill kind="bad" text="attention" />}</View>}
+                left={<View style={styles.wrap}><SymbolBadge symbol={p.option?.underlying ?? p.symbol} size={34} /><Txt v="head">{label}</Txt>{plan?.status === 'closing' && <Pill kind="warn" text="closing" />}{plan?.status === 'attention' && <Pill kind="bad" text="attention" />}</View>}
                 sub={`${qty(p.qty)} @ ${price(p.avgCost)}${plan?.stop != null ? ` · stop ${price(plan.stop)}` : ' · no stop on record'}${plan?.target != null ? ` · target ${price(plan.target)}` : ''}`}
                 right={<Txt num>{money(p.marketValue, p.currency ?? cur)}</Txt>}
                 rightSub={<Delta v="small" value={p.unrealizedPnl} text={`${signedMoney(p.unrealizedPnl, p.currency ?? cur)}  ${pct(p.unrealizedPnlPct)}`} />} />
+              {/* shares only: an option's own price is not on the share-price scale of its stop */}
+              {plan && !p.option && <RangeBar stop={plan.stop} entry={plan.entry} now={mark} target={plan.target} />}
+              </View>
             );
           })}
         </Card>
@@ -162,7 +171,7 @@ export default function PortfolioScreen() {
         <Button kind="plain" label={paused ? 'Resume entries on this book' : 'Pause entries on this book'} onPress={togglePause} />
         <Txt v="small" color={t.accent} style={{ textAlign: 'center', paddingVertical: space.sm }}
           onPress={() => setShowResearch((v) => !v)}>
-          {showResearch ? 'Hide research books' : 'Show research books'}
+          {ws === 'practice' ? (showResearch ? 'Hide research books' : 'Show research books') : ''}
         </Txt>
       </View>
     </Screen>

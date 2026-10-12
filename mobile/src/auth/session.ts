@@ -24,7 +24,8 @@ export async function boot(): Promise<void> {
   const token = await loadToken();
   configureClient({ baseUrl: apiUrl, token, onUnauthorized: signedOutLocally });
   bindAppState();
-  store().set({ apiUrl, lockEnabled, locked: lockEnabled && !!token });
+  const workspace = await loadPref<'live' | 'practice' | null>('workspace', null);
+  store().set({ apiUrl, lockEnabled, workspace, locked: lockEnabled && !!token });
   if (token) {
     try {
       const me = await api.authMe();

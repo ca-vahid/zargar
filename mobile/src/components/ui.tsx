@@ -64,7 +64,7 @@ export function Screen({ children, onRefresh, refreshing, padded = true }: {
 
 export function Card({ children, style, onPress }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void }) {
   const t = useTheme();
-  const base: ViewStyle = { backgroundColor: t.surface, borderRadius: radius.md, padding: space.lg, gap: space.sm };
+  const base: ViewStyle = { backgroundColor: t.surface, borderRadius: radius.lg, padding: space.lg, gap: space.sm, borderWidth: 1, borderColor: t.line };
   if (!onPress) return <View style={[base, style]}>{children}</View>;
   return (
     <Pressable onPress={onPress} android_ripple={{ color: t.surface3 }}
@@ -126,7 +126,7 @@ export function Button({ label, onPress, kind = 'primary', busy, disabled, small
 }) {
   const t = useTheme();
   const bg = kind === 'primary' ? t.accent : kind === 'danger' ? t.downFill : kind === 'good' ? t.upFill : t.surface2;
-  const ink = kind === 'plain' ? t.text : '#ffffff';
+  const ink = kind === 'plain' ? t.text : kind === 'primary' ? t.onAccent : '#ffffff';
   const off = disabled || busy;
   return (
     <Pressable

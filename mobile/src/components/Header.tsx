@@ -1,6 +1,7 @@
 import { Pressable, View } from 'react-native';
 
 import { api } from '../api/endpoints';
+import { setWorkspace, useWorkspace } from '../hooks/useWorkspace';
 import { runAction } from '../lib/actions';
 import { useStore } from '../store';
 import { space, useTheme } from '../theme';
@@ -55,9 +56,32 @@ export function HaltButton() {
   );
 }
 
-export function HeaderRight() {
+/** Live | Practice — changes only what is on screen, never where orders go. */
+export function WorkspaceSwitch() {
+  const t = useTheme();
+  const ws = useWorkspace();
+  const seg = (key: 'live' | 'practice', label: string) => {
+    const on = ws === key;
+    return (
+      <Pressable key={key} onPress={() => setWorkspace(key)} accessibilityRole="button" accessibilityState={{ selected: on }}
+        accessibilityLabel={`${label} workspace`} hitSlop={4}
+        style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, backgroundColor: on ? t.accent : 'transparent' }}>
+        <Txt v="small" color={on ? t.onAccent : t.text2} style={{ fontWeight: on ? '800' : '600' }}>{label}</Txt>
+      </Pressable>
+    );
+  };
+  return (
+    <View style={{ flexDirection: 'row', borderRadius: 999, borderWidth: 1, borderColor: t.line, backgroundColor: t.surface, padding: 2 }}>
+      {seg('live', 'Live')}
+      {seg('practice', 'Practice')}
+    </View>
+  );
+}
+
+export function HeaderRight({ workspace }: { workspace?: boolean }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginRight: space.lg }}>
+      {workspace && <WorkspaceSwitch />}
       <ConnDot />
       <HaltButton />
     </View>

@@ -32,6 +32,8 @@ export interface AppState {
   user: AuthUser | null;
   locked: boolean;
   lockEnabled: boolean;
+  /** which side the screens show; null until chosen = follow the server's trading mode */
+  workspace: 'live' | 'practice' | null;
   // --- live
   conn: Conn;
   synced: boolean;
@@ -85,6 +87,7 @@ export const useStore = create<AppState>((set, get) => ({
   user: null,
   locked: false,
   lockEnabled: false,
+  workspace: null,
   ...live,
   selectedBook: null,
   confirm: null,
