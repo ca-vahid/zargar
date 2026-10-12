@@ -70,6 +70,8 @@ class ScoutService:
         # P3: analyst lanes, research books, entries, accounting, daily report
         from .desk import ScoutDesk
         self.desk = ScoutDesk(self)
+        from .dossier import DossierDesk
+        self.dossier = DossierDesk(self)
 
     # ------------------------------------------------------------------ settings
     def s(self, key: str, default=None):

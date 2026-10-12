@@ -577,6 +577,15 @@ DEFAULTS: dict[str, Any] = {
     "techniques.scout.random_lane_enabled": True,     # the random matched baseline book
     "techniques.scout.random_max_offset_sessions": 4,  # random entry date = matched entry + U{0..N} sessions
     "techniques.scout.report_at": "16:30",            # ET: end-of-day report
+    # Scout dossier (2026-10-12): an on-demand research note for one ticker. Numbers are computed by code from SEC
+    # XBRL + daily bars; ONE Claude call writes the note and every point must cite a fact id. Never a signal.
+    "techniques.scout.dossier_enabled": True,
+    "techniques.scout.dossier_model": "claude-opus-5-5",
+    "techniques.scout.dossier_effort": "high",        # output_config.effort
+    "techniques.scout.dossier_max_tokens": 12000,
+    "techniques.scout.dossier_timeout_s": 240.0,
+    "techniques.scout.dossier_budget_usd_day": 5.0,   # its OWN daily cap, apart from the analyst lanes' budget
+    "techniques.scout.dossier_release_max_chars": 14000,  # results press release excerpt given to the model
     "techniques.flow.otm_min_pct": 0.0,      # flagged footprint: 0–12% OTM
     "techniques.flow.otm_max_pct": 12.0,
     "techniques.flow.repeat_days": 3,        # same zone flagged N days in the window

@@ -867,6 +867,22 @@ export interface Counterfactual {
 
 
 // --- Scout (research only, 2026-10-07) ---
+export interface ScoutDossierFact { id: string; group: string; label: string; value: string; asOf: string | null; tone: string | null }
+export interface ScoutDossierPoint { text: string; facts: string[]; quote: string | null }
+export interface ScoutDossierNote {
+  lean: string; confidence: number | null; summary: string; background: string; leanWhy: ScoutDossierPoint | null;
+  strengths: ScoutDossierPoint[]; concerns: ScoutDossierPoint[]; valuation: ScoutDossierPoint[];
+  watch: ScoutDossierPoint[]; questions: string[];
+}
+/** The list endpoint returns the summary fields only; the detail adds facts, charts and the note. */
+export interface ScoutDossier {
+  id: string; ticker: string; name: string | null; day: string; status: "running" | "ok" | "facts_only" | "error";
+  reason: string | null; lean: string | null; confidence: number | null; summary: string | null;
+  model: string | null; costUsd: number; createdAt: string | null; updatedAt: string | null;
+  facts?: ScoutDossierFact[]; charts?: { price?: any[]; quarters?: any[]; currency?: string };
+  note?: ScoutDossierNote | null; dropped: { section: string; point: any; why: string }[];
+  sources?: { edgar?: string; release?: { filed: string; accession: string; url: string } | null };
+}
 export interface ScoutGate { status: string; why: string; value?: unknown; threshold?: unknown }
 export interface ScoutClaim { text: string; quote: string; sourceId: string }
 export interface ScoutVerdict {

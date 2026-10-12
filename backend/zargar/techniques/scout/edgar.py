@@ -25,6 +25,7 @@ DATASET_URLS = (
 SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik10}.json"
 SHARES_CONCEPT = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik10}/dei/EntityCommonStockSharesOutstanding.json"
 TICKERS = "https://www.sec.gov/files/company_tickers.json"
+COMPANY_FACTS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json"
 
 
 class EdgarError(RuntimeError):
@@ -123,6 +124,11 @@ class EdgarClient:
 
     async def submissions(self, cik: str) -> dict | None:
         r = await self.get(SUBMISSIONS.format(cik10=f"{int(cik):010d}"), allow_404=True)
+        return None if r is None else r.json()
+
+    async def company_facts(self, cik: str) -> dict | None:
+        """Every XBRL fact the company has filed (several MB). None when the SEC holds none."""
+        r = await self.get(COMPANY_FACTS.format(cik10=f"{int(cik):010d}"), allow_404=True)
         return None if r is None else r.json()
 
     async def shares_outstanding(self, cik: str) -> dict | None:

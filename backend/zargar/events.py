@@ -85,6 +85,7 @@ SCOUT_BUDGET_STOP = "ScoutBudgetStop"          # Scout P3: a lane stopped callin
 SCOUT_ENTRY_ATTEMPT = "ScoutEntryAttempt"      # Scout P3: one 10:00-11:30 ET entry attempt (spread judged on the live quote)
 SCOUT_ENTRY = "ScoutEntry"                     # Scout P3: a research-book entry entered / skipped / unfilled / closed
 SCOUT_DAILY_REPORT = "ScoutDailyReport"        # Scout P3: the end-of-day summary
+SCOUT_DOSSIER = "ScoutDossier"                 # Scout: an on-demand research note was written (lean, cost; never a signal)
 PROPOSAL_CREATED = "ProposalCreated"
 PROPOSAL_APPROVED = "ProposalApproved"
 PROPOSAL_REJECTED = "ProposalRejected"

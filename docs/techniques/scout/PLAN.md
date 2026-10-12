@@ -202,3 +202,31 @@ round trip before the spread).
    million tokens per third-party pricing pages - verify on the official page before relying on it). Each has its
    keep/drop lanes; the comparison is part of the experiment. The OpenAI client lives inside Scout only; the user
    adds `OPENAI_API_KEY` to backend/.env (until then the GPT lane is skipped and says so).
+
+## 8. Research note ("dossier"), built 2026-10-11 (0.9.26)
+
+User request 2026-10-11: let Scout act as a financial analyst on a company, without making it complicated enough
+to make mistakes. Decision: the note is a RESEARCH AID for the user, not a signal. It feeds no book, is never
+masked (a person reads it), and is not part of the keep/drop experiment in sections 2 to 7.
+
+How it is kept honest (`techniques/scout/dossier.py`, `fundamentals.py`):
+
+- Code computes every number: SEC XBRL `companyfacts` (revenue, margins, cash flow, balance sheet, share count),
+  daily bars (returns against SPY, range, averages, volatility), valuation ratios, Form 4 open-market trades on
+  file, recent 8-Ks and the next results date. Each is a numbered fact. What cannot be established is left out and
+  the sheet says so (stale tags, financial companies' cash flow and debt, foreign-currency reporters' ratios).
+- One Claude call (Opus 5.5, effort high) writes the note from the fact sheet and the latest results press release.
+  Every point cites fact ids or a verbatim quote from the release; code removes anything else and keeps it on the
+  record as dropped. The model gives a lean (constructive / neutral / cautious), never a price target or an order.
+- No tools are handed to the model and it sees no chart images: models read tables more reliably than pictures, and
+  a single call with a fixed input is reproducible. The page draws the charts for the reader.
+- Own daily cap `techniques.scout.dossier_budget_usd_day` (US$5; a note costs about US$0.10), apart from the lanes'.
+
+Known limits: XBRL lags a results release until the 10-Q or 10-K is filed, so the newest quarter can be missing for
+days (the note says so when it sees the release); "long-term debt" is the tagged figure and can omit leases and
+short-term borrowings; the company background is the model's own knowledge and is labelled unchecked; funds and
+companies that file no US statements get an error or a price-only sheet.
+
+API: `POST /api/scout/dossiers {ticker}`, `GET /api/scout/dossiers`, `GET /api/scout/dossiers/{id}`. UI: Scout >
+Research, and "Research note on <ticker>" in a candidate's detail. Tests: `tests/test_scout_dossier.py`.
+Long-hold replay (same evening): `replay/README.md` - no edge at 20 to 120 sessions either.
