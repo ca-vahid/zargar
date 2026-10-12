@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.24";
+export const APP_VERSION = "0.9.25";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.25",date:"2026-10-11",title:"Phone top bar fits in Practice",items:[
+    {tag:"fixed",text:"On a phone, switching to Practice no longer makes the page wider than the screen. The longer PRACTICE label pushed HALT off the edge and stretched every page and sheet with it; the top bar now always fits the screen, and the version chip steps aside on narrow phones."},
+  ]},
   {version:"0.9.24",date:"2026-10-11",title:"Scout page redesign",items:[
     {tag:"improved",text:"Scout Candidates: a funnel across the top (found, passed the gates, kept by a model, entered), and each row now shows its evidence as a bar or insider dots, the seven gates as dots, each model's verdict with its conviction, and the position's move. Random twins sit behind their own filter."},
     {tag:"improved",text:"Scout candidate detail: the two models' reads side by side, the gates with their reasons, and a price ladder for each fill (stop, entry, now) with the session of the hold."},
