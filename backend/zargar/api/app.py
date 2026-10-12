@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from .. import events as ev
 from ..brokers.yahoo import RANGE_TFS, YahooQuoteFeed, search_symbols
-from ..auth import COOKIE, AuthError, AuthService, cookie_kwargs
+from ..auth import COOKIE, AuthError, AuthService, client_class, cookie_kwargs, normalize_client
 from ..config import AppConfig
 from ..domain import new_id
 from ..engine import Engine
@@ -101,6 +101,7 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
     class GoogleCredential(BaseModel):
         credential: str
+        client: str | None = None     # native app only: phone | tablet | desktop, bound to the session (claim `cl`)
 
     @app.get("/api/auth/config")
     async def auth_config():
@@ -140,10 +141,15 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
             user = auth_svc.sign_in_google(body.credential)
         except AuthError as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc))
-        token = auth_svc.issue_session(user)
+        bound = normalize_client(body.client)      # anything else is ignored (the web sends nothing)
+        token = auth_svc.issue_session(user, client=bound)
         response.set_cookie(COOKIE, token, **cookie_kwargs(config, https=request.url.scheme == "https"))
-        await eng.journal.append("AuthSignIn", {"email": user["email"], "provider": "google",
-                                                 "client": request.headers.get("x-zargar-client", "desktop")})
+        signed_in = {"email": user["email"], "provider": "google",
+                     "client": bound or request.headers.get("x-zargar-client", "desktop")}
+        if bound:
+            signed_in["clientBound"] = True
+            user = {**user, "client": bound}
+        await eng.journal.append("AuthSignIn", signed_in)
         return {"user": user, "token": token}
 
     @app.post("/api/auth/logout")
@@ -201,9 +207,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     # --- orders ---------------------------------------------------------------
     @app.post("/api/orders", dependencies=[auth])
     async def place_order(intent: OrderIntent, request: Request):
-        # the client class is a server-side fact, never trusted from the body
-        client = (request.headers.get("x-zargar-client") or "desktop").lower()
-        intent.client = client if client in ("phone", "tablet", "desktop") else "desktop"
+        # the client class is a server-side fact, never trusted from the body: the session's
+        # bound class (native app) wins, else the X-Zargar-Client header (web)
+        intent.client = client_class(request) or "desktop"
         try:
             order = await eng.orders.place(intent)
         except ValueError as exc:
@@ -365,9 +371,11 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     @app.get("/api/push/vapid", dependencies=[auth])
     async def push_vapid():
         svc = eng.push
+        expo = len(svc.expo_subscriptions()) if svc is not None else 0
         if svc is None or not svc.available:
-            return {"available": False, "publicKey": None, "subscriptions": 0}
-        return {"available": True, "publicKey": svc.public_key(), "subscriptions": len(svc.subscriptions())}
+            return {"available": False, "publicKey": None, "subscriptions": 0, "expo": expo}
+        return {"available": True, "publicKey": svc.public_key(), "subscriptions": len(svc.subscriptions()),
+                "expo": expo}
 
     @app.post("/api/push/subscribe", dependencies=[auth])
     async def push_subscribe(body: PushSub):
@@ -381,6 +389,28 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         if eng.push is None:
             return {"ok": True, "subscriptions": 0}
         return {"ok": True, "subscriptions": await eng.push.unsubscribe(endpoint)}
+
+    # Expo push tokens (the native Android app) - a second transport beside web push,
+    # available even when pywebpush is not installed
+    class ExpoToken(BaseModel):
+        token: str
+        label: str | None = None
+
+    @app.post("/api/push/expo", dependencies=[auth])
+    async def push_expo_register(body: ExpoToken):
+        if eng.push is None:
+            raise HTTPException(status_code=503, detail="push service unavailable")
+        try:
+            n = await eng.push.subscribe_expo(body.token, body.label or "")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "subscriptions": n}
+
+    @app.delete("/api/push/expo", dependencies=[auth])
+    async def push_expo_unregister(token: str):
+        if eng.push is None:
+            return {"ok": True, "subscriptions": 0}
+        return {"ok": True, "subscriptions": await eng.push.unsubscribe_expo(token.strip())}
 
     @app.post("/api/push/test", dependencies=[auth])
     async def push_test():
@@ -582,6 +612,12 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         if eng.positions.portfolio(pid) is None:
             raise HTTPException(status_code=404, detail="unknown portfolio")
         return await eng.release_book_pause(pid, source="app")
+
+    @app.get("/api/alerts", dependencies=[auth])
+    async def alerts(limit: int = 50):
+        """Recent alert-like journal events, newest first (read-only; see `zargar/alerts_feed.py`)."""
+        from ..alerts_feed import recent_alerts
+        return await recent_alerts(eng, limit)
 
     @app.get("/api/events", dependencies=[auth])
     async def events(

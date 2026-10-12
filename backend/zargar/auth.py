@@ -134,11 +134,17 @@ class AuthService:
                 "provider": "google"}
 
     # ------------------------------------------------------------------ sessions
-    def issue_session(self, user: dict) -> str:
+    def issue_session(self, user: dict, *, client: str | None = None) -> str:
+        """`client` (phone | tablet | desktop) binds the client class to the session as claim
+        `cl` - the native app declares it once at sign-in and cannot change it per request.
+        Anything else is ignored; the web flow passes nothing and its sessions carry no claim."""
         now = int(time.time())
         payload = {"sub": user["email"], "name": user.get("name"), "picture": user.get("picture"),
                    "provider": user.get("provider", "google"), "iat": now,
                    "exp": now + int(self.config.session_days) * 86400, "sid": secrets.token_hex(8)}
+        cl = normalize_client(client)
+        if cl:
+            payload["cl"] = cl
         return jwt.encode(payload, self.secret(), algorithm="HS256")
 
     def verify_session(self, token: str | None) -> dict | None:
@@ -152,8 +158,12 @@ class AuthService:
         # the allow list is live: removing an address ends its sessions too
         if self.google_enabled and email not in self.allowed_emails():
             return None
-        return {"email": email, "name": c.get("name") or email, "picture": c.get("picture"),
+        user = {"email": email, "name": c.get("name") or email, "picture": c.get("picture"),
                 "provider": c.get("provider", "google"), "sid": c.get("sid")}
+        cl = normalize_client(c.get("cl"))
+        if cl:                      # only sessions minted with a client class carry the key
+            user["client"] = cl
+        return user
 
     def authenticate(self, *, bearer: str | None = None, cookie: str | None = None,
                      query_token: str | None = None) -> dict | None:
@@ -171,6 +181,27 @@ class AuthService:
             if user:
                 return user
         return None
+
+
+CLIENT_CLASSES = ("phone", "tablet", "desktop")
+CLIENT_HEADER = "x-zargar-client"
+
+
+def normalize_client(value: Any) -> str | None:
+    v = value.strip().lower() if isinstance(value, str) else ""
+    return v if v in CLIENT_CLASSES else None
+
+
+def client_class(request) -> str | None:
+    """The request's client class (phone | tablet | desktop), or None when nothing valid says.
+
+    A `cl` claim in the authenticated session wins: it was fixed at sign-in and a request header
+    cannot override it (the native app). With no claim the self-declared `X-Zargar-Client`
+    header decides, exactly as before (the web app). Call it after `require_auth` has run -
+    that is what puts the verified session on `request.state.user`."""
+    user = getattr(getattr(request, "state", None), "user", None)
+    bound = normalize_client(user.get("client")) if isinstance(user, dict) else None
+    return bound or normalize_client(request.headers.get(CLIENT_HEADER))
 
 
 def cookie_kwargs(config, *, https: bool) -> dict[str, Any]:
