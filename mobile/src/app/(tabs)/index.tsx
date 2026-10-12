@@ -6,6 +6,8 @@ import { api } from '@/api/endpoints';
 import type { ArmedSummary, Portfolio } from '@/api/types';
 import { Heading, Hero, RangeBar, Sparkline, StatTile, SymbolBadge } from '@/components/graphics';
 import { Card, Delta, Empty, Pill, Row, Screen, styles, Txt } from '@/components/ui';
+import { CurrencySwitch } from '@/components/Header';
+import { useConvert, useCurrency } from '@/hooks/useCurrency';
 import { usePoll } from '@/hooks/usePoll';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { dayMove, dayMovePct, GROUP_LABEL, groupOf, visibleBooks, workspaceOf } from '@/lib/books';
@@ -21,7 +23,8 @@ const WINDOW_LABEL: Record<string, string> = {
  *  of the result is banked against still riding. Same numbers as the Money screen. */
 function LedgerHero({ workspace, scope, label }: { workspace: 'practice' | 'live'; scope?: string; label: string }) {
   const t = useTheme();
-  const ledger = usePoll(() => api.ledger(workspace, scope, 30), 60000, [workspace, scope]);
+  const currency = useCurrency();
+  const ledger = usePoll(() => api.ledger(workspace, scope, 30, currency), 60000, [workspace, scope, currency]);
   const l = ledger.data;
   const cur = l?.currency ?? 'USD';
   return (
@@ -59,7 +62,9 @@ function BookRow({ book, last }: { book: Portfolio; last: boolean }) {
     const v = (curve.data ?? []).map((p) => p[1]);
     return book.equity != null ? [...v, book.equity] : v;
   }, [curve.data, book.equity]);
-  const move = dayMove(book);
+  const conv = useConvert();
+  const eq = conv(book.equity ?? book.cash, book.baseCurrency);
+  const move = conv(dayMove(book), book.baseCurrency).value;
   return (
     <Row last={last}
       onPress={() => { useStore.getState().set({ selectedBook: book.id }); router.navigate('/portfolio'); }}
@@ -67,8 +72,8 @@ function BookRow({ book, last }: { book: Portfolio; last: boolean }) {
       right={<View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
         <Sparkline values={values} up={move == null ? undefined : move >= 0} />
         <View style={{ alignItems: 'flex-end', minWidth: 96 }}>
-          <Txt num>{money(book.equity ?? book.cash, book.baseCurrency)}</Txt>
-          <Delta v="small" value={move} text={`${signedMoney(move, book.baseCurrency)}  ${pct(dayMovePct(book))}`} />
+          <Txt num>{money(eq.value, eq.cur)}</Txt>
+          <Delta v="small" value={move} text={`${signedMoney(move, eq.cur)}  ${pct(dayMovePct(book))}`} />
         </View>
       </View>} />
   );
@@ -118,6 +123,8 @@ export default function NowScreen() {
         {broker && !broker.feedConnected && <Pill kind="bad" text="Prices down" />}
         {ws === 'live' && broker?.ibkrConnected === false && <Pill kind="bad" text="IBKR disconnected" />}
         {bookHalts > 0 && <Pill kind="warn" text={`${bookHalts} book${bookHalts > 1 ? 's' : ''} at loss limit`} />}
+        <View style={{ flex: 1 }} />
+        <CurrencySwitch />
       </View>
 
       {heroes.map((h) => <LedgerHero key={h.label} workspace={ws} scope={h.scope} label={h.label} />)}

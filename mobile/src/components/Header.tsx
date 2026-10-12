@@ -1,6 +1,7 @@
 import { Pressable, View } from 'react-native';
 
 import { api } from '../api/endpoints';
+import { setCurrency, useCurrency } from '../hooks/useCurrency';
 import { setWorkspace, useWorkspace } from '../hooks/useWorkspace';
 import { runAction } from '../lib/actions';
 import { useStore } from '../store';
@@ -74,6 +75,28 @@ export function WorkspaceSwitch() {
     <View style={{ flexDirection: 'row', borderRadius: 999, borderWidth: 1, borderColor: t.line, backgroundColor: t.surface, padding: 2 }}>
       {seg('live', 'Live')}
       {seg('practice', 'Practice')}
+    </View>
+  );
+}
+
+/** USD | CAD for money totals. Share prices stay in the stock's own currency. */
+export function CurrencySwitch() {
+  const t = useTheme();
+  const cur = useCurrency();
+  const seg = (key: 'USD' | 'CAD') => {
+    const on = cur === key;
+    return (
+      <Pressable key={key} onPress={() => setCurrency(key)} accessibilityRole="button" accessibilityState={{ selected: on }}
+        accessibilityLabel={`Show money in ${key}`} hitSlop={6}
+        style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: on ? t.surface3 : 'transparent' }}>
+        <Txt v="small" color={on ? t.text : t.text3} style={{ fontWeight: on ? '800' : '600' }}>{key}</Txt>
+      </Pressable>
+    );
+  };
+  return (
+    <View style={{ flexDirection: 'row', borderRadius: 999, borderWidth: 1, borderColor: t.line, padding: 2, alignSelf: 'flex-start' }}>
+      {seg('USD')}
+      {seg('CAD')}
     </View>
   );
 }

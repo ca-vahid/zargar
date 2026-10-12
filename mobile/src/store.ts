@@ -34,6 +34,8 @@ export interface AppState {
   lockEnabled: boolean;
   /** which side the screens show; null until chosen = follow the server's trading mode */
   workspace: 'live' | 'practice' | null;
+  /** the currency money totals are shown in */
+  currency: 'USD' | 'CAD';
   // --- live
   conn: Conn;
   synced: boolean;
@@ -88,6 +90,7 @@ export const useStore = create<AppState>((set, get) => ({
   locked: false,
   lockEnabled: false,
   workspace: null,
+  currency: 'USD',
   ...live,
   selectedBook: null,
   confirm: null,

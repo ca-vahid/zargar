@@ -7,6 +7,9 @@ import type { ManagedPosition, Order, Portfolio, Position } from '@/api/types';
 import { RangeBar, SymbolBadge } from '@/components/graphics';
 import { LineChart } from '@/components/LineChart';
 import { Async, Button, Card, Chips, Delta, Empty, Pill, Row, Screen, Section, styles, Txt } from '@/components/ui';
+import { CurrencySwitch } from '@/components/Header';
+import { useConvert, useCurrency } from '@/hooks/useCurrency';
+import { rateFor } from '@/lib/fx';
 import { usePoll } from '@/hooks/usePoll';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { runAction } from '@/lib/actions';
@@ -47,7 +50,14 @@ export default function PortfolioScreen() {
   const books = useMemo(() => visibleBooks(portfolios, ws, showResearch), [portfolios, ws, showResearch]);
   const book: Portfolio | undefined = books.find((b) => b.id === selected) ?? books[0];
   const bookId = book?.id ?? '';
-  const cur = book?.baseCurrency ?? 'USD';
+  const own = book?.baseCurrency ?? 'USD';
+  // totals follow the chosen display currency; with no live rate they stay in the book's own
+  const display = useCurrency();
+  const conv = useConvert();
+  const usdCad = quotes['USDCAD=X']?.last ?? null;
+  const rate = rateFor(usdCad, own, display);
+  const cur = rate == null ? own : display;
+  const k = rate ?? 1;
 
   const equity = usePoll<Point[]>(
     () => (bookId ? api.equity(bookId, { since: RANGE_MS[range] ? Date.now() - (RANGE_MS[range] as number) : undefined, points: 300 }) : Promise.resolve([])),
@@ -66,7 +76,10 @@ export default function PortfolioScreen() {
   if (!book) return <Screen><Empty text={ws === 'live' ? 'No funded live or paper account yet.' : 'No practice books yet — waiting for the server.'} /></Screen>;
 
   // the live point is appended so the curve's right edge is the number in the headline
-  const series: Point[] = equity.data && book.equity != null ? [...equity.data, [Date.now(), book.equity]] : equity.data ?? [];
+  const raw: Point[] = equity.data && book.equity != null ? [...equity.data, [Date.now(), book.equity]] : equity.data ?? [];
+  // the whole curve at today's rate: its shape is the book's own, only the scale changes
+  const series: Point[] = k === 1 ? raw : raw.map(([ts, v]) => [ts, v * k]);
+  const move = dayMove(book);
   const paused = pauses?.[book.id];
   const lossHalt = lossHalts?.[book.id];
   const refreshAll = () => { equity.refresh(); managed.refresh(); fills.refresh(); };
@@ -101,22 +114,25 @@ export default function PortfolioScreen() {
           <Txt v="label" faint>{GROUP_LABEL[groupOf(book)]}</Txt>
           {paused && <Pill kind="warn" text="Entries paused" />}
           {lossHalt && <Pill kind="bad" text="At loss limit" />}
+          <View style={{ flex: 1 }} />
+          <CurrencySwitch />
         </View>
-        <Txt v="hero" num>{money(book.equity ?? book.cash, cur)}</Txt>
-        <Delta value={dayMove(book)} text={`${signedMoney(dayMove(book), cur)}  ${pct(dayMovePct(book))} today`} />
+        <Txt v="hero" num>{money((book.equity ?? book.cash) * k, cur)}</Txt>
+        <Delta value={move} text={`${signedMoney(move == null ? null : move * k, cur)}  ${pct(dayMovePct(book))} today`} />
+        {cur !== own && <Txt v="small" faint>Held in {own}; shown at {usdCad?.toFixed(4)} USD/CAD.</Txt>}
       </View>
 
       <Card>
         <Async state={equity}>
           {() => (
-            <LineChart points={series} baseline={range === '1D' ? book.dayStart ?? null : null} baselineLabel="yesterday's close"
+            <LineChart points={series} baseline={range === '1D' && book.dayStart != null ? book.dayStart * k : null} baselineLabel="yesterday's close"
               format={(v) => money(v, cur)} formatTime={(ts) => dayTime(ts)} emptyText="Not enough history for this range yet" />
           )}
         </Async>
         <Chips value={range} onChange={setRange} options={(Object.keys(RANGE_MS) as Range[]).map((k) => ({ key: k, label: k }))} />
       </Card>
 
-      <Section title={`Positions · ${positions.length}`} right={<Txt v="small" dim num>Cash {money(book.cash, cur)}</Txt>}>
+      <Section title={`Positions · ${positions.length}`} right={<Txt v="small" dim num>Cash {money(book.cash * k, cur)}</Txt>}>
         <Card>
           {positions.length === 0 && <Empty text="No open positions in this book." />}
           {positions.map((p, i) => {
@@ -132,8 +148,8 @@ export default function PortfolioScreen() {
                   positionId: plan?.id ?? '', name: label } })}
                 left={<View style={styles.wrap}><SymbolBadge symbol={p.option?.underlying ?? p.symbol} size={34} /><Txt v="head">{label}</Txt>{plan?.status === 'closing' && <Pill kind="warn" text="closing" />}{plan?.status === 'attention' && <Pill kind="bad" text="attention" />}</View>}
                 sub={`${qty(p.qty)} @ ${price(p.avgCost)}${plan?.stop != null ? ` · stop ${price(plan.stop)}` : ' · no stop on record'}${plan?.target != null ? ` · target ${price(plan.target)}` : ''}`}
-                right={<Txt num>{money(p.marketValue, p.currency ?? cur)}</Txt>}
-                rightSub={<Delta v="small" value={p.unrealizedPnl} text={`${signedMoney(p.unrealizedPnl, p.currency ?? cur)}  ${pct(p.unrealizedPnlPct)}`} />} />
+                right={<Txt num>{money(conv(p.marketValue, p.currency ?? own).value, conv(p.marketValue, p.currency ?? own).cur)}</Txt>}
+                rightSub={<Delta v="small" value={p.unrealizedPnl} text={`${signedMoney(conv(p.unrealizedPnl, p.currency ?? own).value, conv(p.unrealizedPnl, p.currency ?? own).cur)}  ${pct(p.unrealizedPnlPct)}`} />} />
               {/* shares only: an option's own price is not on the share-price scale of its stop */}
               {plan && !p.option && <RangeBar stop={plan.stop} entry={plan.entry} now={mark} target={plan.target} />}
               </View>
@@ -160,7 +176,7 @@ export default function PortfolioScreen() {
             {(list) => list.slice(0, 12).map((e, i, all) => (
               <Row key={e.id} last={i === all.length - 1}
                 left={`${e.side === 'BUY' ? 'Bought' : 'Sold'} ${qty(e.qty)} ${e.symbol}`}
-                sub={`at ${price(e.price)}${e.commission ? ` · fee ${money(e.commission, cur)}` : ''}`}
+                sub={`at ${price(e.price)}${e.commission ? ` · fee ${money(e.commission, own)}` : ''}`}
                 right={<Txt v="small" dim num>{dayTime(e.ts)}</Txt>} />
             ))}
           </Async>

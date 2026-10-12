@@ -4,6 +4,7 @@ import { Switch, View } from 'react-native';
 import { api } from '@/api/endpoints';
 import { canLock } from '@/auth/lock';
 import { setLockEnabled, signOut } from '@/auth/session';
+import { CurrencySwitch } from '@/components/Header';
 import { Button, Card, Row, Screen, Section, Txt } from '@/components/ui';
 import { APP_VERSION } from '@/config';
 import { runAction } from '@/lib/actions';
@@ -61,6 +62,12 @@ export default function SettingsScreen() {
             right={<Switch value={push?.status === 'on'} disabled={busy || push == null || push.status === 'unavailable'}
               onValueChange={(v) => void togglePush(v)} trackColor={{ true: t.accent, false: t.surface3 }} />} />
           {push?.status === 'on' && <Button small kind="plain" label="Send a test notification" onPress={() => void testPush()} />}
+        </Card>
+      </Section>
+
+      <Section title="Display">
+        <Card>
+          <Row last left="Show money in" sub="Totals, gains and losses. Share prices stay in the stock's own currency." right={<CurrencySwitch />} />
         </Card>
       </Section>
 

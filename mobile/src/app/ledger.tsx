@@ -4,6 +4,8 @@ import { View } from 'react-native';
 import { api } from '@/api/endpoints';
 import type { Ledger } from '@/api/types';
 import { Async, Card, Delta, Empty, Row, Screen, Section, styles, Tabs, Txt } from '@/components/ui';
+import { CurrencySwitch } from '@/components/Header';
+import { useCurrency } from '@/hooks/useCurrency';
 import { usePoll } from '@/hooks/usePoll';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { money, price, qty, shortDate, signedMoney } from '@/lib/format';
@@ -18,13 +20,15 @@ const QUERY: Record<Tab, { workspace: 'practice' | 'live'; scope?: string }> = {
 export default function LedgerScreen() {
   const ws = useWorkspace();
   const [tab, setTab] = useState<Tab>(ws === 'live' ? 'real' : 'practice');
-  const ledger = usePoll(() => api.ledger(QUERY[tab].workspace, QUERY[tab].scope, 30), 120000, [tab]);
+  const currency = useCurrency();
+  const ledger = usePoll(() => api.ledger(QUERY[tab].workspace, QUERY[tab].scope, 30, currency), 120000, [tab, currency]);
 
   return (
     <Screen onRefresh={ledger.refresh} refreshing={ledger.refreshing}>
       <Tabs value={tab} onChange={setTab} options={[
         { key: 'practice', label: 'Practice' }, { key: 'paper', label: 'Paper' }, { key: 'real', label: 'Real money' },
       ]} />
+      <CurrencySwitch />
       <Async state={ledger}>
         {(l: Ledger) => {
           const cur = l.currency ?? 'USD';
