@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.25";
+export const APP_VERSION = "0.9.26";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.26",date:"2026-10-11",title:"Scout research notes",items:[
+    {tag:"new",text:"Scout > Research: type a ticker and get a research note on the company. The numbers (growth, margins, cash flow, balance sheet, valuation, insider trades, price against the S&P 500) are computed from SEC filings and price data; the analyst then writes strengths, concerns, valuation and what to watch, and every point cites the numbers it rests on. Points without a valid citation are removed. A note takes about half a minute and costs about 10 cents, under its own $5 daily cap."},
+    {tag:"new",text:"Each note shows a one-year price chart with the 50- and 200-day averages and the S&P 500, plus revenue and net income by quarter. A candidate's detail has a link that opens the note for that company."},
+    {tag:"improved",text:"Scout replay: both signals were re-run with holds of 20 to 120 sessions. Longer holds do not beat the S&P 500 either (report under docs/techniques/scout/replay)."},
+  ]},
   {version:"0.9.25",date:"2026-10-11",title:"Phone top bar fits in Practice",items:[
     {tag:"fixed",text:"On a phone, switching to Practice no longer makes the page wider than the screen. The longer PRACTICE label pushed HALT off the edge and stretched every page and sheet with it; the top bar now always fits the screen, and the version chip steps aside on narrow phones."},
   ]},

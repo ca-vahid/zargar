@@ -1475,5 +1475,34 @@ class ScoutReport(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ScoutDossier(Base):
+    """An on-demand research note for one ticker (techniques/scout/dossier.py). `facts` are computed by
+    code; `note` is the model's grounded reading of them; `dropped` keeps the points that failed grounding.
+    status: running | ok | facts_only (no usable note - `reason` says why) | error."""
+    __tablename__ = "scout_dossiers"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ticker: Mapped[str] = mapped_column(String(32), index=True)
+    cik: Mapped[str | None] = mapped_column(String(16))
+    name: Mapped[str | None] = mapped_column(String(256))
+    day: Mapped[str] = mapped_column(String(10), index=True)                      # ET date of the request
+    status: Mapped[str] = mapped_column(String(12), index=True)
+    reason: Mapped[str | None] = mapped_column(Text)
+    facts: Mapped[list] = mapped_column(JSONVariant, default=list)
+    charts: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    note: Mapped[dict | None] = mapped_column(JSONVariant)
+    dropped: Mapped[list] = mapped_column(JSONVariant, default=list)
+    sources: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    prompt_version: Mapped[str | None] = mapped_column(String(32))
+    model: Mapped[str | None] = mapped_column(String(64))
+    raw: Mapped[str | None] = mapped_column(Text)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 SCOUT_TABLES = ("scout_filings", "scout_insider_trades", "scout_candidates", "scout_state",
-                "scout_verdicts", "scout_entries", "scout_reports")
+                "scout_verdicts", "scout_entries", "scout_reports", "scout_dossiers")
