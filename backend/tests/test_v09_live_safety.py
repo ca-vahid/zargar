@@ -390,6 +390,45 @@ async def test_a_close_never_sells_beside_an_unconfirmed_stop(eng):
     await pm.stop()
 
 
+async def test_a_close_asks_again_for_a_stop_whose_cancel_was_lost(eng):
+    """2026-10-12 (MGM/CYRX paper): the broker was logged out when the time rule closed - the cancel never reached
+    the venue, the stop id was already cleared, and every later close sent 0 beside the still-resting stop."""
+    pid, fo, pm = await _real_rig(eng)
+    d = await pm.adopt(_spec(pid))
+    s1 = pm.get(d["id"]).venue_stop_order_id
+    fo.confirm = False                                      # the cancel is lost: the stop keeps resting
+    await pm.close(d["id"], fraction=1.0, reason="stale", kind="time")
+    assert [i.order_type for i in fo.placed] == ["STP"] and fo.cancelled == [s1]
+    fo.confirm = True                                       # the broker is back
+    await pm.close(d["id"], fraction=1.0, reason="stale", kind="time")
+    assert fo.cancelled == [s1, s1], "the lost cancel is asked again"
+    assert fo.placed[-1].side == "SELL" and fo.placed[-1].order_type != "STP" and fo.placed[-1].qty == 10
+    await pm.stop()
+
+
+async def test_a_lost_cancel_is_asked_again_after_a_restart(eng):
+    pid, fo, pm = await _real_rig(eng)
+    d = await pm.adopt(_spec(pid))
+    s1 = pm.get(d["id"]).venue_stop_order_id
+    fo.confirm = False
+    await pm.close(d["id"], fraction=1.0, reason="stale", kind="time")
+    pm._retired_stops.clear()                               # a restart forgets the in-memory retire list
+    fo.confirm = True
+    await pm.close(d["id"], fraction=1.0, reason="stale", kind="time")
+    assert fo.cancelled == [s1, s1] and fo.placed[-1].order_type != "STP" and fo.placed[-1].qty == 10
+    await pm.stop()
+
+
+async def test_a_close_never_cancels_another_positions_stop(eng):
+    pid, fo, pm = await _real_rig(eng, cash=20_000.0)
+    a = await pm.adopt(_spec(pid))
+    b = await pm.adopt(_spec(pid))
+    sb = pm.get(b["id"]).venue_stop_order_id
+    await pm.close(a["id"], fraction=1.0, reason="stale", kind="time")
+    assert sb not in fo.cancelled and pm.get(b["id"]).venue_stop_order_id == sb
+    await pm.stop()
+
+
 # ---------------------------------------------------------------- V1.7 good faith
 def test_unsettled_funded_pure():
     ex = [{"orderId": "s", "side": "SELL", "qty": 20, "price": 100.0, "ts": 1},
