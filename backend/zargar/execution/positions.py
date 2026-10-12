@@ -312,6 +312,24 @@ class PositionManager:
             return 0.0
         return sum(max(0.0, float(o.qty or 0) - float(o.filled_qty or 0)) for o in rows if o.id not in exclude)
 
+    async def _stale_own_stops(self, p: Managed) -> list[str]:
+        """Working SELL stops on this position's share symbols that no position holds as its current venue stop: a
+        stop this position retired (the cancel was lost - also across a restart, where the in-memory retire list is
+        gone). A stop another position owns or retired is never touched."""
+        symbols = {l.symbol for l in p.open_legs if l.sec_type == "STK" and l.qty > 0}
+        if not symbols:
+            return []
+        current = {x.venue_stop_order_id for x in self._pos.values() if x.venue_stop_order_id}
+        try:
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(Order.id).where(
+                    Order.portfolio_id == p.portfolio_id, Order.symbol.in_(symbols), Order.side == "SELL",
+                    Order.order_type == "STP", Order.source == "technique",
+                    Order.status.in_(_WORKING_ORDER)))).all()
+        except Exception:                                  # noqa: BLE001 - unknown: nothing to re-cancel
+            return []
+        return [r[0] for r in rows if r[0] not in current and self._retired_stops.get(r[0], p.id) == p.id]
+
     async def _cancel_stop_confirmed(self, p: Managed, order_id: str) -> str:
         """Cancel our own venue stop. On a real book wait (bounded) for the venue's confirmation and remember the id:
         a fill that lands while the cancel is in flight still reduces this position. Returns the final status
@@ -1253,6 +1271,18 @@ class PositionManager:
                 await self.engine.orders.cancel(_old_stop)
             p.venue_stop_at = None
             cancelling.append(_old_stop)
+        if real:
+            # 2026-10-12 (MGM/CYRX paper, broker logged out): a stop retired by an EARLIER attempt whose cancel never
+            # reached the venue still rests there and the id above is already cleared - without asking again every
+            # later close counts it as "already working" and sends nothing, so the position stays "closing" for good
+            for _oid in await self._stale_own_stops(p):
+                if _oid in cancelling:
+                    continue
+                self._retired_stops[_oid] = p.id
+                self._register_exit_order(p, _oid)
+                with contextlib.suppress(Exception):
+                    await self.engine.orders.cancel(_oid)
+                cancelling.append(_oid)
         # a forced (stop) close supersedes any resting limit exit: cancel it so
         # the in-flight guard doesn't suppress the stop, and mark it dead
         # optimistically — a zombie order must never block getting flat
