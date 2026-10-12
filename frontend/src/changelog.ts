@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.26";
+export const APP_VERSION = "0.9.27";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.27",date:"2026-10-12",title:"A close no longer gets stuck behind its own stop",items:[
+    {tag:"fixed",text:"When the broker was logged out as a position was being closed, the request to cancel its resting stop was lost and the app forgot which stop it was. Every later attempt then saw that stop as already selling the shares and sent nothing, so the position stayed in closing. A close now asks again for any of its own stops still resting at the broker, including after a restart."},
+  ]},
   {version:"0.9.26",date:"2026-10-11",title:"Scout research notes",items:[
     {tag:"new",text:"Scout > Research: type a ticker and get a research note on the company. The numbers (growth, margins, cash flow, balance sheet, valuation, insider trades, price against the S&P 500) are computed from SEC filings and price data; the analyst then writes strengths, concerns, valuation and what to watch, and every point cites the numbers it rests on. Points without a valid citation are removed. A note takes about half a minute and costs about 10 cents, under its own $5 daily cap."},
     {tag:"new",text:"Each note shows a one-year price chart with the 50- and 200-day averages and the S&P 500, plus revenue and net income by quarter. A candidate's detail has a link that opens the note for that company."},
