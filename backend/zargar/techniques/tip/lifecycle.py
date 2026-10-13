@@ -288,6 +288,22 @@ def merge_small_trims(ladder: dict | None, *, qty: float, price: float,
     return {**ladder, **new}, note
 
 
+def size_mirrored_trim(fraction: float, *, value: float, min_notional: float) -> tuple[float | None, str | None]:
+    """Pure (2026-10-13): the same floor for a trim COPIED from the source. Paper SNAP sold 51 shares ($344) on
+    jon-and-kian's trim under a $750 floor: `merge_small_trims` only shapes the ladder at adoption. A trim too small
+    for its own order is not sent (the position waits for the source's close, its target or its stop - one order);
+    a remainder too small to ride alone goes with the trim. Returns (fraction or None = skip, note)."""
+    if not min_notional or min_notional <= 0 or not value or value <= 0 or fraction >= 1.0:
+        return fraction, None
+    if fraction * value < float(min_notional):
+        return None, (f"a {fraction:.0%} trim of a ${value:,.0f} position is ${fraction * value:,.0f}, under the "
+                      f"book's ${float(min_notional):,.0f} minimum sell order")
+    if (1.0 - fraction) * value < float(min_notional):
+        return 1.0, (f"the ${(1.0 - fraction) * value:,.0f} left after the trim is under the book's "
+                     f"${float(min_notional):,.0f} minimum sell order: sold in one order")
+    return fraction, None
+
+
 def _policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
     plan = plan or {}
     policy: dict = {"timeframe": "15m"}

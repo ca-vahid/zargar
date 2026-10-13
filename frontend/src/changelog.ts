@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.31";
+export const APP_VERSION = "0.9.32";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.32",date:"2026-10-13",title:"Tips: a copied trim respects the book's minimum sell size",items:[
+    {tag:"fixed",text:"When a source trims and the book copies it, the sale now respects the book's minimum sell size. A trim too small for its own order is not sent, and the position is sold in one order later (the source's close, the target or the stop). A leftover too small to sell alone goes out with the trim. Before, the paper book sold $344 of SNAP under a $750 minimum and paid a second commission."},
+  ]},
   {version:"0.9.31",date:"2026-10-13",title:"Realized profit after fees, and safer closing orders on Wealthsimple/Webull accounts",items:[
     {tag:"fixed",text:"The Realized column on the positions table now shows the result after commissions. Before, it showed the price gain only, so every option round trip read about $2 per contract too high. Hover the number to see the price gain and the fees separately."},
     {tag:"fixed",text:"On Wealthsimple/Webull (SnapTrade) accounts, one failed order-status check used to mark the broker as disconnected, which would have refused a closing order as well as new buys. A closing order is now always sent to the broker; new buys still wait until the status check works again."},

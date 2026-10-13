@@ -2426,6 +2426,22 @@ class SignalService:
                         "signalId": row.id, "reason": f"a {f_eff:.0%} trim of {held_sh:g} share(s) is under one share"},
                         aggregate_type="position", aggregate_id=p["id"], portfolio_id=p.get("portfolioId"))
                 continue
+            # 2026-10-13: the book's minimum sell order (binding minExitNotional) also bounds a copied share trim
+            only_shares = held_sh and all(str(lg.get("secType") or "STK") == "STK" for lg in (p.get("legs") or []))
+            if f_eff < 1.0 and only_shares:
+                from ..techniques.tip.lifecycle import size_mirrored_trim
+                _min_exit = float(_books.knob(_bb, "minExitNotional", eng.settings, 0) or 0)
+                f_sized, _snote = size_mirrored_trim(f_eff, value=held_sh * float(p.get("entry") or 0),
+                                                     min_notional=_min_exit)
+                if f_sized is None:
+                    with contextlib.suppress(Exception):
+                        await eng.journal.append("TipSourceExitNotMirrored", {
+                            "positionId": p["id"], "symbol": p.get("symbol"), "source": source, "action": sig.action,
+                            "signalId": row.id, "reason": _snote, "minExitNotional": _min_exit},
+                            aggregate_type="position", aggregate_id=p["id"], portfolio_id=p.get("portfolioId"))
+                    continue
+                if f_sized != f_eff:
+                    f_eff, reason = f_sized, f"{reason}; {_snote}"
             try:
                 await mgr.close(p["id"], fraction=f_eff, reason=reason[:200])
             except Exception:                            # noqa: BLE001
