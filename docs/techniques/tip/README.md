@@ -28,6 +28,16 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 | `HISTORY.md` | superseded state-of-play and "what changed" text from older refreshes | archive |
 | `reviews/` | external review rounds, responses, deploy and incident records | dated records; `2026-09-14-kfin-response.md` (0.7.83–0.7.87, HOLD142, R147, the 2026-09-15 incidents) and `2026-09-16-tmr-plan-record.md` (TMR, INTRA, I175, the 2026-09-16 incident) are the current ledgers |
 
+## Minimum sell size also bounds a copied trim (2026-10-13, 0.9.32)
+
+The binding knob `minExitNotional` shaped only the ladder at adoption (`lifecycle.merge_small_trims`). A trim copied
+from the source (`SignalService._mirror_source_exit`) ignored it: on 2026-10-13 the paper book sold 51 SNAP ($344)
+under a $750 floor. `lifecycle.size_mirrored_trim` now applies the same floor to share positions, on the position's
+entry value: a trim under the floor is not sent (`TipSourceExitNotMirrored` with the reason; the position leaves in
+one order at the source's close, its target or its stop), and a remainder under the floor goes with the trim. A
+source CLOSE is never held back. Options are not covered (their commission is per contract). Known gap: the held
+position keeps full size while the source has reduced; the stop is unchanged.
+
 ## The measured record (2026-10-12, 0.9.30) - read this before trusting the analyst's verdict
 
 Two order-free replays of the whole archive found no proven edge: no source is positive after costs, and the
