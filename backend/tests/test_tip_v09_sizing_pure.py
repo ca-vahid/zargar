@@ -224,6 +224,16 @@ def test_desk_metric_helpers():
                                         "openRiskPct": 2.5, "openRiskCapPct": 5.0, "mfeKeptMean": 0.4,
                                         "stopOuts": 2, "noiseStopOuts": 1}]})
     assert line == "Tips: P: 3 open, 42% deployed, risk 2.5%/5%, MFE kept 40%, 1/2 noise stops"
+    rec = DM.win_loss_record([{"net": 30.0, "r": 0.6, "mfeKept": 0.5}, {"net": 10.0, "r": 0.2, "mfeKept": 0.25},
+                              {"net": -40.0, "r": -0.8, "mfeKept": None}, {"net": 0.0, "r": None, "mfeKept": None}])
+    assert (rec["n"], rec["wins"], rec["losses"], rec["net"]) == (4, 2, 1, 0.0)
+    assert rec["avgWin"] == 20.0 and rec["avgLoss"] == -40.0 and rec["payoff"] == 0.5
+    assert rec["avgWinR"] == 0.4 and rec["avgLossR"] == -0.8 and rec["expectancyR"] == 0.0 and rec["rCount"] == 3
+    assert rec["mfeKeptMean"] == 0.375
+    assert DM.win_loss_record([])["payoff"] is None
+    line2 = DM.summary_line({"books": [{"portfolioId": "abcdef12", "name": "P", "openPositions": 0,
+                                         "record": {**rec, "days": 14}}]})
+    assert line2 == "Tips: P: 0 open, 14d 2W/1L payoff 0.5 exp +0.00R"
 
 
 def test_fill_cost_decomposition():

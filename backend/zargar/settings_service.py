@@ -307,6 +307,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.regime_vol_max": 25.0,          # V6.2: else SPY 126-session realised vol (% annualised) above this
     "techniques.tip.chase_filter": "observe",       # V6.3: off | observe (journal TipChaseShadow) | enforce (half size + time box 3 sessions)
     "techniques.tip.chase_threshold_pct": 2.0,      # V6.3: entry this % above the prior close = chased
+    "techniques.tip.reentry_guard": "observe",      # 2026-10-12: off | observe (journal TipReentryShadow: a new idea in a name a Tips book closed at a loss inside the cooldown); no enforce mode yet
+    "techniques.tip.reentry_cooldown_days": 1,      # 1 = the same ET day
     "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)

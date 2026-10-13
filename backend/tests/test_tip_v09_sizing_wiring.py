@@ -230,6 +230,35 @@ async def test_hostile_regime_is_journaled_as_a_shadow(rig):
     assert ev and ev[-1]["regime"]["vix"] == 32.0
 
 
+async def test_a_new_idea_in_a_name_closed_at_a_loss_today_is_journaled_not_blocked(rig):
+    eng = rig
+    await eng.settings.set("techniques.tip.geometry_gate", "off", journal=False)
+    pid = _book(eng)
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    q = await _quote(eng, "RENA")
+    # a winner closed today and an old loser never count
+    await _held(eng, pid, "REWN", status="closed", realized=40.0, closed_ms=now - 60_000, close_reason="target")
+    await _held(eng, pid, "REOL", status="closed", realized=-40.0, closed_ms=now - 5 * 86_400_000, close_reason="stop hit")
+    for sym in ("REWN", "REOL"):
+        qq = await _quote(eng, sym)
+        r0, s0 = await _tip(eng, sym, qq.last, stop_pct=3.0)
+        p0 = await eng.proposals.create_from_signal(r0, s0, {})
+        assert "reentry" not in (p0["context"].get("guards") or {})
+    assert not await _events(eng, "TipReentryShadow")
+    lost = await _held(eng, pid, "RENA", status="closed", realized=-25.0, closed_ms=now - 60_000, close_reason="stop hit")
+    row, sig = await _tip(eng, "RENA", q.last, stop_pct=3.0)
+    p = await eng.proposals.create_from_signal(row, sig, {})
+    assert p is not None and p["qty"] >= 1                                  # observe only: the card is still minted
+    re = p["context"]["guards"]["reentry"]
+    assert re["applied"] is False and re["prior"][0]["positionId"] == lost and re["prior"][0]["stopExit"]
+    ev = await _events(eng, "TipReentryShadow")
+    assert len(ev) == 1 and ev[0]["signalId"] == row.id and ev[0]["prior"][0]["realizedPnl"] == -25.0
+    await eng.settings.set("techniques.tip.reentry_guard", "off", journal=False)
+    row2, sig2 = await _tip(eng, "RENA", q.last, stop_pct=3.0)
+    p2 = await eng.proposals.create_from_signal(row2, sig2, {})
+    assert "reentry" not in (p2["context"].get("guards") or {}) and len(await _events(eng, "TipReentryShadow")) == 1
+
+
 async def test_prefetch_seeds_the_decision_time_context_line(rig):
     eng = rig
     from zargar.techniques.tip import prefetch as PF
