@@ -312,6 +312,12 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.chase_threshold_pct": 2.0,      # V6.3: entry this % above the prior close = chased
     "techniques.tip.reentry_guard": "observe",      # 2026-10-12: off | observe (journal TipReentryShadow: a new idea in a name a Tips book closed at a loss inside the cooldown); no enforce mode yet
     "techniques.tip.reentry_cooldown_days": 1,      # 1 = the same ET day
+    "techniques.tip.measured_record": "supply",     # 2026-10-12: off | supply - the nightly replay's rates (all sources, this source, the analyst's own take-vs-skip) ride the analyst's header (techniques/tip/record.py); gates nothing
+    "techniques.tip.measured_record_at": "17:50",   # the nightly re-score (own process; weekdays)
+    "techniques.tip.measured_record_since": "2026-08-28",          # the archive's first day
+    "techniques.tip.measured_record_option_cost": 0.08,            # $ a share, both legs: slippage + fees
+    "techniques.tip.measured_record_supply_since": "2026-10-13",   # the first session the analyst read the record: the take-vs-skip split from here on is the check that supplying it helps
+    "techniques.tip.measured_record_timeout_seconds": 1200,
     "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)

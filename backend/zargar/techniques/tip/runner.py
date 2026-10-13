@@ -1422,6 +1422,19 @@ async def attach_tip_runner(engine) -> None:
     engine.scheduler.register("tip_knowledge_maintenance", maint_at,
                               lambda: _rule_audit.run_knowledge_maintenance(engine),
                               weekdays_only=False)
+    # 2026-10-12: the measured record the analyst reads (archive re-scored on real option trades, own process);
+    # a desk with no snapshot yet builds its first one shortly after boot
+    from . import record as _record
+    engine.scheduler.register("tip_measured_record", str(engine.settings.get("techniques.tip.measured_record_at", "17:50")),
+                              lambda: _record.refresh(engine))
+
+    async def _first_measured_record() -> None:
+        await asyncio.sleep(180)
+        with contextlib.suppress(Exception):
+            if _record.mode(engine.settings) == "supply" and await _record.latest(engine) is None:
+                await _record.refresh(engine)
+    if bool(getattr(engine.config, "alpaca_key_id", "")):
+        asyncio.create_task(_first_measured_record(), name="tip-measured-record-first")
     # PROF-03 (2026-09-15): the overnight-hold study's two research samples -
     # a pre-close snapshot of every open / intraday-exited Tips position and the
     # next session's first qualified quote (observation only; never an order)
