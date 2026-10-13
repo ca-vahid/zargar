@@ -2990,3 +2990,16 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   when the session's own 5m bars are absent (tests that feed raw 1m closing bars on future dates); raw bars decide
   from the second decision on (`last_tf_bar_ts`). Harmless live (the session's bars exist); a test that expects a stop
   on the first fed bar must feed one neutral bar first.
+
+### SnapTrade: a failed status poll never blocks a closing order; realized after fees - 2026-10-13 (Cartel desk, 0.9.31; shared `orders.py`, `brokers/snaptrade.py`, `portfolio.py`)
+
+- `OrderManager.place` still refuses an ENTRY when `executor.connected` is false. A reduce-only order is handed to an
+  executor that declares `exits_when_degraded = True` (SnapTrade only): its `connected` flag is "the last
+  `recentOrders` poll worked", which is not evidence the venue cannot take a close. IBKR and the simulator are unchanged.
+- A 429 on the poll is a stand-down for that account (`throttle_wait_seconds`, venue hint + 1 s, capped at 60 s), not a
+  disconnect. `snaptrade.order_poll_seconds` default 2.0 -> 7.0 (personal keys: 10 requests/minute/account); the
+  unknown-outcome reconcile polls at the same spacing. No SnapTrade order has ever been sent, so this is from the
+  documented limit and stub tests, not from the venue.
+- `positions.realized_pnl` stays price-only. The keeper also carries `feesPaid` per holding (summed from `executions` on
+  load, added on each fill) and ships `realizedNet = realizedPnl - feesPaid`; the Blotter shows the net figure. Managed
+  positions (`state.realizedPnl`, Armed/Portfolios screens) are still before fees - open.
