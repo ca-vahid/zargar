@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.28";
+export const APP_VERSION = "0.9.29";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.29",date:"2026-10-12",title:"Tips keeps score of its winners and losers",items:[
+    {tag:"new",text:"The daily Tips report now carries a win/loss record for each book over the last 14 days: wins, losses, average win and loss, the payoff ratio and how much of each trade's peak gain was kept."},
+    {tag:"new",text:"When a new idea arrives in a name a Tips book closed at a loss the same day, the app records it on the card and in the journal. Nothing is blocked; the record is there to show whether such re-entries lose before any rule is made."},
+  ]},
   {version:"0.9.28",date:"2026-10-12",title:"Options Cartel: Practice trial restarted, and it can no longer be switched off by accident",items:[
     {tag:"fixed",text:"Options Cartel stopped preparing plans on October 5 because it followed the shared Real orders switch, which was turned on for another desk's paper account. Cartel now has its own Practice/Live setting, so its Practice trial keeps running whatever that switch says. A fresh 20-session trial starts October 13."},
     {tag:"new",text:"If Cartel's nightly preparation is ever disabled on a trading day, you get an alert (in the app, by push and on Telegram) instead of a silent skipped day."},
