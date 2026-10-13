@@ -77,8 +77,8 @@ def spread_spec(pf, *, qty: int = 2) -> dict:
         "policy": {"timeframe": "5m", "stop": {"kind": "none", "guard": "defined-risk spread; sized 1%"},
                    "profit_target_pct_of_credit": 60, "dte_close": 7, "time_stop_sessions": 20},
         "legs": [
-            {"symbol": "AAPL261016P00095000", "secType": "OPT", "qty": -qty, "avgFill": 2.00, "multiplier": 100},
-            {"symbol": "AAPL261016P00090000", "secType": "OPT", "qty": qty, "avgFill": 1.00, "multiplier": 100},
+            {"symbol": "AAPL270115P00095000", "secType": "OPT", "qty": -qty, "avgFill": 2.00, "multiplier": 100},
+            {"symbol": "AAPL270115P00090000", "secType": "OPT", "qty": qty, "avgFill": 1.00, "multiplier": 100},
         ],
     }
 
@@ -159,13 +159,13 @@ async def test_credit_target_closes_both_legs_together(engine):
     class Q:
         def __init__(self, bid, ask):
             self.bid, self.ask, self.last, self.ts = bid, ask, (bid + ask) / 2, pm.now_ms()
-    marks = {"AAPL261016P00095000": Q(0.55, 0.65), "AAPL261016P00090000": Q(0.30, 0.34)}
+    marks = {"AAPL270115P00095000": Q(0.55, 0.65), "AAPL270115P00090000": Q(0.30, 0.34)}
     engine.quotes.get = lambda s: marks.get(s)          # net buy-back = 0.65 - 0.30 = 0.35 -> 65% captured
     await pm.on_minute_bar(p, rth_bar("2026-08-27", 34, 101.0))   # closes the 09:30-09:35 5m bar
     assert any(x["kind"] == "credit_target" for x in p.exits), p.events[-3:]
     legs_ordered = [i.symbol for i in fo.placed]
-    assert "AAPL261016P00095000" in legs_ordered and "AAPL261016P00090000" in legs_ordered
-    buyback = next(i for i in fo.placed if i.symbol == "AAPL261016P00095000")
+    assert "AAPL270115P00095000" in legs_ordered and "AAPL270115P00090000" in legs_ordered
+    buyback = next(i for i in fo.placed if i.symbol == "AAPL270115P00095000")
     assert buyback.side == "BUY" and buyback.reduce_only            # short leg buys back reduce-only
 
 
@@ -177,7 +177,7 @@ async def test_multi_leg_partial_close_stays_proportional(engine):
     engine.quotes.get = lambda s: None
     await pm.close(p.id, fraction=0.5, reason="test partial")
     qtys = {i.symbol: i.qty for i in fo.placed}
-    assert qtys.get("AAPL261016P00095000") == 1 and qtys.get("AAPL261016P00090000") == 1
+    assert qtys.get("AAPL270115P00095000") == 1 and qtys.get("AAPL270115P00090000") == 1
     # fills arrive -> legs reduce, position stays open
     for i, intent in enumerate(fo.placed):
         await pm.on_order_update({"id": f"o{i}", "status": "FILLED", "symbol": intent.symbol,
@@ -241,11 +241,11 @@ async def test_restore_and_adopt_resubscribe_the_underlying(engine, monkeypatch)
     pm, fo = await make_manager(engine, fake_orders=True)
     pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
     await pm.adopt(spread_spec(pf, qty=1))
-    assert "AAPL" in ensured and any(s.startswith("AAPL2610") for s in ensured)
+    assert "AAPL" in ensured and any(s.startswith("AAPL2701") for s in ensured)
     ensured.clear()
     pm2 = PositionManager(engine)
     assert await pm2.restore() == 1
-    assert "AAPL" in ensured and any(s.startswith("AAPL2610") for s in ensured)
+    assert "AAPL" in ensured and any(s.startswith("AAPL2701") for s in ensured)
 
 
 async def test_redelivered_bar_and_slow_fill_never_double_exit(engine):
@@ -373,7 +373,7 @@ async def test_monetize_take_and_ratchet_floor_on_the_quote_loop(engine):
     from zargar.domain import Quote, now_ms
     pm, fo = await make_manager(engine, fake_orders=True)
     pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
-    occ = "RKLB261016C00070000"
+    occ = "RKLB270115C00070000"
     d = await pm.adopt({
         "portfolioId": pf, "symbol": "RKLB", "direction": "long", "techniqueId": "tip",
         "entry": 63.15, "risk": 3.35, "entryMark": 3.55,
@@ -413,14 +413,14 @@ async def test_rollup_banks_a_credit_and_keeps_convexity(engine):
     from zargar.domain import Quote, now_ms
     pm, fo = await make_manager(engine, fake_orders=True)
     pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
-    cur, new = "NVDA261016C00200000", "NVDA261016C00250000"
+    cur, new = "NVDA270115C00200000", "NVDA270115C00250000"
 
     class StubOpts:
         def __init__(self):
             self.rows = [
-                {"symbol": new, "expiry": "2026-10-16", "option_type": "call", "strike": 250.0,
+                {"symbol": new, "expiry": "2027-01-15", "option_type": "call", "strike": 250.0,
                  "greeks": {"delta": 0.36, "mid_iv": 0.5}},
-                {"symbol": "NVDA261016C00230000", "expiry": "2026-10-16", "option_type": "call",
+                {"symbol": "NVDA270115C00230000", "expiry": "2027-01-15", "option_type": "call",
                  "strike": 230.0, "greeks": {"delta": 0.52, "mid_iv": 0.5}},
             ]
             self.snaps = {cur: {"greeks": {"delta": 0.82, "mid_iv": 0.55}}}
@@ -462,10 +462,10 @@ async def test_rollup_banks_a_credit_and_keeps_convexity(engine):
     # a second roll with a too-small credit is refused (candidate ask too dear)
     quotes[new] = Quote(symbol=new, bid=12.5, ask=13.0, last=12.7, ts=now_ms())
     engine.options.snaps[new] = {"greeks": {"delta": 0.80, "mid_iv": 0.5}}
-    engine.options.rows = [{"symbol": "NVDA261016C00300000", "expiry": "2026-10-16",
+    engine.options.rows = [{"symbol": "NVDA270115C00300000", "expiry": "2027-01-15",
                             "option_type": "call", "strike": 300.0,
                             "greeks": {"delta": 0.35, "mid_iv": 0.5}}]
-    quotes["NVDA261016C00300000"] = Quote(symbol="NVDA261016C00300000", bid=2.0, ask=2.2,
+    quotes["NVDA270115C00300000"] = Quote(symbol="NVDA270115C00300000", bid=2.0, ask=2.2,
                                           last=2.1, ts=now_ms())
     # credit 12.5 - 2.2 = 10.3 < the NEW debit 12.2 -> refused
     assert await pm._maybe_rollup(p) is False
@@ -475,7 +475,7 @@ async def test_rollup_failed_buy_leaves_us_flat_and_paid(engine):
     from zargar.domain import Quote, now_ms
     pm, fo = await make_manager(engine, fake_orders=True)
     pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
-    cur, new = "AMD261016C00150000", "AMD261016C00190000"
+    cur, new = "AMD270115C00150000", "AMD270115C00190000"
 
     class StubOpts:
         def snapshot_cached(self, sym):
@@ -483,7 +483,7 @@ async def test_rollup_failed_buy_leaves_us_flat_and_paid(engine):
         def provider(self):
             class P:
                 async def all_rows(self, underlying):
-                    return [{"symbol": new, "expiry": "2026-10-16", "option_type": "call",
+                    return [{"symbol": new, "expiry": "2027-01-15", "option_type": "call",
                              "strike": 190.0, "greeks": {"delta": 0.34, "mid_iv": 0.5}}]
             return P()
         async def track(self, sym):

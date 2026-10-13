@@ -465,7 +465,7 @@ class _FakeAnthropic:
                        input={"symbol": "AAPL"})])
         return _FakeAnthropicResp([_Block(type="text", text=(
             '{"verdict": "take", "instrument": "option",'
-            ' "contract": "AAPL261016C00240000", "contract_label": "AAPL 240C 2026-10-16",'
+            ' "contract": "AAPL270115C00240000", "contract_label": "AAPL 240C 2027-01-15",'
             ' "limit_price": 4.6, "quantity": 2,'
             ' "invalidation": "close below 225",'
             ' "rationale": "Uptrend intact and the tip names a liquid strike.",'
@@ -528,7 +528,7 @@ async def test_option_tip_proposal_is_the_contract(app_client):
     p = out[0]["proposal"]
     assert p is not None, "verified explicit call should still propose"
     assert p["secType"] == "OPT" and p["side"] == "BUY"
-    assert p["symbol"] == "AAPL261016C00240000"
+    assert p["symbol"] == "AAPL270115C00240000"
     assert p["qty"] == 2 and p["limitPrice"] and p["limitPrice"] > 0
     ctx = p["context"]
     assert ctx["analystRunId"] and ctx["analyst"]["verdict"] == "take"
@@ -557,7 +557,7 @@ async def test_spread_refused_record_buy_rests_a_limit_at_the_mid(app_client, mo
     await wait_quote(eng, "AAPL")
     from zargar.domain import Quote as _Q
     from zargar.models import RawContent, Signal
-    occ2 = "AAPL261016C00240000"
+    occ2 = "AAPL270115C00240000"
     # the overlay survives the sim feed's own publishes (a bare on_quote pin
     # would be overwritten the moment _shadow_execute ensures the symbol)
     eng.quotes.set_overlay(occ2, bid=1.00, ask=1.50, bid_size=0, ask_size=0)
@@ -589,13 +589,13 @@ async def test_spread_refused_record_buy_rests_a_limit_at_the_mid(app_client, mo
                             subject="alert", body_text="AAPL 240c Oct")
             row = Signal(id=new_id(), raw_content_id=rc.id, source_name="TestLetter",
                          ticker="AAPL", direction="long", action="open", instrument="call",
-                         strike=240.0, expiry="2026-10-16", status="verified",
+                         strike=240.0, expiry="2027-01-15", status="verified",
                          is_actionable=True, extraction={"signal": {}}, verification={"passed": True})
             session.add_all([rc, row])
             await session.commit()
         from zargar.signals.schemas import TradeSignal
         sig = TradeSignal(ticker="AAPL", direction="long", action="open", instrument="call",
-                          strike=240.0, expiry="2026-10-16", timeframe="swing",
+                          strike=240.0, expiry="2027-01-15", timeframe="swing",
                           thesis_summary="calls", evidence_quotes=["AAPL 240c"],
                           confidence="explicit_call", is_actionable=True)
         await eng.signals_service._shadow_execute(row, sig)
@@ -640,7 +640,7 @@ async def test_aged_limit_improves_to_live_ask_on_approval(app_client, monkeypat
     from zargar.domain import Quote
     from zargar.models import Proposal
     client, eng = app_client
-    occ = "AAPL261016C00240000"
+    occ = "AAPL270115C00240000"
     q = Quote(symbol=occ, bid=11.7, ask=11.9, last=11.8, bid_size=500, ask_size=500)
     real_get = eng.quotes.get
     monkeypatch.setattr(eng.quotes, "get",
@@ -846,7 +846,7 @@ async def test_take_fill_adopts_position_under_analyst_exits(app_client):
     # the per-tip premium cap has its own test in test_tip_geometry.py
     await eng.settings.set("techniques.tip.max_premium_per_tip", 0)
     eng.signals_service._analyst_client = _FakeAnthropic()
-    occ = "AAPL261016C00240000"
+    occ = "AAPL270115C00240000"
     # keep the REAL chain out of the test: order placement tracks the contract
     # and the options service would overlay live CBOE bid/ask over our quote
     import httpx as _hx
@@ -1174,7 +1174,7 @@ class _FakeAnthropicAtLevel:
         self.calls += 1
         return _FakeAnthropicResp([_Block(type="text", text=(
             '{"verdict": "take", "instrument": "option",'
-            ' "contract": "AAPL261016C00240000", "contract_label": "AAPL 240C 2026-10-16",'
+            ' "contract": "AAPL270115C00240000", "contract_label": "AAPL 240C 2027-01-15",'
             ' "limit_price": 4.6, "quantity": 2,'
             ' "entry_mode": "at_level", "entry_level": 225.0,'
             ' "entry_note": "extended — wait for the retest",'
@@ -1220,7 +1220,7 @@ async def test_resume_pending_adoptions_after_restart(app_client):
     await wait_quote(eng, "AAPL")
     pid = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")["id"]
     from zargar.models import Order, Proposal
-    occ = "AAPL261016C00240000"
+    occ = "AAPL270115C00240000"
     async with eng.sf() as session:
         session.add(Order(id="ord-r1", portfolio_id=pid, symbol=occ, sec_type="OPT",
                           side="BUY", qty=2, order_type="LMT", limit_price=4.6,
@@ -1793,7 +1793,7 @@ class _FakeAnthropicWatchLevel(_FakeAnthropicAtLevel):
         self.calls += 1
         return _FakeAnthropicResp([_Block(type="text", text=(
             '{"verdict": "watch", "instrument": "option",'
-            ' "contract": "AAPL261016C00240000", "contract_label": "AAPL 240C 2026-10-16",'
+            ' "contract": "AAPL270115C00240000", "contract_label": "AAPL 240C 2027-01-15",'
             ' "limit_price": 4.6, "quantity": 2, "entry_level": 225.0,'
             ' "exit_targets": [245.0], "exit_fractions": [0.5],'
             ' "underlying_stop": 220.0, "max_hold_sessions": 7,'
