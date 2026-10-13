@@ -39,6 +39,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.options_cartel.method_lab": False,  # opt-in, non-ordering Practice experiments
     "techniques.options_cartel.profitability_research.candidate_cap": 50,
     "techniques.options_cartel.profitability_research.bearish_enabled": True,
+    # Cartel's own lane (practice | live). Live additionally needs trading.mode=live and allow_live_auto; another
+    # desk's "real orders" switch must never move Cartel between lanes (2026-10-12).
+    "techniques.options_cartel.workspace": "practice",
     "techniques.options_cartel.preparation": {},
     "techniques.options_cartel.preparation_live": {},
     "techniques.options_cartel.allow_live_auto": False,

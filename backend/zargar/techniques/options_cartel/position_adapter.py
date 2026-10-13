@@ -163,10 +163,26 @@ class CartelPositionAdapter:
                     r.get("status") not in TERMINAL and not (
                         r['kind'] == 'venue_stop' and r.get('status') in ('ACCEPTED', 'SUBMITTED')) for r in p.exits):
                 raise ValueError("reconcile pending entry/exit orders before catch-up review")
-            missed = context.get("missedCloses", [])
             checkpoint = context["stateCheckpoint"]
             if checkpoint["state"] != state.model_dump(mode="json"):
                 raise ValueError("position state changed after its checkpoint; reconcile before catch-up")
+            # A close missed BEFORE the last fill was a decision about a position that no longer exists in that
+            # form (2026-10-12, DHT: a target filled on 10-01, so the 09-29/09-30 closes could never be reviewed
+            # and blocked the four later ones). Those are recorded as superseded; only closes the current state
+            # was held through are reviewed. Nothing is filled or assumed for a superseded close.
+            pending = sorted(set(context.get("missedCloses", [])))
+            missed = [at for at in pending if at >= checkpoint["at"]]
+            superseded = [at for at in pending if at < checkpoint["at"]]
+            if superseded:
+                context["supersededCloses"] = sorted(set(context.get("supersededCloses", [])) | set(superseded))
+                context["missedCloses"] = missed
+            if not missed:
+                p.attention = [s for s in p.attention if not s.startswith("Recovered missed daily closes need execution review")]
+                context["catchupReview"] = {"id": None, "status": "superseded", "supersededCloses": superseded,
+                                            "placesOrders": False}
+                p.policy = {**p.policy, "cartel": context}
+                await manager._persist(p)
+                return context["catchupReview"]
             review = review_missed_closes(campaign, state,
                 [DailyBar.model_validate(b) for b in context["daily"]], missed,
                 state_since_ms=checkpoint["at"], as_of_ms=manager.now_ms())
