@@ -806,7 +806,16 @@ async def _submit_preparation(engine, *, scheduled=False, workspace=None, **kwar
         return await asyncio.shield(engine._cartel_preparation_ready)
     if not policy.enabled:
         if scheduled:
-            return {'status': 'disabled'}
+            # A disabled lane on a trading day is a stoppage, not a normal run: eleven of these were journaled as
+            # ordinary job results 2026-10-05..10-12 and nobody was told.
+            now = kwargs.get('clock', now_ms)()
+            day = dt.datetime.fromtimestamp(now/1000, ET).date()
+            alerted = False
+            if is_trading_day(day) and getattr(engine, '_cartel_disabled_alert_day', None) != day:
+                engine._cartel_disabled_alert_day = day
+                alerted = True
+                await preparation_disabled_alert(engine, policy.workspace, day)
+            return {'status': 'disabled', 'workspace': policy.workspace, 'alerted': alerted}
         raise ValueError(f'Automatic {policy.workspace.title()} preparation is disabled')
     await preparation_portfolio(engine, policy.portfolio_id, policy.workspace)
     require_execution_scope(engine, policy)
@@ -872,6 +881,28 @@ async def recover_interrupted_preparations(engine):
             row.finished_at = dt.datetime.now(dt.UTC)
             row.result = {**row.result, 'phase': 'interrupted', 'updatedAt': now_ms(), 'finishedAt': now_ms(),
                           'message': 'Preparation interrupted; saved work and existing plans are preserved'}
+
+
+async def preparation_disabled_alert(engine, workspace, day):
+    """Journal + toast + push/Telegram, once per trading day; never raises into the scheduler."""
+    import contextlib
+
+    from ... import bus as topics
+    text = (f"Options Cartel preparation is DISABLED for the {workspace.title()} lane on {day.isoformat()}: "
+            "no plans will be armed. Enable it in Options Cartel > Settings or check the lane setting.")
+    with contextlib.suppress(Exception):
+        await engine.journal.append('CartelPreparationDisabled', {'workspace': workspace, 'date': day.isoformat(), 'text': text},
+                                    aggregate_type='technique', aggregate_id='options_cartel')
+    with contextlib.suppress(Exception):
+        engine.bus.publish(topics.TECHNIQUE, {'kind': 'alert', 'level': 'critical', 'text': text})
+    push = getattr(engine, 'push', None)
+    if push is not None:
+        with contextlib.suppress(Exception):
+            await push.send('Options Cartel is not preparing', text, url='/options-cartel', tag='cartel-prep-disabled')
+    tg = getattr(engine, 'telegram', None)
+    if tg is not None:
+        with contextlib.suppress(Exception):
+            await tg.send(f"⚠ {text}")
 
 
 BENCHMARK_RETRY_MS = 20*60_000

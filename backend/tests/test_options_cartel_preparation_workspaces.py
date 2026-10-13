@@ -53,6 +53,7 @@ async def test_live_and_practice_prepare_independently_without_cross_account_ord
         live = PreparationPolicy(risk_pct=1, enabled=True, workspace='live', portfolio_id='cartel-live',
                                  allow_live=True, overnight_ack=True)
         await engine.settings.set(setting_key('live'), live.model_dump(mode='json'))
+        await engine.settings.set('techniques.options_cartel.workspace', 'live')
         await engine.settings.set('trading.mode', 'live')
         with pytest.raises(ValueError, match='permission'):
             await run_preparation(engine, live, clock=lambda: at, **providers)
@@ -94,6 +95,7 @@ async def test_mode_switch_during_collection_prevents_arming(engine):
     choose = providers['choose']
     async def switch_before_arm(*args):
         result = await choose(*args)
+        await engine.settings.set('techniques.options_cartel.workspace', 'live')
         await engine.settings.set('trading.mode', 'live')
         return result
     providers['choose'] = switch_before_arm
@@ -105,3 +107,40 @@ async def test_mode_switch_during_collection_prevents_arming(engine):
             assert await session.scalar(select(func.count()).select_from(TechniqueArmed)) == 0
     finally:
         await runtime.stop()
+
+
+async def test_another_desks_real_orders_switch_does_not_stop_the_practice_lane(engine):
+    """2026-10-12: trading.mode=live (set for the Tips paper book) pointed Cartel at an empty Live policy and
+    every scheduled preparation returned 'disabled' for a week. Cartel's lane is its own setting now."""
+    from zargar.techniques.options_cartel.preparation_scope import active_workspace
+    at, providers = inputs()
+    runtime = CartelRuntime(engine); runtime.clock = lambda: at
+    engine.cartel_observer = runtime
+    policy = PreparationPolicy(risk_pct=1, enabled=True)
+    await engine.settings.set(setting_key('practice'), policy.model_dump(mode='json'))
+    await engine.settings.set('trading.mode', 'live')
+    try:
+        assert active_workspace(engine) == 'practice' and read_policy(engine).enabled
+        result = await run_preparation(engine, policy, clock=lambda: at, **providers)
+        assert result['result']['armed'] == 1, result['result']
+        async with engine.sf() as session:
+            arm = await session.get(TechniqueArmed, result['result']['shortlist'][0]['planId'])
+            assert (await session.get(Portfolio, arm.portfolio_id)).kind == 'sim'
+            assert arm.config['execution']['allow_live'] is False
+        row = runtime.rows[arm.run_id]
+        require_execution_scope(engine, read_policy(engine, row['config']['preparation']['workspace']))
+    finally:
+        await runtime.stop()
+
+
+async def test_disabled_scheduled_preparation_alerts_once_per_trading_day(engine):
+    from zargar.models import Event
+    from zargar.techniques.options_cartel import preparation as prep
+    at, _ = inputs()
+    engine.cartel_observer = SimpleNamespace(stopping=False)
+    await engine.settings.set(setting_key('practice'), PreparationPolicy(enabled=False).model_dump(mode='json'))
+    first = await prep._submit_preparation(engine, scheduled=True, clock=lambda: at)
+    again = await prep._submit_preparation(engine, scheduled=True, clock=lambda: at+60_000)
+    assert first == {'status': 'disabled', 'workspace': 'practice', 'alerted': True} and again['alerted'] is False
+    async with engine.sf() as session:
+        assert await session.scalar(select(func.count()).select_from(Event).where(Event.type == 'CartelPreparationDisabled')) == 1
