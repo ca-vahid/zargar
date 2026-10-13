@@ -1433,7 +1433,7 @@ async def attach_tip_runner(engine) -> None:
         with contextlib.suppress(Exception):
             if _record.mode(engine.settings) == "supply" and await _record.latest(engine) is None:
                 await _record.refresh(engine)
-    if bool(getattr(engine.config, "alpaca_key_id", "")):
+    if bool(getattr(getattr(engine, "config", None), "alpaca_key_id", "")):
         asyncio.create_task(_first_measured_record(), name="tip-measured-record-first")
     # PROF-03 (2026-09-15): the overnight-hold study's two research samples -
     # a pre-close snapshot of every open / intraday-exited Tips position and the
