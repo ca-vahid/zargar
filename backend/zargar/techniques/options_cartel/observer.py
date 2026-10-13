@@ -23,7 +23,7 @@ from ...marketstructure.sessions import session_bounds, session_date
 def session_date_obj(day):
     return dt.date.fromisoformat(day) if isinstance(day, str) else day
 from ...models import BarRow, Event, TechniqueRun
-from .data_quality import evidence, merge, unpack
+from .data_quality import aligned, evidence, merge, unpack, usable
 from .entry import read_entry
 from .observation_health import plan_coverage, recovery_record
 from .plans import CartelPlan
@@ -32,6 +32,7 @@ from .state import ArmRepository
 
 
 CONFIRMATION_MAX_AGE_MS = 120_000
+READ_REFUSED = "Entry read refused its inputs"
 DROP_JOURNAL_INTERVAL_MS = 300_000
 
 
@@ -347,14 +348,18 @@ class CartelObserver(SessionListener):
                                                                 BarRow.ts >= opens, BarRow.ts < closes,
                                                                 BarRow.ts+60_000 <= now))).all()
             locked = await self.repository._locked(session, run_id)
-            minutes = dict(locked.state.get('minutes', {})) if locked.state.get('day') == day else {}
+            minutes = aligned(locked.state.get('minutes', {})) if locked.state.get('day') == day else {}
+            # 2026-10-13: the in-memory series can hold provider stubs (zero volume, off-the-minute
+            # stamp). on_minute_bar refuses them from the bus; a plan armed after the open used to
+            # take them in here, and every later entry read then refused its whole input.
             for b in stored:
-                merge(minutes, Bar(b.symbol, b.tf, b.ts, b.open, b.high, b.low, b.close, b.volume, source=b.source))
+                if b.ts % 60_000 == 0:
+                    merge(minutes, Bar(b.symbol, b.tf, b.ts, b.open, b.high, b.low, b.close, b.volume, source=b.source))
             for b in self.engine.bars.bars(symbol, tf="1m", limit=1000, include_forming=False):
-                if opens <= b.ts < closes and b.ts+60_000 <= now:
+                if usable(symbol, b) and opens <= b.ts < closes and b.ts+60_000 <= now:
                     merge(minutes, b)
             for values in locked.config.get('preparation', {}).get('contextMinutes', []):
-                if opens <= values[0] < closes and values[0]+60_000 <= now:
+                if values[0] % 60_000 == 0 and opens <= values[0] < closes and values[0]+60_000 <= now:
                     merge(minutes, unpack(symbol, values))
             previous_state = locked.state
             cutoff = locked.state.get("observeAfter", locked.state["armedAt"])
@@ -481,6 +486,7 @@ class CartelObserver(SessionListener):
                 if cached["symbol"] == symbol and rid in self.plans and DropRegistry.eligible(cached, self.plans[rid], bar.ts):
                     self.drops.note(rid, bar.ts, now)
             return
+        refused = []
         for rid, cached in list(self.rows.items()):
             if cached["symbol"] != symbol:
                 continue
@@ -503,7 +509,7 @@ class CartelObserver(SessionListener):
                         self.rows[rid] = self.repository.view(row)
                     continue  # correction is context only, never a historical entry
                 day = session_date(bar.ts)
-                minutes = dict(state.get("minutes", {})) if state.get("day") == day else {}
+                minutes = aligned(state.get("minutes", {})) if state.get("day") == day else {}
                 merge(minutes, bar)
                 # A plan's invalidation lifetime starts at its original creation.
                 # observeAfter suppresses missed entries without erasing a close
@@ -512,12 +518,24 @@ class CartelObserver(SessionListener):
                 tape = [unpack(symbol, values) for values in minutes.values()]
                 from .nonemission import effective
                 interval_evidence = effective(self.engine, self.repository.view(row))
-                observation = read_entry(plan, tape, now, entry_after=state.get("observeAfter", state["armedAt"]),
-                                         verified_intervals=interval_evidence)
+                try:
+                    observation = read_entry(plan, tape, now, entry_after=state.get("observeAfter", state["armedAt"]),
+                                             verified_intervals=interval_evidence)
+                except ValueError as exc:
+                    # 2026-10-13: a refused input used to fail this delivery every minute with nothing
+                    # on the plan. Keep the minute, show the refusal, judge nothing; the next bar retries.
+                    row.state = {**state, "minutes": minutes, "day": day,
+                                 "observationError": f"{READ_REFUSED}: {exc}"}
+                    self.rows[rid] = self.repository.view(row)
+                    if not str(state.get("observationError") or "").startswith(READ_REFUSED):
+                        refused.append(rid)
+                    continue
                 observation['verifiedIntervals'] = interval_evidence
                 observation['dataEvidence'] = evidence(minutes)
                 from .decision_evidence import capture
                 captured_events = await capture(session, row, plan, minutes, state, observation, now)
+                if str(state.get("observationError") or "").startswith(READ_REFUSED):
+                    state = {**state, "observationError": None}
                 row.state = {**state, 'dataEvidence': evidence(minutes), "minutes": minutes, "day": day, "lastMinute": bar.ts,
                              "observation": observation, "decisionHistory": retain_decisions(
                                  state.get("decisionHistory", (state.get("observation") or {}).get("trace", [])), observation)}
@@ -540,6 +558,9 @@ class CartelObserver(SessionListener):
             if self.rows[rid]["status"] not in ("armed", "paused"):
                 self.rows.pop(rid, None)
                 self.drops.retire(rid)
+        for rid in refused:
+            await self.repository._journal(self.rows[rid], "observation_refused")
+            self._publish(rid)
         await self._observe_controls(symbol, bar, now)
 
     async def after_signal(self, run_id):

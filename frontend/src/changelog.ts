@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.32";
+export const APP_VERSION = "0.9.33";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.33",date:"2026-10-13",title:"Options Cartel: a plan armed after the open is watched properly",items:[
+    {tag:"fixed",text:"An Options Cartel plan armed after the market opened could pick up a broken price bar from memory and then never check a single candle for the rest of the day, with nothing on screen to say so. This happened to one plan on October 13 (it cost no trade: the price never came near its level). Such bars are now ignored, and a plan saved with one repairs itself on the next bar."},
+    {tag:"improved",text:"If an Options Cartel entry check ever rejects its price data again, the plan now shows the reason and is flagged as needing attention instead of failing silently."},
+  ]},
   {version:"0.9.32",date:"2026-10-13",title:"Tips: a copied trim respects the book's minimum sell size",items:[
     {tag:"fixed",text:"When a source trims and the book copies it, the sale now respects the book's minimum sell size. A trim too small for its own order is not sent, and the position is sold in one order later (the source's close, the target or the stop). A leftover too small to sell alone goes out with the trim. Before, the paper book sold $344 of SNAP under a $750 minimum and paid a second commission."},
   ]},
