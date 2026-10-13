@@ -609,7 +609,7 @@ DEFAULTS: dict[str, Any] = {
     "telegram.enabled": False,
     "snaptrade.enabled": False,
     "snaptrade.sync_minutes": 15,
-    "snaptrade.order_poll_seconds": 2.0,
+    "snaptrade.order_poll_seconds": 7.0,   # personal keys: 10 requests/minute/account (2 s polls would be throttled)
     "snaptrade.reconcile_seconds": 60,
     "snaptrade.allow_brackets": False,
     "snaptrade.options_brokers": ["Webull Canada"],   # verified via options impact 2026-08-21
