@@ -87,3 +87,32 @@ async def test_quote_is_rechecked_after_cancellation_io(engine):
     await adapter.on_watch(rig.pm, rig.p)
     assert engine.orders.placed == [] and rig.p.legs[0].qty == 8
     assert rig.p.policy['cartel']['closeRequest']['remaining'] == 6
+
+
+async def test_closes_missed_before_the_last_fill_are_superseded_not_a_permanent_block(engine):
+    """2026-10-12 (DHT): closes missed before a later fill made every catch-up review raise, so six flags sat
+    'need execution review' for a week. They are recorded as superseded; later closes are still reviewed."""
+    rig = await recovered(engine)
+    adapter = rig.pm._policy_adapter(rig.p)
+    context = rig.p.policy['cartel']
+    old = context['stateCheckpoint']['at']-86_400_000
+    real = list(context['missedCloses'])
+    rig.p.policy = {**rig.p.policy, 'cartel': {**context, 'missedCloses': [old, *real], 'catchupReview': None}}
+    batch = await adapter.prepare_catchup(rig.pm, rig.p)
+    assert batch['status'] == 'reviewed' and batch['review']['missedCloses'] == real
+    assert rig.p.policy['cartel']['supersededCloses'] == [old] and rig.p.policy['cartel']['missedCloses'] == real
+    assert engine.orders.placed == []
+
+
+async def test_only_superseded_closes_clears_the_review_flag_without_orders(engine):
+    rig = await recovered(engine)
+    adapter = rig.pm._policy_adapter(rig.p)
+    context = rig.p.policy['cartel']
+    old = context['stateCheckpoint']['at']-86_400_000
+    rig.p.attention = ['Recovered missed daily closes need execution review; no historical fills were created.', 'Other']
+    rig.p.policy = {**rig.p.policy, 'cartel': {**context, 'missedCloses': [old], 'catchupReview': None}}
+    batch = await adapter.prepare_catchup(rig.pm, rig.p)
+    assert batch['status'] == 'superseded' and rig.p.policy['cartel']['missedCloses'] == []
+    assert rig.p.attention == ['Other'] and engine.orders.placed == []
+    await adapter.on_watch(rig.pm, rig.p)          # a superseded batch never routes anything
+    assert engine.orders.placed == []
