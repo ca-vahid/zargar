@@ -11,8 +11,16 @@ Workspace = Literal['practice', 'live']
 SETTING = 'techniques.options_cartel.preparation'
 
 
+WORKSPACE_SETTING = 'techniques.options_cartel.workspace'
+
+
 def active_workspace(engine):
-    return 'live' if engine.settings.get('trading.mode') == 'live' else 'practice'
+    """Cartel's own lane. 2026-10-12: it used to follow the shared ``trading.mode`` alone, so another desk
+    turning real orders on (for its paper book) pointed Cartel at an empty Live policy and silently stopped
+    the Practice experiment for a week. Live now needs BOTH Cartel's own setting and the shared switch; the
+    real-account checks at arm/entry time still require ``trading.mode == 'live'`` on their own."""
+    own = engine.settings.get(WORKSPACE_SETTING, 'practice')
+    return 'live' if own == 'live' and engine.settings.get('trading.mode') == 'live' else 'practice'
 
 
 def setting_key(workspace):
