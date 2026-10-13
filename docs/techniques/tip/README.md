@@ -28,6 +28,26 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 | `HISTORY.md` | superseded state-of-play and "what changed" text from older refreshes | archive |
 | `reviews/` | external review rounds, responses, deploy and incident records | dated records; `2026-09-14-kfin-response.md` (0.7.83–0.7.87, HOLD142, R147, the 2026-09-15 incidents) and `2026-09-16-tmr-plan-record.md` (TMR, INTRA, I175, the 2026-09-16 incident) are the current ledgers |
 
+## The measured record (2026-10-12, 0.9.30) - read this before trusting the analyst's verdict
+
+Two order-free replays of the whole archive found no proven edge: no source is positive after costs, and the
+analyst's takes do no better than its skips, on the underlying (`research/2026-10-12-source-replay.md`) and on
+the contracts' own traded prices (`research/2026-10-12-option-replay.md`: 228 option tips, every fixed exit rule
+negative, a coin flip before costs).
+
+- Tools: `zargar.tools.tip_source_replay` (underlying) and `zargar.tools.tip_option_replay` (Alpaca 1-minute
+  option bars). Both read-only, no model.
+- `techniques/tip/record.py`: the nightly job `tip_measured_record` (17:50 ET, own process) runs both, journals
+  the compact tables as `TipMeasuredRecord` and the analyst's header carries a few lines of it on every live run:
+  the all-source rates, this source's line, the analyst's own take-versus-skip record and the cost arithmetic. A
+  take must open its rationale with `EDGE:` and the fact that sets the tip apart. Setting
+  `techniques.tip.measured_record` = off | supply. It gates nothing.
+- The check that supplying it helps: `sinceSupply` in the same snapshot (take versus skip for tips from
+  `measured_record_supply_since` on). Read it at 20 priced tips a side; do not tune on less.
+- Do not build selection rules from cuts of this sample (days to expiry, time of day, premium paid): each cut
+  holds 10 to 100 tips and many were tried. The one rule that is arithmetic and not a sample finding is cost:
+  $0.08 a share round trip is 16% of a $0.50 premium.
+
 ## Horizons, ATR stops and exits by horizon (Tips v0.9 V2/V3/V4, 2026-10-05)
 
 Plan `research/2026-10-04-v09/PLAN.md`; evidence R3 (our record) + R4 (external); register `horizon-exits-v1`.

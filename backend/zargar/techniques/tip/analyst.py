@@ -2383,7 +2383,15 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         except Exception as exc:                        # noqa: BLE001 - the header never fails on this
             log.debug("analyst prefetch failed for %s: %s", signal_row.id, exc)
             seed_txt = ""
-    header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
+    # 2026-10-12: the desk's MEASURED record (rates over the archive, priced on real option trades) rides every
+    # live run ahead of the rulebook and the notes - never a historical one (it contains what happened later)
+    if not experiment:
+        from . import record as _record
+        record_txt = await _record.header_block(eng, signal_row.source_name)
+        if record_txt:
+            rec.step("note", f"Measured record supplied ({len(record_txt)} chars).", measuredRecord=True)
+            seed_txt += record_txt
+    header = (f"Today (ET):{dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
               + event_line + risk_line +
               f"Per-tip budget: ${policy.budget_per_tip:,.0f} · option DTE window "
               f"{policy.dte_min}-{policy.dte_max} (tip's own contract may override)\n"

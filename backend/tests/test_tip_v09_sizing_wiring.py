@@ -300,3 +300,21 @@ async def test_morning_report_carries_the_tips_block(rig):
     c = tb["closed"][0]
     assert c["r"] == 2.0 and c["peakR"] == 2.0 and c["mfeKept"] == 1.0
     assert tb["stopOuts"] == 1 and tb["noiseStopOuts"] == 1 and tb["noiseUnknown"] == 0
+
+
+async def test_measured_record_is_read_from_the_journal_and_can_be_switched_off(rig):
+    """2026-10-12: the analyst's header block comes from the latest journaled snapshot; off = no block; a desk
+    with no option feed never builds one."""
+    from zargar.techniques.tip import record as R
+
+    from .test_tip_measured_record import _option_rep, _source_rep
+    eng = rig
+    assert await R.header_block(eng, "room") == ""
+    await eng.journal.append(R.EVENT, R.compact(_option_rep(), _source_rep(), as_of="2026-10-12T22:00:00+00:00",
+                                                supply_since=None), aggregate_type="tip", aggregate_id="measured-record")
+    setattr(eng, R._CACHE_ATTR, None)                      # a restart: the cache is rebuilt from the journal
+    assert (await R.header_block(eng, "room")).startswith("MEASURED RECORD")
+    await eng.settings.set("techniques.tip.measured_record", "off", journal=False)
+    assert await R.header_block(eng, "room") == ""
+    await eng.settings.set("techniques.tip.measured_record", "supply", journal=False)
+    assert await R.refresh(eng) is None and len(await _events(eng, R.EVENT)) == 1
