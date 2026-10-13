@@ -64,7 +64,57 @@ async def idea_inputs(eng, signal_row, sig) -> dict:
     ch = out.get("chase") or {}
     if ch.get("would"):
         await note("TipChaseShadow", ch)
+    re = None
+    with contextlib.suppress(Exception):
+        re = await reentry_after_loss(eng, sym)
+    out["reentry"] = re
+    if re:
+        await note("TipReentryShadow", re)
     return out
+
+
+async def reentry_after_loss(eng, symbol: str) -> dict | None:
+    """2026-10-12 (observe only): a new idea in a name a Tips book closed AT A LOSS within the cooldown (default: the
+    same ET day). Journals what a cooldown would have refused - there is no enforce mode until the record shows the
+    re-entries lose. None when off or nothing matches. Shadow books never count."""
+    import datetime as dt
+
+    from sqlalchemy import select
+
+    from ...models import ManagedPositionRow
+    from ...options import occ as _occ
+    from .desk_metrics import is_stop_exit
+    s = eng.settings
+    mode = str(s.get("techniques.tip.reentry_guard", "observe") or "observe").lower()
+    if mode == "off" or not symbol:
+        return None
+    days = max(1, int(s.get("techniques.tip.reentry_cooldown_days", 1) or 1))
+    now_et = dt.datetime.now(_ec.ET)
+    start = (now_et - dt.timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    since_ms = int(start.timestamp() * 1000)
+    async with eng.sf() as session:
+        rows = (await session.execute(select(ManagedPositionRow).where(
+            ManagedPositionRow.technique == "tip", ManagedPositionRow.status == "closed",
+            ManagedPositionRow.updated_at >= start - dt.timedelta(days=1)))).scalars().all()
+    prior = []
+    for r in rows:
+        st = r.state or {}
+        pnl = float(st.get("realizedPnl") or 0)
+        if pnl >= 0 or int(st.get("closedMs") or 0) < since_ms:
+            continue
+        o = _occ.parse(str(r.symbol or ""))
+        if (o.underlying if o else str(r.symbol or "").upper()) != str(symbol).upper():
+            continue
+        pf = eng.positions.portfolio(r.portfolio_id) or {}
+        if pf.get("kind") == "shadow":
+            continue
+        prior.append({"positionId": r.id, "portfolioId": r.portfolio_id, "book": pf.get("name"),
+                      "realizedPnl": round(pnl, 2), "closedMs": int(st.get("closedMs") or 0),
+                      "stopExit": is_stop_exit(st), "closeReason": str(st.get("closeReason") or "")[:160]})
+    if not prior:
+        return None
+    return {"mode": "observe", "applied": False, "cooldownDays": days, "prior": prior,
+            "would": "wait for the next session: this name was closed at a loss inside the cooldown"}
 
 
 def book_scale(eng, dec: dict | None, binding) -> dict:
@@ -232,7 +282,7 @@ def card_fields(decision: dict | None, scale: dict | None) -> dict:
     ec = _ec.card_context(decision.get("entryContext"))
     if ec:
         out["entryContext"] = ec
-    guards = {k: decision.get(k) for k in ("regime", "chase") if decision.get(k)}
+    guards = {k: decision.get(k) for k in ("regime", "chase", "reentry") if decision.get(k)}
     if guards:
         out["guards"] = guards
     if scale and scale.get("parts"):
