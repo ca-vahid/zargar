@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.30";
+export const APP_VERSION = "0.9.31";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.31",date:"2026-10-13",title:"Realized profit after fees, and safer closing orders on Wealthsimple/Webull accounts",items:[
+    {tag:"fixed",text:"The Realized column on the positions table now shows the result after commissions. Before, it showed the price gain only, so every option round trip read about $2 per contract too high. Hover the number to see the price gain and the fees separately."},
+    {tag:"fixed",text:"On Wealthsimple/Webull (SnapTrade) accounts, one failed order-status check used to mark the broker as disconnected, which would have refused a closing order as well as new buys. A closing order is now always sent to the broker; new buys still wait until the status check works again."},
+    {tag:"improved",text:"Order-status checks on those accounts now run every 7 seconds instead of every 2, inside the broker connection's limit of 10 requests a minute, and stand down for as long as it asks when it says to slow down."},
+  ]},
   {version:"0.9.30",date:"2026-10-12",title:"The Tips analyst reads the measured record",items:[
     {tag:"new",text:"Every option tip in the archive is now priced on the contract's own traded prices under three fixed exit rules. The result: no source is profitable after costs, and the analyst's takes did no better than its skips."},
     {tag:"improved",text:"The Tips analyst now gets that measured record on every run: the rates for all sources, for the tip's own source, its own take-versus-skip record and the cost arithmetic. A take must state what sets the tip apart from the losing record. The record is rebuilt every night; nothing is blocked."},

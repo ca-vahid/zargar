@@ -179,7 +179,9 @@ const PositionRow = memo(function PositionRow({ p, c, linkHue, research }: {
       <td className="num">
         <ValuePill value={unreal} text={`${fmtSigned(unreal)} (${fmtPct(pct)})`} />
       </td>
-      <td className={`num ${p.realizedPnl >= 0 ? "pos" : "neg"}`}>{fmtSigned(p.realizedPnl)}</td>
+      <td className={`num ${(p.realizedNet ?? p.realizedPnl) >= 0 ? "pos" : "neg"}`}
+        title={p.feesPaid ? `After fees: ${fmtSigned(p.realizedPnl)} on price, less ${fmtMoney(p.feesPaid)} of fees paid on this holding (entry fees of what is still held included)` : undefined}>
+        {fmtSigned(p.realizedNet ?? p.realizedPnl)}</td>
     </tr>
   );
 });

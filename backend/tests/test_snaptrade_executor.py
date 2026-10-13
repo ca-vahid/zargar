@@ -203,6 +203,55 @@ async def test_unknown_outcome_reconcile_not_found(sf):
     await client.aclose()
 
 
+async def test_throttled_poll_backs_off_and_is_not_a_disconnect(sf):
+    stub = StubSnapTrade()
+    stub.place_response = {"brokerage_order_id": "bo-8", "status": "PENDING"}
+    broker, col, client = make_broker(sf, stub)
+    oid = new_id()
+    await seed_order(sf, oid)
+    await broker.submit(border(oid))
+
+    stub.recent_status = (429, {"detail": "Request was throttled. Expected available in 7 seconds."})
+    await broker.poll_once()
+    assert broker.connected is True  # a rate limit is not a lost venue
+    assert len(stub.calls("/recentOrders")) == 1
+    stub.recent_status = None
+    stub.recent_orders["acct-1"] = [{
+        "brokerage_order_id": "bo-8", "status": "EXECUTED",
+        "filled_quantity": 2.0, "execution_price": 100.0}]
+    await broker.poll_once()  # still standing down: no request, no report
+    assert len(stub.calls("/recentOrders")) == 1 and col.fills() == []
+    broker._poll_not_before.clear()  # the stand-down has passed
+    await broker.poll_once()
+    assert len(col.fills()) == 1
+    await client.aclose()
+
+
+async def test_failed_poll_marks_the_venue_degraded_but_open_for_exits(sf):
+    stub = StubSnapTrade()
+    stub.place_response = {"brokerage_order_id": "bo-10", "status": "PENDING"}
+    broker, col, client = make_broker(sf, stub)
+    oid = new_id()
+    await seed_order(sf, oid)
+    await broker.submit(border(oid))
+
+    stub.recent_error = httpx.ConnectError("no route")
+    await broker.poll_once()
+    assert broker.connected is False
+    assert broker.exits_when_degraded is True
+    stub.recent_error = None
+    await broker.poll_once()
+    assert broker.connected is True
+    await client.aclose()
+
+
+def test_throttle_wait_reads_the_venue_hint():
+    from zargar.brokers.snaptrade import throttle_wait_seconds
+    assert throttle_wait_seconds({"detail": "Request was throttled. Expected available in 7 seconds."}) == 8.0
+    assert throttle_wait_seconds({"detail": "Expected available in 900 seconds."}) == 60.0
+    assert throttle_wait_seconds("slow down") == 15.0
+
+
 async def test_order_impact_maps_fee_fields(sf):
     stub = StubSnapTrade()
     broker, col, client = make_broker(sf, stub)

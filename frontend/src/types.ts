@@ -108,7 +108,9 @@ export interface Position {
   option?: OptionInfo | null; // present for OPT positions
   qty: number;
   avgCost: number;
-  realizedPnl: number;
+  realizedPnl: number; // price-only (before commissions)
+  feesPaid?: number; // every commission paid on this holding
+  realizedNet?: number; // realizedPnl - feesPaid
   currency?: string; // native currency of the instrument (values are native)
   last?: number;
   marketValue?: number;
