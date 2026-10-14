@@ -226,3 +226,18 @@ def test_provisional_minutes_without_volume_are_not_exchange_bars():
     bars = feed._parse_completed_bars("TST", data)
     assert [b.ts for b in bars] == [ts[0] * 1000, ts[1] * 1000]
     assert all(b.source == "exchange" and b.volume > 0 for b in bars)
+
+
+def test_the_latest_print_row_is_never_a_bar():
+    """2026-10-13: the chart's last row is the latest print, stamped at its own second with volume 0. On a thin
+    name it sits in an earlier minute, passed the still-forming check and reached armed plans as a candle."""
+    from zargar.brokers.yahoo import YahooQuoteFeed, parse_bars
+    from zargar.domain import now_ms
+    feed = YahooQuoteFeed(on_quote=lambda q: None)
+    bucket = (now_ms() // 60_000) * 60_000
+    ts = [(bucket - 5 * 60_000) // 1000, (bucket - 4 * 60_000) // 1000, (bucket - 4 * 60_000) // 1000 + 11]
+    data = {"chart": {"result": [{"timestamp": ts, "indicators": {"quote": [{
+        "open": [10, 10, 10.2], "high": [11, 11, 10.2], "low": [9, 9, 10.2], "close": [10.5, 10.2, 10.2],
+        "volume": [1000, 1200, 0]}]}}]}}
+    assert [b.ts for b in feed._parse_completed_bars("TST", data)] == [ts[0] * 1000, ts[1] * 1000]
+    assert [b.ts for b in parse_bars("TST", "1m", data)] == [ts[0] * 1000, ts[1] * 1000]
