@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.33";
+export const APP_VERSION = "0.9.34";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.34",date:"2026-10-13",title:"Platform: the latest-print row from the data feed is no longer taken as a candle",items:[
+    {tag:"fixed",text:"Armed plans no longer receive a false one-minute candle on thinly traded stocks. The backup data feed adds a row for the latest trade, stamped at its own second with no volume; when that trade was in an earlier minute the app treated it as a finished candle and then ignored that minute's real candle. Such rows are now dropped by the feed reader and by the in-memory price series."},
+  ]},
   {version:"0.9.33",date:"2026-10-13",title:"Options Cartel: a plan armed after the open is watched properly",items:[
     {tag:"fixed",text:"An Options Cartel plan armed after the market opened could pick up a broken price bar from memory and then never check a single candle for the rest of the day, with nothing on screen to say so. This happened to one plan on October 13 (it cost no trade: the price never came near its level). Such bars are now ignored, and a plan saved with one repairs itself on the next bar."},
     {tag:"improved",text:"If an Options Cartel entry check ever rejects its price data again, the plan now shows the reason and is flagged as needing attention instead of failing silently."},

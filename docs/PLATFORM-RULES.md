@@ -3003,3 +3003,17 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
 - `positions.realized_pnl` stays price-only. The keeper also carries `feesPaid` per holding (summed from `executions` on
   load, added on each fill) and ships `realizedNet = realizedPnl - feesPaid`; the Blotter shows the net figure. Managed
   positions (`state.realizedPnl`, Armed/Portfolios screens) are still before fees - open.
+
+### The feed's latest-print row is never a candle - 2026-10-13 (Tips desk, 0.9.34; shared `brokers/yahoo.py`, `marketdata.py`)
+
+- **Finding.** Yahoo's chart response ends with a row for the latest PRINT, stamped at that print's own second, volume 0.
+  On a thin name the print sits in an EARLIER minute than now, so the "still-forming minute" check let it through as an
+  exchange bar. `BarAggregator.ingest_exchange_bar` appended and published it; an armed plan took it as a candle
+  (`last_bar_ts` moved to the stub) and then dropped that minute's real bar as older. Evidence: `TechniquePlanError`
+  "stale bars" with `lastBarTs` off the minute (PRQR 3 on 2026-10-13; CAVA, PYPL, XOP on 10-09), and the eight PANW stubs
+  the Cartel desk found the same day (its 0.9.33 filters them on its own side). `persist_bars` already dropped such rows,
+  so the table was clean and memory was not.
+- **Rule.** Memory follows storage: a 1m bar whose `ts` is not on the minute never enters `BarAggregator` (seed or
+  correction), and the Yahoo readers drop the latest-print row. A consumer may keep its own filter but need not.
+- **Not changed.** The stale-bars alarm itself (`stale_seconds` 180): on a thin name with no trades for three minutes it
+  is correct and only idles triggers.
