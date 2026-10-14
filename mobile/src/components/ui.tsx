@@ -1,6 +1,7 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -146,8 +147,8 @@ export function Button({ label, onPress, kind = 'primary', busy, disabled, small
 }
 
 /** Underline tabs — the web app's convention for switching views in place. */
-export function Tabs<T extends string>({ value, options, onChange }: {
-  value: T; options: { key: T; label: string; badge?: number }[]; onChange: (k: T) => void;
+export function Tabs<T extends string>({ value, options, onChange, compact }: {
+  value: T; options: { key: T; label: string; badge?: number }[]; onChange: (k: T) => void; compact?: boolean;
 }) {
   const t = useTheme();
   return (
@@ -156,7 +157,7 @@ export function Tabs<T extends string>({ value, options, onChange }: {
         const on = o.key === value;
         return (
           <Pressable key={o.key} onPress={() => onChange(o.key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
-            style={{ paddingVertical: space.md, marginRight: space.xl, borderBottomWidth: 2, borderBottomColor: on ? t.accent : 'transparent', flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+            style={{ paddingVertical: space.md, marginRight: compact ? space.lg : space.xl, borderBottomWidth: 2, borderBottomColor: on ? t.accent : 'transparent', flexDirection: 'row', gap: 6, alignItems: 'center' }}>
             <Txt color={on ? t.text : t.text3} style={{ fontWeight: on ? '700' : '500' }}>{o.label}</Txt>
             {!!o.badge && (
               <View style={{ backgroundColor: t.accent, borderRadius: 999, minWidth: 18, paddingHorizontal: 5, alignItems: 'center' }}>
@@ -199,6 +200,38 @@ export function Loading() {
   return <View style={{ paddingVertical: space.xl, alignItems: 'center' }}><ActivityIndicator color={t.text3} /></View>;
 }
 
+/** A quiet grey block where content is about to be: the page keeps its shape while
+ *  data arrives, instead of a spinner that pushes everything down when it resolves. */
+export function Skeleton({ height = 14, width = '100%', round = 6, style }: {
+  height?: number; width?: number | `${number}%`; round?: number; style?: StyleProp<ViewStyle>;
+}) {
+  const t = useTheme();
+  const pulse = useRef(new Animated.Value(0.45)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 0.9, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0.45, duration: 700, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  return <Animated.View style={[{ height, width, borderRadius: round, backgroundColor: t.surface3, opacity: pulse }, style]} />;
+}
+
+/** Placeholder rows for a list that is loading. */
+export function SkeletonRows({ rows = 3 }: { rows?: number }) {
+  return (
+    <View style={{ gap: space.md, paddingVertical: space.sm }} accessibilityLabel="Loading">
+      {Array.from({ length: rows }, (_, i) => (
+        <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.lg }}>
+          <Skeleton width={`${46 - i * 6}%`} />
+          <Skeleton width="22%" />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** What failed and what to do, in the place the data would have been. */
 export function Problem({ error, onRetry }: { error: string; onRetry?: () => void }) {
   const t = useTheme();
@@ -211,13 +244,15 @@ export function Problem({ error, onRetry }: { error: string; onRetry?: () => voi
 }
 
 /** Loading / failed / empty / data — every list on every screen goes through this. */
-export function Async<T>({ state, empty, children }: {
+export function Async<T>({ state, empty, children, height }: {
   state: { data: T | null; error: string | null; loading: boolean; refresh: () => void };
   empty?: string; children: (data: T) => ReactNode;
+  /** the height the content will take, when known: the placeholder holds that room */
+  height?: number;
 }) {
   if (state.data == null) {
     if (state.error) return <Problem error={state.error} onRetry={state.refresh} />;
-    return <Loading />;
+    return height ? <Skeleton height={height} round={radius.md} /> : <SkeletonRows />;
   }
   if (empty && Array.isArray(state.data) && state.data.length === 0) return <Empty text={empty} />;
   return <>{children(state.data)}</>;

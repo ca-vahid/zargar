@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { PanResponder, View } from 'react-native';
 import Svg, { Defs, Line, LinearGradient, Path, Stop, Circle, Text as SvgText } from 'react-native-svg';
 
@@ -13,7 +13,7 @@ export interface Overlay { values: (number | null)[]; color: string; label: stri
  *  `points` is [time, value]; x is evenly spaced so closed hours take no room.
  *  Touch and drag to read any point: the header shows its value and time through
  *  `format` / `formatTime`, so the chart never needs a legend of its own. */
-export function LineChart({ points, height = 180, color, baseline, baselineLabel, overlays, format, formatTime, emptyText = 'No data yet' }: {
+export const LineChart = memo(function LineChart({ points, height = 180, color, baseline, baselineLabel, overlays, format, formatTime, emptyText = 'No data yet', onPick, axis }: {
   points: Point[];
   height?: number;
   color?: string;
@@ -23,6 +23,11 @@ export function LineChart({ points, height = 180, color, baseline, baselineLabel
   format: (v: number) => string;
   formatTime: (t: number) => string;
   emptyText?: string;
+  /** the point under the finger, null when it lifts; with this set the caller shows
+   *  the reading (in its headline) and the chart drops its own line of text */
+  onPick?: (point: Point | null) => void;
+  /** label the first and last sample under the chart */
+  axis?: (t: number) => string;
 }) {
   const t = useTheme();
   const [width, setWidth] = useState(0);
@@ -40,17 +45,24 @@ export function LineChart({ points, height = 180, color, baseline, baselineLabel
 
   const frameRef = useRef(frame);
   frameRef.current = frame;
-  const countRef = useRef(values.length);
-  countRef.current = values.length;
+  const seriesRef = useRef(series);
+  seriesRef.current = series;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
+  const touch = useRef((x: number | null) => {
+    const i = x == null ? null : indexAt(x, seriesRef.current.length, frameRef.current);
+    setPick(i);
+    onPickRef.current?.(i == null ? null : seriesRef.current[i] ?? null);
+  }).current;
   const responder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       // a mostly-vertical drag belongs to the page scroll, not the crosshair
       onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > Math.abs(g.dy),
-      onPanResponderGrant: (e) => setPick(indexAt(e.nativeEvent.locationX, countRef.current, frameRef.current)),
-      onPanResponderMove: (e) => setPick(indexAt(e.nativeEvent.locationX, countRef.current, frameRef.current)),
-      onPanResponderRelease: () => setPick(null),
-      onPanResponderTerminate: () => setPick(null),
+      onPanResponderGrant: (e) => touch(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => touch(e.nativeEvent.locationX),
+      onPanResponderRelease: () => touch(null),
+      onPanResponderTerminate: () => touch(null),
     }),
   ).current;
 
@@ -62,10 +74,12 @@ export function LineChart({ points, height = 180, color, baseline, baselineLabel
 
   return (
     <View>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', minHeight: 18 }}>
-        <Txt v="small" num dim>{pick != null ? formatTime(series[shown][0]) : ' '}</Txt>
-        <Txt v="small" num dim>{pick != null ? format(series[shown][1]) : ' '}</Txt>
-      </View>
+      {!onPick && (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', minHeight: 18 }}>
+          <Txt v="small" num dim>{pick != null ? formatTime(series[shown][0]) : ' '}</Txt>
+          <Txt v="small" num dim>{pick != null ? format(series[shown][1]) : ' '}</Txt>
+        </View>
+      )}
       <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} {...responder.panHandlers}
         accessibilityLabel={`Chart, latest ${format(values[values.length - 1])}`}>
         {width > 0 && (
@@ -109,6 +123,12 @@ export function LineChart({ points, height = 180, color, baseline, baselineLabel
           </Svg>
         )}
       </View>
+      {axis && (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingRight: frame.right, marginTop: 2 }}>
+          <Txt v="small" faint num>{axis(series[0][0])}</Txt>
+          <Txt v="small" faint num>{axis(series[series.length - 1][0])}</Txt>
+        </View>
+      )}
       {(baseline != null && baselineLabel) || overlays?.length ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 4 }}>
           {baseline != null && baselineLabel && <Txt v="small" faint>┄ {baselineLabel}</Txt>}
@@ -117,7 +137,7 @@ export function LineChart({ points, height = 180, color, baseline, baselineLabel
       ) : null}
     </View>
   );
-}
+});
 
 /** Resample an overlay to the thinned main series' length (nearest sample). */
 function decimateLike(values: (number | null)[], from: number, to: number): (number | null)[] {

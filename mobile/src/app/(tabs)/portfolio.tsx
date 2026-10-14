@@ -1,51 +1,49 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { api } from '@/api/endpoints';
-import type { ManagedPosition, Order, Portfolio, Position } from '@/api/types';
-import { RangeBar, SymbolBadge } from '@/components/graphics';
-import { LineChart } from '@/components/LineChart';
-import { Async, Button, Card, Chips, Delta, Empty, Pill, Row, Screen, Section, styles, Txt } from '@/components/ui';
+import type { Order, Portfolio } from '@/api/types';
 import { AccountPicker } from '@/components/AccountPicker';
+import { DateRangeSheet } from '@/components/DateRangeSheet';
 import { CurrencySwitch } from '@/components/Header';
-import { useConvert, useCurrency } from '@/hooks/useCurrency';
-import { rateFor } from '@/lib/fx';
+import { LineChart } from '@/components/LineChart';
+import { planFor, PositionRow } from '@/components/PositionRow';
+import { Async, Button, Card, Chips, Delta, Empty, Pill, Row, Screen, Section, Skeleton, styles, Txt } from '@/components/ui';
+import { useCurrency } from '@/hooks/useCurrency';
 import { usePoll } from '@/hooks/usePoll';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { runAction } from '@/lib/actions';
 import { dayMove, dayMovePct, GROUP_LABEL, groupOf, visibleBooks } from '@/lib/books';
 import type { Point } from '@/lib/chart';
-import { dayTime, money, pct, price, qty, signedMoney } from '@/lib/format';
+import { dayTime, money, pct, price, qty, shortDate, signedMoney } from '@/lib/format';
+import { rateFor } from '@/lib/fx';
+import { clip, RANGE_KEYS, type RangeKey, rangeStats, rangeWords, type Span, spanChip, spanFor, spanLabel } from '@/lib/range';
 import { useStore } from '@/store';
-import { space, useTheme } from '@/theme';
+import { space } from '@/theme';
 
-type Range = '1D' | '1W' | '1M' | '3M' | 'All';
-const RANGE_MS: Record<Range, number | null> = {
-  '1D': 24 * 3600e3, '1W': 7 * 24 * 3600e3, '1M': 31 * 24 * 3600e3, '3M': 92 * 24 * 3600e3, All: null,
-};
-
-/** The stop and next target the position manager holds for a symbol in a book. */
-function planFor(managed: ManagedPosition[] | null, pos: Position) {
-  const m = (managed ?? []).find((x) => x.portfolioId === pos.portfolioId
-    && (x.symbol === pos.symbol || x.legs.some((l) => l.symbol === pos.symbol)));
-  if (!m) return null;
-  const targets: number[] = m.policy?.ladder?.targets ?? [];
-  return { id: m.id, stop: m.state?.stop ?? null, venueStop: m.venueStopAt ?? null, entry: m.entry,
-    target: targets[m.state?.trimsDone ?? 0] ?? null, status: m.status, held: m.sessionsHeld };
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Txt v="small" faint>{label}</Txt>
+      <Txt v="small" num>{value}</Txt>
+    </View>
+  );
 }
 
 export default function PortfolioScreen() {
-  const t = useTheme();
   const ws = useWorkspace();
-  const quotes = useStore((s) => s.quotes);
+  const usdCad = useStore((s) => s.quotes['USDCAD=X']?.last ?? null);
   const portfolios = useStore((s) => s.portfolios);
   const positionsMap = useStore((s) => s.positions);
   const ordersMap = useStore((s) => s.openOrders);
   const selected = useStore((s) => s.selectedBook);
   const pauses = useStore((s) => s.halt.pauses);
   const lossHalts = useStore((s) => s.halt.books);
-  const [range, setRange] = useState<Range>('1D');
+  const [range, setRange] = useState<RangeKey>('1D');
+  const [custom, setCustom] = useState<Span | null>(null);
+  const [choosing, setChoosing] = useState(false);
+  const [picked, setPicked] = useState<Point | null>(null);
   const [showResearch, setShowResearch] = useState(false);
 
   const books = useMemo(() => visibleBooks(portfolios, ws, showResearch), [portfolios, ws, showResearch]);
@@ -54,17 +52,19 @@ export default function PortfolioScreen() {
   const own = book?.baseCurrency ?? 'USD';
   // totals follow the chosen display currency; with no live rate they stay in the book's own
   const display = useCurrency();
-  const conv = useConvert();
-  const usdCad = quotes['USDCAD=X']?.last ?? null;
   const rate = rateFor(usdCad, own, display);
   const cur = rate == null ? own : display;
   const k = rate ?? 1;
 
+  // the window is fixed when a range is chosen, so the same question is asked on every refresh
+  const span = useMemo(() => spanFor(range, Date.now(), custom), [range, custom]);
+  const rangeId = `${range}:${custom?.from ?? ''}:${custom?.to ?? ''}`;
   const equity = usePoll<Point[]>(
-    () => (bookId ? api.equity(bookId, { since: RANGE_MS[range] ? Date.now() - (RANGE_MS[range] as number) : undefined, points: 300 }) : Promise.resolve([])),
-    60000, [bookId, range]);
-  const managed = usePoll(() => api.managedPositions('open'), 30000);
-  const fills = usePoll(() => (bookId ? api.executions(bookId, 15) : Promise.resolve([])), 60000, [bookId]);
+    () => (bookId ? api.equity(bookId, { since: span.from ?? undefined, points: span.to == null ? 300 : 900 }) : Promise.resolve([])),
+    60000, [bookId, rangeId], `equity:${bookId}:${rangeId}`);
+  const managed = usePoll(() => api.managedPositions('open'), 30000, [], 'managed:open');
+  const fills = usePoll(() => (bookId ? api.executions(bookId, 15) : Promise.resolve([])), 60000, [bookId], `fills:${bookId}`);
+  useEffect(() => { setPicked(null); }, [bookId, rangeId]);
 
   const positions = useMemo(
     () => Object.values(positionsMap).filter((p) => p.portfolioId === bookId && Math.abs(p.qty) > 1e-9)
@@ -74,13 +74,29 @@ export default function PortfolioScreen() {
     () => Object.values(ordersMap).filter((o) => o.portfolioId === bookId).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     [ordersMap, bookId]);
 
+  // the curve in the display currency (its shape is the book's own, only the scale changes);
+  // a window that runs up to now ends on the live value, so its right edge is the headline
+  const liveEquity = book?.equity ?? null;
+  const series = useMemo<Point[]>(() => {
+    const inside = clip(equity.data ?? [], span);
+    const withNow: Point[] = span.to == null && liveEquity != null && equity.data ? [...inside, [Date.now(), liveEquity]] : inside;
+    return k === 1 ? withNow : withNow.map(([ts, v]) => [ts, v * k]);
+  }, [equity.data, span, liveEquity, k]);
+
+  const moneyIn = useCallback((v: number) => money(v, cur), [cur]);
+  const timeOf = useCallback((ts: number) => dayTime(ts), []);
+  const axisOf = useCallback((ts: number) => (range === '1D' || range === '1W' ? dayTime(ts) : shortDate(ts)), [range]);
+
   if (!book) return <Screen><Empty text={ws === 'live' ? 'No funded live or paper account yet.' : 'No practice books yet — waiting for the server.'} /></Screen>;
 
-  // the live point is appended so the curve's right edge is the number in the headline
-  const raw: Point[] = equity.data && book.equity != null ? [...equity.data, [Date.now(), book.equity]] : equity.data ?? [];
-  // the whole curve at today's rate: its shape is the book's own, only the scale changes
-  const series: Point[] = k === 1 ? raw : raw.map(([ts, v]) => [ts, v * k]);
-  const move = dayMove(book);
+  // the day view measures from the server's day-start anchor; every other window from its first record
+  const dayAnchor = range === '1D' && book.dayStart != null ? book.dayStart * k : null;
+  const stats = rangeStats(series, dayAnchor);
+  const headline = picked ? picked[1] : span.to == null ? (book.equity ?? book.cash) * k : stats?.end ?? null;
+  const change = picked && stats ? picked[1] - stats.start : stats ? stats.change : range === '1D' ? (dayMove(book) ?? 0) * k : null;
+  const changePct = picked && stats ? (stats.start ? ((picked[1] - stats.start) / Math.abs(stats.start)) * 100 : null)
+    : stats ? stats.pct : range === '1D' ? dayMovePct(book) : null;
+  const words = picked ? `at ${dayTime(picked[0])}` : rangeWords(range, span, Date.now(), stats?.firstTs);
   const paused = pauses?.[book.id];
   const lossHalt = lossHalts?.[book.id];
   const refreshAll = () => { equity.refresh(); managed.refresh(); fills.refresh(); };
@@ -105,6 +121,11 @@ export default function PortfolioScreen() {
       confirmLabel: 'Cancel order', danger: true, secure: true },
     () => api.cancelOrder(o.id), `${o.symbol}: cancel sent`);
 
+  const pickRange = (key: RangeKey) => {
+    if (key === 'Custom') setChoosing(true);
+    else setRange(key);
+  };
+
   return (
     <Screen onRefresh={refreshAll} refreshing={equity.refreshing || managed.refreshing}>
       <AccountPicker books={books} selected={book} onSelect={(id) => useStore.getState().set({ selectedBook: id })}
@@ -121,44 +142,43 @@ export default function PortfolioScreen() {
           <View style={{ flex: 1 }} />
           <CurrencySwitch />
         </View>
-        <Txt v="hero" num>{money((book.equity ?? book.cash) * k, cur)}</Txt>
-        <Delta value={move} text={`${signedMoney(move == null ? null : move * k, cur)}  ${pct(dayMovePct(book))} today`} />
+        {headline != null
+          ? <Txt v="hero" num>{money(headline, cur)}</Txt>
+          : equity.data ? <Txt v="hero" num dim>—</Txt> : <Skeleton height={30} width="55%" style={{ marginVertical: 4 }} />}
+        {change != null
+          ? <Delta value={change} text={`${signedMoney(change, cur)}  ${pct(changePct)}  ${words}`} />
+          : equity.data ? <Txt dim>No record for {spanLabel(span, Date.now())}</Txt> : <Skeleton height={14} width="45%" style={{ marginVertical: 3 }} />}
+        {span.to != null && !picked && <Txt v="small" faint>Value at the end of {spanLabel(span, Date.now())}. Now: {money((book.equity ?? book.cash) * k, cur)}.</Txt>}
         {cur !== own && <Txt v="small" faint>Held in {own}; shown at {usdCad?.toFixed(4)} USD/CAD.</Txt>}
       </View>
 
       <Card>
-        <Async state={equity}>
+        <Async state={equity} height={200}>
           {() => (
-            <LineChart points={series} baseline={range === '1D' && book.dayStart != null ? book.dayStart * k : null} baselineLabel="yesterday's close"
-              format={(v) => money(v, cur)} formatTime={(ts) => dayTime(ts)} emptyText="Not enough history for this range yet" />
+            <LineChart points={series} baseline={dayAnchor ?? (range === '1D' ? null : stats?.start ?? null)}
+              baselineLabel={range === '1D' ? "yesterday's close" : 'where this period started'}
+              format={moneyIn} formatTime={timeOf} axis={axisOf} onPick={setPicked} emptyText="Not enough history for these dates yet" />
           )}
         </Async>
-        <Chips value={range} onChange={setRange} options={(Object.keys(RANGE_MS) as Range[]).map((k) => ({ key: k, label: k }))} />
+        <Chips value={range} onChange={pickRange}
+          options={RANGE_KEYS.map((key) => ({ key, label: key === 'Custom' ? (range === 'Custom' ? spanChip(span, Date.now()) : 'Custom…') : key }))} />
+        {stats && series.length > 1 && (
+          <View style={{ flexDirection: 'row', gap: space.md, marginTop: space.xs }}>
+            <Stat label="Started at" value={money(stats.start, cur)} />
+            <Stat label="High" value={money(stats.high, cur)} />
+            <Stat label="Low" value={money(stats.low, cur)} />
+          </View>
+        )}
       </Card>
+      <DateRangeSheet visible={choosing} value={range === 'Custom' ? custom : null} onClose={() => setChoosing(false)}
+        onApply={(next) => { setCustom(next); setRange('Custom'); }} />
 
       <Section title={`Positions · ${positions.length}`} right={<Txt v="small" dim num>Cash {money(book.cash * k, cur)}</Txt>}>
         <Card>
           {positions.length === 0 && <Empty text="No open positions in this book." />}
-          {positions.map((p, i) => {
-            const plan = planFor(managed.data, p);
-            const label = p.option?.short ?? p.symbol;
-            const mark = quotes[p.symbol]?.last || p.last || null;
-            return (
-              <View key={p.symbol} style={{ gap: 4, paddingBottom: i === positions.length - 1 ? 0 : space.sm }}>
-              <Row last
-                onPress={() => router.navigate({ pathname: '/chart/[symbol]', params: {
-                  symbol: p.option?.underlying ?? p.symbol, entry: plan ? String(plan.entry) : String(p.avgCost),
-                  stop: plan?.stop != null ? String(plan.stop) : '', target: plan?.target != null ? String(plan.target) : '',
-                  positionId: plan?.id ?? '', name: label } })}
-                left={<View style={styles.wrap}><SymbolBadge symbol={p.option?.underlying ?? p.symbol} size={34} /><Txt v="head">{label}</Txt>{plan?.status === 'closing' && <Pill kind="warn" text="closing" />}{plan?.status === 'attention' && <Pill kind="bad" text="attention" />}</View>}
-                sub={`${qty(p.qty)} @ ${price(p.avgCost)}${plan?.stop != null ? ` · stop ${price(plan.stop)}` : ' · no stop on record'}${plan?.target != null ? ` · target ${price(plan.target)}` : ''}`}
-                right={<Txt num>{money(conv(p.marketValue, p.currency ?? own).value, conv(p.marketValue, p.currency ?? own).cur)}</Txt>}
-                rightSub={<Delta v="small" value={p.unrealizedPnl} text={`${signedMoney(conv(p.unrealizedPnl, p.currency ?? own).value, conv(p.unrealizedPnl, p.currency ?? own).cur)}  ${pct(p.unrealizedPnlPct)}`} />} />
-              {/* shares only: an option's own price is not on the share-price scale of its stop */}
-              {plan && !p.option && <RangeBar stop={plan.stop} entry={plan.entry} now={mark} target={plan.target} />}
-              </View>
-            );
-          })}
+          {positions.map((p, i) => (
+            <PositionRow key={p.symbol} pos={p} plan={planFor(managed.data, p)} plansKnown={managed.data != null} own={own} last={i === positions.length - 1} />
+          ))}
         </Card>
       </Section>
 

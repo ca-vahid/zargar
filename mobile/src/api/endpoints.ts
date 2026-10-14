@@ -61,8 +61,10 @@ export const api = {
 
   // --- money
   portfolios: () => request<PortfolioWithPositions[]>('GET', '/api/portfolios'),
+  /** `limit` caps the RAW samples read before thinning to `points`: the server's default (2000, about
+   *  16 hours of 30-second samples) cut every longer window short. The thinning runs in Postgres. */
   equity: (pid: string, opts: { since?: number; points?: number } = {}) =>
-    request<[number, number][]>('GET', `/api/portfolios/${pid}/equity${q({ since: opts.since, points: opts.points ?? 300 })}`),
+    request<[number, number][]>('GET', `/api/portfolios/${pid}/equity${q({ since: opts.since, points: opts.points ?? 300, limit: 200000 })}`),
   managedPositions: (status = 'open') => request<ManagedPosition[]>('GET', `/api/positions/managed${q({ status })}`),
   orders: (portfolio: string, limit = 30) => request<Order[]>('GET', `/api/orders${q({ portfolio, limit })}`),
   executions: (portfolio: string, limit = 30) => request<Execution[]>('GET', `/api/executions${q({ portfolio, limit })}`),

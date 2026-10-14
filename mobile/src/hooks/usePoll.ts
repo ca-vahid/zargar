@@ -11,24 +11,39 @@ export interface Polled<T> {
   refresh: () => void;
 }
 
+// The last answer to each named question. A screen that has shown something once
+// shows it again at once and refreshes underneath, instead of going blank and
+// spinning every time a book, a range or a tab changes.
+const cache = new Map<string, unknown>();
+const remember = (key: string, value: unknown) => {
+  if (cache.size > 300) cache.clear();
+  cache.set(key, value);
+};
+export const clearPollCache = () => cache.clear();
+
 /** Fetch when the screen is shown, again every `everyMs` while it stays on screen and
  *  the app is in the foreground, and whenever a value in `deps` changes. A failed
- *  refresh keeps the last good data on screen and reports the error beside it. */
-export function usePoll<T>(fetcher: () => Promise<T>, everyMs: number, deps: unknown[] = []): Polled<T> {
+ *  refresh keeps the last good data on screen and reports the error beside it.
+ *  `cacheKey` names the question: its last answer is shown while the new one loads. */
+export function usePoll<T>(fetcher: () => Promise<T>, everyMs: number, deps: unknown[] = [], cacheKey?: string): Polled<T> {
   const focused = useIsFocused();
-  const [data, setData] = useState<T | null>(null);
+  const [data, setData] = useState<T | null>(() => (cacheKey ? (cache.get(cacheKey) as T | undefined) ?? null : null));
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(data == null);
   const [refreshing, setRefreshing] = useState(false);
   const fn = useRef(fetcher);
   fn.current = fetcher;
+  const named = useRef(cacheKey);
+  named.current = cacheKey;
   const seq = useRef(0);
 
   const run = useCallback(async (byHand: boolean) => {
     const mine = ++seq.current;
+    const name = named.current;
     if (byHand) setRefreshing(true);
     try {
       const res = await fn.current();
+      if (name) remember(name, res); // still the right answer to ITS question
       if (mine !== seq.current) return; // a newer request superseded this one
       setData(res);
       setError(null);
@@ -56,8 +71,16 @@ export function usePoll<T>(fetcher: () => Promise<T>, everyMs: number, deps: unk
     return () => { clearInterval(timer); sub.remove(); };
   }, [focused, everyMs, key, run]);
 
-  // a different question (another book, another range): drop the old answer
-  useEffect(() => { setData(null); setLoading(true); }, [key]);
+  // a different question (another book, another range): show its last answer if there
+  // is one, otherwise drop the old answer rather than show it under the wrong name
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    const known = cacheKey ? (cache.get(cacheKey) as T | undefined) ?? null : null;
+    setData(known);
+    setError(null);
+    setLoading(known == null);
+  }, [key, cacheKey]);
 
   return { data, error, loading, refreshing, refresh: useCallback(() => { void run(true); }, [run]) };
 }

@@ -4,7 +4,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
-import { extent, linePath } from '../lib/chart';
+import { areaPath, extent, linePath, yAt } from '../lib/chart';
 import { radius, space, useTheme } from '../theme';
 import { Txt } from './ui';
 
@@ -42,6 +42,74 @@ export function Sparkline({ values, width = 76, height = 30, up }: { values: num
     <Svg width={width} height={height}>
       <Path d={linePath(values, extent(values, [], 0.05), frame)} stroke={ink} strokeWidth={1.75} fill="none" strokeLinejoin="round" strokeLinecap="round" />
     </Svg>
+  );
+}
+
+/** A wide trend line with a soft fill and an optional dashed reference level (where the
+ *  day started): the headline card's "how has today gone" picture. */
+export function AreaSpark({ values, baseline, height = 56 }: { values: number[]; baseline?: number | null; height?: number }) {
+  const t = useTheme();
+  const [width, setWidth] = useState(0);
+  const ok = values.length > 1;
+  const rising = ok ? values[values.length - 1] >= (baseline ?? values[0]) : true;
+  const ink = rising ? t.up : t.down;
+  const frame = { width, height, left: 0, right: 0, top: 4, bottom: 2 };
+  const range = extent(values, baseline != null ? [baseline] : [], 0.06);
+  return (
+    <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ height }}>
+      {ok && width > 0 && (
+        <Svg width={width} height={height}>
+          <Defs>
+            <LinearGradient id={`area-${rising ? 'u' : 'd'}`} x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={ink} stopOpacity={0.28} />
+              <Stop offset="1" stopColor={ink} stopOpacity={0} />
+            </LinearGradient>
+          </Defs>
+          <Path d={areaPath(values, range, frame)} fill={`url(#area-${rising ? 'u' : 'd'})`} />
+          {baseline != null && (
+            <Line x1={0} x2={width} y1={yAt(baseline, range, frame)} y2={yAt(baseline, range, frame)} stroke={t.text3} strokeWidth={1} strokeDasharray="3 4" />
+          )}
+          <Path d={linePath(values, range, frame)} stroke={ink} strokeWidth={2} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        </Svg>
+      )}
+    </View>
+  );
+}
+
+/** Gains above the line, losses below it, one bar per day. Tap a bar to read it. */
+export function DayBars({ items, format, height = 84 }: {
+  items: { label: string; value: number }[]; format: (v: number) => string; height?: number;
+}) {
+  const t = useTheme();
+  const [picked, setPicked] = useState<number | null>(null);
+  const top = Math.max(0, ...items.map((i) => i.value));
+  const bottom = Math.max(0, ...items.map((i) => -i.value));
+  const whole = top + bottom || 1;
+  const upRoom = Math.max(top > 0 ? 10 : 0, (top / whole) * height);
+  const downRoom = Math.max(bottom > 0 ? 10 : 0, (bottom / whole) * height);
+  const shown = picked != null && picked < items.length ? picked : items.length - 1;
+  if (!items.length) return null;
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Txt v="small" dim>{items[shown].label}</Txt>
+        <Txt v="small" num color={items[shown].value > 0 ? t.up : items[shown].value < 0 ? t.down : t.text2} style={{ fontWeight: '700' }}>{format(items[shown].value)}</Txt>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        {items.map((it, i) => (
+          <Pressable key={`${it.label}-${i}`} onPress={() => setPicked(i)} accessibilityRole="button" accessibilityLabel={`${it.label}: ${format(it.value)}`}
+            style={{ flex: 1, opacity: i === shown ? 1 : 0.6 }}>
+            <View style={{ height: upRoom, justifyContent: 'flex-end' }}>
+              {it.value > 0 && <View style={{ height: Math.max(2, (it.value / (top || 1)) * upRoom), backgroundColor: t.upFill, borderTopLeftRadius: 3, borderTopRightRadius: 3 }} />}
+            </View>
+            <View style={{ height: 1, backgroundColor: t.text3 }} />
+            <View style={{ height: downRoom }}>
+              {it.value < 0 && <View style={{ height: Math.max(2, (-it.value / (bottom || 1)) * downRoom), backgroundColor: t.downFill, borderBottomLeftRadius: 3, borderBottomRightRadius: 3 }} />}
+            </View>
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }
 

@@ -46,7 +46,7 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: t.text3,
         tabBarLabelStyle: { fontWeight: '600' },
       }}>
-      <Tabs.Screen name="index" options={{ title: 'Now', headerTitle: () => <Brand />, tabBarIcon: icon('pulse', 'pulse-outline') }} />
+      <Tabs.Screen name="index" options={{ title: 'Home', headerTitle: () => <Brand />, tabBarIcon: icon('home', 'home-outline') }} />
       <Tabs.Screen name="portfolio" options={{ title: 'Portfolio', tabBarIcon: icon('wallet', 'wallet-outline') }} />
       <Tabs.Screen name="tips" options={{ title: 'Tips', tabBarIcon: icon('chatbubble-ellipses', 'chatbubble-ellipses-outline'), tabBarBadge: pending || undefined }} />
       <Tabs.Screen name="research" options={{ title: 'Research', tabBarIcon: icon('telescope', 'telescope-outline') }} />
