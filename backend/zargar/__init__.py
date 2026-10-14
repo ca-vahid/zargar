@@ -1,4 +1,4 @@
-__version__ = "0.9.33"
+__version__ = "0.9.34"
 
 
 def _read_build() -> str:

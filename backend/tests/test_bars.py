@@ -100,3 +100,19 @@ def test_exchange_bar_replaces_the_held_sampled_bar():
         unsub()
 
     asyncio.run(run())
+
+
+def test_an_off_the_minute_stub_never_enters_the_series():
+    """2026-10-13: memory follows storage (persist_bars drops stubs) - neither a seed nor a correction adds one."""
+    from zargar.domain import Bar
+    bus = Bus()
+    seen = []
+    bus.subscribe("bars", lambda m: seen.append(m))
+    agg = BarAggregator(bus)
+    t0 = 1_700_000_040_000
+    good = Bar(symbol="TST", tf="1m", ts=t0, open=10, high=11, low=9, close=10.5, volume=100, source="exchange")
+    stub = Bar(symbol="TST", tf="1m", ts=t0 + 11_000, open=10.5, high=10.5, low=10.5, close=10.5, volume=0, source="exchange")
+    agg.seed("TST", [good, stub])
+    agg.ingest_exchange_bar(Bar(symbol="TST", tf="1m", ts=t0 + MINUTE_MS + 17_000, open=10.5, high=10.5, low=10.5,
+                                close=10.5, volume=0))
+    assert [b.ts for b in agg.bars("TST", include_forming=False)] == [t0]
