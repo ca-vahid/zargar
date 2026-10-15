@@ -914,6 +914,37 @@ export interface ScoutLane {
   skipped: number; pending: number; realizedNet: number; openNet: number; totalNet: number; hitRate: number | null;
   openTrades: ScoutEntry[]; closedTrades: ScoutEntry[];
 }
+// Scout agent (PLAN section 9)
+export interface ScoutAgentPlan {
+  entry: { kind: "now" | "limit"; limit: number | null; ref: number }; stop: number; targets: number[];
+  targetsR: number[]; stopAtr: number; horizon: number; conviction: number | null; thesis: string; invalidation: string;
+}
+export interface ScoutAgentProposal {
+  ticker: string; candidateId?: string | null; twin?: { ticker: string | null; candidateId?: string | null; why?: string };
+  check: { ok: boolean; ticker: string; reasons: string[]; notes: string[]; plan: ScoutAgentPlan | null;
+    evidence: { resultId: string; quote: string; point: string }[];
+    droppedEvidence: { resultId: string; quote: string; why: string }[] };
+}
+export interface ScoutAgentRun {
+  id: string; day: string; lane: string; model: string | null; status: string; reason: string | null;
+  proposals: ScoutAgentProposal[]; toolCalls: number; tokensIn: number; tokensOut: number; cacheRead: number;
+  cacheWrite: number; costUsd: number; latencyMs: number; lessonsVersion: string | null; promptVersion: string | null;
+  createdAt: string | null; transcript?: { id: string; tool: string; args: Record<string, unknown>; text: string }[];
+}
+export interface ScoutAgentLaneStats {
+  closed: number; netPnl: number; hitRate: number | null; meanR: number | null; totalR: number;
+  meanExcessVsSpy: number | null; withSpy: number; open: number; pending: number;
+}
+export interface ScoutAgentDiff { diff: number | null; lo: number | null; hi: number | null; sessions: number; nA: number; nB: number }
+export interface ScoutAgentView {
+  runs: ScoutAgentRun[]; lanes: ScoutLane[]; enabled: boolean;
+  lessons: { id: string; text: string; cases: string[]; status: string; effectiveFrom: string; retiredFrom: string | null; reviewDay: string }[];
+  scorecard: { lanes: Record<string, ScoutAgentLaneStats>; vsScreen: ScoutAgentDiff; gptVsRandom: ScoutAgentDiff;
+    sampleStart: string;
+    gate: { passed: boolean; verdict: string; checks: { name: string; need: string; have: number | null; ok: boolean }[];
+      agentVsRandom: ScoutAgentDiff } };
+  schedule: { name: string; at: string; lastDay: string }[];
+}
 export interface ScoutReport {
   day: string; at: string; candidates: { kind: string; status: string; n: number }[];
   verdicts: { lane: string; status: string; verdict: string | null; n: number }[];

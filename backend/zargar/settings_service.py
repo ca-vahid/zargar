@@ -597,6 +597,40 @@ DEFAULTS: dict[str, Any] = {
     "techniques.scout.dossier_timeout_s": 240.0,
     "techniques.scout.dossier_budget_usd_day": 5.0,   # its OWN daily cap, apart from the analyst lanes' budget
     "techniques.scout.dossier_release_max_chars": 14000,  # results press release excerpt given to the model
+    # Scout AGENT (PLAN section 9, user decision 2026-10-14): a tool-using research agent proposes up to 3 long swing
+    # trades each morning for SIMULATED research books ($10k each, 1% risk per trade); code checks every proposal
+    # and sizes it; comparison lanes = GPT on the same tools, a random twin per Claude pick, the screen's top names.
+    # PREREGISTERED for the sample from agent_sample_start: do not tune mid-sample (gate: agent_score.py).
+    "techniques.scout.agent_enabled": True,
+    "techniques.scout.agent_at": "07:30",             # ET, before the 10:00-11:30 entry window
+    "techniques.scout.agent_review_at": "16:45",      # ET, the week's last session: lessons from closed cases
+    "techniques.scout.agent_claude_enabled": True,
+    "techniques.scout.agent_claude_model": "claude-opus-5-5",
+    "techniques.scout.agent_claude_effort": "high",
+    "techniques.scout.agent_gpt_enabled": True,       # needs OPENAI_API_KEY (absent = the run is recorded as skipped)
+    "techniques.scout.agent_gpt_model": "gpt-6.1-sol",
+    "techniques.scout.agent_gpt_effort": "high",
+    "techniques.scout.agent_budget_usd_day": 10.0,    # BOTH lanes + the weekly review; its own cap
+    "techniques.scout.agent_max_turns": 16,
+    "techniques.scout.agent_max_tool_calls": 24,
+    "techniques.scout.agent_max_tokens": 12000,       # per model call (thinking included)
+    "techniques.scout.agent_call_timeout_s": 240.0,
+    "techniques.scout.agent_max_proposals": 3,
+    "techniques.scout.agent_min_r1": 1.5,             # first target at least this many R
+    "techniques.scout.agent_book_cash": 10_000.0,     # each agent-lane book starts with this
+    "techniques.scout.agent_risk_pct": 1.0,           # % of book equity at risk per trade (qty = risk / (fill - stop))
+    "techniques.scout.agent_max_position_pct": 20.0,  # one position at most this % of book equity
+    "techniques.scout.agent_random_lane_enabled": True,
+    "techniques.scout.agent_screen_lane_enabled": True,
+    "techniques.scout.agent_screen_lane_picks": 3,
+    "techniques.scout.agent_screen_lane_horizon": 10,
+    "techniques.scout.agent_screen_top": 25,          # names shown to the agent from the screen
+    "techniques.scout.agent_universe_extra": [],      # added to the EM core universe for the screen
+    "techniques.scout.agent_fetch_concurrency": 6,
+    "techniques.scout.agent_release_chars": 4000,     # results release excerpt in the fundamentals tool
+    "techniques.scout.agent_max_lessons": 8,
+    "techniques.scout.agent_review_min_cases": 4,
+    "techniques.scout.agent_sample_start": "2026-10-15",  # the graduation gate counts weeks from here
     "techniques.flow.otm_min_pct": 0.0,      # flagged footprint: 0–12% OTM
     "techniques.flow.otm_max_pct": 12.0,
     "techniques.flow.repeat_days": 3,        # same zone flagged N days in the window

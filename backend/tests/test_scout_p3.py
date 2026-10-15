@@ -173,7 +173,8 @@ def test_books_lanes_and_random_draw():
     # 2026-10-11: the unclassified variant has its OWN five books (never the S1 books)
     assert bk.lanes_for("s1_unclassified", {"claude": "keep", "gpt": "drop"}) == ["s1u_screen", "s1u_claude_keep", "s1u_gpt_drop"]
     assert bk.lanes_for("random", {}) == [] and bk.lane_label("s1u_screen") == "Scout S1U screen"
-    assert len(bk.all_lanes()) == 16 and bk.lane_label("s1_claude_keep") == "Scout S1 claude keep"
+    assert len(bk.all_lanes()) == 20 and bk.lane_label("s1_claude_keep") == "Scout S1 claude keep"
+    assert bk.lane_label("agent_claude") == "Scout Agent Claude"         # 2026-10-14: the agent's four books
     assert bk.lane_label("s2_gpt_drop") == "Scout S2 gpt drop" and bk.lane_label("random") == "Scout random"
     pool = bk.build_pool(["AAA", "BBB"], set())
     assert len(pool) >= 20 and "AAA" in pool                     # thin pool topped up

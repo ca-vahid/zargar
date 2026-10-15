@@ -59,3 +59,35 @@ def build_scout_routes(app, eng, auth, config) -> None:
     @app.get("/api/scout/reports", dependencies=[auth])
     async def scout_reports(limit: int = 10):
         return await _svc(eng).desk.reports(limit=min(60, max(1, limit)))
+
+    # ---- the research agent (PLAN section 9; simulated research books only)
+    @app.get("/api/scout/agent", dependencies=[auth])
+    async def scout_agent():
+        svc = _svc(eng)
+        await svc.desk.sync_entries()
+        await svc.agent.enrich_cases()
+        lanes = [l for l in await svc.desk.lanes() if l["lane"].startswith("agent_")]
+        return {"runs": await svc.agent.runs(limit=20), "scorecard": await svc.agent.scorecard(),
+                "lessons": await svc.agent.lessons(), "lanes": lanes,
+                "enabled": bool(svc.s("agent_enabled", True)),
+                "schedule": [j for j in eng.scheduler.status() if j["name"].startswith("scout_agent")]}
+
+    @app.get("/api/scout/agent/runs/{run_id}", dependencies=[auth])
+    async def scout_agent_run(run_id: str):
+        r = await _svc(eng).agent.run(run_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail="no such run")
+        return r
+
+    @app.post("/api/scout/agent/run", dependencies=[auth])
+    async def scout_agent_run_now():
+        """Run today's agent now (normally 07:30 ET). Idempotent per day and lane; its entries are attempted
+        in the usual 10:00-11:30 ET window on the simulated research books."""
+        import asyncio
+        svc = _svc(eng)
+        if not bool(svc.s("agent_enabled", True)):
+            raise HTTPException(status_code=400, detail="techniques.scout.agent_enabled is off")
+        task = asyncio.create_task(svc.agent.run_day())
+        svc.agent.tasks.add(task)
+        task.add_done_callback(svc.agent.tasks.discard)
+        return {"started": True}

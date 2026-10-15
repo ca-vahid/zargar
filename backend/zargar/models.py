@@ -1504,5 +1504,51 @@ class ScoutDossier(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ScoutAgentRun(Base):
+    """Scout agent (PLAN section 9): one pre-market research run of one model lane. `transcript` keeps every
+    tool call with its result id and text (the evidence the proposals cite); `proposals` keeps each proposal
+    as submitted plus the code checks' verdict. status: running | ok | no_trade | budget | error | skipped."""
+    __tablename__ = "scout_agent_runs"
+    __table_args__ = (UniqueConstraint("day", "lane", name="uq_scout_agent_run_day_lane"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)                      # ET session date
+    lane: Mapped[str] = mapped_column(String(16), index=True)                     # claude | gpt
+    model: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(12), index=True)
+    reason: Mapped[str | None] = mapped_column(Text)
+    transcript: Mapped[list] = mapped_column(JSONVariant, default=list)
+    proposals: Mapped[list] = mapped_column(JSONVariant, default=list)
+    screen: Mapped[list] = mapped_column(JSONVariant, default=list)              # the idea list the run saw
+    lessons_version: Mapped[str | None] = mapped_column(String(16))
+    prompt_version: Mapped[str | None] = mapped_column(String(32))
+    tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    cache_read: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScoutAgentLesson(Base):
+    """Scout agent: a lesson from the weekly self-review. It cites closed cases (scout_entries ids) and is
+    supplied to runs only from `effective_from` (the next week's first session - never mid-week).
+    status: active | retired."""
+    __tablename__ = "scout_agent_lessons"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    cases: Mapped[list] = mapped_column(JSONVariant, default=list)
+    status: Mapped[str] = mapped_column(String(12), index=True)
+    effective_from: Mapped[str] = mapped_column(String(10), index=True)
+    retired_from: Mapped[str | None] = mapped_column(String(10))
+    review_day: Mapped[str] = mapped_column(String(10), index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 SCOUT_TABLES = ("scout_filings", "scout_insider_trades", "scout_candidates", "scout_state",
-                "scout_verdicts", "scout_entries", "scout_reports", "scout_dossiers")
+                "scout_verdicts", "scout_entries", "scout_reports", "scout_dossiers",
+                "scout_agent_runs", "scout_agent_lessons")
