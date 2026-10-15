@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.34";
+export const APP_VERSION = "0.9.35";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.35",date:"2026-10-14",title:"Scout: a research agent that finds and proposes trades on its own",items:[
+    {tag:"new",text:"Scout now has a research agent. Each session morning it reads the market through tools (chart numbers, company filings, options-implied moves, earnings dates, its own past trades), proposes up to three swing trades with a stop, targets and a holding period, and trades them on simulated research books. Code checks every proposal and sets the size; nothing reaches a broker."},
+    {tag:"new",text:"Fair comparisons run beside it: the same research by a second model, a random stock with the same plan shape for every pick, and the screen's top names on a fixed plan. A scoreboard and a graduation gate (40 closed trades, 8 weeks, beating the random picks) show whether it has an edge."},
+    {tag:"new",text:"A weekly review turns closed trades into lessons, each backed by at least two trades, used from the following week. Scout > Agent shows the runs, every proposal with the evidence it quoted, the trades and the lessons."},
+  ]},
   {version:"0.9.34",date:"2026-10-13",title:"Platform: the latest-print row from the data feed is no longer taken as a candle",items:[
     {tag:"fixed",text:"Armed plans no longer receive a false one-minute candle on thinly traded stocks. The backup data feed adds a row for the latest trade, stamped at its own second with no volume; when that trade was in an earlier minute the app treated it as a finished candle and then ignored that minute's real candle. Such rows are now dropped by the feed reader and by the in-memory price series."},
   ]},
