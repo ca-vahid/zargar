@@ -87,6 +87,14 @@ SILENCE_RECYCLE_MS = 90_000   # no frame for this long while the tape prints -> 
 AUTH_RECYCLE_MS = 30_000      # connected this long without a successful auth -> close and reconnect
 
 
+DATA_FRAME_TYPES = frozenset({"q", "t", "b", "u", "d"})   # quote, trade, bar, updated bar, daily bar
+
+
+def is_data_frame(m) -> bool:
+    """A market-data frame (not success/subscription/error control traffic)."""
+    return isinstance(m, dict) and m.get("T") in DATA_FRAME_TYPES
+
+
 def should_recycle(now: int, connected_at: int, last_msg: int, authed: bool, expect_traffic: bool) -> str | None:
     """Pure: why the current socket must be recycled, or None. `last_msg` 0 = no frame yet on this socket."""
     if not authed and now - connected_at > AUTH_RECYCLE_MS:
@@ -293,12 +301,17 @@ class AlpacaQuoteFeed(QuoteFeed):
                     guard = asyncio.create_task(self._recycle_watch(ws, now_ms()), name="alpaca-recycle-watch")
                     try:
                         async for raw in ws:
-                            self._last_msg = now_ms()
                             try:
                                 msgs = json.loads(raw)
                             except (TypeError, ValueError):
                                 continue
-                            for m in msgs if isinstance(msgs, list) else [msgs]:
+                            batch = msgs if isinstance(msgs, list) else [msgs]
+                            # only MARKET DATA proves the stream is alive: on 2026-10-15 Alpaca's data froze at
+                            # 12:56 ET for ~75 min while auth/subscribe acks kept arriving, so every recycle read as
+                            # "recovered" (FeedRecovered + a UI alert every ~90 s)
+                            if any(is_data_frame(m) for m in batch):
+                                self._last_msg = now_ms()
+                            for m in batch:
                                 self.handle(m)
                     finally:
                         guard.cancel()
