@@ -230,3 +230,72 @@ companies that file no US statements get an error or a price-only sheet.
 API: `POST /api/scout/dossiers {ticker}`, `GET /api/scout/dossiers`, `GET /api/scout/dossiers/{id}`. UI: Scout >
 Research, and "Research note on <ticker>" in a candidate's detail. Tests: `tests/test_scout_dossier.py`.
 Long-hold replay (same evening): `replay/README.md` - no edge at 20 to 120 sessions either.
+## 9. The Scout agent - autonomous research and proposals (user decision 2026-10-14, built 0.9.35)
+
+User, 2026-10-14: "the idea is that the scout gets automatically used with an smart llm system and suggest investments
+not that a human uses it"; plan approved the same evening with every default ("go with all recommendations and p1 up to
+p5"). This is a SEPARATE experiment from sections 2-7 (the screen + keep/drop filter): there the model may only veto a
+rule's candidate; here the model finds and proposes trades itself, and is judged prospectively against fair controls.
+
+**Honest frame.** No published evidence shows a language model picks stocks with an edge, and backtests of model picks
+are contaminated by what the model has seen (section 1, [F6]). So the agent is judged ONLY live, from
+`techniques.scout.agent_sample_start` (2026-10-15), on simulated research books, against a random twin of every pick.
+
+### 9.1 How a day runs (`techniques/scout/agent.py`)
+- 07:30 ET `scout_agent`: code chart-reads Scout's own universe (`AGENT_UNIVERSE`, ~150 liquid US names, plus
+  `agent_universe_extra`) and ranks it (`agent_tools.screen`: 60d and 20d return vs SPY, 5-day volume ratio; above the
+  50-day average, price >= $5, 20-day dollar volume >= $5M). Each model lane then runs a tool loop.
+- Tools (all numbers computed by code, quotable lines, `agent_tools.py`): `chart` (trend, 20/50/200-day averages, ATR,
+  returns vs SPY, RSI, 20/55/52-week ranges, swing support/resistance with touches, volume ratios, gap, last 10
+  sessions), `fundamentals` (the research note's SEC fact sheet + results release excerpt, `DossierDesk.gather`),
+  `options_view` (30-day IV, implied 1/10-session move, at-the-money straddle), `events` (next earnings), `book`,
+  `past_cases` (closed picks + active lessons). The screen and the book are given up front as results T1/T2. No chart
+  images: the model reads numbers.
+- The model ends with `submit_proposals` (0-3). Code checks each (`agent_plan.check`): every evidence item must quote a
+  tool result of THIS run verbatim (min 2 grounded); the ticker was charted; long shares only; stop 0.5-4 ATR below
+  the entry; first target >= 1.5R; horizon 3-20 sessions, cut to end before a known earnings date (< 3 left = refused);
+  limit entries at or below the last close; not held or proposed twice. Refusals stay on the record.
+- Accepted -> a `ScoutCandidate` (kind `agent_pick`) + a pending `ScoutEntry` in the lane's book. The existing entry rule
+  fills it 10:00-11:30 ET (spread gate; a limit plan also waits for ask <= limit, else `level_not_reached`).
+- Sizing at the fill (code): qty = 1% of book equity / (fill - stop), capped at 20% of equity and by cash.
+- Exits (position manager, policies-as-data): the plan's stop on the daily close, targets as a half/half ladder with
+  the stop to entry on the first trim, time exit at the horizon, gap exit.
+
+### 9.2 Lanes (shadow books, $10k each, sim executor only)
+| Book | What it trades |
+|---|---|
+| `agent_claude` | Opus 5.5 (effort high) picks |
+| `agent_gpt` | GPT-6.1 Sol on the same tools and prompt |
+| `agent_random` | for every Claude pick, a seeded random name from the same universe (excluding names the agent charted), with the pick's geometry in ATR units (stop distance, limit offset, targets in R, horizon) |
+| `agent_screen` | the screen's top 3 names on a fixed plan (now, stop 2 ATR, targets 2R/3R, 10 sessions) |
+
+The agent's candidates are kept out of the section 2-7 baseline pools and candidate lists (they have their own tab).
+
+### 9.3 Learning loop
+16:30 report: closed agent trades become cases (`enrich_cases`: result in R, best/worst excursion in R from daily
+bars, SPY over the hold, excess return). Week's last session 16:45 ET `scout_agent_review`: one Claude call over the
+closed cases writes lessons; each must cite >= 2 case ids (else discarded); max 8 active; a lesson is supplied to runs
+only from the NEXT week's first session (`effective_from`), never mid-week; the review may retire a lesson. The active
+lesson set's hash (`lessons_version`) is stamped on every run so results can be split by lesson set.
+
+### 9.4 Scorecard and graduation gate (`agent_score.py`, preregistered)
+Per lane: closed trades, mean R (net after $1/order fees over planned risk), hit rate, mean excess vs SPY, net P&L.
+Comparisons with a DATE-CLUSTERED bootstrap (sessions resampled, 2000 draws): Claude - random (the gate), Claude -
+screen, GPT - random. Gate (all must hold): >= 40 closed Claude-lane trades; >= 8 weeks since the sample start; Claude
+net P&L > 0; the 95% lower bound of (Claude mean R - random mean R) > 0. Otherwise "no proven edge yet".
+
+### 9.5 What passing the gate does - and does not do
+Nothing by itself. Scout never routes to IBKR (standing constraint). The next step - the agent's picks as approval
+cards on the IBKR Paper book, at small size - is the user's decision when the gate passes, and real money keeps the
+per-card OK. That wiring is deliberately NOT built.
+
+### 9.6 Budget and knobs
+`techniques.scout.agent_*` (settings_service): own daily cap `agent_budget_usd_day` $10 (both lanes + the review; a call
+whose worst case would exceed it is not made - the run is recorded `budget`), 16 turns / 24 tool calls / 12k tokens per
+call, one moving prompt-cache breakpoint. Expected cost ~$1-2 per Claude run. Do not tune thresholds mid-sample; a
+change is a new prompt/plan version.
+
+### 9.7 API, UI, tests
+`GET /api/scout/agent` (runs, scorecard + gate, lessons, lane books), `GET /api/scout/agent/runs/{id}` (with the
+transcript), `POST /api/scout/agent/run` (run today now; idempotent per day and lane). UI: Scout > **Agent** (default
+tab). Tests: `tests/test_scout_agent.py` (fake providers only - no model call).

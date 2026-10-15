@@ -30,6 +30,7 @@ from ... import events as ev
 from ...domain import new_id
 from ...models import ManagedPositionRow, Order, ScoutCandidate, ScoutEntry, ScoutReport, ScoutVerdict, utcnow
 from ...marketstructure import market_calendar as mcal
+from . import agent_plan as ap
 from . import analyst as an
 from . import books as bk
 from . import entry as er
@@ -40,6 +41,7 @@ from .screens import S1_KIND, S1_UNCLASSIFIED_KIND, S2_KIND, add_sessions
 log = logging.getLogger("zargar.scout.desk")
 TECHNIQUE_ID = "scout"
 RANDOM_KIND = "random"
+AGENT_KINDS = ("agent_pick", "agent_random", "agent_screen")      # agent.py (PLAN section 9)
 _TERMINAL = ("FILLED", "REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED", "ERROR")
 
 
@@ -356,9 +358,10 @@ class ScoutDesk:
                 return False
             lo365 = (now.date() - dt.timedelta(days=365)).isoformat()
             lo30 = (now.date() - dt.timedelta(days=30)).isoformat()
+            # 2026-10-14: the agent's picks and its comparison lanes are never part of this baseline's pool
             past = (await s.execute(select(ScoutCandidate.ticker, ScoutCandidate.gates, ScoutCandidate.signal_date)
                                     .where(ScoutCandidate.signal_date >= lo365,
-                                           ScoutCandidate.kind != RANDOM_KIND))).all()
+                                           ScoutCandidate.kind.notin_((RANDOM_KIND, *AGENT_KINDS))))).all()
         ok = [t for t, g, _ in past if (g or {}).get("price", {}).get("status") == "pass"
               and (g or {}).get("adv", {}).get("status") == "pass"]
         recent = {t for t, _, d in past if d >= lo30}
@@ -452,6 +455,13 @@ class ScoutDesk:
             sp = er.spread_pct((q or {}).get("bid"), (q or {}).get("ask"))
             seen = any(a.get("spreadPct") is not None for a in (es[0].attempts or []))
             action, why = er.decide(now, es[0].entry_date, sp, rule, seen_quote=seen or sp is not None)
+            if action == er.ENTER:
+                # an agent LIMIT plan (PLAN section 9) enters only when the live ask has come to its limit
+                ok, lwhy = ap.limit_gate((es[0].config or {}).get("plan"), (q or {}).get("ask"))
+                if not ok:
+                    last_slot = now.hour * 60 + now.minute >= er._minutes(rule.end)
+                    action, why = ((er.SKIP, lwhy) if last_slot
+                                   else (er.RETRY, f"{lwhy} - re-check in {rule.step_minutes} min"))
             if action == er.WAIT:
                 continue
             att = {"at": now.isoformat(), "bid": (q or {}).get("bid"), "ask": (q or {}).get("ask"),
@@ -532,7 +542,9 @@ class ScoutDesk:
         async with self.engine.sf() as s:
             e = await s.get(ScoutEntry, eid)
             lane, ticker, cid, entry_date, hold = e.book, e.ticker, e.candidate_id, e.entry_date, e.hold_sessions
-        book = await bk.ensure_book(self.engine, lane)
+            cfg = dict(e.config or {})
+        plan = cfg.get("plan")                   # an agent plan (PLAN section 9): its stop, targets, risk sizing
+        book = await bk.ensure_book(self.engine, lane, starting_cash=float(cfg.get("bookCash") or 100_000.0))
         pid = book["id"]
         await self._update_entry(eid, portfolio_id=pid)
         if book.get("kind") != "shadow" or self.engine.executor_for(book) is not self.engine.sim_executor:
@@ -544,11 +556,21 @@ class ScoutDesk:
         if a <= 0:
             return await self._finish(eid, status="skipped", reason="no_atr: no daily history for the ATR stop", code="no_atr", spread=sp)
         ask, bid = float(q["ask"]), float(q["bid"])
-        qty = math.floor(float(self.s("position_usd", 600.0)) / ask)
-        if qty < 1:
-            return await self._finish(eid, status="skipped", reason=f"size: ${float(self.s('position_usd', 600.0)):g} buys < 1 share at {ask}", code="size", spread=sp)
         # marketable limit: never above the observed ask by more than the gate's half spread
         limit = round(ask * (1 + float(self.s("gate_max_spread_pct", 0.5)) / 200.0), 2)
+        if plan:
+            if (plan.get("entry") or {}).get("kind") == "limit" and plan["entry"].get("limit"):
+                limit = min(limit, round(float(plan["entry"]["limit"]), 2))
+            eq = await self.engine.positions.equity(pid)
+            qty, why = ap.size(equity=eq, cash=float(book.get("cash") or 0), fill=limit, stop=float(plan["stop"]),
+                               risk_pct=float(cfg.get("riskPct") or 1.0),
+                               max_position_pct=float(cfg.get("maxPositionPct") or 20.0))
+            if qty < 1:
+                return await self._finish(eid, status="skipped", reason=f"size: {why}", code="size", spread=sp)
+        else:
+            qty = math.floor(float(self.s("position_usd", 600.0)) / ask)
+        if qty < 1:
+            return await self._finish(eid, status="skipped", reason=f"size: ${float(self.s('position_usd', 600.0)):g} buys < 1 share at {ask}", code="size", spread=sp)
         intent = OrderIntent(portfolio_id=pid, symbol=ticker, sec_type="STK", side="BUY", qty=qty, order_type="LMT",
                              limit_price=limit, tif="DAY", source="technique", technique_id=TECHNIQUE_ID,
                              tags=["scout", f"scout:{lane}"])
@@ -575,9 +597,14 @@ class ScoutDesk:
             return await self._finish(eid, status="unfilled", reason=f"unfilled: limit {limit} not filled within "
                                       f"{float(self.s('entry_fill_wait_s', 30.0)):g}s - cancelled", code="unfilled", spread=sp)
         fill, fq = float(order.avg_fill_price), float(order.filled_qty)
-        stop = round(fill - float(self.s("stop_atr_mult", 2.0)) * a, 2)
-        policy = {"timeframe": "1d", "stop": {"kind": "fixed", "price": stop},
-                  "time_stop_sessions": max(1, hold - 1), "gap_exit": True}
+        if plan:
+            stop = round(float(plan["stop"]), 2)
+            targets = [float(t) for t in plan.get("targets") or [] if float(t) > fill]
+            policy = ap.policy(plan, stop=stop, targets=targets)
+        else:
+            stop = round(fill - float(self.s("stop_atr_mult", 2.0)) * a, 2)
+            policy = {"timeframe": "1d", "stop": {"kind": "fixed", "price": stop},
+                      "time_stop_sessions": max(1, hold - 1), "gap_exit": True}
         pos = await self.engine.position_manager.adopt({
             "portfolioId": pid, "symbol": ticker, "direction": "long", "techniqueId": TECHNIQUE_ID,
             "tags": ["scout", f"scout:{lane}", f"candidate:{cid}"], "runId": cid, "entry": fill,
@@ -589,9 +616,10 @@ class ScoutDesk:
         await self._update_entry(eid, status="entered", position_id=pos["id"], qty=fq, entry_price=fill,
                                  entry_ts=utcnow(), stop_price=stop, fees=fee, orders_filled=1,
                                  half_spread_cost=round(max(0.0, ask - bid) / 2 * fq, 4), reason=None)
+        how = (f"plan stop, targets {policy.get('ladder', {}).get('targets', [])}" if plan
+               else f"fill - {float(self.s('stop_atr_mult', 2.0)):g} x ATR {a:.2f}")
         await self._finish(eid, status="entered", reason=f"filled {fq:g} @ {fill:.2f}; stop {stop:.2f} "
-                           f"(fill - {float(self.s('stop_atr_mult', 2.0)):g} x ATR {a:.2f}); time exit after {hold} sessions",
-                           code="entered", spread=sp)
+                           f"({how}); time exit after {hold} sessions", code="entered", spread=sp)
         return "entered"
 
     async def _await_fill(self, oid: str | None, timeout_s: float):
@@ -735,6 +763,12 @@ class ScoutDesk:
                                          "totalNet", "hitRate")} for l in lanes],
             "llm": {**spend, "budgetUsd": float(self.s("llm_budget_usd_day", 15.0))},
         }
+        agent = getattr(self.svc, "agent", None)
+        if agent is not None:
+            try:
+                data["agent"] = await agent.summary(day)
+            except Exception:                    # noqa: BLE001 - the report never fails on the agent section
+                log.exception("scout report: agent summary")
         async with self.engine.sf() as s:
             row = await s.get(ScoutReport, day)
             if row is None:

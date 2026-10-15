@@ -2909,6 +2909,22 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .scout-lane-trades { padding: 0 var(--sp-3) var(--sp-2) var(--sp-5); display: grid; gap: 6px; font-size: var(--fs-1); }
 .scout-note { font-size: var(--fs-1); }
 
+/* Scout agent tab (2026-10-14) */
+.scout-agent-today { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
+.scout-agent-diffs { display: grid; gap: 4px; font-size: var(--fs-1); }
+.scout-agent-check { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; padding: 3px 0; font-size: var(--fs-1); }
+.scout-agent-run { border-top: 1px solid var(--border); padding: 0 var(--sp-3); }
+.scout-agent-body { display: grid; gap: var(--sp-3); padding: var(--sp-2) 0 var(--sp-3) var(--sp-4); font-size: var(--fs-1); }
+.scout-agent-prop { display: grid; gap: 4px; }
+.scout-agent-prop.refused { opacity: .75; }
+.scout-agent-prop-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.scout-agent-ev { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.scout-agent-tx { display: grid; gap: 4px; }
+.scout-agent-tx pre { white-space: pre-wrap; word-break: break-word; font-size: var(--fs-0, 11px); max-height: 320px; overflow: auto;
+  background: var(--bg-2, transparent); padding: 6px 8px; border-radius: 4px; }
+.scout-agent-lesson { padding: 3px 0; font-size: var(--fs-1); }
+.scout-agent-lesson.retired { opacity: .6; text-decoration: line-through; }
+
 .scout-positions { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-4) var(--sp-5); padding: var(--sp-3) var(--sp-4); }
 .scout-pos { display: grid; gap: 4px; min-width: 0; }
 .scout-pos-head { display: flex; align-items: center; gap: 10px; }
@@ -3031,4 +3047,5 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .dossier-fact .fid { margin-right: 6px; }
 .dossier-fact dd { margin: 0; font-size: var(--fs-2); }
 .dossier-fact dd.good { box-shadow: inset 2px 0 0 var(--up); padding-left: 8px; }
-.dossier-fact dd.bad { box-shadow: inset 2px 0 0 var(--down); padding-left: 8px; }
+.dossier-fact dd.bad { box-shadow: inset 2px 0 0 var(--down); padding-left: 8px; }.scout-agent-scroll { overflow-x: auto; }
+.scout-agent-scroll .tbl { min-width: 640px; }
