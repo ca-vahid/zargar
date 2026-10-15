@@ -80,6 +80,20 @@ EMIT_MS = 250
 _US_SHARE_CLASS = re.compile(r"^[A-Z]{1,5}\.[ABC]$")
 _US_ROOT = re.compile(r"^[A-Z]{1,6}$")
 SUB_CHUNK = 50          # symbols per subscribe message: a rejected message loses its chunk, never the whole list
+# 2026-10-15: at 12:58 ET the socket went SILENT (open, pings answered, no frames) and `async for raw in ws` waited
+# forever - `connected` said down, nothing reconnected, every armed plan idled on "stale bars" (208 in 15 min) until a
+# restart. The stream now recycles its own socket when it is silent or unauthenticated while the tape should print.
+SILENCE_RECYCLE_MS = 90_000   # no frame for this long while the tape prints -> close and reconnect
+AUTH_RECYCLE_MS = 30_000      # connected this long without a successful auth -> close and reconnect
+
+
+def should_recycle(now: int, connected_at: int, last_msg: int, authed: bool, expect_traffic: bool) -> str | None:
+    """Pure: why the current socket must be recycled, or None. `last_msg` 0 = no frame yet on this socket."""
+    if not authed and now - connected_at > AUTH_RECYCLE_MS:
+        return "not authenticated"
+    if expect_traffic and now - max(last_msg, connected_at) > SILENCE_RECYCLE_MS:
+        return "silent"
+    return None
 
 
 def is_us_share_class(symbol: str) -> bool:
@@ -276,14 +290,18 @@ class AlpacaQuoteFeed(QuoteFeed):
                     for msg in self._connect_sub_msgs():
                         await ws.send(json.dumps(msg))
                     backoff = 1.0
-                    async for raw in ws:
-                        self._last_msg = now_ms()
-                        try:
-                            msgs = json.loads(raw)
-                        except (TypeError, ValueError):
-                            continue
-                        for m in msgs if isinstance(msgs, list) else [msgs]:
-                            self.handle(m)
+                    guard = asyncio.create_task(self._recycle_watch(ws, now_ms()), name="alpaca-recycle-watch")
+                    try:
+                        async for raw in ws:
+                            self._last_msg = now_ms()
+                            try:
+                                msgs = json.loads(raw)
+                            except (TypeError, ValueError):
+                                continue
+                            for m in msgs if isinstance(msgs, list) else [msgs]:
+                                self.handle(m)
+                    finally:
+                        guard.cancel()
             except asyncio.CancelledError:
                 self._ws = None
                 self._authed = False
@@ -294,6 +312,18 @@ class AlpacaQuoteFeed(QuoteFeed):
             self._authed = False
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
+
+    async def _recycle_watch(self, ws, connected_at: int, every: float = 10.0) -> None:
+        """Close a silent or never-authenticated socket so `_run` reconnects (should_recycle)."""
+        while True:
+            await asyncio.sleep(every)
+            why = should_recycle(now_ms(), connected_at, self._last_msg if self._last_msg >= connected_at else 0,
+                                 self._authed, _expect_traffic())
+            if why:
+                log.warning("alpaca stream %s - recycling the socket", why)
+                with contextlib.suppress(Exception):
+                    await ws.close()
+                return
 
     # ------------------------------------------------------------- messages
     def _st(self, s: str) -> dict:

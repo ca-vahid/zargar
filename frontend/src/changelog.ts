@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.35";
+export const APP_VERSION = "0.9.36";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.36",date:"2026-10-15",title:"Market data reconnects itself when the stream goes quiet",items:[
+    {tag:"fixed",text:"When the Alpaca market-data stream stayed open but stopped sending data, the app never reconnected: armed plans waited on stale bars until a restart (13:00 ET on 10-15). The stream now reconnects by itself after 90 seconds of silence during market hours, or 30 seconds without a successful sign-in."},
+  ]},
   {version:"0.9.35",date:"2026-10-14",title:"Scout: a research agent that finds and proposes trades on its own",items:[
     {tag:"new",text:"Scout now has a research agent. Each session morning it reads the market through tools (chart numbers, company filings, options-implied moves, earnings dates, its own past trades), proposes up to three swing trades with a stop, targets and a holding period, and trades them on simulated research books. Code checks every proposal and sets the size; nothing reaches a broker."},
     {tag:"new",text:"Fair comparisons run beside it: the same research by a second model, a random stock with the same plan shape for every pick, and the screen's top names on a fixed plan. A scoreboard and a graduation gate (40 closed trades, 8 weeks, beating the random picks) show whether it has an edge."},

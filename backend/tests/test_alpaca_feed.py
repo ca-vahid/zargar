@@ -183,3 +183,44 @@ def test_connect_subscribe_is_chunked_with_spy_alone():
     assert sorted(sent) == sorted(names) and len(msgs) == 1 + 3
     assert all(len(m["trades"]) <= SUB_CHUNK for m in msgs)
     assert "ES1!" not in sent and "ATH-PA" not in sent
+
+
+def test_should_recycle_a_silent_or_unauthenticated_socket():
+    """2026-10-15: the socket went silent at 12:58 ET and nothing reconnected (208 stale-bar errors)."""
+    from zargar.brokers.alpaca import AUTH_RECYCLE_MS, SILENCE_RECYCLE_MS, should_recycle
+    t0 = 1_000_000
+    # fresh, authenticated, printing -> keep
+    assert should_recycle(t0 + 5_000, t0, t0 + 4_000, True, True) is None
+    # authenticated but silent past the limit while the tape prints -> recycle
+    assert should_recycle(t0 + SILENCE_RECYCLE_MS + 5_000, t0, t0 + 1_000, True, True) == "silent"
+    # no frame at all since connect counts from the connect time
+    assert should_recycle(t0 + SILENCE_RECYCLE_MS + 1, t0, 0, True, True) == "silent"
+    # overnight silence is normal
+    assert should_recycle(t0 + 10 * SILENCE_RECYCLE_MS, t0, t0 + 1_000, True, False) is None
+    # never authenticated (e.g. 406 connection limited) -> recycle after the auth window, even overnight
+    assert should_recycle(t0 + AUTH_RECYCLE_MS - 1, t0, 0, False, False) is None
+    assert should_recycle(t0 + AUTH_RECYCLE_MS + 1, t0, 0, False, False) == "not authenticated"
+
+
+@pytest.mark.asyncio
+async def test_recycle_watch_closes_a_silent_socket(monkeypatch):
+    import zargar.brokers.alpaca as al
+    clock = {"t": 1_000_000}
+    monkeypatch.setattr(al, "now_ms", lambda: clock["t"])
+    monkeypatch.setattr(al, "_expect_traffic", lambda: True)
+
+    class FakeWs:
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    feed = make_feed([], [])
+    feed._authed = True
+    ws = FakeWs()
+    task = asyncio.create_task(feed._recycle_watch(ws, clock["t"], every=0.01))
+    await asyncio.sleep(0.05)
+    assert not ws.closed                       # within the silence window
+    clock["t"] += al.SILENCE_RECYCLE_MS + 1
+    await asyncio.wait_for(task, 1.0)
+    assert ws.closed
