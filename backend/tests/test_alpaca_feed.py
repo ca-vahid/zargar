@@ -224,3 +224,13 @@ async def test_recycle_watch_closes_a_silent_socket(monkeypatch):
     clock["t"] += al.SILENCE_RECYCLE_MS + 1
     await asyncio.wait_for(task, 1.0)
     assert ws.closed
+
+
+def test_only_market_data_frames_prove_the_stream_alive():
+    """2026-10-15: data froze for ~75 min while control acks kept arriving; acks must not read as 'alive'."""
+    from zargar.brokers.alpaca import is_data_frame
+    assert is_data_frame({"T": "q", "S": "SPY"}) and is_data_frame({"T": "t"}) and is_data_frame({"T": "b"})
+    assert not is_data_frame({"T": "success", "msg": "authenticated"})
+    assert not is_data_frame({"T": "subscription", "trades": ["SPY"]})
+    assert not is_data_frame({"T": "error", "code": 406})
+    assert not is_data_frame("noise")

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.36";
+export const APP_VERSION = "0.9.37";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.37",date:"2026-10-15",title:"Quieter data alerts during a provider outage; the emergency restart works after a failed deploy",items:[
+    {tag:"fixed",text:"During a market-data outage the app no longer announces \"stream recovered\" every 90 seconds: only real quotes, trades and bars count as the stream being up."},
+    {tag:"fixed",text:"The emergency restart no longer refuses to run when an earlier deploy left an expired handoff behind (it blocked a restart on 10-15 while data was stale)."},
+  ]},
   {version:"0.9.36",date:"2026-10-15",title:"Market data reconnects itself when the stream goes quiet",items:[
     {tag:"fixed",text:"When the Alpaca market-data stream stayed open but stopped sending data, the app never reconnected: armed plans waited on stale bars until a restart (13:00 ET on 10-15). The stream now reconnects by itself after 90 seconds of silence during market hours, or 30 seconds without a successful sign-in."},
   ]},
