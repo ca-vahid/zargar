@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.37";
+export const APP_VERSION = "0.9.38";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.38",date:"2026-10-21",title:"A short-dated option tip traded as shares always carries a stop",items:[
+    {tag:"fixed",text:"A tip on an option expiring within 3 days that a book trades as shares (the IBKR paper book is shares-only) now gets the normal share stop. Before, the card went out with no stop (AAPL, 10-21)."},
+  ]},
   {version:"0.9.37",date:"2026-10-15",title:"Quieter data alerts during a provider outage; the emergency restart works after a failed deploy",items:[
     {tag:"fixed",text:"During a market-data outage the app no longer announces \"stream recovered\" every 90 seconds: only real quotes, trades and bars count as the stream being up."},
     {tag:"fixed",text:"The emergency restart no longer refuses to run when an earlier deploy left an expired handoff behind (it blocked a restart on 10-15 while data was stale)."},
