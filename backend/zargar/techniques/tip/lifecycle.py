@@ -107,6 +107,13 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
             floor_pct = 1.0
     width_floor = max(a, entry * floor_pct / 100.0)
     default_dist = width_floor
+    if vehicle == "shares" and plan.get("lotto"):
+        # 2026-10-21 (AAPL, ab): a lotto-dated OPTION tip expressed as SHARES (the paper book is shares-only) kept the
+        # lotto lane's exemption from the ATR stop and reached the card with no stop at all. The lotto lane is an
+        # option exit policy; a share position is never stopless.
+        plan["lotto"] = False
+        plan["atrStop"] = bool(plan.get("atrDaily"))
+        repairs.append("shares vehicle: not a lotto - the share stop rules apply")
     atr_d = float(plan.get("atrDaily") or 0.0) if plan.get("atrStop") else 0.0
     floor_label = "floor"
     if atr_d > 0:
@@ -925,7 +932,7 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
                 log.debug("geometry gate: no bars for %s (checking without structure)", underlying)
         fresh, repairs = check_exit_geometry(plan, direction=direction,
                                              entry_ref=entry_ref, bars=gate_bars,
-                                             settings=eng.settings)
+                                             settings=eng.settings, vehicle=("option" if is_opt else "shares"))
         pre = ctx.get("riskPlan") if isinstance(ctx.get("riskPlan"), dict) else {}
         exception: dict | None = None
         if pre.get("enforced") and pre.get("finalStop") is not None:

@@ -114,6 +114,18 @@ def test_atr_stop_floor_replaces_the_percent_floor_and_keeps_wide_stops():
     assert legacy["underlyingStop"] == 99.25                                         # the 0.75% floor stands
 
 
+def test_a_lotto_dated_tip_expressed_as_shares_still_gets_its_stop():
+    # 2026-10-21 AAPL (ab, 2-DTE call on a shares-only paper book): the lotto stamp switched atrStop off and the
+    # share card went out with no stop. The lotto lane is an option policy; shares always get the ATR stop.
+    lotto = {**_plan(None, horizon="short", applied=False, atr_stop=False), "lotto": True}
+    shares, rep = check_exit_geometry(lotto, direction="long", entry_ref=100.0, bars=[], settings=S,
+                                      vehicle="shares")
+    assert shares["underlyingStop"] == 94.0 and shares["lotto"] is False              # short default 2x ATR
+    assert any("not a lotto" in r for r in rep)
+    opt, _ = check_exit_geometry(lotto, direction="long", entry_ref=100.0, bars=[], settings=S, vehicle="option")
+    assert opt.get("underlyingStop") is None and opt["lotto"] is True                # options keep the lotto lane
+
+
 def test_short_direction_stop_mirrors():
     p, _ = check_exit_geometry(_plan(101.0), direction="short", entry_ref=100.0, bars=[], settings=S,
                                vehicle="option")
