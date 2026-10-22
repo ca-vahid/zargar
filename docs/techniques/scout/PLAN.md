@@ -316,3 +316,11 @@ Change (entry rule only; screen, checks, sizing and exits unchanged):
 - Prompt `scout-agent-v2` tells the agent how a limit is worked. `agent_max_proposals` 3 -> 5 (more cases per week).
 - Runs are labelled by prompt version. The gate's sample start (2026-10-15) is unchanged: the v1 sample is only 3
   fills. A scorecard split by prompt version is not built yet.
+
+### 9.9 The screen lane's position cap fits its rolling book (2026-10-22, 0.9.40)
+Finding: on 10-22 the screen lane skipped all three picks (ISRG, CVX, NOW) for cash. Its $10k book was down to $23 and
+then $410. It adds 3 names a session and holds each 10 sessions, so up to 30 positions are open at once, but each
+could take the agents' 20% cap. Change: the screen lane's per-position cap is min(20%, 100% / (picks x horizon)),
+which is 3.33% here (`agent_plan.rolling_position_pct`). It also buys one share when that cap rounds to zero but one
+share fits the risk budget and the cash (`minOneShare`). The scorecard is in R, so this changes the lane's dollars,
+not its verdict. The agent lanes keep 20%.

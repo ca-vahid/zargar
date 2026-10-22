@@ -203,17 +203,30 @@ def check(p: dict, *, chart: dict | None, results: dict[str, str], held: set[str
 
 
 def size(*, equity: float, cash: float, fill: float, stop: float, risk_pct: float,
-         max_position_pct: float) -> tuple[int, str]:
-    """Shares for a fill: risk % of equity over the per-share risk, capped by a share of equity and by cash."""
+         max_position_pct: float, min_one: bool = False) -> tuple[int, str]:
+    """Shares for a fill: risk % of equity over the per-share risk, capped by a share of equity and by cash.
+    `min_one` (the screen lane's rolling cap): one share when the cap alone rounds it to zero but one share fits
+    both the risk budget and the cash."""
     per = fill - stop
     if per <= 0:
         return 0, f"fill {fill:.2f} at or below the stop {stop:.2f}"
     by_risk = math.floor(equity * risk_pct / 100.0 / per)
     by_cap = math.floor(equity * max_position_pct / 100.0 / fill)
     by_cash = math.floor(max(cash, 0.0) / fill)
+    if min_one and by_cap < 1 and by_risk >= 1 and by_cash >= 1:
+        by_cap = 1
     q = max(0, min(by_risk, by_cap, by_cash))
     which = "risk" if q == by_risk else "position cap" if q == by_cap else "cash"
     return q, f"{q} shares (bound by {which}: risk {by_risk}, cap {by_cap}, cash {by_cash})"
+
+
+def rolling_position_pct(cap_pct: float, picks_per_day: int, horizon: int) -> float:
+    """A lane that adds `picks_per_day` names every session and holds each `horizon` sessions carries up to
+    picks x horizon positions at once; its per-position cap must fit them all in the book or later picks are skipped
+    for cash (2026-10-22: the screen lane skipped ISRG, CVX and NOW with $23 left). The scorecard is in R, so a
+    smaller position changes the dollars, never the verdict."""
+    slots = max(1, int(picks_per_day)) * max(1, int(horizon))
+    return round(min(float(cap_pct), 100.0 / slots), 4)
 
 
 def policy(plan: dict, *, stop: float, targets: list[float]) -> dict:

@@ -373,6 +373,21 @@ async def test_gpt_lane_tool_loop_and_no_trade(agent_rig, engine):
         assert (await s.execute(select(func.count()).select_from(ScoutEntry))).scalar_one() == 0
 
 
+def test_the_screen_lane_cap_fits_every_rolling_position():
+    # 3 picks a day x 10 sessions = 30 positions at once: each may use 1/30 of the book, never the 20% agent cap
+    assert ap.rolling_position_pct(20.0, 3, 10) == round(100 / 30, 4)
+    assert ap.rolling_position_pct(20.0, 1, 3) == 20.0
+    # a $1,000 stock: the cap rounds to zero shares, one share fits risk and cash -> one share
+    q, _ = ap.size(equity=10_000, cash=2_000, fill=1000.0, stop=960.0, risk_pct=1.0, max_position_pct=3.3333,
+                   min_one=True)
+    assert q == 1
+    q0, _ = ap.size(equity=10_000, cash=2_000, fill=1000.0, stop=960.0, risk_pct=1.0, max_position_pct=3.3333)
+    assert q0 == 0
+    q_cash, _ = ap.size(equity=10_000, cash=500, fill=1000.0, stop=960.0, risk_pct=1.0, max_position_pct=3.3333,
+                        min_one=True)
+    assert q_cash == 0                                                      # never more than the cash
+
+
 def test_a_limit_is_worked_for_its_sessions_then_expires():
     from zargar.techniques.scout import entry as er
     from zargar.techniques.scout.screens import add_sessions
