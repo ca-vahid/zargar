@@ -715,8 +715,13 @@ class AgentDesk:
             if (await s.execute(select(ScoutCandidate.id).where(ScoutCandidate.key == key))).scalar_one_or_none():
                 return None
         cid = new_id()
+        max_pct = float(self.s("max_position_pct", 20.0))
+        if kind == SCREEN_KIND:
+            # the screen lane adds names every session: its cap fits picks x horizon positions (PLAN 9.9)
+            max_pct = ap.rolling_position_pct(max_pct, int(self.s("screen_lane_picks", 3)),
+                                              int(self.s("screen_lane_horizon", 10)))
         cfg = {"plan": plan, "riskPct": float(self.s("risk_pct", 1.0)),
-               "maxPositionPct": float(self.s("max_position_pct", 20.0)),
+               "maxPositionPct": max_pct, **({"minOneShare": True} if kind == SCREEN_KIND else {}),
                "bookCash": float(self.s("book_cash", 10_000.0)), "promptVersion": PROMPT_VERSION,
                **self.svc.desk._rules_snapshot()}
         async with self.engine.sf() as s:
