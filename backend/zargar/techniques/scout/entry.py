@@ -84,6 +84,29 @@ def decide(now: dt.datetime, entry_date: str, spread: float | None, rule: EntryR
     return RETRY, f"spread {spread:.3f}% > {rule.max_spread_pct:g}% at {now:%H:%M} ET - re-check in {rule.step_minutes} min"
 
 
+def session_index(entry_date: str, today: str, limit: int = 30) -> int | None:
+    """Trading sessions from `entry_date` to `today` (0 = the entry session itself); None when `today` is before
+    the entry session or more than `limit` sessions after it."""
+    if today < entry_date:
+        return None
+    from .screens import add_sessions
+    d, i = entry_date, 0
+    while d < today and i <= limit:
+        d, i = add_sessions(d, 1), i + 1
+    return i if d == today and i <= limit else None
+
+
+def limit_window(entry_date: str, today: str, sessions: int) -> tuple[str, bool] | None:
+    """A LIMIT plan's working window (2026-10-21, PLAN section 9.8): the limit is worked on the entry session and
+    the next `sessions - 1` sessions. -> (the session to judge today as, more sessions remain after today?), or None
+    when today is outside the window (the window has expired, or the entry session is not reached)."""
+    n = max(1, int(sessions))
+    idx = session_index(entry_date, today, limit=n)
+    if idx is None or idx >= n:
+        return None
+    return today, idx < n - 1
+
+
 def reason_code(reason: str) -> str:
     """The short code at the front of a SKIP reason (spread | no_quote | window_missed)."""
     return reason.split(":", 1)[0].strip()
