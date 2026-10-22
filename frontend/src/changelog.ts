@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.38";
+export const APP_VERSION = "0.9.39";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.39",date:"2026-10-21",title:"Scout's agent picks get a real chance to fill",items:[
+    {tag:"improved",text:"A Scout agent limit buy is now worked from 10:00 to 15:30 ET for up to three sessions (it was tried only until 11:30 on the first day; 3 of 18 picks filled). Its random twin follows the same rule, and a late fill still exits on the plan's original date."},
+    {tag:"improved",text:"The Scout agent may propose up to five trades a day (was three)."},
+  ]},
   {version:"0.9.38",date:"2026-10-21",title:"A short-dated option tip traded as shares always carries a stop",items:[
     {tag:"fixed",text:"A tip on an option expiring within 3 days that a book trades as shares (the IBKR paper book is shares-only) now gets the normal share stop. Before, the card went out with no stop (AAPL, 10-21)."},
   ]},

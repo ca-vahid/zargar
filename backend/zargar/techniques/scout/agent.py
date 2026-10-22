@@ -38,7 +38,7 @@ from .form4 import ET
 
 log = logging.getLogger("zargar.scout.agent")
 TECHNIQUE_ID = "scout"
-PROMPT_VERSION = "scout-agent-v1"
+PROMPT_VERSION = "scout-agent-v2"    # v2 2026-10-21: a limit is worked 10:00-15:30 ET for 3 sessions
 LANES = ("claude", "gpt")
 BOOK_OF = {"claude": "agent_claude", "gpt": "agent_gpt"}
 RANDOM_BOOK, SCREEN_BOOK = "agent_random", "agent_screen"
@@ -69,7 +69,7 @@ AGENT_UNIVERSE = (
 )
 
 SYSTEM_PROMPT = """You are the Scout agent: an experienced, sceptical swing trader and equity analyst running a
-SIMULATED research book of US shares. Each morning before the open you look for at most three long swing
+SIMULATED research book of US shares. Each morning before the open you look for at most five long swing
 trades (held 3 to 20 sessions) and propose them with a full plan. Proposing nothing is a valid, often correct
 answer: a trade must earn its place.
 
@@ -87,7 +87,8 @@ How you work
 
 What a proposal must contain (the code checks every one and refuses what fails)
 - long only (shares, no shorting); entry "now" (bought between 10:00 and 11:30 ET today) or "limit" with a
-  limit price at or below the last close (bought only if the price comes to it today);
+  limit price at or below the last close (worked 10:00 to 15:30 ET today and the next two sessions, bought only
+  if the price comes to it; the horizon still counts from today);
 - a stop below the entry, 0.5 to 4 ATR away, placed where the idea is proven wrong (under support, not an
   arbitrary percentage); one or two ascending targets, the first at least 1.5R (R = entry - stop);
 - a horizon of 3 to 20 sessions; a conviction from 1 (weak) to 5 (strong);
