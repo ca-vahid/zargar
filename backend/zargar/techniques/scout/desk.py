@@ -582,7 +582,8 @@ class ScoutDesk:
             eq = await self.engine.positions.equity(pid)
             qty, why = ap.size(equity=eq, cash=float(book.get("cash") or 0), fill=limit, stop=float(plan["stop"]),
                                risk_pct=float(cfg.get("riskPct") or 1.0),
-                               max_position_pct=float(cfg.get("maxPositionPct") or 20.0))
+                               max_position_pct=float(cfg.get("maxPositionPct") or 20.0),
+                               min_one=bool(cfg.get("minOneShare")))
             if qty < 1:
                 return await self._finish(eid, status="skipped", reason=f"size: {why}", code="size", spread=sp)
         else:
