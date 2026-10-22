@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "Zargar",
+    "slug": "zargar",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "zargar",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "ca.vahid.zargar",
+      "adaptiveIcon": {
+        "backgroundColor": "#0d0d0d",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0d0d0d",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 96
+        }
+      ],
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "color": "#5b8cff"
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://zargar-desk.tail97d481.ts.net",
+      "pushConfigured": false,
+      "router": {},
+      "eas": {
+        "projectId": "e1315745-eae2-41fe-91ea-cef3e6140dc9"
+      }
+    },
+    "owner": "vahiids-team",
+    "updates": {
+      "url": "https://u.expo.dev/e1315745-eae2-41fe-91ea-cef3e6140dc9",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
+}
