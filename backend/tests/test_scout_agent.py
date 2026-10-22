@@ -373,6 +373,101 @@ async def test_gpt_lane_tool_loop_and_no_trade(agent_rig, engine):
         assert (await s.execute(select(func.count()).select_from(ScoutEntry))).scalar_one() == 0
 
 
+def test_a_limit_is_worked_for_its_sessions_then_expires():
+    from zargar.techniques.scout import entry as er
+    from zargar.techniques.scout.screens import add_sessions
+    d0 = "2026-10-21"                                                       # a Wednesday
+    d1, d2, d3 = add_sessions(d0, 1), add_sessions(d0, 2), add_sessions(d0, 3)
+    assert er.session_index(d0, d0) == 0 and er.session_index(d0, d2) == 2 and er.session_index(d0, "2026-10-20") is None
+    assert er.limit_window(d0, d0, 3) == (d0, True) and er.limit_window(d0, d1, 3) == (d1, True)
+    assert er.limit_window(d0, d2, 3) == (d2, False)                         # the last session: no carry
+    assert er.limit_window(d0, d3, 3) is None and er.limit_window(d0, d1, 1) is None
+
+
+async def test_an_unreached_limit_carries_to_the_next_session_and_fills_there(agent_rig, engine):
+    """2026-10-21 (PLAN 9.8): 3 of 18 agent picks filled when a limit was tried 10:00-11:30 ET on day 1 only."""
+    from zargar.techniques.scout.screens import add_sessions
+    svc, today = agent_rig
+    day = today.isoformat()
+    engine.config.openai_api_key = ""
+    await engine.settings.set("techniques.scout.agent_screen_lane_enabled", False)
+    await engine.settings.set("techniques.scout.agent_random_lane_enabled", False)
+
+    def propose():
+        r = svc.agent._reads[day]["AAPL"]
+        last, a = r["last"], r["atr14"]
+        lim = round(last - 0.8 * a, 2)                                       # well under the market: not reached
+        stop = round(lim - 2.0 * a, 2)
+        return {"proposals": [
+            {"ticker": "AAPL", "side": "long", "entry": {"kind": "limit", "limit_price": lim}, "stop": stop,
+             "targets": [round(lim + 2.5 * (lim - stop), 2)], "horizon_sessions": 8, "conviction": 3,
+             "thesis": "pullback buy", "invalidation": "a close under the stop",
+             "evidence": [{"result_id": "T3", "quote": "trend: uptrend", "point": "trend up"},
+                          {"result_id": "T3", "quote": "50-day average slope over 10 sessions", "point": "rising"}]}]}
+
+    svc.agent.claude_client = ScriptedClaude(propose)
+    await svc.agent.run_day(morning(today))
+    async with engine.sf() as s:
+        e = (await s.execute(select(ScoutEntry).where(ScoutEntry.book == "agent_claude"))).scalar_one()
+    d0 = e.entry_date
+    await wait_for(lambda: engine.quotes.get("AAPL") is not None)
+    day0 = dt.date.fromisoformat(d0)
+    # 15:30 ET on the entry session: past the old 11:30 end, the limit is still worked, then carried
+    await svc.desk.attempt_entries(morning(day0, "15:30"))
+    async with engine.sf() as s:
+        e = await s.get(ScoutEntry, e.id)
+    assert e.status == "pending" and "carried to the next session" in e.attempts[-1]["reason"], e.attempts
+    # next session: the price has come to the limit (moved above the live ask) -> it fills, keeping the END date
+    ask = float(engine.quotes.get("AAPL").ask)
+    async with engine.sf() as s:
+        row = await s.get(ScoutEntry, e.id)
+        cfg = dict(row.config)
+        cfg["plan"] = {**cfg["plan"], "entry": {**cfg["plan"]["entry"], "limit": round(ask * 1.01, 2)},
+                       "stop": round(ask * 0.95, 2), "targets": [round(ask * 1.2, 2)]}
+        row.config = cfg
+        await s.commit()
+    d1 = dt.date.fromisoformat(add_sessions(d0, 1))
+    res = await svc.desk.attempt_entries(morning(d1, "13:00"))
+    async with engine.sf() as s:
+        e = await s.get(ScoutEntry, e.id)
+    assert e.status == "entered", (res, e.status, e.reason, e.attempts)
+    p = engine.position_manager.get(e.position_id)
+    assert p.policy["time_stop_sessions"] == 8 - 1 - 1                     # one session waited off the horizon
+
+
+async def test_a_limit_expires_after_its_last_session(agent_rig, engine):
+    from zargar.techniques.scout.screens import add_sessions
+    svc, today = agent_rig
+    day = today.isoformat()
+    engine.config.openai_api_key = ""
+    await engine.settings.set("techniques.scout.agent_screen_lane_enabled", False)
+    await engine.settings.set("techniques.scout.agent_random_lane_enabled", False)
+    await engine.settings.set("techniques.scout.agent_limit_sessions", 2)
+
+    def propose():
+        r = svc.agent._reads[day]["AAPL"]
+        last, a = r["last"], r["atr14"]
+        lim = round(last - 0.8 * a, 2)
+        stop = round(lim - 2.0 * a, 2)
+        return {"proposals": [
+            {"ticker": "AAPL", "side": "long", "entry": {"kind": "limit", "limit_price": lim}, "stop": stop,
+             "targets": [round(lim + 2.5 * (lim - stop), 2)], "horizon_sessions": 8, "conviction": 3,
+             "thesis": "pullback buy", "invalidation": "a close under the stop",
+             "evidence": [{"result_id": "T3", "quote": "trend: uptrend", "point": "trend up"},
+                          {"result_id": "T3", "quote": "50-day average slope over 10 sessions", "point": "rising"}]}]}
+
+    svc.agent.claude_client = ScriptedClaude(propose)
+    await svc.agent.run_day(morning(today))
+    async with engine.sf() as s:
+        e = (await s.execute(select(ScoutEntry).where(ScoutEntry.book == "agent_claude"))).scalar_one()
+    await wait_for(lambda: engine.quotes.get("AAPL") is not None)
+    d1 = dt.date.fromisoformat(add_sessions(e.entry_date, 1))
+    await svc.desk.attempt_entries(morning(d1, "15:30"))                   # the last session's last slot
+    async with engine.sf() as s:
+        e = await s.get(ScoutEntry, e.id)
+    assert e.status == "skipped" and "level_not_reached" in (e.reason or ""), (e.status, e.reason)
+
+
 async def test_budget_stop_records_the_run(agent_rig, engine):
     svc, today = agent_rig
     await engine.settings.set("techniques.scout.agent_budget_usd_day", 0.01)

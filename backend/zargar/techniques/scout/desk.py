@@ -22,6 +22,7 @@ import contextlib
 import datetime as dt
 import logging
 import math
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import func, select
@@ -451,17 +452,30 @@ class ScoutDesk:
                                                   f"'{bk.RANDOM_METHOD}'")
                     out["skipped"] += len(es)
                     continue
-            q = await self.quote_of(ticker) if es[0].entry_date == today else None
+            # a LIMIT plan (agent picks and their random twins, PLAN section 9.8, 2026-10-21) is worked through the
+            # session (`agent_limit_end`) and for `agent_limit_sessions` sessions: 3 of 18 agent picks filled when the
+            # limit was only tried 10:00-11:30 ET on the first day
+            plan = (es[0].config or {}).get("plan") or {}
+            day_rule, judge_date, carry = rule, es[0].entry_date, False
+            if (plan.get("entry") or {}).get("kind") == "limit":
+                win = er.limit_window(es[0].entry_date, today, int(self.s("agent_limit_sessions", 3)))
+                if win is not None:
+                    judge_date, carry = win
+                    day_rule = replace(rule, end=str(self.s("agent_limit_end", "15:30")))
+            q = await self.quote_of(ticker) if judge_date == today else None
             sp = er.spread_pct((q or {}).get("bid"), (q or {}).get("ask"))
             seen = any(a.get("spreadPct") is not None for a in (es[0].attempts or []))
-            action, why = er.decide(now, es[0].entry_date, sp, rule, seen_quote=seen or sp is not None)
+            action, why = er.decide(now, judge_date, sp, day_rule, seen_quote=seen or sp is not None)
             if action == er.ENTER:
                 # an agent LIMIT plan (PLAN section 9) enters only when the live ask has come to its limit
-                ok, lwhy = ap.limit_gate((es[0].config or {}).get("plan"), (q or {}).get("ask"))
+                ok, lwhy = ap.limit_gate(plan, (q or {}).get("ask"))
                 if not ok:
-                    last_slot = now.hour * 60 + now.minute >= er._minutes(rule.end)
+                    last_slot = now.hour * 60 + now.minute >= er._minutes(day_rule.end)
                     action, why = ((er.SKIP, lwhy) if last_slot
-                                   else (er.RETRY, f"{lwhy} - re-check in {rule.step_minutes} min"))
+                                   else (er.RETRY, f"{lwhy} - re-check in {day_rule.step_minutes} min"))
+            if action == er.SKIP and carry and er.reason_code(why) != "window_missed":
+                # the limit has sessions left: today's last slot carries it to the next session, never skips it
+                action, why = er.RETRY, f"{why} - carried to the next session"
             if action == er.WAIT:
                 continue
             att = {"at": now.isoformat(), "bid": (q or {}).get("bid"), "ask": (q or {}).get("ask"),
@@ -544,6 +558,10 @@ class ScoutDesk:
             lane, ticker, cid, entry_date, hold = e.book, e.ticker, e.candidate_id, e.entry_date, e.hold_sessions
             cfg = dict(e.config or {})
         plan = cfg.get("plan")                   # an agent plan (PLAN section 9): its stop, targets, risk sizing
+        waited = er.session_index(entry_date, now.astimezone(ET).date().isoformat()) or 0
+        if plan and waited and plan.get("horizon"):
+            # a limit filled on a later session keeps the plan's END date (its horizon was cut before earnings)
+            plan = {**plan, "horizon": max(1, int(plan["horizon"]) - waited)}
         book = await bk.ensure_book(self.engine, lane, starting_cash=float(cfg.get("bookCash") or 100_000.0))
         pid = book["id"]
         await self._update_entry(eid, portfolio_id=pid)

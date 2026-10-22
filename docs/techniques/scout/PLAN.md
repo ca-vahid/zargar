@@ -299,3 +299,20 @@ change is a new prompt/plan version.
 `GET /api/scout/agent` (runs, scorecard + gate, lessons, lane books), `GET /api/scout/agent/runs/{id}` (with the
 transcript), `POST /api/scout/agent/run` (run today now; idempotent per day and lane). UI: Scout > **Agent** (default
 tab). Tests: `tests/test_scout_agent.py` (fake providers only - no model call).
+
+### 9.8 Limit entries worked for three sessions (2026-10-21, 0.9.39; user: "improve and use scout more")
+Finding: in the first 7 sessions the Claude and GPT lanes proposed 18 trades and 3 filled. 17 of the 18 were limit
+buys 1-6% under the last close, and a limit was tried only at the 15-minute slots from 10:00 to 11:30 ET on the entry
+session. The lanes were judged on almost nothing. The tips desk's measured record (2026-10-21: 272 option tips, negative
+under every exit rule) also made Scout the desk's own idea source to build on, not a side study.
+
+Change (entry rule only; screen, checks, sizing and exits unchanged):
+- A LIMIT plan (agent picks and their random twins alike, so the comparison stays fair) is worked 10:00 to
+  `techniques.scout.agent_limit_end` (15:30 ET) for `techniques.scout.agent_limit_sessions` (3) sessions, the entry
+  session included (`entry.limit_window`). The last slot of a non-final session carries the limit to the next session.
+  The last slot of the final session skips it (`level_not_reached`). A "now" plan keeps the 10:00-11:30 rule.
+- A limit filled on a later session keeps the plan's END date: the horizon is reduced by the sessions waited (the
+  horizon was already cut before a known earnings date at proposal time).
+- Prompt `scout-agent-v2` tells the agent how a limit is worked. `agent_max_proposals` 3 -> 5 (more cases per week).
+- Runs are labelled by prompt version. The gate's sample start (2026-10-15) is unchanged: the v1 sample is only 3
+  fills. A scorecard split by prompt version is not built yet.

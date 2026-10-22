@@ -615,7 +615,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.scout.agent_max_tool_calls": 24,
     "techniques.scout.agent_max_tokens": 12000,       # per model call (thinking included)
     "techniques.scout.agent_call_timeout_s": 240.0,
-    "techniques.scout.agent_max_proposals": 3,
+    "techniques.scout.agent_max_proposals": 5,        # 3 -> 5 2026-10-21 (PLAN 9.8): more cases per week
     "techniques.scout.agent_min_r1": 1.5,             # first target at least this many R
     "techniques.scout.agent_book_cash": 10_000.0,     # each agent-lane book starts with this
     "techniques.scout.agent_risk_pct": 1.0,           # % of book equity at risk per trade (qty = risk / (fill - stop))
@@ -625,6 +625,10 @@ DEFAULTS: dict[str, Any] = {
     "techniques.scout.agent_screen_lane_picks": 3,
     "techniques.scout.agent_screen_lane_horizon": 10,
     "techniques.scout.agent_screen_top": 25,          # names shown to the agent from the screen
+    # 2026-10-21 (PLAN 9.8): a LIMIT plan (agent picks + their random twins) is worked to this time each session, for
+    # this many sessions (the entry session included); 3 of 18 agent picks filled under the 10:00-11:30 one-day rule
+    "techniques.scout.agent_limit_end": "15:30",
+    "techniques.scout.agent_limit_sessions": 3,
     "techniques.scout.agent_universe_extra": [],      # added to the EM core universe for the screen
     "techniques.scout.agent_fetch_concurrency": 6,
     "techniques.scout.agent_release_chars": 4000,     # results release excerpt in the fundamentals tool
