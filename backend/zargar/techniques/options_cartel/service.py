@@ -149,7 +149,8 @@ class CartelService:
                                         aggregate_type="technique_run", aggregate_id=row.id)
         return self._view(row, detail=True)
 
-    async def analyze(self, body: ResearchInput, *, collection: dict | None = None, parent_run_id=None):
+    async def analyze(self, body: ResearchInput, *, collection: dict | None = None, parent_run_id=None, persist=None):
+        """``persist(screen, analysis) -> bool`` (optional): False returns the same view unsaved (``runId`` None)."""
         if body.rules.profile == 'post_ignition_2026_09_11':
             body = body.model_copy(update={'parameters': body.parameters.model_copy(update={'family': 'post_ignition'})})
         if body.membership_snapshot_id:
@@ -198,12 +199,16 @@ class CartelService:
                                   body.as_of_ms, direction=body.direction)
         inputs = body.model_dump(mode="json")
         digest = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
-        return await self._store(mode="analysis", symbol=body.facts.symbol, at=body.as_of_ms,
-                                 result={"screen": screen, "analysis": analysis, "collection": collection},
-                                 config={"inputs": inputs, "inputSha256": digest, "dataSource": body.data_source,
-                                         "thresholds": body.rules.model_dump(mode="json"), "codeVersion": "cartel-research-1"},
-                                 verdict="setup" if any(c["contextPassed"] for c in analysis["candidates"]) else "watch_only",
-                                 parent=parent_run_id)
+        result = {"screen": screen, "analysis": analysis, "collection": collection}
+        config = {"inputs": inputs, "inputSha256": digest, "dataSource": body.data_source,
+                  "thresholds": body.rules.model_dump(mode="json"), "codeVersion": "cartel-research-1"}
+        verdict = "setup" if any(c["contextPassed"] for c in analysis["candidates"]) else "watch_only"
+        if persist is not None and not persist(screen, analysis):
+            return {"runId": None, "technique": "options_cartel", "symbol": body.facts.symbol, "mode": "analysis",
+                    "status": "done", "verdict": verdict, "asOfMs": body.as_of_ms, "parentRunId": parent_run_id,
+                    "persisted": False, "result": result, "config": config}
+        return await self._store(mode="analysis", symbol=body.facts.symbol, at=body.as_of_ms, result=result,
+                                 config=config, verdict=verdict, parent=parent_run_id)
 
     async def collect_and_analyze(self, body):
         from .collect import collect_inputs
