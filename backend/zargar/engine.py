@@ -916,7 +916,9 @@ class Engine:
                     selftest_day = now_et.strftime("%Y-%m-%d")
                     problems: list[str] = []
                     try:
-                        bars = await feed.fetch_bars("SPY", tf="1m", range_="1d")
+                        # 5d, not 1d (2026-10-26): at 09:00 ET a "1d" request sometimes returns TODAY's empty
+                        # regular session and failed the test on 10-21 and 10-26 while the feed was fine
+                        bars = await feed.fetch_bars("SPY", tf="1m", range_="5d")
                         if not bars:
                             problems.append("REST bar fetch returned nothing")
                     except Exception as exc:
