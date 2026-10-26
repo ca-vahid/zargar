@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.40";
+export const APP_VERSION = "0.9.41";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.41",date:"2026-10-26",title:"The pre-open feed check no longer fails on a good feed",items:[
+    {tag:"fixed",text:"The 09:00 ET feed self-test asks for five days of SPY bars instead of one. Before the open a one-day request sometimes came back empty, so the test failed on 10-21 and 10-26 while data was flowing normally."},
+  ]},
   {version:"0.9.40",date:"2026-10-22",title:"Scout's screen lane no longer runs out of cash",items:[
     {tag:"fixed",text:"Scout's screen lane sizes each position to fit every position it holds at once (3 a day for 10 sessions), so new picks are no longer skipped for cash (ISRG, CVX and NOW were skipped on 10-22)."},
   ]},
