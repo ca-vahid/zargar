@@ -2697,6 +2697,13 @@ class SignalService:
             dup = (await self._find_duplicate(key, window)
                    if sig.action in ("open", "add", "") and experiment is None
                    and not grounding.get("conflict") else None)
+            if dup is not None and sig.is_actionable and not dup.is_actionable:
+                # 2026-10-27 (eva SPY 774C): "774c 10/30 is what I'm looking at" (not actionable, skipped) swallowed
+                # her real BTO at 1.86 three minutes later, which was never appraised. An actionable call is never a
+                # repeat of an earlier NON-actionable mention of the same contract - it is the tip.
+                istep("signal", f"{sig.ticker}: an earlier mention of this contract was not actionable - "
+                                "this actionable call is appraised as its own tip.")
+                dup = None
             if dup is not None:
                 async with eng.sf() as session:
                     db_dup = await session.get(Signal, dup.id)
