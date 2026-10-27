@@ -1653,6 +1653,24 @@ async def test_duplicate_tip_attaches_not_reproposes(app_client):
     assert card["barCleared"] is False   # one tip is nowhere near the bar
 
 
+async def test_an_actionable_call_is_not_swallowed_by_an_earlier_non_actionable_mention(app_client):
+    """2026-10-27 eva SPY 774C: 'looking at the 774c' (not actionable) then the real BTO three minutes later -
+    the BTO must be its own tip, never a seen-again of the eyeing line."""
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    eyeing = canned_extraction()
+    eyeing.signals[0] = eyeing.signals[0].model_copy(update={"is_actionable": False, "confidence": "watchlist"})
+    first = await run_pipeline(eng, eyeing)
+    assert first[0].get("duplicateOf") is None
+    real = await run_pipeline(eng, canned_extraction())
+    assert real[0].get("duplicateOf") is None, real[0]
+    assert real[0]["signal"]["id"] != first[0]["signal"]["id"]
+    # a repeat of the actionable call still attaches to it
+    again = await run_pipeline(eng, canned_extraction())
+    assert again[0].get("duplicateOf") == real[0]["signal"]["id"]
+
+
 def _spread_cboe(exp: str):
     """A CBOE mock serving one AAPL expiry with the 240/250 calls."""
     import httpx as _hx

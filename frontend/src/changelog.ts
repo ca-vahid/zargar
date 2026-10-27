@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.41";
+export const APP_VERSION = "0.9.42";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.42",date:"2026-10-27",title:"A real buy is never folded into an earlier 'looking at' message",items:[
+    {tag:"fixed",text:"A source's actual buy is now appraised as its own tip even when the same contract was mentioned minutes earlier in a message that was not a trade. On 10-27 eva's SPY 774C buy at 1.86 was merged into her 'looking at the 774c' post and never appraised."},
+  ]},
   {version:"0.9.41",date:"2026-10-26",title:"The pre-open feed check no longer fails on a good feed",items:[
     {tag:"fixed",text:"The 09:00 ET feed self-test asks for five days of SPY bars instead of one. Before the open a one-day request sometimes came back empty, so the test failed on 10-21 and 10-26 while data was flowing normally."},
   ]},
