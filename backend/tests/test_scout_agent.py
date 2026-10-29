@@ -483,6 +483,89 @@ async def test_a_limit_expires_after_its_last_session(agent_rig, engine):
     assert e.status == "skipped" and "level_not_reached" in (e.reason or ""), (e.status, e.reason)
 
 
+async def _paper_book(engine, kind="paper", cash=6_849.19) -> str:
+    import uuid
+    from zargar.models import Portfolio
+    p = Portfolio(id=uuid.uuid4().hex, name=f"Paper {uuid.uuid4().hex[:4]}", kind=kind, starting_cash=cash, cash=cash)
+    async with engine.sf() as s:
+        s.add(p)
+        await s.commit()
+    engine.positions.register_portfolio(p)
+    return p.id
+
+
+def _now_pick(svc, day):
+    def propose():
+        r = svc.agent._reads[day]["AAPL"]
+        last, a = r["last"], r["atr14"]
+        stop = round(last - 2.0 * a, 2)
+        return {"proposals": [
+            {"ticker": "AAPL", "side": "long", "entry": {"kind": "now"}, "stop": stop,
+             "targets": [round(last + 2.5 * (last - stop), 2)], "horizon_sessions": 8, "conviction": 4,
+             "thesis": "uptrend", "invalidation": "a close under the stop",
+             "evidence": [{"result_id": "T3", "quote": "trend: uptrend", "point": "trend up"},
+                          {"result_id": "T3", "quote": "50-day average slope over 10 sessions", "point": "rising"}]}]}
+    return propose
+
+
+async def test_the_paper_route_mirrors_a_pick_onto_the_paper_book_within_its_caps(agent_rig, engine, monkeypatch):
+    """2026-10-27 user decision (PLAN 9.10): an agent pick is also entered on the configured PAPER book."""
+    svc, today = agent_rig
+    day = today.isoformat()
+    engine.config.openai_api_key = ""
+    await engine.settings.set("techniques.scout.agent_screen_lane_enabled", False)
+    await engine.settings.set("techniques.scout.agent_random_lane_enabled", False)
+    pid = await _paper_book(engine)
+    await engine.settings.set("techniques.scout.paper_enabled", True)
+    await engine.settings.set("techniques.scout.paper_portfolio_id", pid)
+    svc.agent.claude_client = ScriptedClaude(_now_pick(svc, day))
+    await svc.agent.run_day(morning(today))
+    async with engine.sf() as s:
+        rows = {e.book: e for e in (await s.execute(select(ScoutEntry))).scalars().all()}
+    assert set(rows) == {"agent_claude", "paper"} and rows["paper"].config["paper"] is True
+    sent = []
+    real_place = engine.orders.place
+
+    async def place(intent):
+        if intent.portfolio_id == pid:
+            sent.append(intent)
+            return {"id": "x", "status": "REJECTED", "rejectReason": "captured by the test"}
+        return await real_place(intent)
+    monkeypatch.setattr(engine.orders, "place", place)
+    await wait_for(lambda: engine.quotes.get("AAPL") is not None)
+    await svc.desk.attempt_entries(morning(today, "10:00"))
+    assert len(sent) == 1, sent
+    it = sent[0]
+    assert it.portfolio_id == pid and it.side == "BUY" and it.qty * it.limit_price <= 700.0 + 1e-6
+    assert "scout:paper" in it.tags
+
+
+async def test_the_paper_route_refuses_a_live_book_and_a_switched_off_route(agent_rig, engine, monkeypatch):
+    svc, today = agent_rig
+    day = today.isoformat()
+    engine.config.openai_api_key = ""
+    await engine.settings.set("techniques.scout.agent_screen_lane_enabled", False)
+    await engine.settings.set("techniques.scout.agent_random_lane_enabled", False)
+    live = await _paper_book(engine, kind="live")
+    await engine.settings.set("techniques.scout.paper_enabled", True)
+    await engine.settings.set("techniques.scout.paper_portfolio_id", live)          # misconfigured: a LIVE book
+    svc.agent.claude_client = ScriptedClaude(_now_pick(svc, day))
+    await svc.agent.run_day(morning(today))
+    sent = []
+    real_place = engine.orders.place
+
+    async def place(intent):
+        if intent.portfolio_id == live:
+            sent.append(intent)
+        return await real_place(intent)
+    monkeypatch.setattr(engine.orders, "place", place)
+    await wait_for(lambda: engine.quotes.get("AAPL") is not None)
+    await svc.desk.attempt_entries(morning(today, "10:00"))
+    async with engine.sf() as s:
+        paper = (await s.execute(select(ScoutEntry).where(ScoutEntry.book == "paper"))).scalar_one()
+    assert not sent and paper.status == "skipped" and "not a paper book" in (paper.reason or "")
+
+
 async def test_budget_stop_records_the_run(agent_rig, engine):
     svc, today = agent_rig
     await engine.settings.set("techniques.scout.agent_budget_usd_day", 0.01)

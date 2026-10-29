@@ -44,6 +44,7 @@ BOOK_OF = {"claude": "agent_claude", "gpt": "agent_gpt"}
 RANDOM_BOOK, SCREEN_BOOK = "agent_random", "agent_screen"
 AGENT_BOOKS = ("agent_claude", "agent_gpt", RANDOM_BOOK, SCREEN_BOOK)
 PICK_KIND, RANDOM_KIND, SCREEN_KIND = "agent_pick", "agent_random", "agent_screen"
+PAPER_BOOK = "paper"          # PLAN 9.10: the same pick, entered on the configured paper book (never a live book)
 AGENT_KINDS = (PICK_KIND, RANDOM_KIND, SCREEN_KIND)
 
 # The screen's universe (2026-10-14): liquid US common stocks across sectors, large and mid caps. Fixed for the
@@ -730,6 +731,12 @@ class AgentDesk:
                                  gates={}, config=cfg, created_at=utcnow(), updated_at=utcnow()))
             await s.commit()
         await self.svc.desk._plan_entry(cid, book, ticker, day, int(plan["horizon"]), config=cfg)
+        lanes = {x.strip() for x in str(self.svc.s("paper_lanes", "") or "").split(",") if x.strip()}
+        if bool(self.svc.s("paper_enabled", False)) and book in lanes:
+            # PLAN 9.10: the same pick and plan on the paper book, judged by the same entry rule at the same slot
+            await self.svc.desk._plan_entry(cid, PAPER_BOOK, ticker, day, int(plan["horizon"]),
+                                            config={**cfg, "paper": True, "mirrorOf": book,
+                                                    "riskPct": float(self.svc.s("paper_risk_pct", 1.0))})
         await self.engine.journal.append(ev.SCOUT_CANDIDATE_FOUND, {
             "technique": TECHNIQUE_ID, "candidateId": cid, "key": key, "kind": kind, "ticker": ticker,
             "entryDate": day, "evidence": {**evidence, "plan": plan}}, aggregate_type="scout", aggregate_id=cid)

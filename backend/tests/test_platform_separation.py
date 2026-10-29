@@ -87,3 +87,12 @@ def test_scout_orders_only_from_the_desk_on_shadow_books():
     assert ".submit(" not in desk
     books = (SCOUT_DIR / "books.py").read_text(encoding="utf-8")
     assert 'kind="shadow"' in books and 'kind="sim"' not in books and '"live"' not in books
+
+
+def test_scout_paper_route_is_paper_only_and_off_by_default():
+    # 2026-10-27 user decision (PLAN 9.10): Scout may ALSO enter on the one configured PAPER book - never a live book
+    desk = (SCOUT_DIR / "desk.py").read_text(encoding="utf-8")
+    assert 'book.get("kind") != "paper"' in desk and '"paper_enabled"' in desk
+    assert '"live"' not in desk
+    from zargar.settings_service import DEFAULTS
+    assert DEFAULTS["techniques.scout.paper_enabled"] is False and DEFAULTS["techniques.scout.paper_portfolio_id"] == ""
