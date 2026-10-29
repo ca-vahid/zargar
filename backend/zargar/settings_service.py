@@ -627,6 +627,15 @@ DEFAULTS: dict[str, Any] = {
     "techniques.scout.agent_screen_top": 25,          # names shown to the agent from the screen
     # 2026-10-21 (PLAN 9.8): a LIMIT plan (agent picks + their random twins) is worked to this time each session, for
     # this many sessions (the entry session included); 3 of 18 agent picks filled under the 10:00-11:30 one-day rule
+    # 2026-10-27 (user decision, PLAN 9.10): Scout's picks ALSO trade the one configured PAPER book (never a live
+    # book) - the old "Scout never routes to IBKR" rule is lifted for paper only. Off by default; the paper book is
+    # named explicitly; its own caps (open positions, notional per position, risk) bound it.
+    "techniques.scout.paper_enabled": False,
+    "techniques.scout.paper_portfolio_id": "",
+    "techniques.scout.paper_lanes": "agent_claude,agent_screen",
+    "techniques.scout.paper_risk_pct": 1.0,
+    "techniques.scout.paper_max_positions": 3,
+    "techniques.scout.paper_max_position_usd": 700.0,
     "techniques.scout.agent_limit_end": "15:30",
     "techniques.scout.agent_limit_sessions": 3,
     "techniques.scout.agent_universe_extra": [],      # added to the EM core universe for the screen

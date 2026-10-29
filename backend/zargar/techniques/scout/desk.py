@@ -39,6 +39,8 @@ from .form4 import ET
 from .gates import overall
 from .screens import S1_KIND, S1_UNCLASSIFIED_KIND, S2_KIND, add_sessions
 
+PAPER_LANE = "paper"          # PLAN 9.10: entries on the configured paper book (agent.PAPER_BOOK)
+
 log = logging.getLogger("zargar.scout.desk")
 TECHNIQUE_ID = "scout"
 RANDOM_KIND = "random"
@@ -562,10 +564,27 @@ class ScoutDesk:
         if plan and waited and plan.get("horizon"):
             # a limit filled on a later session keeps the plan's END date (its horizon was cut before earnings)
             plan = {**plan, "horizon": max(1, int(plan["horizon"]) - waited)}
-        book = await bk.ensure_book(self.engine, lane, starting_cash=float(cfg.get("bookCash") or 100_000.0))
-        pid = book["id"]
+        paper = bool(cfg.get("paper"))
+        if paper:
+            # PLAN 9.10 (user decision 2026-10-27): the ONE configured paper book - never a live book, never another
+            # kind; the route can be switched off and every cap is checked before the order
+            pid = str(self.s("paper_portfolio_id", "") or "")
+            book = self.engine.positions.portfolio(pid) if pid else None
+            if not bool(self.s("paper_enabled", False)) or not book or book.get("kind") != "paper":
+                return await self._finish(eid, status="skipped", code="refused",
+                                          reason="refused: the paper route is off or the book is not a paper book")
+            async with self.engine.sf() as s:
+                held = (await s.execute(select(func.count()).select_from(ScoutEntry).where(
+                    ScoutEntry.book == lane, ScoutEntry.status.in_(("entered", "ordering"))))).scalar_one()
+            if held >= int(self.s("paper_max_positions", 3)):
+                return await self._finish(eid, status="skipped", code="size",
+                                          reason=f"size: the paper book already holds {held} Scout positions "
+                                                 f"(max {int(self.s('paper_max_positions', 3))})")
+        else:
+            book = await bk.ensure_book(self.engine, lane, starting_cash=float(cfg.get("bookCash") or 100_000.0))
+            pid = book["id"]
         await self._update_entry(eid, portfolio_id=pid)
-        if book.get("kind") != "shadow" or self.engine.executor_for(book) is not self.engine.sim_executor:
+        if not paper and (book.get("kind") != "shadow" or self.engine.executor_for(book) is not self.engine.sim_executor):
             return await self._finish(eid, status="skipped", reason="refused: not a simulated research book", code="refused")
         halted = self.engine.trading_halted(pid)
         if halted:
@@ -580,7 +599,10 @@ class ScoutDesk:
             if (plan.get("entry") or {}).get("kind") == "limit" and plan["entry"].get("limit"):
                 limit = min(limit, round(float(plan["entry"]["limit"]), 2))
             eq = await self.engine.positions.equity(pid)
-            qty, why = ap.size(equity=eq, cash=float(book.get("cash") or 0), fill=limit, stop=float(plan["stop"]),
+            cash = float(book.get("cash") or 0)
+            if paper:
+                cash = min(cash, float(self.s("paper_max_position_usd", 700.0)))   # the per-position notional cap
+            qty, why = ap.size(equity=eq, cash=cash, fill=limit, stop=float(plan["stop"]),
                                risk_pct=float(cfg.get("riskPct") or 1.0),
                                max_position_pct=float(cfg.get("maxPositionPct") or 20.0),
                                min_one=bool(cfg.get("minOneShare")))
@@ -707,7 +729,11 @@ class ScoutDesk:
         books = {p.get("sourceName", "")[len(bk.LANE_SOURCE_PREFIX):]: p for p in self.engine.positions.portfolios()
                  if p.get("kind") == "shadow" and p.get("book") == bk.BOOK_TAG}
         out = []
-        for lane in bk.all_lanes():
+        lanes = list(bk.all_lanes())
+        if any(r.book == PAPER_LANE for r in rows):
+            lanes.append(PAPER_LANE)                    # PLAN 9.10: the paper-account mirror of the agent picks
+            books[PAPER_LANE] = {"id": str(self.s("paper_portfolio_id", "") or "") or None}
+        for lane in lanes:
             mine = [r for r in rows if r.book == lane]
             closed = [r for r in mine if r.status == "closed"]
             open_ = [r for r in mine if r.status == "entered"]
@@ -721,7 +747,8 @@ class ScoutDesk:
                     unreal += u
                 open_rows.append({**entry_dict(r), "mark": m, "openNetPnl": None if u is None else round(u, 2)})
             wins = sum(1 for r in closed if float(r.net_pnl or 0) > 0)
-            out.append({"lane": lane, "label": bk.lane_label(lane), "portfolioId": (books.get(lane) or {}).get("id"),
+            out.append({"lane": lane, "label": "Paper account (agent + screen picks)" if lane == PAPER_LANE
+                        else bk.lane_label(lane), "portfolioId": (books.get(lane) or {}).get("id"),
                         "entries": len(mine), "open": len(open_), "closed": len(closed),
                         "skipped": sum(1 for r in mine if r.status in ("skipped", "unfilled")),
                         "pending": sum(1 for r in mine if r.status in ("pending", "ordering")),

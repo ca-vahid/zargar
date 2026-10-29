@@ -317,6 +317,22 @@ Change (entry rule only; screen, checks, sizing and exits unchanged):
 - Runs are labelled by prompt version. The gate's sample start (2026-10-15) is unchanged: the v1 sample is only 3
   fills. A scorecard split by prompt version is not built yet.
 
+### 9.10 Scout's picks trade the IBKR paper account (2026-10-27, 0.9.43; user decision)
+Finding: the Tips paper book had made no IBKR trade since 10-15. The Tips analyst has taken 0 of 122 tips since it
+began reading the desk's measured record (272 option tips, negative under every exit rule). That is correct
+behaviour, but it leaves the IBKR order route unexercised and the LIVE-IBKR-RUNBOOK unpassable. The user chose to
+route Scout's own picks to the paper account, which lifts the original "Scout never routes to IBKR" rule (section
+5) for PAPER only. Real money is unchanged: no live book can be configured, and none is reachable.
+
+How it works: an `agent_claude` or `agent_screen` pick (`techniques.scout.paper_lanes`) ALSO gets a `paper` entry
+with the same plan. It is judged by the same entry rule at the same slot and placed through
+`OrderManager.place()` (RiskGate inside) on the book named in `techniques.scout.paper_portfolio_id`. The book must
+be kind `paper`, or the entry is refused. Caps: `paper_max_positions` 3 open Scout positions, `paper_max_position_usd`
+$700 notional each, and `paper_risk_pct` 1% of the paper equity at the plan stop. Exits run through the position
+manager, with a venue GTC stop overnight. The paper lane never enters the agent scorecard or the gate (those stay
+on the simulated books); it is an execution record. Off by default (`paper_enabled`). The guard is
+`test_platform_separation::test_scout_paper_route_is_paper_only_and_off_by_default`.
+
 ### 9.9 The screen lane's position cap fits its rolling book (2026-10-22, 0.9.40)
 Finding: on 10-22 the screen lane skipped all three picks (ISRG, CVX, NOW) for cash. Its $10k book was down to $23 and
 then $410. It adds 3 names a session and holds each 10 sessions, so up to 30 positions are open at once, but each
