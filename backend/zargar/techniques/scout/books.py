@@ -66,6 +66,11 @@ def lane_label(lane: str) -> str:
         return "Scout random"
     if lane in AGENT_LABELS:
         return AGENT_LABELS[lane]
+    if lane == "paper":
+        # PLAN 9.10: the paper-account mirror (desk.PAPER_LANE). 2026-10-29: the 16:30 report crashed on it
+        return "Scout paper account"
+    if "_" not in lane:
+        return f"Scout {lane}"
     sig, rest = lane.split("_", 1)
     rest = rest.replace("gpt_", "gpt ").replace("claude_", "claude ")
     return f"Scout {sig.upper()} {rest}"
