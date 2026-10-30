@@ -576,6 +576,13 @@ class ScoutDesk:
             async with self.engine.sf() as s:
                 held = (await s.execute(select(func.count()).select_from(ScoutEntry).where(
                     ScoutEntry.book == lane, ScoutEntry.status.in_(("entered", "ordering"))))).scalar_one()
+            async with self.engine.sf() as s:
+                same = (await s.execute(select(func.count()).select_from(ScoutEntry).where(
+                    ScoutEntry.book == lane, ScoutEntry.ticker == ticker, ScoutEntry.id != eid,
+                    ScoutEntry.status.in_(("entered", "ordering"))))).scalar_one()
+            if same:
+                return await self._finish(eid, status="skipped", code="size",
+                                          reason=f"size: the paper book already holds {ticker} (one position per name)")
             if held >= int(self.s("paper_max_positions", 3)):
                 return await self._finish(eid, status="skipped", code="size",
                                           reason=f"size: the paper book already holds {held} Scout positions "

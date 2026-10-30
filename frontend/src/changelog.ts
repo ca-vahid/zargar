@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.44";
+export const APP_VERSION = "0.9.46";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.46",date:"2026-10-30",title:"Discord intake no longer stalls on edits",items:[
+    {tag:"fixed",text:"The Discord mirror no longer fails a whole batch when a message and its edit arrive at the same moment, which had stalled tip intake and dropped messages."},
+  ]},
+  {version:"0.9.45",date:"2026-10-30",title:"One Scout paper position per stock",items:[
+    {tag:"fixed",text:"The IBKR paper account holds at most one Scout position per stock: when the agent and the screen pick the same name (GILD on 10-30), only one paper entry is made."},
+  ]},
   {version:"0.9.44",date:"2026-10-29",title:"The Scout daily report works with the paper-account lane",items:[
     {tag:"fixed",text:"The 16:30 ET Scout report no longer fails once the paper-account lane has trades (it crashed on 10-29 reading the lane's name)."},
   ]},

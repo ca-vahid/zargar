@@ -545,6 +545,27 @@ async def test_the_paper_route_mirrors_a_pick_onto_the_paper_book_within_its_cap
     assert lanes["paper"]["label"].startswith("Paper account")
 
 
+async def test_the_paper_route_keeps_one_position_per_name(agent_rig, engine):
+    """2026-10-30: the agent and the screen both picked GILD -> two paper entries for one name."""
+    svc, today = agent_rig
+    day = today.isoformat()
+    engine.config.openai_api_key = ""
+    await engine.settings.set("techniques.scout.agent_random_lane_enabled", False)
+    await engine.settings.set("techniques.scout.agent_screen_lane_enabled", False)
+    pid = await _paper_book(engine)
+    await engine.settings.set("techniques.scout.paper_enabled", True)
+    await engine.settings.set("techniques.scout.paper_portfolio_id", pid)
+    svc.agent.claude_client = ScriptedClaude(_now_pick(svc, day))
+    await svc.agent.run_day(morning(today))
+    # a second lane picks the same name: no second paper entry
+    assert await svc.agent._paper_holds("AAPL") is True
+    cid = await svc.agent._enqueue("agent_screen", "agent_screen", "AAPL", day, morning(today),
+                                   {"horizon": 10, "entry": {"kind": "now"}, "stop": 1.0, "targets": [2.0]}, {})
+    async with engine.sf() as s:
+        papers = (await s.execute(select(ScoutEntry).where(ScoutEntry.book == "paper"))).scalars().all()
+    assert cid and len(papers) == 1 and papers[0].ticker == "AAPL"
+
+
 def test_every_lane_has_a_label():
     from zargar.techniques.scout import books as bk
     assert bk.lane_label("paper") == "Scout paper account"
