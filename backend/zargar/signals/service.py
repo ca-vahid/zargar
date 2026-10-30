@@ -1243,60 +1243,78 @@ class SignalService:
 
     async def discord_store_messages(self, messages: list[dict]) -> int:
         """Upsert mirrored messages (id = the discord message id); prune the
-        mirror past techniques.tip.mirror_max_messages, oldest first."""
+        mirror past techniques.tip.mirror_max_messages, oldest first.
+        Race-safe (2026-10-30): the gateway posts a message and its edits as
+        separate concurrent requests, so two requests can both miss the row and
+        both insert it. Each insert runs in its own savepoint; a duplicate key
+        falls back to the revision upsert instead of failing the whole batch
+        with a 500 (which spooled and then dead-lettered the envelopes)."""
+        from sqlalchemy.exc import IntegrityError
         from ..models import DiscordMessage
         stored = 0
         to_fetch: list[tuple[str, list[str]]] = []   # new messages with images
+
+        def _ts(m: dict, key: str) -> dt.datetime | None:
+            try:
+                s = str(m.get(key) or "")
+                return dt.datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
+            except ValueError:
+                return None
+
+        def _revise(row, m: dict, mid: str) -> bool:
+            # revision upsert (gateway envelope 2026-09-09): an EDITED
+            # message updates the mirror row when the revision is
+            # newer. Field PRESENCE matters (Codex G4): text/images
+            # arriving as None mean "not in this partial payload —
+            # keep the original evidence", never "cleared".
+            edited = _ts(m, "editedAt")
+            if edited is None or (row.edited_at is not None and edited <= row.edited_at):
+                return False
+            if m.get("text") is not None:
+                row.text = str(m.get("text"))[:8000]
+            if m.get("images") is not None:
+                urls = [str(u) for u in (m.get("images") or [])][:6]
+                if urls != list(row.images or []):
+                    row.images = urls
+                    # local copies belong to the OLD attachment set —
+                    # invalidate and re-fetch so view_image never
+                    # serves a superseded chart as current evidence
+                    row.local_images = []
+                    if urls:
+                        to_fetch.append((mid, urls))
+            row.edited_at = edited
+            return True
+
         async with self.engine.sf() as session:
             for m in messages[:200]:
                 mid = str(m.get("id") or "").strip()
                 if not mid:
                     continue
-
-                def _ts(key: str) -> dt.datetime | None:
-                    try:
-                        s = str(m.get(key) or "")
-                        return dt.datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
-                    except ValueError:
-                        return None
                 row = await session.get(DiscordMessage, mid)
                 if row is not None:
-                    # revision upsert (gateway envelope 2026-09-09): an EDITED
-                    # message updates the mirror row when the revision is
-                    # newer. Field PRESENCE matters (Codex G4): text/images
-                    # arriving as None mean "not in this partial payload —
-                    # keep the original evidence", never "cleared".
-                    edited = _ts("editedAt")
-                    if edited is not None and (row.edited_at is None or edited > row.edited_at):
-                        if m.get("text") is not None:
-                            row.text = str(m.get("text"))[:8000]
-                        if m.get("images") is not None:
-                            urls = [str(u) for u in (m.get("images") or [])][:6]
-                            if urls != list(row.images or []):
-                                row.images = urls
-                                # local copies belong to the OLD attachment set —
-                                # invalidate and re-fetch so view_image never
-                                # serves a superseded chart as current evidence
-                                row.local_images = []
-                                if urls:
-                                    to_fetch.append((mid, urls))
-                        row.edited_at = edited
-                        stored += 1
+                    stored += _revise(row, m, mid)
                     continue
-                posted = _ts("postedAt")
                 urls = [str(u) for u in (m.get("images") or [])][:6]
-                session.add(DiscordMessage(
-                    id=mid, channel_id=str(m.get("channelId") or ""),
-                    source_name=(m.get("source") or None),
-                    guild_name=(m.get("guild") or None),
-                    author=str(m.get("author") or "")[:128],
-                    author_id=(str(m.get("authorId")) if m.get("authorId") else None),
-                    is_bot=bool(m.get("isBot")),
-                    text=str(m.get("text") or "")[:8000],
-                    images=urls,
-                    posted_at=posted,
-                    edited_at=_ts("editedAt")))   # a first-seen already-edited
-                stored += 1                        # message keeps its revision time
+                try:
+                    async with session.begin_nested():
+                        session.add(DiscordMessage(
+                            id=mid, channel_id=str(m.get("channelId") or ""),
+                            source_name=(m.get("source") or None),
+                            guild_name=(m.get("guild") or None),
+                            author=str(m.get("author") or "")[:128],
+                            author_id=(str(m.get("authorId")) if m.get("authorId") else None),
+                            is_bot=bool(m.get("isBot")),
+                            text=str(m.get("text") or "")[:8000],
+                            images=urls,
+                            posted_at=_ts(m, "postedAt"),
+                            edited_at=_ts(m, "editedAt")))  # a first-seen already-edited
+                except IntegrityError:                      # message keeps its revision time
+                    # a concurrent request inserted it first: treat as a revision
+                    row = await session.get(DiscordMessage, mid, populate_existing=True)
+                    if row is not None:
+                        stored += _revise(row, m, mid)
+                    continue
+                stored += 1
                 if urls:
                     to_fetch.append((mid, urls))
             await session.commit()

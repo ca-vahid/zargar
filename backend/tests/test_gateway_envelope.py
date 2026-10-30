@@ -267,6 +267,34 @@ async def test_mirror_upserts_newer_revisions_only(rig):
     assert "CORRECTED" in row.text
 
 
+async def test_mirror_store_survives_a_concurrent_insert(rig, monkeypatch):
+    """2026-10-30: a message and its edits arrive as concurrent POSTs; both
+    miss the row and both insert. The loser must fold into a revision, not
+    500 the whole batch (the gateway spooled, then dead-lettered, envelopes)."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+    svc = rig.signals_service
+    assert await svc.discord_store_messages([mirror_record(_msg(text="original"), "src1")]) == 1
+    real_get = AsyncSession.get
+    missed = []
+
+    async def racing_get(self, cls, ident, **kw):
+        if cls is DiscordMessage and not kw.get("populate_existing") and not missed:
+            missed.append(ident)            # the other request has not committed yet
+            return None
+        return await real_get(self, cls, ident, **kw)
+
+    monkeypatch.setattr(AsyncSession, "get", racing_get)
+    edited = mirror_record(_msg(text="CORRECTED strike 105",
+                                edited="2026-09-09T11:00:00+00:00"), "src1")
+    other = mirror_record(_msg(mid="222", text="another"), "src1")
+    assert await svc.discord_store_messages([edited, other]) == 2
+    assert missed == ["111"]
+    async with rig.sf() as session:
+        row = await real_get(session, DiscordMessage, "111")
+        second = await real_get(session, DiscordMessage, "222")
+    assert "CORRECTED" in row.text and second is not None
+
+
 async def test_edit_is_journaled_never_reextracted(rig):
     from sqlalchemy import select
     from zargar.models import Event
