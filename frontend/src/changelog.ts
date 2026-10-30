@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.43";
+export const APP_VERSION = "0.9.44";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.44",date:"2026-10-29",title:"The Scout daily report works with the paper-account lane",items:[
+    {tag:"fixed",text:"The 16:30 ET Scout report no longer fails once the paper-account lane has trades (it crashed on 10-29 reading the lane's name)."},
+  ]},
   {version:"0.9.43",date:"2026-10-27",title:"Scout's picks trade the IBKR paper account",items:[
     {tag:"new",text:"Scout's agent and screen picks now also trade the IBKR paper account (paper only, never real money): up to 3 positions of about $700 each, 1% risk at the plan's stop, with a GTC stop at IBKR overnight. It shows as the 'Paper account' lane on the Scout page."},
   ]},
