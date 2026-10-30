@@ -538,6 +538,18 @@ async def test_the_paper_route_mirrors_a_pick_onto_the_paper_book_within_its_cap
     it = sent[0]
     assert it.portfolio_id == pid and it.side == "BUY" and it.qty * it.limit_price <= 700.0 + 1e-6
     assert "scout:paper" in it.tags
+    # 2026-10-29: the 16:30 report crashed on the paper lane (books.lane_label split it on "_")
+    rep = await svc.desk.daily_report(morning(today, "16:30"))
+    assert rep is not None
+    lanes = {x["lane"]: x for x in await svc.desk.lanes()}
+    assert lanes["paper"]["label"].startswith("Paper account")
+
+
+def test_every_lane_has_a_label():
+    from zargar.techniques.scout import books as bk
+    assert bk.lane_label("paper") == "Scout paper account"
+    for lane in bk.all_lanes():
+        assert bk.lane_label(lane)
 
 
 async def test_the_paper_route_refuses_a_live_book_and_a_switched_off_route(agent_rig, engine, monkeypatch):
