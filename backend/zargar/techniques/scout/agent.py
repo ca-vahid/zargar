@@ -732,8 +732,9 @@ class AgentDesk:
             await s.commit()
         await self.svc.desk._plan_entry(cid, book, ticker, day, int(plan["horizon"]), config=cfg)
         lanes = {x.strip() for x in str(self.svc.s("paper_lanes", "") or "").split(",") if x.strip()}
-        if bool(self.svc.s("paper_enabled", False)) and book in lanes:
-            # PLAN 9.10: the same pick and plan on the paper book, judged by the same entry rule at the same slot
+        if bool(self.svc.s("paper_enabled", False)) and book in lanes and not await self._paper_holds(ticker):
+            # PLAN 9.10: the same pick and plan on the paper book, judged by the same entry rule at the same slot;
+            # one paper position per name (2026-10-30: the agent and the screen both picked GILD -> two entries)
             await self.svc.desk._plan_entry(cid, PAPER_BOOK, ticker, day, int(plan["horizon"]),
                                             config={**cfg, "paper": True, "mirrorOf": book,
                                                     "riskPct": float(self.svc.s("paper_risk_pct", 1.0))})
@@ -743,6 +744,13 @@ class AgentDesk:
         with contextlib.suppress(Exception):
             await self.engine.ensure_symbol(ticker)
         return cid
+
+    async def _paper_holds(self, ticker: str) -> bool:
+        """A paper entry for this name is already pending, ordering or held."""
+        async with self.engine.sf() as s:
+            return bool((await s.execute(select(func.count()).select_from(ScoutEntry).where(
+                ScoutEntry.book == PAPER_BOOK, ScoutEntry.ticker == ticker,
+                ScoutEntry.status.in_(("pending", "ordering", "entered"))))).scalar_one())
 
     async def _twin(self, cid: str | None, ticker: str, plan: dict, day: str, now: dt.datetime, st: RunState) -> dict:
         """The random twin: a name drawn (seeded by the pick) from the same screen + universe the agent saw,
