@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.46";
+export const APP_VERSION = "0.9.47";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.47",date:"2026-11-02",title:"One venue stop per position",items:[
+    {tag:"fixed",text:"A held position can no longer end up with two resting stop orders: the stop is placed once even when the watch loop and the entry both try at the same moment (ZS on the Scout screen book, 10-29)."},
+  ]},
   {version:"0.9.46",date:"2026-10-30",title:"Discord intake no longer stalls on edits",items:[
     {tag:"fixed",text:"The Discord mirror no longer fails a whole batch when a message and its edit arrive at the same moment, which had stalled tip intake and dropped messages."},
   ]},

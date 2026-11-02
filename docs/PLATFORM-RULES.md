@@ -3017,3 +3017,15 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   correction), and the Yahoo readers drop the latest-print row. A consumer may keep its own filter but need not.
 - **Not changed.** The stale-bars alarm itself (`stale_seconds` 180): on a thin name with no trades for three minutes it
   is correct and only idles triggers.
+
+### One venue-stop pass per position at a time - 2026-11-02 (Tips desk, 0.9.47; shared `execution/positions.py`)
+- Finding: Scout's ZS on the Scout screen book (10-29) rested TWO full-size GTC stops 48 ms apart - the 2 s watch
+  loop's "missing venue stop" heal ran `_ensure_venue_stop` while `adopt()`'s pass was still awaiting `place`, so both
+  saw no stop id. Tips positions were already covered by `serialized_adapter`'s `position_guard`; other techniques
+  (Scout, anything without an adapter) were not. On 11-02 one stop filled, the tracked one was cancelled and the
+  manager re-placed a stop against an empty book twice a minute for 45 min (ShadowSellRefused) until the bar close
+  closed the record. 16 Scout research positions carried doubled stops; the IBKR paper book had none.
+- Rule: `_ensure_venue_stop` is single-flight per position for EVERY technique - a call that lands while a pass runs
+  marks it dirty and the running pass re-checks once with the settled state. On a real book a race like this would rest
+  two sells for one lot. Regression: `tests/test_position_venue_stop_resize.py::test_concurrent_venue_stop_passes_rest_one_stop`
+  (fails on the old code).
