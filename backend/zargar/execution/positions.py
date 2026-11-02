@@ -243,6 +243,7 @@ class PositionManager:
         # waits for such a cancel to be confirmed
         self._retired_stops: dict[str, str] = {}
         self._stop_replace_pending: set[str] = set()
+        self._venue_stop_busy: dict[str, bool] = {}     # 2026-11-02: one venue-stop pass per position at a time
         self._venue_heal_at: dict[str, float] = {}       # 2026-10-05: last missing-venue-stop heal per position
         self._gf_noted: set[tuple] = set()             # V1.7 good-faith deferrals already journaled (pos, kind, day)
         self._now = time.time                          # injectable clock (chaos tests)
@@ -958,7 +959,27 @@ class PositionManager:
     async def _ensure_venue_stop(self, p: Managed) -> None:
         """Share positions that may be held overnight get a resting GTC stop at
         the venue; the app being down must never leave them naked. Tightened
-        stops cancel + replace."""
+        stops cancel + replace.
+        SINGLE-FLIGHT per position (2026-11-02): open() and the entry's fill
+        report both ran this at once (ZS 10-29, 48 ms apart) - each saw no stop
+        id across the other's `place` await and BOTH rested a full-size stop. A
+        call that lands while a pass is running marks it dirty instead; the
+        running pass re-checks once with the settled state."""
+        busy = self._venue_stop_busy
+        if p.id in busy:
+            busy[p.id] = True
+            return
+        busy[p.id] = False
+        try:
+            while True:
+                await self._ensure_venue_stop_once(p)
+                if not busy.get(p.id):
+                    break
+                busy[p.id] = False
+        finally:
+            busy.pop(p.id, None)
+
+    async def _ensure_venue_stop_once(self, p: Managed) -> None:
         adapter = self._policy_adapter(p)
         if adapter is not None and hasattr(adapter, "ensure_venue_stop"):
             if await adapter.ensure_venue_stop(self, p):
