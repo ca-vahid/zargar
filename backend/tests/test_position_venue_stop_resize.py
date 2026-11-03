@@ -117,3 +117,26 @@ async def test_concurrent_venue_stop_passes_rest_one_stop(fresh_db):
         assert getattr(mgr, "_venue_stop_busy", {}) == {}
     finally:
         await eng.stop()
+
+
+async def test_a_stop_refused_for_an_empty_shadow_book_closes_the_stale_record(fresh_db):
+    """DX 2026-11-03: a doubled stop sold the lot; the tracked stop was cancelled and every re-placement was
+    refused ("shadow book holds no lot to sell") twice a minute. The record must close, not loop."""
+    eng = Engine(make_test_config())
+    await eng.start()
+    await attach_signal_layer(eng)
+    try:
+        mgr = eng.position_manager
+        q = await _quote(eng, "VEMP")
+        pos = await _adopt(eng, "VEMP", qty=5, stop=round(q.last * 0.9, 2), technique="scout")
+        p = mgr.get(pos["id"])
+        stop_id = p.venue_stop_order_id
+        assert stop_id
+        await mgr.on_order_update({"id": stop_id, "symbol": "VEMP", "status": "REJECTED_RISK",
+                                   "rejectReason": "shadow book holds no lot to sell (no phantom short)"})
+        p = mgr.get(pos["id"])
+        assert p is None or p.status == "closed", (p.status, p.venue_stop_order_id)
+        stops = await _venue_stops(eng, "VEMP")
+        assert len(stops) == 1, [(o.id[:8], o.status) for o in stops]     # nothing re-placed
+    finally:
+        await eng.stop()

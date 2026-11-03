@@ -3029,3 +3029,7 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   marks it dirty and the running pass re-checks once with the settled state. On a real book a race like this would rest
   two sells for one lot. Regression: `tests/test_position_venue_stop_resize.py::test_concurrent_venue_stop_passes_rest_one_stop`
   (fails on the old code).
+- Follow-up 2026-11-03 (0.9.48): a venue stop REFUSED with "no lot to sell" (the shadow book's lot ledger holds none of the
+  symbol) closes the stale record (`venue_flat`) instead of re-placing every minute - DX on Scout S1U gpt keep looped 78
+  times from 09:58 ET, one of the 16 positions doubled before 0.9.47. Keyed on that refusal ONLY: a lagging live position
+  read must never close a record (a live position would lose its stop). Test: `test_a_stop_refused_for_an_empty_shadow_book_closes_the_stale_record`.

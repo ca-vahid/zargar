@@ -1555,6 +1555,22 @@ class PositionManager:
             p.venue_stop_at = None
             p.venue_stop_qty = None
             why = o.get("rejectReason") or status
+            if status == "REJECTED_RISK" and "no lot to sell" in str(why):
+                # 2026-11-03 (DX, ZS): a SHADOW book's lot ledger is authoritative and holds none of this
+                # symbol - another (untracked, doubled) stop already sold it. Re-placing would be refused every
+                # minute forever; the leg is stale bookkeeping, so close the record like the exit path does
+                sym = str(o.get("symbol") or "").upper()
+                for leg in p.open_legs:
+                    if leg.sec_type == "STK" and leg.symbol.upper() == sym and leg.qty > 0:
+                        leg.qty = 0.0
+                        p.venue_flat_legs = getattr(p, "venue_flat_legs", 0) + 1
+                if not p.open_legs and p.status != "closed":
+                    msg = f"closed on a stale record: the book holds no {sym} for the venue stop to protect ({why})"
+                    if msg not in p.attention:
+                        p.attention.append(msg)
+                    await self._alert(p, msg, level="warning", stage="venue_flat")
+                    await self._mark_closed(p, reason="venue already flat — the book holds no lot for the stop")
+                    return
             await self._alert(p, f"venue stop {status.lower()} at the broker ({why}) - re-placing it",
                               level="warning", stage="venue_stop")
             last = getattr(self, "_venue_stop_replaced", {}).get(p.id, 0.0)
