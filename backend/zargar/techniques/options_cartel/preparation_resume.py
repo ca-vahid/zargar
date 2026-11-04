@@ -25,6 +25,8 @@ async def saved_work(engine, prior):
             for row in source.result.get('rows',[]):
                 if row.get('analysisId') and row.get('status') in ('candidate','filtered','research_only'):
                     rows[row['symbol']]=row;reused[row['symbol']]=row['analysisId']
+                elif row.get('evidenceSaved') is False and row.get('status')=='filtered':
+                    rows[row['symbol']]=row;reused[row['symbol']]=None  # C3: the compact row is the whole record
             for row in source.result.get('shortlist',[]):
                 if row.get('status')=='awaiting_contract': pending[row['symbol']]=row
                 else: pending.pop(row['symbol'],None)
