@@ -3033,3 +3033,12 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   symbol) closes the stale record (`venue_flat`) instead of re-placing every minute - DX on Scout S1U gpt keep looped 78
   times from 09:58 ET, one of the 16 positions doubled before 0.9.47. Keyed on that refusal ONLY: a lagging live position
   read must never close a record (a live position would lose its stop). Test: `test_a_stop_refused_for_an_empty_shadow_book_closes_the_stale_record`.
+
+### Cyclic GC is compacted off-hours and survivors are frozen - 2026-11-09 (Tips desk, 0.9.49; `zargar/gctune.py`, `api/app.py`)
+- Finding: two 2.6-2.7 s event-loop stalls in the 11-09 session (11:02 and 11:35 ET, loopwatch top frame
+  `_weakrefset._remove`) were CPython full (gen-2) collections walking the engine's ~1.5 GB long-lived heap. Nothing
+  in the app tuned GC. The 2 s quote stop watch / premium stop can act that much late; venue GTC stops are unaffected.
+- Rule: after startup and nightly at `ops.gc_compact_at` (20:00 ET, every day) the engine runs `gctune.compact()` =
+  unfreeze -> full collect -> `gc.freeze()`, so session collections walk only objects created since (benchmark: 0.69 s ->
+  0.017 s on a 3M-object heap). Unfreezing first means cycles that died after a freeze are collected the next night
+  (refcount frees are unaffected). Rollback `ops.gc_freeze=false`. Tests `tests/test_gctune.py`.
