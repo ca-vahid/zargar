@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.48";
+export const APP_VERSION = "0.9.49";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.49",date:"2026-11-09",title:"Shorter engine pauses",items:[
+    {tag:"improved",text:"The engine no longer pauses ~2.5 s during the session to clean up memory: long-lived state is set aside after startup and each night, so session clean-ups are about 40x faster."},
+  ]},
   {version:"0.9.48",date:"2026-11-03",title:"A stop with nothing left to protect closes the record",items:[
     {tag:"fixed",text:"When a research book no longer holds the shares a stop protects, the position record now closes instead of retrying the stop twice a minute (DX on a Scout book, 11-03)."},
   ]},

@@ -860,6 +860,8 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
     "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
     "ops.loop_stall_seconds": 2.0,             # event-loop stall watch: log the blocking call site when the loop is silent this long (0 = off)
+    "ops.gc_freeze": True,                     # 2026-11-09: full GC + gc.freeze() after startup and nightly - session collections skip long-lived state (2.6 s loop stalls)
+    "ops.gc_compact_at": "20:00",              # ET, every day: the nightly unfreeze -> collect -> freeze
     # W1.6 (2026-10-02): host clock vs an HTTP Date reference (HEAD) at startup + daily; journaled ClockSkew,
     # desk alert (toast + push + Telegram) above the threshold; the system time is never changed
     "ops.clock_skew_check": True,

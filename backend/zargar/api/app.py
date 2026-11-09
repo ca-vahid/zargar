@@ -55,6 +55,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         await attach_cartel_observer(eng)
         from ..desk import attach_desk
         attach_desk(eng)                      # morning report + roll watchdog + nightly soak
+        from ..gctune import attach as attach_gctune
+        attach_gctune(eng)                    # freeze startup survivors; nightly compact (GC pauses 2026-11-09)
         await hub.start()
         yield
         await hub.stop()
