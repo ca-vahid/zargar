@@ -31,6 +31,26 @@ export function SymbolBadge({ symbol, size = 38 }: { symbol: string; size?: numb
   );
 }
 
+const BROKER_INK: Record<string, [string, string]> = {
+  'interactive brokers': ['IB', '#d81222'], webull: ['W', '#0d8bff'], wealthsimple: ['WS', '#b9a67c'],
+};
+
+/** A broker's mark: its logo when the server has one, otherwise a lettered tile in its colour. */
+export function BrokerBadge({ name, logoUrl, size = 26 }: { name: string; logoUrl?: string | null; size?: number }) {
+  const t = useTheme();
+  const key = Object.keys(BROKER_INK).find((k) => name.toLowerCase().includes(k));
+  const [letters, ink] = key ? BROKER_INK[key] : [name.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || '?', hueFor(name)];
+  const box = { width: size, height: size, borderRadius: size * 0.26 };
+  if (logoUrl) {
+    return <Image source={{ uri: logoUrl }} style={[box, { backgroundColor: t.surface3 }]} contentFit="cover" accessibilityLabel={name} />;
+  }
+  return (
+    <View accessibilityLabel={name} style={[box, { backgroundColor: ink, alignItems: 'center', justifyContent: 'center' }]}>
+      <Txt color="#ffffff" style={{ fontWeight: '800', fontSize: size * (letters.length > 1 ? 0.4 : 0.5), letterSpacing: -0.3 }}>{letters}</Txt>
+    </View>
+  );
+}
+
 /** A small trend line with no axes: direction at a glance, coloured by the day. */
 export function Sparkline({ values, width = 76, height = 30, up }: { values: number[]; width?: number; height?: number; up?: boolean }) {
   const t = useTheme();

@@ -42,6 +42,7 @@ export default function MoreScreen() {
 
       <Card>
         {item('notifications-outline', 'Alerts', liveAlerts ? `${liveAlerts} new since you opened the app` : 'What the desk flagged, newest first', '/alerts')}
+        {item('alarm-outline', 'Standing orders', 'Your own order plans: arm them, watch them fill', '/standing')}
         {item('flash-outline', 'Armed plans', 'Every plan waiting for its level, and the ones in a trade', '/armed')}
         {item('cash-outline', 'Money', 'What each workspace made and lost, in plain numbers', '/ledger')}
         {item('pulse-outline', 'System', 'Server, brokers, price feed and tip intake', '/system')}

@@ -17,8 +17,12 @@ each asks for confirmation and then the phone's fingerprint or PIN:
 | Close a position, sell an armed plan's trade | Chart of a position, Armed plans |
 | Cancel an unfilled buy order | Portfolio → Working orders |
 | Pause or resume an armed plan | Armed plans → Watching |
+| Arm, disarm or cancel a standing order; the real-money switch for standing orders | More → Standing orders |
 
 It offers no way to place a new manual order, and it cannot cancel a stop or a target.
+Standing orders are drafted on the desk (by Claude, from the person's plan); the phone arms
+them (one tap, a confirmation listing every order, then the fingerprint) and follows them.
+Never arm, disarm or cancel one from the browser preview: it talks to the live server.
 Approving a card always re-runs the server's checks first and binds the approval to the
 refreshed plan; a card the checks block cannot be approved here.
 
@@ -44,7 +48,7 @@ src/notifications/  push.ts (channels, token, tap → screen)
 ```bash
 npm install
 npm run typecheck          # tsc
-npm test                   # types-in-sync check + jest (31 tests)
+npm test                   # types-in-sync check + jest
 npm run doctor             # expo-doctor
 npm run export:android     # bundle the JS for Android (no native build)
 npm run build:dev          # EAS development build (APK with the dev client)

@@ -1,3 +1,4 @@
+import type { StandingList, StandingOrder, StandingPreflight } from '../lib/standing';
 import { request } from './client';
 import type {
   ArmedPlan,
@@ -32,6 +33,23 @@ export interface IntakeLiveness {
 export interface AlertItem {
   id: string; ts: string; kind: string; level: 'info' | 'warning' | 'error';
   title: string; body: string; symbol?: string | null; url?: string | null;
+}
+/** GET /api/brokerages — only what the phone draws: which broker holds which book, and its logo. */
+export interface Brokerages {
+  providers: { broker: string; logoUrl?: string | null; accounts: { portfolioId: string; name?: string;
+    cashBalances?: { currency: string; cash: number }[] }[] }[];
+}
+export interface ScoutAgentTrade { id: string; ticker: string; entryDate: string; status: string; reason?: string | null;
+  net?: number | null; r?: number | null; entryPrice?: number | null; exitPrice?: number | null; [k: string]: any }
+export interface ScoutAgentLane { lane: string; label: string; portfolioId: string; entries: number; open: number; closed: number;
+  skipped: number; pending: number; realizedNet: number; openNet: number; totalNet: number; hitRate: number | null;
+  openTrades: ScoutAgentTrade[]; closedTrades: ScoutAgentTrade[] }
+export interface ScoutAgent {
+  enabled: boolean;
+  runs: { id: string; day: string; lane: string; model: string; status: string; reason?: string | null; proposals: any[]; costUsd?: number | null; createdAt: string }[];
+  lanes: ScoutAgentLane[];
+  lessons: { id: string; text: string; status: string; effectiveFrom?: string | null; reviewDay?: string | null }[];
+  scorecard?: { sampleStart?: string; gate?: { passed: boolean; verdict: string; checks: { name: string; need: string; have: number | string | null; ok: boolean }[] } };
 }
 export type ChartBar = [number, number, number, number, number, number];
 export interface ChartData { symbol: string; tf: string; range: string | null; source: string; bars: ChartBar[] }
@@ -111,6 +129,21 @@ export const api = {
   scoutDossier: (id: string) => request<ScoutDossier>('GET', `/api/scout/dossiers/${id}`),
   scoutDossierRequest: (ticker: string, refresh = false) =>
     request<ScoutDossier>('POST', '/api/scout/dossiers', { ticker, refresh }),
+
+  scoutAgent: () => request<ScoutAgent>('GET', '/api/scout/agent'),
+
+  // --- standing orders (the person's own plans; arming is their tap + fingerprint)
+  standing: () => request<StandingList>('GET', '/api/standing'),
+  standingArmPlan: (planId: string, confirm: string) =>
+    request<unknown>('POST', `/api/standing/plan/${planId}/arm`, { confirm }),
+  standingArm: (id: string, confirm: string) => request<StandingOrder>('POST', `/api/standing/${id}/arm`, { confirm }),
+  standingDisarm: (id: string) => request<StandingOrder>('POST', `/api/standing/${id}/disarm`),
+  standingCancel: (id: string) => request<StandingOrder>('POST', `/api/standing/${id}/cancel`),
+  /** dry-run of the risk checks at the current quote — never an order */
+  standingPreflight: (id: string) => request<StandingPreflight>('POST', `/api/standing/${id}/preflight`),
+  setStandingAllowLive: (on: boolean) =>
+    request<unknown>('PATCH', '/api/settings', { 'execution.standing_orders.allow_live': on }),
+  brokerages: () => request<Brokerages>('GET', '/api/brokerages'),
 
   // --- push (Expo token; backend PR "mobile-backend")
   pushRegister: (token: string, label: string) =>

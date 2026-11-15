@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
@@ -8,14 +9,16 @@ import { AreaSpark, DayBars, Heading, Hero, Meter, RangeBar, Sparkline, SymbolBa
 import { CurrencySwitch } from '@/components/Header';
 import { planFor, PositionRow } from '@/components/PositionRow';
 import { Card, Delta, Empty, Pill, Row, Screen, Skeleton, SkeletonRows, styles, Tabs, Txt } from '@/components/ui';
+import { useBooks } from '@/hooks/useBooks';
 import { useConvert, useCurrency } from '@/hooks/useCurrency';
 import { usePoll } from '@/hooks/usePoll';
 import { useWorkspace } from '@/hooks/useWorkspace';
-import { dayMove, dayMovePct, GROUP_LABEL, groupOf, visibleBooks, workspaceOf } from '@/lib/books';
+import { dayMove, dayMovePct, GROUP_LABEL, groupOf, liftEmptyCurve, workspaceOf } from '@/lib/books';
 import type { Point } from '@/lib/chart';
 import { clock, money, pct, price, shortDate, signedMoney, titleCase } from '@/lib/format';
 import { marketClock, newYorkTime } from '@/lib/market';
 import { sumSeries } from '@/lib/range';
+import { minutesToTrigger, orderLine, standingCounts, waitText } from '@/lib/standing';
 import { watchSymbol } from '@/live/socket';
 import { useStore } from '@/store';
 import { radius, space, useTheme } from '@/theme';
@@ -266,7 +269,7 @@ export default function HomeScreen() {
   const synced = useStore((s) => s.synced);
   const [view, setView] = useState<Pane>('overview');
 
-  const books = useMemo(() => visibleBooks(portfolios, ws), [portfolios, ws]);
+  const books = useBooks(ws);
   const ids = books.map((b) => b.id).join(',');
   // the groups that get a headline: real money and the paper account are never summed
   const groups = useMemo(() => (ws === 'practice'
@@ -281,12 +284,26 @@ export default function HomeScreen() {
   const curves = usePoll<Curves>(
     async () => {
       const list = await Promise.all(books.map((b) => api.equity(b.id, { since: Date.now() - 24 * 3600e3, points: 48 }).catch(() => [] as Point[])));
-      return Object.fromEntries(books.map((b, i) => [b.id, list[i]]));
+      return Object.fromEntries(books.map((b, i) => [b.id, liftEmptyCurve(list[i], b.equity)]));
     }, 300000, [ids], `curves:${ids}`);
   // the ledger is the slow one (about a second): nothing above waits for it
   const ledgers = usePoll<(Ledger | null)[]>(
     () => Promise.all(groups.map((g) => api.ledger(ws, g.scope, 30, currency).catch(() => null))),
     120000, [ws, scopes, currency], `ledgers:${ws}:${scopes}:${currency}`);
+
+  // the person's own standing orders: how many wait, and which fires next
+  const standing = usePoll(() => api.standing(), 30000, [], 'standing');
+  const so = useMemo(() => {
+    const orders = standing.data?.orders ?? [];
+    const at = newYorkTime(Date.now());
+    let next: { text: string; wait: number } | null = null;
+    for (const o of orders) {
+      if (o.status !== 'armed') continue;
+      const wait = minutesToTrigger(o, at);
+      if (wait != null && (!next || wait < next.wait)) next = { text: orderLine(o), wait };
+    }
+    return { ...standingCounts(orders), next };
+  }, [standing.data]);
 
   useEffect(() => { for (const f of INDEX_FUNDS) watchSymbol(f.symbol); }, []);
   // a plan fired, filled or stopped: re-pull shortly after instead of waiting for the tick
@@ -314,7 +331,7 @@ export default function HomeScreen() {
   const attention = s ? mine(s.attention) : [];
   const bookHalts = Object.keys(halt.books ?? {}).length;
   const moverScale = Math.max(0, ...holdings.map((p) => Math.abs(p.unrealizedPnl ?? 0)));
-  const refreshAll = () => { summary.refresh(); curves.refresh(); ledgers.refresh(); };
+  const refreshAll = () => { summary.refresh(); curves.refresh(); ledgers.refresh(); standing.refresh(); };
 
   return (
     <Screen onRefresh={refreshAll} refreshing={summary.refreshing}>
@@ -338,9 +355,32 @@ export default function HomeScreen() {
           ledger={ledgers.data ? ledgers.data[i] : ledgers.error ? null : undefined} />
       ))}
 
-      {(proposals.length > 0 || attention.length > 0) && (
+      {(so.armed > 0 || so.working > 0 || so.failed > 0) && (
+        <Card onPress={() => router.navigate('/standing')} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, borderColor: so.failed ? t.down : so.working ? t.accent : t.line }}>
+          <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: `${so.failed ? t.down : t.warn}22`, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="alarm-outline" size={20} color={so.failed ? t.down : t.warn} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Txt style={{ fontWeight: '700' }}>
+              Standing orders · {[so.working ? `${so.working} working` : '', so.armed ? `${so.armed} armed` : '', so.failed ? `${so.failed} failed` : ''].filter(Boolean).join(' · ')}
+            </Txt>
+            <Txt v="small" dim numberOfLines={1}>
+              {so.next ? `Next: ${so.next.text} · ${waitText(so.next.wait)}` : so.failed ? 'An order failed: open to see why' : 'Open to follow them'}
+            </Txt>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={t.text3} />
+        </Card>
+      )}
+
+      {(proposals.length > 0 || attention.length > 0 || so.draft > 0) && (
         <Card style={{ borderColor: t.accent }}>
           <Heading icon="hand-left-outline" title="Needs you" />
+          {so.draft > 0 && (
+            <Row last={!attention.length && !proposals.length} onPress={() => router.navigate('/standing')}
+              left={`${so.draft} standing order${so.draft > 1 ? 's' : ''} waiting to be armed`}
+              sub="Drafted from your plan. They do nothing until you arm them."
+              right={<Txt color={t.accent} style={{ fontWeight: '700' }}>Arm</Txt>} />
+          )}
           {proposals.length > 0 && (
             <Row last={!attention.length} onPress={() => router.navigate('/tips')}
               left={`${proposals.length} approval card${proposals.length > 1 ? 's' : ''} waiting`}
@@ -394,7 +434,8 @@ export default function HomeScreen() {
           {groups.map((g, i) => {
             const l = ledgers.data?.[i];
             const days = l ? [...l.days].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-10) : [];
-            if (ledgers.data && days.length === 0) return null;
+            // a group with no closed trade has nothing to chart
+            if (ledgers.data && !days.some((d) => Math.abs(d.realized) > 0.005)) return null;
             return (
               <View key={g.label} style={{ gap: space.sm }}>
                 <Heading icon="bar-chart-outline" title={`Closed trades by day${groups.length > 1 ? ` · ${g.label}` : ''}`}

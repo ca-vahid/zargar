@@ -10,11 +10,12 @@ import { CurrencySwitch } from '@/components/Header';
 import { LineChart } from '@/components/LineChart';
 import { planFor, PositionRow } from '@/components/PositionRow';
 import { Async, Button, Card, Chips, Delta, Empty, Pill, Row, Screen, Section, Skeleton, styles, Txt } from '@/components/ui';
+import { useBooks } from '@/hooks/useBooks';
 import { useCurrency } from '@/hooks/useCurrency';
 import { usePoll } from '@/hooks/usePoll';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { runAction } from '@/lib/actions';
-import { dayMove, dayMovePct, GROUP_LABEL, groupOf, visibleBooks } from '@/lib/books';
+import { dayMove, dayMovePct, GROUP_LABEL, groupOf, liftEmptyCurve } from '@/lib/books';
 import type { Point } from '@/lib/chart';
 import { dayTime, money, pct, price, qty, shortDate, signedMoney } from '@/lib/format';
 import { rateFor } from '@/lib/fx';
@@ -34,7 +35,6 @@ function Stat({ label, value }: { label: string; value: string }) {
 export default function PortfolioScreen() {
   const ws = useWorkspace();
   const usdCad = useStore((s) => s.quotes['USDCAD=X']?.last ?? null);
-  const portfolios = useStore((s) => s.portfolios);
   const positionsMap = useStore((s) => s.positions);
   const ordersMap = useStore((s) => s.openOrders);
   const selected = useStore((s) => s.selectedBook);
@@ -46,7 +46,7 @@ export default function PortfolioScreen() {
   const [picked, setPicked] = useState<Point | null>(null);
   const [showResearch, setShowResearch] = useState(false);
 
-  const books = useMemo(() => visibleBooks(portfolios, ws, showResearch), [portfolios, ws, showResearch]);
+  const books = useBooks(ws, showResearch);
   const book: Portfolio | undefined = books.find((b) => b.id === selected) ?? books[0];
   const bookId = book?.id ?? '';
   const own = book?.baseCurrency ?? 'USD';
@@ -78,7 +78,7 @@ export default function PortfolioScreen() {
   // a window that runs up to now ends on the live value, so its right edge is the headline
   const liveEquity = book?.equity ?? null;
   const series = useMemo<Point[]>(() => {
-    const inside = clip(equity.data ?? [], span);
+    const inside = clip(liftEmptyCurve(equity.data ?? [], liveEquity), span);
     const withNow: Point[] = span.to == null && liveEquity != null && equity.data ? [...inside, [Date.now(), liveEquity]] : inside;
     return k === 1 ? withNow : withNow.map(([ts, v]) => [ts, v * k]);
   }, [equity.data, span, liveEquity, k]);

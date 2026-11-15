@@ -81,10 +81,10 @@ export default function SettingsScreen() {
           <Row last left="Entries from this phone"
             sub={<Txt v="small" dim>{exitOnly === false
               ? 'The server allows new manual orders from phones. This app still offers none.'
-              : 'The server refuses new manual orders from phones on real and paper accounts. Approving a card, halting, pausing and exits all work.'}</Txt>}
+              : 'The server refuses new manual orders from phones on real and paper accounts. Approving a card, arming a standing order, halting, pausing and exits all work.'}</Txt>}
             right={<Txt dim>{exitOnly === false ? 'Allowed' : 'Exit only'}</Txt>} />
         </Card>
-        <Txt v="small" faint>Approving a card, the kill switch, pausing a book and closing a position always ask for your fingerprint or PIN.</Txt>
+        <Txt v="small" faint>Approving a card, arming a standing order, the kill switch, pausing a book and closing a position always ask for your fingerprint or PIN.</Txt>
       </Section>
 
       <Section title="Account">

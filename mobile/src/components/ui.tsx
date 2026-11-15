@@ -111,12 +111,15 @@ export function Row({ left, sub, right, rightSub, onPress, last }: {
 }
 
 export type PillKind = 'ok' | 'bad' | 'warn' | 'dim' | 'accent';
-export function Pill({ text, kind = 'dim' }: { text: string; kind?: PillKind }) {
+/** `solid` fills the pill: for the one word on a row that must be read first (BUY, SELL, REAL MONEY). */
+export function Pill({ text, kind = 'dim', solid }: { text: string; kind?: PillKind; solid?: boolean }) {
   const t = useTheme();
   const ink = kind === 'ok' ? t.up : kind === 'bad' ? t.down : kind === 'warn' ? t.warn : kind === 'accent' ? t.accent : t.text2;
+  const fill = kind === 'ok' ? t.upFill : kind === 'bad' ? t.downFill : kind === 'accent' ? t.accent : kind === 'warn' ? t.warn : t.surface3;
+  const onFill = kind === 'accent' || kind === 'warn' ? t.onAccent : kind === 'dim' ? t.text : '#ffffff';
   return (
-    <View style={{ borderRadius: 999, borderWidth: 1, borderColor: ink, paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start' }}>
-      <Txt v="small" color={ink} style={{ fontWeight: '600' }}>{text}</Txt>
+    <View style={{ borderRadius: 999, borderWidth: 1, borderColor: solid ? fill : ink, backgroundColor: solid ? fill : 'transparent', paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start' }}>
+      <Txt v="small" color={solid ? onFill : ink} style={{ fontWeight: solid ? '800' : '600', letterSpacing: solid ? 0.4 : 0 }}>{text}</Txt>
     </View>
   );
 }

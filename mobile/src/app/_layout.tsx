@@ -69,6 +69,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="alerts" options={{ title: 'Alerts' }} />
         <Stack.Screen name="armed" options={{ title: 'Armed plans' }} />
+        <Stack.Screen name="standing" options={{ title: 'Standing orders' }} />
         <Stack.Screen name="ledger" options={{ title: 'Money' }} />
         <Stack.Screen name="system" options={{ title: 'System' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />

@@ -1,11 +1,12 @@
 // What the update the phone is running brought. Rewrite it with every over-the-air publish.
 export const WHATS_NEW: { title: string; items: string[] } = {
-  title: 'Home, ranges and a clearer update screen',
+  title: 'Standing orders on your phone',
   items: [
-    '"Now" is now Home: market clock, index tiles, gains and losses, closed trades by day',
-    'Portfolio headline follows 1D to All, plus custom dates; drag the chart to read any moment',
-    'Longer ranges show their full history (they stopped at about 16 hours before)',
-    'Screens keep their last numbers while they refresh instead of spinning',
-    'This update card: what you run, when it was published, and what is new',
+    'Standing orders (More, and a card on Home): your plans step by step, when each can fire in your own time, arm a plan with one tap and your fingerprint, check, disarm or cancel an order',
+    'The real-money switch for standing orders, with its state always in view',
+    'Your IBKR live account now shows on Home and Portfolio with the cash the broker reports',
+    'Alerts: an icon per kind, repeats folded into one row, and a Problems filter',
+    'Research has an Agent tab: what the Scout agent holds, what it learned, and whether it has proven an edge',
+    'Home no longer draws an empty chart for a group with no closed trades',
   ],
 };

@@ -5,6 +5,7 @@ export function routeForWebPath(path: string | null | undefined): string {
   if (!p || p === '/') return '/';
   if (p.startsWith('/inbox') || p.startsWith('/tips')) return '/tips';
   if (p.startsWith('/armed')) return '/armed';
+  if (p.startsWith('/standing')) return '/standing';
   if (p.startsWith('/dashboard') || p.startsWith('/portfolio') || p.startsWith('/blotter')) return '/portfolio';
   if (p.includes('/scout')) return '/research';
   if (p.startsWith('/settings')) return '/settings';

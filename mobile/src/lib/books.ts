@@ -39,6 +39,15 @@ export function visibleBooks(all: Portfolio[], workspace: Workspace, includeRese
     .sort((a, b) => ORDER.indexOf(groupOf(a)) - ORDER.indexOf(groupOf(b)) || a.name.localeCompare(b.name));
 }
 
+/** A book whose recorded values are all zero while it is worth something now has no
+ *  history yet (its cash is known only from the broker's own read). Drawing those zeros
+ *  would show a jump that never happened: hold the line at what it is worth instead. */
+export function liftEmptyCurve<P extends [number, number]>(curve: P[], equity: number | null | undefined): P[] {
+  if (!curve.length || equity == null || Math.abs(equity) < 0.005) return curve;
+  if (curve.some((p) => Math.abs(p[1]) >= 0.005)) return curve;
+  return curve.map((p) => [p[0], equity] as unknown as P);
+}
+
 /** Today's move in the book's own currency: live equity against the server's
  *  day-start anchor (the previous session's close). Null when either is unknown. */
 export function dayMove(p: Pick<Portfolio, 'equity' | 'dayStart'>): number | null {

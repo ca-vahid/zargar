@@ -40,7 +40,7 @@ export default function SystemScreen() {
           <Row left="This phone" sub={apiUrl.replace(/^https?:\/\//, '')}
             right={<Pill kind={conn === 'live' ? 'ok' : conn === 'connecting' ? 'warn' : 'bad'} text={conn === 'live' ? 'Live' : conn === 'connecting' ? 'Connecting' : 'Offline'} />} />
           <Row left="Price feed" sub={broker?.quoteSource ? `Source: ${broker.quoteSource}` : undefined} right={yes(broker?.feedConnected, 'Connected', 'Down')} />
-          <Row left="IBKR" sub={broker?.ibkr ? `${broker.ibkr.account ?? ''} · spendable ${money(broker.ibkr.spendable, broker.ibkr.bookCurrency)} · read ${ago(broker.ibkr.syncedAt)}` : undefined}
+          <Row left="IBKR" sub={broker?.ibkr ? `${broker.ibkr.account ?? ''}${/^U/.test(broker.ibkr.account ?? '') ? ' (real account)' : ''} · cash ${Object.entries(broker.ibkr.cashByCurrency ?? {}).map(([c, v]) => money(v, c)).join(' + ') || money(broker.ibkr.spendable, broker.ibkr.bookCurrency)} · read ${ago(broker.ibkr.syncedAt)}` : undefined}
             right={yes(broker?.ibkrConnected, 'Connected', 'Disconnected')} />
           <Row last left="SnapTrade" right={yes(broker?.snaptradeConnected, 'Connected', 'Disconnected')} />
         </Card>
