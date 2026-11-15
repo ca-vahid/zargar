@@ -173,7 +173,7 @@ export function StandingPage() {
                         </div>
                       )}
                     </td>
-                    <td className="so-actions">
+                    <td><span className="so-actions">
                       {!history && <button className="link-btn" disabled={!!busy} title="Dry-run the risk checks at today's quote (no order sent)"
                         onClick={() => act(`pf:${o.id}`, async () => {
                           const r = await api.post<Preflight>(`/api/standing/${o.id}/preflight`);
@@ -183,7 +183,7 @@ export function StandingPage() {
                         onClick={() => act(`d:${o.id}`, () => api.post(`/api/standing/${o.id}/disarm`))}>disarm</button>}
                       {OPEN.has(o.status) && <button className="link-btn danger" disabled={!!busy}
                         onClick={() => act(`c:${o.id}`, () => api.post(`/api/standing/${o.id}/cancel`))}>cancel</button>}
-                    </td>
+                    </span></td>
                   </tr>
                 );
               })}
