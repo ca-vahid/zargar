@@ -3087,5 +3087,5 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .so-err svg, .so-pf svg { width: 12px; height: 12px; flex-shrink: 0; margin-top: 1px; }
 .so-pf.ok { color: var(--up); }
 .so-pf.bad { color: var(--down); }
-.so-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.so-actions { display: inline-flex; gap: 10px; }
 .so-spin { width: 9px; height: 9px; border-width: 2px; }
