@@ -24,6 +24,7 @@ const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "options", label: "Options", icon: <IconOptions /> },
   { key: "technique", label: "Techniques", icon: <IconTechnique /> },
   { key: "armed", label: "Armed", icon: <IconArmed /> },
+  { key: "standing", label: "Standing orders", icon: <IconArmed /> },
   { key: "watchlists", label: "Watchlists", icon: <IconWatchlist /> },
   { key: "portfolios", label: "Portfolios", icon: <IconPortfolios /> },
   { key: "ledger", label: "Ledger", icon: <IconLedger /> },

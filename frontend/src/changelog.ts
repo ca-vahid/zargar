@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.49";
+export const APP_VERSION = "0.9.50";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.50",date:"2026-11-14",title:"Standing orders",items:[
+    {tag:"new",text:"Standing orders: tell Claude your plan, review it on the new Standing orders page and arm it with one click - the app waits for the trigger, prices a limit off the live quote, re-prices an unfilled order inside your cap and sets your take-profit / stop-loss after a buy. Real accounts also need your own switch on that page."},
+  ]},
   {version:"0.9.49",date:"2026-11-09",title:"Shorter engine pauses",items:[
     {tag:"improved",text:"The engine no longer pauses ~2.5 s during the session to clean up memory: long-lived state is set aside after startup and each night, so session clean-ups are about 40x faster."},
   ]},
