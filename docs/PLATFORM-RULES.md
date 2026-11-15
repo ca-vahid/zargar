@@ -3042,3 +3042,11 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   unfreeze -> full collect -> `gc.freeze()`, so session collections walk only objects created since (benchmark: 0.69 s ->
   0.017 s on a 3M-object heap). Unfreezing first means cycles that died after a freeze are collected the next night
   (refcount frees are unaffected). Rollback `ops.gc_freeze=false`. Tests `tests/test_gctune.py`.
+
+### Standing orders: the user's armed order plans - 2026-11-14 (Tips desk, 0.9.50; `execution/standing.py`, `api/routes_standing.py`, `pages/StandingPage.tsx`)
+- New platform surface (not a technique): user order plans drafted by Claude, ARMED only by the user (per order or
+  one plan click, confirm phrase), real-money books additionally behind `execution.standing_orders.allow_live`
+  (default False, user's switch). Execution = DAY limits off the live quote inside the user's cap through
+  `OrderManager.place` (RiskGate, kill switch for buys, sells reduce-only), write-ahead `placing` state reconciled
+  from the `standing:<id>` order tag, cancel + re-price an unfilled limit up to `max_attempts`, filled buys adopted
+  by the position manager with the user's TP/SL. Guide: `docs/STANDING-ORDERS.md`. Tests: `tests/test_standing_orders.py`.
