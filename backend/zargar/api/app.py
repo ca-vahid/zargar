@@ -55,6 +55,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         await attach_cartel_observer(eng)
         from ..desk import attach_desk
         attach_desk(eng)                      # morning report + roll watchdog + nightly soak
+        from ..execution.standing import attach as attach_standing
+        await attach_standing(eng)            # the user's armed order plans (2026-11-14)
         from ..gctune import attach as attach_gctune
         attach_gctune(eng)                    # freeze startup survivors; nightly compact (GC pauses 2026-11-09)
         await hub.start()
@@ -68,6 +70,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
             await eng.flow_service.stop()
         if getattr(eng, "scout_service", None) is not None:
             await eng.scout_service.stop()
+        if getattr(eng, "standing_orders", None) is not None:
+            await eng.standing_orders.stop()
         if eng.technique is not None:
             await eng.technique.stop()
         await eng.stop()
@@ -672,6 +676,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
     from .routes_scout import build_scout_routes
     build_scout_routes(app, eng, auth, config)
+
+    from .routes_standing import build_standing_routes
+    build_standing_routes(app, eng, auth, config)
 
     from .routes_team2 import build_team2_routes
     build_team2_routes(app, eng, auth, config)

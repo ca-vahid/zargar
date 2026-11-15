@@ -860,6 +860,11 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
     "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
     "ops.loop_stall_seconds": 2.0,             # event-loop stall watch: log the blocking call site when the loop is silent this long (0 = off)
+    "execution.standing_orders.allow_live": False,   # 2026-11-14: the USER's switch - armed standing orders may route to live/paper books
+    "execution.standing_orders.poll_seconds": 5.0,
+    "execution.standing_orders.fill_wait_seconds": 60.0,  # an unfilled limit is cancelled and re-priced after this
+    "execution.standing_orders.max_attempts": 5,          # placements per order before it gives up
+    "execution.standing_orders.slippage_pct": 0.5,        # default limit = ask x 1.005 / bid x 0.995
     "ops.gc_freeze": True,                     # 2026-11-09: full GC + gc.freeze() after startup and nightly - session collections skip long-lived state (2.6 s loop stalls)
     "ops.gc_compact_at": "20:00",              # ET, every day: the nightly unfreeze -> collect -> freeze
     # W1.6 (2026-10-02): host clock vs an HTTP Date reference (HEAD) at startup + daily; journaled ClockSkew,

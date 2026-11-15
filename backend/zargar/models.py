@@ -1552,3 +1552,43 @@ class ScoutAgentLesson(Base):
 SCOUT_TABLES = ("scout_filings", "scout_insider_trades", "scout_candidates", "scout_state",
                 "scout_verdicts", "scout_entries", "scout_reports", "scout_dossiers",
                 "scout_agent_runs", "scout_agent_lessons")
+
+
+class StandingOrder(Base):
+    """The user's own order plan (2026-11-14): "sell my SPCX Monday", "buy ANT when it lists, as much as $8,000
+    allows, +10% take profit / -10% stop". Claude drafts it; only the USER arms it (and a real-money book also
+    needs `execution.standing_orders.allow_live`); the app then waits for the trigger, prices a limit off the live
+    quote, routes it through OrderManager -> RiskGate, re-prices an unfilled limit inside the user's cap and, on a
+    filled buy, hands the position to the position manager with the user's exits. Lifecycle:
+    draft -> armed -> placing -> working -> done | failed | cancelled | expired."""
+    __tablename__ = "standing_orders"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plan_id: Mapped[str | None] = mapped_column(String(64), index=True)          # orders armed together in ONE click
+    plan_name: Mapped[str | None] = mapped_column(String(120))
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    side: Mapped[str] = mapped_column(String(4))                                  # BUY | SELL
+    qty: Mapped[float | None] = mapped_column(Float)                              # exact quantity, or ...
+    budget: Mapped[float | None] = mapped_column(Float)                           # ... spend up to this (buy only)
+    trigger: Mapped[str] = mapped_column(String(12), default="now")               # now | at | listing
+    not_before: Mapped[str | None] = mapped_column(String(5))                     # "HH:MM" ET (trigger=at)
+    expires_on: Mapped[str] = mapped_column(String(10), index=True)               # ET date; unfilled after it = expired
+    max_price: Mapped[float | None] = mapped_column(Float)                        # buy cap: never pay above
+    min_price: Mapped[float | None] = mapped_column(Float)                        # sell floor: never sell below
+    slippage_pct: Mapped[float] = mapped_column(Float, default=0.5)               # limit = ask(1+s) / bid(1-s)
+    take_profit_pct: Mapped[float | None] = mapped_column(Float)                  # buy exits, % from the avg fill
+    stop_loss_pct: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(12), index=True, default="draft")
+    note: Mapped[str | None] = mapped_column(Text)                                # the user's own words
+    last_error: Mapped[str | None] = mapped_column(Text)
+    order_id: Mapped[str | None] = mapped_column(String(64))                      # the working order
+    order_ids: Mapped[list] = mapped_column(JSONVariant, default=list)
+    attempts: Mapped[list] = mapped_column(JSONVariant, default=list)
+    filled_qty: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_fill_price: Mapped[float | None] = mapped_column(Float)
+    position_id: Mapped[str | None] = mapped_column(String(64))
+    armed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    working_since: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
