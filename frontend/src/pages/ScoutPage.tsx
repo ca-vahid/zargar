@@ -8,10 +8,12 @@ import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
+import { AgentTab } from "./ScoutAgent";
 import { DossierTab, queueDossier } from "./ScoutDossier";
 import type { ScoutCandidate, ScoutEntry, ScoutLane, ScoutReport, ScoutStatus, ScoutVerdict } from "../types";
 
 const TABS = [
+  { key: "agent", label: "Agent" },
   { key: "candidates", label: "Candidates" },
   { key: "lanes", label: "Lanes" },
   { key: "dossier", label: "Research" },
@@ -197,7 +199,7 @@ function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: Re
 export function ScoutPage() {
   const pageTab = useStore((s) => s.pageTab);
   const setPageTab = useStore((s) => s.setPageTab);
-  const tab: Tab = (TABS.some((t) => t.key === pageTab) ? pageTab : "candidates") as Tab;
+  const tab: Tab = (TABS.some((t) => t.key === pageTab) ? pageTab : "agent") as Tab;
   return (
     <div className="tips-page scout-page">
       <div className="tips-head">
@@ -209,6 +211,7 @@ export function ScoutPage() {
         </div>
         <span className="muted tips-head-sub">research only · simulated books, never a broker</span>
       </div>
+      {tab === "agent" && <AgentTab />}
       {tab === "candidates" && <CandidatesTab />}
       {tab === "lanes" && <LanesTab />}
       {tab === "dossier" && <DossierTab />}
@@ -525,7 +528,7 @@ function LanesTab() {
   const reports = useAsync(() => api.scoutReports(60), []);
   const cands = useAsync(() => api.scoutCandidates(30), []);
   const [open, setOpen] = useState<string | null>(null);
-  const lanes = st.data ?? [];
+  const lanes = (st.data ?? []).filter((l) => !l.lane.startsWith("agent_"));     // the agent's books: Agent tab
   const trend = useMemo(() => {
     const m: Record<string, number[]> = {};
     for (const r of [...(reports.data ?? [])].sort((a: ScoutReport, b: ScoutReport) => a.day.localeCompare(b.day))) {

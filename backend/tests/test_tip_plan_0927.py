@@ -233,3 +233,45 @@ def test_the_knowledge_manifest_covers_every_rule_and_caps_notes():
     b = {x["scope"]: x for x in plan_notes(notes, keep=15, general_min_supplied=20, tag="t")}
     assert sorted(b["source:ab"]["expire"]["ids"]) == [f"s{i}" for i in range(5)]   # the 5 least relied-on
     assert b["general"]["expire"]["ids"] == ["g1"]                                   # a pinned note stays
+
+
+def test_a_copied_trim_respects_the_minimum_sell_order():
+    from zargar.techniques.tip.lifecycle import size_mirrored_trim
+    assert size_mirrored_trim(0.5, value=694.0, min_notional=750.0)[0] is None      # paper SNAP 10-13: $347 trim
+    assert size_mirrored_trim(0.5, value=1600.0, min_notional=750.0) == (0.5, None)
+    f, note = size_mirrored_trim(0.6, value=1600.0, min_notional=750.0)             # $640 left: goes with the trim
+    assert f == 1.0 and "one order" in note
+    assert size_mirrored_trim(0.5, value=694.0, min_notional=0) == (0.5, None)      # knob off
+    assert size_mirrored_trim(1.0, value=100.0, min_notional=750.0) == (1.0, None)  # a close is never held back
+
+
+async def test_the_mirror_skips_a_share_trim_under_the_books_minimum_sell_order():
+    from zargar.signals.service import SignalService
+    closed, journal = [], []
+
+    class PM:
+        def positions(self, status=None):
+            return [{"id": "small", "technique": "tip", "tags": ["source:jk"], "symbol": "SNAP", "portfolioId": "sim",
+                     "entry": 6.74, "legs": [{"secType": "STK", "qty": 103}]},
+                    {"id": "big", "technique": "tip", "tags": ["source:jk"], "symbol": "SNAP", "portfolioId": "sim",
+                     "entry": 6.74, "legs": [{"secType": "STK", "qty": 400}]}]
+
+        async def close(self, pid, fraction=1.0, reason=""):
+            closed.append((pid, fraction))
+
+    class J:
+        async def append(self, *a, **k):
+            journal.append((a[0], a[1].get("positionId")))
+    eng = NS(settings=_S({"techniques.tip.mirror_source_exits": True, "techniques.tip.mirror_trim_fraction": 0.5,
+                          "techniques.tip.min_exit_order_notional": 750.0}),
+             position_manager=PM(), positions=NS(portfolio=lambda pid: {"kind": "sim"}), journal=J())
+    svc = SignalService.__new__(SignalService)
+    svc.engine = eng
+    trim = NS(action="trim", actor="author", is_actionable=True)
+    row = NS(id="s1", ticker="SNAP", instrument="shares", strike=None, expiry=None)
+    assert await svc._mirror_source_exit("jk", row, trim, {"passed": True}) == ["big"]
+    assert closed == [("big", 0.5)] and ("TipSourceExitNotMirrored", "small") in journal
+    closed.clear()
+    assert await svc._mirror_source_exit("jk", row, NS(action="close", actor="author", is_actionable=True),
+                                         {"passed": True}) == ["small", "big"]
+    assert closed == [("small", 1.0), ("big", 1.0)]

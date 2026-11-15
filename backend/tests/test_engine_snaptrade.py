@@ -83,6 +83,39 @@ async def test_live_order_routes_and_fills(snaptrade_engine):
     assert eng.positions.position_qty(pid, "AAPL") == 1
 
 
+async def test_failed_status_poll_blocks_entries_but_never_an_exit(snaptrade_engine):
+    import httpx
+    eng, stub = snaptrade_engine
+    pid = snaptrade_pid(eng)
+    await eng.settings.set("trading.mode", "live")
+    await wait_quote(eng, "AAPL")
+    await wait_quote(eng, "MSFT")
+    stub.place_response = {"brokerage_order_id": "bo-1", "status": "PENDING"}
+    order = await eng.orders.place(OrderIntent(
+        portfolio_id=pid, symbol="AAPL", side="BUY", qty=2, order_type="MKT"))
+    assert order["status"] == "SUBMITTED", order
+    last = eng.quotes.get("AAPL").last
+    stub.recent_orders["acct-1"] = [{
+        "brokerage_order_id": "bo-1", "status": "PARTIAL",
+        "filled_quantity": 1.0, "execution_price": round(last, 2)}]
+    await eng.snaptrade.poll_once()
+    await wait_for(lambda: eng.positions.position_qty(pid, "AAPL") == 1)
+
+    stub.recent_error = httpx.ConnectError("no route")  # the order is still working, the poll now fails
+    await eng.snaptrade.poll_once()
+    assert eng.snaptrade.connected is False
+
+    entry = await eng.orders.place(OrderIntent(
+        portfolio_id=pid, symbol="MSFT", side="BUY", qty=1, order_type="MKT"))
+    assert entry["status"] == "REJECTED" and "no connected execution venue" in entry["rejectReason"]
+    stub.place_response = {"brokerage_order_id": "bo-exit", "status": "PENDING"}
+    placed = len(stub.calls("/trade/place"))
+    exit_order = await eng.orders.place(OrderIntent(
+        portfolio_id=pid, symbol="AAPL", side="SELL", qty=1, order_type="MKT", reduce_only=True))
+    assert exit_order["status"] == "SUBMITTED", exit_order
+    assert len(stub.calls("/trade/place")) == placed + 1  # the close reached the venue
+
+
 async def test_mode_gate_blocks_snaptrade_outside_live(snaptrade_engine):
     eng, stub = snaptrade_engine
     pid = snaptrade_pid(eng)

@@ -229,3 +229,60 @@ async def test_signal_and_observation_survive_journal_failure_together(repo, mon
     assert restored.detail("r1")["signal"] == row["state"]["signal"]
     await restored.on_minute_bar("HOOD", tape()[-1])
     assert (await repo.load("r1"))["state"]["signal"] == row["state"]["signal"]
+
+
+async def test_plan_armed_after_the_open_ignores_stub_bars_held_in_memory(repo, monkeypatch):
+    """2026-10-13 (PANW): a zero-volume, off-the-minute stub in the in-memory series was seeded into
+    a plan armed mid-session, and every later entry read refused its whole input."""
+    async def ensure(symbol):
+        return None
+    monkeypatch.setattr(repo.engine, "ensure_symbol", ensure)
+    await repo.engine.positions.load()
+    stub = replace(tape()[0], ts=OPEN+53_000, volume=0, source="exchange")
+    repo.engine.bars.seed("HOOD", [tape()[0], stub, tape()[1], tape()[2]])
+    instance = CartelObserver(repo.engine)
+    instance.clock = lambda: OPEN + 3*60_000
+    try:
+        await instance.arm("r1", {"portfolioId": "pf", "mode": "alert"})
+        seeded = (await repo.load("r1"))["state"]["minutes"]
+        assert sorted(int(k) for k in seeded) == [OPEN, OPEN+60_000, OPEN+120_000]
+        for bar in tape()[3:]:
+            instance.clock = lambda b=bar: b.ts+60_000
+            await instance.on_minute_bar("HOOD", bar)
+        state = (await repo.load("r1"))["state"]
+        assert state["lastMinute"] == tape()[-1].ts and not state.get("observationError")
+        assert state["phase"] == "signalled"
+    finally:
+        await instance.stop()
+
+
+async def test_saved_stub_minute_is_dropped_on_the_next_bar(repo, monkeypatch):
+    instance = await observer(repo, monkeypatch)
+    try:
+        async with repo.engine.sf() as session, session.begin():
+            row = await repo._locked(session, "r1")
+            row.state = {**row.state, "day": "2026-05-05",
+                         "minutes": {str(OPEN+53_000): [OPEN+53_000, 48.6, 48.6, 48.6, 48.6, 0, "exchange"]}}
+        for bar in tape():
+            instance.clock = lambda b=bar: b.ts+60_000
+            await instance.on_minute_bar("HOOD", bar)
+        state = (await repo.load("r1"))["state"]
+        assert all(int(k) % 60_000 == 0 for k in state["minutes"])
+        assert state["phase"] == "signalled"
+    finally:
+        await instance.stop()
+
+
+async def test_refused_entry_input_is_shown_on_the_plan_not_raised(repo, monkeypatch):
+    instance = await observer(repo, monkeypatch)
+    try:
+        bad = replace(tape()[0], high=48.0)   # high below the open: the read refuses the candle
+        instance.clock = lambda: OPEN + 60_000
+        await instance.on_minute_bar("HOOD", bad)
+        state = (await repo.load("r1"))["state"]
+        assert state["observationError"].startswith("Entry read refused its inputs")
+        assert state.get("lastMinute") is None and state["signal"] is None
+        detail = instance.detail("r1")
+        assert detail["needsAttention"] and detail["status"] == "armed"
+    finally:
+        await instance.stop()

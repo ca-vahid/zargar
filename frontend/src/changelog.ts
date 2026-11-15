@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.27";
+export const APP_VERSION = "0.9.52";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,93 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.52",date:"2026-11-14",title:"Standing orders polish",items:[
+    {tag:"fixed",text:"Standing orders: the check / cancel links no longer break the row lines."},
+  ]},
+  {version:"0.9.51",date:"2026-11-14",title:"Standing orders page redesign",items:[
+    {tag:"improved",text:"Standing orders page redesigned to match the app: broker logos, symbol icons, BUY/SELL markers, status pills, a clear real-money switch, a one-step confirm for arming a plan, a risk-check preview per order, and history tucked away."},
+  ]},
+  {version:"0.9.50",date:"2026-11-14",title:"Standing orders",items:[
+    {tag:"new",text:"Standing orders: tell Claude your plan, review it on the new Standing orders page and arm it with one click - the app waits for the trigger, prices a limit off the live quote, re-prices an unfilled order inside your cap and sets your take-profit / stop-loss after a buy. Real accounts also need your own switch on that page."},
+  ]},
+  {version:"0.9.49",date:"2026-11-09",title:"Shorter engine pauses",items:[
+    {tag:"improved",text:"The engine no longer pauses ~2.5 s during the session to clean up memory: long-lived state is set aside after startup and each night, so session clean-ups are about 40x faster."},
+  ]},
+  {version:"0.9.48",date:"2026-11-03",title:"A stop with nothing left to protect closes the record",items:[
+    {tag:"fixed",text:"When a research book no longer holds the shares a stop protects, the position record now closes instead of retrying the stop twice a minute (DX on a Scout book, 11-03)."},
+  ]},
+  {version:"0.9.47",date:"2026-11-02",title:"One venue stop per position",items:[
+    {tag:"fixed",text:"A held position can no longer end up with two resting stop orders: the stop is placed once even when the watch loop and the entry both try at the same moment (ZS on the Scout screen book, 10-29)."},
+  ]},
+  {version:"0.9.46",date:"2026-10-30",title:"Discord intake no longer stalls on edits",items:[
+    {tag:"fixed",text:"The Discord mirror no longer fails a whole batch when a message and its edit arrive at the same moment, which had stalled tip intake and dropped messages."},
+  ]},
+  {version:"0.9.45",date:"2026-10-30",title:"One Scout paper position per stock",items:[
+    {tag:"fixed",text:"The IBKR paper account holds at most one Scout position per stock: when the agent and the screen pick the same name (GILD on 10-30), only one paper entry is made."},
+  ]},
+  {version:"0.9.44",date:"2026-10-29",title:"The Scout daily report works with the paper-account lane",items:[
+    {tag:"fixed",text:"The 16:30 ET Scout report no longer fails once the paper-account lane has trades (it crashed on 10-29 reading the lane's name)."},
+  ]},
+  {version:"0.9.43",date:"2026-10-27",title:"Scout's picks trade the IBKR paper account",items:[
+    {tag:"new",text:"Scout's agent and screen picks now also trade the IBKR paper account (paper only, never real money): up to 3 positions of about $700 each, 1% risk at the plan's stop, with a GTC stop at IBKR overnight. It shows as the 'Paper account' lane on the Scout page."},
+  ]},
+  {version:"0.9.42",date:"2026-10-27",title:"A real buy is never folded into an earlier 'looking at' message",items:[
+    {tag:"fixed",text:"A source's actual buy is now appraised as its own tip even when the same contract was mentioned minutes earlier in a message that was not a trade. On 10-27 eva's SPY 774C buy at 1.86 was merged into her 'looking at the 774c' post and never appraised."},
+  ]},
+  {version:"0.9.41",date:"2026-10-26",title:"The pre-open feed check no longer fails on a good feed",items:[
+    {tag:"fixed",text:"The 09:00 ET feed self-test asks for five days of SPY bars instead of one. Before the open a one-day request sometimes came back empty, so the test failed on 10-21 and 10-26 while data was flowing normally."},
+  ]},
+  {version:"0.9.40",date:"2026-10-22",title:"Scout's screen lane no longer runs out of cash",items:[
+    {tag:"fixed",text:"Scout's screen lane sizes each position to fit every position it holds at once (3 a day for 10 sessions), so new picks are no longer skipped for cash (ISRG, CVX and NOW were skipped on 10-22)."},
+  ]},
+  {version:"0.9.39",date:"2026-10-21",title:"Scout's agent picks get a real chance to fill",items:[
+    {tag:"improved",text:"A Scout agent limit buy is now worked from 10:00 to 15:30 ET for up to three sessions (it was tried only until 11:30 on the first day; 3 of 18 picks filled). Its random twin follows the same rule, and a late fill still exits on the plan's original date."},
+    {tag:"improved",text:"The Scout agent may propose up to five trades a day (was three)."},
+  ]},
+  {version:"0.9.38",date:"2026-10-21",title:"A short-dated option tip traded as shares always carries a stop",items:[
+    {tag:"fixed",text:"A tip on an option expiring within 3 days that a book trades as shares (the IBKR paper book is shares-only) now gets the normal share stop. Before, the card went out with no stop (AAPL, 10-21)."},
+  ]},
+  {version:"0.9.37",date:"2026-10-15",title:"Quieter data alerts during a provider outage; the emergency restart works after a failed deploy",items:[
+    {tag:"fixed",text:"During a market-data outage the app no longer announces \"stream recovered\" every 90 seconds: only real quotes, trades and bars count as the stream being up."},
+    {tag:"fixed",text:"The emergency restart no longer refuses to run when an earlier deploy left an expired handoff behind (it blocked a restart on 10-15 while data was stale)."},
+  ]},
+  {version:"0.9.36",date:"2026-10-15",title:"Market data reconnects itself when the stream goes quiet",items:[
+    {tag:"fixed",text:"When the Alpaca market-data stream stayed open but stopped sending data, the app never reconnected: armed plans waited on stale bars until a restart (13:00 ET on 10-15). The stream now reconnects by itself after 90 seconds of silence during market hours, or 30 seconds without a successful sign-in."},
+  ]},
+  {version:"0.9.35",date:"2026-10-14",title:"Scout: a research agent that finds and proposes trades on its own",items:[
+    {tag:"new",text:"Scout now has a research agent. Each session morning it reads the market through tools (chart numbers, company filings, options-implied moves, earnings dates, its own past trades), proposes up to three swing trades with a stop, targets and a holding period, and trades them on simulated research books. Code checks every proposal and sets the size; nothing reaches a broker."},
+    {tag:"new",text:"Fair comparisons run beside it: the same research by a second model, a random stock with the same plan shape for every pick, and the screen's top names on a fixed plan. A scoreboard and a graduation gate (40 closed trades, 8 weeks, beating the random picks) show whether it has an edge."},
+    {tag:"new",text:"A weekly review turns closed trades into lessons, each backed by at least two trades, used from the following week. Scout > Agent shows the runs, every proposal with the evidence it quoted, the trades and the lessons."},
+  ]},
+  {version:"0.9.34",date:"2026-10-13",title:"Platform: the latest-print row from the data feed is no longer taken as a candle",items:[
+    {tag:"fixed",text:"Armed plans no longer receive a false one-minute candle on thinly traded stocks. The backup data feed adds a row for the latest trade, stamped at its own second with no volume; when that trade was in an earlier minute the app treated it as a finished candle and then ignored that minute's real candle. Such rows are now dropped by the feed reader and by the in-memory price series."},
+  ]},
+  {version:"0.9.33",date:"2026-10-13",title:"Options Cartel: a plan armed after the open is watched properly",items:[
+    {tag:"fixed",text:"An Options Cartel plan armed after the market opened could pick up a broken price bar from memory and then never check a single candle for the rest of the day, with nothing on screen to say so. This happened to one plan on October 13 (it cost no trade: the price never came near its level). Such bars are now ignored, and a plan saved with one repairs itself on the next bar."},
+    {tag:"improved",text:"If an Options Cartel entry check ever rejects its price data again, the plan now shows the reason and is flagged as needing attention instead of failing silently."},
+  ]},
+  {version:"0.9.32",date:"2026-10-13",title:"Tips: a copied trim respects the book's minimum sell size",items:[
+    {tag:"fixed",text:"When a source trims and the book copies it, the sale now respects the book's minimum sell size. A trim too small for its own order is not sent, and the position is sold in one order later (the source's close, the target or the stop). A leftover too small to sell alone goes out with the trim. Before, the paper book sold $344 of SNAP under a $750 minimum and paid a second commission."},
+  ]},
+  {version:"0.9.31",date:"2026-10-13",title:"Realized profit after fees, and safer closing orders on Wealthsimple/Webull accounts",items:[
+    {tag:"fixed",text:"The Realized column on the positions table now shows the result after commissions. Before, it showed the price gain only, so every option round trip read about $2 per contract too high. Hover the number to see the price gain and the fees separately."},
+    {tag:"fixed",text:"On Wealthsimple/Webull (SnapTrade) accounts, one failed order-status check used to mark the broker as disconnected, which would have refused a closing order as well as new buys. A closing order is now always sent to the broker; new buys still wait until the status check works again."},
+    {tag:"improved",text:"Order-status checks on those accounts now run every 7 seconds instead of every 2, inside the broker connection's limit of 10 requests a minute, and stand down for as long as it asks when it says to slow down."},
+  ]},
+  {version:"0.9.30",date:"2026-10-12",title:"The Tips analyst reads the measured record",items:[
+    {tag:"new",text:"Every option tip in the archive is now priced on the contract's own traded prices under three fixed exit rules. The result: no source is profitable after costs, and the analyst's takes did no better than its skips."},
+    {tag:"improved",text:"The Tips analyst now gets that measured record on every run: the rates for all sources, for the tip's own source, its own take-versus-skip record and the cost arithmetic. A take must state what sets the tip apart from the losing record. The record is rebuilt every night; nothing is blocked."},
+  ]},
+  {version:"0.9.29",date:"2026-10-12",title:"Tips keeps score of its winners and losers",items:[
+    {tag:"new",text:"The daily Tips report now carries a win/loss record for each book over the last 14 days: wins, losses, average win and loss, the payoff ratio and how much of each trade's peak gain was kept."},
+    {tag:"new",text:"When a new idea arrives in a name a Tips book closed at a loss the same day, the app records it on the card and in the journal. Nothing is blocked; the record is there to show whether such re-entries lose before any rule is made."},
+  ]},
+  {version:"0.9.28",date:"2026-10-12",title:"Options Cartel: Practice trial restarted, and it can no longer be switched off by accident",items:[
+    {tag:"fixed",text:"Options Cartel stopped preparing plans on October 5 because it followed the shared Real orders switch, which was turned on for another desk's paper account. Cartel now has its own Practice/Live setting, so its Practice trial keeps running whatever that switch says. A fresh 20-session trial starts October 13."},
+    {tag:"new",text:"If Cartel's nightly preparation is ever disabled on a trading day, you get an alert (in the app, by push and on Telegram) instead of a silent skipped day."},
+    {tag:"fixed",text:"A held Cartel position's missed daily checks can now always be reviewed: checks missed before a later sale are recorded as superseded instead of blocking the review of every later day."},
+    {tag:"new",text:"One scorecard for the Cartel trial (closed trades only, after commissions, no paper gains), so the trial's result has a single agreed number."},
+  ]},
   {version:"0.9.27",date:"2026-10-12",title:"A close no longer gets stuck behind its own stop",items:[
     {tag:"fixed",text:"When the broker was logged out as a position was being closed, the request to cancel its resting stop was lost and the app forgot which stop it was. Every later attempt then saw that stop as already selling the shares and sent nothing, so the position stayed in closing. A close now asks again for any of its own stops still resting at the broker, including after a restart."},
   ]},

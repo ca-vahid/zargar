@@ -110,11 +110,12 @@ async def load_session_context(engine, plan, now, *, fetch=None):
     async with engine.sf() as session:
         rows = (await session.scalars(select(BarRow).where(BarRow.symbol == plan.symbol,
             BarRow.tf == '1m', BarRow.ts >= opens, BarRow.ts+60_000 <= now))).all()
-    tape = {r.ts: Bar(r.symbol, '1m', r.ts, r.open, r.high, r.low, r.close, r.volume, source=r.source) for r in rows}
+    tape = {r.ts: Bar(r.symbol, '1m', r.ts, r.open, r.high, r.low, r.close, r.volume, source=r.source) for r in rows
+            if r.ts % 60_000 == 0}
     cached = await read_cache(engine, plan.symbol, '1m', 'cartel-session-recovery:v1', now)
     if cached:
         for b in cached_bars(cached, plan.symbol, '1m'):
-            if opens <= b.ts and b.ts+60000 <= now and (b.ts not in tape or trusted(b) and not trusted(tape[b.ts])):
+            if b.ts % 60_000 == 0 and opens <= b.ts and b.ts+60000 <= now and (b.ts not in tape or trusted(b) and not trusted(tape[b.ts])):
                 tape[b.ts] = b
     expected = range(opens, now//60_000*60_000, 60_000)
     simulated = getattr(getattr(engine, 'config', None), 'quote_source', None) == 'sim'

@@ -351,3 +351,12 @@ are 3x the pool; with the entry rule unchanged they gave 8 trades, +5.52R, but o
 roughly neutral otherwise. Practice now runs dry-up `ratio_v1` 1.5x plus a 0.95 minute-liquidity screen (0.8.53) for
 a preregistered 20-session sample from 09-28; decision table in `reviews/2026-09-24-sharp-pencil/PLAN.md` section 9
 (< 8 trades or net <= 0 after fees = stop development).
+
+## October 12: trial interrupted by a shared switch; restarted 10-13 with a written score
+
+The 09-28 sample ran six sessions: the shared `trading.mode=live` (10-03, for the Tips paper book) pointed Cartel at
+an empty Live policy and preparation was silently disabled 10-05..10-12. Result on those six sessions: 1 entry (DHT),
+0 closed trades; +$1,094 marked, of which $37.92 is realized after fees - not a verdict. A fresh 20 sessions start
+2026-10-13 with the same thresholds and one authoritative score (`tools/cartel_scorecard.py`; closed campaigns only,
+net of commissions, no marks). Record: `reviews/2026-09-24-sharp-pencil/PLAN.md` section 10. Venue for eventual real
+money: Webull Canada (user decision); live stays off until the staged gates pass.

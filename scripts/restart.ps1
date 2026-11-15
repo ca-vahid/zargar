@@ -61,6 +61,20 @@ $handoff = $null
 $handoffManifest = $null
 if (Test-Path -LiteralPath $handoffPath) {
   $handoff = Get-Content -LiteralPath $handoffPath -Raw | ConvertFrom-Json
+  # 2026-10-15: a deploy whose restoration check failed left its handoff behind; once it expired, the emergency door
+  # (ZargarRestartOverride = restart.ps1 -Force) refused every restart while market data was stale. A -Force restart
+  # with NO handoff file already restarts the checkout as it stands, so an EXPIRED handoff is archived and the forced
+  # restart proceeds exactly as if it were absent. deploy.ps1 still refuses on an expired handoff (Assert-ZargarHandoff).
+  $handoffExpired = $false
+  try { $handoffExpired = [DateTimeOffset]::Parse($handoff.expiresAt) -le [DateTimeOffset]::UtcNow } catch { }
+  if ($handoffExpired -and $Force) {
+    $archived = Join-Path $Root ('logs/deployment-pending.expired-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.json')
+    Move-Item -LiteralPath $handoffPath -Destination $archived -Force
+    Write-Host ('> Expired deployment handoff archived to ' + $archived + '; forced restart of the checkout as it stands')
+    $handoff = $null
+  }
+}
+if ($handoff) {
   # KFIN-04: clean reviewed source AND the manifest of the COMPLETE built artifact (every file under
   # frontend/dist), not only HEAD and dist/index.html; a refusal is a terminal 'failed' on the receipt
   try { $handoffManifest = Assert-ZargarHandoff $Root $handoff $Expect }

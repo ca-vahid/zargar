@@ -698,13 +698,13 @@ class DossierDesk:
             log.exception("scout dossier %s failed", ticker)
             await self._update(did, status="error", reason=f"{type(exc).__name__}: {str(exc)[:400]}")
 
-    async def _build(self, did: str, ticker: str, day: str) -> None:
-        from ... import events as ev
+    async def gather(self, ticker: str, day: str) -> dict:
+        """The fact sheet for `ticker` as of `day`, without the model call (also the Scout agent's
+        `fundamentals` tool). {"error": why} when the SEC has no filer for the ticker."""
         hit = await self.cik_for_ticker(ticker)
         if hit is None:
-            await self._update(did, status="error", reason=f"{ticker} is not in the SEC's company list (funds and "
-                                                           f"foreign-only listings have no filings to read)")
-            return
+            return {"error": f"{ticker} is not in the SEC's company list (funds and foreign-only listings have no "
+                             f"filings to read)"}
         cik, title = hit
         today = dt.date.fromisoformat(day)
         subs = await self.svc._submissions(cik)
@@ -745,6 +745,17 @@ class DossierDesk:
                                    f"{res8k['accession'].replace('-', '')}/{res8k['accession']}-index.htm"}
         sources = {"release": rel_meta, "releaseText": release,
                    "edgar": f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={int(cik)}&type=&dateb=&owner=include&count=40"}
+        return {"cik": str(cik), "profile": profile, "sheet": sheet, "charts": charts, "release": release,
+                "sources": sources}
+
+    async def _build(self, did: str, ticker: str, day: str) -> None:
+        from ... import events as ev
+        g = await self.gather(ticker, day)
+        if g.get("error"):
+            await self._update(did, status="error", reason=g["error"])
+            return
+        cik, profile, sheet, charts, release, sources = (g["cik"], g["profile"], g["sheet"], g["charts"],
+                                                         g["release"], g["sources"])
         base = dict(cik=str(cik), name=profile["name"], facts=[f.to_dict() for f in sheet.facts], charts=charts,
                     sources=sources, prompt_version=PROMPT_VERSION)
         model, _effort, max_tokens = self._cfg()

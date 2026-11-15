@@ -392,7 +392,12 @@ class OrderManager:
                 order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
                 reject_reason=f"trading.mode={mode} blocks orders on a '{kind}' portfolio")
         executor = self._executor_for(portfolio)
-        if executor is None or not executor.connected:
+        # 2026-10-13: a venue whose health flag is only "the last status poll failed" (SnapTrade: stateless HTTP,
+        # rate-limited polls) opts in to still being handed a CLOSING order - a throttled poll must never trap a
+        # held position. The submit itself reports a real refusal. Entries keep the strict check.
+        degraded_exit = (intent.reduce_only and executor is not None
+                         and getattr(executor, "exits_when_degraded", False))
+        if executor is None or not (executor.connected or degraded_exit):
             return await self._transition(
                 order.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
                 reject_reason=f"no connected execution venue for '{kind}' portfolio")

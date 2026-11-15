@@ -11,10 +11,10 @@ from .conftest import make_test_config, wait_for
 from .test_tip_geometry_wiring import _quote
 
 
-async def _adopt(eng, sym: str, *, qty: int, stop: float) -> dict:
+async def _adopt(eng, sym: str, *, qty: int, stop: float, technique: str = "tip") -> dict:
     q = await _quote(eng, sym)
     pid = next(p["id"] for p in eng.positions.portfolios() if p["kind"] == "sim")
-    spec = {"portfolioId": pid, "symbol": sym, "direction": "long", "techniqueId": "tip",
+    spec = {"portfolioId": pid, "symbol": sym, "direction": "long", "techniqueId": technique,
             "entry": q.last, "risk": max(q.last - stop, 0.01),
             "legs": [{"symbol": sym, "secType": "STK", "qty": qty, "avgFill": q.last, "origin": "adoption"}],
             "overnight": "venue_stop",
@@ -65,5 +65,78 @@ async def test_venue_stop_resizes_after_a_trim_and_survives_a_restart(fresh_db):
         assert mgr._order_index.get(stop_id) == pos["id"], "the venue stop must reach the position after a restart"
         p3 = mgr.get(pos["id"])
         assert p3.venue_stop_qty == 60.0
+    finally:
+        await eng.stop()
+
+
+async def test_concurrent_venue_stop_passes_rest_one_stop(fresh_db):
+    """ZS 2026-10-29 (a Scout position - Tips positions already hold the
+    serialized_adapter guard): the watch loop re-ran the venue-stop pass while
+    open()'s pass was still placing; both saw no stop id and BOTH rested a
+    full-size GTC stop (on a real book: two sells for one lot)."""
+    import asyncio
+    eng = Engine(make_test_config())
+    await eng.start()
+    await attach_signal_layer(eng)
+    try:
+        mgr = eng.position_manager
+        q = await _quote(eng, "VDUP")
+        pos = await _adopt(eng, "VDUP", qty=10, stop=round(q.last * 0.9, 2), technique="scout")
+        p = mgr.get(pos["id"])
+        first = p.venue_stop_order_id
+        assert first
+        # the resting stop is lost (e.g. the executor dropped it): two passes race to re-place it
+        await eng.orders.cancel(first)
+        p.venue_stop_order_id, p.venue_stop_at, p.venue_stop_qty = None, None, None
+        real_place = eng.orders.place
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def held_place(intent, *a, **kw):      # the first placement is still at the venue...
+            if not entered.is_set():
+                entered.set()
+                await release.wait()
+            return await real_place(intent, *a, **kw)
+
+        eng.orders.place = held_place
+        try:
+            first_pass = asyncio.create_task(mgr._ensure_venue_stop(p))
+            await asyncio.wait_for(entered.wait(), 5)
+            second_pass = asyncio.create_task(mgr._ensure_venue_stop(p))   # ...when the watch loop runs
+            loop = asyncio.get_running_loop()
+            for _ in range(20):                       # real turns of the loop: the second pass runs now
+                fut = loop.create_future()
+                loop.call_soon(fut.set_result, None)
+                await fut
+            release.set()
+            await asyncio.gather(first_pass, second_pass)
+        finally:
+            eng.orders.place = real_place
+        stops = await _venue_stops(eng, "VDUP")
+        live = [o for o in stops if o.status in ("SUBMITTED", "ACCEPTED", "WORKING")]
+        assert len(live) == 1 and live[0].id == p.venue_stop_order_id, [(o.id[:8], o.status) for o in stops]
+        assert getattr(mgr, "_venue_stop_busy", {}) == {}
+    finally:
+        await eng.stop()
+
+
+async def test_a_stop_refused_for_an_empty_shadow_book_closes_the_stale_record(fresh_db):
+    """DX 2026-11-03: a doubled stop sold the lot; the tracked stop was cancelled and every re-placement was
+    refused ("shadow book holds no lot to sell") twice a minute. The record must close, not loop."""
+    eng = Engine(make_test_config())
+    await eng.start()
+    await attach_signal_layer(eng)
+    try:
+        mgr = eng.position_manager
+        q = await _quote(eng, "VEMP")
+        pos = await _adopt(eng, "VEMP", qty=5, stop=round(q.last * 0.9, 2), technique="scout")
+        p = mgr.get(pos["id"])
+        stop_id = p.venue_stop_order_id
+        assert stop_id
+        await mgr.on_order_update({"id": stop_id, "symbol": "VEMP", "status": "REJECTED_RISK",
+                                   "rejectReason": "shadow book holds no lot to sell (no phantom short)"})
+        p = mgr.get(pos["id"])
+        assert p is None or p.status == "closed", (p.status, p.venue_stop_order_id)
+        stops = await _venue_stops(eng, "VEMP")
+        assert len(stops) == 1, [(o.id[:8], o.status) for o in stops]     # nothing re-placed
     finally:
         await eng.stop()

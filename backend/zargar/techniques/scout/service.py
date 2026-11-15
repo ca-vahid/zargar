@@ -72,6 +72,8 @@ class ScoutService:
         self.desk = ScoutDesk(self)
         from .dossier import DossierDesk
         self.dossier = DossierDesk(self)
+        from .agent import AgentDesk             # PLAN section 9: the research agent (simulated books only)
+        self.agent = AgentDesk(self)
 
     # ------------------------------------------------------------------ settings
     def s(self, key: str, default=None):
@@ -108,10 +110,12 @@ class ScoutService:
         at = str(self.s("daily_at", "07:00"))
         self.engine.scheduler.register("scout_daily", at, self._scheduled)
         self.desk.start()
+        self.agent.start()
 
     async def stop(self) -> None:
         self.engine.scheduler.unregister("scout_daily")
         self.desk.stop()
+        self.agent.stop()
 
     async def _scheduled(self):
         if not bool(self.s("daily_enabled", True)):
@@ -580,6 +584,8 @@ class ScoutService:
             q = select(ScoutCandidate).where(ScoutCandidate.signal_date >= lo)
             if kind:
                 q = q.where(ScoutCandidate.kind == kind)
+            else:                                # the agent's picks have their own view (Scout > Agent)
+                q = q.where(ScoutCandidate.kind.notin_(("agent_pick", "agent_random", "agent_screen")))
             rows = (await s.execute(q.order_by(ScoutCandidate.signal_ts.desc()))).scalars().all()
         out = [candidate_dict(r) for r in rows]
         ids = [c["id"] for c in out]

@@ -581,4 +581,10 @@ entry-grid replay (`tools/cartel_entry_grid.py [--near-miss]`, read-only; run un
 (5m pilot NOT activated). A PREREGISTERED 20-session Practice experiment runs from 2026-09-28: dry-up `ratio_v1` 1.5x,
 `minMinuteCoverage` 0.95 (C0 screen), `minArmTargetR` 0.5 - fewer than 8 trades or net <= 0 after fees stops
 development (`reviews/2026-09-24-sharp-pencil/PLAN.md` §9). Don't tune its thresholds mid-sample.
+**Cartel 2026-10-12 (0.9.28):** the 09-28 sample was INTERRUPTED (shared `trading.mode=live` silently disabled
+preparation 10-05..10-12) and RESTARTED for 20 sessions from 2026-10-13 (PLAN §10). Cartel's lane is its own setting
+`techniques.options_cartel.workspace` (never derive it from `trading.mode` alone); a disabled preparation alerts. The
+trial's score is ONE tool: `python -m zargar.tools.cartel_scorecard` (closed campaigns, net of commissions, no marks).
+Real money = Webull Canada via SnapTrade when the staged gates pass (no SnapTrade order has ever been sent; a held
+option has no broker stop); `techniques.options_cartel.allow_live_auto` is the user's explicit go only.
 

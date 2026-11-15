@@ -38,6 +38,16 @@ Definitions and user instructions: [profitability protocol](PROFITABILITY-RESEAR
 - Consistent source-qualified coverage for all observation-pool members, including illiquid names.
 - Prospective net option outcomes, concentration/capital competition and a later holdout period.
 - Source-example calibration and broker-specific Live acceptance; no automatic strategy graduation.
+- **A confirmation candle is refused when one of its last three minutes has no exchange bar by the
+  candle's close (measured 2026-10-13).** The provider check only probes a minute once it is 3 minutes
+  old and a closed candle is never re-read, so a late or never-emitted minute in that tail makes the
+  candle `untrusted_confirmation` for good. Day 1 of the restarted trial: 9 of about 78 full-session
+  candles on A, OLLI and RBRK (none would have passed the 1.5x volume rule: best ratio 1.13). Left
+  unchanged during the 20-session sample; count it in each daily review before deciding anything.
+- A plan armed after the open used to seed provider stub bars (zero volume, off-the-minute stamp) from
+  the in-memory series and then refuse every entry read silently (PANW, 2026-10-13, no trade lost).
+  Fixed in 0.9.33: stubs are ignored at every intake, saved ones are dropped on the next bar, and a
+  refused read shows on the plan as needing attention.
 
 Historical checks and deployments stay in dated evidence records, including
 [September 13 readiness](archive/2026-09/READINESS-2026-09-13.md) and

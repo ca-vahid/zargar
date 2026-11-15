@@ -230,6 +230,35 @@ async def test_hostile_regime_is_journaled_as_a_shadow(rig):
     assert ev and ev[-1]["regime"]["vix"] == 32.0
 
 
+async def test_a_new_idea_in_a_name_closed_at_a_loss_today_is_journaled_not_blocked(rig):
+    eng = rig
+    await eng.settings.set("techniques.tip.geometry_gate", "off", journal=False)
+    pid = _book(eng)
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    q = await _quote(eng, "RENA")
+    # a winner closed today and an old loser never count
+    await _held(eng, pid, "REWN", status="closed", realized=40.0, closed_ms=now - 60_000, close_reason="target")
+    await _held(eng, pid, "REOL", status="closed", realized=-40.0, closed_ms=now - 5 * 86_400_000, close_reason="stop hit")
+    for sym in ("REWN", "REOL"):
+        qq = await _quote(eng, sym)
+        r0, s0 = await _tip(eng, sym, qq.last, stop_pct=3.0)
+        p0 = await eng.proposals.create_from_signal(r0, s0, {})
+        assert "reentry" not in (p0["context"].get("guards") or {})
+    assert not await _events(eng, "TipReentryShadow")
+    lost = await _held(eng, pid, "RENA", status="closed", realized=-25.0, closed_ms=now - 60_000, close_reason="stop hit")
+    row, sig = await _tip(eng, "RENA", q.last, stop_pct=3.0)
+    p = await eng.proposals.create_from_signal(row, sig, {})
+    assert p is not None and p["qty"] >= 1                                  # observe only: the card is still minted
+    re = p["context"]["guards"]["reentry"]
+    assert re["applied"] is False and re["prior"][0]["positionId"] == lost and re["prior"][0]["stopExit"]
+    ev = await _events(eng, "TipReentryShadow")
+    assert len(ev) == 1 and ev[0]["signalId"] == row.id and ev[0]["prior"][0]["realizedPnl"] == -25.0
+    await eng.settings.set("techniques.tip.reentry_guard", "off", journal=False)
+    row2, sig2 = await _tip(eng, "RENA", q.last, stop_pct=3.0)
+    p2 = await eng.proposals.create_from_signal(row2, sig2, {})
+    assert "reentry" not in (p2["context"].get("guards") or {}) and len(await _events(eng, "TipReentryShadow")) == 1
+
+
 async def test_prefetch_seeds_the_decision_time_context_line(rig):
     eng = rig
     from zargar.techniques.tip import prefetch as PF
@@ -271,3 +300,21 @@ async def test_morning_report_carries_the_tips_block(rig):
     c = tb["closed"][0]
     assert c["r"] == 2.0 and c["peakR"] == 2.0 and c["mfeKept"] == 1.0
     assert tb["stopOuts"] == 1 and tb["noiseStopOuts"] == 1 and tb["noiseUnknown"] == 0
+
+
+async def test_measured_record_is_read_from_the_journal_and_can_be_switched_off(rig):
+    """2026-10-12: the analyst's header block comes from the latest journaled snapshot; off = no block; a desk
+    with no option feed never builds one."""
+    from zargar.techniques.tip import record as R
+
+    from .test_tip_measured_record import _option_rep, _source_rep
+    eng = rig
+    assert await R.header_block(eng, "room") == ""
+    await eng.journal.append(R.EVENT, R.compact(_option_rep(), _source_rep(), as_of="2026-10-12T22:00:00+00:00",
+                                                supply_since=None), aggregate_type="tip", aggregate_id="measured-record")
+    setattr(eng, R._CACHE_ATTR, None)                      # a restart: the cache is rebuilt from the journal
+    assert (await R.header_block(eng, "room")).startswith("MEASURED RECORD")
+    await eng.settings.set("techniques.tip.measured_record", "off", journal=False)
+    assert await R.header_block(eng, "room") == ""
+    await eng.settings.set("techniques.tip.measured_record", "supply", journal=False)
+    assert await R.refresh(eng) is None and len(await _events(eng, R.EVENT)) == 1

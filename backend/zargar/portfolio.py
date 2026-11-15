@@ -95,6 +95,15 @@ class PositionKeeper:
                     "realizedPnl": pos.realized_pnl,
                     "currency": currency_for_symbol(pos.symbol),
                 }
+            # commissions paid per holding, from the fills themselves (realizedPnl is stored before fees)
+            from sqlalchemy import func
+            from .models import Execution
+            for pid, symbol, fees in (await session.execute(
+                    select(Execution.portfolio_id, Execution.symbol, func.sum(Execution.commission))
+                    .group_by(Execution.portfolio_id, Execution.symbol))).all():
+                for (ppid, sym, _st), held in self._positions.items():
+                    if ppid == pid and sym == symbol:
+                        held["feesPaid"] = float(fees or 0.0)
 
     def register_portfolio(self, p: Portfolio, *, venue: str = "ibkr") -> None:
         self._portfolios[p.id] = {
@@ -262,6 +271,10 @@ class PositionKeeper:
             "currency": self._pos_currency(pos),
             "last": round(last, 4),
             "marketValue": round(pos["qty"] * last * mult, 2),  # native currency
+            # realizedPnl is price-only; realizedNet takes off every commission paid on this holding
+            # (entry fees of contracts still open included), so it is what the cash actually kept.
+            "feesPaid": round(pos.get("feesPaid", 0.0), 2),
+            "realizedNet": round(pos["realizedPnl"] - pos.get("feesPaid", 0.0), 2),
             "unrealizedPnl": round(unreal, 2),
             "unrealizedPnlPct": round(
                 (last / pos["avgCost"] - 1) * 100 * (1 if pos["qty"] >= 0 else -1), 2)
@@ -403,6 +416,7 @@ class PositionKeeper:
                 pos["qty"] = new_qty  # partial close keeps avg cost
             else:
                 pos["qty"], pos["avgCost"] = new_qty, price  # crossed through flat
+        pos["feesPaid"] = pos.get("feesPaid", 0.0) + commission
         self._positions[key] = pos
 
         pf = self._portfolios.get(portfolio_id)

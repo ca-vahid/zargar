@@ -285,6 +285,8 @@ class BarAggregator:
     def seed(self, symbol: str, bars: list[Bar]) -> None:
         dq = self._bars[symbol]
         for b in bars:
+            if b.tf == "1m" and b.ts % MINUTE_MS:
+                continue                     # 2026-10-13: an off-the-minute stub is never a candle (memory == storage)
             dq.append(b)
         # R9 (2026-09-09): never pretend the cumulative counter was 0 — the first quote after a seed
         # establishes the baseline (delta 0), otherwise a 10M session total became one minute's volume
@@ -297,8 +299,8 @@ class BarAggregator:
         the in-memory bar for that minute (or appends a minute we missed) and
         republishes so live consumers re-read accurate history; the still-forming
         minute is never touched, and same-minute DB writes conflict-ignore."""
-        if bar.tf != "1m" or bar.close <= 0:
-            return
+        if bar.tf != "1m" or bar.close <= 0 or bar.ts % MINUTE_MS:
+            return                                   # 2026-10-13: persist_bars drops off-the-minute stubs; so does memory
         self._exchange_received[(bar.symbol, bar.ts)] = now_ms()
         if len(self._exchange_received) > 5000:
             self._exchange_received.pop(next(iter(self._exchange_received)))

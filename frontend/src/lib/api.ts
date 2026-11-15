@@ -160,6 +160,9 @@ export const api = {
   scoutDossier: (id: string) => request<import("../types").ScoutDossier>("GET", `/api/scout/dossiers/${id}`),
   scoutDossierRequest: (ticker: string, refresh = false) =>
     request<import("../types").ScoutDossier>("POST", "/api/scout/dossiers", { ticker, refresh }),
+  scoutAgent: () => request<import("../types").ScoutAgentView>("GET", "/api/scout/agent"),
+  scoutAgentRun: (id: string) => request<import("../types").ScoutAgentRun>("GET", `/api/scout/agent/runs/${id}`),
+  scoutAgentRunNow: () => request<{ started: boolean }>("POST", "/api/scout/agent/run"),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any, Callable
@@ -281,6 +282,13 @@ def dashed_uuid(hex_id: str) -> str:
     return str(uuid.UUID(hex=hex_id))
 
 
+def throttle_wait_seconds(body: Any, default: float = 15.0) -> float:
+    """Seconds to stand down after a 429 ("Request was throttled. Expected available in 7 seconds.")."""
+    detail = body.get("detail") if isinstance(body, dict) else body
+    found = re.search(r"available in (\d+(?:\.\d+)?) second", str(detail or ""))
+    return min(60.0, max(1.0, float(found.group(1)) + 1.0)) if found else default
+
+
 def exec_id_for(broker_order_id: str, cum_qty: float) -> str:
     """Deterministic executions PK: re-polling identical state can't double-insert."""
     return hashlib.sha256(f"snaptrade:{broker_order_id}:{cum_qty:g}".encode()).hexdigest()[:32]
@@ -328,6 +336,11 @@ class SnapTradeBroker(Executor):
         self._submit_locks: dict[str, asyncio.Lock] = {}
         self._task: asyncio.Task | None = None
         self._healthy = True
+        self._poll_not_before: dict[str, float] = {}  # account id -> monotonic ts (rate-limit backoff)
+
+    # `connected` here only means "the last status poll worked"; a closing order is still handed to the
+    # venue when it is false (OrderManager.place) - the submit call reports a real refusal by itself.
+    exits_when_degraded = True
 
     # ---------------------------------------------------------------- lifecycle
     async def start(self) -> None:
@@ -500,7 +513,8 @@ class SnapTradeBroker(Executor):
         the order was (as far as we can tell) never accepted, so reject.
         """
         window = float(self._settings.get("snaptrade.reconcile_seconds", 60))
-        poll_interval = min(2.0, max(0.05, window / 5))
+        poll_interval = min(float(self._settings.get("snaptrade.order_poll_seconds", 7.0)),
+                            max(0.05, window / 5))
         deadline = time.monotonic() + window
         while time.monotonic() < deadline:
             try:
@@ -649,7 +663,7 @@ class SnapTradeBroker(Executor):
     # ---------------------------------------------------------------- polling
     async def _poll_loop(self) -> None:
         while True:
-            interval = float(self._settings.get("snaptrade.order_poll_seconds", 2.0))
+            interval = float(self._settings.get("snaptrade.order_poll_seconds", 7.0))
             if not self._tracked:
                 await asyncio.sleep(max(interval, 1.0))
                 continue
@@ -665,12 +679,24 @@ class SnapTradeBroker(Executor):
         for t in self._tracked.values():
             by_account.setdefault(t.account_id, []).append(t)
         for account_id, tracked_list in by_account.items():
+            if time.monotonic() < self._poll_not_before.get(account_id, 0.0):
+                continue
             try:
                 payload = await self._client.request(
                     "GET", f"/api/v1/accounts/{account_id}/recentOrders",
                     params=_RECENT_ORDERS_PARAMS)
                 self._healthy = True
-            except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
+            except SnapTradeError as exc:
+                if exc.status == 429:
+                    # throttled is not disconnected: stand down for as long as the venue asks, keep routing
+                    wait = throttle_wait_seconds(exc.body)
+                    self._poll_not_before[account_id] = time.monotonic() + wait
+                    log.warning("recentOrders throttled for %s; next poll in %.0fs", account_id, wait)
+                    continue
+                log.warning("recentOrders failed for %s: %s", account_id, exc)
+                self._healthy = False
+                continue
+            except SnapTradeUnknownOutcome as exc:
                 log.warning("recentOrders failed for %s: %s", account_id, exc)
                 self._healthy = False
                 continue

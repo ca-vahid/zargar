@@ -16,6 +16,7 @@ class StubSnapTrade:
         self.place_response: dict = {"brokerage_order_id": "bo-1", "status": "PENDING"}
         self.place_error: int | Exception | None = None
         self.recent_error: Exception | None = None
+        self.recent_status: tuple[int, dict] | None = None  # e.g. (429, {"detail": "Request was throttled..."})
         self.cancel_response: dict = {"brokerage_order_id": "bo-1"}
         # options endpoints (/accounts/{id}/trading/options[/impact])
         self.option_place_response: dict = {"brokerage_order_id": "obo-1", "orders": []}
@@ -68,6 +69,8 @@ class StubSnapTrade:
         if path == "/api/v1/accounts":
             return httpx.Response(200, json=self.accounts)
         if path.endswith("/recentOrders"):
+            if self.recent_status is not None:
+                return httpx.Response(self.recent_status[0], json=self.recent_status[1])
             if self.recent_error is not None:
                 raise self.recent_error
             account_id = path.split("/")[4]

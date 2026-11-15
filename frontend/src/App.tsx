@@ -1,3 +1,4 @@
+import { StandingPage } from "./pages/StandingPage";
 import { useWorkspace } from "./lib/workspace";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Splash } from "./components/Splash";
@@ -163,6 +164,7 @@ export default function App() {
           {page === "options_cartel" && <Suspense fallback={<div className="state-note">loading…</div>}><OptionsCartelPage /></Suspense>}
           {page === "scout" && <Suspense fallback={<div className="state-note">loading…</div>}><ScoutPage /></Suspense>}
           {page === "armed" && <ArmedPage />}
+          {page === "standing" && <StandingPage />}
           {page === "watchlists" && <WatchlistsPage />}
           </PageErrorBoundary>
         </div>

@@ -2990,3 +2990,63 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   when the session's own 5m bars are absent (tests that feed raw 1m closing bars on future dates); raw bars decide
   from the second decision on (`last_tf_bar_ts`). Harmless live (the session's bars exist); a test that expects a stop
   on the first fed bar must feed one neutral bar first.
+
+### SnapTrade: a failed status poll never blocks a closing order; realized after fees - 2026-10-13 (Cartel desk, 0.9.31; shared `orders.py`, `brokers/snaptrade.py`, `portfolio.py`)
+
+- `OrderManager.place` still refuses an ENTRY when `executor.connected` is false. A reduce-only order is handed to an
+  executor that declares `exits_when_degraded = True` (SnapTrade only): its `connected` flag is "the last
+  `recentOrders` poll worked", which is not evidence the venue cannot take a close. IBKR and the simulator are unchanged.
+- A 429 on the poll is a stand-down for that account (`throttle_wait_seconds`, venue hint + 1 s, capped at 60 s), not a
+  disconnect. `snaptrade.order_poll_seconds` default 2.0 -> 7.0 (personal keys: 10 requests/minute/account); the
+  unknown-outcome reconcile polls at the same spacing. No SnapTrade order has ever been sent, so this is from the
+  documented limit and stub tests, not from the venue.
+- `positions.realized_pnl` stays price-only. The keeper also carries `feesPaid` per holding (summed from `executions` on
+  load, added on each fill) and ships `realizedNet = realizedPnl - feesPaid`; the Blotter shows the net figure. Managed
+  positions (`state.realizedPnl`, Armed/Portfolios screens) are still before fees - open.
+
+### The feed's latest-print row is never a candle - 2026-10-13 (Tips desk, 0.9.34; shared `brokers/yahoo.py`, `marketdata.py`)
+
+- **Finding.** Yahoo's chart response ends with a row for the latest PRINT, stamped at that print's own second, volume 0.
+  On a thin name the print sits in an EARLIER minute than now, so the "still-forming minute" check let it through as an
+  exchange bar. `BarAggregator.ingest_exchange_bar` appended and published it; an armed plan took it as a candle
+  (`last_bar_ts` moved to the stub) and then dropped that minute's real bar as older. Evidence: `TechniquePlanError`
+  "stale bars" with `lastBarTs` off the minute (PRQR 3 on 2026-10-13; CAVA, PYPL, XOP on 10-09), and the eight PANW stubs
+  the Cartel desk found the same day (its 0.9.33 filters them on its own side). `persist_bars` already dropped such rows,
+  so the table was clean and memory was not.
+- **Rule.** Memory follows storage: a 1m bar whose `ts` is not on the minute never enters `BarAggregator` (seed or
+  correction), and the Yahoo readers drop the latest-print row. A consumer may keep its own filter but need not.
+- **Not changed.** The stale-bars alarm itself (`stale_seconds` 180): on a thin name with no trades for three minutes it
+  is correct and only idles triggers.
+
+### One venue-stop pass per position at a time - 2026-11-02 (Tips desk, 0.9.47; shared `execution/positions.py`)
+- Finding: Scout's ZS on the Scout screen book (10-29) rested TWO full-size GTC stops 48 ms apart - the 2 s watch
+  loop's "missing venue stop" heal ran `_ensure_venue_stop` while `adopt()`'s pass was still awaiting `place`, so both
+  saw no stop id. Tips positions were already covered by `serialized_adapter`'s `position_guard`; other techniques
+  (Scout, anything without an adapter) were not. On 11-02 one stop filled, the tracked one was cancelled and the
+  manager re-placed a stop against an empty book twice a minute for 45 min (ShadowSellRefused) until the bar close
+  closed the record. 16 Scout research positions carried doubled stops; the IBKR paper book had none.
+- Rule: `_ensure_venue_stop` is single-flight per position for EVERY technique - a call that lands while a pass runs
+  marks it dirty and the running pass re-checks once with the settled state. On a real book a race like this would rest
+  two sells for one lot. Regression: `tests/test_position_venue_stop_resize.py::test_concurrent_venue_stop_passes_rest_one_stop`
+  (fails on the old code).
+- Follow-up 2026-11-03 (0.9.48): a venue stop REFUSED with "no lot to sell" (the shadow book's lot ledger holds none of the
+  symbol) closes the stale record (`venue_flat`) instead of re-placing every minute - DX on Scout S1U gpt keep looped 78
+  times from 09:58 ET, one of the 16 positions doubled before 0.9.47. Keyed on that refusal ONLY: a lagging live position
+  read must never close a record (a live position would lose its stop). Test: `test_a_stop_refused_for_an_empty_shadow_book_closes_the_stale_record`.
+
+### Cyclic GC is compacted off-hours and survivors are frozen - 2026-11-09 (Tips desk, 0.9.49; `zargar/gctune.py`, `api/app.py`)
+- Finding: two 2.6-2.7 s event-loop stalls in the 11-09 session (11:02 and 11:35 ET, loopwatch top frame
+  `_weakrefset._remove`) were CPython full (gen-2) collections walking the engine's ~1.5 GB long-lived heap. Nothing
+  in the app tuned GC. The 2 s quote stop watch / premium stop can act that much late; venue GTC stops are unaffected.
+- Rule: after startup and nightly at `ops.gc_compact_at` (20:00 ET, every day) the engine runs `gctune.compact()` =
+  unfreeze -> full collect -> `gc.freeze()`, so session collections walk only objects created since (benchmark: 0.69 s ->
+  0.017 s on a 3M-object heap). Unfreezing first means cycles that died after a freeze are collected the next night
+  (refcount frees are unaffected). Rollback `ops.gc_freeze=false`. Tests `tests/test_gctune.py`.
+
+### Standing orders: the user's armed order plans - 2026-11-14 (Tips desk, 0.9.50; `execution/standing.py`, `api/routes_standing.py`, `pages/StandingPage.tsx`)
+- New platform surface (not a technique): user order plans drafted by Claude, ARMED only by the user (per order or
+  one plan click, confirm phrase), real-money books additionally behind `execution.standing_orders.allow_live`
+  (default False, user's switch). Execution = DAY limits off the live quote inside the user's cap through
+  `OrderManager.place` (RiskGate, kill switch for buys, sells reduce-only), write-ahead `placing` state reconciled
+  from the `standing:<id>` order tag, cancel + re-price an unfilled limit up to `max_attempts`, filled buys adopted
+  by the position manager with the user's TP/SL. Guide: `docs/STANDING-ORDERS.md`. Tests: `tests/test_standing_orders.py`.

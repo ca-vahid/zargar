@@ -9,6 +9,11 @@ What gets pushed (subscribed off the bus, so the armer stays decoupled):
   technique.armed events     fired · position_open · exit_fill · entry_rejected · exit_failed
   proposals (pending)        a proposal waiting for approval
   system.halt                kill switch engaged
+
+Two transports share the one settings list (`mobile.push_subscriptions`):
+  web   `{endpoint, keys, label}` (no `kind`)            -> pywebpush / VAPID
+  expo  `{kind: "expo", token, endpoint: token, label}`  -> Expo's push service (the native Android app)
+Either works without the other: Expo tokens are sent with zero web subscriptions and without pywebpush.
 """
 from __future__ import annotations
 
@@ -16,7 +21,10 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 from typing import Any
+
+import httpx
 
 from . import bus as topics
 
@@ -31,6 +39,42 @@ except Exception:  # pragma: no cover
     WebPushException = Exception  # type: ignore
     Vapid = None  # type: ignore
     HAVE_PUSH = False
+
+# --- Expo (native app) ------------------------------------------------------
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+EXPO_TIMEOUT_S = 10.0          # a slow push service must never hold a bus tap for long
+EXPO_BATCH = 100               # Expo accepts at most 100 messages per request
+_EXPO_TOKEN = re.compile(r"^Expo(nent)?PushToken\[[^\[\]\s]{1,200}\]$")
+
+# The Android notification channels the app creates - exactly these four.
+CHANNELS = ("approvals", "trades", "alerts", "critical")
+
+
+def valid_expo_token(token: str) -> bool:
+    return bool(_EXPO_TOKEN.match(token or ""))
+
+
+def channel_for(tag: str | None, level: str = "info") -> str:
+    """Android channel for one push, derived from what every caller already passes.
+
+      approvals  proposal-<id> (a proposal waits) · card-<id> (a Tips card needs a human)
+      trades     armed-<runId> (fired, position open, exit filled, entry rejected, exit FAILED)
+      critical   halt · host-memory · incident* · anything else at level critical/error
+                 (plan/position alerts, IBKR link lost, intake stall page, clock skew)
+      alerts     everything else (warning/info technique alerts, the morning report, the test push)
+
+    The tag wins over the level, so a failed exit stays in `trades` and a card in `approvals`."""
+    t = (tag or "").lower()
+    if t.startswith(("proposal-", "card-")):
+        return "approvals"
+    if t.startswith("armed-"):
+        return "trades"
+    if t in ("halt", "host-memory") or t.startswith("incident"):
+        return "critical"
+    if (level or "").lower() in ("critical", "error"):
+        return "critical"
+    return "alerts"
+
 
 ARMED_EVENTS = {
     "fired": ("⚡ {symbol} fired", "{text}"),
@@ -74,24 +118,110 @@ class PushService:
         return (self._vapid() or {}).get("public")
 
     # ------------------------------------------------------------ subscriptions
-    def subscriptions(self) -> list[dict]:
+    def _entries(self) -> list[dict]:
+        """Every stored entry, both transports."""
         subs = self.engine.settings.get("mobile.push_subscriptions", []) or []
         return [x for x in subs if isinstance(x, dict) and x.get("endpoint")]
 
+    async def _store(self, entries: list[dict]) -> None:
+        await self.engine.settings.set("mobile.push_subscriptions", entries, journal=False)
+
+    def subscriptions(self) -> list[dict]:
+        """Web Push subscriptions (an entry without `kind` is a web one)."""
+        return [x for x in self._entries() if x.get("kind") != "expo"]
+
+    def expo_subscriptions(self) -> list[dict]:
+        return [x for x in self._entries() if x.get("kind") == "expo" and x.get("token")]
+
     async def subscribe(self, sub: dict, label: str = "") -> int:
-        subs = [x for x in self.subscriptions() if x.get("endpoint") != sub.get("endpoint")]
+        subs = [x for x in self._entries() if x.get("endpoint") != sub.get("endpoint")]
         subs.append({**sub, "label": label})
-        await self.engine.settings.set("mobile.push_subscriptions", subs, journal=False)
-        return len(subs)
+        await self._store(subs)
+        return len(self.subscriptions())
 
     async def unsubscribe(self, endpoint: str) -> int:
-        subs = [x for x in self.subscriptions() if x.get("endpoint") != endpoint]
-        await self.engine.settings.set("mobile.push_subscriptions", subs, journal=False)
-        return len(subs)
+        await self._store([x for x in self._entries() if x.get("endpoint") != endpoint])
+        return len(self.subscriptions())
+
+    async def subscribe_expo(self, token: str, label: str = "") -> int:
+        """Register (or re-label) one Expo push token. Raises ValueError on a malformed token."""
+        token = (token or "").strip()
+        if not valid_expo_token(token):
+            raise ValueError("not an Expo push token (expected ExponentPushToken[...] or ExpoPushToken[...])")
+        subs = [x for x in self._entries() if x.get("endpoint") != token]
+        subs.append({"kind": "expo", "token": token, "endpoint": token, "label": label or ""})
+        await self._store(subs)
+        return len(self.expo_subscriptions())
+
+    async def unsubscribe_expo(self, token: str) -> int:
+        await self._store([x for x in self._entries()
+                           if not (x.get("kind") == "expo" and x.get("endpoint") == token)])
+        return len(self.expo_subscriptions())
 
     # ------------------------------------------------------------------ sending
     async def send(self, title: str, body: str, *, url: str = "/armed", tag: str | None = None,
-                   level: str = "info") -> int:
+                   level: str = "info", channel: str | None = None) -> int:
+        """Fan one notification out to every subscription on both transports. Returns how many
+        were accepted. Never raises: a transport failure is logged and the other still sends.
+        `channel` (one of CHANNELS) overrides the Android channel derived from tag/level."""
+        if channel not in CHANNELS:
+            channel = channel_for(tag, level)
+        results = await asyncio.gather(
+            self._send_web(title, body, url=url, tag=tag, level=level),
+            self._send_expo(title, body, url=url, tag=tag, level=level, channel=channel),
+            return_exceptions=True)
+        total = 0
+        for r in results:
+            if isinstance(r, asyncio.CancelledError):
+                raise r
+            if isinstance(r, BaseException):
+                log.warning("push transport failed", exc_info=r)
+            else:
+                total += int(r)
+        return total
+
+    async def _post_expo(self, messages: list[dict]) -> list[dict]:
+        """POST one batch (<= EXPO_BATCH) to Expo; returns its tickets, one per message in order.
+        The one network call of the Expo transport - tests replace this method."""
+        async with httpx.AsyncClient(timeout=EXPO_TIMEOUT_S) as http:
+            r = await http.post(EXPO_PUSH_URL, json=messages,
+                                headers={"Accept": "application/json", "Content-Type": "application/json"})
+            r.raise_for_status()
+            data = r.json().get("data")
+        if isinstance(data, dict):          # a single-message request may answer with one ticket
+            data = [data]
+        return [t for t in (data or []) if isinstance(t, dict)]
+
+    async def _send_expo(self, title: str, body: str, *, url: str, tag: str | None, level: str,
+                         channel: str) -> int:
+        tokens = [x["token"] for x in self.expo_subscriptions()]
+        if not tokens:
+            return 0
+        messages = [{"to": t, "title": title, "body": body[:400], "priority": "high", "sound": "default",
+                     "channelId": channel, "data": {"url": url, "tag": tag, "level": level}} for t in tokens]
+        ok = 0
+        dead: list[str] = []
+        for i in range(0, len(messages), EXPO_BATCH):
+            batch = messages[i:i + EXPO_BATCH]
+            try:
+                tickets = await asyncio.wait_for(self._post_expo(batch), timeout=EXPO_TIMEOUT_S + 2)
+            except Exception as exc:
+                log.warning("expo push failed (%d message(s)): %r", len(batch), exc)
+                continue
+            for msg, ticket in zip(batch, tickets):
+                if ticket.get("status") == "ok":
+                    ok += 1
+                    continue
+                err = (ticket.get("details") or {}).get("error")
+                if err == "DeviceNotRegistered":      # the app was uninstalled / the token rotated
+                    dead.append(msg["to"])
+                log.warning("expo push refused (%s): %s", err, ticket.get("message"))
+        for token in dead:
+            with contextlib.suppress(Exception):
+                await self.unsubscribe_expo(token)
+        return ok
+
+    async def _send_web(self, title: str, body: str, *, url: str, tag: str | None, level: str) -> int:
         subs = self.subscriptions()
         if not subs or not HAVE_PUSH:
             return 0
@@ -124,9 +254,8 @@ class PushService:
 
     # ------------------------------------------------------------------ bus taps
     async def start(self) -> None:
-        if not HAVE_PUSH:
-            log.info("pywebpush not installed — web push disabled")
-            return
+        if not HAVE_PUSH:   # the bus taps still run: Expo tokens need no pywebpush
+            log.info("pywebpush not installed — web push disabled (Expo push still works)")
         self._tasks = [
             asyncio.create_task(self._technique_loop(), name="push-technique"),
             asyncio.create_task(self._proposal_loop(), name="push-proposals"),

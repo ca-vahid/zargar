@@ -6,7 +6,7 @@ import datetime as dt
 from ...marketstructure.aggregate import bar_session
 from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import session_bounds, session_date
-from .data_quality import evidence, merge
+from .data_quality import aligned, evidence, merge, usable
 from .preparation_readiness import load_session_context
 
 
@@ -107,7 +107,7 @@ async def repair_gaps(runtime, *, load=load_session_context):
                 opens, closes = session_bounds(session_date(now))
                 tape = dict(cached['state'].get('minutes',{}))
                 for b in bars:
-                    if b.symbol==cached['symbol'] and b.tf=='1m' and b.ts+60000<=now:
+                    if usable(cached['symbol'],b) and b.ts+60000<=now:
                         merge(tape,b)  # do not probe intervals whose native bars just arrived
                 candidates = [t for t in range(opens,min(closes,now//60000*60000),60000)
                               if t not in covered and (str(t) not in tape or len(tape[str(t)])<7 or tape[str(t)][6]!='exchange')]
@@ -123,10 +123,10 @@ async def repair_gaps(runtime, *, load=load_session_context):
                 if runtime.stopping or row.status != 'armed' or row.state['phase'] != 'waiting':
                     continue
                 state = row.state
-                minutes = dict(state.get('minutes', {}))
+                minutes = aligned(state.get('minutes', {}))
                 changed = 0
                 for b in bars:
-                    if b.symbol == row.symbol and b.tf == '1m' and b.ts+60_000 <= now:
+                    if usable(row.symbol, b) and b.ts+60_000 <= now:
                         changed += int(merge(minutes, b))
                 added = changed
                 recovered_at = runtime.clock()

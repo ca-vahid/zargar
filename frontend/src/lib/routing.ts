@@ -22,7 +22,7 @@ import type { Page } from "../store";
  */
 
 export const PAGES: Page[] = [
-  "dashboard", "trade", "options", "inbox", "technique", "flow", "team2", "options_cartel", "scout", "armed", "watchlists",
+  "dashboard", "trade", "options", "inbox", "technique", "flow", "team2", "options_cartel", "scout", "armed", "standing", "watchlists",
   "portfolios", "ledger", "journal", "settings",
 ];
 const OCC_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
@@ -37,7 +37,7 @@ export const PAGE_TABS: Partial<Record<Page, readonly string[]>> = {
   flow: ["reads", "brief"],
   team2: ["plans", "armed", "history", "validation"],
   options_cartel: ["plans", "armed", "history", "validation", "method", "settings", "desk"],
-  scout: ["candidates", "lanes", "dossier", "status"],
+  scout: ["agent", "candidates", "lanes", "dossier", "status"],
 };
 
 export interface RouteState {

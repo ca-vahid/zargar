@@ -54,6 +54,8 @@ async def drain_catchup(adapter, manager, p):
         if batch['cursor'] == len(batch['actions']):
             batch.update(status='complete', completedAt=manager.now_ms())
             context['missedCloses'] = sorted(set(context.get('missedCloses', []))-set(batch['review']['missedCloses']))
+            if not context['missedCloses']:  # the review is done; the flag must not outlive it
+                p.attention = [s for s in p.attention if not s.startswith('Recovered missed daily closes need execution review')]
         context['catchupReview'] = batch
         p.policy = {**p.policy, 'cartel': context}
         await manager._persist(p)  # fixed remaining targets precede all routing I/O

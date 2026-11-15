@@ -39,6 +39,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.options_cartel.method_lab": False,  # opt-in, non-ordering Practice experiments
     "techniques.options_cartel.profitability_research.candidate_cap": 50,
     "techniques.options_cartel.profitability_research.bearish_enabled": True,
+    # Cartel's own lane (practice | live). Live additionally needs trading.mode=live and allow_live_auto; another
+    # desk's "real orders" switch must never move Cartel between lanes (2026-10-12).
+    "techniques.options_cartel.workspace": "practice",
     "techniques.options_cartel.preparation": {},
     "techniques.options_cartel.preparation_live": {},
     "techniques.options_cartel.allow_live_auto": False,
@@ -307,6 +310,14 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.regime_vol_max": 25.0,          # V6.2: else SPY 126-session realised vol (% annualised) above this
     "techniques.tip.chase_filter": "observe",       # V6.3: off | observe (journal TipChaseShadow) | enforce (half size + time box 3 sessions)
     "techniques.tip.chase_threshold_pct": 2.0,      # V6.3: entry this % above the prior close = chased
+    "techniques.tip.reentry_guard": "observe",      # 2026-10-12: off | observe (journal TipReentryShadow: a new idea in a name a Tips book closed at a loss inside the cooldown); no enforce mode yet
+    "techniques.tip.reentry_cooldown_days": 1,      # 1 = the same ET day
+    "techniques.tip.measured_record": "supply",     # 2026-10-12: off | supply - the nightly replay's rates (all sources, this source, the analyst's own take-vs-skip) ride the analyst's header (techniques/tip/record.py); gates nothing
+    "techniques.tip.measured_record_at": "17:50",   # the nightly re-score (own process; weekdays)
+    "techniques.tip.measured_record_since": "2026-08-28",          # the archive's first day
+    "techniques.tip.measured_record_option_cost": 0.08,            # $ a share, both legs: slippage + fees
+    "techniques.tip.measured_record_supply_since": "2026-10-13",   # the first session the analyst read the record: the take-vs-skip split from here on is the check that supplying it helps
+    "techniques.tip.measured_record_timeout_seconds": 1200,
     "ibkr.portfolio_id": "",                        # the app portfolio that mirrors the connected IBKR account (balance + positions sync)
     "ibkr.sync_seconds": 60,                        # IBKR account sync cadence
     "ibkr.cash_currency": "USD",                    # the cash balance the book may spend (US stocks need USD; a CAD balance is not converted)
@@ -586,6 +597,53 @@ DEFAULTS: dict[str, Any] = {
     "techniques.scout.dossier_timeout_s": 240.0,
     "techniques.scout.dossier_budget_usd_day": 5.0,   # its OWN daily cap, apart from the analyst lanes' budget
     "techniques.scout.dossier_release_max_chars": 14000,  # results press release excerpt given to the model
+    # Scout AGENT (PLAN section 9, user decision 2026-10-14): a tool-using research agent proposes up to 3 long swing
+    # trades each morning for SIMULATED research books ($10k each, 1% risk per trade); code checks every proposal
+    # and sizes it; comparison lanes = GPT on the same tools, a random twin per Claude pick, the screen's top names.
+    # PREREGISTERED for the sample from agent_sample_start: do not tune mid-sample (gate: agent_score.py).
+    "techniques.scout.agent_enabled": True,
+    "techniques.scout.agent_at": "07:30",             # ET, before the 10:00-11:30 entry window
+    "techniques.scout.agent_review_at": "16:45",      # ET, the week's last session: lessons from closed cases
+    "techniques.scout.agent_claude_enabled": True,
+    "techniques.scout.agent_claude_model": "claude-opus-5-5",
+    "techniques.scout.agent_claude_effort": "high",
+    "techniques.scout.agent_gpt_enabled": True,       # needs OPENAI_API_KEY (absent = the run is recorded as skipped)
+    "techniques.scout.agent_gpt_model": "gpt-6.1-sol",
+    "techniques.scout.agent_gpt_effort": "high",
+    "techniques.scout.agent_budget_usd_day": 10.0,    # BOTH lanes + the weekly review; its own cap
+    "techniques.scout.agent_max_turns": 16,
+    "techniques.scout.agent_max_tool_calls": 24,
+    "techniques.scout.agent_max_tokens": 12000,       # per model call (thinking included)
+    "techniques.scout.agent_call_timeout_s": 240.0,
+    "techniques.scout.agent_max_proposals": 5,        # 3 -> 5 2026-10-21 (PLAN 9.8): more cases per week
+    "techniques.scout.agent_min_r1": 1.5,             # first target at least this many R
+    "techniques.scout.agent_book_cash": 10_000.0,     # each agent-lane book starts with this
+    "techniques.scout.agent_risk_pct": 1.0,           # % of book equity at risk per trade (qty = risk / (fill - stop))
+    "techniques.scout.agent_max_position_pct": 20.0,  # one position at most this % of book equity
+    "techniques.scout.agent_random_lane_enabled": True,
+    "techniques.scout.agent_screen_lane_enabled": True,
+    "techniques.scout.agent_screen_lane_picks": 3,
+    "techniques.scout.agent_screen_lane_horizon": 10,
+    "techniques.scout.agent_screen_top": 25,          # names shown to the agent from the screen
+    # 2026-10-21 (PLAN 9.8): a LIMIT plan (agent picks + their random twins) is worked to this time each session, for
+    # this many sessions (the entry session included); 3 of 18 agent picks filled under the 10:00-11:30 one-day rule
+    # 2026-10-27 (user decision, PLAN 9.10): Scout's picks ALSO trade the one configured PAPER book (never a live
+    # book) - the old "Scout never routes to IBKR" rule is lifted for paper only. Off by default; the paper book is
+    # named explicitly; its own caps (open positions, notional per position, risk) bound it.
+    "techniques.scout.paper_enabled": False,
+    "techniques.scout.paper_portfolio_id": "",
+    "techniques.scout.paper_lanes": "agent_claude,agent_screen",
+    "techniques.scout.paper_risk_pct": 1.0,
+    "techniques.scout.paper_max_positions": 3,
+    "techniques.scout.paper_max_position_usd": 700.0,
+    "techniques.scout.agent_limit_end": "15:30",
+    "techniques.scout.agent_limit_sessions": 3,
+    "techniques.scout.agent_universe_extra": [],      # added to the EM core universe for the screen
+    "techniques.scout.agent_fetch_concurrency": 6,
+    "techniques.scout.agent_release_chars": 4000,     # results release excerpt in the fundamentals tool
+    "techniques.scout.agent_max_lessons": 8,
+    "techniques.scout.agent_review_min_cases": 4,
+    "techniques.scout.agent_sample_start": "2026-10-15",  # the graduation gate counts weeks from here
     "techniques.flow.otm_min_pct": 0.0,      # flagged footprint: 0–12% OTM
     "techniques.flow.otm_max_pct": 12.0,
     "techniques.flow.repeat_days": 3,        # same zone flagged N days in the window
@@ -598,7 +656,7 @@ DEFAULTS: dict[str, Any] = {
     "telegram.enabled": False,
     "snaptrade.enabled": False,
     "snaptrade.sync_minutes": 15,
-    "snaptrade.order_poll_seconds": 2.0,
+    "snaptrade.order_poll_seconds": 7.0,   # personal keys: 10 requests/minute/account (2 s polls would be throttled)
     "snaptrade.reconcile_seconds": 60,
     "snaptrade.allow_brackets": False,
     "snaptrade.options_brokers": ["Webull Canada"],   # verified via options impact 2026-08-21
@@ -802,6 +860,13 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
     "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
     "ops.loop_stall_seconds": 2.0,             # event-loop stall watch: log the blocking call site when the loop is silent this long (0 = off)
+    "execution.standing_orders.allow_live": False,   # 2026-11-14: the USER's switch - armed standing orders may route to live/paper books
+    "execution.standing_orders.poll_seconds": 5.0,
+    "execution.standing_orders.fill_wait_seconds": 60.0,  # an unfilled limit is cancelled and re-priced after this
+    "execution.standing_orders.max_attempts": 5,          # placements per order before it gives up
+    "execution.standing_orders.slippage_pct": 0.5,        # default limit = ask x 1.005 / bid x 0.995
+    "ops.gc_freeze": True,                     # 2026-11-09: full GC + gc.freeze() after startup and nightly - session collections skip long-lived state (2.6 s loop stalls)
+    "ops.gc_compact_at": "20:00",              # ET, every day: the nightly unfreeze -> collect -> freeze
     # W1.6 (2026-10-02): host clock vs an HTTP Date reference (HEAD) at startup + daily; journaled ClockSkew,
     # desk alert (toast + push + Telegram) above the threshold; the system time is never changed
     "ops.clock_skew_check": True,

@@ -323,7 +323,8 @@ async def test_real_refresh_timeout_is_bounded_by_the_deadline():
     rig = ntnx_rig(hang=[NTNX_OCT])
     start = asyncio.get_running_loop().time()
     result = await select_contract(rig.engine(), ntnx_plan(), ntnx_policy(selection_version="diverse_liquidity_v1"),
-                                   SelectionRequest(preferred_contract=NTNX_OCT, deadline_ms=int(dt.datetime.now(dt.UTC).timestamp()*1000)+300))
+                                   # recorded-day clock: on the wall clock the October expiry falls under dte_min from 2026-09-26
+                                   SelectionRequest(preferred_contract=NTNX_OCT, clock=rig.clock, deadline_ms=SEP21_1030+300))
     assert asyncio.get_running_loop().time()-start < 5
     assert result["batches"][0]["timedOut"] == 1 and NTNX_OCT not in rig.refreshed
 

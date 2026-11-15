@@ -21,6 +21,16 @@ def trusted(bar, *, simulation=False):
     return bar.source == 'exchange' or simulation and bar.source == 'sim'
 
 
+def usable(symbol, bar):
+    """A provider stub (wrong symbol, other timeframe, off-the-minute stamp) is never a plan's candle."""
+    return bar.symbol == symbol and bar.tf == '1m' and bar.ts % 60_000 == 0
+
+
+def aligned(minutes):
+    """Saved minutes without off-the-minute keys: one stub must not poison every later entry read."""
+    return {k: v for k, v in minutes.items() if int(k) % 60_000 == 0}
+
+
 def merge(minutes, bar):
     """Upgrade provenance, preserve equal-quality first observation; never downgrade.
 

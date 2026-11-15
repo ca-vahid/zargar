@@ -243,6 +243,7 @@ class PositionManager:
         # waits for such a cancel to be confirmed
         self._retired_stops: dict[str, str] = {}
         self._stop_replace_pending: set[str] = set()
+        self._venue_stop_busy: dict[str, bool] = {}     # 2026-11-02: one venue-stop pass per position at a time
         self._venue_heal_at: dict[str, float] = {}       # 2026-10-05: last missing-venue-stop heal per position
         self._gf_noted: set[tuple] = set()             # V1.7 good-faith deferrals already journaled (pos, kind, day)
         self._now = time.time                          # injectable clock (chaos tests)
@@ -958,7 +959,27 @@ class PositionManager:
     async def _ensure_venue_stop(self, p: Managed) -> None:
         """Share positions that may be held overnight get a resting GTC stop at
         the venue; the app being down must never leave them naked. Tightened
-        stops cancel + replace."""
+        stops cancel + replace.
+        SINGLE-FLIGHT per position (2026-11-02): open() and the entry's fill
+        report both ran this at once (ZS 10-29, 48 ms apart) - each saw no stop
+        id across the other's `place` await and BOTH rested a full-size stop. A
+        call that lands while a pass is running marks it dirty instead; the
+        running pass re-checks once with the settled state."""
+        busy = self._venue_stop_busy
+        if p.id in busy:
+            busy[p.id] = True
+            return
+        busy[p.id] = False
+        try:
+            while True:
+                await self._ensure_venue_stop_once(p)
+                if not busy.get(p.id):
+                    break
+                busy[p.id] = False
+        finally:
+            busy.pop(p.id, None)
+
+    async def _ensure_venue_stop_once(self, p: Managed) -> None:
         adapter = self._policy_adapter(p)
         if adapter is not None and hasattr(adapter, "ensure_venue_stop"):
             if await adapter.ensure_venue_stop(self, p):
@@ -1534,6 +1555,22 @@ class PositionManager:
             p.venue_stop_at = None
             p.venue_stop_qty = None
             why = o.get("rejectReason") or status
+            if status == "REJECTED_RISK" and "no lot to sell" in str(why):
+                # 2026-11-03 (DX, ZS): a SHADOW book's lot ledger is authoritative and holds none of this
+                # symbol - another (untracked, doubled) stop already sold it. Re-placing would be refused every
+                # minute forever; the leg is stale bookkeeping, so close the record like the exit path does
+                sym = str(o.get("symbol") or "").upper()
+                for leg in p.open_legs:
+                    if leg.sec_type == "STK" and leg.symbol.upper() == sym and leg.qty > 0:
+                        leg.qty = 0.0
+                        p.venue_flat_legs = getattr(p, "venue_flat_legs", 0) + 1
+                if not p.open_legs and p.status != "closed":
+                    msg = f"closed on a stale record: the book holds no {sym} for the venue stop to protect ({why})"
+                    if msg not in p.attention:
+                        p.attention.append(msg)
+                    await self._alert(p, msg, level="warning", stage="venue_flat")
+                    await self._mark_closed(p, reason="venue already flat — the book holds no lot for the stop")
+                    return
             await self._alert(p, f"venue stop {status.lower()} at the broker ({why}) - re-placing it",
                               level="warning", stage="venue_stop")
             last = getattr(self, "_venue_stop_replaced", {}).get(p.id, 0.0)

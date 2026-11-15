@@ -130,6 +130,34 @@ async def test_position_avg_cost_and_realized_pnl(engine):
     result = await keeper.apply_fill(pid, "TEST", "STK", "SELL", 10, 120.0, 1.0)
     assert result["realizedPnl"] == pytest.approx(150.0)
     assert keeper.position_qty(pid, "TEST") == 10
+    # the price-only figure stays; the net one takes off all three commissions
+    assert result["feesPaid"] == pytest.approx(3.0)
+    assert result["realizedNet"] == pytest.approx(147.0)
+
+
+async def test_fees_paid_are_rebuilt_from_the_fills_on_load(engine):
+    from sqlalchemy import func, select
+    from zargar.models import Execution
+    keeper = engine.positions
+    pid = sim_portfolio(engine)["id"]
+    await engine.settings.set("sim.stock_commission", 1.25)
+    await wait_quote(engine, "AAPL")
+    order = await engine.orders.place(OrderIntent(
+        portfolio_id=pid, symbol="AAPL", side="BUY", qty=2, order_type="MKT"))
+
+    async def filled():
+        return any(o["id"] == order["id"] and o["status"] == "FILLED"
+                   for o in await engine.orders.list_orders(pid))
+    await wait_for(filled)
+    async with engine.sf() as session:
+        paid = float((await session.execute(select(func.sum(Execution.commission)).where(
+            Execution.portfolio_id == pid, Execution.symbol == "AAPL"))).scalar() or 0.0)
+    before = next(p for p in keeper.positions_list(pid) if p["symbol"] == "AAPL")
+    assert paid == pytest.approx(1.25) and before["feesPaid"] == pytest.approx(paid)
+    await keeper.load()  # a restart reads the same figure back from the fills
+    after = next(p for p in keeper.positions_list(pid) if p["symbol"] == "AAPL")
+    assert after["feesPaid"] == pytest.approx(paid)
+    assert after["realizedNet"] == pytest.approx(after["realizedPnl"] - paid)
 
 
 async def test_equity_and_snapshot(engine):

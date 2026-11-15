@@ -195,3 +195,43 @@ except rollbacks for a defect.
 
 A partial reading is never a verdict. Rollback of the experiment = `setups.dry_up_rule` back to `non_increasing_v1`
 and `minMinuteCoverage` back to 0 through the preparation config endpoint.
+
+## 10. Trial interrupted and restarted (2026-10-12, user decision)
+
+**What happened.** On 2026-10-03 the shared `trading.mode` switch was set to `live` for the Tips IBKR paper book.
+Cartel chose its Practice/Live lane from that switch alone, no Live policy exists, and every scheduled preparation
+from 10-05 08:45 ET returned `disabled` (eleven runs, journaled as normal). The 09-28 sample therefore ran on six
+sessions only: 2 signals, 1 entry (DHT 09-29, 5 x Nov-20 22C at $1.80; 1 sold 10-01 at $2.20; 4 still held),
+0 closed trades.
+
+**Decision.** The 09-28 sample is declared interrupted, not judged. A fresh 20-session sample starts 2026-10-13
+(through 2026-11-09), same settings as section 9, same book (`297d8b39...`; DHT runs off inside it and is not part of
+the new sample).
+
+**The score is now one computation:** `python -m zargar.tools.cartel_scorecard` (read-only).
+
+- A trade is one managed Cartel position whose entry filled on or after 2026-10-13.
+- Closed = no contracts left. A partial exit does not close a trade.
+- Net = sell proceeds - buy cost - every commission. No mark is used; open positions are listed, never scored.
+- The score is also shown without its best closed trade.
+- A session ran when Cartel had at least one arm for it; the verdict is final only after 20 sessions have run.
+
+| After 20 run sessions | Decision |
+|---|---|
+| Fewer than 8 closed trades | Stop development |
+| 8 or more, net <= 0 after fees | Stop development |
+| 8 or more, net > 0 | Keep: longer sample; real money still needs the staged gates below |
+
+**Fixed with the restart (0.9.28):** Cartel's lane is its own setting (`techniques.options_cartel.workspace`,
+default practice; Live needs it AND `trading.mode=live` AND `allow_live_auto`); a disabled preparation on a trading
+day alerts (journal `CartelPreparationDisabled`, toast, push, Telegram) once a day; a close missed before a later
+fill is recorded as superseded instead of blocking every catch-up review.
+
+**Real money (readiness audit 2026-10-12).** Venue decided: Webull Canada through SnapTrade, "when ready"
+(Wealthsimple cannot trade options through SnapTrade). Findings that gate it: no order of any kind has ever gone
+through SnapTrade from this app; a held option has no stop at the broker; SnapTrade fills record no commission;
+status polling (2 s) exceeds SnapTrade's documented 10 requests/minute; option caps are the loosened Practice
+values and per-book overrides do not reach them; open options are marked at an unchecked mid; sim limit fills
+ignore displayed size. Stages before real money: (1) truthful marks/fills and a tight live risk profile,
+(2) SnapTrade order-path tests, (3) a supervised one-contract test, (4) an overnight test, (5) a positive restarted
+sample. `techniques.options_cartel.allow_live_auto` stays false; flipping it is the user's explicit go only.

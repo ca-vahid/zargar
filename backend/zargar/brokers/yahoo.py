@@ -242,6 +242,11 @@ class YahooQuoteFeed(QuoteFeed):
             bar_ms = int(t) * 1000
             if bar_ms >= now_bucket:                 # still-forming minute — skip
                 continue
+            if bar_ms % 60_000:
+                # 2026-10-13: the chart's last row is the latest PRINT, stamped at its own second with volume 0. On a
+                # thin name that print sits in an earlier minute, so the rule above let it through as an exchange bar:
+                # armed plans took it as a candle and then dropped that minute's real bar as older (PRQR, PANW)
+                continue
             if i >= len(v) or v[i] is None:
                 # F79 (2026-09-09): Yahoo populates a minute's volume with a lag; until it does the row is
                 # PROVISIONAL and must not be handed on as an exchange correction — with source precedence
@@ -354,6 +359,10 @@ def _session(periods: dict | None, now_s: float | None = None) -> str:
     return "closed"
 
 
+# timeframes whose bars start on a multiple of the step (1h bars start at 09:30 ET, so they are not listed)
+_STUB_STEP_S = {"1m": 60, "2m": 120, "5m": 300, "15m": 900}
+
+
 def parse_day_bars(symbol: str, data: dict) -> list[Bar]:
     return parse_bars(symbol, "1m", data)
 
@@ -368,10 +377,13 @@ def parse_bars(symbol: str, tf: str, data: dict) -> list[Bar]:
     opens, highs, lows = block.get("open") or [], block.get("high") or [], block.get("low") or []
     closes, volumes = block.get("close") or [], block.get("volume") or []
     out: list[Bar] = []
+    step = _STUB_STEP_S.get(tf)
     for i, ts in enumerate(stamps):
         c = closes[i] if i < len(closes) else None
         if c is None:
             continue
+        if step and i and i == len(stamps) - 1 and stamps[i - 1] is not None and 0 <= int(ts) - int(stamps[i - 1]) < step:
+            continue                             # the latest-print row (see _parse_completed_bars), never a bar
         o = opens[i] if i < len(opens) and opens[i] is not None else c
         h = highs[i] if i < len(highs) and highs[i] is not None else max(o, c)
         lo = lows[i] if i < len(lows) and lows[i] is not None else min(o, c)

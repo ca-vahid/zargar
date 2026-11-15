@@ -56,9 +56,21 @@ FALLBACK_POOL = ("AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA", "JPM", "XOM", 
                  "BAC", "WFC", "C", "GS", "MS", "BA", "LMT", "UPS", "F", "GM")
 
 
+AGENT_LANES = ("agent_claude", "agent_gpt", "agent_random", "agent_screen")     # agent.py (PLAN section 9)
+AGENT_LABELS = {"agent_claude": "Scout Agent Claude", "agent_gpt": "Scout Agent GPT",
+                "agent_random": "Scout Agent random", "agent_screen": "Scout Agent screen"}
+
+
 def lane_label(lane: str) -> str:
     if lane == RANDOM:
         return "Scout random"
+    if lane in AGENT_LABELS:
+        return AGENT_LABELS[lane]
+    if lane == "paper":
+        # PLAN 9.10: the paper-account mirror (desk.PAPER_LANE). 2026-10-29: the 16:30 report crashed on it
+        return "Scout paper account"
+    if "_" not in lane:
+        return f"Scout {lane}"
     sig, rest = lane.split("_", 1)
     rest = rest.replace("gpt_", "gpt ").replace("claude_", "claude ")
     return f"Scout {sig.upper()} {rest}"
@@ -68,7 +80,7 @@ def all_lanes() -> list[str]:
     out = []
     for sig in SIGNALS:
         out += [f"{sig}_screen", f"{sig}_claude_keep", f"{sig}_claude_drop", f"{sig}_gpt_keep", f"{sig}_gpt_drop"]
-    return out + [RANDOM]
+    return out + [RANDOM, *AGENT_LANES]
 
 
 def lanes_for(kind: str, verdicts: dict[str, str | None]) -> list[str]:

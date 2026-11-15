@@ -31,6 +31,11 @@ such. No profitable strategy or exact author replication has been established.
   relaxed volume dry-up (1.5x), a thin-stock screen (0.95 of minutes traded) and the 0.5R arm gate, with a
   preregistered stop rule: after 20 sessions, fewer than 8 trades or a net loss after fees stops development.
   [Plan section 9](reviews/2026-09-24-sharp-pencil/PLAN.md).
+- **2026-10-12 (0.9.28): trial restarted.** The 09-28 sample was cut to six sessions when a shared switch silently
+  disabled preparation (10-05..10-12). A fresh 20 sessions run from 10-13 with one written score
+  (`python -m zargar.tools.cartel_scorecard`). Cartel's lane is now its own setting and a disabled preparation alerts.
+  Real money: Webull Canada when the staged gates pass, not before.
+  [Plan section 10](reviews/2026-09-24-sharp-pencil/PLAN.md).
 - **Known limits.** Untrusted confirmation windows are caused by no-trade minutes at the end of a
   bucket, before a non-emission proof can exist (design decision open). Sean's daily posts cannot be
   retrieved automatically (X returns 402). Shares fallback (brief F6) and historical data repair (F7)

@@ -57,6 +57,30 @@ def noise_stop(*, direction: str, entry: float, risk: float, highs_after: list[f
     return (max(highs_after) >= entry + risk) if highs_after else None
 
 
+def win_loss_record(trades: list[dict]) -> dict:
+    """2026-10-12: the winners-and-losers record of closed positions ({net, r, mfeKept} each; net after fees).
+    payoff = average win / average loss; expectancyR = mean R over the trades that have one. A scratch (net 0) is
+    neither. None where there is nothing to average."""
+    wins = [t for t in trades if float(t.get("net") or 0) > 0]
+    losses = [t for t in trades if float(t.get("net") or 0) < 0]
+
+    def mean(xs: list) -> float | None:
+        xs = [float(x) for x in xs if x is not None]
+        return (sum(xs) / len(xs)) if xs else None
+
+    aw, al = mean([t["net"] for t in wins]), mean([t["net"] for t in losses])
+    rs = [t.get("r") for t in trades if t.get("r") is not None]
+    exp_r, kept = mean(rs), mean([t.get("mfeKept") for t in trades])
+    return {"n": len(trades), "wins": len(wins), "losses": len(losses),
+            "net": round(sum(float(t.get("net") or 0) for t in trades), 2),
+            "avgWin": (round(aw, 2) if aw is not None else None), "avgLoss": (round(al, 2) if al is not None else None),
+            "payoff": (round(aw / abs(al), 2) if (aw is not None and al) else None),
+            "avgWinR": (lambda v: round(v, 3) if v is not None else None)(mean([t.get("r") for t in wins])),
+            "avgLossR": (lambda v: round(v, 3) if v is not None else None)(mean([t.get("r") for t in losses])),
+            "expectancyR": (round(exp_r, 3) + 0.0 if exp_r is not None else None), "rCount": len(rs),
+            "mfeKeptMean": (round(kept, 3) if kept is not None else None)}
+
+
 async def tips_daily(eng, *, lookback_hours: float = 24.0, noise_days: int = 14) -> dict:
     from sqlalchemy import select
 
@@ -99,6 +123,7 @@ async def tips_daily(eng, *, lookback_hours: float = 24.0, noise_days: int = 14)
                 for e in (await session.execute(select(Execution).where(Execution.order_id.in_(list(oids))))).scalars().all():
                     by_order.setdefault(e.order_id, []).append(e)
         kept, closed_rows, noise, stops, noise_unknown = [], [], 0, 0, 0
+        window_trades: list[dict] = []
         daily_cache: dict[str, list] = {}
         for r in recent:
             st, cfg = r.state or {}, r.config or {}
@@ -113,8 +138,9 @@ async def tips_daily(eng, *, lookback_hours: float = 24.0, noise_days: int = 14)
             peak = float((st.get("policyState") or {}).get("peakFavorable") or 0)
             peak_r = (peak / per_unit_risk) if per_unit_risk > 0 else None
             in_window = int(st.get("closedMs") or 0) >= now_ms - int(lookback_hours * 3600 * 1000)
+            k = mfe_kept(realized_r=rr, peak_r=peak_r)
+            window_trades.append({"net": net, "r": rr, "mfeKept": k})
             if in_window:
-                k = mfe_kept(realized_r=rr, peak_r=peak_r)
                 closed_rows.append({"positionId": r.id, "symbol": r.symbol, "r": (round(rr, 3) if rr is not None else None),
                                     "peakR": (round(peak_r, 3) if peak_r is not None else None), "mfeKept": k,
                                     "horizon": horizon_of(cfg, r.tags), "reason": st.get("closeReason")})
@@ -157,9 +183,18 @@ async def tips_daily(eng, *, lookback_hours: float = 24.0, noise_days: int = 14)
             "closed": closed_rows, "mfeKeptMean": (round(sum(kept) / len(kept), 3) if kept else None),
             "stopOuts": stops, "noiseStopOuts": noise, "noiseUnknown": noise_unknown,
             "noiseWindowDays": noise_days,
+            "record": {**win_loss_record(window_trades), "days": noise_days},
         })
     out["asOf"] = dt.datetime.now(dt.timezone.utc).isoformat()
     return out
+
+
+def _record_bit(rec: dict | None) -> str:
+    if not rec or not rec.get("n"):
+        return ""
+    return (f", {rec.get('days')}d {rec['wins']}W/{rec['losses']}L"
+            + (f" payoff {rec['payoff']:g}" if rec.get("payoff") is not None else "")
+            + (f" exp {rec['expectancyR']:+.2f}R" if rec.get("expectancyR") is not None else ""))
 
 
 def summary_line(m: dict | None) -> str:
@@ -174,5 +209,6 @@ def summary_line(m: dict | None) -> str:
                     + (f", {u:g}% deployed" if u is not None else "")
                     + (f", risk {r:g}%/{b['openRiskCapPct']:g}%" if r is not None else "")
                     + (f", MFE kept {round(b['mfeKeptMean'] * 100)}%" if b.get("mfeKeptMean") is not None else "")
-                    + (f", {b['noiseStopOuts']}/{b['stopOuts']} noise stops" if b.get("stopOuts") else ""))
+                    + (f", {b['noiseStopOuts']}/{b['stopOuts']} noise stops" if b.get("stopOuts") else "")
+                    + _record_bit(b.get("record")))
     return "Tips: " + "; ".join(bits)

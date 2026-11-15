@@ -107,6 +107,13 @@ def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
             floor_pct = 1.0
     width_floor = max(a, entry * floor_pct / 100.0)
     default_dist = width_floor
+    if vehicle == "shares" and plan.get("lotto"):
+        # 2026-10-21 (AAPL, ab): a lotto-dated OPTION tip expressed as SHARES (the paper book is shares-only) kept the
+        # lotto lane's exemption from the ATR stop and reached the card with no stop at all. The lotto lane is an
+        # option exit policy; a share position is never stopless.
+        plan["lotto"] = False
+        plan["atrStop"] = bool(plan.get("atrDaily"))
+        repairs.append("shares vehicle: not a lotto - the share stop rules apply")
     atr_d = float(plan.get("atrDaily") or 0.0) if plan.get("atrStop") else 0.0
     floor_label = "floor"
     if atr_d > 0:
@@ -286,6 +293,22 @@ def merge_small_trims(ladder: dict | None, *, qty: float, price: float,
     note = (f"small position (${value:,.0f}): exits merged so every sell is >= ${float(min_notional):,.0f} "
             f"({n_before} sell orders -> {n_after})")
     return {**ladder, **new}, note
+
+
+def size_mirrored_trim(fraction: float, *, value: float, min_notional: float) -> tuple[float | None, str | None]:
+    """Pure (2026-10-13): the same floor for a trim COPIED from the source. Paper SNAP sold 51 shares ($344) on
+    jon-and-kian's trim under a $750 floor: `merge_small_trims` only shapes the ladder at adoption. A trim too small
+    for its own order is not sent (the position waits for the source's close, its target or its stop - one order);
+    a remainder too small to ride alone goes with the trim. Returns (fraction or None = skip, note)."""
+    if not min_notional or min_notional <= 0 or not value or value <= 0 or fraction >= 1.0:
+        return fraction, None
+    if fraction * value < float(min_notional):
+        return None, (f"a {fraction:.0%} trim of a ${value:,.0f} position is ${fraction * value:,.0f}, under the "
+                      f"book's ${float(min_notional):,.0f} minimum sell order")
+    if (1.0 - fraction) * value < float(min_notional):
+        return 1.0, (f"the ${(1.0 - fraction) * value:,.0f} left after the trim is under the book's "
+                     f"${float(min_notional):,.0f} minimum sell order: sold in one order")
+    return fraction, None
 
 
 def _policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
@@ -909,7 +932,7 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
                 log.debug("geometry gate: no bars for %s (checking without structure)", underlying)
         fresh, repairs = check_exit_geometry(plan, direction=direction,
                                              entry_ref=entry_ref, bars=gate_bars,
-                                             settings=eng.settings)
+                                             settings=eng.settings, vehicle=("option" if is_opt else "shares"))
         pre = ctx.get("riskPlan") if isinstance(ctx.get("riskPlan"), dict) else {}
         exception: dict | None = None
         if pre.get("enforced") and pre.get("finalStop") is not None:
