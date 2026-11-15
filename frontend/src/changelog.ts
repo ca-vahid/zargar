@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.51";
+export const APP_VERSION = "0.9.52";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.52",date:"2026-11-14",title:"Standing orders polish",items:[
+    {tag:"fixed",text:"Standing orders: the check / cancel links no longer break the row lines."},
+  ]},
   {version:"0.9.51",date:"2026-11-14",title:"Standing orders page redesign",items:[
     {tag:"improved",text:"Standing orders page redesigned to match the app: broker logos, symbol icons, BUY/SELL markers, status pills, a clear real-money switch, a one-step confirm for arming a plan, a risk-check preview per order, and history tucked away."},
   ]},
