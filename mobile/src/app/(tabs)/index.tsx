@@ -5,25 +5,24 @@ import { Pressable, View } from 'react-native';
 
 import { api } from '@/api/endpoints';
 import type { ArmedSummary, Ledger, Portfolio, Position } from '@/api/types';
-import { AreaSpark, DayBars, Heading, Hero, Meter, RangeBar, Sparkline, SymbolBadge } from '@/components/graphics';
+import { AreaSpark, DayBars, Heading, Hero, Meter, Sparkline, SymbolBadge } from '@/components/graphics';
 import { CurrencySwitch } from '@/components/Header';
-import { planFor, PositionRow } from '@/components/PositionRow';
-import { Card, Delta, Empty, Pill, Row, Screen, Skeleton, SkeletonRows, styles, Tabs, Txt } from '@/components/ui';
+import { Card, Delta, Empty, Pill, Row, Screen, Skeleton, styles, Txt } from '@/components/ui';
 import { useBooks } from '@/hooks/useBooks';
 import { useConvert, useCurrency } from '@/hooks/useCurrency';
 import { usePoll } from '@/hooks/usePoll';
+import { useStanding } from '@/hooks/useStanding';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { dayMove, dayMovePct, GROUP_LABEL, groupOf, liftEmptyCurve, workspaceOf } from '@/lib/books';
 import type { Point } from '@/lib/chart';
 import { clock, money, pct, price, shortDate, signedMoney, titleCase } from '@/lib/format';
 import { marketClock, newYorkTime } from '@/lib/market';
 import { sumSeries } from '@/lib/range';
-import { minutesToTrigger, orderLine, standingCounts, waitText } from '@/lib/standing';
+import { minutesToTrigger, orderLine, waitText } from '@/lib/standing';
 import { watchSymbol } from '@/live/socket';
 import { useStore } from '@/store';
 import { radius, space, useTheme } from '@/theme';
 
-type Pane = 'overview' | 'positions' | 'plans' | 'activity';
 type Curves = Record<string, Point[]>;
 type Convert = ReturnType<typeof useConvert>;
 const INDEX_FUNDS: { symbol: string; name: string }[] = [
@@ -162,98 +161,45 @@ function MoverRow({ pos, bookName, scale, last, conv }: { pos: Position; bookNam
   );
 }
 
-function PositionsView({ holdings, bookOf, conv }: { holdings: Position[]; bookOf: (id: string) => Portfolio | undefined; conv: Convert }) {
-  const managed = usePoll(() => api.managedPositions('open'), 30000, [], 'managed:open');
-  const total = holdings.reduce((sum, p) => sum + (conv(p.unrealizedPnl, p.currency).value ?? 0), 0);
-  const cur = conv(0, holdings[0]?.currency).cur;
+/** A second group of accounts (the broker's paper account beside real money): one quiet line. */
+function GroupLine({ label, books, conv }: { label: string; books: Portfolio[]; conv: Convert }) {
+  const cur = conv(0, books[0]?.baseCurrency).cur;
+  const total = books.reduce((sum, b) => sum + (conv(b.equity ?? b.cash, b.baseCurrency).value ?? 0), 0);
+  const known = books.every((b) => b.dayStart != null && b.equity != null);
+  const move = known ? books.reduce((sum, b) => sum + (conv(dayMove(b), b.baseCurrency).value ?? 0), 0) : null;
   return (
-    <View style={{ gap: space.sm }}>
-      <Heading icon="trending-up-outline" title={`Open positions · ${holdings.length}`}
-        right={holdings.length ? <Delta v="small" value={total} text={`${signedMoney(total, cur)} unrealized`} /> : undefined} />
-      <Card>
-        {holdings.length === 0 && <Empty text="Nothing is held in this workspace right now." />}
-        {holdings.map((p, i) => (
-          <PositionRow key={`${p.portfolioId}:${p.symbol}`} pos={p} plan={planFor(managed.data, p)} plansKnown={managed.data != null}
-            own={bookOf(p.portfolioId)?.baseCurrency ?? 'USD'} bookName={bookOf(p.portfolioId)?.name} last={i === holdings.length - 1} />
-        ))}
-      </Card>
-    </View>
+    <Card onPress={() => { useStore.getState().set({ selectedBook: books[0]?.id ?? null }); router.navigate('/portfolio'); }}
+      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: space.md }}>
+      <Txt v="label" dim>{label}</Txt>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.md }}>
+        {move != null && <Delta v="small" value={move} text={`${signedMoney(move, cur)} today`} />}
+        <Txt num style={{ fontWeight: '700' }}>{money(total, cur)}</Txt>
+      </View>
+    </Card>
   );
 }
 
-function PlansView({ s, watching, inTrade }: { s: ArmedSummary | null; watching: ArmedSummary['watching']; inTrade: ArmedSummary['inTrade'] }) {
+/** One thing waiting for the person: an icon, what it is, and the word that says what to do. */
+function TodoRow({ icon, ink, title, sub, action, onPress, last }: {
+  icon: keyof typeof Ionicons.glyphMap; ink: string; title: string; sub?: string; action: string; onPress: () => void; last?: boolean;
+}) {
   const t = useTheme();
-  if (!s) return <Card><SkeletonRows rows={5} /></Card>;
-  const near = [...watching].sort((a, b) => Math.abs(a.nearest?.distancePct ?? 99) - Math.abs(b.nearest?.distancePct ?? 99));
   return (
-    <>
-      {inTrade.length > 0 && (
-        <View style={{ gap: space.sm }}>
-          <Heading icon="flash-outline" title={`Plans in a trade · ${inTrade.length}`}
-            right={<Txt v="small" color={t.accent} onPress={() => router.navigate('/armed')}>Manage</Txt>} />
-          <Card>
-            {inTrade.map((x, i) => {
-              const entry = x.underlyingEntry ?? x.entry;
-              return (
-                <View key={`${x.runId}-${x.triggerId}`} style={{ gap: 6, paddingBottom: i === inTrade.length - 1 ? 0 : space.md }}>
-                  <Row last
-                    onPress={() => router.navigate({ pathname: '/chart/[symbol]', params: { symbol: x.symbol, entry: String(entry), stop: String(x.stop), target: x.nextTarget != null ? String(x.nextTarget) : '' } })}
-                    left={<View style={styles.wrap}><SymbolBadge symbol={x.symbol} size={34} /><Txt v="head">{x.symbol}</Txt><Pill kind={x.direction === 'short' ? 'bad' : 'ok'} text={x.direction} /></View>}
-                    sub={`${x.account ?? ''} · stop ${price(x.stop)}${x.nextTarget != null ? ` · target ${price(x.nextTarget)}` : ''}`}
-                    right={<Delta value={x.unrealizedPnl} text={signedMoney(x.unrealizedPnl)} />}
-                    rightSub={x.unrealizedR != null ? `${x.unrealizedR >= 0 ? '+' : ''}${x.unrealizedR.toFixed(2)} R` : undefined} />
-                  <RangeBar stop={x.stop} entry={entry} now={x.lastPrice} target={x.nextTarget} />
-                </View>
-              );
-            })}
-          </Card>
-        </View>
-      )}
-      <View style={{ gap: space.sm }}>
-        <Heading icon="eye-outline" title={`Waiting for their price · ${watching.length}`}
-          right={<Txt v="small" color={t.accent} onPress={() => router.navigate('/armed')}>All plans</Txt>} />
-        <Card>
-          {watching.length === 0 && <Empty text="No plans are waiting in this workspace." />}
-          {near.slice(0, 15).map((w, i, all) => {
-            const away = w.nearest.distancePct != null ? Math.abs(w.nearest.distancePct) : null;
-            return (
-              <Pressable key={w.runId} android_ripple={{ color: t.surface3 }}
-                onPress={() => router.navigate({ pathname: '/chart/[symbol]', params: { symbol: w.symbol, entry: String(w.nearest.entry), stop: String(w.nearest.stop), target: w.nearest.targets?.[0] != null ? String(w.nearest.targets[0]) : '' } })}
-                style={{ paddingVertical: space.sm, gap: 6, borderBottomWidth: i === all.length - 1 ? 0 : 0.5, borderBottomColor: t.line }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                  <SymbolBadge symbol={w.symbol} size={30} />
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.wrap}><Txt v="head">{w.symbol}</Txt>{!!w.grade && <Pill kind="accent" text={w.grade} />}{w.stale && <Pill kind="warn" text="stale" />}</View>
-                    <Txt v="small" dim numberOfLines={1}>{titleCase(w.nearest.kind)} at {price(w.nearest.entry)} · {w.account ?? ''}</Txt>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Txt num>{price(w.lastPrice)}</Txt>
-                    <Txt v="small" dim num>{away != null ? `${away.toFixed(2)}% away` : ''}</Txt>
-                  </View>
-                </View>
-                {/* fuller = closer to its entry price; anything 5% or more away reads empty */}
-                {away != null && <Meter value={1 - Math.min(away, 5) / 5} color={away < 1 ? t.accent : t.text3} height={4} />}
-              </Pressable>
-            );
-          })}
-          {watching.length > 15 && <Txt v="small" dim style={{ paddingTop: space.sm }}>Showing the 15 closest of {watching.length}.</Txt>}
-        </Card>
+    <Pressable onPress={onPress} accessibilityRole="button" android_ripple={{ color: t.surface3 }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: last ? 0 : 0.5, borderBottomColor: t.line }}>
+      <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: `${ink}22`, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name={icon} size={20} color={ink} />
       </View>
-      {s.stoppedToday.length > 0 && (
-        <View style={{ gap: space.sm }}>
-          <Heading icon="stop-circle-outline" title={`Finished today · ${s.stoppedToday.length}`} />
-          <Card>
-            {s.stoppedToday.slice(0, 12).map((x, i, all) => (
-              <Row key={`${x.runId}-${i}`} last={i === all.length - 1} left={x.symbol} sub={x.reason}
-                right={x.realizedPnl != null ? <Delta value={x.realizedPnl} text={signedMoney(x.realizedPnl)} /> : undefined}
-                rightSub={x.at ? clock(x.at) : undefined} />
-            ))}
-          </Card>
-        </View>
-      )}
-    </>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Txt style={{ fontWeight: '700' }}>{title}</Txt>
+        {!!sub && <Txt v="small" dim numberOfLines={2}>{sub}</Txt>}
+      </View>
+      <Txt v="small" color={t.accent} style={{ fontWeight: '700' }}>{action}</Txt>
+    </Pressable>
   );
 }
+
+const openOrders = (tab: 'standing' | 'plans') => router.navigate({ pathname: '/orders', params: { tab } });
 
 export default function HomeScreen() {
   const t = useTheme();
@@ -267,7 +213,8 @@ export default function HomeScreen() {
   const allProposals = useStore((s) => s.proposals);
   const armedBump = useStore((s) => s.armedBump);
   const synced = useStore((s) => s.synced);
-  const [view, setView] = useState<Pane>('overview');
+  const [allPositions, setAllPositions] = useState(false);
+  const [allActivity, setAllActivity] = useState(false);
 
   const books = useBooks(ws);
   const ids = books.map((b) => b.id).join(',');
@@ -291,19 +238,19 @@ export default function HomeScreen() {
     () => Promise.all(groups.map((g) => api.ledger(ws, g.scope, 30, currency).catch(() => null))),
     120000, [ws, scopes, currency], `ledgers:${ws}:${scopes}:${currency}`);
 
-  // the person's own standing orders: how many wait, and which fires next
-  const standing = usePoll(() => api.standing(), 30000, [], 'standing');
-  const so = useMemo(() => {
-    const orders = standing.data?.orders ?? [];
+  // the person's own standing orders in this workspace: how many wait, and which fires next
+  const standing = useStanding();
+  const so = standing.counts;
+  const nextOrder = useMemo(() => {
     const at = newYorkTime(Date.now());
     let next: { text: string; wait: number } | null = null;
-    for (const o of orders) {
+    for (const o of standing.orders ?? []) {
       if (o.status !== 'armed') continue;
       const wait = minutesToTrigger(o, at);
       if (wait != null && (!next || wait < next.wait)) next = { text: orderLine(o), wait };
     }
-    return { ...standingCounts(orders), next };
-  }, [standing.data]);
+    return next;
+  }, [standing.orders]);
 
   useEffect(() => { for (const f of INDEX_FUNDS) watchSymbol(f.symbol); }, []);
   // a plan fired, filled or stopped: re-pull shortly after instead of waiting for the tick
@@ -331,7 +278,23 @@ export default function HomeScreen() {
   const attention = s ? mine(s.attention) : [];
   const bookHalts = Object.keys(halt.books ?? {}).length;
   const moverScale = Math.max(0, ...holdings.map((p) => Math.abs(p.unrealizedPnl ?? 0)));
-  const refreshAll = () => { summary.refresh(); curves.refresh(); ledgers.refresh(); standing.refresh(); };
+  const unrealized = holdings.reduce((sum, p) => sum + (conv(p.unrealizedPnl, p.currency).value ?? 0), 0);
+  const refreshAll = () => { summary.refresh(); curves.refresh(); ledgers.refresh(); standing.list.refresh(); };
+
+  // everything that waits for the person, most urgent first
+  const todos: { key: string; icon: keyof typeof Ionicons.glyphMap; ink: string; title: string; sub?: string; action: string; go: () => void }[] = [];
+  if (so.failed > 0) todos.push({ key: 'failed', icon: 'warning', ink: t.down, title: `${so.failed} standing order${so.failed > 1 ? 's' : ''} failed`, sub: 'Open it to see the broker\'s reason.', action: 'Look', go: () => openOrders('standing') });
+  if (so.draft > 0) todos.push({ key: 'draft', icon: 'alarm-outline', ink: t.accent, title: `${so.draft} standing order${so.draft > 1 ? 's' : ''} to arm`, sub: 'Drafted from your plan. They do nothing until you arm them.', action: 'Arm', go: () => openOrders('standing') });
+  if (proposals.length > 0) todos.push({ key: 'cards', icon: 'chatbubble-ellipses-outline', ink: t.accent, title: `${proposals.length} tip card${proposals.length > 1 ? 's' : ''} to decide`, sub: proposals.slice(0, 4).map((p) => p.symbol).join(' · '), action: 'Review', go: () => router.navigate('/tips') });
+  for (const a of attention) todos.push({ key: a.runId, icon: 'alert-circle-outline', ink: t.warn, title: `${a.symbol} plan needs attention`, sub: a.reasons.join(' · '), action: 'Open', go: () => openOrders('plans') });
+
+  const working = so.armed + so.working;
+  // today's events of this workspace: drop the ones that belong to the other side's plans
+  const timeline = useMemo(() => {
+    if (!s) return [];
+    const other = new Set([...s.inTrade, ...s.watching].filter((x) => workspaceOf(x.workspace) !== ws).map((x) => x.runId));
+    return s.timeline.filter((e) => !other.has(e.runId));
+  }, [s, ws]);
 
   return (
     <Screen onRefresh={refreshAll} refreshing={summary.refreshing}>
@@ -339,139 +302,115 @@ export default function HomeScreen() {
         <MarketLine />
         <CurrencySwitch />
       </View>
-      {(halt.engaged || (broker && !broker.feedConnected) || (ws === 'live' && broker?.ibkrConnected === false) || bookHalts > 0 || s?.windowOpenNow) && (
+      {(halt.engaged || (broker && !broker.feedConnected) || (ws === 'live' && broker?.ibkrConnected === false) || bookHalts > 0) && (
         <View style={styles.wrap}>
-          {halt.engaged && <Pill kind="bad" text={`Halted${halt.reason ? `: ${halt.reason}` : ''}`} />}
+          {halt.engaged && <Pill solid kind="bad" text={`Halted${halt.reason ? `: ${halt.reason}` : ''}`} />}
           {broker && !broker.feedConnected && <Pill kind="bad" text="Prices down" />}
           {ws === 'live' && broker?.ibkrConnected === false && <Pill kind="bad" text="IBKR disconnected" />}
           {bookHalts > 0 && <Pill kind="warn" text={`${bookHalts} book${bookHalts > 1 ? 's' : ''} at loss limit`} />}
-          {s?.windowOpenNow && !halt.engaged && <Pill kind="accent" text="Entry window open" />}
         </View>
       )}
 
-      {groups.length === 0 && <Card><Empty text={synced ? 'No funded accounts in this workspace.' : 'Waiting for the server…'} /></Card>}
-      {groups.map((g, i) => (
-        <HeroCard key={g.label} label={g.label} books={g.books} curves={curves.data} conv={conv}
-          ledger={ledgers.data ? ledgers.data[i] : ledgers.error ? null : undefined} />
-      ))}
-
-      {(so.armed > 0 || so.working > 0 || so.failed > 0) && (
-        <Card onPress={() => router.navigate('/standing')} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, borderColor: so.failed ? t.down : so.working ? t.accent : t.line }}>
-          <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: `${so.failed ? t.down : t.warn}22`, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="alarm-outline" size={20} color={so.failed ? t.down : t.warn} />
-          </View>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Txt style={{ fontWeight: '700' }}>
-              Standing orders · {[so.working ? `${so.working} working` : '', so.armed ? `${so.armed} armed` : '', so.failed ? `${so.failed} failed` : ''].filter(Boolean).join(' · ')}
-            </Txt>
-            <Txt v="small" dim numberOfLines={1}>
-              {so.next ? `Next: ${so.next.text} · ${waitText(so.next.wait)}` : so.failed ? 'An order failed: open to see why' : 'Open to follow them'}
-            </Txt>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={t.text3} />
+      {todos.length > 0 && (
+        <Card style={{ borderColor: t.accent, paddingVertical: space.sm }}>
+          <Txt v="label" color={t.accent} style={{ paddingTop: space.sm }}>Needs you</Txt>
+          {todos.map((x, i) => <TodoRow key={x.key} icon={x.icon} ink={x.ink} title={x.title} sub={x.sub} action={x.action} onPress={x.go} last={i === todos.length - 1} />)}
         </Card>
       )}
 
-      {(proposals.length > 0 || attention.length > 0 || so.draft > 0) && (
-        <Card style={{ borderColor: t.accent }}>
-          <Heading icon="hand-left-outline" title="Needs you" />
-          {so.draft > 0 && (
-            <Row last={!attention.length && !proposals.length} onPress={() => router.navigate('/standing')}
-              left={`${so.draft} standing order${so.draft > 1 ? 's' : ''} waiting to be armed`}
-              sub="Drafted from your plan. They do nothing until you arm them."
-              right={<Txt color={t.accent} style={{ fontWeight: '700' }}>Arm</Txt>} />
-          )}
-          {proposals.length > 0 && (
-            <Row last={!attention.length} onPress={() => router.navigate('/tips')}
-              left={`${proposals.length} approval card${proposals.length > 1 ? 's' : ''} waiting`}
-              sub={proposals.slice(0, 4).map((p) => p.symbol).join(' · ')}
-              right={<Txt color={t.accent} style={{ fontWeight: '700' }}>Review</Txt>} />
-          )}
-          {attention.map((a, i, all) => (
-            <Row key={a.runId} last={i === all.length - 1} onPress={() => router.navigate('/armed')}
-              left={<View style={styles.wrap}><SymbolBadge symbol={a.symbol} size={30} /><Txt v="head">{a.symbol}</Txt><Pill kind="warn" text="Attention" /></View>}
-              sub={a.reasons.join(' · ')} />
-          ))}
+      {groups.length === 0 && <Card><Empty text={synced ? `No funded accounts in ${ws === 'live' ? 'Live' : 'Practice'}.` : 'Waiting for the server…'} /></Card>}
+      {groups.map((g, i) => (i === 0
+        ? <HeroCard key={g.label} label={g.label} books={g.books} curves={curves.data} conv={conv}
+            ledger={ledgers.data ? ledgers.data[i] : ledgers.error ? null : undefined} />
+        : <GroupLine key={g.label} label={g.label} books={g.books} conv={conv} />))}
+
+      {(working > 0 || watching.length > 0 || inTrade.length > 0) && (
+        <View style={{ gap: space.sm }}>
+          <Heading icon="alarm-outline" title="Orders at work" />
+          <Card style={{ paddingVertical: space.sm }}>
+            {working > 0 && (
+              <TodoRow icon="alarm-outline" ink={t.warn} last={!(watching.length || inTrade.length)} action="Follow" onPress={() => openOrders('standing')}
+                title={`Standing orders · ${[so.working ? `${so.working} working` : '', so.armed ? `${so.armed} armed` : ''].filter(Boolean).join(' · ')}`}
+                sub={nextOrder ? `Next: ${nextOrder.text} · ${waitText(nextOrder.wait)}` : undefined} />
+            )}
+            {(watching.length > 0 || inTrade.length > 0) && (
+              <TodoRow icon="flash-outline" ink={inTrade.length ? t.up : t.text2} last action="Open" onPress={() => openOrders('plans')}
+                title={`Armed plans · ${inTrade.length} in a trade · ${watching.length} watching`}
+                sub={inTrade.length ? inTrade.map((x) => x.symbol).slice(0, 6).join(' · ') : 'The desk\'s own plans, waiting for their price'} />
+            )}
+          </Card>
+        </View>
+      )}
+
+      <View style={{ gap: space.sm }}>
+        <Heading icon="wallet-outline" title="Accounts today" />
+        <Card>
+          {books.length === 0 && <Empty text={synced ? 'No funded books in this workspace.' : 'Waiting for the server…'} />}
+          {books.map((b, i) => <BookRow key={b.id} book={b} curve={curves.data?.[b.id]} conv={conv} last={i === books.length - 1} />)}
         </Card>
+      </View>
+
+      {holdings.length > 0 && (
+        <View style={{ gap: space.sm }}>
+          <Heading icon="podium-outline" title={`Positions · ${holdings.length}`}
+            right={<Delta v="small" value={unrealized} text={`${signedMoney(unrealized, conv(0, holdings[0]?.currency).cur)} open`} />} />
+          <Card>
+            {(allPositions ? holdings : holdings.slice(0, 5)).map((p, i, all) => (
+              <MoverRow key={`${p.portfolioId}:${p.symbol}`} pos={p} bookName={bookOf(p.portfolioId)?.name ?? ''} scale={moverScale} conv={conv} last={i === all.length - 1} />
+            ))}
+            {holdings.length > 5 && (
+              <Txt v="small" color={t.accent} style={{ fontWeight: '700', paddingTop: space.sm }} onPress={() => setAllPositions((v) => !v)}>
+                {allPositions ? 'Show the top 5' : `Show all ${holdings.length}`}
+              </Txt>
+            )}
+          </Card>
+        </View>
       )}
 
-      <Tabs compact value={view} onChange={setView} options={[
-        { key: 'overview', label: 'Overview' },
-        { key: 'positions', label: 'Positions', badge: holdings.length },
-        { key: 'plans', label: 'Plans', badge: s ? watching.length + inTrade.length : undefined },
-        { key: 'activity', label: 'Activity' },
-      ]} />
+      <View style={{ gap: space.sm }}>
+        <Heading icon="globe-outline" title="The market today" />
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          {INDEX_FUNDS.map((f) => <IndexTile key={f.symbol} symbol={f.symbol} name={f.name} />)}
+        </View>
+      </View>
 
-      {view === 'overview' && (
-        <>
-          <View style={{ gap: space.sm }}>
-            <Heading icon="globe-outline" title="The market today" />
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              {INDEX_FUNDS.map((f) => <IndexTile key={f.symbol} symbol={f.symbol} name={f.name} />)}
-            </View>
-          </View>
-
-          <View style={{ gap: space.sm }}>
-            <Heading icon="wallet-outline" title="Accounts today" />
-            <Card>
-              {books.length === 0 && <Empty text={synced ? 'No funded books in this workspace.' : 'Waiting for the server…'} />}
-              {books.map((b, i) => <BookRow key={b.id} book={b} curve={curves.data?.[b.id]} conv={conv} last={i === books.length - 1} />)}
-            </Card>
-          </View>
-
-          {holdings.length > 0 && (
-            <View style={{ gap: space.sm }}>
-              <Heading icon="podium-outline" title="Biggest gains and losses now"
-                right={holdings.length > 5 ? <Txt v="small" color={t.accent} onPress={() => setView('positions')}>All {holdings.length}</Txt> : undefined} />
-              <Card>
-                {holdings.slice(0, 5).map((p, i, all) => (
-                  <MoverRow key={`${p.portfolioId}:${p.symbol}`} pos={p} bookName={bookOf(p.portfolioId)?.name ?? ''} scale={moverScale} conv={conv} last={i === all.length - 1} />
-                ))}
-              </Card>
-            </View>
-          )}
-
-          {groups.map((g, i) => {
-            const l = ledgers.data?.[i];
-            const days = l ? [...l.days].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-10) : [];
-            // a group with no closed trade has nothing to chart
-            if (ledgers.data && !days.some((d) => Math.abs(d.realized) > 0.005)) return null;
-            return (
-              <View key={g.label} style={{ gap: space.sm }}>
-                <Heading icon="bar-chart-outline" title={`Closed trades by day${groups.length > 1 ? ` · ${g.label}` : ''}`}
-                  right={<Txt v="small" color={t.accent} onPress={() => router.navigate('/ledger')}>Money</Txt>} />
-                <Card>
-                  {l ? <DayBars items={days.map((d) => ({ label: shortDate(`${d.date}T12:00:00`), value: d.realized }))} format={(v) => signedMoney(v, l.currency ?? 'USD')} />
-                    : <Skeleton height={104} round={radius.md} />}
-                </Card>
-              </View>
-            );
-          })}
-        </>
-      )}
-
-      {view === 'positions' && <PositionsView holdings={holdings} bookOf={bookOf} conv={conv} />}
-
-      {view === 'plans' && <PlansView s={s} watching={watching} inTrade={inTrade} />}
-
-      {view === 'activity' && (
+      {timeline.length > 0 && (
         <View style={{ gap: space.sm }}>
           <Heading icon="time-outline" title="What happened today"
             right={<Txt v="small" color={t.accent} onPress={() => router.navigate('/alerts')}>Alerts</Txt>} />
           <Card>
-            {!s && <SkeletonRows rows={5} />}
-            {s && s.timeline.length === 0 && <Empty text="Nothing has happened yet today." />}
-            {s && s.timeline.slice(0, 30).map((e, i, all) => (
-              <Row key={`${e.ts}-${e.runId}-${i}`} last={i === all.length - 1}
+            {(allActivity ? timeline.slice(0, 40) : timeline.slice(0, 5)).map((e, i, all) => (
+              <Row key={`${e.ts}-${e.runId}-${i}`} last={i === all.length - 1 && timeline.length <= 5}
                 left={<Txt><Txt style={{ fontWeight: '700' }}>{e.symbol}</Txt>  {titleCase(e.kind)}</Txt>}
                 sub={e.text}
                 right={<Txt v="small" dim num>{clock(e.ts)}</Txt>}
                 rightSub={e.pnl != null ? <Delta v="small" value={e.pnl} text={signedMoney(e.pnl)} /> : undefined} />
             ))}
+            {timeline.length > 5 && (
+              <Txt v="small" color={t.accent} style={{ fontWeight: '700', paddingTop: space.sm }} onPress={() => setAllActivity((v) => !v)}>
+                {allActivity ? 'Show less' : `Show all ${Math.min(timeline.length, 40)}`}
+              </Txt>
+            )}
           </Card>
         </View>
       )}
-      {!s && summary.error && <Txt color={t.down}>{summary.error}</Txt>}
+
+      {groups.map((g, i) => {
+        const l = ledgers.data?.[i];
+        const days = l ? [...l.days].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-10) : [];
+        // a group with no closed trade has nothing to chart
+        if (!l || !days.some((d) => Math.abs(d.realized) > 0.005)) return null;
+        return (
+          <View key={g.label} style={{ gap: space.sm }}>
+            <Heading icon="bar-chart-outline" title={`Closed trades by day${groups.length > 1 ? ` · ${g.label}` : ''}`}
+              right={<Txt v="small" color={t.accent} onPress={() => router.navigate('/ledger')}>Money</Txt>} />
+            <Card>
+              <DayBars items={days.map((d) => ({ label: shortDate(`${d.date}T12:00:00`), value: d.realized }))} format={(v) => signedMoney(v, l.currency ?? 'USD')} />
+            </Card>
+          </View>
+        );
+      })}
+      {!s && summary.error && <Txt v="small" color={t.down}>{summary.error}</Txt>}
     </Screen>
   );
 }

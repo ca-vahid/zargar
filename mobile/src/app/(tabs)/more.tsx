@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { TextInput, View } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 
-import { Button, Card, Row, Screen, Txt } from '@/components/ui';
+import { Button, Card, Txt } from '@/components/ui';
+import { Screen } from '@/components/ui';
 import { APP_VERSION } from '@/config';
 import { useStore } from '@/store';
 import { radius, space, useTheme } from '@/theme';
@@ -16,15 +17,25 @@ export default function MoreScreen() {
   const liveAlerts = useStore((s) => s.liveAlerts.length);
   const [symbol, setSymbol] = useState('');
   const clean = symbol.trim().toUpperCase();
+  const chart = () => clean && router.navigate({ pathname: '/chart/[symbol]', params: { symbol: clean } });
 
-  const item = (icon: IconName, label: string, sub: string, href: string, last = false) => (
-    <Row key={href} last={last} onPress={() => router.navigate(href as any)}
-      left={<View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        <Ionicons name={icon} size={20} color={t.text2} />
+  const item = (icon: IconName, ink: string, label: string, sub: string, href: string, last = false, note?: string) => (
+    <Pressable key={href} onPress={() => router.navigate(href as any)} accessibilityRole="button" accessibilityLabel={label} android_ripple={{ color: t.surface3 }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: last ? 0 : 0.5, borderBottomColor: t.line }}>
+      <View style={{ width: 40, height: 40, borderRadius: radius.md, backgroundColor: `${ink}22`, alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name={icon} size={21} color={ink} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
         <Txt v="head">{label}</Txt>
-      </View>}
-      sub={sub}
-      right={<Ionicons name="chevron-forward" size={18} color={t.text3} />} />
+        <Txt v="small" dim numberOfLines={2}>{sub}</Txt>
+      </View>
+      {!!note && (
+        <View style={{ backgroundColor: t.accent, borderRadius: 999, minWidth: 20, paddingHorizontal: 6, alignItems: 'center' }}>
+          <Txt v="small" color={t.onAccent} style={{ fontWeight: '700' }}>{note}</Txt>
+        </View>
+      )}
+      <Ionicons name="chevron-forward" size={18} color={t.text3} />
+    </Pressable>
   );
 
   return (
@@ -33,20 +44,21 @@ export default function MoreScreen() {
         <Txt v="label" faint>Open a chart</Txt>
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           <TextInput value={symbol} onChangeText={setSymbol} placeholder="Symbol, e.g. SPY" placeholderTextColor={t.text3}
-            autoCapitalize="characters" autoCorrect={false} maxLength={10} accessibilityLabel="Symbol"
-            onSubmitEditing={() => clean && router.navigate({ pathname: '/chart/[symbol]', params: { symbol: clean } })}
+            autoCapitalize="characters" autoCorrect={false} maxLength={10} accessibilityLabel="Symbol" onSubmitEditing={chart}
             style={{ flex: 1, backgroundColor: t.surface2, color: t.text, borderRadius: radius.sm, paddingHorizontal: space.md, fontSize: 15, minHeight: 46 }} />
-          <Button label="Chart" disabled={!clean} onPress={() => router.navigate({ pathname: '/chart/[symbol]', params: { symbol: clean } })} />
+          <Button label="Chart" disabled={!clean} onPress={chart} />
         </View>
       </Card>
 
-      <Card>
-        {item('notifications-outline', 'Alerts', liveAlerts ? `${liveAlerts} new since you opened the app` : 'What the desk flagged, newest first', '/alerts')}
-        {item('alarm-outline', 'Standing orders', 'Your own order plans: arm them, watch them fill', '/standing')}
-        {item('flash-outline', 'Armed plans', 'Every plan waiting for its level, and the ones in a trade', '/armed')}
-        {item('cash-outline', 'Money', 'What each workspace made and lost, in plain numbers', '/ledger')}
-        {item('pulse-outline', 'System', 'Server, brokers, price feed and tip intake', '/system')}
-        {item('settings-outline', 'Settings', 'Notifications, app lock, server address, sign out', '/settings', true)}
+      <Card style={{ paddingVertical: space.sm }}>
+        {item('notifications-outline', t.warn, 'Alerts', 'What the desk flagged, newest first', '/alerts', false, liveAlerts ? String(liveAlerts) : undefined)}
+        {item('cash-outline', t.up, 'Money', 'What each workspace made and lost, in plain numbers', '/ledger')}
+        {item('telescope-outline', t.series, 'Research', 'Company notes, the Scout screen and the Scout agent', '/research', true)}
+      </Card>
+
+      <Card style={{ paddingVertical: space.sm }}>
+        {item('pulse-outline', t.series3, 'System', 'Server, brokers, price feed and tip intake', '/system')}
+        {item('settings-outline', t.text2, 'Settings', 'Notifications, app lock, updates, sign out', '/settings', true)}
       </Card>
 
       <Txt v="small" faint style={{ textAlign: 'center' }}>

@@ -68,8 +68,7 @@ export default function RootLayout() {
         contentStyle: { backgroundColor: t.bg }, headerRight: () => <HeaderRight /> }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="alerts" options={{ title: 'Alerts' }} />
-        <Stack.Screen name="armed" options={{ title: 'Armed plans' }} />
-        <Stack.Screen name="standing" options={{ title: 'Standing orders' }} />
+        <Stack.Screen name="research" options={{ title: 'Research' }} />
         <Stack.Screen name="ledger" options={{ title: 'Money' }} />
         <Stack.Screen name="system" options={{ title: 'System' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />

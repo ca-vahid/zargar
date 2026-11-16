@@ -144,7 +144,7 @@ describe('books', () => {
 
 describe('notification links', () => {
   it('opens the screen that shows what the web path showed', () => {
-    expect(routeForWebPath('/armed/abc123')).toBe('/armed');
+    expect(routeForWebPath('/armed/abc123')).toBe('/orders?tab=plans');
     expect(routeForWebPath('/inbox')).toBe('/tips');
     expect(routeForWebPath('/inbox/analyst/9')).toBe('/tips');
     expect(routeForWebPath('/dashboard')).toBe('/portfolio');

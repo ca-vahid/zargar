@@ -1,10 +1,10 @@
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { api } from '@/api/endpoints';
 import type { ArmedSummary } from '@/api/types';
-import { Async, Button, Card, Delta, Empty, Pill, Row, Screen, Section, styles, Tabs, Txt } from '@/components/ui';
+import { Async, Button, Card, Chips, Delta, Empty, Pill, Row, Screen, Section, styles, Txt } from '@/components/ui';
 import { usePoll } from '@/hooks/usePoll';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { workspaceOf } from '@/lib/books';
@@ -16,10 +16,10 @@ import { space } from '@/theme';
 
 type Tab = 'trade' | 'watching' | 'stopped';
 
-export default function ArmedScreen() {
+export function ArmedScreen({ header }: { header?: ReactNode }) {
   const [tab, setTab] = useState<Tab>('trade');
   const ws = useWorkspace();
-  const raw = usePoll(() => api.armedSummary(), 20000);
+  const raw = usePoll(() => api.armedSummary(), 20000, [], 'armed:summary');
   // the server's summary spans every book: keep this workspace's plans (stopped plans carry no book, so all show)
   const summary = useMemo(() => {
     const d = raw.data;
@@ -48,12 +48,11 @@ export default function ArmedScreen() {
 
   return (
     <Screen onRefresh={summary.refresh} refreshing={summary.refreshing}>
+      {header}
       <Async state={summary}>
         {(s: ArmedSummary) => (
           <>
             <View style={styles.wrap}>
-              <Pill kind="accent" text={`${ws === 'live' ? 'Live' : 'Practice'} · ${s.watching.length} watching`} />
-              <Pill kind={s.inTrade.length ? 'ok' : 'dim'} text={`${s.inTrade.length} in a trade`} />
               {s.attention.length > 0 && <Pill kind="bad" text={`${s.attention.length} need attention`} />}
             </View>
             <Card>
@@ -67,10 +66,10 @@ export default function ArmedScreen() {
               </Txt>
             </Card>
 
-            <Tabs value={tab} onChange={setTab} options={[
-              { key: 'trade', label: 'In a trade', badge: s.inTrade.length },
-              { key: 'watching', label: 'Watching' },
-              { key: 'stopped', label: 'Stopped today' },
+            <Chips value={tab} onChange={setTab} options={[
+              { key: 'trade', label: `In a trade · ${s.inTrade.length}` },
+              { key: 'watching', label: `Watching · ${s.watching.length}` },
+              { key: 'stopped', label: `Stopped today · ${s.stoppedToday.length}` },
             ]} />
 
             {tab === 'trade' && (s.inTrade.length === 0

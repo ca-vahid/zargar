@@ -58,6 +58,6 @@ describe('alerts', () => {
     expect(alertLabel({ kind: 'TipIntakeStalled', level: 'error' })).toBe('Tip intake stalled');
   });
   it('opens the standing orders screen from its notification', () => {
-    expect(routeForWebPath('/standing')).toBe('/standing');
+    expect(routeForWebPath('/standing')).toBe('/orders?tab=standing');
   });
 });

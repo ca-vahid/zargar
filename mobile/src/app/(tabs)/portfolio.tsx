@@ -182,9 +182,8 @@ export default function PortfolioScreen() {
         </Card>
       </Section>
 
-      <Section title={`Working orders · ${orders.length}`}>
+      {orders.length > 0 && <Section title={`Working orders · ${orders.length}`}>
         <Card>
-          {orders.length === 0 && <Empty text="No orders are working in this book." />}
           {orders.map((o, i) => (
             <Row key={o.id} last={i === orders.length - 1} onPress={o.side === 'BUY' ? () => void cancelEntry(o) : undefined}
               left={`${o.side === 'BUY' ? 'Buy' : 'Sell'} ${qty(o.qty)} ${o.option?.short ?? o.symbol}`}
@@ -192,7 +191,7 @@ export default function PortfolioScreen() {
               right={<Txt v="small" dim num>{dayTime(o.createdAt)}</Txt>} />
           ))}
         </Card>
-      </Section>
+      </Section>}
 
       <Section title="Recent fills">
         <Card>

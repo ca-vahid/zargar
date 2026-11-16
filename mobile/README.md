@@ -16,8 +16,8 @@ each asks for confirmation and then the phone's fingerprint or PIN:
 | Pause or resume entries on one book | Portfolio |
 | Close a position, sell an armed plan's trade | Chart of a position, Armed plans |
 | Cancel an unfilled buy order | Portfolio → Working orders |
-| Pause or resume an armed plan | Armed plans → Watching |
-| Arm, disarm or cancel a standing order; the real-money switch for standing orders | More → Standing orders |
+| Pause or resume an armed plan | Orders → Armed plans |
+| Arm, disarm or cancel a standing order; the real-money switch for standing orders | Orders → Standing |
 
 It offers no way to place a new manual order, and it cannot cancel a stop or a target.
 Standing orders are drafted on the desk (by Claude, from the person's plan); the phone arms
@@ -29,8 +29,9 @@ refreshed plan; a card the checks block cannot be approved here.
 ## Layout
 
 ```
-src/app/            screens (Expo Router): (tabs)/ Now · Portfolio · Tips · Research · More,
-                    plus alerts, armed, ledger, system, settings, chart/[symbol], dossier/[id]
+src/app/            screens (Expo Router): (tabs)/ Home · Orders · Portfolio · Tips · More,
+                    plus research, alerts, ledger, system, settings, chart/[symbol], dossier/[id]
+src/screens/        Standing and Armed: the panels of the Orders tab
 src/api/            client.ts (HTTP), endpoints.ts (the routes used), types.ts (generated copy)
 src/auth/           session.ts (boot, sign-in, sign-out), google.ts, lock.ts, storage.ts
 src/live/socket.ts  the one WebSocket: snapshot on connect, reconnect with backoff

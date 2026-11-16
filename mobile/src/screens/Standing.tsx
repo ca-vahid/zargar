@@ -1,18 +1,18 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 
 import { api } from '@/api/endpoints';
 import { BrokerBadge, EmptyArt, Heading, SymbolBadge } from '@/components/graphics';
 import { Button, Card, Pill, Problem, Screen, SkeletonRows, styles, Txt } from '@/components/ui';
 import { type BookBroker, useBrokers } from '@/hooks/useBrokers';
-import { usePoll } from '@/hooks/usePoll';
+import { useStanding } from '@/hooks/useStanding';
 import { runAction } from '@/lib/actions';
 import { clock, price, qty } from '@/lib/format';
 import { newYorkTime } from '@/lib/market';
 import {
   exitsText, groupPlans, guardText, isOpen, isRunning, minutesToTrigger, orderLine, preflightText, priceSign, sizeText,
-  standingCounts, STATUS_LABEL, type StandingOrder, type StandingPlan, type StandingPreflight, statusTone, waitText, whenText,
+  STATUS_LABEL, type StandingOrder, type StandingPlan, type StandingPreflight, statusTone, waitText, whenText,
 } from '@/lib/standing';
 import { useStore } from '@/store';
 import { radius, space, useTheme } from '@/theme';
@@ -95,11 +95,11 @@ function OrderStep({ o, last, at, now, busy, preflight, history, onCheck, onDisa
   );
 }
 
-export default function StandingScreen() {
+export function StandingScreen({ header }: { header?: ReactNode }) {
   const t = useTheme();
   const brokerOf = useBrokers();
   const [fast, setFast] = useState(false);
-  const list = usePoll(() => api.standing(), fast ? 4000 : 15000, [], 'standing');
+  const { list, orders, counts, elsewhere, allowLive, ws } = useStanding(fast ? 4000 : 15000);
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<Record<string, StandingPreflight>>({});
   const [showHistory, setShowHistory] = useState(false);
@@ -109,10 +109,7 @@ export default function StandingScreen() {
     return () => clearInterval(timer);
   }, []);
 
-  const orders = list.data?.orders;
-  const allowLive = !!list.data?.allowLive;
   const plans = useMemo(() => groupPlans(orders ?? []), [orders]);
-  const counts = useMemo(() => standingCounts(orders ?? []), [orders]);
   const at = newYorkTime(now);
   // while an order is being sent or is working, follow it closely
   const running = counts.working > 0;
@@ -216,6 +213,7 @@ export default function StandingScreen() {
 
   return (
     <Screen onRefresh={list.refresh} refreshing={list.refreshing}>
+      {header}
       {orders == null && (list.error ? <Problem error={list.error} onRetry={list.refresh} /> : <Card><SkeletonRows rows={5} /></Card>)}
       {orders != null && (
         <>
@@ -241,7 +239,7 @@ export default function StandingScreen() {
             </Card>
           )}
 
-          <Pressable onPress={() => { if (!busy) void toggleLive(); }} accessibilityRole="button"
+          {ws === 'live' && <Pressable onPress={() => { if (!busy) void toggleLive(); }} accessibilityRole="button"
             accessibilityLabel={allowLive ? 'Real money is on. Turn it off' : 'Real money is off. Turn it on'}
             style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.lg, borderWidth: 1, padding: space.lg,
               borderColor: allowLive ? t.downFill : t.line, backgroundColor: allowLive ? `${t.downFill}1f` : t.surface }}>
@@ -253,12 +251,14 @@ export default function StandingScreen() {
                 : 'Armed orders on real accounts wait until you turn this on.'}</Txt>
             </View>
             <Txt v="small" color={t.accent} style={{ fontWeight: '700' }}>{allowLive ? 'Turn off' : 'Turn on'}</Txt>
-          </Pressable>
+          </Pressable>}
 
           {list.error && <Txt v="small" color={t.down}>Not refreshed: {list.error}</Txt>}
 
           {plans.open.length === 0
-            ? <EmptyArt text="No open standing orders. Tell Claude your plan on the desk — the orders appear here for you to arm." />
+            ? <EmptyArt text={elsewhere > 0
+                ? `${elsewhere} open standing order${elsewhere > 1 ? 's are' : ' is'} in the ${ws === 'live' ? 'Practice' : 'Live'} workspace. Switch at the top to see ${elsewhere > 1 ? 'them' : 'it'}.`
+                : `No open standing orders in ${ws === 'live' ? 'Live' : 'Practice'}. Tell Claude your plan on the desk — the orders appear here for you to arm.`} />
             : (
               <View style={{ gap: space.sm }}>
                 <Heading icon="list-outline" title={`Open plans · ${plans.open.length}`} />

@@ -50,6 +50,8 @@ export interface AppState {
   liveAlerts: AlertItem[];
   /** bumps when something the armed summary shows has changed (plan event, halt) */
   armedBump: number;
+  /** standing orders that need the person in the workspace on screen (drafts + failed) */
+  standingBadge: number;
   // --- ui
   selectedBook: string | null;
   confirm: ConfirmRequest | null;
@@ -80,6 +82,7 @@ const live = {
   broker: null as BrokerState | null,
   liveAlerts: [] as AlertItem[],
   armedBump: 0,
+  standingBadge: 0,
 };
 
 export const useStore = create<AppState>((set, get) => ({
