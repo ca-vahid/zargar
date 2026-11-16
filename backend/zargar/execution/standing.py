@@ -269,6 +269,11 @@ class StandingOrderService:
         qty = size_for(row, limit)
         if qty < 1:
             return {"ok": False, "why": "nothing left to trade at this price"}
+        if row.side == "SELL":
+            held = self._held(row)
+            if held < 1:
+                return {"ok": False, "why": f"the book holds no {row.symbol} to sell"}
+            qty = min(qty, held)
         res = await self.engine.orders.place(self._intent(row, qty, limit, dry_run=True))
         risk = res.get("risk") or {}
         failed = [c for c in risk.get("checks", []) if not c.get("passed")]
@@ -341,7 +346,24 @@ class StandingOrderService:
         if qty < 1:
             return await self._finish(row, "done" if row.filled_qty else "failed",
                                       "budget too small for one share" if not row.filled_qty else "complete")
+        if row.side == "SELL":
+            # 2026-11-16: a reduce-only SELL is checked by nobody against the shares held (RiskGate runs the
+            # safety-only list); an XIU.TO sell with no position reached IBKR three times. On a US name the venue
+            # would have opened a SHORT. A sell never exceeds what the book holds.
+            held = self._held(row)
+            if held < 1:
+                return await self._finish(row, "done" if row.filled_qty else "failed",
+                                          "complete" if row.filled_qty else f"the book holds no {row.symbol} to sell")
+            qty = min(qty, held)
         await self._place(row, qty, limit, q)
+
+    def _held(self, row: StandingOrder) -> float:
+        """Whole shares of the symbol this book holds now (fractional remainders cannot be sold by a whole-share order)."""
+        try:
+            return float(math.floor(max(0.0, float(self.engine.positions.position_qty(row.portfolio_id, row.symbol,
+                                                                                       "STK") or 0.0)) + 1e-9))
+        except Exception:                                       # noqa: BLE001
+            return 0.0
 
     def _triggered(self, row: StandingOrder, now: dt.datetime) -> tuple[bool, str]:
         if not is_us_market_hours(now):
