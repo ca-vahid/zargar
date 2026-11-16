@@ -111,8 +111,16 @@ class YahooQuoteFeed(QuoteFeed):
         poll_seconds: float | Callable[[], float] = 3.0,
         client: httpx.AsyncClient | None = None,
         on_bars: Callable[[list], None] | None = None,
+        context_only: Callable[[str], bool] | None = None,
+        context_seconds: float | Callable[[], float] = 120.0,
     ) -> None:
         self._on_quote = on_quote
+        # 2026-11-16: a symbol another feed is streaming (Alpaca) only needs Yahoo for session context; polling it
+        # every cycle drew a 429 every ~2 min and starved the names Yahoo is the SOLE source for (XIU.TO stale 7 min
+        # while a live standing order waited on it). Such symbols are fetched at most every `context_seconds`.
+        self._context_only = context_only
+        self._context_seconds = context_seconds
+        self._fetched_at: dict[str, float] = {}
         # optional: hand completed 1-minute exchange bars to a consumer (the bar
         # aggregator's ingest_exchange_bar) so live decisions use real OHLC/volume
         self._on_bars = on_bars
@@ -156,6 +164,31 @@ class YahooQuoteFeed(QuoteFeed):
             return max(1.0, float(raw))  # floor: don't hammer Yahoo below 1s
         except (TypeError, ValueError):
             return 3.0
+
+    def _due_symbols(self) -> list[str]:
+        """This sweep's symbols: every sole-source symbol, plus context-only ones whose last fetch is older than
+        `context_seconds` (sole-source first, so a rate limit hits the context polls)."""
+        now = time.monotonic()
+        raw = self._context_seconds() if callable(self._context_seconds) else self._context_seconds
+        try:
+            every = max(0.0, float(raw))
+        except (TypeError, ValueError):
+            every = 120.0
+        primary, context = [], []
+        for s in sorted(self._symbols):
+            slow = False
+            if self._context_only is not None:
+                try:
+                    slow = bool(self._context_only(s))
+                except Exception:  # pragma: no cover - defensive
+                    slow = False
+            if not slow:
+                primary.append(s)
+            elif now - self._fetched_at.get(s, 0.0) >= every:
+                context.append(s)
+        for s in primary + context:
+            self._fetched_at[s] = now
+        return primary + context
 
     async def _loop(self) -> None:
         while True:
@@ -217,7 +250,7 @@ class YahooQuoteFeed(QuoteFeed):
                     except (ValueError, KeyError, TypeError):
                         pass
 
-        await asyncio.gather(*(fetch(s) for s in sorted(self._symbols)))
+        await asyncio.gather(*(fetch(s) for s in self._due_symbols()))
         if rate_limited:
             self._cooldown_until = time.monotonic() + COOLDOWN_SECONDS
             log.warning("yahoo rate-limited (429) — cooling down %ss", COOLDOWN_SECONDS)

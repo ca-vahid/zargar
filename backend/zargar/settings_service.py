@@ -669,6 +669,7 @@ DEFAULTS: dict[str, Any] = {
     "sim.reg_fee_per_contract": 0.05,       # practice fills: regulatory/exchange fees per contract on top (OCC/ORF/FINRA ≈ $0.05)
     "sim.stock_commission": 0.0,            # practice fills: flat commission per share trade — Webull CA charges $0 (audited 2026-09-01)
     "quotes.yahoo_poll_seconds": 1.0,   # 1=frantic … 10=calm (see ui tick-speed select)
+    "quotes.yahoo_context_seconds": 120.0,  # 2026-11-16: an Alpaca-streamed symbol is polled on Yahoo (context only) at most this often
     # --- broker fee schedule (editable estimates; verify via order impact) ----
     "fees.webull_fx_pct": 1.5,          # Webull CA: rate + 1.5% markup on CAD<->USD
     "fees.wealthsimple_fx_pct": 1.5,    # WS: ~1.5% conversion on USD trades in CAD accts
