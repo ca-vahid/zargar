@@ -23,6 +23,7 @@ import contextlib
 import datetime as dt
 import logging
 import math
+import time
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -97,6 +98,7 @@ class StandingOrderService:
         self.engine = engine
         self._task = None
         self._alerted: set[str] = set()
+        self._refreshed_at: dict[str, float] = {}
 
     # ------------------------------------------------------------------ settings
     def s(self, key: str, default):
@@ -316,6 +318,8 @@ class StandingOrderService:
         if row.expires_on < now.date().isoformat():
             return await self._finish(row, "expired", "not triggered before it expired")
         fired, why = self._triggered(row, now)
+        if why == "quote is stale" and await self._refresh_quote(row.symbol):
+            fired, why = self._triggered(row, now)
         if not fired:
             await self._note_wait(row, why)
             return
@@ -342,6 +346,11 @@ class StandingOrderService:
     def _triggered(self, row: StandingOrder, now: dt.datetime) -> tuple[bool, str]:
         if not is_us_market_hours(now):
             return False, "market closed"
+        # the clock first: a quote refresh is only worth asking for once the order is due
+        if row.trigger == "at" and row.not_before:
+            hh, mm = (int(x) for x in row.not_before.split(":"))
+            if (now.hour, now.minute) < (hh, mm):
+                return False, f"waiting for {row.not_before} ET"
         q = self.engine.quotes.get(row.symbol)
         stale = float(self.engine.settings.get("risk.stale_quote_seconds", 10))
         if q is None:
@@ -350,13 +359,25 @@ class StandingOrderService:
             return False, "quote is stale"
         if not (q.bid and q.ask and q.ask >= q.bid):
             return False, "no two-sided quote yet"
-        if row.trigger == "at" and row.not_before:
-            hh, mm = (int(x) for x in row.not_before.split(":"))
-            if (now.hour, now.minute) < (hh, mm):
-                return False, f"waiting for {row.not_before} ET"
         if row.trigger == "listing" and not (q.volume and q.volume > 0 and q.last):
             return False, "waiting for the first regular-session prints"
         return True, ""
+
+    async def _refresh_quote(self, symbol: str) -> bool:
+        """2026-11-16: a due order on a symbol whose only source is the Yahoo poll (XIU.TO) saw a 20-40 s old quote
+        on most ticks and the 10 s freshness rule held it. Ask the feed for one fresh quote (at most every 5 s)."""
+        refresh = getattr(self.engine.feed, "refresh", None)
+        if refresh is None:
+            return False
+        last = self._refreshed_at.get(symbol, 0.0)
+        if time.monotonic() - last < 5.0:
+            return False
+        self._refreshed_at[symbol] = time.monotonic()
+        try:
+            return bool(await refresh(symbol))
+        except Exception:                                       # noqa: BLE001
+            log.warning("quote refresh failed for %s", symbol, exc_info=True)
+            return False
 
     # ------------------------------------------------------------------ placement (write-ahead)
     def _intent(self, row: StandingOrder, qty: float, limit: float, *, dry_run: bool = False):

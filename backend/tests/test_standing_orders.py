@@ -180,3 +180,27 @@ async def test_a_crash_mid_placement_is_reconciled_from_the_order_tag_never_rese
     async with eng.sf() as s:
         n = len((await s.execute(select(Order).where(Order.symbol == "STI"))).scalars().all())
     assert n == 1                                                               # nothing re-sent
+
+
+async def test_a_due_order_on_a_stale_quote_asks_the_feed_for_a_fresh_one(rig, monkeypatch):
+    """2026-11-16: XIU.TO's only source (the Yahoo poll) ran 20-40 s behind the 10 s freshness rule; a due order
+    now asks the feed for one fresh quote instead of waiting on the sweep."""
+    eng, svc = rig
+    await _quote(eng, "STJ")
+    calls = []
+    real_age = eng.quotes.age_seconds
+    monkeypatch.setattr(eng.quotes, "age_seconds", lambda s: real_age(s) if calls else 60.0)
+
+    async def refresh(symbol):
+        calls.append(symbol)
+        return True
+    monkeypatch.setattr(eng.feed, "refresh", refresh, raising=False)
+    d = await svc.create({"portfolioId": _sim_pid(eng), "symbol": "STJ", "side": "BUY", "qty": 1, "slippagePct": 2,
+                          "trigger": "at", "notBefore": "12:00"})
+    await svc.arm(d["id"], confirm_phrase(d["id"]))
+    await svc.tick(now=OPEN_NOW)                                   # 11:00 - not due: no refresh asked for
+    assert calls == [] and (await svc.get(d["id"]))["lastError"] == "waiting for 12:00 ET"
+    due = dt.datetime(2026, 11, 10, 12, 1, tzinfo=ET)
+    await svc.tick(now=due)
+    assert calls == ["STJ"]
+    assert (await svc.get(d["id"]))["status"] in ("placing", "working", "done")
