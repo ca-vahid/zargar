@@ -165,6 +165,30 @@ class YahooQuoteFeed(QuoteFeed):
         except (TypeError, ValueError):
             return 3.0
 
+    async def refresh(self, symbol: str) -> bool:
+        """One on-demand fetch for a symbol that must trade NOW (a due standing order whose only source is this
+        poll): the sweep's cadence leaves such a quote older than the risk gate's freshness bar most of the time."""
+        if time.monotonic() < self._cooldown_until:
+            return False
+        try:
+            resp = await self._http.get(CHART_URL.format(symbol=yahoo_symbol(symbol)),
+                                        params={"interval": "1m", "range": "1d", "includePrePost": "true"})
+        except httpx.HTTPError:
+            return False
+        if resp.status_code == 429:
+            self._cooldown_until = time.monotonic() + COOLDOWN_SECONDS
+            return False
+        if resp.status_code != 200:
+            return False
+        try:
+            quote = self._parse_chart(symbol, resp.json())
+        except (ValueError, KeyError):
+            return False
+        if quote is None:
+            return False
+        self._on_quote(quote)
+        return True
+
     def _due_symbols(self) -> list[str]:
         """This sweep's symbols: every sole-source symbol, plus context-only ones whose last fetch is older than
         `context_seconds` (sole-source first, so a rate limit hits the context polls)."""
