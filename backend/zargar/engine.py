@@ -174,7 +174,9 @@ class Engine:
                         on_quote=_yahoo_quote,
                         poll_seconds=lambda: (20.0 if alpaca.connected else
                                               float(self.settings.get("quotes.yahoo_poll_seconds", 1.0))),
-                        on_bars=self._ingest_exchange_bars)
+                        on_bars=self._ingest_exchange_bars,
+                        context_only=alpaca.streaming,
+                        context_seconds=lambda: self.settings.get("quotes.yahoo_context_seconds", 120.0))
                     self.feed = HybridQuoteFeed(alpaca, yahoo)
                     # the trading path evaluates the EXCHANGE bar for a minute when
                     # one is coming (Alpaca-streamed symbol): hold the sampled bar

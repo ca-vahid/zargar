@@ -241,3 +241,21 @@ def test_the_latest_print_row_is_never_a_bar():
         "volume": [1000, 1200, 0]}]}}]}}
     assert [b.ts for b in feed._parse_completed_bars("TST", data)] == [ts[0] * 1000, ts[1] * 1000]
     assert [b.ts for b in parse_bars("TST", "1m", data)] == [ts[0] * 1000, ts[1] * 1000]
+
+
+def test_streamed_symbols_are_polled_only_for_context_and_sole_source_first():
+    """2026-11-16: Alpaca-streamed names polled every cycle drew a 429 every ~2 min and starved XIU.TO (Yahoo is
+    its only source). Streamed names are fetched at most every context_seconds; sole-source names every sweep."""
+    from zargar.brokers.yahoo import YahooQuoteFeed
+    feed = YahooQuoteFeed(on_quote=lambda q: None, context_only=lambda s: s in {"AAPL", "TQQQ"},
+                          context_seconds=120.0)
+    for s in ("AAPL", "TQQQ", "XIU.TO"):
+        feed._symbols.add(s)
+    assert feed._due_symbols() == ["XIU.TO", "AAPL", "TQQQ"]      # first sweep: everything, sole-source first
+    assert feed._due_symbols() == ["XIU.TO"]                      # next sweeps: streamed names wait
+    for s in ("AAPL", "TQQQ"):
+        feed._fetched_at[s] -= 121
+    assert feed._due_symbols() == ["XIU.TO", "AAPL", "TQQQ"]
+    plain = YahooQuoteFeed(on_quote=lambda q: None)               # no streaming feed: every symbol, every sweep
+    plain._symbols.update({"B", "A"})
+    assert plain._due_symbols() == ["A", "B"] and plain._due_symbols() == ["A", "B"]
