@@ -3089,3 +3089,14 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .so-pf.bad { color: var(--down); }
 .so-actions { display: inline-flex; gap: 10px; }
 .so-spin { width: 9px; height: 9px; border-width: 2px; }
+
+/* standing orders: delegated arming (2026-11-16) */
+.so-delegation { margin-top: 8px; }
+.so-delegation-form { margin-top: 8px; }
+.so-form-grid { display: grid; grid-template-columns: max-content 1fr; gap: 10px 16px; align-items: center; padding: 6px 0 12px; }
+.so-form-grid > label { color: var(--text-2, var(--muted)); font-size: 12px; }
+.so-form-grid input[type="number"], .so-form-grid select, .so-form-grid input[type="date"] { max-width: 220px; }
+.so-form-accounts { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.so-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.so-armed-by { font-size: 11px; margin-top: 2px; }
+.so-confirm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

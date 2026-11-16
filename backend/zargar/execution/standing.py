@@ -1,8 +1,10 @@
 """Standing orders (2026-11-14) - the user's own order plan, executed by the app after THEY arm it.
 
 The user says what they want ("sell my SPCX Monday", "buy ANT as soon as it lists with up to $8,000, take profit
-+10%, stop -10%"). Claude drafts it as a `draft` row; only the user arms it (POST /arm with the confirm phrase),
-and a live/paper book additionally needs `execution.standing_orders.allow_live` - Claude never flips either.
++10%, stop -10%"). Claude drafts it as a `draft` row; the user arms it (POST /arm with the confirm phrase) - or,
+while the user's time-boxed DELEGATION is active (2026-11-16), Claude arms it inside that delegation's accounts and
+money caps, which the app enforces. A live/paper book additionally needs `execution.standing_orders.allow_live`,
+which Claude never flips.
 
 Once armed the service, every `poll_seconds`:
 - waits for the trigger: `now` (regular session + a fresh two-sided quote), `at` (not before HH:MM ET) or
@@ -30,7 +32,7 @@ from sqlalchemy import select
 
 from .. import events as ev
 from ..domain import new_id
-from ..models import Order, StandingOrder, utcnow
+from ..models import Order, StandingDelegation, StandingOrder, utcnow
 from ..risk import is_us_market_hours
 
 log = logging.getLogger(__name__)
@@ -46,6 +48,14 @@ _REFUSED = ("REJECTED", "REJECTED_RISK", "ERROR")
 def confirm_phrase(order_id: str) -> str:
     """Sent by the UI's confirm dialog after the user clicks Arm: deliberately not a default a script would send."""
     return f"ARM {order_id[:8]}"
+
+
+DELEGATE_PHRASE = "I DELEGATE ARMING"
+
+
+def delegated_phrase(delegation_id: str) -> str:
+    """The confirm an arm sends under the user's delegation; the app checks the window/accounts/caps behind it."""
+    return f"DELEGATED {delegation_id[:8]}"
 
 
 def today_et(now: dt.datetime | None = None) -> str:
@@ -169,27 +179,165 @@ class StandingOrderService:
             row = await session.get(StandingOrder, oid)
         return self.to_dict(row) if row else None
 
+    # ------------------------------------------------------------------ delegation (2026-11-16)
+    async def create_delegation(self, spec: dict, confirm: str) -> dict:
+        """The user's go-ahead from the Standing orders page. `confirm` is the phrase the page asks them to type."""
+        if confirm.strip() != DELEGATE_PHRASE:
+            raise ValueError(f"type '{DELEGATE_PHRASE}' to delegate arming")
+        pids = [str(p) for p in (spec.get("portfolioIds") or []) if p]
+        if not pids:
+            raise ValueError("pick at least one account")
+        for p in pids:
+            if self.engine.positions.portfolio(p) is None:
+                raise ValueError(f"unknown portfolio {p}")
+        ends = dt.datetime.fromisoformat(str(spec.get("endsAt") or ""))
+        if ends.tzinfo is None:
+            ends = ends.replace(tzinfo=ET)
+        now = dt.datetime.now(dt.timezone.utc)
+        if ends <= now:
+            raise ValueError("the end must be in the future")
+        if ends - now > dt.timedelta(days=31):
+            raise ValueError("a delegation lasts at most 31 days")
+        per, total = float(spec.get("maxOrderNotional") or 0), float(spec.get("maxTotalNotional") or 0)
+        if per <= 0 or total <= 0 or per > total:
+            raise ValueError("set a per-order cap and a total cap (per-order <= total)")
+        row = StandingDelegation(id=new_id(), portfolio_ids=pids, starts_at=now, ends_at=ends,
+                                 max_order_notional=per, max_total_notional=total, note=(spec.get("note") or None))
+        async with self.engine.sf() as session:
+            session.add(row)
+            await session.commit()
+        await self._journal_delegation(row, "delegated")
+        return await self._delegation_dict(row)
+
+    async def revoke_delegation(self, did: str) -> dict:
+        async with self.engine.sf() as session:
+            row = await session.get(StandingDelegation, did)
+            if row is None:
+                raise ValueError("no such delegation")
+            if row.revoked_at is None:
+                row.revoked_at = utcnow()
+                await session.commit()
+        await self._journal_delegation(row, "revoked")
+        return await self._delegation_dict(row)
+
+    async def delegations(self, *, active_only: bool = False) -> list[dict]:
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(StandingDelegation)
+                                          .order_by(StandingDelegation.created_at.desc()).limit(20))).scalars().all()
+        out = [await self._delegation_dict(r) for r in rows]
+        return [d for d in out if d["active"]] if active_only else out
+
+    @staticmethod
+    def _active(d: StandingDelegation, now: dt.datetime | None = None) -> bool:
+        now = now or dt.datetime.now(dt.timezone.utc)
+        return d.revoked_at is None and d.starts_at <= now < d.ends_at
+
+    @staticmethod
+    def buy_notional(row: StandingOrder) -> float | None:
+        """The most a buy can spend: its budget, or qty x its max price. None = unbounded (no delegated arm)."""
+        if row.side != "BUY":
+            return 0.0
+        if row.budget:
+            return float(row.budget)
+        if row.qty and row.max_price:
+            return float(row.qty) * float(row.max_price)
+        return None
+
+    async def _committed(self, did: str) -> float:
+        """Buy money this delegation has armed: filled notional, plus the bound of what is still open."""
+        tag = f"claude:delegation:{did}"
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(StandingOrder).where(StandingOrder.armed_by == tag,
+                                                                      StandingOrder.side == "BUY"))).scalars().all()
+        total = 0.0
+        for r in rows:
+            filled = float(r.filled_qty or 0) * float(r.avg_fill_price or 0)
+            if r.status in OPEN:
+                total += max(filled, self.buy_notional(r) or 0.0)
+            else:
+                total += filled
+        return round(total, 2)
+
+    async def _delegation_dict(self, d: StandingDelegation) -> dict:
+        return {"id": d.id, "portfolioIds": list(d.portfolio_ids or []), "startsAt": d.starts_at.isoformat(),
+                "endsAt": d.ends_at.isoformat(), "maxOrderNotional": d.max_order_notional,
+                "maxTotalNotional": d.max_total_notional, "note": d.note, "active": self._active(d),
+                "revokedAt": d.revoked_at.isoformat() if d.revoked_at else None,
+                "committed": await self._committed(d.id), "confirm": delegated_phrase(d.id)}
+
+    async def _check_delegated(self, row: StandingOrder, confirm: str) -> str:
+        """The app's own gate on an arm made under delegation; returns the `armed_by` stamp or raises."""
+        did_prefix = confirm.strip()[len("DELEGATED "):].strip()
+        async with self.engine.sf() as session:
+            ds = (await session.execute(select(StandingDelegation))).scalars().all()
+        d = next((x for x in ds if x.id.startswith(did_prefix) and len(did_prefix) >= 8), None)
+        if d is None:
+            raise ValueError("no such delegation")
+        if not self._active(d):
+            raise ValueError("this delegation is not active (expired, revoked or not started)")
+        if row.portfolio_id not in (d.portfolio_ids or []):
+            raise ValueError("this account is not covered by the delegation")
+        if row.expires_on > d.ends_at.astimezone(ET).date().isoformat():
+            raise ValueError("the order outlives the delegation - shorten its expiry")
+        if row.side == "BUY":
+            cost = self.buy_notional(row)
+            if cost is None:
+                raise ValueError("a delegated buy needs a budget or a max price")
+            if cost > d.max_order_notional + 1e-6:
+                raise ValueError(f"this buy can spend {cost:,.2f}, over the per-order cap {d.max_order_notional:,.2f}")
+            used = await self._committed(d.id)
+            if used + cost > d.max_total_notional + 1e-6:
+                raise ValueError(f"over the delegation's total cap: {used:,.2f} used + {cost:,.2f} > "
+                                 f"{d.max_total_notional:,.2f}")
+        return f"claude:delegation:{d.id}"
+
+    async def _delegation_for(self, confirm: str) -> StandingDelegation | None:
+        prefix = confirm.strip()[len("DELEGATED "):].strip()
+        async with self.engine.sf() as session:
+            ds = (await session.execute(select(StandingDelegation))).scalars().all()
+        return next((x for x in ds if len(prefix) >= 8 and x.id.startswith(prefix)), None)
+
+    async def _journal_delegation(self, d: StandingDelegation, stage: str) -> None:
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.STANDING_ORDER, {
+                "delegationId": d.id, "stage": stage, "portfolioIds": list(d.portfolio_ids or []),
+                "endsAt": d.ends_at.isoformat(), "maxOrderNotional": d.max_order_notional,
+                "maxTotalNotional": d.max_total_notional}, aggregate_type="standing_delegation", aggregate_id=d.id)
+
+    # ------------------------------------------------------------------ arming
     async def arm(self, oid: str, confirm: str) -> dict:
+        armed_by = "user"
         async with self.engine.sf() as session:
             row = await session.get(StandingOrder, oid)
             if row is None:
                 raise ValueError("no such standing order")
             if row.status != "draft":
                 raise ValueError(f"only a draft can be armed (this one is {row.status})")
-            if confirm.strip() != confirm_phrase(row.id):
+            if confirm.strip().startswith("DELEGATED "):
+                armed_by = await self._check_delegated(row, confirm)
+            elif confirm.strip() != confirm_phrase(row.id):
                 raise ValueError(f"type '{confirm_phrase(row.id)}' to arm this order")
             if self._kind(row.portfolio_id) in ("live", "paper") and not bool(self.s("allow_live", False)):
                 raise ValueError("real-money standing orders are off: turn on Settings -> "
                                  "execution.standing_orders.allow_live first")
             if row.expires_on < today_et():
                 raise ValueError("this draft expired - change its date first")
-            row.status, row.armed_at, row.last_error = "armed", utcnow(), None
+            row.status, row.armed_at, row.last_error, row.armed_by = "armed", utcnow(), None, armed_by
             await session.commit()
         with contextlib.suppress(Exception):
             await self.engine.ensure_symbol(row.symbol)
-        await self._journal(row, "armed", {})
+        await self._journal(row, "armed", {"armedBy": armed_by})
+        if armed_by != "user":
+            cap = row.budget or (f"<= {row.max_price}" if row.max_price else "")
+            await self._push(f"Claude armed: {row.side} {row.symbol}",
+                             f"{row.side} {row.qty or ''} {row.symbol} {cap} on {self._name(row.portfolio_id)} "
+                             f"(delegation) - {row.plan_name or row.note or ''}".strip(),
+                             key=f"delegated-arm:{row.id}")
         self.start()
         return self.to_dict(row)
+
+    def _name(self, pid: str) -> str:
+        return (self.engine.positions.portfolio(pid) or {}).get("name") or pid[:8]
 
     async def create_plan(self, name: str, orders: list[dict]) -> dict:
         """Several drafts that the user arms with ONE click (arm_plan). Validated all-or-nothing."""
@@ -209,7 +357,8 @@ class StandingOrderService:
 
     async def arm_plan(self, plan_id: str, confirm: str) -> dict:
         """The user's one click: arms every draft of the plan, or none (each passes the same gates as arm())."""
-        if confirm.strip() != confirm_phrase(plan_id):
+        delegated = confirm.strip().startswith("DELEGATED ")
+        if not delegated and confirm.strip() != confirm_phrase(plan_id):
             raise ValueError("confirm phrase does not match this plan")
         async with self.engine.sf() as session:
             rows = (await session.execute(select(StandingOrder).where(StandingOrder.plan_id == plan_id))).scalars().all()
@@ -222,7 +371,15 @@ class StandingOrderService:
                                  "execution.standing_orders.allow_live first")
             if r.expires_on < today_et():
                 raise ValueError(f"{r.symbol} {r.side} expired - change its date first")
-        armed = [await self.arm(r.id, confirm_phrase(r.id)) for r in drafts]
+        if delegated:
+            # all or nothing: every buy of the plan must fit the caps TOGETHER before any order is armed
+            for r in drafts:
+                await self._check_delegated(r, confirm)
+            plan_cost = sum(self.buy_notional(r) or 0.0 for r in drafts)
+            d = await self._delegation_for(confirm)
+            if d is not None and (await self._committed(d.id)) + plan_cost > d.max_total_notional + 1e-6:
+                raise ValueError("this plan's buys together exceed the delegation's total cap")
+        armed = [await self.arm(r.id, confirm.strip() if delegated else confirm_phrase(r.id)) for r in drafts]
         return {"planId": plan_id, "armed": armed}
 
     async def disarm(self, oid: str) -> dict:
@@ -576,7 +733,7 @@ class StandingOrderService:
                 "takeProfitPct": r.take_profit_pct, "stopLossPct": r.stop_loss_pct, "status": r.status,
                 "note": r.note, "lastError": r.last_error, "orderId": r.order_id, "orderIds": list(r.order_ids or []),
                 "attempts": list(r.attempts or []), "filledQty": r.filled_qty, "avgFillPrice": r.avg_fill_price,
-                "positionId": r.position_id, "armConfirm": confirm_phrase(r.id),
+                "positionId": r.position_id, "armConfirm": confirm_phrase(r.id), "armedBy": r.armed_by or "user",
                 "armedAt": r.armed_at.isoformat() if r.armed_at else None,
                 "createdAt": r.created_at.isoformat() if r.created_at else None}
 

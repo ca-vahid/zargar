@@ -3050,3 +3050,10 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   `OrderManager.place` (RiskGate, kill switch for buys, sells reduce-only), write-ahead `placing` state reconciled
   from the `standing:<id>` order tag, cancel + re-price an unfilled limit up to `max_attempts`, filled buys adopted
   by the position manager with the user's TP/SL. Guide: `docs/STANDING-ORDERS.md`. Tests: `tests/test_standing_orders.py`.
+- **2026-11-16 - standing orders: delegated arming + sells capped at shares held (0.9.55/0.9.56).** A standing SELL is
+  reduce-only, so RiskGate's safety-only list never compared it with the position: one reached IBKR with no shares.
+  `StandingOrderService` now caps a sell at the whole shares held and fails it before any venue contact when there are
+  none - keep that check in the service (reduce-only exits elsewhere rely on their own position bookkeeping). Delegated
+  arming (user decision): the user creates a `standing_delegations` row from the page (accounts, window <= 31 days,
+  per-buy and total caps); arms with `DELEGATED <id[:8]>` are checked by the app against it, stamped `armed_by`,
+  journaled and pushed. A delegation never reaches allow_live, risk caps, the kill switch, cash/FX or account links.

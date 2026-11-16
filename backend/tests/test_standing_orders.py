@@ -116,12 +116,12 @@ async def test_one_click_arms_the_whole_plan(rig):
 async def test_an_armed_buy_fills_and_hands_its_exits_to_the_position_manager(rig):
     eng, svc = rig
     q = await _quote(eng, "STE")
-    d = await svc.create({"portfolioId": _sim_pid(eng), "symbol": "STE", "side": "BUY", "qty": 3,
+    d = await svc.create({"portfolioId": _sim_pid(eng), "symbol": "STE", "side": "BUY", "qty": 1,
                           "takeProfitPct": 10, "stopLossPct": 10, "slippagePct": 2})
     await svc.arm(d["id"], confirm_phrase(d["id"]))
     r = await _run_until(svc, d["id"], ("done", "failed"))
     assert r["status"] == "done", r
-    assert r["filledQty"] == 3 and r["avgFillPrice"] > 0
+    assert r["filledQty"] == 1 and r["avgFillPrice"] > 0   # 1 share: the sim price is random and 3 broke the $1k cap
     pos = eng.position_manager.get(r["positionId"])
     assert pos is not None and pos.policy["stop"]["price"] == round(r["avgFillPrice"] * 0.9, 2)
     assert pos.policy["ladder"]["targets"] == [round(r["avgFillPrice"] * 1.1, 2)]
@@ -221,3 +221,83 @@ async def test_a_sell_never_exceeds_the_shares_the_book_holds(rig):
     assert r["status"] == "failed" and "holds no STK1" in (r["note"] or r["lastError"] or ""), r
     async with eng.sf() as session:
         assert not (await session.execute(select(Order).where(Order.symbol == "STK1"))).scalars().all()
+
+
+# ------------------------------------------------------------------ delegation (2026-11-16)
+def _future(hours=8):
+    return (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=hours)).isoformat()
+
+
+async def _delegate(svc, pid, per=1000.0, total=1500.0, hours=8):
+    return await svc.create_delegation({"portfolioIds": [pid], "endsAt": _future(hours), "maxOrderNotional": per,
+                                        "maxTotalNotional": total}, standing.DELEGATE_PHRASE)
+
+
+async def test_a_delegation_needs_the_users_phrase_and_sane_caps(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    with pytest.raises(ValueError):
+        await svc.create_delegation({"portfolioIds": [pid], "endsAt": _future(), "maxOrderNotional": 10,
+                                     "maxTotalNotional": 20}, "yes")
+    with pytest.raises(ValueError):
+        await _delegate(svc, pid, per=500, total=100)                       # per-order above total
+    with pytest.raises(ValueError):
+        await _delegate(svc, pid, hours=24 * 40)                            # longer than 31 days
+    d = await _delegate(svc, pid)
+    assert d["active"] and d["confirm"] == standing.delegated_phrase(d["id"]) and d["committed"] == 0
+
+
+async def test_delegated_arms_are_bounded_by_account_and_caps_and_stamped(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    d = await _delegate(svc, pid, per=1000, total=1500)
+    ok = await svc.create({"portfolioId": pid, "symbol": "DLA", "side": "BUY", "qty": 5, "maxPrice": 150})
+    armed = await svc.arm(ok["id"], d["confirm"])
+    assert armed["status"] == "armed" and armed["armedBy"] == f"claude:delegation:{d['id']}"
+    big = await svc.create({"portfolioId": pid, "symbol": "DLB", "side": "BUY", "budget": 1200})
+    with pytest.raises(ValueError, match="per-order cap"):
+        await svc.arm(big["id"], d["confirm"])
+    over = await svc.create({"portfolioId": pid, "symbol": "DLC", "side": "BUY", "budget": 800})
+    with pytest.raises(ValueError, match="total cap"):                        # 750 used + 800 > 1500
+        await svc.arm(over["id"], d["confirm"])
+    loose = await svc.create({"portfolioId": pid, "symbol": "DLD", "side": "BUY", "qty": 1})
+    with pytest.raises(ValueError, match="budget or a max price"):
+        await svc.arm(loose["id"], d["confirm"])
+    sell = await svc.create({"portfolioId": pid, "symbol": "DLE", "side": "SELL", "qty": 1})
+    assert (await svc.arm(sell["id"], d["confirm"]))["status"] == "armed"     # sells only need the account
+
+
+async def test_a_revoked_expired_or_foreign_delegation_arms_nothing(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    d = await _delegate(svc, pid)
+    late = await svc.create({"portfolioId": pid, "symbol": "DLF", "side": "BUY", "qty": 1, "maxPrice": 10,
+                             "expiresOn": (dt.date.today() + dt.timedelta(days=5)).isoformat()})
+    with pytest.raises(ValueError, match="outlives"):
+        await svc.arm(late["id"], d["confirm"])
+    await svc.revoke_delegation(d["id"])
+    o = await svc.create({"portfolioId": pid, "symbol": "DLG", "side": "BUY", "qty": 1, "maxPrice": 10})
+    with pytest.raises(ValueError, match="not active"):
+        await svc.arm(o["id"], d["confirm"])
+    other = next(p["id"] for p in eng.positions.portfolios() if p["id"] != pid)
+    d2 = await svc.create_delegation({"portfolioIds": [other], "endsAt": _future(), "maxOrderNotional": 100,
+                                      "maxTotalNotional": 100}, standing.DELEGATE_PHRASE)
+    with pytest.raises(ValueError, match="not covered"):
+        await svc.arm(o["id"], d2["confirm"])
+    with pytest.raises(ValueError, match="no such delegation"):
+        await svc.arm(o["id"], "DELEGATED 0000")
+
+
+async def test_a_delegated_plan_arms_all_or_nothing_against_the_total_cap(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    d = await _delegate(svc, pid, per=1000, total=1500)
+    p = await svc.create_plan("ant", [{"portfolioId": pid, "symbol": "DLH", "side": "BUY", "budget": 900},
+                                      {"portfolioId": pid, "symbol": "DLI", "side": "BUY", "budget": 900}])
+    with pytest.raises(ValueError, match="together exceed"):
+        await svc.arm_plan(p["planId"], d["confirm"])
+    assert all(o["status"] == "draft" for o in [await svc.get(x["id"]) for x in p["orders"]])
+    p2 = await svc.create_plan("ok", [{"portfolioId": pid, "symbol": "DLJ", "side": "BUY", "budget": 700},
+                                      {"portfolioId": pid, "symbol": "DLJ", "side": "SELL", "qty": 1}])
+    out = await svc.arm_plan(p2["planId"], d["confirm"])
+    assert [o["status"] for o in out["armed"]] == ["armed", "armed"]
