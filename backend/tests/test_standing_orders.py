@@ -52,6 +52,7 @@ async def rig(fresh_db):
     await eng.start()
     await attach_signal_layer(eng)
     svc = StandingOrderService(eng)                  # ticks driven by the test (no background loop)
+    svc.start = lambda: None                         # arm() starts the real-clock loop: in market hours it raced the test
     eng.standing_orders = svc
     try:
         yield eng, svc
@@ -204,3 +205,19 @@ async def test_a_due_order_on_a_stale_quote_asks_the_feed_for_a_fresh_one(rig, m
     await svc.tick(now=due)
     assert calls == ["STJ"]
     assert (await svc.get(d["id"]))["status"] in ("placing", "working", "done")
+
+
+async def test_a_sell_never_exceeds_the_shares_the_book_holds(rig):
+    """2026-11-16: a standing SELL with no position reached IBKR (XIU.TO) - reduce-only orders skip the entry caps,
+    so on a US name the venue would have opened a short. No shares: the order fails before any venue contact."""
+    eng, svc = rig
+    await _quote(eng, "STK1")
+    pid = _sim_pid(eng)
+    s = await svc.create({"portfolioId": pid, "symbol": "STK1", "side": "SELL", "qty": 3, "slippagePct": 2})
+    await svc.arm(s["id"], confirm_phrase(s["id"]))
+    assert (await svc.preflight(s["id"]))["ok"] is False
+    await svc.tick(now=OPEN_NOW)
+    r = await svc.get(s["id"])
+    assert r["status"] == "failed" and "holds no STK1" in (r["note"] or r["lastError"] or ""), r
+    async with eng.sf() as session:
+        assert not (await session.execute(select(Order).where(Order.symbol == "STK1"))).scalars().all()

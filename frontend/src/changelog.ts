@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.54";
+export const APP_VERSION = "0.9.55";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.55",date:"2026-11-16",title:"Standing sells never exceed what you hold",items:[
+    {tag:"security",text:"A standing SELL is capped at the whole shares the book holds and fails, without contacting the broker, when there are none (a sell could otherwise open a short)"},
+  ]},
   {version:"0.9.54",date:"2026-11-16",title:"Standing orders on TSX symbols",items:[
     {tag:"fixed",text:"A due standing order on a symbol only Yahoo quotes (XIU.TO) fetches one fresh quote instead of waiting on the slow sweep"},
   ]},
