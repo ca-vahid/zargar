@@ -527,6 +527,12 @@ class HybridQuoteFeed(QuoteFeed):
         # context poll (prev_close / session) for the Alpaca-streamed ones.
         await self.yahoo.watch(symbol)
 
+    async def refresh(self, symbol: str) -> bool:
+        """On-demand quote for a symbol Alpaca is not streaming (non-US listings): Yahoo is its only source."""
+        if self.alpaca.streaming(symbol):
+            return False
+        return await self.yahoo.refresh(symbol)
+
     # history stays on Yahoo (deep 1m/1d archives; Alpaca REST can join later)
     async def fetch_bars(self, *args, **kwargs):
         return await self.yahoo.fetch_bars(*args, **kwargs)

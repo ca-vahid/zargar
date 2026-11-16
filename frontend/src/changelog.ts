@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.53";
+export const APP_VERSION = "0.9.54";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.54",date:"2026-11-16",title:"Standing orders on TSX symbols",items:[
+    {tag:"fixed",text:"A due standing order on a symbol only Yahoo quotes (XIU.TO) fetches one fresh quote instead of waiting on the slow sweep"},
+  ]},
   {version:"0.9.53",date:"2026-11-16",title:"Fresher quotes for non-US symbols",items:[
     {tag:"fixed",text:"Yahoo no longer re-polls symbols Alpaca already streams every cycle (context only, every 2 min): the constant rate limiting starved TSX names like XIU.TO of quotes"},
   ]},
