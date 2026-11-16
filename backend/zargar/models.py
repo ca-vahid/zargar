@@ -1588,7 +1588,27 @@ class StandingOrder(Base):
     filled_qty: Mapped[float] = mapped_column(Float, default=0.0)
     avg_fill_price: Mapped[float | None] = mapped_column(Float)
     position_id: Mapped[str | None] = mapped_column(String(64))
+    armed_by: Mapped[str] = mapped_column(String(80), default="user")            # user | claude:delegation:<id>
     armed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     working_since: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class StandingDelegation(Base):
+    """The user's time-boxed go-ahead (2026-11-16): "you're free to arm, take care of the rest for today / this
+    week". Created only by the user from the Standing orders page. While it is active Claude may arm standing
+    plans itself (the user's chat plans, repairs of them, Scout ideas) - the APP enforces the window, the accounts
+    and the money caps on every such arm, stamps `armed_by`, and pushes the user. It never touches allow_live, risk
+    caps, the kill switch, cash/FX or account links. Revoked = no new delegated arms (working orders carry on)."""
+    __tablename__ = "standing_delegations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    portfolio_ids: Mapped[list] = mapped_column(JSONVariant, default=list)       # the accounts it covers
+    starts_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ends_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    max_order_notional: Mapped[float] = mapped_column(Float)                       # one buy, at its cap price
+    max_total_notional: Mapped[float] = mapped_column(Float)                       # all delegated buys in the window
+    note: Mapped[str | None] = mapped_column(Text)
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

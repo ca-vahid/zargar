@@ -13,7 +13,7 @@ The user's own order plans, executed by the app after **the user** arms them. Fi
 | Trigger, price, route, re-price, fill, exits | the app |
 | Watch, diagnose, push the user, fix app bugs, draft corrected orders | Claude |
 
-Claude never arms an order, never flips `allow_live`, and never submits a real-money order itself.
+Claude never flips `allow_live` and never submits a real-money order outside a standing order. Claude arms orders only while the user's **delegation** is active (below); otherwise the user arms.
 
 ## Order fields
 `portfolioId, symbol, side` (BUY/SELL), `qty` **or** `budget` (buys: whole shares that fit), `trigger`
@@ -40,4 +40,29 @@ Claude never arms an order, never flips `allow_live`, and never submits a real-m
 - RiskGate caps apply to real books too (`risk.max_position_pct` 50% of a book's equity, `risk.price_collar_pct`
   5%): a budget that breaches them is refused - use **preflight** on the page before arming.
 - Cash by currency is not checked by the app before sending; the broker's refusal comes back as `lastError`.
-- IBKR live is not connected (the gateway on 4002 is the paper account).
+- **IBKR refuses API orders on Canadian listings** (Error 201 "API/CTCI orders for Canadian products are not allowed",
+  status Inactive; XIU.TO 2026-11-16). Use US listings at IBKR from Zargar. IBKR live U27762724 holds CAD only - a US
+  buy needs USD there first.
+- **Wealthsimple has two books named "Wealthsimple Trade (Personal)"**: c7134b99 (CAD, holds the TQQQ) and 2b821772
+  (the USD sub-account - SnapTrade 400 "Account has been archived or closed"). Draft on c7134b99.
+- **50% `risk.max_position_pct`** refuses a buy that takes one name past half the book (TQQQ buy-back on Wealthsimple,
+  2026-11-16; an all-in ANT buy) - changing the cap is the user's decision.
+- **App equity reads below the broker** (Webull -17%, Wealthsimple -32%, `BrokerSyncMismatch` 2026-11-16) - the % caps
+  are judged on the lower number. Open fix.
+- Fixed 2026-11-16: Yahoo 429s starved Yahoo-only symbols (0.9.53); a due order on a Yahoo-only quote fetches a fresh one
+  (0.9.54); **a standing SELL is capped at the whole shares held and fails before any venue contact when there are none**
+  (0.9.55 - before it a sell with no shares reached IBKR; on a US name it could have opened a short).
+- First real fills 2026-11-16: Webull SELL 1 SPCX @ 139.03 (09:45), BUY 1 AAPL @ 353.99 (10:00) - each filled within
+  seconds of the first limit; Zargar positions matched.
+
+## Delegated arming (2026-11-16, user decision)
+The user switches it on from **Standing orders -> Delegate arming** (accounts, window up to 31 days, max per buy, max
+total buys, explicit confirm; phrase `I DELEGATE ARMING`). While it is active Claude may arm plans itself with the
+confirm `DELEGATED <id[:8]>` - the user's chat plans, repairs of failed orders, and Scout ideas ("i can tell you to
+listen to scout and you do the trading"). The APP enforces on every delegated arm: the delegation is active (not
+revoked/expired), the account is covered, the order expires inside the window, a buy has a budget or a max price, the
+buy's bound is within the per-order cap, and everything armed under the delegation stays within the total cap (open
+orders count at their bound, finished ones at filled notional; a plan is checked as a whole, all or nothing). Each
+delegated arm is stamped `armedBy=claude:delegation:<id>`, journaled and pushed to the user. Revoke stops new
+delegated arms (working orders carry on). Never under delegation: `allow_live`, risk caps, kill switch, cash/FX,
+account links. Rows: `standing_delegations`.

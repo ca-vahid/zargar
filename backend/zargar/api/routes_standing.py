@@ -36,6 +36,15 @@ class ArmBody(BaseModel):
     confirm: str
 
 
+class DelegationSpec(BaseModel):
+    portfolioIds: list[str]
+    endsAt: str
+    maxOrderNotional: float
+    maxTotalNotional: float
+    note: Optional[str] = None
+    confirm: str
+
+
 def _svc(eng):
     svc = getattr(eng, "standing_orders", None)
     if svc is None:
@@ -52,7 +61,23 @@ def build_standing_routes(app, eng, auth, config) -> None:
     @app.get("/api/standing", dependencies=[auth])
     async def standing_list(open_only: bool = False):
         return {"orders": await _svc(eng).list(include_closed=not open_only),
-                "allowLive": bool(eng.settings.get("execution.standing_orders.allow_live", False))}
+                "allowLive": bool(eng.settings.get("execution.standing_orders.allow_live", False)),
+                "delegations": await _svc(eng).delegations()}
+
+    # 2026-11-16: the user's time-boxed go-ahead for Claude to arm plans (created from the Standing orders page)
+    @app.post("/api/standing/delegations", dependencies=[auth])
+    async def standing_delegate(body: DelegationSpec):
+        try:
+            return await _svc(eng).create_delegation(body.model_dump(), body.confirm)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/standing/delegations/{did}/revoke", dependencies=[auth])
+    async def standing_revoke(did: str):
+        try:
+            return await _svc(eng).revoke_delegation(did)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @app.post("/api/standing", dependencies=[auth])
     async def standing_create(body: StandingOrderSpec):
