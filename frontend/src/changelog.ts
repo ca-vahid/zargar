@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.55";
+export const APP_VERSION = "0.9.56";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.56",date:"2026-11-16",title:"Delegate arming to Claude",items:[
+    {tag:"new",text:"Standing orders: Delegate arming lets Claude arm orders for a window you choose (today, the week, a date), on the accounts you pick, inside a per-buy and total money cap the app enforces; every order Claude arms is marked and pushed to you, and Revoke stops it"},
+  ]},
   {version:"0.9.55",date:"2026-11-16",title:"Standing sells never exceed what you hold",items:[
     {tag:"security",text:"A standing SELL is capped at the whole shares the book holds and fails, without contacting the broker, when there are none (a sell could otherwise open a short)"},
   ]},

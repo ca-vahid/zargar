@@ -18,8 +18,26 @@ type SO = {
   trigger: string; notBefore: string | null; expiresOn: string; maxPrice: number | null; minPrice: number | null;
   slippagePct: number; takeProfitPct: number | null; stopLossPct: number | null; status: string;
   note: string | null; lastError: string | null; filledQty: number; avgFillPrice: number | null;
-  attempts: Attempt[]; armConfirm: string; positionId: string | null;
+  attempts: Attempt[]; armConfirm: string; positionId: string | null; armedBy?: string;
 };
+type Delegation = {
+  id: string; portfolioIds: string[]; startsAt: string; endsAt: string; maxOrderNotional: number;
+  maxTotalNotional: number; active: boolean; revokedAt: string | null; committed: number;
+};
+const DELEGATE_PHRASE = "I DELEGATE ARMING";
+
+/** End of the chosen window as an ET wall-clock ISO string (the server reads it as ET). */
+function windowEnd(choice: string, custom: string): string {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  if (choice === "today") return `${ymd(et)}T16:15:00`;
+  if (choice === "week") {
+    const fri = new Date(et); fri.setDate(et.getDate() + ((5 - et.getDay() + 7) % 7));
+    return `${ymd(fri)}T16:15:00`;
+  }
+  if (choice === "7d") { const d = new Date(et); d.setDate(et.getDate() + 7); return `${ymd(d)}T16:15:00`; }
+  return `${custom}T16:15:00`;
+}
 type Preflight = { ok: boolean; why?: string; reason?: string; limit?: number; qty?: number; notional?: number;
   failedChecks?: { name: string; detail: string }[] };
 
@@ -54,12 +72,21 @@ export function StandingPage() {
   const [confirmLive, setConfirmLive] = useState(false);
   const [preflight, setPreflight] = useState<Record<string, Preflight>>({});
   const [showHistory, setShowHistory] = useState(false);
+  const [delegations, setDelegations] = useState<Delegation[]>([]);
+  const [delegating, setDelegating] = useState(false);
+  const [dAccounts, setDAccounts] = useState<string[]>([]);
+  const [dWindow, setDWindow] = useState("today");
+  const [dDate, setDDate] = useState("");
+  const [dPer, setDPer] = useState("500");
+  const [dTotal, setDTotal] = useState("1000");
+  const [dConfirm, setDConfirm] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get<{ orders: SO[]; allowLive: boolean }>("/api/standing");
+      const r = await api.get<{ orders: SO[]; allowLive: boolean; delegations?: Delegation[] }>("/api/standing");
       setOrders(r.orders);
       setAllowLive(r.allowLive);
+      setDelegations(r.delegations ?? []);
       setLoadErr(null);
     } catch (e) { setLoadErr(String((e as Error).message)); }
   }, []);
@@ -163,6 +190,7 @@ export function StandingPage() {
                       <span className={`status-pill ${PILL[o.status] ?? "dim"}`}>
                         {LIVE_RUN.has(o.status) && <span className="spinner so-spin" />}{LABEL[o.status] ?? o.status}
                       </span>
+                      {o.armedBy && o.armedBy !== "user" && <div className="so-dim so-armed-by">armed by Claude</div>}
                       {o.filledQty > 0 && <div className="so-fill">{o.filledQty} @ ${o.avgFillPrice?.toFixed(2)}</div>}
                       {o.lastError && o.status !== "done" && <div className="so-err"><IconWarn />{o.lastError}</div>}
                       {pf && (
@@ -196,6 +224,81 @@ export function StandingPage() {
 
   const armedCount = (orders ?? []).filter((o) => o.status === "armed").length;
   const workingCount = (orders ?? []).filter((o) => LIVE_RUN.has(o.status)).length;
+  const realBooks = portfolios.filter((p) => ["live", "paper"].includes(p.kind ?? "") && !(p as { archived?: boolean }).archived);
+  const activeDelegation = delegations.find((d) => d.active) ?? null;
+  const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const endLabel = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+  const delegationCard = activeDelegation ? (
+    <div className="so-switch on so-delegation">
+      <span className="status-pill wait">Claude may arm</span>
+      <div className="so-switch-text">
+        Until <b>{endLabel(activeDelegation.endsAt)}</b> on {activeDelegation.portfolioIds.map((p) => accountOf(p).name).join(", ")}.
+        {" "}Buys up to {money(activeDelegation.maxOrderNotional)} each, {money(activeDelegation.committed)} of {money(activeDelegation.maxTotalNotional)} used.
+        {" "}You get a push for every order Claude arms.
+      </div>
+      <button className="danger-btn" disabled={!!busy}
+        onClick={() => act("revoke", () => api.post(`/api/standing/delegations/${activeDelegation.id}/revoke`, {}))}>Revoke</button>
+    </div>
+  ) : delegating ? (
+    <div className="panel so-plan so-delegation-form">
+      <div className="so-plan-head"><div className="so-plan-title"><b>Let Claude arm orders for a while</b>
+        <span className="so-dim">Claude arms your plans, repairs and Scout ideas inside these limits. It can never change the real-money switch, risk caps, the kill switch, cash or accounts.</span></div></div>
+      <div className="so-form-grid">
+        <label>Accounts</label>
+        <div className="so-form-accounts">
+          {realBooks.map((p) => (
+            <label key={p.id} className="so-check">
+              <input type="checkbox" checked={dAccounts.includes(p.id)}
+                onChange={(e) => setDAccounts((a) => (e.target.checked ? [...a, p.id] : a.filter((x) => x !== p.id)))} />
+              <BrokerIcon name={accountOf(p.id).broker} logoUrl={accountOf(p.id).logo} size={16} /> {p.name}
+            </label>
+          ))}
+        </div>
+        <label>For</label>
+        <div>
+          <select value={dWindow} onChange={(e) => setDWindow(e.target.value)}>
+            <option value="today">the rest of today</option>
+            <option value="week">until Friday's close</option>
+            <option value="7d">7 days</option>
+            <option value="date">until a date…</option>
+          </select>
+          {dWindow === "date" && <input type="date" value={dDate} onChange={(e) => setDDate(e.target.value)} />}
+        </div>
+        <label>Max per buy</label>
+        <input type="number" min={1} value={dPer} onChange={(e) => setDPer(e.target.value)} />
+        <label>Max total buys</label>
+        <input type="number" min={1} value={dTotal} onChange={(e) => setDTotal(e.target.value)} />
+      </div>
+      <div className="so-confirm-actions">
+        {dConfirm ? (
+          <>
+            <span className="so-warn-line">Claude will be able to place real-money buys up to {money(Number(dTotal) || 0)} in total. Sure?</span>
+            <button className="primary-btn" disabled={!!busy || dAccounts.length === 0} onClick={() => act("delegate", async () => {
+              await api.post("/api/standing/delegations", {
+                portfolioIds: dAccounts, endsAt: windowEnd(dWindow, dDate), maxOrderNotional: Number(dPer),
+                maxTotalNotional: Number(dTotal), confirm: DELEGATE_PHRASE,
+              });
+              setDelegating(false); setDConfirm(false);
+            })}>Yes, delegate</button>
+            <button className="ghost-btn" onClick={() => setDConfirm(false)}>Back</button>
+          </>
+        ) : (
+          <>
+            <button className="primary-btn" disabled={dAccounts.length === 0 || !(Number(dPer) > 0) || !(Number(dTotal) >= Number(dPer))
+              || (dWindow === "date" && !dDate)} onClick={() => setDConfirm(true)}>Delegate</button>
+            <button className="ghost-btn" onClick={() => setDelegating(false)}>Cancel</button>
+          </>
+        )}
+      </div>
+    </div>
+  ) : (
+    <div className="so-switch off so-delegation">
+      <span className="status-pill dim">you arm</span>
+      <div className="so-switch-text">Away for a while? Let Claude arm orders for a set time, accounts and money cap.</div>
+      <button className="ghost-btn" onClick={() => { setDelegating(true); setDAccounts(realBooks.map((p) => p.id)); }}>Delegate arming…</button>
+    </div>
+  );
 
   return (
     <div className="tips-page">
@@ -225,6 +328,8 @@ export function StandingPage() {
           </button>
         )}
       </div>
+
+      {delegationCard}
 
       {loadErr && <ErrorState message={`Could not load standing orders: ${loadErr}`} onRetry={load} />}
       {actErr && <ErrorState message={actErr} />}
