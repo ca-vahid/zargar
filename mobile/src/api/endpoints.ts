@@ -87,7 +87,8 @@ export const api = {
   orders: (portfolio: string, limit = 30) => request<Order[]>('GET', `/api/orders${q({ portfolio, limit })}`),
   executions: (portfolio: string, limit = 30) => request<Execution[]>('GET', `/api/executions${q({ portfolio, limit })}`),
   ledger: (workspace: 'practice' | 'live', scope?: string, days = 30, currency?: string) =>
-    request<Ledger>('GET', `/api/desk/ledger${q({ days, workspace, scope, currency })}`),
+    // the first read after a quiet spell takes the server up to ~17 s (measured 2026-11-15): give it room
+    request<Ledger>('GET', `/api/desk/ledger${q({ days, workspace, scope, currency })}`, undefined, 45000),
   /** `range` asks for real exchange history; without it the server answers from its own short store */
   chart: (symbol: string, tf: string, range?: string, limit = 200) =>
     request<ChartData>('GET', `/api/chart/${encodeURIComponent(symbol)}${q({ tf, range, limit })}`),
