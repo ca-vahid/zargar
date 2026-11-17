@@ -301,3 +301,76 @@ async def test_a_delegated_plan_arms_all_or_nothing_against_the_total_cap(rig):
                                       {"portfolioId": pid, "symbol": "DLJ", "side": "SELL", "qty": 1}])
     out = await svc.arm_plan(p2["planId"], d["confirm"])
     assert [o["status"] for o in out["armed"]] == ["armed", "armed"]
+
+
+# ------------------------------------------------------------------ repairs (2026-11-16)
+async def _failed_user_order(svc, pid, **kw):
+    spec = {"portfolioId": pid, "symbol": "RPA", "side": "BUY", "qty": 2, "maxPrice": 60.0, **kw}
+    d = await svc.create(spec)
+    await svc.arm(d["id"], confirm_phrase(d["id"]))
+    await svc._update(d["id"], status="failed", last_error="refused: venue says no")
+    return d
+
+
+async def test_a_repair_of_a_user_armed_order_is_armed_at_once_inside_the_originals_bounds(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    orig = await _failed_user_order(svc, pid)
+    out = await svc.repair_plan("fix", [{"repairOf": orig["id"], "portfolioId": pid, "symbol": "RPB", "side": "BUY",
+                                         "qty": 1, "maxPrice": 50.0}])
+    r = out["armed"][0]
+    assert r["status"] == "armed" and r["armedBy"] == f"claude:repair:{orig['id']}" and r["repairOf"] == orig["id"]
+
+
+async def test_a_repair_never_grows_the_order_or_changes_side_or_outlives_it(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    orig = await _failed_user_order(svc, pid)
+    base = {"repairOf": orig["id"], "portfolioId": pid, "symbol": "RPA", "side": "BUY"}
+    with pytest.raises(ValueError, match="more shares"):
+        await svc.repair_plan("x", [{**base, "qty": 3, "maxPrice": 10}])
+    with pytest.raises(ValueError, match="more than the original"):
+        await svc.repair_plan("x", [{**base, "qty": 2, "maxPrice": 80}])               # 160 > 120
+    with pytest.raises(ValueError, match="side"):
+        await svc.repair_plan("x", [{**base, "side": "SELL", "qty": 1}])
+    with pytest.raises(ValueError, match="outlives"):
+        await svc.repair_plan("x", [{**base, "qty": 1, "maxPrice": 50,
+                                     "expiresOn": (dt.date.today() + dt.timedelta(days=3)).isoformat()}])
+    other = next(p["id"] for p in eng.positions.portfolios() if p["id"] != pid)
+    with pytest.raises(ValueError, match="same broker"):
+        await svc.repair_plan("x", [{**base, "portfolioId": other, "qty": 1, "maxPrice": 50}])
+
+
+async def test_repairs_need_a_user_armed_original_and_stop_after_two(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    draft = await svc.create({"portfolioId": pid, "symbol": "RPC", "side": "BUY", "qty": 1, "maxPrice": 10})
+    await svc._update(draft["id"], status="failed")                       # never armed by the user
+    with pytest.raises(ValueError, match="user armed"):
+        await svc.repair_plan("x", [{"repairOf": draft["id"], "portfolioId": pid, "symbol": "RPC", "side": "BUY",
+                                     "qty": 1, "maxPrice": 10}])
+    orig = await _failed_user_order(svc, pid)
+    prev = orig
+    for _ in range(2):
+        out = await svc.repair_plan("x", [{"repairOf": prev["id"], "portfolioId": pid, "symbol": "RPA", "side": "BUY",
+                                           "qty": 1, "maxPrice": 50}])
+        prev = out["armed"][0]
+        await svc._update(prev["id"], status="failed")
+    with pytest.raises(ValueError, match="already repaired"):
+        await svc.repair_plan("x", [{"repairOf": prev["id"], "portfolioId": pid, "symbol": "RPA", "side": "BUY",
+                                     "qty": 1, "maxPrice": 50}])
+
+
+async def test_a_sell_repair_may_change_symbol_only_to_what_the_repair_buys(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    buy = await _failed_user_order(svc, pid)
+    sell = await svc.create({"portfolioId": pid, "symbol": "RPA", "side": "SELL", "qty": 1})
+    await svc.arm(sell["id"], confirm_phrase(sell["id"]))
+    with pytest.raises(ValueError, match="only to one this repair also buys"):
+        await svc.repair_plan("x", [{"repairOf": sell["id"], "portfolioId": pid, "symbol": "RPZ", "side": "SELL", "qty": 1}])
+    out = await svc.repair_plan("x", [
+        {"repairOf": buy["id"], "portfolioId": pid, "symbol": "RPZ", "side": "BUY", "qty": 1, "maxPrice": 20},
+        {"repairOf": sell["id"], "portfolioId": pid, "symbol": "RPZ", "side": "SELL", "qty": 1}])
+    assert [o["status"] for o in out["armed"]] == ["armed", "armed"]
+    assert (await svc.get(sell["id"]))["status"] == "cancelled"             # the waiting original is replaced
