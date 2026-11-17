@@ -3057,3 +3057,4 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   arming (user decision): the user creates a `standing_delegations` row from the page (accounts, window <= 31 days,
   per-buy and total caps); arms with `DELEGATED <id[:8]>` are checked by the app against it, stamped `armed_by`,
   journaled and pushed. A delegation never reaches allow_live, risk caps, the kill switch, cash/FX or account links.
+- **2026-11-17 - standing-order repairs inherit the user's arm (0.9.57).** `StandingOrderService.repair_plan` arms a corrected order for a failed user-armed one without a new click, bounded by the original (side, broker connection, size/notional, expiry, 2 repairs). Keep those bounds in the service; `arm(armed_by=...)` is internal and no route passes it.

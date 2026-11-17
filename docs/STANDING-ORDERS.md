@@ -66,3 +66,15 @@ orders count at their bound, finished ones at filled notional; a plan is checked
 delegated arm is stamped `armedBy=claude:delegation:<id>`, journaled and pushed to the user. Revoke stops new
 delegated arms (working orders carry on). Never under delegation: `allow_live`, risk caps, kill switch, cash/FX,
 account links. Rows: `standing_delegations`.
+
+## Repairs inherit the user's arm (2026-11-17, user decision)
+"Once you have a directive, the corrected plan should be auto armed in the app because it was already discussed."
+When an order the USER armed (or a delegation armed) fails or cannot fill as drafted - wrong sub-account, a listing
+the venue refuses, a cap refusal - Claude posts the corrected order to `POST /api/standing/repair` (each order names
+`repairOf`) and the app arms it at once, with no second click, stamped `armedBy=claude:repair:<original id>` and pushed
+to the user. The app bounds every repair: same side; same broker connection (another sub-account of the same login
+is allowed); never more shares, and a buy never able to spend more than the original at its cap; never past the
+original's expiry (an expired original needs the user or a delegation); at most 2 repairs per original; a SELL may
+change symbol only to one the same repair buys (a test round trip); a waiting original is cancelled when its repair
+arms. `allow_live` and every RiskGate check still apply. Claude repairs as soon as a failure is diagnosed - the
+2026-11-16 Wealthsimple and IBKR corrections waited for a click and expired unfilled.

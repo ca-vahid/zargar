@@ -1588,7 +1588,8 @@ class StandingOrder(Base):
     filled_qty: Mapped[float] = mapped_column(Float, default=0.0)
     avg_fill_price: Mapped[float | None] = mapped_column(Float)
     position_id: Mapped[str | None] = mapped_column(String(64))
-    armed_by: Mapped[str] = mapped_column(String(80), default="user")            # user | claude:delegation:<id>
+    armed_by: Mapped[str] = mapped_column(String(80), default="user")            # user | claude:delegation:<id> | claude:repair:<id>
+    repair_of: Mapped[str | None] = mapped_column(String(64), index=True)        # the failed order this one repairs
     armed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     working_since: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
