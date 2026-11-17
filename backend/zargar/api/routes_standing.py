@@ -25,6 +25,7 @@ class StandingOrderSpec(BaseModel):
     takeProfitPct: Optional[float] = None
     stopLossPct: Optional[float] = None
     note: Optional[str] = None
+    repairOf: Optional[str] = None
 
 
 class PlanSpec(BaseModel):
@@ -90,6 +91,14 @@ def build_standing_routes(app, eng, auth, config) -> None:
     async def standing_plan(body: PlanSpec):
         try:
             return await _svc(eng).create_plan(body.name, [_spec(o) for o in body.orders])
+        except (ValueError, AssertionError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # 2026-11-16: corrected orders for failed user-armed ones - armed at once on the user's original arm, bounded
+    @app.post("/api/standing/repair", dependencies=[auth])
+    async def standing_repair(body: PlanSpec):
+        try:
+            return await _svc(eng).repair_plan(body.name, [_spec(o) for o in body.orders])
         except (ValueError, AssertionError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 

@@ -51,6 +51,7 @@ def confirm_phrase(order_id: str) -> str:
 
 
 DELEGATE_PHRASE = "I DELEGATE ARMING"
+MAX_REPAIRS = 2          # corrected versions of one user-armed order Claude may arm on the user's original arm
 
 
 def delegated_phrase(delegation_id: str) -> str:
@@ -304,9 +305,112 @@ class StandingOrderService:
                 "endsAt": d.ends_at.isoformat(), "maxOrderNotional": d.max_order_notional,
                 "maxTotalNotional": d.max_total_notional}, aggregate_type="standing_delegation", aggregate_id=d.id)
 
+    # ------------------------------------------------------------------ repairs (2026-11-16, user decision)
+    async def repair_plan(self, name: str, orders: list[dict]) -> dict:
+        """Corrected orders for user-armed orders that failed (wrong account, a listing the venue refuses, a cap
+        refusal). The USER's arm of the original carries over - the repair is armed at once, no second click
+        ("once you have a directive, the corrected plan should be auto armed"). The app bounds it: same side, same
+        broker connection, never more shares or a larger buy than the original, never past the original's expiry,
+        at most MAX_REPAIRS per original; a sell may change symbol only to one this same repair buys (a test round
+        trip). allow_live and every RiskGate check still apply. Each order names `repairOf` = the failed order."""
+        if not orders:
+            raise ValueError("a repair needs at least one order")
+        today = today_et()
+        checked: list[tuple[dict, StandingOrder, str]] = []
+        buys = {(str(o.get("portfolioId")), str(o.get("symbol") or "").upper()) for o in orders
+                if str(o.get("side") or "").upper() == "BUY"}
+        for spec in orders:
+            orig = await self._load(str(spec.get("repairOf") or ""))
+            if orig is None:
+                raise ValueError("each repair names repairOf = the failed standing order")
+            root = await self._root(orig)
+            if root.armed_at is None or not (root.armed_by == "user"
+                                             or (root.armed_by or "").startswith("claude:delegation:")):
+                raise ValueError("only an order the user armed (or a delegation armed) can be repaired")
+            if orig.status not in ("failed", "armed"):
+                raise ValueError(f"{orig.symbol} {orig.side} is {orig.status} - only a failed or waiting order is repaired")
+            if orig.expires_on < today:
+                raise ValueError(f"{orig.symbol} {orig.side} expired on {orig.expires_on} - a new plan needs the user")
+            if await self._repair_count(root.id) >= MAX_REPAIRS:
+                raise ValueError(f"{root.symbol} {root.side} was already repaired {MAX_REPAIRS} times - ask the user")
+            side = str(spec.get("side") or "").upper()
+            if side != orig.side:
+                raise ValueError("a repair keeps the original's side")
+            pid = str(spec.get("portfolioId") or "")
+            if pid != orig.portfolio_id and not await self._same_connection(pid, orig.portfolio_id):
+                raise ValueError("a repair stays at the same broker connection")
+            sym = str(spec.get("symbol") or "").strip().upper()
+            if spec.get("budget") and not orig.budget and not orig.max_price:
+                raise ValueError("the original had no money bound - a budget repair needs the user")
+            if side == "SELL" and sym != orig.symbol and (pid, sym) not in buys:
+                raise ValueError("a sell may change symbol only to one this repair also buys")
+            expires = str(spec.get("expiresOn") or orig.expires_on)
+            if expires > orig.expires_on:
+                raise ValueError("a repair never outlives the original")
+            if spec.get("qty") and orig.qty and float(spec["qty"]) > float(orig.qty):
+                raise ValueError("a repair never trades more shares than the original")
+            checked.append(({**spec, "symbol": sym, "expiresOn": expires}, orig, root.id))
+        # create, then bound the buys against the originals at their caps
+        made = await self.create_plan(name, [{k: v for k, v in s.items() if k != "repairOf"} for s, _, _ in checked])
+        try:
+            for row_d, (spec, orig, root_id) in zip(made["orders"], checked):
+                new = await self._load(row_d["id"])
+                if new.side == "BUY":
+                    cost, cap = self.buy_notional(new), self.buy_notional(orig)
+                    if cost is None:
+                        raise ValueError(f"the repair buy of {new.symbol} needs a max price or a budget")
+                    if cap is not None and cost > cap + 1e-6:
+                        raise ValueError(f"the repair buy of {new.symbol} can spend {cost:,.2f}, more than the "
+                                         f"original's {cap:,.2f}")
+                    if cap is None and new.symbol != orig.symbol:
+                        raise ValueError("the original buy had no price cap - a symbol change needs the user")
+                await self._update(new.id, repair_of=orig.id)
+        except Exception:
+            for o in made["orders"]:
+                with contextlib.suppress(Exception):
+                    await self.cancel(o["id"])
+            raise
+        armed = []
+        for row_d, (spec, orig, root_id) in zip(made["orders"], checked):
+            if orig.status == "armed":                          # the original stops waiting: the repair replaces it
+                with contextlib.suppress(Exception):
+                    await self._finish(orig, "cancelled", f"replaced by repair {row_d['id'][:8]}")
+            armed.append(await self.arm(row_d["id"], confirm_phrase(row_d["id"]), armed_by=f"claude:repair:{root_id}"))
+        return {"planId": made["planId"], "planName": name, "armed": armed}
+
+    async def _load(self, oid: str) -> StandingOrder | None:
+        if not oid:
+            return None
+        async with self.engine.sf() as session:
+            return await session.get(StandingOrder, oid)
+
+    async def _root(self, row: StandingOrder) -> StandingOrder:
+        seen = 0
+        while row.repair_of and seen < 10:
+            parent = await self._load(row.repair_of)
+            if parent is None:
+                break
+            row, seen = parent, seen + 1
+        return row
+
+    async def _repair_count(self, root_id: str) -> int:
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(StandingOrder).where(
+                StandingOrder.armed_by == f"claude:repair:{root_id}"))).scalars().all()
+        return len(rows)
+
+    async def _same_connection(self, a: str, b: str) -> bool:
+        from ..models import BrokerageAccount
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(BrokerageAccount).where(
+                BrokerageAccount.portfolio_id.in_([a, b])))).scalars().all()
+        conns = {r.portfolio_id: r.connection_id for r in rows}
+        return a in conns and b in conns and conns[a] == conns[b]
+
     # ------------------------------------------------------------------ arming
-    async def arm(self, oid: str, confirm: str) -> dict:
-        armed_by = "user"
+    async def arm(self, oid: str, confirm: str, *, armed_by: str | None = None) -> dict:
+        """`armed_by` is internal only (repairs): the routes never pass it."""
+        armed_by = armed_by or "user"
         async with self.engine.sf() as session:
             row = await session.get(StandingOrder, oid)
             if row is None:
@@ -331,7 +435,8 @@ class StandingOrderService:
             cap = row.budget or (f"<= {row.max_price}" if row.max_price else "")
             await self._push(f"Claude armed: {row.side} {row.symbol}",
                              f"{row.side} {row.qty or ''} {row.symbol} {cap} on {self._name(row.portfolio_id)} "
-                             f"(delegation) - {row.plan_name or row.note or ''}".strip(),
+                             f"({'repair of your armed order' if armed_by.startswith('claude:repair:') else 'delegation'})"
+                             f" - {row.plan_name or row.note or ''}".strip(),
                              key=f"delegated-arm:{row.id}")
         self.start()
         return self.to_dict(row)
@@ -734,6 +839,7 @@ class StandingOrderService:
                 "note": r.note, "lastError": r.last_error, "orderId": r.order_id, "orderIds": list(r.order_ids or []),
                 "attempts": list(r.attempts or []), "filledQty": r.filled_qty, "avgFillPrice": r.avg_fill_price,
                 "positionId": r.position_id, "armConfirm": confirm_phrase(r.id), "armedBy": r.armed_by or "user",
+                "repairOf": r.repair_of,
                 "armedAt": r.armed_at.isoformat() if r.armed_at else None,
                 "createdAt": r.created_at.isoformat() if r.created_at else None}
 
