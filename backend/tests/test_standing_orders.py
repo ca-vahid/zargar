@@ -1,6 +1,7 @@
 """Standing orders (2026-11-14): the user's plan, drafted by Claude, armed by the user in one click, executed by
 the app through OrderManager/RiskGate on the sim broker here."""
 import datetime as dt
+import math
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -374,3 +375,71 @@ async def test_a_sell_repair_may_change_symbol_only_to_what_the_repair_buys(rig)
         {"repairOf": sell["id"], "portfolioId": pid, "symbol": "RPZ", "side": "SELL", "qty": 1}])
     assert [o["status"] for o in out["armed"]] == ["armed", "armed"]
     assert (await svc.get(sell["id"]))["status"] == "cancelled"             # the waiting original is replaced
+
+
+# ------------------------------------------------------------------ spend-all + per-book cap (2026-11-17)
+async def test_a_spend_all_buy_waits_for_the_plans_sells_then_sizes_from_cash(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    q = await _quote(eng, "SPA")
+    p = await svc.create_plan("ant", [
+        {"portfolioId": pid, "symbol": "SPA", "side": "SELL", "qty": 1, "trigger": "at", "notBefore": "15:00"},
+        {"portfolioId": pid, "symbol": "SPB", "side": "BUY", "spendAll": True, "slippagePct": 2}])
+    await svc.arm_plan(p["planId"], p["armConfirm"])
+    buy = next(o for o in p["orders"] if o["side"] == "BUY")
+    await _quote(eng, "SPB")
+    await svc.tick(now=OPEN_NOW)
+    assert "sells" in ((await svc.get(buy["id"]))["lastError"] or "")       # the sell (no shares) is still open
+    sell = next(o for o in p["orders"] if o["side"] == "SELL")
+    await svc._update(sell["id"], status="failed")
+    row = await svc._load(buy["id"])
+    limit = round(eng.quotes.get("SPB").ask * 1.02, 2)
+    qty, _ = svc._cash_qty(row, limit)
+    cash = float(eng.positions.portfolio(pid)["cash"])
+    assert qty == math.floor(cash * 0.97 / limit) and qty >= 1
+    assert q.ask > 0
+
+
+async def test_spend_all_needs_a_live_fx_rate_across_currencies(rig, monkeypatch):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    d = await svc.create({"portfolioId": pid, "symbol": "SPC", "side": "BUY", "spendAll": True})
+    row = await svc._load(d["id"])
+    pf = dict(eng.positions.portfolio(pid)); pf["baseCurrency"] = "CAD"
+    monkeypatch.setattr(eng.positions, "portfolio", lambda _pid: pf)
+    monkeypatch.setattr(eng.positions.fx, "rate", lambda a, b, **k: None)
+    qty, why = svc._cash_qty(row, 10.0)
+    assert qty is None and "rate" in why
+    monkeypatch.setattr(eng.positions.fx, "rate", lambda a, b, **k: 0.7)       # CAD -> USD
+    qty, _ = svc._cash_qty(row, 10.0)
+    assert qty == math.floor(float(pf["cash"]) * 0.7 * 0.97 / 10.0)
+
+
+async def test_spend_all_is_for_buys_without_a_qty(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    with pytest.raises(ValueError, match="for buys"):
+        await svc.create({"portfolioId": pid, "symbol": "SPD", "side": "SELL", "qty": 1, "spendAll": True})
+    with pytest.raises(ValueError, match="no qty"):
+        await svc.create({"portfolioId": pid, "symbol": "SPD", "side": "BUY", "qty": 1, "spendAll": True})
+    d = await svc.create({"portfolioId": pid, "symbol": "SPD", "side": "BUY", "spendAll": True, "budget": 500})
+    assert d["spendAll"] is True and d["budget"] == 500
+
+
+async def test_a_per_book_position_cap_beats_the_global_one(rig):
+    eng, svc = rig
+    pid = _sim_pid(eng)
+    await _quote(eng, "CAPX")
+    eq = float(await eng.positions.equity(pid))
+    px = eng.quotes.get("CAPX").ask
+    qty = max(1, int(eq * 0.6 / px))                          # ~60% of the book
+    await eng.settings.set_many({"risk.max_position_pct": 50.0, "risk.max_position_notional": 10_000_000.0,
+                               "risk.max_gross_exposure_pct": 1000.0, "risk.sim_require_cash": False})
+    from zargar.orders import OrderIntent
+    intent = lambda: OrderIntent(portfolio_id=pid, symbol="CAPX", sec_type="STK", side="BUY", qty=qty,
+                                 order_type="LMT", limit_price=round(px * 1.01, 2), tif="DAY", dry_run=True)
+    res = await eng.orders.place(intent())
+    assert any(c["name"] == "max_position_pct" and not c["passed"] for c in res["risk"]["checks"])
+    await eng.settings.set_many({"risk.max_position_pct_by_portfolio": {pid: 100.0}})
+    res = await eng.orders.place(intent())
+    assert all(c["passed"] for c in res["risk"]["checks"] if c["name"] == "max_position_pct")
