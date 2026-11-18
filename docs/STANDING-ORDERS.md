@@ -91,3 +91,11 @@ arms. `allow_live` and every RiskGate check still apply. Claude repairs as soon 
   limit orders only until trading starts, orders placed before it queue unexecuted, early trading volatile with
   possible halts. The `listing` trigger sends nothing until the first regular prints with volume, every order is a
   limit inside the user's max price, and buys wait out a halt (RiskGate `not_halted`).
+
+## Questions for the user (2026-11-18, v0.9.60)
+When a decision is the user's (a max price, convert-or-skip, a plan outside any delegation or repair bound), Claude
+asks through the app, not only in chat: `python -m zargar.tools.ask_user ask "<question>" --option A --option B
+[--detail ...] [--wait 600]` (API `POST /api/questions`). The question is pushed, sits at the top of the phone's
+Home with its answer buttons, and the answer is read back with `ask_user wait <id>` / `GET /api/questions/<id>`.
+An answer is words on the record (`DeskQuestion` journal events): it never arms, approves or moves anything by
+itself - Claude acts on it under the rules above. `create_plan` also pushes "A plan is waiting for your arm".

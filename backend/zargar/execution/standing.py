@@ -470,6 +470,10 @@ class StandingOrderService:
                 with contextlib.suppress(Exception):
                     await self.cancel(m["id"])
             raise
+        # 2026-11-18: a plan that waits for the user's arm says so on their phone (the 11-16 corrected plans sat
+        # unarmed and expired because nobody saw them)
+        await self._push("A plan is waiting for your arm", f"{name} ({len(made)} order{'s' if len(made) != 1 else ''})",
+                         key=f"drafted:{plan_id}", level="warning")
         return {"planId": plan_id, "planName": name, "armConfirm": confirm_phrase(plan_id), "orders": made}
 
     async def arm_plan(self, plan_id: str, confirm: str) -> dict:

@@ -680,6 +680,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     from .routes_standing import build_standing_routes
     build_standing_routes(app, eng, auth, config)
 
+    from .routes_questions import build_question_routes
+    build_question_routes(app, eng, auth, config)
+
     from .routes_team2 import build_team2_routes
     build_team2_routes(app, eng, auth, config)
 
