@@ -1575,6 +1575,7 @@ class StandingOrder(Base):
     trigger: Mapped[str] = mapped_column(String(12), default="now")               # now | at | listing
     not_before: Mapped[str | None] = mapped_column(String(5))                     # "HH:MM" ET (trigger=at)
     expires_on: Mapped[str] = mapped_column(String(10), index=True)               # ET date; unfilled after it = expired
+    starts_on: Mapped[str | None] = mapped_column(String(10))                     # ET date; nothing fires before it
     max_price: Mapped[float | None] = mapped_column(Float)                        # buy cap: never pay above
     min_price: Mapped[float | None] = mapped_column(Float)                        # sell floor: never sell below
     slippage_pct: Mapped[float] = mapped_column(Float, default=0.5)               # limit = ask(1+s) / bid(1-s)
