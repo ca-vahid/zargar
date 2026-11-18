@@ -84,6 +84,7 @@ SCOUT_VERDICT = "ScoutVerdict"                 # Scout P3: one analyst lane's ke
 SCOUT_BUDGET_STOP = "ScoutBudgetStop"          # Scout P3: a lane stopped calling - the day's LLM budget is used
 SCOUT_ENTRY_ATTEMPT = "ScoutEntryAttempt"      # Scout P3: one 10:00-11:30 ET entry attempt (spread judged on the live quote)
 SCOUT_ENTRY = "ScoutEntry"                     # Scout P3: a research-book entry entered / skipped / unfilled / closed
+DESK_QUESTION = "DeskQuestion"               # 2026-11-18: a question for the user asked / answered / cancelled (stage in payload)
 STANDING_ORDER = "StandingOrder"             # 2026-11-14: a user standing order drafted / armed / placed / filled / failed / expired (stage in payload)
 SCOUT_DAILY_REPORT = "ScoutDailyReport"        # Scout P3: the end-of-day summary
 SCOUT_DOSSIER = "ScoutDossier"                 # Scout: an on-demand research note was written (lean, cost; never a signal)
