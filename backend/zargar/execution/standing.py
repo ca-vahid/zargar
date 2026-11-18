@@ -148,6 +148,11 @@ class StandingOrderService:
             assert 0 <= int(hh) < 24 and 0 <= int(mm) < 60
         expires = str(spec.get("expiresOn") or today_et())
         dt.date.fromisoformat(expires)
+        starts = spec.get("startsOn") or None
+        if starts:
+            dt.date.fromisoformat(str(starts))
+            if str(starts) > expires:
+                raise ValueError("startsOn is after expiresOn")
         tp, sl = spec.get("takeProfitPct"), spec.get("stopLossPct")
         if side == "SELL" and (tp or sl):
             raise ValueError("take-profit / stop-loss apply to buys")
@@ -160,6 +165,7 @@ class StandingOrderService:
             qty=float(qty) if qty else None, budget=float(budget) if budget else None, spend_all=spend_all,
             trigger=trigger,
             not_before=not_before if trigger == "at" else None, expires_on=expires,
+            starts_on=str(starts) if starts else None,
             max_price=float(spec["maxPrice"]) if spec.get("maxPrice") else None,
             min_price=float(spec["minPrice"]) if spec.get("minPrice") else None,
             slippage_pct=float(spec.get("slippagePct", self.s("slippage_pct", 0.5))),
@@ -678,6 +684,8 @@ class StandingOrderService:
             return 0.0
 
     def _triggered(self, row: StandingOrder, now: dt.datetime) -> tuple[bool, str]:
+        if row.starts_on and now.date().isoformat() < row.starts_on:
+            return False, f"waiting for {row.starts_on}"
         if not is_us_market_hours(now):
             return False, "market closed"
         # the clock first: a quote refresh is only worth asking for once the order is due
@@ -889,7 +897,7 @@ class StandingOrderService:
                 "note": r.note, "lastError": r.last_error, "orderId": r.order_id, "orderIds": list(r.order_ids or []),
                 "attempts": list(r.attempts or []), "filledQty": r.filled_qty, "avgFillPrice": r.avg_fill_price,
                 "positionId": r.position_id, "armConfirm": confirm_phrase(r.id), "armedBy": r.armed_by or "user",
-                "repairOf": r.repair_of, "spendAll": bool(r.spend_all),
+                "repairOf": r.repair_of, "spendAll": bool(r.spend_all), "startsOn": r.starts_on,
                 "armedAt": r.armed_at.isoformat() if r.armed_at else None,
                 "createdAt": r.created_at.isoformat() if r.created_at else None}
 
