@@ -78,3 +78,16 @@ original's expiry (an expired original needs the user or a delegation); at most 
 change symbol only to one the same repair buys (a test round trip); a waiting original is cancelled when its repair
 arms. `allow_live` and every RiskGate check still apply. Claude repairs as soon as a failure is diagnosed - the
 2026-11-16 Wealthsimple and IBKR corrections waited for a click and expired unfilled.
+
+## Spend-all buys and per-book position caps (2026-11-17, ANT)
+- A BUY with `spendAll: true` sizes at fire time from the book's cash, converted to the stock's currency at the live
+  FX rate (never 1:1; no rate = wait), less `execution.standing_orders.spend_all_reserve_pct` (3%) for the broker's FX
+  fee and drift; a `budget`, when also set, is a ceiling. It WAITS until every SELL of the same plan in the same account
+  is finished, so the sale proceeds are part of the money.
+- `risk.max_position_pct_by_portfolio` ({portfolioId: pct}) beats the global `risk.max_position_pct` for that book only.
+  User decision 2026-11-17 for ANT: remove the cap on Webull (Cash) 5e63e107, Wealthsimple (Personal) c7134b99 and
+  Live (IBKR) 2d173f44 (set to 100); the automated desks keep the global cap.
+- Webull Canada on the ANT IPO (2026-11-17 client notice): no 9:30 open; an opening auction at a time Nasdaq announces,
+  limit orders only until trading starts, orders placed before it queue unexecuted, early trading volatile with
+  possible halts. The `listing` trigger sends nothing until the first regular prints with volume, every order is a
+  limit inside the user's max price, and buys wait out a halt (RiskGate `not_halted`).

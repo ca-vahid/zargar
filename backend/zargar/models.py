@@ -1571,6 +1571,7 @@ class StandingOrder(Base):
     side: Mapped[str] = mapped_column(String(4))                                  # BUY | SELL
     qty: Mapped[float | None] = mapped_column(Float)                              # exact quantity, or ...
     budget: Mapped[float | None] = mapped_column(Float)                           # ... spend up to this (buy only)
+    spend_all: Mapped[bool] = mapped_column(Boolean, default=False)               # buy: size from the book's cash at fire time
     trigger: Mapped[str] = mapped_column(String(12), default="now")               # now | at | listing
     not_before: Mapped[str | None] = mapped_column(String(5))                     # "HH:MM" ET (trigger=at)
     expires_on: Mapped[str] = mapped_column(String(10), index=True)               # ET date; unfilled after it = expired

@@ -130,7 +130,12 @@ class StandingOrderService:
             raise ValueError("side must be BUY or SELL")
         qty = spec.get("qty")
         budget = spec.get("budget")
-        if bool(qty) == bool(budget):
+        spend_all = bool(spec.get("spendAll"))
+        if spend_all and side != "BUY":
+            raise ValueError("spendAll is for buys")
+        if spend_all and qty:
+            raise ValueError("spendAll sizes from cash - give no qty (a budget, if any, is a ceiling)")
+        if not spend_all and bool(qty) == bool(budget):
             raise ValueError("give exactly one of qty or budget")
         if budget and side != "BUY":
             raise ValueError("budget is for buys; a sell takes qty")
@@ -152,7 +157,8 @@ class StandingOrderService:
         row = StandingOrder(
             id=new_id(), plan_id=(spec.get("planId") or None), plan_name=(spec.get("planName") or None),
             portfolio_id=pid, symbol=str(spec.get("symbol") or "").strip().upper(), side=side,
-            qty=float(qty) if qty else None, budget=float(budget) if budget else None, trigger=trigger,
+            qty=float(qty) if qty else None, budget=float(budget) if budget else None, spend_all=spend_all,
+            trigger=trigger,
             not_before=not_before if trigger == "at" else None, expires_on=expires,
             max_price=float(spec["maxPrice"]) if spec.get("maxPrice") else None,
             min_price=float(spec["minPrice"]) if spec.get("minPrice") else None,
@@ -528,7 +534,12 @@ class StandingOrderService:
         limit, why = limit_for(row.side, q, row.slippage_pct, cap)
         if limit is None:
             return {"ok": False, "why": why}
-        qty = size_for(row, limit)
+        if row.spend_all:
+            qty, why = self._cash_qty(row, limit)
+            if qty is None:
+                return {"ok": False, "why": why}
+        else:
+            qty = size_for(row, limit)
         if qty < 1:
             return {"ok": False, "why": "nothing left to trade at this price"}
         if row.side == "SELL":
@@ -598,16 +609,26 @@ class StandingOrderService:
         if self._kind(row.portfolio_id) in ("live", "paper") and not bool(self.s("allow_live", False)):
             await self._note_wait(row, "execution.standing_orders.allow_live is off")
             return
+        if row.spend_all and await self._plan_sells_pending(row):
+            await self._note_wait(row, "waiting for this plan's sells in the account to finish")
+            return
         q = self.engine.quotes.get(row.symbol)
         cap = row.max_price if row.side == "BUY" else row.min_price
         limit, why = limit_for(row.side, q, row.slippage_pct, cap)
         if limit is None:
             await self._note_wait(row, why)
             return
-        qty = size_for(row, limit)
+        if row.spend_all:
+            qty, why = self._cash_qty(row, limit)
+            if qty is None:
+                await self._note_wait(row, why)
+                return
+        else:
+            qty = size_for(row, limit)
         if qty < 1:
             return await self._finish(row, "done" if row.filled_qty else "failed",
-                                      "budget too small for one share" if not row.filled_qty else "complete")
+                                      ("not enough cash for one share" if row.spend_all else
+                                       "budget too small for one share") if not row.filled_qty else "complete")
         if row.side == "SELL":
             # 2026-11-16: a reduce-only SELL is checked by nobody against the shares held (RiskGate runs the
             # safety-only list); an XIU.TO sell with no position reached IBKR three times. On a US name the venue
@@ -618,6 +639,35 @@ class StandingOrderService:
                                           "complete" if row.filled_qty else f"the book holds no {row.symbol} to sell")
             qty = min(qty, held)
         await self._place(row, qty, limit, q)
+
+    def _cash_qty(self, row: StandingOrder, limit: float) -> tuple[float | None, str]:
+        """2026-11-17 ("sell all of them, spend everything"): whole shares the book's cash buys NOW, in the stock's
+        currency at the live FX rate (never 1:1 - CAD read as USD would overspend by a third), less a reserve for the
+        broker's FX fee and price drift, capped by `budget` when one is set. (None, why) = wait."""
+        from ..fx import currency_for_symbol
+        pf = self.engine.positions.portfolio(row.portfolio_id) or {}
+        cash = float(pf.get("cash") or 0.0)
+        book_ccy = str(pf.get("baseCurrency") or "USD").upper()
+        sym_ccy = currency_for_symbol(row.symbol)
+        rate = 1.0 if book_ccy == sym_ccy else self.engine.positions.fx.rate(book_ccy, sym_ccy)
+        if rate is None:
+            return None, f"no live {book_ccy}->{sym_ccy} rate to size from cash"
+        reserve = max(0.0, float(self.s("spend_all_reserve_pct", 3.0))) / 100.0
+        money = cash * rate * (1.0 - reserve)
+        if row.budget:
+            spent = float(row.filled_qty or 0.0) * float(row.avg_fill_price or 0.0)
+            money = min(money, float(row.budget) - spent)
+        return float(max(0, math.floor(money / limit))) if limit > 0 else 0.0, ""
+
+    async def _plan_sells_pending(self, row: StandingOrder) -> bool:
+        """A spend-all buy waits for the SAME plan's sells in the same account: their proceeds are the money."""
+        if not row.plan_id:
+            return False
+        async with self.engine.sf() as session:
+            sells = (await session.execute(select(StandingOrder).where(
+                StandingOrder.plan_id == row.plan_id, StandingOrder.portfolio_id == row.portfolio_id,
+                StandingOrder.side == "SELL"))).scalars().all()
+        return any(s.status in ("draft", *OPEN) for s in sells)
 
     def _held(self, row: StandingOrder) -> float:
         """Whole shares of the symbol this book holds now (fractional remainders cannot be sold by a whole-share order)."""
@@ -839,7 +889,7 @@ class StandingOrderService:
                 "note": r.note, "lastError": r.last_error, "orderId": r.order_id, "orderIds": list(r.order_ids or []),
                 "attempts": list(r.attempts or []), "filledQty": r.filled_qty, "avgFillPrice": r.avg_fill_price,
                 "positionId": r.position_id, "armConfirm": confirm_phrase(r.id), "armedBy": r.armed_by or "user",
-                "repairOf": r.repair_of,
+                "repairOf": r.repair_of, "spendAll": bool(r.spend_all),
                 "armedAt": r.armed_at.isoformat() if r.armed_at else None,
                 "createdAt": r.created_at.isoformat() if r.created_at else None}
 
