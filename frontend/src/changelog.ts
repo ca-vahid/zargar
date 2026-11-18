@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.60";
+export const APP_VERSION = "0.9.61";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.61",date:"2026-11-18",title:"Quieter refused exits",items:[
+    {tag:"fixed",text:"A position whose exit was refused for an account-type mismatch (paper book while IBKR is on the live account) no longer re-fires its quote stop every 30 seconds; it waits 15 minutes. Other refusals still retry at once"},
+  ]},
   {version:"0.9.60",date:"2026-11-18",title:"Questions for you, and a push when a plan waits for your arm",items:[
     {tag:"new",text:"Questions inbox: when Claude needs a decision from you it is stored, pushed to your phone and shown on the phone's Home with its answer buttons (API /api/questions, tool zargar.tools.ask_user). An answer is words on the record; it never arms or moves anything by itself."},
     {tag:"improved",text:"A standing plan drafted for your arm now sends a push, so a corrected plan cannot sit unseen until it expires."},
