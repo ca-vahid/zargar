@@ -474,7 +474,9 @@ class RiskGate:
                 f"resulting position ${new_notional:,.0f} exceeds cap ${max_notional:,.0f}"
                 if new_notional > max_notional else ""))
             if equity > 0 and portfolio.kind != "shadow":   # research books: see 5. above
-                max_pct = float(s.get("risk.max_position_pct", 10.0))
+                # 2026-11-17 (user: "remove the cap" for the ANT accounts): a per-book override beats the global cap
+                over = (s.get("risk.max_position_pct_by_portfolio", {}) or {}).get(intent.portfolio_id)
+                max_pct = float(over if over is not None else s.get("risk.max_position_pct", 10.0))
                 pct = new_notional / equity * 100
                 checks.append(RiskCheck(
                     "max_position_pct", pct <= max_pct,

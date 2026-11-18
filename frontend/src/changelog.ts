@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.57";
+export const APP_VERSION = "0.9.58";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.58",date:"2026-11-17",title:"Spend-all buys",items:[
+    {tag:"new",text:"Standing orders: a buy can spend all the account's cash at the moment it fires (converted at the live FX rate, 3% kept for fees), after the plan's sells in that account finish"},
+    {tag:"improved",text:"Risk: the per-position % cap can be set per account (risk.max_position_pct_by_portfolio)"},
+  ]},
   {version:"0.9.57",date:"2026-11-17",title:"Corrected orders arm themselves",items:[
     {tag:"new",text:"Standing orders: when an order you armed fails, Claude posts a corrected order that arms on your original arm (same side and broker, never larger or longer-lived, at most 2 per order) and you get a push - no second click"},
   ]},
