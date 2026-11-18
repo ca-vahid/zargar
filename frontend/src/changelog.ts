@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.58";
+export const APP_VERSION = "0.9.59";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.59",date:"2026-11-17",title:"Standing orders with a start date",items:[
+    {tag:"new",text:"Standing orders can carry a start date (startsOn): an order armed days ahead waits for that day"},
+    {tag:"fixed",text:"The standing-order API now passes spendAll through (it was dropped)"},
+  ]},
   {version:"0.9.58",date:"2026-11-17",title:"Spend-all buys",items:[
     {tag:"new",text:"Standing orders: a buy can spend all the account's cash at the moment it fires (converted at the live FX rate, 3% kept for fees), after the plan's sells in that account finish"},
     {tag:"improved",text:"Risk: the per-position % cap can be set per account (risk.max_position_pct_by_portfolio)"},

@@ -443,3 +443,24 @@ async def test_a_per_book_position_cap_beats_the_global_one(rig):
     await eng.settings.set_many({"risk.max_position_pct_by_portfolio": {pid: 100.0}})
     res = await eng.orders.place(intent())
     assert all(c["passed"] for c in res["risk"]["checks"] if c["name"] == "max_position_pct")
+
+
+async def test_an_order_with_a_start_date_waits_for_that_day(rig):
+    """2026-11-17: the ANT plan is armed two days ahead - its 'now' sells must not fire on the day in between."""
+    eng, svc = rig
+    await _quote(eng, "SOD")
+    d = await svc.create({"portfolioId": _sim_pid(eng), "symbol": "SOD", "side": "BUY", "qty": 1, "slippagePct": 2,
+                          "startsOn": "2026-11-12", "expiresOn": "2099-01-01"})
+    await svc.arm(d["id"], confirm_phrase(d["id"]))
+    await svc.tick(now=OPEN_NOW)                                   # 2026-11-10, two days early
+    r = await svc.get(d["id"])
+    assert r["status"] == "armed" and r["lastError"] == "waiting for 2026-11-12" and r["startsOn"] == "2026-11-12"
+    with pytest.raises(ValueError, match="after expiresOn"):
+        await svc.create({"portfolioId": _sim_pid(eng), "symbol": "SOD", "side": "BUY", "qty": 1,
+                          "startsOn": "2026-11-13", "expiresOn": "2026-11-12"})
+
+
+def test_the_api_spec_carries_spend_all_and_starts_on():
+    from zargar.api.routes_standing import StandingOrderSpec, _spec
+    s = _spec(StandingOrderSpec(portfolioId="p", symbol="ANT", side="BUY", spendAll=True, startsOn="2026-11-19"))
+    assert s["spendAll"] is True and s["startsOn"] == "2026-11-19"

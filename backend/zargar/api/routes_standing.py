@@ -26,6 +26,8 @@ class StandingOrderSpec(BaseModel):
     stopLossPct: Optional[float] = None
     note: Optional[str] = None
     repairOf: Optional[str] = None
+    spendAll: Optional[bool] = None
+    startsOn: Optional[str] = None
 
 
 class PlanSpec(BaseModel):
