@@ -1598,6 +1598,25 @@ class StandingOrder(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class DeskQuestion(Base):
+    """A question for the user (2026-11-18): asked by Claude or a desk job, pushed to the phone and answered there
+    with one tap. The answer is words on the record; it never arms, approves or moves anything by itself."""
+    __tablename__ = "desk_questions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    detail: Mapped[str | None] = mapped_column(Text)
+    options: Mapped[list] = mapped_column(JSONVariant, default=list)            # suggested answers (0-4)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)  # open | answered | cancelled
+    asked_by: Mapped[str] = mapped_column(String(40), default="claude")
+    url: Mapped[str | None] = mapped_column(String(200))                          # the web path it is about
+    answer: Mapped[str | None] = mapped_column(Text)
+    answered_via: Mapped[str | None] = mapped_column(String(20))
+    answered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class StandingDelegation(Base):
     """The user's time-boxed go-ahead (2026-11-16): "you're free to arm, take care of the rest for today / this
     week". Created only by the user from the Standing orders page. While it is active Claude may arm standing
