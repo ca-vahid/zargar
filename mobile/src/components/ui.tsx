@@ -14,6 +14,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { router } from 'expo-router';
+
+import { setWorkspace } from '../hooks/useWorkspace';
+import { attentionCount, useStore } from '../store';
 import { radius, space, toneColor, useTheme } from '../theme';
 
 type Variant = 'hero' | 'title' | 'head' | 'body' | 'small' | 'label';
@@ -46,11 +51,45 @@ export function Delta({ value, text, v = 'body', style }: { value: number | null
   return <Txt v={v} num color={toneColor(t, sign)} style={style}>{text}</Txt>;
 }
 
-export function Screen({ children, onRefresh, refreshing, padded = true }: {
+/** What waits for the person, on whatever screen they are: a question from Claude, an order
+ *  that failed, a plan to arm. One line, one tap to the place that deals with it. */
+function AttentionStrip() {
+  const t = useTheme();
+  const a = useStore((s) => s.attention);
+  if (!attentionCount(a)) return null;
+  const q = a.questions.length;
+  const failed = a.failed.live + a.failed.practice;
+  const drafts = a.drafts.live + a.drafts.practice;
+  const text = q ? (q === 1 ? 'Claude has a question for you' : `${q} questions are waiting for your answer`)
+    : failed ? `${failed} standing order${failed > 1 ? 's' : ''} failed`
+    : `${drafts} standing order${drafts > 1 ? 's are' : ' is'} waiting for your arm`;
+  const go = () => {
+    if (q) { router.navigate('/questions'); return; }
+    // the order lives in one workspace: show that one
+    setWorkspace((failed ? a.failed : a.drafts).live ? 'live' : 'practice');
+    router.navigate('/orders?tab=standing' as any);
+  };
+  const urgent = q > 0 || failed > 0;
+  return (
+    <Pressable onPress={go} accessibilityRole="button" accessibilityLabel={text}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg, paddingVertical: 10,
+        backgroundColor: failed && !q ? t.downFill : t.accent }}>
+      <Ionicons name={q ? 'help-circle' : failed ? 'warning' : 'alarm'} size={18} color={failed && !q ? '#ffffff' : t.onAccent} />
+      <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: failed && !q ? '#ffffff' : t.onAccent }} numberOfLines={1}>{text}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '800', color: failed && !q ? '#ffffff' : t.onAccent }}>{q ? 'Answer' : urgent ? 'Look' : 'Arm'}</Text>
+    </Pressable>
+  );
+}
+
+export function Screen({ children, onRefresh, refreshing, padded = true, attention = true }: {
   children: ReactNode; onRefresh?: () => void; refreshing?: boolean; padded?: boolean;
+  /** false on a screen that already shows what waits for the person */
+  attention?: boolean;
 }) {
   const t = useTheme();
   return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+    {attention && <AttentionStrip />}
     <ScrollView
       style={{ flex: 1, backgroundColor: t.bg }}
       contentContainerStyle={[{ paddingBottom: space.xl * 2 }, padded && { padding: space.lg, gap: space.lg }]}
@@ -60,6 +99,7 @@ export function Screen({ children, onRefresh, refreshing, padded = true }: {
         : undefined}>
       {children}
     </ScrollView>
+    </View>
   );
 }
 

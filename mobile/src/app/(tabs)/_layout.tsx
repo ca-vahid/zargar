@@ -31,6 +31,7 @@ export default function TabsLayout() {
   const proposals = useStore((s) => s.proposals);
   // the badge counts the cards of the workspace on screen
   const standingBadge = useStore((s) => s.standingBadge);
+  const questions = useStore((s) => s.attention.questions.length);
   const pending = proposals.filter((p) => workspaceOf(portfolios.find((b) => b.id === p.portfolioId)?.kind) === ws).length;
   return (
     <Tabs
@@ -47,7 +48,7 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: t.text3,
         tabBarLabelStyle: { fontWeight: '600' },
       }}>
-      <Tabs.Screen name="index" options={{ title: 'Home', headerTitle: () => <Brand />, tabBarIcon: icon('home', 'home-outline') }} />
+      <Tabs.Screen name="index" options={{ title: 'Home', headerTitle: () => <Brand />, tabBarIcon: icon('home', 'home-outline'), tabBarBadge: questions || undefined }} />
       <Tabs.Screen name="orders" options={{ title: 'Orders', tabBarIcon: icon('alarm', 'alarm-outline'), tabBarBadge: standingBadge || undefined }} />
       <Tabs.Screen name="portfolio" options={{ title: 'Portfolio', tabBarIcon: icon('wallet', 'wallet-outline') }} />
       <Tabs.Screen name="tips" options={{ title: 'Tips', tabBarIcon: icon('chatbubble-ellipses', 'chatbubble-ellipses-outline'), tabBarBadge: pending || undefined }} />

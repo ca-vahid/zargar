@@ -1,11 +1,11 @@
 // What the update the phone is running brought. Rewrite it with every over-the-air publish.
 export const WHATS_NEW: { title: string; items: string[] } = {
-  title: 'A simpler layout, with Orders up front',
+  title: 'Questions from Claude, and nothing left unarmed unseen',
   items: [
-    'New Orders tab: your standing orders, the desk\'s armed plans, and what is resting at a broker',
-    'Live / Practice now applies everywhere: standing orders show only in the workspace of their account',
-    'Home is one page: what needs you first, then your money, orders at work, accounts, positions and the market',
-    'Research, Alerts and Money are under More, each with its own icon',
-    'A badge on Orders when a standing order waits to be armed or has failed',
+    'When Claude needs a decision from you, the question sits at the top of Home with its answer buttons; one tap answers it',
+    'A gold bar on every screen when a question, a failed order or a plan to arm is waiting, with a buzz when it arrives',
+    'Orders shows who armed each order, start dates ("Thu Nov 19"), and buys that spend all the cash',
+    'Delegate arming from your phone: let Claude arm plans for a day or a week, inside limits you set, and stop it any time',
+    'Old drafts and failures whose day has passed no longer ask for your attention',
   ],
 };

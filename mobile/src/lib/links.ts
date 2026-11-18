@@ -4,6 +4,7 @@ export function routeForWebPath(path: string | null | undefined): string {
   const p = (path ?? '').split('?')[0].replace(/\/+$/, '');
   if (!p || p === '/') return '/';
   if (p.startsWith('/inbox') || p.startsWith('/tips')) return '/tips';
+  if (p.startsWith('/questions')) return '/questions';
   if (p.startsWith('/armed')) return '/orders?tab=plans';
   if (p.startsWith('/standing')) return '/orders?tab=standing';
   if (p.startsWith('/dashboard') || p.startsWith('/portfolio') || p.startsWith('/blotter')) return '/portfolio';

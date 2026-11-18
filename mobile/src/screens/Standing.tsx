@@ -3,15 +3,17 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 
 import { api } from '@/api/endpoints';
+import { DelegationCard } from '@/components/Delegation';
 import { BrokerBadge, EmptyArt, Heading, SymbolBadge } from '@/components/graphics';
 import { Button, Card, Pill, Problem, Screen, SkeletonRows, styles, Txt } from '@/components/ui';
 import { type BookBroker, useBrokers } from '@/hooks/useBrokers';
 import { useStanding } from '@/hooks/useStanding';
 import { runAction } from '@/lib/actions';
 import { clock, price, qty } from '@/lib/format';
-import { newYorkTime } from '@/lib/market';
+import { useBooks } from '@/hooks/useBooks';
+import { newYorkDate, newYorkTime } from '@/lib/market';
 import {
-  exitsText, groupPlans, guardText, isOpen, isRunning, minutesToTrigger, orderLine, preflightText, priceSign, sizeText,
+  armedByText, dayLabel, exitsText, groupPlans, guardText, isOpen, isRunning, minutesToTrigger, orderLine, preflightText, priceSign, sizeText,
   STATUS_LABEL, type StandingOrder, type StandingPlan, type StandingPreflight, statusTone, waitText, whenText,
 } from '@/lib/standing';
 import { useStore } from '@/store';
@@ -42,14 +44,15 @@ function Line({ icon, text, color }: { icon: keyof typeof Ionicons.glyphMap; tex
 }
 
 /** One order as a step on its plan's timeline: when, what, the price guard, and where it stands. */
-function OrderStep({ o, last, at, now, busy, preflight, history, onCheck, onDisarm, onCancel }: {
-  o: StandingOrder; last: boolean; at: ReturnType<typeof newYorkTime>; now: number; busy: boolean;
+function OrderStep({ o, last, account, at, today, now, busy, preflight, history, onCheck, onDisarm, onCancel }: {
+  o: StandingOrder; last: boolean; account?: string; at: ReturnType<typeof newYorkTime>; today: string | null; now: number; busy: boolean;
   preflight?: StandingPreflight; history?: boolean; onCheck: () => void; onDisarm: () => void; onCancel: () => void;
 }) {
   const t = useTheme();
   const tone = statusTone(o.status);
   const ink = tone === 'ok' ? t.up : tone === 'bad' ? t.down : tone === 'warn' ? t.warn : t.text3;
-  const wait = o.status === 'armed' || o.status === 'draft' ? minutesToTrigger(o, at) : null;
+  const wait = o.status === 'armed' || o.status === 'draft' ? minutesToTrigger(o, at, today) : null;
+  const by = armedByText(o);
   const exits = exitsText(o);
   return (
     <View style={{ flexDirection: 'row', gap: space.md }}>
@@ -71,8 +74,10 @@ function OrderStep({ o, last, at, now, busy, preflight, history, onCheck, onDisa
           <Txt v="head">{o.symbol}</Txt>
           <Txt dim num style={{ flexShrink: 1 }} numberOfLines={1}>{sizeText(o)}</Txt>
         </View>
+        {!!account && <Line icon="business-outline" text={account} />}
         <Line icon="shield-checkmark-outline" text={`${guardText(o)} · limit within ${o.slippagePct}% of the quote`} />
         {!!exits && <Line icon="flag-outline" text={`After it fills: ${exits}`} />}
+        {!!by && <Line icon="key-outline" color={t.accent} text={by} />}
         {wait != null && !history && (
           <Line icon="time-outline" text={wait <= 0 ? 'Its window is open now' : `Can fire ${waitText(wait)} · ${localAt(now, wait)} your time`} />
         )}
@@ -80,7 +85,7 @@ function OrderStep({ o, last, at, now, busy, preflight, history, onCheck, onDisa
         {o.attempts.length > 1 && isOpen(o.status) && <Line icon="repeat-outline" text={`Re-priced ${o.attempts.length - 1} time${o.attempts.length > 2 ? 's' : ''}`} />}
         {!!o.lastError && o.status !== 'done' && (o.status === 'failed'
           ? <Line icon="warning" color={t.down} text={o.lastError} />
-          : isOpen(o.status) && <Line icon="hourglass-outline" text={`Waiting: ${o.lastError}`} />)}
+          : isOpen(o.status) && <Line icon="hourglass-outline" text={/^waiting/i.test(o.lastError) ? o.lastError.replace(/^w/, 'W').replace(/(\d{4}-\d{2}-\d{2})/, (d) => dayLabel(d)) : `Waiting: ${o.lastError}`} />)}
         {preflight && <Line icon={preflight.ok ? 'checkmark-circle-outline' : 'close-circle-outline'} color={preflight.ok ? t.up : t.down}
           text={`Check: ${preflightText(preflight)}`} />}
         {!history && isOpen(o.status) && (
@@ -99,7 +104,8 @@ export function StandingScreen({ header }: { header?: ReactNode }) {
   const t = useTheme();
   const brokerOf = useBrokers();
   const [fast, setFast] = useState(false);
-  const { list, orders, counts, elsewhere, allowLive, ws } = useStanding(fast ? 4000 : 15000);
+  const { list, orders, counts, elsewhere, allowLive, delegations, ws } = useStanding(fast ? 4000 : 15000);
+  const books = useBooks(ws);
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<Record<string, StandingPreflight>>({});
   const [showHistory, setShowHistory] = useState(false);
@@ -111,6 +117,7 @@ export function StandingScreen({ header }: { header?: ReactNode }) {
 
   const plans = useMemo(() => groupPlans(orders ?? []), [orders]);
   const at = newYorkTime(now);
+  const today = newYorkDate(now);
   // while an order is being sent or is working, follow it closely
   const running = counts.working > 0;
   useEffect(() => { setFast(running); }, [running]);
@@ -119,11 +126,11 @@ export function StandingScreen({ header }: { header?: ReactNode }) {
     let best: { o: StandingOrder; wait: number } | null = null;
     for (const o of orders ?? []) {
       if (o.status !== 'armed') continue;
-      const wait = minutesToTrigger(o, at);
+      const wait = minutesToTrigger(o, at, today);
       if (wait != null && (!best || wait < best.wait)) best = { o, wait };
     }
     return best;
-  }, [orders, at]);
+  }, [orders, at, today]);
 
   const act = async (ask: Parameters<typeof runAction>[0], fn: () => Promise<unknown>, done: string) => {
     setBusy(true);
@@ -199,7 +206,7 @@ export function StandingScreen({ header }: { header?: ReactNode }) {
         </View>
         <View>
           {plan.rows.map((o, i) => (
-            <OrderStep key={o.id} o={o} last={i === plan.rows.length - 1} at={at} now={now} busy={busy} preflight={preflight[o.id]} history={history}
+            <OrderStep key={o.id} o={o} last={i === plan.rows.length - 1} account={accounts.length > 1 ? brokerOf(o.portfolioId).name : undefined} at={at} today={today} now={now} busy={busy} preflight={preflight[o.id]} history={history}
               onCheck={() => void check(o)} onDisarm={() => void disarm(o)} onCancel={() => void cancel(o)} />
           ))}
         </View>
@@ -252,6 +259,8 @@ export function StandingScreen({ header }: { header?: ReactNode }) {
             </View>
             <Txt v="small" color={t.accent} style={{ fontWeight: '700' }}>{allowLive ? 'Turn off' : 'Turn on'}</Txt>
           </Pressable>}
+
+          {ws === 'live' && <DelegationCard delegations={delegations} books={books} onChanged={list.refresh} />}
 
           {list.error && <Txt v="small" color={t.down}>Not refreshed: {list.error}</Txt>}
 

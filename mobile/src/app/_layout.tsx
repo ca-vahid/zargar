@@ -11,6 +11,7 @@ import { LockScreen } from '@/components/LockScreen';
 import { LoginScreen } from '@/components/LoginScreen';
 import { ConfirmHost, ToastHost } from '@/components/Overlays';
 import { fetchUpdate, restartIntoUpdate } from '@/lib/updates';
+import { startAttention } from '@/live/attention';
 import { bindNotifications, ensureChannels } from '@/notifications/push';
 import { useStore } from '@/store';
 import { useTheme } from '@/theme';
@@ -40,6 +41,9 @@ export default function RootLayout() {
     return bindNotifications();
   }, [signedIn]);
 
+  // what waits for the person, watched from every screen
+  useEffect(() => (signedIn ? startAttention() : undefined), [signedIn]);
+
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') {
@@ -68,6 +72,7 @@ export default function RootLayout() {
         contentStyle: { backgroundColor: t.bg }, headerRight: () => <HeaderRight /> }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="alerts" options={{ title: 'Alerts' }} />
+        <Stack.Screen name="questions" options={{ title: 'Questions for you' }} />
         <Stack.Screen name="research" options={{ title: 'Research' }} />
         <Stack.Screen name="ledger" options={{ title: 'Money' }} />
         <Stack.Screen name="system" options={{ title: 'System' }} />

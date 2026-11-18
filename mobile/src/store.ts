@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import type { AlertItem, AuthUser } from './api/endpoints';
+import type { AlertItem, AuthUser, DeskQuestion } from './api/endpoints';
 import type { BrokerState, HaltState, Order, Portfolio, Position, Proposal, Quote, Snapshot } from './api/types';
 
 export type Conn = 'idle' | 'connecting' | 'live' | 'down';
@@ -18,6 +18,14 @@ export interface ConfirmRequest {
   secure?: boolean;
   resolve: (ok: boolean) => void;
 }
+
+export interface Attention {
+  questions: DeskQuestion[];
+  drafts: { live: number; practice: number };
+  failed: { live: number; practice: number };
+}
+export const attentionCount = (a: Attention) =>
+  a.questions.length + a.drafts.live + a.drafts.practice + a.failed.live + a.failed.practice;
 
 export interface Toast { id: number; kind: 'ok' | 'error' | 'info'; text: string }
 
@@ -52,6 +60,8 @@ export interface AppState {
   armedBump: number;
   /** standing orders that need the person in the workspace on screen (drafts + failed) */
   standingBadge: number;
+  /** what waits for the person on EITHER workspace: open questions, plans to arm, orders that failed today */
+  attention: Attention;
   // --- ui
   selectedBook: string | null;
   confirm: ConfirmRequest | null;
@@ -83,6 +93,7 @@ const live = {
   liveAlerts: [] as AlertItem[],
   armedBump: 0,
   standingBadge: 0,
+  attention: { questions: [], drafts: { live: 0, practice: 0 }, failed: { live: 0, practice: 0 } } as Attention,
 };
 
 export const useStore = create<AppState>((set, get) => ({

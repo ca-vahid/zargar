@@ -25,6 +25,19 @@ export function newYorkTime(now: number): { weekday: number; minutes: number } |
   }
 }
 
+/** Today's calendar date in New York ("2026-11-19"), or null when the device cannot convert time zones. */
+export function newYorkDate(now: number): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date(now));
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    const out = `${get('year')}-${get('month')}-${get('day')}`;
+    return /^\d{4}-\d{2}-\d{2}$/.test(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 export function span(minutes: number): string {
   const m = Math.max(1, Math.round(minutes));
   if (m < 60) return `${m} min`;

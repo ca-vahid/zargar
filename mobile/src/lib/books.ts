@@ -44,7 +44,10 @@ export function visibleBooks(all: Portfolio[], workspace: Workspace, includeRese
  *  would show a jump that never happened: hold the line at what it is worth instead. */
 export function liftEmptyCurve<P extends [number, number]>(curve: P[], equity: number | null | undefined): P[] {
   if (!curve.length || equity == null || Math.abs(equity) < 0.005) return curve;
-  if (curve.some((p) => Math.abs(p[1]) >= 0.005)) return curve;
+  // zeros before the first real value are "not recorded yet", not a worthless account: leave them out
+  const firstReal = curve.findIndex((p) => Math.abs(p[1]) >= 0.005);
+  if (firstReal > 0) return curve.slice(firstReal);
+  if (firstReal === 0) return curve;
   return curve.map((p) => [p[0], equity] as unknown as P);
 }
 

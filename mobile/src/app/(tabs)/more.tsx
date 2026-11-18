@@ -15,6 +15,7 @@ export default function MoreScreen() {
   const t = useTheme();
   const user = useStore((s) => s.user);
   const liveAlerts = useStore((s) => s.liveAlerts.length);
+  const questions = useStore((s) => s.attention.questions.length);
   const [symbol, setSymbol] = useState('');
   const clean = symbol.trim().toUpperCase();
   const chart = () => clean && router.navigate({ pathname: '/chart/[symbol]', params: { symbol: clean } });
@@ -51,6 +52,7 @@ export default function MoreScreen() {
       </Card>
 
       <Card style={{ paddingVertical: space.sm }}>
+        {item('help-circle-outline', t.accent, 'Questions for you', 'What Claude asked, and what you answered', '/questions', false, questions ? String(questions) : undefined)}
         {item('notifications-outline', t.warn, 'Alerts', 'What the desk flagged, newest first', '/alerts', false, liveAlerts ? String(liveAlerts) : undefined)}
         {item('cash-outline', t.up, 'Money', 'What each workspace made and lost, in plain numbers', '/ledger')}
         {item('telescope-outline', t.series, 'Research', 'Company notes, the Scout screen and the Scout agent', '/research', true)}

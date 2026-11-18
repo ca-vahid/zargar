@@ -1,4 +1,4 @@
-import type { StandingList, StandingOrder, StandingPreflight } from '../lib/standing';
+import type { StandingDelegation, StandingList, StandingOrder, StandingPreflight } from '../lib/standing';
 import { request } from './client';
 import type {
   ArmedPlan,
@@ -50,6 +50,12 @@ export interface ScoutAgent {
   lanes: ScoutAgentLane[];
   lessons: { id: string; text: string; status: string; effectiveFrom?: string | null; reviewDay?: string | null }[];
   scorecard?: { sampleStart?: string; gate?: { passed: boolean; verdict: string; checks: { name: string; need: string; have: number | string | null; ok: boolean }[] } };
+}
+/** A question Claude (or a desk job) asks the person; answered once, from the phone or the desk. */
+export interface DeskQuestion {
+  id: string; text: string; detail: string | null; options: string[]; status: 'open' | 'answered' | 'cancelled' | 'expired';
+  askedBy: string; url: string | null; answer: string | null; answeredVia: string | null; answeredAt: string | null;
+  expiresAt: string | null; createdAt: string;
 }
 export type ChartBar = [number, number, number, number, number, number];
 export interface ChartData { symbol: string; tf: string; range: string | null; source: string; bars: ChartBar[] }
@@ -145,6 +151,14 @@ export const api = {
   setStandingAllowLive: (on: boolean) =>
     request<unknown>('PATCH', '/api/settings', { 'execution.standing_orders.allow_live': on }),
   brokerages: () => request<Brokerages>('GET', '/api/brokerages'),
+  /** the person's go-ahead for Claude to arm plans; the server asks for this exact phrase */
+  standingDelegate: (spec: { portfolioIds: string[]; endsAt: string; maxOrderNotional: number; maxTotalNotional: number }) =>
+    request<StandingDelegation>('POST', '/api/standing/delegations', { ...spec, confirm: 'I DELEGATE ARMING' }),
+  standingRevoke: (id: string) => request<StandingDelegation>('POST', `/api/standing/delegations/${id}/revoke`),
+
+  // --- questions for the person
+  questions: (openOnly = false) => request<DeskQuestion[]>('GET', `/api/questions${q({ open_only: openOnly || undefined, limit: 40 })}`),
+  answerQuestion: (id: string, answer: string) => request<DeskQuestion>('POST', `/api/questions/${id}/answer`, { answer }),
 
   // --- push (Expo token; backend PR "mobile-backend")
   pushRegister: (token: string, label: string) =>

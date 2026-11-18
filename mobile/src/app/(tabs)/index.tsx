@@ -7,16 +7,17 @@ import { api } from '@/api/endpoints';
 import type { ArmedSummary, Ledger, Portfolio, Position } from '@/api/types';
 import { AreaSpark, DayBars, Heading, Hero, Meter, Sparkline, SymbolBadge } from '@/components/graphics';
 import { CurrencySwitch } from '@/components/Header';
+import { QuestionCard } from '@/components/Questions';
 import { Card, Delta, Empty, Pill, Row, Screen, Skeleton, styles, Txt } from '@/components/ui';
 import { useBooks } from '@/hooks/useBooks';
 import { useConvert, useCurrency } from '@/hooks/useCurrency';
 import { usePoll } from '@/hooks/usePoll';
 import { useStanding } from '@/hooks/useStanding';
-import { useWorkspace } from '@/hooks/useWorkspace';
+import { setWorkspace, useWorkspace } from '@/hooks/useWorkspace';
 import { dayMove, dayMovePct, GROUP_LABEL, groupOf, liftEmptyCurve, workspaceOf } from '@/lib/books';
 import type { Point } from '@/lib/chart';
 import { clock, money, pct, price, shortDate, signedMoney, titleCase } from '@/lib/format';
-import { marketClock, newYorkTime } from '@/lib/market';
+import { marketClock, newYorkDate, newYorkTime } from '@/lib/market';
 import { sumSeries } from '@/lib/range';
 import { minutesToTrigger, orderLine, waitText } from '@/lib/standing';
 import { watchSymbol } from '@/live/socket';
@@ -246,7 +247,7 @@ export default function HomeScreen() {
     let next: { text: string; wait: number } | null = null;
     for (const o of standing.orders ?? []) {
       if (o.status !== 'armed') continue;
-      const wait = minutesToTrigger(o, at);
+      const wait = minutesToTrigger(o, at, newYorkDate(Date.now()));
       if (wait != null && (!next || wait < next.wait)) next = { text: orderLine(o), wait };
     }
     return next;
@@ -275,18 +276,22 @@ export default function HomeScreen() {
   const s: ArmedSummary | null = summary.data;
   const inTrade = s ? mine(s.inTrade) : [];
   const watching = s ? mine(s.watching) : [];
-  const attention = s ? mine(s.attention) : [];
+  const planAttention = s ? mine(s.attention) : [];
   const bookHalts = Object.keys(halt.books ?? {}).length;
   const moverScale = Math.max(0, ...holdings.map((p) => Math.abs(p.unrealizedPnl ?? 0)));
   const unrealized = holdings.reduce((sum, p) => sum + (conv(p.unrealizedPnl, p.currency).value ?? 0), 0);
   const refreshAll = () => { summary.refresh(); curves.refresh(); ledgers.refresh(); standing.list.refresh(); };
 
   // everything that waits for the person, most urgent first
+  const attention = useStore((st) => st.attention);
+  const other = ws === 'live' ? 'practice' : 'live';
+  const otherWaiting = attention.drafts[other] + attention.failed[other];
   const todos: { key: string; icon: keyof typeof Ionicons.glyphMap; ink: string; title: string; sub?: string; action: string; go: () => void }[] = [];
   if (so.failed > 0) todos.push({ key: 'failed', icon: 'warning', ink: t.down, title: `${so.failed} standing order${so.failed > 1 ? 's' : ''} failed`, sub: 'Open it to see the broker\'s reason.', action: 'Look', go: () => openOrders('standing') });
   if (so.draft > 0) todos.push({ key: 'draft', icon: 'alarm-outline', ink: t.accent, title: `${so.draft} standing order${so.draft > 1 ? 's' : ''} to arm`, sub: 'Drafted from your plan. They do nothing until you arm them.', action: 'Arm', go: () => openOrders('standing') });
   if (proposals.length > 0) todos.push({ key: 'cards', icon: 'chatbubble-ellipses-outline', ink: t.accent, title: `${proposals.length} tip card${proposals.length > 1 ? 's' : ''} to decide`, sub: proposals.slice(0, 4).map((p) => p.symbol).join(' · '), action: 'Review', go: () => router.navigate('/tips') });
-  for (const a of attention) todos.push({ key: a.runId, icon: 'alert-circle-outline', ink: t.warn, title: `${a.symbol} plan needs attention`, sub: a.reasons.join(' · '), action: 'Open', go: () => openOrders('plans') });
+  if (otherWaiting > 0) todos.push({ key: 'other', icon: 'swap-horizontal', ink: t.accent, title: `${otherWaiting} standing order${otherWaiting > 1 ? 's' : ''} need you in ${other === 'live' ? 'Live' : 'Practice'}`, sub: 'They belong to accounts of the other workspace.', action: 'Switch', go: () => { setWorkspace(other); openOrders('standing'); } });
+  for (const a of planAttention) todos.push({ key: a.runId, icon: 'alert-circle-outline', ink: t.warn, title: `${a.symbol} plan needs attention`, sub: a.reasons.join(' · '), action: 'Open', go: () => openOrders('plans') });
 
   const working = so.armed + so.working;
   // today's events of this workspace: drop the ones that belong to the other side's plans
@@ -297,7 +302,7 @@ export default function HomeScreen() {
   }, [s, ws]);
 
   return (
-    <Screen onRefresh={refreshAll} refreshing={summary.refreshing}>
+    <Screen attention={false} onRefresh={refreshAll} refreshing={summary.refreshing}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
         <MarketLine />
         <CurrencySwitch />
@@ -310,6 +315,8 @@ export default function HomeScreen() {
           {bookHalts > 0 && <Pill kind="warn" text={`${bookHalts} book${bookHalts > 1 ? 's' : ''} at loss limit`} />}
         </View>
       )}
+
+      {attention.questions.map((q) => <QuestionCard key={q.id} q={q} />)}
 
       {todos.length > 0 && (
         <Card style={{ borderColor: t.accent, paddingVertical: space.sm }}>

@@ -2,7 +2,8 @@ import { useEffect, useMemo } from 'react';
 
 import { api } from '../api/endpoints';
 import { workspaceOf } from '../lib/books';
-import { isOpen, standingCounts } from '../lib/standing';
+import { newYorkDate } from '../lib/market';
+import { isOpen, standingCounts, withStale } from '../lib/standing';
 import { useStore } from '../store';
 import { usePoll } from './usePoll';
 import { useWorkspace } from './useWorkspace';
@@ -14,7 +15,8 @@ export function useStanding(everyMs = 30000) {
   const ws = useWorkspace();
   const portfolios = useStore((s) => s.portfolios);
   const list = usePoll(() => api.standing(), everyMs, [], 'standing');
-  const all = list.data?.orders ?? null;
+  const raw = list.data?.orders ?? null;
+  const all = useMemo(() => (raw ? withStale(raw, newYorkDate(Date.now())) : null), [raw]);
   const orders = useMemo(
     () => (all ? all.filter((o) => workspaceOf(portfolios.find((b) => b.id === o.portfolioId)?.kind) === ws) : null),
     [all, portfolios, ws]);
@@ -22,5 +24,5 @@ export function useStanding(everyMs = 30000) {
   const elsewhere = all ? all.filter((o) => isOpen(o.status)).length - counts.open : 0;
   const badge = counts.draft + counts.failed;
   useEffect(() => { if (orders) useStore.getState().set({ standingBadge: badge }); }, [orders, badge]);
-  return { list, orders, counts, elsewhere, allowLive: !!list.data?.allowLive, ws };
+  return { list, orders, counts, elsewhere, allowLive: !!list.data?.allowLive, delegations: list.data?.delegations ?? [], ws };
 }

@@ -32,7 +32,7 @@ describe('an IBKR account whose book has no cash on record yet', () => {
   });
   it('holds an all-zero curve at what the book is worth', () => {
     expect(liftEmptyCurve([[1, 0], [2, 0]], 2000)).toEqual([[1, 2000], [2, 2000]]);
-    expect(liftEmptyCurve([[1, 0], [2, 1990]], 2000)).toEqual([[1, 0], [2, 1990]]);
+    expect(liftEmptyCurve([[1, 0], [2, 1990], [3, 0]], 2000)).toEqual([[2, 1990], [3, 0]]);
     expect(liftEmptyCurve([[1, 0]], 0)).toEqual([[1, 0]]);
   });
 });
