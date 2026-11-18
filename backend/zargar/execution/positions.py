@@ -2373,12 +2373,27 @@ class PositionManager:
                 self._breaches[k] = n
                 if n >= need:
                     self._breaches.pop(k, None)
+                    if self._blocked_by_account_mismatch(p, now):
+                        return
                     self._log(p, "quote_stop", f"underlying {q.last} decisively through the stop {stop:.4f}")
                     await self.close(p.id, fraction=1.0, kind="stop", force_market=True,
                                      reason=f"intra-bar quote breach ({q.last} vs stop {stop:.4f})")
                 return
             self._breaches.pop((p.id, "quote"), None)
 
+
+    MISMATCH_BACKOFF_MS = 15 * 60 * 1000
+
+    @staticmethod
+    def _blocked_by_account_mismatch(p, now: int) -> bool:
+        """2026-11-18: a paper book's MRNA quote brake re-fired every ~30 s all morning (34 refusals in 15 min) while
+        the gateway is logged into the LIVE account - the order guard refuses every one ("account type mismatch").
+        That refusal cannot clear until the gateway changes, so the quote brake stands down for 15 minutes after it.
+        ONLY that reason: any other refusal (a stale quote, a venue reject) still re-fires on the next breach."""
+        last = p.exits[-1] if p.exits else None
+        return bool(last and last.get("status") in ("REJECTED", "REJECTED_RISK")
+                    and "account type mismatch" in str(last.get("error") or "")
+                    and now - int(last.get("ts") or 0) < PositionManager.MISMATCH_BACKOFF_MS)
 
     # ---------------------------------------------------------------- reconciliation
     async def reconcile(self) -> dict:
