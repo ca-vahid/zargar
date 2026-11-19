@@ -931,6 +931,21 @@ class SnapTradeSync:
             await self._maybe_rename(portfolio_id, display_name)
 
         cash, cash_balances = await self._fetch_cash(account_id, currency, acct)
+        if cash is None:
+            # 2026-11-19: no FX rate for a currency the account holds (the first sync after a restart runs before
+            # the USD/CAD quote arrives). Adding the wallets 1:1 read a C$24.7k account as C$19.7k, moved "today"
+            # by thousands and tripped the daily-loss halt on two real books. The book's cash stands until a rate
+            # is known; positions still level-set.
+            cash = float((self._positions.portfolio(portfolio_id) or {}).get("cash") or 0.0)
+            skip_key = (account_id, "cash-fx", dt.datetime.now(dt.timezone.utc).date().isoformat())
+            if skip_key not in self._mismatch_warned:
+                self._mismatch_warned.add(skip_key)
+                log.warning("SnapTrade cash level-set skipped for %s: no FX rate into %s", display_name, currency)
+                await self._journal.append(
+                    "SnapTradeCashSkipped",
+                    {"account": display_name, "reason": "no FX rate", "bookCurrency": currency,
+                     "cashBalances": cash_balances, "cashKept": round(cash, 2)},
+                    aggregate_type="portfolio", aggregate_id=portfolio_id, portfolio_id=portfolio_id)
         positions = await self._fetch_positions(account_id)
         # pre-seed the impact endpoint's symbol-id cache from held positions —
         # saves a brokerage API call per fee check (Wealthsimple rate-limits)
@@ -1053,8 +1068,11 @@ class SnapTradeSync:
         return pid
 
     async def _fetch_cash(self, account_id: str, currency: str,
-                          acct: dict) -> tuple[float, list[dict]]:
+                          acct: dict) -> tuple[float | None, list[dict]]:
         """All cash balances FX-converted into the account currency.
+
+        A total of None means a wallet could not be converted (no FX rate): the caller
+        keeps the book's cash rather than level-set it to a 1:1 sum.
 
         Accounts hold cash in several currencies at once (Webull CASH keeps a
         USD wallet inside a CAD account) — dropping non-primary currencies
@@ -1076,7 +1094,15 @@ class SnapTradeSync:
                 entries.append({"currency": code, "cash": float(bal["cash"])})
         if entries:
             fx = self._positions.fx
-            total = sum(fx.convert(e["cash"], e["currency"], currency) for e in entries)
+            total = 0.0
+            for e in entries:
+                if abs(e["cash"]) < 0.005:
+                    continue
+                # FX markets close for the weekend: the last rate (up to 4 days old) beats none
+                r = fx.rate(e["currency"], currency) or fx.rate(e["currency"], currency, max_age_ms=4 * 86_400_000)
+                if r is None:
+                    return None, entries
+                total += e["cash"] * r
             return total, entries
         total = float(((acct.get("balance") or {}).get("total") or {}).get("amount") or 0.0)
         return total, []

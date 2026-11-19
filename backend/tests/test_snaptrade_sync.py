@@ -163,6 +163,48 @@ async def test_multi_currency_cash_included(sf):
     await client.aclose()
 
 
+async def test_a_usd_wallet_is_never_added_one_to_one_without_a_rate(sf):
+    """2026-11-19: the first sync after a restart ran before the USD/CAD quote existed and summed
+    USD 11,737.88 + CAD 7,942.23 as C$19,680 - "today" read -15% and the daily-loss halt engaged."""
+    stub = StubSnapTrade()
+    stub.connections = [stub_connection()]
+    stub.accounts = [stub_account(total=24_700.0)]
+    stub.balances["acct-1"] = [{"currency": {"code": "CAD"}, "cash": 24_000.0}]
+    sync, positions, *_ = make_sync(sf, stub)
+    await sync.sync_once()
+    pid = sync._account_to_portfolio["acct-1"]
+    assert positions.portfolio(pid)["cash"] == pytest.approx(24_000.0)
+    anchor = await positions.day_start_equity(pid)
+
+    # the sale proceeds land as USD; no rate is known yet
+    stub.balances["acct-1"] = [{"currency": {"code": "USD"}, "cash": 11_737.88},
+                               {"currency": {"code": "CAD"}, "cash": 7_942.23}]
+    result = await sync.sync_once()
+    assert positions.portfolio(pid)["cash"] == pytest.approx(24_000.0)        # kept, not 19,680.11
+    assert await positions.day_start_equity(pid) == pytest.approx(anchor)     # "today" did not move
+    acct = result["providers"][0]["accounts"][0]
+    assert acct["cashBalances"] == [{"currency": "USD", "cash": 11_737.88}, {"currency": "CAD", "cash": 7_942.23}]
+    async with sf() as s:
+        skipped = (await s.execute(select(func.count()).select_from(Event)
+                                   .where(Event.type == "SnapTradeCashSkipped"))).scalar_one()
+    assert skipped == 1
+
+    # the rate arrives: each wallet is converted into the book's currency
+    positions._quotes.on_quote(Quote(symbol="USDCAD=X", bid=1.4315, ask=1.4315, last=1.4315))
+    await sync.sync_once()
+    assert positions.portfolio(pid)["cash"] == pytest.approx(11_737.88 * 1.4315 + 7_942.23)
+
+
+async def test_a_zero_foreign_wallet_needs_no_rate(sf):
+    stub = StubSnapTrade()
+    stub.connections = [stub_connection()]
+    stub.accounts = [stub_account(total=500.0)]
+    stub.balances["acct-1"] = [{"currency": {"code": "USD"}, "cash": 0.0}, {"currency": {"code": "CAD"}, "cash": 500.0}]
+    sync, positions, *_ = make_sync(sf, stub)
+    await sync.sync_once()
+    assert positions.portfolio(sync._account_to_portfolio["acct-1"])["cash"] == pytest.approx(500.0)
+
+
 async def test_sync_mismatch_warning(sf):
     """Broker's FX-converted total far from our computed equity -> journaled once."""
     stub = StubSnapTrade()
