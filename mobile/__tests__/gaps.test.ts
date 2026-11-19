@@ -4,6 +4,7 @@ import { brokerCash, withBrokerCash } from '../src/hooks/useBooks';
 import { alertLabel, foldAlerts } from '../src/lib/alerts';
 import { liftEmptyCurve, visibleBooks } from '../src/lib/books';
 import { routeForWebPath } from '../src/lib/links';
+import { versionLabel } from '../src/lib/updates';
 
 const book = (over: Partial<Portfolio>): Portfolio =>
   ({ id: 'ib', name: 'Live (IBKR)', kind: 'live', cash: 0, equity: 0, startingCash: 0, baseCurrency: 'USD', venue: 'ibkr', ...over });
@@ -59,5 +60,13 @@ describe('alerts', () => {
   });
   it('opens the standing orders screen from its notification', () => {
     expect(routeForWebPath('/standing')).toBe('/orders?tab=standing');
+  });
+});
+
+describe('the version a person sees', () => {
+  it('names an over-the-air update by the day it was published', () => {
+    expect(versionLabel('0.1.0', { embedded: false, publishedAt: new Date(2026, 10, 18, 9) })).toBe('0.1.0 · Nov 18');
+    expect(versionLabel('0.1.0', { embedded: true, publishedAt: new Date(2026, 10, 18) })).toBe('0.1.0');
+    expect(versionLabel('0.1.0', { embedded: false, publishedAt: null })).toBe('0.1.0');
   });
 });

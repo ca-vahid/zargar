@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { APP_VERSION } from '@/config';
-import { checkUpdate, restartIntoUpdate, updateInfo, type UpdateCheck } from '@/lib/updates';
+import { checkUpdate, restartIntoUpdate, updateInfo, type UpdateCheck, versionLabel } from '@/lib/updates';
 import { WHATS_NEW } from '@/lib/whatsNew';
 import { radius, space, useTheme } from '@/theme';
 import { Button, Card, Txt } from './ui';
@@ -60,7 +60,7 @@ export function UpdateCard() {
           <Txt v="title" color={t.onAccent}>Z</Txt>
         </View>
         <View style={{ flex: 1, gap: 4 }}>
-          <Txt v="head">Zargar <Txt dim num>{APP_VERSION}</Txt></Txt>
+          <Txt v="head">Zargar <Txt dim num>{versionLabel(APP_VERSION)}</Txt></Txt>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {badge.spin ? <ActivityIndicator size="small" color={badge.ink} /> : <Ionicons name={badge.icon} size={16} color={badge.ink} />}
             <Txt v="small" color={badge.ink} style={{ fontWeight: '600' }}>{badge.text}</Txt>

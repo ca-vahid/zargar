@@ -22,6 +22,16 @@ export function updateInfo(): UpdateInfo {
   }
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** The version a person can tell apart: the installed build's number never changes between
+ *  installs, so an over-the-air update is named by the day it was published ("0.1.0 · Nov 18"). */
+export function versionLabel(version: string, info: Pick<UpdateInfo, 'embedded' | 'publishedAt'> = updateInfo()): string {
+  const d = info.publishedAt;
+  if (info.embedded || !d || Number.isNaN(d.getTime())) return version;
+  return `${version} · ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
 /** The answer to "is there anything newer?". `failed` is kept apart from `latest`: a phone
  *  that could not reach the update server must never be told it is up to date. */
 export type UpdateCheck =

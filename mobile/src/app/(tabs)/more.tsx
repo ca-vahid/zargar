@@ -6,6 +6,7 @@ import { Pressable, TextInput, View } from 'react-native';
 import { Button, Card, Txt } from '@/components/ui';
 import { Screen } from '@/components/ui';
 import { APP_VERSION } from '@/config';
+import { versionLabel } from '@/lib/updates';
 import { useStore } from '@/store';
 import { radius, space, useTheme } from '@/theme';
 
@@ -64,7 +65,7 @@ export default function MoreScreen() {
       </Card>
 
       <Txt v="small" faint style={{ textAlign: 'center' }}>
-        {user?.email ? `${user.email} · ` : ''}App {APP_VERSION}
+        {user?.email ? `${user.email} · ` : ''}App {versionLabel(APP_VERSION)}
       </Txt>
     </Screen>
   );
