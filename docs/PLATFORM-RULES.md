@@ -3059,3 +3059,12 @@ Tests: `tests/test_tip_v09_horizons.py` (evaluator + manager cases), `tests/test
   journaled and pushed. A delegation never reaches allow_live, risk caps, the kill switch, cash/FX or account links.
 - **2026-11-17 - standing-order repairs inherit the user's arm (0.9.57).** `StandingOrderService.repair_plan` arms a corrected order for a failed user-armed one without a new click, bounded by the original (side, broker connection, size/notional, expiry, 2 repairs). Keep those bounds in the service; `arm(armed_by=...)` is internal and no route passes it.
 - **2026-11-19 - exits are held, not refused, on an account-type mismatch (0.9.62).** With the gateway on the live account (ANT week), the paper book's MRNA exit was refused every cycle and each refusal pushed the user; on the way the manager also cancelled its own copy of the resting venue stop. `PositionManager.close()` now asks `OrderManager.account_mismatch()` (the SAME rule `place()` enforces, `_kind_mismatch`) first and HOLDS: no order, no stop cancel, policy kept, one `exit_held` alert per 6 h; `_ensure_venue_stop_once` skips too. The exit runs on the next decision after the matching gateway is back.
+
+### 2026-11-19 - cash in another currency is never level-set 1:1 (v0.9.63)
+The first SnapTrade sync after a restart ran before the USD/CAD quote existed and summed the wallets 1:1
+(USD 11,737.88 + CAD 7,942.23 = "C$19,680" for a C$24.7k account): equity and "today" moved by thousands and
+`check_daily_loss` halted two real books on ANT day. Rule: a broker cash level-set converts every wallet at an FX
+rate (live, else the last one up to 4 days old); with no rate at all the book's cash STANDS for that pass
+(`SnapTradeCashSkipped` journaled once a day per account) - same as the IBKR sync. `FxService.convert` also falls
+back to the last rate up to 4 days old before its 1:1 last resort. Test:
+`tests/test_snaptrade_sync.py::test_a_usd_wallet_is_never_added_one_to_one_without_a_rate`.
