@@ -231,6 +231,7 @@ class PositionManager:
         self._orders_task: asyncio.Task | None = None
         self._order_index: dict[str, str] = {}
         self._breaches: dict[tuple[str, str], int] = {}
+        self._mismatch_alerted: dict[tuple[str, str], int] = {}
         self._roll_ticks: dict[str, int] = {}
         self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
         self._last_decide: dict[str, int] = {}   # position id -> raw-bar ts last decided on
@@ -986,6 +987,9 @@ class PositionManager:
                 return
         if p.overnight != "venue_stop" or p.status not in ("open",):
             return
+        _check = getattr(getattr(self.engine, "orders", None), "account_mismatch", None)
+        if callable(_check) and _check(p.portfolio_id):
+            return      # 2026-11-19: the other account type's gateway is connected - leave the resting stop alone
         stk = [l for l in p.open_legs if l.sec_type == "STK" and l.qty > 0]
         if not stk:
             return
@@ -1276,6 +1280,8 @@ class PositionManager:
         # V1.7 (2026-10-05): a cash IBKR book never sells shares bought with unsettled proceeds before they settle
         # unless the sale is protective (stops always go - journaled + alerted)
         if await self._good_faith_defers(p, kind=kind, reason=reason):
+            return p.to_dict()
+        if await self._held_for_account_mismatch(p, kind=kind, reason=reason):
             return p.to_dict()
         if fraction >= 1.0 - 1e-9:
             p.status = "closing"
@@ -2381,6 +2387,27 @@ class PositionManager:
                 return
             self._breaches.pop((p.id, "quote"), None)
 
+
+    MISMATCH_ALERT_MS = 6 * 60 * 60 * 1000
+
+    async def _held_for_account_mismatch(self, p, *, kind: str, reason: str) -> bool:
+        """2026-11-19 (user: "fix what is causing this"): while the gateway is logged into the OTHER account type (the
+        live account during ANT week), every exit of a paper book is refused by the order guard - and before this the
+        manager kept trying (and cancelled its own copy of the resting venue stop on the way), pushing the user's phone
+        for each refusal. Now the exit is HELD before anything is touched: the position keeps its policy, its resting
+        venue stop is not cancelled, one alert says why (at most every 6 h), and the next decision after the matching
+        gateway is back exits as usual."""
+        check = getattr(getattr(self.engine, "orders", None), "account_mismatch", None)
+        why = check(p.portfolio_id) if callable(check) else None
+        if not why:
+            return False
+        key = (p.id, "account_mismatch")
+        now = self.now_ms()
+        if now - self._mismatch_alerted.get(key, 0) >= self.MISMATCH_ALERT_MS:
+            self._mismatch_alerted[key] = now
+            await self._alert(p, f"{kind} exit on {p.symbol} held ({reason}): {why} - it runs when the matching "
+                                 f"gateway is connected", stage="exit_held", level="warning")
+        return True
 
     MISMATCH_BACKOFF_MS = 15 * 60 * 1000
 

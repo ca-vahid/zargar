@@ -244,6 +244,34 @@ class OrderManager:
         return derive_option_action(side.upper(), pos, qty)
 
     # ------------------------------------------------------------------ place
+    @staticmethod
+    def _kind_mismatch(kind: str, executor, *, reduce_only: bool) -> str | None:
+        """review B2 (2026-10-04): a PAPER book only routes to a paper account and a LIVE book only to a live one -
+        the gateway port alone must never decide whose money trades. Unknown account type refuses new entries (exits
+        are allowed so a held position can always be closed). Shared by place() and account_mismatch()."""
+        _ak = getattr(executor, "account_kind", None)
+        if callable(_ak) and kind in ("paper", "live"):
+            ak = _ak()
+            if ak != kind and not (ak is None and reduce_only):
+                return (f"account type mismatch: a '{kind}' book cannot route to an IBKR "
+                        f"{ak or 'unknown'} account (check the gateway login / port)")
+        return None
+
+    def account_mismatch(self, portfolio_id: str) -> str | None:
+        """Would an EXIT for this book be refused for the account type right now? (2026-11-19) The position manager
+        asks before it starts an exit, so it holds instead of looping on a refusal that cannot clear."""
+        portfolio = self._positions.portfolio(portfolio_id) or {}
+        kind = portfolio.get("kind")
+        if kind not in ("paper", "live"):
+            return None
+        try:
+            executor = self._executor_for(portfolio)
+        except Exception:                                      # noqa: BLE001
+            return None
+        if executor is None:
+            return None
+        return self._kind_mismatch(kind, executor, reduce_only=True)
+
     async def place(self, intent: OrderIntent, *, before_submit: Callable[[], None] | None = None) -> dict:
         await self._ensure_symbol(intent.symbol)
         portfolio = self._positions.portfolio(intent.portfolio_id)
@@ -404,14 +432,9 @@ class OrderManager:
         # review B2 (2026-10-04): a PAPER book only routes to a paper account and a LIVE book only to a live one -
         # the gateway port alone must never decide whose money trades. Unknown account type refuses new entries
         # (exits are allowed so a held position can always be closed).
-        _ak = getattr(executor, "account_kind", None)
-        if callable(_ak) and kind in ("paper", "live"):
-            ak = _ak()
-            if ak != kind and not (ak is None and intent.reduce_only):
-                return await self._transition(
-                    order.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
-                    reject_reason=(f"account type mismatch: a '{kind}' book cannot route to an IBKR "
-                                   f"{ak or 'unknown'} account (check the gateway login / port)"))
+        why = self._kind_mismatch(kind, executor, reduce_only=intent.reduce_only)
+        if why:
+            return await self._transition(order.id, OrderStatus.REJECTED, ev.ORDER_REJECTED, reject_reason=why)
 
         result = await self._transition(order.id, OrderStatus.SUBMITTED, ev.ORDER_SUBMITTED,
                                         extra=extra_out or None)
