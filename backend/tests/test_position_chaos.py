@@ -677,3 +677,24 @@ async def test_the_crash_brake_never_fires_on_an_after_hours_print(engine, monke
         await pm._watch_once()
         clock[0] += 2000
     assert len(fo.placed) == n + 1, "inside the session the same print fires ONE exit (not one per poll)"
+
+
+async def test_a_bar_that_closed_before_the_entry_never_takes_the_target(engine):
+    """2026-11-19 (ANT): after a restart the newest completed 5m bar was the opening spike from BEFORE a fresh
+    rebuy (high 113, target 109.75, entry 99.77) - the manager read "TP1 reached" and sold at market. A bar that
+    closed before the entry, on the entry's own session, says nothing about the position."""
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt({"portfolioId": pf, "symbol": "AAPL", "direction": "long", "techniqueId": "standing",
+                        "entry": 99.77, "risk": 9.98, "overnight": "app_managed", "overnightAck": True,
+                        "policy": {"timeframe": "5m", "stop": {"kind": "fixed", "price": 89.79},
+                                   "ladder": {"targets": [109.75], "fractions": [1.0]}},
+                        "legs": [{"symbol": "AAPL", "secType": "STK", "qty": 20, "avgFill": 99.77}]})
+    p = pm.get(d["id"])
+    spike = rth_bar("2026-08-27", 135, 112.0, spread=1.5)               # 11:45 ET, high 113.5, before the entry
+    spike = Bar(symbol="AAPL", tf="5m", ts=spike.ts, open=111.0, high=113.5, low=110.0, close=112.0, volume=9000)
+    p.opened_ms = rth_bar("2026-08-27", 195, 99.77).ts                  # entered 12:45 ET the same session
+    engine.bars.bars = lambda *a, **k: [spike]                          # the only completed 5m bar the feed has
+    await pm.on_minute_bar(p, rth_bar("2026-08-27", 199, 99.0))          # 12:49 closes the 12:45-12:50 bar
+    assert not any(x["kind"] in ("target", "trim", "tp") or "TP" in str(x.get("reason")) for x in p.exits), p.exits
+    assert fo.placed == []
