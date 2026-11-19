@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.62";
+export const APP_VERSION = "0.9.64";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.64",date:"2026-11-19",title:"Hand a position back",items:[
+    {tag:"new",text:"A managed position can be released back to you: its broker stop is cancelled and no automatic exit fires again; the shares stay in the account"},
+  ]},
+  {version:"0.9.63",date:"2026-11-19",title:"Broker cash in another currency is converted, never added 1:1",items:[
+    {tag:"fixed",text:"After a restart the first Webull / Wealthsimple sync could add the US-dollar wallet to the Canadian one 1:1, so the account value and today's move read thousands off and the daily-loss limit paused two real books. Each wallet is now converted at the exchange rate; when no rate is known yet the previous cash stands until one arrives."},
+  ]},
   {version:"0.9.62",date:"2026-11-19",title:"Exits wait for the right account",items:[
     {tag:"fixed",text:"While IBKR is logged into the other account type (live vs paper), a managed position's exit is held - no refused orders, its resting stop left alone, one alert every 6 hours - and runs as soon as the matching gateway is back"},
   ]},

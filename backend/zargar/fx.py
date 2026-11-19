@@ -49,7 +49,8 @@ class FxService:
         return None
 
     def convert(self, amount: float, frm: str, to: str) -> float:
-        r = self.rate(frm, to)
+        # a rate up to 4 days old (FX closes for the weekend; a feed can stall) is far closer than 1:1
+        r = self.rate(frm, to) or self.rate(frm, to, max_age_ms=4 * 86_400_000)
         if r is None:
             key = (frm.upper(), to.upper())
             if key not in self._warned and key[0] != key[1]:
