@@ -46,3 +46,6 @@ example
 dist-android/
 *service-account*.json
 
+
+# Firebase config: present on the build machine only
+google-services.json
