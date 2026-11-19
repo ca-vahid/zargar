@@ -1353,6 +1353,29 @@ class PositionManager:
         return p.to_dict()
 
     @serialized_adapter
+    async def release(self, pid: str, *, reason: str = "released to the user") -> dict | None:
+        """2026-11-19 (user, holding ANT through the swings: "let's just keep it"): hand a position back to the user.
+        The resting venue stop is cancelled and the record leaves management (status `released`: never evaluated,
+        never restored) - no automatic exit of any kind fires afterwards. The shares stay in the account; selling is
+        the user's own order. A policy change cannot do this: it may only TIGHTEN a stop."""
+        p = self._pos.get(pid)
+        if p is None:
+            return None
+        if p.status not in ("open", "attention"):
+            raise ValueError(f"only an open position can be released (this one is {p.status})")
+        stop_id, p.venue_stop_order_id = p.venue_stop_order_id, None
+        if stop_id:
+            self._retired_stops[stop_id] = p.id
+            with contextlib.suppress(Exception):
+                await self.engine.orders.cancel(stop_id)
+        p.status = "released"
+        self._breaches = {k: v for k, v in self._breaches.items() if k[0] != p.id}
+        self._log(p, "released", reason)
+        await self._journal(POSITION_POLICY, p, {"policy": p.policy, "released": True, "reason": reason,
+                                                 "cancelledVenueStop": stop_id})
+        await self._persist(p)
+        return p.to_dict()
+
     async def set_policy(self, pid: str, policy: dict) -> dict | None:
         p = self._pos.get(pid)
         if p is None:

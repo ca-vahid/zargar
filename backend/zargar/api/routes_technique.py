@@ -102,6 +102,18 @@ def build_technique_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=404, detail="unknown position")
         return out
 
+    @app.post("/api/positions/managed/{pid}/release", dependencies=[auth])
+    async def managed_release(pid: str, body: dict | None = None):
+        """2026-11-19: hand a position back to the user - its venue stop is cancelled and no automatic exit fires
+        again (journaled). The shares stay in the account."""
+        try:
+            out = await eng.position_manager.release(pid, reason=str((body or {}).get("reason") or "released to the user"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if out is None:
+            raise HTTPException(status_code=404, detail="unknown position")
+        return out
+
     @app.post("/api/positions/managed/{pid}/close", dependencies=[auth])
     async def managed_close(pid: str, fraction: float = 1.0):
         out = await eng.position_manager.close(pid, fraction=fraction, reason="manual close (API)")
