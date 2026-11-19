@@ -1361,8 +1361,11 @@ class PositionManager:
         p = self._pos.get(pid)
         if p is None:
             return None
-        if p.status not in ("open", "attention"):
+        if p.status not in ("open", "attention", "closing"):
             raise ValueError(f"only an open position can be released (this one is {p.status})")
+        if p.status == "closing" and any(x.get("orderId") and x.get("status") not in self._EXIT_DEAD + ("FILLED",)
+                                         for x in p.exits):
+            raise ValueError("an exit order is still live - cancel it first")
         stop_id, p.venue_stop_order_id = p.venue_stop_order_id, None
         if stop_id:
             self._retired_stops[stop_id] = p.id
@@ -1799,7 +1802,8 @@ class PositionManager:
             # 2026-10-05 (generic): the DAILY decision is judged on the session's own bar - open of its first 5m bar,
             # the session's high/low, the closing minute's close - not on the last 5m bar alone (a daily ladder rung
             # touched at 11:00 was invisible to a 15:55 5m bar)
-            today = [b for b in tf_bars if session_date(b.ts) == day]
+            today = [b for b in tf_bars if session_date(b.ts) == day
+                     and not (p.opened_ms and session_date(p.opened_ms) == day and b.ts + 300_000 <= p.opened_ms)]
             if today:
                 tfbar = Bar(symbol=p.symbol, tf="1d", ts=today[0].ts, open=today[0].open,
                             high=max([b.high for b in today] + [bar.high]), low=min([b.low for b in today] + [bar.low]),
@@ -1811,6 +1815,14 @@ class PositionManager:
             tfbar = tf_bars[-1] if tf_bars else bar
         if p.last_tf_bar_ts is not None and tfbar.ts <= p.last_tf_bar_ts:
             tfbar = bar                                  # fall back to the raw bar (tests feed those directly)
+        entered_today = bool(p.opened_ms) and session_date(p.opened_ms) == day
+        if entered_today and tf != "1d" and tfbar.ts + step * 60_000 <= p.opened_ms:
+            # 2026-11-19: after a restart the newest COMPLETED tf bar was the ANT opening spike from BEFORE the
+            # position existed (high 113 vs entry 99.77) - "TP1 reached" sold 20 shares at market at 98.56. A bar
+            # that closed before the entry says nothing about this position: judge the raw bar instead.
+            tfbar = bar
+        if entered_today and bar.ts + 60_000 <= p.opened_ms:
+            return                                       # a minute that closed before the entry
         p.last_tf_bar_ts = max(p.last_tf_bar_ts or 0, tfbar.ts)
         # a re-delivered closing minute (the ~5s exchange-corrected bar, or any
         # duplicate on the bus) must not re-run the policy: the first decision's

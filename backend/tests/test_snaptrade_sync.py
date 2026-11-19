@@ -305,3 +305,49 @@ def test_alpaca_streaming_is_per_symbol():
     assert feed.streaming("TQQQ")                # printed just now
     st["emit_ms"] = now_ms() - 10 * 60 * 1000
     assert not feed.streaming("TQQQ")            # went quiet — Yahoo takes over
+
+
+async def test_an_outage_answer_never_zeroes_a_book_that_holds_shares(sf):
+    """2026-11-19 13:31 ET: SnapTrade said "balance n/a" with no balances and no positions for Wealthsimple; the sync
+    level-set 22 ANT to 0 and cash to $0 (a -100% loss halt). No data is unknown, never flat: the book stands."""
+    stub = StubSnapTrade()
+    stub.connections = [stub_connection()]
+    stub.accounts = [stub_account(total=3_000.0)]
+    stub.balances["acct-1"] = [{"currency": {"code": "CAD"}, "cash": 500.0}]
+    stub.unified_positions = {"acct-1": [
+        {"instrument": {"kind": "stock", "symbol": "ANT", "raw_symbol": "ANT", "currency": "USD", "exchange": "XNAS"},
+         "units": "22", "price": "95", "cost_basis": "93.28", "currency": "USD"}]}
+    sync, positions, *_ = make_sync(sf, stub)
+    await sync.sync_once()
+    pid = sync._account_to_portfolio["acct-1"]
+    assert positions.position_qty(pid, "ANT") == 22.0
+
+    stub.accounts = [stub_account(total=None)]               # "balance n/a"
+    stub.balances["acct-1"] = []
+    stub.unified_positions = {"acct-1": []}
+    await sync.sync_once()
+    assert positions.position_qty(pid, "ANT") == 22.0         # kept
+    assert positions.portfolio(pid)["cash"] == pytest.approx(500.0)
+    async with sf() as s:
+        skipped = (await s.execute(select(func.count()).select_from(Event)
+                                   .where(Event.type == "SnapTradeSyncSkipped"))).scalar_one()
+    assert skipped == 1
+
+
+async def test_a_genuinely_sold_out_account_still_level_sets(sf):
+    """The guard is for MISSING data: a real answer with cash and no positions (everything sold) still applies."""
+    stub = StubSnapTrade()
+    stub.connections = [stub_connection()]
+    stub.accounts = [stub_account(total=3_000.0)]
+    stub.balances["acct-1"] = [{"currency": {"code": "CAD"}, "cash": 500.0}]
+    stub.unified_positions = {"acct-1": [
+        {"instrument": {"kind": "stock", "symbol": "SHOP.TO", "raw_symbol": "SHOP", "currency": "CAD",
+                        "exchange": "XTSE"}, "units": "5", "price": "100", "cost_basis": "90", "currency": "CAD"}]}
+    sync, positions, *_ = make_sync(sf, stub)
+    await sync.sync_once()
+    pid = sync._account_to_portfolio["acct-1"]
+    stub.balances["acct-1"] = [{"currency": {"code": "CAD"}, "cash": 1_000.0}]
+    stub.unified_positions = {"acct-1": []}
+    await sync.sync_once()
+    assert positions.position_qty(pid, "SHOP.TO") == 0.0
+    assert positions.portfolio(pid)["cash"] == pytest.approx(1_000.0)

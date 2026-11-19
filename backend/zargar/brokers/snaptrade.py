@@ -931,6 +931,21 @@ class SnapTradeSync:
             await self._maybe_rename(portfolio_id, display_name)
 
         cash, cash_balances = await self._fetch_cash(account_id, currency, acct)
+        positions = await self._fetch_positions(account_id)
+        held = [p for p in self._positions.positions_list(portfolio_id) if abs(float(p.get("qty") or 0)) > 1e-9]
+        if positions is None or (cash is None and not cash_balances and not positions and held):
+            # 2026-11-19: an outage answer (no balances, no positions) for a book that holds shares is NOT a flat
+            # account - the 13:31 ET sync level-set Wealthsimple's 22 ANT to 0. Skip this pass; the book stands.
+            skip_key = (account_id, "unavailable", dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H"))
+            if skip_key not in self._mismatch_warned:
+                self._mismatch_warned.add(skip_key)
+                log.warning("SnapTrade sync skipped for %s: broker data unavailable", display_name)
+                await self._journal.append(
+                    "SnapTradeSyncSkipped",
+                    {"account": display_name, "reason": "broker data unavailable (no balances/positions)",
+                     "heldInBook": len(held)},
+                    aggregate_type="portfolio", aggregate_id=portfolio_id, portfolio_id=portfolio_id)
+            return
         if cash is None:
             # 2026-11-19: no FX rate for a currency the account holds (the first sync after a restart runs before
             # the USD/CAD quote arrives). Adding the wallets 1:1 read a C$24.7k account as C$19.7k, moved "today"
@@ -943,10 +958,9 @@ class SnapTradeSync:
                 log.warning("SnapTrade cash level-set skipped for %s: no FX rate into %s", display_name, currency)
                 await self._journal.append(
                     "SnapTradeCashSkipped",
-                    {"account": display_name, "reason": "no FX rate", "bookCurrency": currency,
-                     "cashBalances": cash_balances, "cashKept": round(cash, 2)},
+                    {"account": display_name, "reason": "no FX rate" if cash_balances else "balances unavailable",
+                     "bookCurrency": currency, "cashBalances": cash_balances, "cashKept": round(cash, 2)},
                     aggregate_type="portfolio", aggregate_id=portfolio_id, portfolio_id=portfolio_id)
-        positions = await self._fetch_positions(account_id)
         # pre-seed the impact endpoint's symbol-id cache from held positions —
         # saves a brokerage API call per fee check (Wealthsimple rate-limits)
         for p in positions:
@@ -1104,30 +1118,38 @@ class SnapTradeSync:
                     return None, entries
                 total += e["cash"] * r
             return total, entries
-        total = float(((acct.get("balance") or {}).get("total") or {}).get("amount") or 0.0)
-        return total, []
+        amount = ((acct.get("balance") or {}).get("total") or {}).get("amount")
+        if amount is None:
+            # 2026-11-19 13:31 ET: SnapTrade answered "balance n/a" with no balances for Webull + Wealthsimple (an
+            # upstream outage). Reading that as $0 zeroed a real book and tripped a -100% loss halt. No data is
+            # UNKNOWN, never zero: the caller keeps the book's cash.
+            return None, []
+        return float(amount), []
 
-    async def _fetch_positions(self, account_id: str) -> list[dict]:
-        """Parsed positions via the unified endpoint, legacy as fallback."""
+    async def _fetch_positions(self, account_id: str) -> list[dict] | None:
+        """Parsed positions via the unified endpoint, legacy as fallback. None = the fetch FAILED (unknown) - never
+        the same thing as an empty account (2026-11-19)."""
         try:
             payload = await self._client.request(
                 "GET", f"/api/v1/accounts/{account_id}/positions/all")
-            rows = payload.get("results") if isinstance(payload, dict) else None
+            if not isinstance(payload, dict) or "results" not in payload:
+                return None
+            rows = payload.get("results")
             return [p for p in (extract_unified_position(r) for r in rows or []) if p]
         except SnapTradeError as exc:
             if exc.status not in (404, 410):
                 log.warning("positions/all failed for %s: %s", account_id, exc)
-                return []
+                return None
         except SnapTradeUnknownOutcome as exc:
             log.warning("positions/all failed for %s: %s", account_id, exc)
-            return []
+            return None
         # older accounts: the pre-2026 positions endpoint
         try:
             rows = await self._client.request(
                 "GET", f"/api/v1/accounts/{account_id}/positions")
         except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
             log.warning("positions fetch failed for %s: %s", account_id, exc)
-            return []
+            return None
         rows = rows if isinstance(rows, list) else []
         return [p for p in (extract_position(r) for r in rows) if p]
 

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.64";
+export const APP_VERSION = "0.9.65";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.65",date:"2026-11-19",title:"ANT-day fixes",items:[
+    {tag:"fixed",text:"A position is never judged on a price bar that closed before it was bought (a stale opening-spike bar sold a fresh ANT rebuy as a false take-profit)"},
+    {tag:"fixed",text:"A broker data outage (SnapTrade \"balance n/a\", no positions) no longer zeroes a book that holds shares; the sync is skipped and journaled"},
+    {tag:"improved",text:"A stuck closing position with no live exit order can be released back to you"},
+  ]},
   {version:"0.9.64",date:"2026-11-19",title:"Hand a position back",items:[
     {tag:"new",text:"A managed position can be released back to you: its broker stop is cancelled and no automatic exit fires again; the shares stay in the account"},
   ]},
