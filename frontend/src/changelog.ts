@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.61";
+export const APP_VERSION = "0.9.62";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.62",date:"2026-11-19",title:"Exits wait for the right account",items:[
+    {tag:"fixed",text:"While IBKR is logged into the other account type (live vs paper), a managed position's exit is held - no refused orders, its resting stop left alone, one alert every 6 hours - and runs as soon as the matching gateway is back"},
+  ]},
   {version:"0.9.61",date:"2026-11-18",title:"Quieter refused exits",items:[
     {tag:"fixed",text:"A position whose exit was refused for an account-type mismatch (paper book while IBKR is on the live account) no longer re-fires its quote stop every 30 seconds; it waits 15 minutes. Other refusals still retry at once"},
   ]},
