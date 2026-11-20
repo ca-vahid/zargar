@@ -464,3 +464,23 @@ def test_the_api_spec_carries_spend_all_and_starts_on():
     from zargar.api.routes_standing import StandingOrderSpec, _spec
     s = _spec(StandingOrderSpec(portfolioId="p", symbol="ANT", side="BUY", spendAll=True, startsOn="2026-11-19"))
     assert s["spendAll"] is True and s["startsOn"] == "2026-11-19"
+
+
+async def test_the_tick_resubscribes_armed_symbols_after_a_restart(rig, monkeypatch):
+    """2026-11-19: after a restart only arm() had subscribed - the ANT buys read "no quote yet" until a manual
+    preflight. The tick now ensures every open order's symbol once per process."""
+    eng, svc = rig
+    d = await svc.create({"portfolioId": _sim_pid(eng), "symbol": "RSUB", "side": "BUY", "qty": 1})
+    await svc.arm(d["id"], confirm_phrase(d["id"]))
+    seen = []
+    real = eng.ensure_symbol
+
+    async def spy(sym):
+        seen.append(sym)
+        return await real(sym)
+    monkeypatch.setattr(eng, "ensure_symbol", spy)
+    fresh = StandingOrderService(eng)                    # a new process: nothing watched yet
+    fresh.start = lambda: None
+    await fresh.tick(now=OPEN_NOW)
+    await fresh.tick(now=OPEN_NOW)
+    assert seen.count("RSUB") == 1

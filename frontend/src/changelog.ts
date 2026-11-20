@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.9.66";
+export const APP_VERSION = "0.9.67";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.9.67",date:"2026-11-20",title:"Standing orders after a restart",items:[
+    {tag:"fixed",text:"Armed standing orders re-subscribe their symbol's prices after a restart (ANT read \"no quote yet\" until a manual check)"},
+    {tag:"fixed",text:"Standing orders: the Delegate arming card's title and description no longer run together"},
+  ]},
   {version:"0.9.66",date:"2026-11-20",title:"Exits wait for the broker connection",items:[
     {tag:"fixed",text:"While a paper or live book's broker connection is down (IB Gateway logged out), its exits are held with one alert instead of being refused and alerted every few seconds; they run when the connection is back"},
   ]},
