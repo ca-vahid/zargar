@@ -3100,3 +3100,4 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .so-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .so-armed-by { font-size: 11px; margin-top: 2px; }
 .so-confirm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.so-delegation-form .so-plan-title { display: flex; flex-direction: column; gap: 4px; }

@@ -110,6 +110,7 @@ class StandingOrderService:
         self._task = None
         self._alerted: set[str] = set()
         self._refreshed_at: dict[str, float] = {}
+        self._watched: set[str] = set()
 
     # ------------------------------------------------------------------ settings
     def s(self, key: str, default):
@@ -590,6 +591,12 @@ class StandingOrderService:
         async with self.engine.sf() as session:
             rows = (await session.execute(select(StandingOrder).where(StandingOrder.status.in_(OPEN)))).scalars().all()
         for row in rows:
+            # 2026-11-19: a restart drops the feed's subscriptions and only arm() subscribed - ANT's buys read "no quote
+            # for ANT yet" after the 10:50 ET restart until a manual preflight re-subscribed. Once per process per symbol.
+            if row.symbol not in self._watched:
+                self._watched.add(row.symbol)
+                with contextlib.suppress(Exception):
+                    await self.engine.ensure_symbol(row.symbol)
             try:
                 await self._process(row, now)
             except Exception as exc:                            # noqa: BLE001
