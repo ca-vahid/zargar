@@ -50,3 +50,19 @@ def test_the_order_guard_and_the_hold_share_one_rule():
     unknown = SimpleNamespace(account_kind=lambda: None)
     assert OrderManager._kind_mismatch("paper", unknown, reduce_only=True) is None        # exits allowed
     assert OrderManager._kind_mismatch("paper", unknown, reduce_only=False)               # entries refused
+
+
+def test_a_disconnected_venue_is_held_like_a_mismatch():
+    """2026-11-20: IB Gateway logged out after a reboot - the paper MRNA exit was refused 59 times in 15 minutes."""
+    from types import SimpleNamespace
+    from zargar.orders import OrderManager
+    om = OrderManager.__new__(OrderManager)
+    om._positions = SimpleNamespace(portfolio=lambda pid: {"id": pid, "kind": "paper"})
+    om._executor_for = lambda pf: SimpleNamespace(connected=False, account_kind=lambda: None)
+    assert "no connected execution venue" in om.account_mismatch("p1")
+    om._executor_for = lambda pf: None
+    assert "no connected execution venue" in om.account_mismatch("p1")
+    om._executor_for = lambda pf: SimpleNamespace(connected=True, account_kind=lambda: "paper")
+    assert om.account_mismatch("p1") is None
+    om._positions = SimpleNamespace(portfolio=lambda pid: {"id": pid, "kind": "sim"})
+    assert om.account_mismatch("p1") is None                       # sim books are never held
