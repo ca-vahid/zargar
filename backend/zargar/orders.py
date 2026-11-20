@@ -268,8 +268,12 @@ class OrderManager:
             executor = self._executor_for(portfolio)
         except Exception:                                      # noqa: BLE001
             return None
-        if executor is None:
-            return None
+        if executor is None or not (getattr(executor, "connected", True)
+                                    or getattr(executor, "exits_when_degraded", False)):
+            # 2026-11-20: after a reboot with IB Gateway logged out, the paper book's MRNA exit was refused "no
+            # connected execution venue" 59 times in 15 minutes (a push each). No venue = the exit cannot leave;
+            # the manager holds it the same way and it runs once the gateway is back.
+            return f"no connected execution venue for '{kind}' portfolio (gateway logged out?)"
         return self._kind_mismatch(kind, executor, reduce_only=True)
 
     async def place(self, intent: OrderIntent, *, before_submit: Callable[[], None] | None = None) -> dict:
