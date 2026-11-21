@@ -178,8 +178,20 @@ def evaluation_row(saved, review, policy=None):
                     reasons.append(f"{c['setup']}: first target distance {room['firstTargetPct']:.3f}% is below the configured {policy.min_target_distance_pct:g}% minimum; nearby resistance retained.")
     if not review and not reasons:
         reasons = ['No qualifying measured setup with valid targets and sufficient configured target distance']
-    return {'symbol': saved['symbol'], 'analysisId': saved['runId'],
-            'status': 'candidate' if review else 'filtered', 'reasons': reasons}
+    row = {'symbol': saved['symbol'], 'analysisId': saved['runId'],
+           'status': 'candidate' if review else 'filtered', 'reasons': reasons}
+    if saved['runId'] is None:
+        row['evidenceSaved'] = False  # C3: screened out on 2+ checks; the compact row is the record
+    return row
+
+
+def keep_evidence(screen, analysis):
+    """C3 (2026-09-27): persist the full analysis for setups and for near misses (at most one failed check);
+    the ~95% screened out on several checks keep only their compact preparation row (~300 MB/day saved)."""
+    if any(c.get('contextPassed') or c.get('researchContextPassed') for c in analysis.get('candidates', [])):
+        return True
+    failed = [g for g in (*screen['gates'], *analysis.get('checks', [])) if g['status'] != 'pass']
+    return len(failed) <= 1
 
 
 async def run_preparation(engine, policy: PreparationPolicy, **kwargs):
@@ -321,6 +333,19 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
             industry_raw = prior.config['industryPublication']
             at = prior.as_of
         else:
+            # C4 (2026-09-27): a stale benchmark ends the run as waiting_for_benchmark anyway; check it BEFORE paying
+            # for discovery and the industry capture (each 5-20 min retry repeated both on 2026-09-23).
+            precheck_at = clock()
+            stale = {}
+            async with httpx.AsyncClient(headers={'User-Agent': UA}, timeout=30.) as client:
+                for symbol in ('SPY', 'QQQ'):
+                    _, provenance = await history_reader.daily(symbol, precheck_at, client)
+                    if provenance.get('historyFresh') is False:
+                        stale[symbol] = f"Expected {provenance['historyExpectedThrough']}; provider history ends {provenance['historyThrough'] or 'without bars'}"
+            if stale:
+                result.update(marketDataErrors=stale, armingBlocked=True, notEvaluated=0, benchmarkPrecheck=True,
+                              message='Waiting for completed benchmark session before discovery; fresh preparation will retry.')
+                return await checkpoint('waiting_for_benchmark', terminal=True)
             await checkpoint('discovering', force=True)
             args = {'clock': clock}
             if discover is discover_market:
@@ -455,7 +480,8 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                         research = ResearchInput(history=history, indices=indices, facts=facts, rules=rules,
                             parameters=policy.setups.model_copy(update={'family': 'post_ignition' if policy.profile == 'post_ignition_2026_09_11' else policy.setups.family}), as_of_ms=at, direction=direction, data_source=listing['source'],
                             industry_snapshot_id=captured['runId'])
-                        saved = await service.analyze(research, collection=provenance, parent_run_id=run_id)
+                        saved = await service.analyze(research, collection=provenance, parent_run_id=run_id,
+                                                      persist=keep_evidence)
                         review = review_saved(saved)
                         entry = evaluation_row(saved, review, policy)
                         entry['leaderEvidence'] = leader_evidence(saved)
